@@ -240,8 +240,18 @@ func TestReconcileDeprecatedGlobalConfig(t *testing.T) {
 	reconciler := &HostedClusterReconciler{
 		Client: fakeClient,
 	}
+
+	originalSpec := hc.Spec.DeepCopy()
 	if err := reconciler.reconcileDeprecatedGlobalConfig(context.Background(), hc); err != nil {
 		t.Fatalf("unexpected reconcile error: %v", err)
+	}
+
+	// Update fields if required.
+	if !equality.Semantic.DeepEqual(&hc.Spec, originalSpec) {
+		err := reconciler.Client.Update(context.Background(), hc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	}
 
 	updatedHc := &hyperv1.HostedCluster{}

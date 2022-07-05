@@ -566,8 +566,8 @@ func (r *AWSEndpointServiceReconciler) hostedCluster(ctx context.Context, hcp *h
 }
 
 func (r *AWSEndpointServiceReconciler) controlPlaneOperatorRoleARN(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
-	if hc.Spec.Platform.AWS == nil || hc.Spec.Platform.AWS.Roles.ControlPlaneOperatorARN == "" {
+	if hc.Spec.Platform.AWS == nil || hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN == "" {
 		return "", fmt.Errorf("hosted cluster does not have control plane operator credentials")
 	}
-	return hc.Spec.Platform.AWS.Roles.ControlPlaneOperatorARN, nil
+	return hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, nil
 }

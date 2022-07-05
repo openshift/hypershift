@@ -1185,16 +1185,76 @@ the default service endpoint of specific AWS Services.</p>
 </tr>
 <tr>
 <td>
-<code>roles</code></br>
+<code>rolesRef</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1alpha1.AWSRoles">
-AWSRoles
+<a href="#hypershift.openshift.io/v1alpha1.AWSRolesRef">
+AWSRolesRef
 </a>
 </em>
 </td>
 <td>
-<p>Roles contains references to various AWS IAM roles required to enable
+<p>RolesRef contains references to various AWS IAM roles required to enable
 integrations such as OIDC.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>roles</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSRoleCredentials">
+[]AWSRoleCredentials
+</a>
+</em>
+</td>
+<td>
+<p>Deprecated
+This field will be removed in the next API release.
+Use RolesRef instead.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeCloudControllerCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>Deprecated
+This field will be removed in the next API release.
+Use RolesRef instead.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodePoolManagementCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>Deprecated
+This field will be removed in the next API release.
+Use RolesRef instead.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneOperatorCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>Deprecated
+This field will be removed in the next API release.
+Use RolesRef instead.</p>
 </td>
 </tr>
 <tr>
@@ -1344,13 +1404,60 @@ requirements of all services.</p>
 </tr>
 </tbody>
 </table>
-###AWSRoles { #hypershift.openshift.io/v1alpha1.AWSRoles }
+###AWSRoleCredentials { #hypershift.openshift.io/v1alpha1.AWSRoleCredentials }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1alpha1.AWSPlatformSpec">AWSPlatformSpec</a>)
 </p>
 <p>
-<p>AWSRoles contains references to various AWS IAM roles required to enable
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>arn</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>namespace</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSRolesRef { #hypershift.openshift.io/v1alpha1.AWSRolesRef }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSPlatformSpec">AWSPlatformSpec</a>)
+</p>
+<p>
+<p>AWSRolesRef contains references to various AWS IAM roles required to enable
 integrations such as OIDC.</p>
 </p>
 <table>

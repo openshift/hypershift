@@ -112,7 +112,7 @@ type ExampleAWSOptions struct {
 	SecurityGroupID    string
 	InstanceProfile    string
 	InstanceType       string
-	Roles              hyperv1.AWSRoles
+	Roles              hyperv1.AWSRolesRef
 	KMSProviderRoleARN string
 	KMSKeyARN          string
 	RootVolumeSize     int64
@@ -234,8 +234,8 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AWSPlatform,
 			AWS: &hyperv1.AWSPlatformSpec{
-				Region: o.AWS.Region,
-				Roles:  o.AWS.Roles,
+				Region:   o.AWS.Region,
+				RolesRef: o.AWS.Roles,
 				CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
 					VPC: o.AWS.VPCID,
 					Subnet: &hyperv1.AWSResourceReference{

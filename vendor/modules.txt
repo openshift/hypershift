@@ -682,6 +682,7 @@ gopkg.in/go-playground/validator.v9
 gopkg.in/inf.v0
 # gopkg.in/ini.v1 v1.63.2
 ## explicit
+gopkg.in/ini.v1
 # gopkg.in/square/go-jose.v2 v2.5.1
 ## explicit
 gopkg.in/square/go-jose.v2

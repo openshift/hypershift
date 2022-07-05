@@ -821,10 +821,10 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			return nil
 		}
 		for arn, secret := range map[string]*corev1.Secret{
-			hcp.Spec.Platform.AWS.Roles.IngressARN:       manifests.AWSIngressCloudCredsSecret(),
-			hcp.Spec.Platform.AWS.Roles.StorageARN:       manifests.AWSStorageCloudCredsSecret(),
-			hcp.Spec.Platform.AWS.Roles.ImageRegistryARN: manifests.AWSImageRegistryCloudCredsSecret(),
-			hcp.Spec.Platform.AWS.Roles.NetworkARN:       manifests.AWSNetworkCloudCredsSecret(),
+			hcp.Spec.Platform.AWS.RolesRef.IngressARN:       manifests.AWSIngressCloudCredsSecret(),
+			hcp.Spec.Platform.AWS.RolesRef.StorageARN:       manifests.AWSStorageCloudCredsSecret(),
+			hcp.Spec.Platform.AWS.RolesRef.ImageRegistryARN: manifests.AWSImageRegistryCloudCredsSecret(),
+			hcp.Spec.Platform.AWS.RolesRef.NetworkARN:       manifests.AWSNetworkCloudCredsSecret(),
 		} {
 			err := syncSecret(secret, arn)
 			if err != nil {

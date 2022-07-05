@@ -793,11 +793,38 @@ type AWSPlatformSpec struct {
 	// +immutable
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
-	// Roles contains references to various AWS IAM roles required to enable
+	// RolesRef contains references to various AWS IAM roles required to enable
 	// integrations such as OIDC.
 	//
 	// +immutable
-	Roles AWSRoles `json:"roles"`
+	RolesRef AWSRolesRef `json:"rolesRef"`
+
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use RolesRef instead.
+	// +immutable
+	Roles []AWSRoleCredentials `json:"roles,omitempty"`
+
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use RolesRef instead.
+	//
+	// +immutable
+	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
+
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use RolesRef instead.
+	//
+	// +immutable
+	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
+
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use RolesRef instead.
+	//
+	// +immutable
+	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
 
 	// ResourceTags is a list of additional tags to apply to AWS resources created
 	// for the cluster. See
@@ -817,6 +844,12 @@ type AWSPlatformSpec struct {
 	// +kubebuilder:default=Public
 	// +optional
 	EndpointAccess AWSEndpointAccessType `json:"endpointAccess,omitempty"`
+}
+
+type AWSRoleCredentials struct {
+	ARN       string `json:"arn"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 }
 
 // AWSResourceTag is a tag to apply to AWS resources created for the cluster.
@@ -839,9 +872,9 @@ type AWSResourceTag struct {
 	Value string `json:"value"`
 }
 
-// AWSRoles contains references to various AWS IAM roles required to enable
+// AWSRolesRef contains references to various AWS IAM roles required to enable
 // integrations such as OIDC.
-type AWSRoles struct {
+type AWSRolesRef struct {
 	// The referenced role must have a trust relationship that allows it to be assumed via web identity.
 	// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
 	// Example:

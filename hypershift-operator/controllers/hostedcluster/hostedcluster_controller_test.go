@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
+
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
@@ -1837,4 +1839,246 @@ func TestIsUpgradeable(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileDeprecatedAWSRoles(t *testing.T) {
+	testNamespace := "test"
+
+	// Emulate user input secrets pre-created by the CLI.
+	kubeCloudControllerARN := "kubeCloudControllerARN"
+	kubeCloudControllerSecretName := "kubeCloudControllerCreds"
+	kubeCloudControllerSecret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      kubeCloudControllerSecretName,
+		},
+		Data: map[string][]byte{
+			"credentials": []byte(fmt.Sprintf(`[default]
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+`, kubeCloudControllerARN)),
+		},
+	}
+
+	nodePoolManagementARN := "nodePoolManagementARN"
+	nodePoolManagementSecretName := "nodePoolManagementCreds"
+	nodePoolManagementSecret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      nodePoolManagementSecretName,
+		},
+		Data: map[string][]byte{
+			"credentials": []byte(fmt.Sprintf(`[default]
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+`, nodePoolManagementARN)),
+		},
+	}
+
+	controlPlaneOperatorARN := "controlPlaneOperatorARN"
+	controlPlaneOperatorSecretName := "controlPlaneOperatorCreds"
+	controlPlaneOperatorSecret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      controlPlaneOperatorSecretName,
+		},
+		Data: map[string][]byte{
+			"credentials": []byte(fmt.Sprintf(`[default]
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+`, controlPlaneOperatorARN)),
+		},
+	}
+
+	// Emulate user input.
+	ingressARN := "ingressARN"
+	imageRegistryARN := "registryARN"
+	storageARN := "ebsARN"
+	networkARN := "networkARN"
+
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "",
+			Namespace: testNamespace,
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					RolesRef: hyperv1.AWSRolesRef{
+						IngressARN:              "",
+						ImageRegistryARN:        "",
+						StorageARN:              "",
+						NetworkARN:              "",
+						KubeCloudControllerARN:  "",
+						NodePoolManagementARN:   "",
+						ControlPlaneOperatorARN: "",
+					},
+					Roles: []hyperv1.AWSRoleCredentials{
+						{
+							ARN:       ingressARN,
+							Namespace: "openshift-ingress-operator",
+							Name:      "cloud-credentials",
+						},
+						{
+							ARN:       imageRegistryARN,
+							Namespace: "openshift-image-registry",
+							Name:      "installer-cloud-credentials",
+						},
+						{
+							ARN:       storageARN,
+							Namespace: "openshift-cluster-csi-drivers",
+							Name:      "ebs-cloud-credentials",
+						},
+						{
+							ARN:       networkARN,
+							Namespace: "openshift-cloud-network-config-controller",
+							Name:      "cloud-credentials",
+						},
+					},
+					KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: kubeCloudControllerSecretName},
+					NodePoolManagementCreds:   corev1.LocalObjectReference{Name: nodePoolManagementSecretName},
+					ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: controlPlaneOperatorSecretName},
+				},
+			},
+		},
+		Status: hyperv1.HostedClusterStatus{},
+	}
+
+	// Expect old fields to be migrated.
+	expectedAWSPlatformSpec := &hyperv1.AWSPlatformSpec{
+		Region:              "",
+		CloudProviderConfig: nil,
+		ServiceEndpoints:    nil,
+		RolesRef: hyperv1.AWSRolesRef{
+			IngressARN:              ingressARN,
+			ImageRegistryARN:        imageRegistryARN,
+			StorageARN:              storageARN,
+			NetworkARN:              networkARN,
+			KubeCloudControllerARN:  kubeCloudControllerARN,
+			NodePoolManagementARN:   nodePoolManagementARN,
+			ControlPlaneOperatorARN: controlPlaneOperatorARN,
+		},
+		Roles:                     nil,
+		KubeCloudControllerCreds:  corev1.LocalObjectReference{},
+		NodePoolManagementCreds:   corev1.LocalObjectReference{},
+		ControlPlaneOperatorCreds: corev1.LocalObjectReference{},
+		ResourceTags:              nil,
+		EndpointAccess:            "",
+	}
+
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(controlPlaneOperatorSecret, nodePoolManagementSecret, kubeCloudControllerSecret).Build()
+	r := &HostedClusterReconciler{Client: client}
+
+	g := NewGomegaWithT(t)
+	err := r.reconcileDeprecatedAWSRoles(context.Background(), hc)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(hc.Spec.Platform.AWS).To(BeEquivalentTo(expectedAWSPlatformSpec))
+}
+
+func TestEnsureHCPAWSRolesBackwardCompatibility(t *testing.T) {
+	ingressARN := "ingressARN"
+	imageRegistryARN := "imageRegistryARN"
+	storageARN := "storageARN"
+	networkARN := "networkARN"
+
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "",
+			Namespace: "",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					RolesRef: hyperv1.AWSRolesRef{
+						IngressARN:              ingressARN,
+						ImageRegistryARN:        imageRegistryARN,
+						StorageARN:              storageARN,
+						NetworkARN:              networkARN,
+						KubeCloudControllerARN:  "anything",
+						NodePoolManagementARN:   "anything",
+						ControlPlaneOperatorARN: "anything",
+					},
+				},
+			},
+		},
+	}
+
+	expectedAWSPlatformSpec := &hyperv1.AWSPlatformSpec{
+		Region:              "",
+		CloudProviderConfig: nil,
+		ServiceEndpoints:    nil,
+		RolesRef: hyperv1.AWSRolesRef{
+			IngressARN:              ingressARN,
+			ImageRegistryARN:        imageRegistryARN,
+			StorageARN:              storageARN,
+			NetworkARN:              networkARN,
+			KubeCloudControllerARN:  "anything",
+			NodePoolManagementARN:   "anything",
+			ControlPlaneOperatorARN: "anything",
+		},
+		Roles: []hyperv1.AWSRoleCredentials{
+			{
+				ARN:       ingressARN,
+				Namespace: "openshift-ingress-operator",
+				Name:      "cloud-credentials",
+			},
+			{
+				ARN:       imageRegistryARN,
+				Namespace: "openshift-image-registry",
+				Name:      "installer-cloud-credentials",
+			},
+			{
+				ARN:       storageARN,
+				Namespace: "openshift-cluster-csi-drivers",
+				Name:      "ebs-cloud-credentials",
+			},
+			{
+				ARN:       imageRegistryARN,
+				Namespace: "cloud-network-config-controller",
+				Name:      "cloud-credentials",
+			},
+		},
+		KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: platformaws.KubeCloudControllerCredsSecret("").Name},
+		NodePoolManagementCreds:   corev1.LocalObjectReference{},
+		ControlPlaneOperatorCreds: corev1.LocalObjectReference{},
+		ResourceTags:              nil,
+		EndpointAccess:            "",
+	}
+
+	g := NewGomegaWithT(t)
+	hcp := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					Region:                    "",
+					CloudProviderConfig:       nil,
+					ServiceEndpoints:          nil,
+					RolesRef:                  hyperv1.AWSRolesRef{},
+					Roles:                     nil,
+					KubeCloudControllerCreds:  corev1.LocalObjectReference{},
+					NodePoolManagementCreds:   corev1.LocalObjectReference{},
+					ControlPlaneOperatorCreds: corev1.LocalObjectReference{},
+					ResourceTags:              nil,
+					EndpointAccess:            "",
+				},
+			},
+		},
+	}
+	ensureHCPAWSRolesBackwardCompatibility(hc, hcp)
+	g.Expect(hcp.Spec.Platform.AWS).To(BeEquivalentTo(expectedAWSPlatformSpec))
 }

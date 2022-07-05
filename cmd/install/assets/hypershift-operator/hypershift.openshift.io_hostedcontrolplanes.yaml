@@ -2084,6 +2084,15 @@ spec:
                         required:
                         - vpc
                         type: object
+                      controlPlaneOperatorCreds:
+                        description: Deprecated This field will be removed in the
+                          next API release. Use RolesRef instead.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
                       endpointAccess:
                         default: Public
                         description: EndpointAccess specifies the publishing scope
@@ -2093,6 +2102,24 @@ spec:
                         - PublicAndPrivate
                         - Private
                         type: string
+                      kubeCloudControllerCreds:
+                        description: Deprecated This field will be removed in the
+                          next API release. Use RolesRef instead.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                      nodePoolManagementCreds:
+                        description: Deprecated This field will be removed in the
+                          next API release. Use RolesRef instead.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
                       region:
                         description: Region is the AWS region in which the cluster
                           resides. This configures the OCP control plane cloud integrations,
@@ -2132,7 +2159,24 @@ spec:
                         maxItems: 25
                         type: array
                       roles:
-                        description: Roles contains references to various AWS IAM
+                        description: Deprecated This field will be removed in the
+                          next API release. Use RolesRef instead.
+                        items:
+                          properties:
+                            arn:
+                              type: string
+                            name:
+                              type: string
+                            namespace:
+                              type: string
+                          required:
+                          - arn
+                          - name
+                          - namespace
+                          type: object
+                        type: array
+                      rolesRef:
+                        description: RolesRef contains references to various AWS IAM
                           roles required to enable integrations such as OIDC.
                         properties:
                           controlPlaneOperatorARN:
@@ -2338,8 +2382,11 @@ spec:
                           type: object
                         type: array
                     required:
+                    - controlPlaneOperatorCreds
+                    - kubeCloudControllerCreds
+                    - nodePoolManagementCreds
                     - region
-                    - roles
+                    - rolesRef
                     type: object
                   azure:
                     description: Azure defines azure specific settings

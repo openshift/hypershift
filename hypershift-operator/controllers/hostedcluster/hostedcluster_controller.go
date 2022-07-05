@@ -66,6 +66,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"gopkg.in/ini.v1"
 	jose "gopkg.in/square/go-jose.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -666,12 +667,29 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	createOrUpdate := r.createOrUpdate(req)
+	// Handle deprecated fields.
+	originalSpec := hcluster.Spec.DeepCopy()
 
-	// Reconcile deprecated global configuration
+	// Reconcile deprecated global configuration.
 	if err := r.reconcileDeprecatedGlobalConfig(ctx, hcluster); err != nil {
 		return ctrl.Result{}, err
 	}
+
+	// Reconcile deprecated AWS roles.
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if err := r.reconcileDeprecatedAWSRoles(ctx, hcluster); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Update fields if required.
+	if !equality.Semantic.DeepEqual(&hcluster.Spec, originalSpec) {
+		log.Info("Updating deprecated fields for hosted cluster")
+		return ctrl.Result{}, r.Client.Update(ctx, hcluster)
+	}
+
+	createOrUpdate := r.createOrUpdate(req)
 
 	// Reconcile the hosted cluster namespace
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
@@ -1331,6 +1349,19 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	// always reconcile the release image (facilitates rolling forward)
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 
+	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
+	hcp.Spec.OLMCatalogPlacement = hcluster.Spec.OLMCatalogPlacement
+	hcp.Spec.Autoscaling = hcluster.Spec.Autoscaling
+
+	// Backward compatible conversions.
+	// TODO (alberto): Drop this as we go GA in only support targeted release.
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		// For compatibility with versions of the CPO < 4.12, the HCP KubeCloudControllerCreds secret ref
+		// and the roles need to be populated so the old CPO can operate.
+		ensureHCPAWSRolesBackwardCompatibility(hcluster, hcp)
+	}
+
 	if hcluster.Spec.Configuration != nil {
 		hcp.Spec.Configuration = hcluster.Spec.Configuration.DeepCopy()
 		// for compatibility with previous versions of the CPO, the hcp configuration should be
@@ -1344,11 +1375,35 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.Configuration = nil
 	}
 
-	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
-	hcp.Spec.OLMCatalogPlacement = hcluster.Spec.OLMCatalogPlacement
-	hcp.Spec.Autoscaling = hcluster.Spec.Autoscaling
-
 	return nil
+}
+
+func ensureHCPAWSRolesBackwardCompatibility(hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) {
+	hcp.Spec.Platform.AWS.KubeCloudControllerCreds = corev1.LocalObjectReference{Name: platformaws.KubeCloudControllerCredsSecret("").Name}
+	hcp.Spec.Platform.AWS.Roles = []hyperv1.AWSRoleCredentials{
+		{
+			ARN:       hc.Spec.Platform.AWS.RolesRef.IngressARN,
+			Namespace: "openshift-ingress-operator",
+			Name:      "cloud-credentials",
+		},
+		{
+			ARN:       hc.Spec.Platform.AWS.RolesRef.ImageRegistryARN,
+			Namespace: "openshift-image-registry",
+			Name:      "installer-cloud-credentials",
+		},
+		{
+			ARN:       hc.Spec.Platform.AWS.RolesRef.StorageARN,
+			Namespace: "openshift-cluster-csi-drivers",
+			Name:      "ebs-cloud-credentials",
+		},
+		{
+			ARN:       hc.Spec.Platform.AWS.RolesRef.ImageRegistryARN,
+			Namespace: "cloud-network-config-controller",
+			Name:      "cloud-credentials",
+		},
+	}
+
+	hcp.Spec.Platform.AWS.RolesRef = hc.Spec.Platform.AWS.RolesRef
 }
 
 // reconcileCAPIManager orchestrates orchestrates of  all CAPI manager components.
@@ -4307,9 +4362,6 @@ func (r *HostedClusterReconciler) reconcileDeprecatedGlobalConfig(ctx context.Co
 		return nil
 	}
 
-	log := ctrl.LoggerFrom(ctx)
-
-	originalSpec := hc.Spec.DeepCopy()
 	gconfig, err := globalconfig.ParseGlobalConfig(ctx, hc.Spec.Configuration)
 	if err != nil {
 		// This should never happen because at this point, the global configuration
@@ -4352,14 +4404,77 @@ func (r *HostedClusterReconciler) reconcileDeprecatedGlobalConfig(ctx context.Co
 	hc.Spec.Configuration.ConfigMapRefs = nil
 	hc.Spec.Configuration.SecretRefs = nil
 
-	if !equality.Semantic.DeepEqual(&hc.Spec, originalSpec) {
-		log.Info("Updating deprecated configuration for hosted cluster", "hostedcluster", client.ObjectKeyFromObject(hc).String())
-		if err = r.Client.Update(ctx, hc); err != nil {
-			return fmt.Errorf("failed to update hosted cluster configuration: %w", err)
+	return nil
+}
+
+// reconcileDeprecatedAWSRoles converts previously specified input in .aws.roles format to
+// the new the rolesRef field. It clears the previous, deprecated configuration.
+// TODO: drop when we no longer need to support versions < 4.12
+func (r *HostedClusterReconciler) reconcileDeprecatedAWSRoles(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	// Migrate ARNs from slice into typed fields.
+	log := ctrl.LoggerFrom(ctx)
+	for _, v := range hc.Spec.Platform.AWS.Roles {
+		switch v.Namespace {
+		case "openshift-image-registry":
+			hc.Spec.Platform.AWS.RolesRef.ImageRegistryARN = v.ARN
+		case "openshift-ingress-operator":
+			hc.Spec.Platform.AWS.RolesRef.IngressARN = v.ARN
+		case "openshift-cloud-network-config-controller":
+			hc.Spec.Platform.AWS.RolesRef.NetworkARN = v.ARN
+		case "openshift-cluster-csi-drivers":
+			hc.Spec.Platform.AWS.RolesRef.StorageARN = v.ARN
+		default:
+			log.Info("Invalid namespace for deprecated role: %q", v.Namespace)
 		}
+	}
+	hc.Spec.Platform.AWS.Roles = nil
+
+	// Migrate ARNs from secrets into typed fields.
+	if hc.Spec.Platform.AWS.NodePoolManagementCreds.Name != "" {
+		nodePoolManagementARN, err := r.getARNFromSecret(ctx, hc.Spec.Platform.AWS.NodePoolManagementCreds.Name, hc.Namespace)
+		if err != nil {
+			return fmt.Errorf("failed to get ARN from secret: %w", err)
+		}
+		hc.Spec.Platform.AWS.RolesRef.NodePoolManagementARN = nodePoolManagementARN
+		hc.Spec.Platform.AWS.NodePoolManagementCreds = corev1.LocalObjectReference{}
+	}
+
+	if hc.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name != "" {
+		controlPlaneOperatorARN, err := r.getARNFromSecret(ctx, hc.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name, hc.Namespace)
+		if err != nil {
+			return fmt.Errorf("failed to get ARN from secret: %w", err)
+		}
+		hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN = controlPlaneOperatorARN
+		hc.Spec.Platform.AWS.ControlPlaneOperatorCreds = corev1.LocalObjectReference{}
+	}
+
+	if hc.Spec.Platform.AWS.KubeCloudControllerCreds.Name != "" {
+		kubeCloudControllerARN, err := r.getARNFromSecret(ctx, hc.Spec.Platform.AWS.KubeCloudControllerCreds.Name, hc.Namespace)
+		if err != nil {
+			return fmt.Errorf("failed to get ARN from secret: %w", err)
+		}
+		hc.Spec.Platform.AWS.RolesRef.KubeCloudControllerARN = kubeCloudControllerARN
+		hc.Spec.Platform.AWS.KubeCloudControllerCreds = corev1.LocalObjectReference{}
 	}
 
 	return nil
+}
+
+func (r *HostedClusterReconciler) getARNFromSecret(ctx context.Context, name, namespace string) (string, error) {
+	creds := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(creds), creds); err != nil {
+		return "", fmt.Errorf("failed to get secret: %w", err)
+	}
+	credContent, err := ini.Load(creds.Data["credentials"])
+	if err != nil {
+		return "", fmt.Errorf("cannot parse credentials: %w", err)
+	}
+	return credContent.Section("default").Key("role_arn").String(), nil
 }
 
 func configurationFieldsToRawExtensions(config *hyperv1.ClusterConfiguration) ([]runtime.RawExtension, error) {

@@ -15,7 +15,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -23,7 +22,6 @@ import (
 	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -243,15 +241,6 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 	// this is not trivial as the CPO deployment itself needs the secret with the ControlPlaneOperatorARN
 	var errs []error
 	syncSecret := func(secret *corev1.Secret, arn string) error {
-		ns := &corev1.Namespace{}
-		err := c.Get(ctx, client.ObjectKey{Name: secret.Namespace}, ns)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				log.FromContext(ctx, "WARNING: cannot sync cloud credential secret because namespace does not exist", "secret", client.ObjectKeyFromObject(secret))
-				return nil
-			}
-			return fmt.Errorf("failed to get secret namespace %s: %w", secret.Namespace, err)
-		}
 		if _, err := createOrUpdate(ctx, c, secret, func() error {
 			credentials := fmt.Sprintf(awsCredentialsTemplate, arn)
 			secret.Data = map[string][]byte{"credentials": []byte(credentials)}
@@ -263,9 +252,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		return nil
 	}
 	for arn, secret := range map[string]*corev1.Secret{
-		hcluster.Spec.Platform.AWS.Roles.KubeCloudControllerARN:  KubeCloudControllerCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.AWS.Roles.NodePoolManagementARN:   NodePoolManagementCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.AWS.Roles.ControlPlaneOperatorARN: ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.AWS.RolesRef.KubeCloudControllerARN:  KubeCloudControllerCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.AWS.RolesRef.NodePoolManagementARN:   NodePoolManagementCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN: ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
 	} {
 		err := syncSecret(secret, arn)
 		if err != nil {
