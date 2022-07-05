@@ -28,7 +28,7 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: IBMPowerVSImage is the Schema for the ibmpowervsimages API
+        description: IBMPowerVSImage is the Schema for the ibmpowervsimages API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -43,7 +43,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: IBMPowerVSImageSpec defines the desired state of IBMPowerVSImage
+            description: IBMPowerVSImageSpec defines the desired state of IBMPowerVSImage.
             properties:
               bucket:
                 description: Cloud Object Storage bucket name; bucket-name[/optional/folder]
@@ -62,19 +62,19 @@ spec:
                 - retain
                 type: string
               object:
-                description: Cloud Object Storage image filename
+                description: Cloud Object Storage image filename.
                 type: string
               region:
-                description: Cloud Object Storage region
+                description: Cloud Object Storage region.
                 type: string
               serviceInstanceID:
                 description: ServiceInstanceID is the id of the power cloud instance
-                  where the image will get imported
+                  where the image will get imported.
                 type: string
               storageType:
                 default: tier1
                 description: Type of storage, storage pool with the most available
-                  space will be selected
+                  space will be selected.
                 enum:
                 - tier1
                 - tier3
@@ -87,7 +87,7 @@ spec:
             - serviceInstanceID
             type: object
           status:
-            description: IBMPowerVSImageStatus defines the observed state of IBMPowerVSImage
+            description: IBMPowerVSImageStatus defines the observed state of IBMPowerVSImage.
             properties:
               conditions:
                 description: Conditions defines current service state of the IBMPowerVSImage.
@@ -135,13 +135,13 @@ spec:
                   type: object
                 type: array
               imageID:
-                description: ImageID is the id of the imported image
+                description: ImageID is the id of the imported image.
                 type: string
               imageState:
-                description: ImageState is the status of the imported image
+                description: ImageState is the status of the imported image.
                 type: string
               jobID:
-                description: JobID is the job ID of an import operation
+                description: JobID is the job ID of an import operation.
                 type: string
               ready:
                 description: Ready is true when the provider resource is ready.
