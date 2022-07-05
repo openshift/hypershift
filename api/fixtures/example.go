@@ -106,24 +106,21 @@ type ExampleAWSOptionsZones struct {
 }
 
 type ExampleAWSOptions struct {
-	Region                      string
-	Zones                       []ExampleAWSOptionsZones
-	VPCID                       string
-	SecurityGroupID             string
-	InstanceProfile             string
-	InstanceType                string
-	Roles                       []hyperv1.AWSRoleCredentials
-	KubeCloudControllerRoleARN  string
-	NodePoolManagementRoleARN   string
-	ControlPlaneOperatorRoleARN string
-	KMSProviderRoleARN          string
-	KMSKeyARN                   string
-	RootVolumeSize              int64
-	RootVolumeType              string
-	RootVolumeIOPS              int64
-	ResourceTags                []hyperv1.AWSResourceTag
-	EndpointAccess              string
-	ProxyAddress                string
+	Region             string
+	Zones              []ExampleAWSOptionsZones
+	VPCID              string
+	SecurityGroupID    string
+	InstanceProfile    string
+	InstanceType       string
+	Roles              hyperv1.AWSRolesRef
+	KMSProviderRoleARN string
+	KMSKeyARN          string
+	RootVolumeSize     int64
+	RootVolumeType     string
+	RootVolumeIOPS     int64
+	ResourceTags       []hyperv1.AWSResourceTag
+	EndpointAccess     string
+	ProxyAddress       string
 }
 
 type ExampleAzureOptions struct {
@@ -230,9 +227,6 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			kmsCredsSecret = buildAWSCreds(o.Name+"-kms-creds", o.AWS.KMSProviderRoleARN)
 		}
 		awsResources := &ExampleAWSResources{
-			buildAWSCreds(o.Name+"-cloud-ctrl-creds", o.AWS.KubeCloudControllerRoleARN),
-			buildAWSCreds(o.Name+"-node-mgmt-creds", o.AWS.NodePoolManagementRoleARN),
-			buildAWSCreds(o.Name+"-cpo-creds", o.AWS.ControlPlaneOperatorRoleARN),
 			kmsCredsSecret,
 		}
 		endpointAccess := hyperv1.AWSEndpointAccessType(o.AWS.EndpointAccess)
@@ -240,8 +234,8 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AWSPlatform,
 			AWS: &hyperv1.AWSPlatformSpec{
-				Region: o.AWS.Region,
-				Roles:  o.AWS.Roles,
+				Region:   o.AWS.Region,
+				RolesRef: o.AWS.Roles,
 				CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
 					VPC: o.AWS.VPCID,
 					Subnet: &hyperv1.AWSResourceReference{
@@ -249,11 +243,8 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					},
 					Zone: o.AWS.Zones[0].Name,
 				},
-				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: awsResources.KubeCloudControllerAWSCreds.Name},
-				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: awsResources.NodePoolManagementAWSCreds.Name},
-				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: awsResources.ControlPlaneOperatorAWSCreds.Name},
-				ResourceTags:              o.AWS.ResourceTags,
-				EndpointAccess:            endpointAccess,
+				ResourceTags:   o.AWS.ResourceTags,
+				EndpointAccess: endpointAccess,
 			},
 		}
 

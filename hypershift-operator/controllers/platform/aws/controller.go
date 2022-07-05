@@ -16,8 +16,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/elbv2"
 	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
 	"github.com/go-logr/logr"
-	"gopkg.in/ini.v1"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -33,7 +31,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/support/upsert"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -569,21 +566,8 @@ func (r *AWSEndpointServiceReconciler) hostedCluster(ctx context.Context, hcp *h
 }
 
 func (r *AWSEndpointServiceReconciler) controlPlaneOperatorRoleARN(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
-	if hc.Spec.Platform.AWS == nil || hc.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name == "" {
+	if hc.Spec.Platform.AWS == nil || hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN == "" {
 		return "", fmt.Errorf("hosted cluster does not have control plane operator credentials")
 	}
-	creds := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      hc.Spec.Platform.AWS.ControlPlaneOperatorCreds.Name,
-			Namespace: hc.Namespace,
-		},
-	}
-	if err := r.Get(ctx, client.ObjectKeyFromObject(creds), creds); err != nil {
-		return "", fmt.Errorf("cannot get control plane operator credentials: %w", err)
-	}
-	credContent, err := ini.Load(creds.Data["credentials"])
-	if err != nil {
-		return "", fmt.Errorf("cannot parse credentials: %w", err)
-	}
-	return credContent.Section("default").Key("role_arn").String(), nil
+	return hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, nil
 }

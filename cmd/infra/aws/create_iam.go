@@ -42,17 +42,13 @@ type CreateIAMOptions struct {
 }
 
 type CreateIAMOutput struct {
-	Region      string                       `json:"region"`
-	ProfileName string                       `json:"profileName"`
-	InfraID     string                       `json:"infraID"`
-	IssuerURL   string                       `json:"issuerURL"`
-	Roles       []hyperv1.AWSRoleCredentials `json:"roles"`
-	KMSKeyARN   string                       `json:"kmsKeyARN"`
-
-	KubeCloudControllerRoleARN  string `json:"kubeCloudControllerRoleARN"`
-	NodePoolManagementRoleARN   string `json:"nodePoolManagementRoleARN"`
-	ControlPlaneOperatorRoleARN string `json:"controlPlaneOperatorRoleARN"`
-	KMSProviderRoleARN          string `json:"kmsProviderRoleARN"`
+	Region             string              `json:"region"`
+	ProfileName        string              `json:"profileName"`
+	InfraID            string              `json:"infraID"`
+	IssuerURL          string              `json:"issuerURL"`
+	Roles              hyperv1.AWSRolesRef `json:"roles"`
+	KMSKeyARN          string              `json:"kmsKeyARN"`
+	KMSProviderRoleARN string              `json:"kmsProviderRoleARN"`
 }
 
 func NewCreateIAMCommand() *cobra.Command {

@@ -2144,12 +2144,8 @@ spec:
                         - vpc
                         type: object
                       controlPlaneOperatorCreds:
-                        description: "ControlPlaneOperatorCreds is a reference to
-                          a secret containing cloud credentials with permissions matching
-                          the control-plane-operator policy. The secret should have
-                          exactly one key, `credentials`, whose value is an AWS credentials
-                          file. \n TODO(dan): document the \"control plane operator
-                          policy\""
+                        description: Deprecated This field will be removed in the
+                          next API release. Use RolesRef instead.
                         properties:
                           name:
                             description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -2166,11 +2162,8 @@ spec:
                         - Private
                         type: string
                       kubeCloudControllerCreds:
-                        description: "KubeCloudControllerCreds is a reference to a
-                          secret containing cloud credentials with permissions matching
-                          the cloud controller policy. The secret should have exactly
-                          one key, `credentials`, whose value is an AWS credentials
-                          file. \n TODO(dan): document the \"cloud controller policy\""
+                        description: Deprecated This field will be removed in the
+                          next API release. Use RolesRef instead.
                         properties:
                           name:
                             description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -2178,12 +2171,8 @@ spec:
                             type: string
                         type: object
                       nodePoolManagementCreds:
-                        description: "NodePoolManagementCreds is a reference to a
-                          secret containing cloud credentials with permissions matching
-                          the node pool management policy. The secret should have
-                          exactly one key, `credentials`, whose value is an AWS credentials
-                          file. \n TODO(dan): document the \"node pool management
-                          policy\""
+                        description: Deprecated This field will be removed in the
+                          next API release. Use RolesRef instead.
                         properties:
                           name:
                             description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -2229,14 +2218,8 @@ spec:
                         maxItems: 25
                         type: array
                       roles:
-                        description: "Roles must contain exactly 4 entries representing
-                          the locators for roles supporting the following OCP services:
-                          \n - openshift-ingress-operator/cloud-credentials - openshift-image-registry/installer-cloud-credentials
-                          - openshift-cluster-csi-drivers/ebs-cloud-credentials -
-                          cloud-network-config-controller/cloud-credentials \n Each
-                          role has unique permission requirements whose documentation
-                          is TBD. \n TODO(dan): revisit this field; it's really 3
-                          required fields with specific content requirements"
+                        description: Deprecated This field will be removed in the
+                          next API release. Use RolesRef instead.
                         items:
                           properties:
                             arn:
@@ -2251,6 +2234,187 @@ spec:
                           - namespace
                           type: object
                         type: array
+                      rolesRef:
+                        description: RolesRef contains references to various AWS IAM
+                          roles required to enable integrations such as OIDC.
+                        properties:
+                          controlPlaneOperatorARN:
+                            description: "ControlPlaneOperatorARN  is an ARN value
+                              referencing a role that should contain policy permissions
+                              matching the control-plane-operator policy. \n The following
+                              is an example of a valid policy document: \n { \t\"Version\":
+                              \"2012-10-17\", \t\"Statement\": [ \t\t{ \t\t\t\"Effect\":
+                              \"Allow\", \t\t\t\"Action\": [ \t\t\t\t\"ec2:CreateVpcEndpoint\",
+                              \t\t\t\t\"ec2:DescribeVpcEndpoints\", \t\t\t\t\"ec2:ModifyVpcEndpoint\",
+                              \t\t\t\t\"ec2:DeleteVpcEndpoints\", \t\t\t\t\"ec2:CreateTags\",
+                              \t\t\t\t\"route53:ListHostedZones\" \t\t\t], \t\t\t\"Resource\":
+                              \"*\" \t\t}, \t\t{ \t\t\t\"Effect\": \"Allow\", \t\t\t\"Action\":
+                              [ \t\t\t\t\"route53:ChangeResourceRecordSets\", \t\t\t\t\"route53:ListResourceRecordSets\"
+                              \t\t\t], \t\t\t\"Resource\": \"arn:aws:route53:::%s\"
+                              \t\t} \t] }"
+                            type: string
+                          imageRegistryARN:
+                            description: "ImageRegistryARN is an ARN value referencing
+                              a role used for image registry OIDC integration. \n
+                              The following is an example of a valid policy document:
+                              \n { \t\"Version\": \"2012-10-17\", \t\"Statement\":
+                              [ \t\t{ \t\t\t\"Effect\": \"Allow\", \t\t\t\"Action\":
+                              [ \t\t\t\t\"s3:CreateBucket\", \t\t\t\t\"s3:DeleteBucket\",
+                              \t\t\t\t\"s3:PutBucketTagging\", \t\t\t\t\"s3:GetBucketTagging\",
+                              \t\t\t\t\"s3:PutBucketPublicAccessBlock\", \t\t\t\t\"s3:GetBucketPublicAccessBlock\",
+                              \t\t\t\t\"s3:PutEncryptionConfiguration\", \t\t\t\t\"s3:GetEncryptionConfiguration\",
+                              \t\t\t\t\"s3:PutLifecycleConfiguration\", \t\t\t\t\"s3:GetLifecycleConfiguration\",
+                              \t\t\t\t\"s3:GetBucketLocation\", \t\t\t\t\"s3:ListBucket\",
+                              \t\t\t\t\"s3:GetObject\", \t\t\t\t\"s3:PutObject\",
+                              \t\t\t\t\"s3:DeleteObject\", \t\t\t\t\"s3:ListBucketMultipartUploads\",
+                              \t\t\t\t\"s3:AbortMultipartUpload\", \t\t\t\t\"s3:ListMultipartUploadParts\"
+                              \t\t\t], \t\t\t\"Resource\": \"*\" \t\t} \t] }"
+                            type: string
+                          ingressARN:
+                            description: "The referenced role must have a trust relationship
+                              that allows it to be assumed via web identity. https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
+                              Example: { \t\t\"Version\": \"2012-10-17\", \t\t\"Statement\":
+                              [ \t\t\t{ \t\t\t\t\"Effect\": \"Allow\", \t\t\t\t\"Principal\":
+                              { \t\t\t\t\t\"Federated\": \"{{ .ProviderARN }}\" \t\t\t\t},
+                              \t\t\t\t\t\"Action\": \"sts:AssumeRoleWithWebIdentity\",
+                              \t\t\t\t\"Condition\": { \t\t\t\t\t\"StringEquals\":
+                              { \t\t\t\t\t\t\"{{ .ProviderName }}:sub\": {{ .ServiceAccounts
+                              }} \t\t\t\t\t} \t\t\t\t} \t\t\t} \t\t] \t} \n IngressARN
+                              is an ARN value referencing a role used for ingress
+                              OIDC integration. \n The following is an example of
+                              a valid policy document: \n { \t\"Version\": \"2012-10-17\",
+                              \t\"Statement\": [ \t\t{ \t\t\t\"Effect\": \"Allow\",
+                              \t\t\t\"Action\": [ \t\t\t\t\"elasticloadbalancing:DescribeLoadBalancers\",
+                              \t\t\t\t\"tag:GetResources\", \t\t\t\t\"route53:ListHostedZones\"
+                              \t\t\t], \t\t\t\"Resource\": \"*\" \t\t}, \t\t{ \t\t\t\"Effect\":
+                              \"Allow\", \t\t\t\"Action\": [ \t\t\t\t\"route53:ChangeResourceRecordSets\"
+                              \t\t\t], \t\t\t\"Resource\": [ \t\t\t\t\"arn:aws:route53:::PUBLIC_ZONE_ID\",
+                              \t\t\t\t\"arn:aws:route53:::PRIVATE_ZONE_ID\" \t\t\t]
+                              \t\t} \t] }"
+                            type: string
+                          kubeCloudControllerARN:
+                            description: "KubeCloudControllerARN is an ARN value referencing
+                              a role that should contain policy permissions matching
+                              the cloud controller policy. \n The following is an
+                              example of a valid policy document: \n  {  \"Version\":
+                              \"2012-10-17\",  \"Statement\": [    {      \"Action\":
+                              [        \"ec2:DescribeInstances\",        \"ec2:DescribeImages\",
+                              \       \"ec2:DescribeRegions\",        \"ec2:DescribeRouteTables\",
+                              \       \"ec2:DescribeSecurityGroups\",        \"ec2:DescribeSubnets\",
+                              \       \"ec2:DescribeVolumes\",        \"ec2:CreateSecurityGroup\",
+                              \       \"ec2:CreateTags\",        \"ec2:CreateVolume\",
+                              \       \"ec2:ModifyInstanceAttribute\",        \"ec2:ModifyVolume\",
+                              \       \"ec2:AttachVolume\",        \"ec2:AuthorizeSecurityGroupIngress\",
+                              \       \"ec2:CreateRoute\",        \"ec2:DeleteRoute\",
+                              \       \"ec2:DeleteSecurityGroup\",        \"ec2:DeleteVolume\",
+                              \       \"ec2:DetachVolume\",        \"ec2:RevokeSecurityGroupIngress\",
+                              \       \"ec2:DescribeVpcs\",        \"elasticloadbalancing:AddTags\",
+                              \       \"elasticloadbalancing:AttachLoadBalancerToSubnets\",
+                              \       \"elasticloadbalancing:ApplySecurityGroupsToLoadBalancer\",
+                              \       \"elasticloadbalancing:CreateLoadBalancer\",
+                              \       \"elasticloadbalancing:CreateLoadBalancerPolicy\",
+                              \       \"elasticloadbalancing:CreateLoadBalancerListeners\",
+                              \       \"elasticloadbalancing:ConfigureHealthCheck\",
+                              \       \"elasticloadbalancing:DeleteLoadBalancer\",
+                              \       \"elasticloadbalancing:DeleteLoadBalancerListeners\",
+                              \       \"elasticloadbalancing:DescribeLoadBalancers\",
+                              \       \"elasticloadbalancing:DescribeLoadBalancerAttributes\",
+                              \       \"elasticloadbalancing:DetachLoadBalancerFromSubnets\",
+                              \       \"elasticloadbalancing:DeregisterInstancesFromLoadBalancer\",
+                              \       \"elasticloadbalancing:ModifyLoadBalancerAttributes\",
+                              \       \"elasticloadbalancing:RegisterInstancesWithLoadBalancer\",
+                              \       \"elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer\",
+                              \       \"elasticloadbalancing:AddTags\",        \"elasticloadbalancing:CreateListener\",
+                              \       \"elasticloadbalancing:CreateTargetGroup\",
+                              \       \"elasticloadbalancing:DeleteListener\",        \"elasticloadbalancing:DeleteTargetGroup\",
+                              \       \"elasticloadbalancing:DescribeListeners\",
+                              \       \"elasticloadbalancing:DescribeLoadBalancerPolicies\",
+                              \       \"elasticloadbalancing:DescribeTargetGroups\",
+                              \       \"elasticloadbalancing:DescribeTargetHealth\",
+                              \       \"elasticloadbalancing:ModifyListener\",        \"elasticloadbalancing:ModifyTargetGroup\",
+                              \       \"elasticloadbalancing:RegisterTargets\",        \"elasticloadbalancing:SetLoadBalancerPoliciesOfListener\",
+                              \       \"iam:CreateServiceLinkedRole\",        \"kms:DescribeKey\"
+                              \     ],      \"Resource\": [        \"*\"      ],      \"Effect\":
+                              \"Allow\"    }  ] }"
+                            type: string
+                          networkARN:
+                            description: "NetworkOIDC is an ARN value referencing
+                              a role used for networking OIDC integration. \n The
+                              following is an example of a valid policy document:
+                              \n { \t\"Version\": \"2012-10-17\", \t\"Statement\":
+                              [ \t\t{ \t\t\t\"Effect\": \"Allow\", \t\t\t\"Action\":
+                              [ \t\t\t\t\"ec2:DescribeInstances\",        \"ec2:DescribeInstanceStatus\",
+                              \       \"ec2:DescribeInstanceTypes\",        \"ec2:UnassignPrivateIpAddresses\",
+                              \       \"ec2:AssignPrivateIpAddresses\",        \"ec2:UnassignIpv6Addresses\",
+                              \       \"ec2:AssignIpv6Addresses\",        \"ec2:DescribeSubnets\",
+                              \       \"ec2:DescribeNetworkInterfaces\" \t\t\t], \t\t\t\"Resource\":
+                              \"*\" \t\t} \t] }"
+                            type: string
+                          nodePoolManagementARN:
+                            description: "NodePoolManagementARN is an ARN value referencing
+                              a role that should contain policy permissions matching
+                              the node pool management policy. \n The following is
+                              an example of a valid policy document: \n {   \"Version\":
+                              \"2012-10-17\",  \"Statement\": [    {      \"Action\":
+                              [        \"ec2:AllocateAddress\",        \"ec2:AssociateRouteTable\",
+                              \       \"ec2:AttachInternetGateway\",        \"ec2:AuthorizeSecurityGroupIngress\",
+                              \       \"ec2:CreateInternetGateway\",        \"ec2:CreateNatGateway\",
+                              \       \"ec2:CreateRoute\",        \"ec2:CreateRouteTable\",
+                              \       \"ec2:CreateSecurityGroup\",        \"ec2:CreateSubnet\",
+                              \       \"ec2:CreateTags\",        \"ec2:DeleteInternetGateway\",
+                              \       \"ec2:DeleteNatGateway\",        \"ec2:DeleteRouteTable\",
+                              \       \"ec2:DeleteSecurityGroup\",        \"ec2:DeleteSubnet\",
+                              \       \"ec2:DeleteTags\",        \"ec2:DescribeAccountAttributes\",
+                              \       \"ec2:DescribeAddresses\",        \"ec2:DescribeAvailabilityZones\",
+                              \       \"ec2:DescribeImages\",        \"ec2:DescribeInstances\",
+                              \       \"ec2:DescribeInternetGateways\",        \"ec2:DescribeNatGateways\",
+                              \       \"ec2:DescribeNetworkInterfaces\",        \"ec2:DescribeNetworkInterfaceAttribute\",
+                              \       \"ec2:DescribeRouteTables\",        \"ec2:DescribeSecurityGroups\",
+                              \       \"ec2:DescribeSubnets\",        \"ec2:DescribeVpcs\",
+                              \       \"ec2:DescribeVpcAttribute\",        \"ec2:DescribeVolumes\",
+                              \       \"ec2:DetachInternetGateway\",        \"ec2:DisassociateRouteTable\",
+                              \       \"ec2:DisassociateAddress\",        \"ec2:ModifyInstanceAttribute\",
+                              \       \"ec2:ModifyNetworkInterfaceAttribute\",        \"ec2:ModifySubnetAttribute\",
+                              \       \"ec2:ReleaseAddress\",        \"ec2:RevokeSecurityGroupIngress\",
+                              \       \"ec2:RunInstances\",        \"ec2:TerminateInstances\",
+                              \       \"tag:GetResources\",        \"ec2:CreateLaunchTemplate\",
+                              \       \"ec2:CreateLaunchTemplateVersion\",        \"ec2:DescribeLaunchTemplates\",
+                              \       \"ec2:DescribeLaunchTemplateVersions\",        \"ec2:DeleteLaunchTemplate\",
+                              \       \"ec2:DeleteLaunchTemplateVersions\"      ],
+                              \     \"Resource\": [        \"*\"      ],      \"Effect\":
+                              \"Allow\"    },    {      \"Condition\": {        \"StringLike\":
+                              {          \"iam:AWSServiceName\": \"elasticloadbalancing.amazonaws.com\"
+                              \       }      },      \"Action\": [        \"iam:CreateServiceLinkedRole\"
+                              \     ],      \"Resource\": [        \"arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing\"
+                              \     ],      \"Effect\": \"Allow\"    },    {      \"Action\":
+                              [        \"iam:PassRole\"      ],      \"Resource\":
+                              [        \"arn:*:iam::*:role/*-worker-role\"      ],
+                              \     \"Effect\": \"Allow\"    }  ] }"
+                            type: string
+                          storageARN:
+                            description: "StorageOIDC is an ARN value referencing
+                              a role used for storage driver OIDC integration. \n
+                              The following is an example of a valid policy document:
+                              \n { \t\"Version\": \"2012-10-17\", \t\"Statement\":
+                              [ \t\t{ \t\t\t\"Effect\": \"Allow\", \t\t\t\"Action\":
+                              [ \t\t\t\t\"ec2:AttachVolume\", \t\t\t\t\"ec2:CreateSnapshot\",
+                              \t\t\t\t\"ec2:CreateTags\", \t\t\t\t\"ec2:CreateVolume\",
+                              \t\t\t\t\"ec2:DeleteSnapshot\", \t\t\t\t\"ec2:DeleteTags\",
+                              \t\t\t\t\"ec2:DeleteVolume\", \t\t\t\t\"ec2:DescribeInstances\",
+                              \t\t\t\t\"ec2:DescribeSnapshots\", \t\t\t\t\"ec2:DescribeTags\",
+                              \t\t\t\t\"ec2:DescribeVolumes\", \t\t\t\t\"ec2:DescribeVolumesModifications\",
+                              \t\t\t\t\"ec2:DetachVolume\", \t\t\t\t\"ec2:ModifyVolume\"
+                              \t\t\t], \t\t\t\"Resource\": \"*\" \t\t} \t] }"
+                            type: string
+                        required:
+                        - controlPlaneOperatorARN
+                        - imageRegistryARN
+                        - ingressARN
+                        - kubeCloudControllerARN
+                        - networkARN
+                        - nodePoolManagementARN
+                        - storageARN
+                        type: object
                       serviceEndpoints:
                         description: "ServiceEndpoints specifies optional custom endpoints
                           which will override the default service endpoint of specific
@@ -2281,6 +2445,7 @@ spec:
                     - kubeCloudControllerCreds
                     - nodePoolManagementCreds
                     - region
+                    - rolesRef
                     type: object
                   azure:
                     description: Azure defines azure specific settings
