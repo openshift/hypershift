@@ -1597,13 +1597,13 @@ const (
 	// underlying cluster's ClusterVersion.
 	ClusterVersionUpgradeable ConditionType = "ClusterVersionUpgradeable"
 
-	// ReconciliationPaused indicates if reconciliation of the hostedcluster is
-	// paused.
-	ReconciliationPaused ConditionType = "ReconciliationPaused"
+	// ReconciliationActive indicates if reconciliation of the hostedcluster is
+	// active or paused.
+	ReconciliationActive ConditionType = "ReconciliationActive"
 
-	// OIDCConfigurationInvalid indicates if an AWS cluster's OIDC condition is
+	// ValidOIDCConfiguration indicates if an AWS cluster's OIDC condition is
 	// detected as invalid.
-	OIDCConfigurationInvalid ConditionType = "OIDCConfigurationInvalid"
+	ValidOIDCConfiguration ConditionType = "ValidOIDCConfiguration"
 
 	// ValidReleaseImage indicates if the release image set in the spec is valid
 	// for the HostedCluster. For example, this can be set false if the

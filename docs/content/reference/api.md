@@ -2663,17 +2663,13 @@ HostedCluster is available to handle ignition requests.</p>
 <td></td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
 <td></td>
-</tr><tr><td><p>&#34;OIDCConfigurationInvalid&#34;</p></td>
-<td><p>OIDCConfigurationInvalid indicates if an AWS cluster&rsquo;s OIDC condition is
-detected as invalid.</p>
-</td>
 </tr><tr><td><p>&#34;PlatformCredentialsFound&#34;</p></td>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
 desired platform are valid.</p>
 </td>
-</tr><tr><td><p>&#34;ReconciliationPaused&#34;</p></td>
-<td><p>ReconciliationPaused indicates if reconciliation of the hostedcluster is
-paused.</p>
+</tr><tr><td><p>&#34;ReconciliationActive&#34;</p></td>
+<td><p>ReconciliationActive indicates if reconciliation of the hostedcluster is
+active or paused.</p>
 </td>
 </tr><tr><td><p>&#34;SupportedHostedCluster&#34;</p></td>
 <td><p>SupportedHostedCluster indicates whether a HostedCluster is supported by
@@ -2692,6 +2688,10 @@ ClusterConfiguration specified for the HostedCluster is valid.</p>
 </td>
 </tr><tr><td><p>&#34;ValidHostedControlPlaneConfiguration&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;ValidOIDCConfiguration&#34;</p></td>
+<td><p>ValidOIDCConfiguration indicates if an AWS cluster&rsquo;s OIDC condition is
+detected as invalid.</p>
+</td>
 </tr><tr><td><p>&#34;ValidReleaseImage&#34;</p></td>
 <td><p>ValidReleaseImage indicates if the release image set in the spec is valid
 for the HostedCluster. For example, this can be set false if the

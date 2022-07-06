@@ -400,7 +400,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	hostedControlPlane.Status.Initialized = true
 
-	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, util.GenerateReconciliationPausedCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, util.GenerateReconciliationActiveCondition(hostedControlPlane.Spec.PausedUntil, hostedControlPlane.Generation))
 	// Always update status based on the current state of the world.
 	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
