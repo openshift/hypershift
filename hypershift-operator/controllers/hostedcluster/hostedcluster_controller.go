@@ -290,6 +290,30 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
+	// Part zero: Handle deprecated fields.
+	// This is done before anything else to prevent other update calls from failing if e.g. they are missing a new required field.
+	// TODO (alberto): drop this as we cut beta and only support >= GA clusters.
+	originalSpec := hcluster.Spec.DeepCopy()
+
+	// Reconcile deprecated global configuration.
+	if err := r.reconcileDeprecatedGlobalConfig(ctx, hcluster); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile deprecated AWS roles.
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if err := r.reconcileDeprecatedAWSRoles(ctx, hcluster); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Update fields if required.
+	if !equality.Semantic.DeepEqual(&hcluster.Spec, originalSpec) {
+		log.Info("Updating deprecated fields for hosted cluster")
+		return ctrl.Result{}, r.Client.Update(ctx, hcluster)
+	}
+
 	// Part one: update status
 
 	// Set kubeconfig status
@@ -2110,13 +2134,13 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 // image based on the following order of precedence (from most to least
 // preferred):
 //
-// 1. The image specified by the ControlPlaneOperatorImageAnnotation on the
-//    HostedCluster resource itself
-// 2. The hypershift image specified in the release payload indicated by the
-//    HostedCluster's release field
-// 3. The hypershift-operator's own image for release versions 4.9 and 4.10
-// 4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
-//    version 4.8
+//  1. The image specified by the ControlPlaneOperatorImageAnnotation on the
+//     HostedCluster resource itself
+//  2. The hypershift image specified in the release payload indicated by the
+//     HostedCluster's release field
+//  3. The hypershift-operator's own image for release versions 4.9 and 4.10
+//  4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
+//     version 4.8
 //
 // If no image can be found according to these rules, an error is returned.
 func getControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
