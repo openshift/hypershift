@@ -28,9 +28,24 @@ type HostedControlPlaneSpec struct {
 	ReleaseImage string                      `json:"releaseImage"`
 	PullSecret   corev1.LocalObjectReference `json:"pullSecret"`
 	IssuerURL    string                      `json:"issuerURL"`
-	ServiceCIDR  string                      `json:"serviceCIDR"`
-	PodCIDR      string                      `json:"podCIDR"`
-	MachineCIDR  string                      `json:"machineCIDR"`
+
+	// Networking specifies network configuration for the cluster.
+	Networking ClusterNetworking `json:"networking"`
+
+	// deprecated
+	// use networking.ServiceNetwork
+	ServiceCIDR string `json:"serviceCIDR"`
+
+	// deprecated
+	// use networking.ClusterNetwork
+	PodCIDR string `json:"podCIDR"`
+
+	// deprecated
+	// use networking.MachineNetwork
+	MachineCIDR string `json:"machineCIDR"`
+
+	// deprecated
+	// use networking.NetworkType
 	// NetworkType specifies the SDN provider used for cluster networking.
 	NetworkType NetworkType                 `json:"networkType"`
 	SSHKey      corev1.LocalObjectReference `json:"sshKey"`
@@ -52,13 +67,19 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	ServiceAccountSigningKey *corev1.LocalObjectReference `json:"serviceAccountSigningKey,omitempty"`
 
+	// deprecated
+	// use networking.apiServer.APIPort
 	// APIPort is the port at which the APIServer listens inside a worker
 	// +optional
 	APIPort *int32 `json:"apiPort,omitempty"`
+	// deprecated
+	// use networking.apiServer.AdvertiseAddress
 	// APIAdvertiseAddress is the address at which the APIServer listens
 	// inside a worker.
 	// +optional
 	APIAdvertiseAddress *string `json:"apiAdvertiseAddress,omitempty"`
+	// deprecated
+	// use networking.apiServer.APIAllowedCIDRBlocks
 	// APIAllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
 	// If not specified, traffic is allowed from all addresses.
 	// This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
