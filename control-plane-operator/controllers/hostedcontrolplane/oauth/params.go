@@ -39,6 +39,7 @@ type OAuthServerParams struct {
 	LoginURLOverride        string
 	AvailabilityProberImage string `json:"availabilityProberImage"`
 	Availability            hyperv1.AvailabilityPolicy
+	Socks5ProxyImage        string
 }
 
 type OAuthConfigParams struct {
@@ -80,6 +81,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 		OAuthServerImage:        images["oauth-server"],
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
+		Socks5ProxyImage:        images["socks5-proxy"],
 	}
 	if hcp.Spec.Configuration != nil {
 		p.APIServer = hcp.Spec.Configuration.APIServer
