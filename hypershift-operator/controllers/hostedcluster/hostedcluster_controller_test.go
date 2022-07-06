@@ -8,22 +8,23 @@ import (
 	"testing"
 	"time"
 
-	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
-
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
@@ -2081,4 +2082,79 @@ func TestEnsureHCPAWSRolesBackwardCompatibility(t *testing.T) {
 	}
 	ensureHCPAWSRolesBackwardCompatibility(hc, hcp)
 	g.Expect(hcp.Spec.Platform.AWS).To(BeEquivalentTo(expectedAWSPlatformSpec))
+}
+
+func TestReconcileDeprecatedGlobalConfig(t *testing.T) {
+	hc := &hyperv1.HostedCluster{}
+	hc.Name = "fake-name"
+	hc.Namespace = "fake-namespace"
+
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: configv1.APIServerSpec{
+			ClientCA: configv1.ConfigMapNameReference{
+				Name: "fake-ca",
+			},
+		},
+	}
+	serializedAPIServer, err := util.SerializeResource(apiServer, hyperapi.Scheme)
+	if err != nil {
+		t.Fatalf("failed to serialize apiserver: %v", err)
+	}
+	hc.Spec.Configuration = &hyperv1.ClusterConfiguration{
+		Items: []runtime.RawExtension{
+			{
+				Raw: []byte(serializedAPIServer),
+			},
+		},
+		ConfigMapRefs: []corev1.LocalObjectReference{
+			{
+				Name: "fake-ca",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(hyperapi.Scheme).
+		WithObjects(hc).
+		Build()
+	reconciler := &HostedClusterReconciler{
+		Client: fakeClient,
+	}
+
+	originalSpec := hc.Spec.DeepCopy()
+	if err := reconciler.reconcileDeprecatedGlobalConfig(context.Background(), hc); err != nil {
+		t.Fatalf("unexpected reconcile error: %v", err)
+	}
+
+	// Update fields if required.
+	if !equality.Semantic.DeepEqual(&hc.Spec, originalSpec) {
+		err := reconciler.Client.Update(context.Background(), hc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	updatedHc := &hyperv1.HostedCluster{}
+	if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(hc), updatedHc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updatedHc.Spec.Configuration == nil {
+		t.Fatalf("unexpected nil configuration")
+	}
+
+	if len(updatedHc.Spec.Configuration.Items) > 0 {
+		t.Errorf("non-empty deprecated configuration")
+	}
+	if len(updatedHc.Spec.Configuration.ConfigMapRefs) > 0 {
+		t.Errorf("non-empty configmap refs")
+	}
+	if len(updatedHc.Spec.Configuration.SecretRefs) > 0 {
+		t.Errorf("non-emtpy secret refs")
+	}
+	if !equality.Semantic.DeepEqual(&apiServer.Spec, updatedHc.Spec.Configuration.APIServer) {
+		t.Errorf("unexpected apiserver spec: %#v", updatedHc.Spec.Configuration.APIServer)
+	}
 }
