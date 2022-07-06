@@ -19,6 +19,7 @@ metadata:
   name: cluster
 spec:
   featureSet: LatencySensitive
+  unknownField: example
 `
 
 func TestParseGlobalConfig(t *testing.T) {
