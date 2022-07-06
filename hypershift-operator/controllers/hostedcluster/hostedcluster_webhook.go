@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"reflect"
 
+	corev1 "k8s.io/api/core/v1"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -66,6 +68,12 @@ func filterMutableHostedClusterSpecFields(spec *hyperv1.HostedClusterSpec) {
 	}
 	if spec.Platform.Type == hyperv1.AWSPlatform && spec.Platform.AWS != nil {
 		spec.Platform.AWS.ResourceTags = nil
+		// This is to enable reconcileDeprecatedAWSRoles.
+		spec.Platform.AWS.RolesRef = hyperv1.AWSRolesRef{}
+		spec.Platform.AWS.Roles = []hyperv1.AWSRoleCredentials{}
+		spec.Platform.AWS.NodePoolManagementCreds = corev1.LocalObjectReference{}
+		spec.Platform.AWS.ControlPlaneOperatorCreds = corev1.LocalObjectReference{}
+		spec.Platform.AWS.KubeCloudControllerCreds = corev1.LocalObjectReference{}
 	}
 }
 

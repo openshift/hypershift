@@ -189,6 +189,56 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 			},
 			expectError: true,
 		},
+		{
+			name: "when .AWSPlatformSpec.RolesRef, .AWSPlatformSpec.roles .AWSPlatformSpec.*Creds are changed it should be allowed",
+			old: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							RolesRef: hyperv1.AWSRolesRef{},
+							Roles: []hyperv1.AWSRoleCredentials{
+								{
+									ARN:       "test",
+									Namespace: "test",
+									Name:      "test",
+								},
+								{
+									ARN:       "test",
+									Namespace: "test",
+									Name:      "test",
+								}},
+							KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: "test"},
+							NodePoolManagementCreds:   corev1.LocalObjectReference{Name: "test"},
+							ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: "test"},
+						},
+					},
+				},
+			},
+			new: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							RolesRef: hyperv1.AWSRolesRef{
+								IngressARN:              "test",
+								ImageRegistryARN:        "test",
+								StorageARN:              "test",
+								NetworkARN:              "test",
+								KubeCloudControllerARN:  "test",
+								NodePoolManagementARN:   "test",
+								ControlPlaneOperatorARN: "test",
+							},
+							Roles:                     nil,
+							KubeCloudControllerCreds:  corev1.LocalObjectReference{},
+							NodePoolManagementCreds:   corev1.LocalObjectReference{},
+							ControlPlaneOperatorCreds: corev1.LocalObjectReference{},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tc := range testCases {
