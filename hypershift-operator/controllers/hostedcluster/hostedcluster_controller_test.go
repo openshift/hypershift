@@ -34,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -1692,10 +1693,29 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 }
 
 func TestConfigurationFieldsToRawExtensions(t *testing.T) {
-	config := &hyperv1.ClusterConfiguration{Proxy: &configv1.ProxySpec{HTTPProxy: "http://10.0.136.57:3128", HTTPSProxy: "http://10.0.136.57:3128"}}
+	config := &hyperv1.ClusterConfiguration{
+		Ingress: &configv1.IngressSpec{Domain: "example.com"},
+		Proxy:   &configv1.ProxySpec{HTTPProxy: "http://10.0.136.57:3128", HTTPSProxy: "http://10.0.136.57:3128"},
+	}
 	result, err := configurationFieldsToRawExtensions(config)
 	if err != nil {
 		t.Fatalf("configurationFieldsToRawExtensions: %v", err)
+	}
+
+	// Check that serialized resources do not contain a status section
+	for i, rawExt := range result {
+		unstructuredObj := &unstructured.Unstructured{}
+		_, _, err := unstructured.UnstructuredJSONScheme.Decode(rawExt.Raw, nil, unstructuredObj)
+		if err != nil {
+			t.Fatalf("unexpected decode error: %v", err)
+		}
+		_, exists, err := unstructured.NestedFieldNoCopy(unstructuredObj.Object, "status")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if exists {
+			t.Errorf("status field exists for resource %d", i)
+		}
 	}
 
 	serialized, err := json.Marshal(result)
@@ -1714,13 +1734,28 @@ func TestConfigurationFieldsToRawExtensions(t *testing.T) {
 		t.Errorf("output does not match a json-roundtripped version: %s", diff)
 	}
 
+	var ingress configv1.Ingress
+	if err := json.Unmarshal(result[0].Raw, &ingress); err != nil {
+		t.Fatalf("failed to unmarshal raw data: %v", err)
+	}
+	if ingress.APIVersion == "" || ingress.Kind == "" {
+		t.Errorf("rawObject has no apiVersion or kind set: %+v", ingress.ObjectMeta)
+	}
+	if ingress.Spec.Domain != "example.com" {
+		t.Errorf("ingress does not have expected domain: %q", ingress.Spec.Domain)
+	}
+
 	var proxy configv1.Proxy
-	if err := json.Unmarshal(result[0].Raw, &proxy); err != nil {
+	if err := json.Unmarshal(result[1].Raw, &proxy); err != nil {
 		t.Fatalf("failed to unmarshal raw data: %v", err)
 	}
 	if proxy.APIVersion == "" || proxy.Kind == "" {
 		t.Errorf("rawObject has no apiVersion or kind set: %+v", proxy.ObjectMeta)
 	}
+	if proxy.Spec.HTTPProxy != "http://10.0.136.57:3128" {
+		t.Errorf("proxy does not have expected HTTPProxy: %q", proxy.Spec.HTTPProxy)
+	}
+
 }
 
 func TestIsUpgradeable(t *testing.T) {

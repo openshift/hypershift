@@ -80,6 +80,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	kjson "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/types"
@@ -4753,6 +4754,20 @@ func configurationFieldsToRawExtensions(config *hyperv1.ClusterConfiguration) ([
 		if err := serializer.Encode(result[idx].Object, b); err != nil {
 			return nil, fmt.Errorf("failed to marshal %+v: %w", result[idx].Object, err)
 		}
+
+		// Remove the status part of the serialized resource. We only have
+		// spec to begin with and status causes incompatibilities with previous
+		// versions of the CPO
+		unstructuredObject := &unstructured.Unstructured{}
+		if _, _, err := unstructured.UnstructuredJSONScheme.Decode(b.Bytes(), nil, unstructuredObject); err != nil {
+			return nil, fmt.Errorf("failed to decode resource into unstructured: %w", err)
+		}
+		unstructured.RemoveNestedField(unstructuredObject.Object, "status")
+		b = &bytes.Buffer{}
+		if err := unstructured.UnstructuredJSONScheme.Encode(unstructuredObject, b); err != nil {
+			return nil, fmt.Errorf("failed to serialize unstructured resource: %w", err)
+		}
+
 		result[idx].Raw = bytes.TrimSuffix(b.Bytes(), []byte("\n"))
 		result[idx].Object = nil
 	}
