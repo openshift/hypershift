@@ -475,8 +475,8 @@ github.com/pborman/uuid
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.51.1
-## explicit; go 1.14
+# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.57.0
+## explicit; go 1.17
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1
 # github.com/prometheus/client_golang v1.12.1
