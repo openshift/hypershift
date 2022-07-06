@@ -2472,10 +2472,57 @@ github.com/openshift/api/config/v1.ProxySpec
 </tr>
 </tbody>
 </table>
+###ClusterNetworkEntry { #hypershift.openshift.io/v1alpha1.ClusterNetworkEntry }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">ClusterNetworking</a>)
+</p>
+<p>
+<p>ClusterNetworkEntry is a single IP address block for pod IP blocks. IP blocks
+are allocated with size 2^HostSubnetLength.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>cidr</code></br>
+<em>
+<a href="#">
+github.com/openshift/hypershift/api/util/ipnet.IPNet
+</a>
+</em>
+</td>
+<td>
+<p>CIDR is the IP block address pool.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>hostPrefix</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>HostPrefix is the prefix size to allocate to each node from the CIDR.
+For example, 24 would allocate 2^8=256 adresses to each node. If this
+field is not used by the plugin, it can be left unset.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ClusterNetworking { #hypershift.openshift.io/v1alpha1.ClusterNetworking }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>)
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
 <p>ClusterNetworking specifies network configuration for a cluster.</p>
@@ -2496,8 +2543,9 @@ string
 </em>
 </td>
 <td>
-<p>ServiceCIDR is&hellip;</p>
-<p>TODO(dan): document it</p>
+<p>Deprecated
+This field will be removed in the next API release.
+Use ServiceNetwork instead</p>
 </td>
 </tr>
 <tr>
@@ -2508,8 +2556,9 @@ string
 </em>
 </td>
 <td>
-<p>PodCIDR is&hellip;</p>
-<p>TODO(dan): document it</p>
+<p>Deprecated
+This field will be removed in the next API release.
+Use ClusterNetwork instead</p>
 </td>
 </tr>
 <tr>
@@ -2520,8 +2569,49 @@ string
 </em>
 </td>
 <td>
-<p>MachineCIDR is&hellip;</p>
-<p>TODO(dan): document it</p>
+<p>Deprecated
+This field will be removed in the next API release.
+Use MachineNetwork instead</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>machineNetwork</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.MachineNetworkEntry">
+[]MachineNetworkEntry
+</a>
+</em>
+</td>
+<td>
+<p>MachineNetwork is the list of IP address pools for machines.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterNetwork</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworkEntry">
+[]ClusterNetworkEntry
+</a>
+</em>
+</td>
+<td>
+<p>ClusterNetwork is the list of IP address pools for pods.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceNetwork</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ServiceNetworkEntry">
+[]ServiceNetworkEntry
+</a>
+</em>
+</td>
+<td>
+<p>ServiceNetwork is the list of IP address pools for services.
+NOTE: currently only one entry is supported.</p>
 </td>
 </tr>
 <tr>
@@ -3491,12 +3581,27 @@ string
 </tr>
 <tr>
 <td>
+<code>networking</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">
+ClusterNetworking
+</a>
+</em>
+</td>
+<td>
+<p>Networking specifies network configuration for the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>serviceCIDR</code></br>
 <em>
 string
 </em>
 </td>
 <td>
+<p>deprecated
+use networking.ServiceNetwork</p>
 </td>
 </tr>
 <tr>
@@ -3507,6 +3612,8 @@ string
 </em>
 </td>
 <td>
+<p>deprecated
+use networking.ClusterNetwork</p>
 </td>
 </tr>
 <tr>
@@ -3517,6 +3624,8 @@ string
 </em>
 </td>
 <td>
+<p>deprecated
+use networking.MachineNetwork</p>
 </td>
 </tr>
 <tr>
@@ -3529,7 +3638,9 @@ NetworkType
 </em>
 </td>
 <td>
-<p>NetworkType specifies the SDN provider used for cluster networking.</p>
+<p>deprecated
+use networking.NetworkType
+NetworkType specifies the SDN provider used for cluster networking.</p>
 <p>
 Value must be one of:
 &#34;Calico&#34;, 
@@ -3626,7 +3737,9 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>APIPort is the port at which the APIServer listens inside a worker</p>
+<p>deprecated
+use networking.apiServer.APIPort
+APIPort is the port at which the APIServer listens inside a worker</p>
 </td>
 </tr>
 <tr>
@@ -3638,7 +3751,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>APIAdvertiseAddress is the address at which the APIServer listens
+<p>deprecated
+use networking.apiServer.AdvertiseAddress
+APIAdvertiseAddress is the address at which the APIServer listens
 inside a worker.</p>
 </td>
 </tr>
@@ -3652,7 +3767,9 @@ inside a worker.</p>
 </em>
 </td>
 <td>
-<p>APIAllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+<p>deprecated
+use networking.apiServer.APIAllowedCIDRBlocks
+APIAllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
 If not specified, traffic is allowed from all addresses.
 This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges</p>
 </td>
@@ -4788,6 +4905,37 @@ string
 <td>
 <em>(Optional)</em>
 <p>Hostname is the name of the DNS record that will be created pointing to the LoadBalancer.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###MachineNetworkEntry { #hypershift.openshift.io/v1alpha1.MachineNetworkEntry }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">ClusterNetworking</a>)
+</p>
+<p>
+<p>MachineNetworkEntry is a single IP address block for node IP blocks.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>cidr</code></br>
+<em>
+<a href="#">
+github.com/openshift/hypershift/api/util/ipnet.IPNet
+</a>
+</em>
+</td>
+<td>
+<p>CIDR is the IP block address pool for machines within the cluster.</p>
 </td>
 </tr>
 </tbody>
@@ -6491,6 +6639,37 @@ AESCBCSpec
 <td><p>KMS integrates with a cloud provider&rsquo;s key management service to do secret encryption</p>
 </td>
 </tr></tbody>
+</table>
+###ServiceNetworkEntry { #hypershift.openshift.io/v1alpha1.ServiceNetworkEntry }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">ClusterNetworking</a>)
+</p>
+<p>
+<p>ServiceNetworkEntry is a single IP address block for the service network.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>cidr</code></br>
+<em>
+<a href="#">
+github.com/openshift/hypershift/api/util/ipnet.IPNet
+</a>
+</em>
+</td>
+<td>
+<p>CIDR is the IP block address pool for services within the cluster.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###ServicePublishingStrategy { #hypershift.openshift.io/v1alpha1.ServicePublishingStrategy }
 <p>

@@ -7,6 +7,8 @@ import (
 	runtime "k8s.io/apimachinery/pkg/runtime"
 
 	configv1 "github.com/openshift/api/config/v1"
+
+	"github.com/openshift/hypershift/api/util/ipnet"
 )
 
 func init() {
@@ -441,26 +443,40 @@ type DNSSpec struct {
 
 // ClusterNetworking specifies network configuration for a cluster.
 type ClusterNetworking struct {
-	// ServiceCIDR is...
-	//
-	// TODO(dan): document it
-	//
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use ServiceNetwork instead
 	// +immutable
-	ServiceCIDR string `json:"serviceCIDR"`
+	ServiceCIDR string `json:"serviceCIDR,omitempty"`
 
-	// PodCIDR is...
-	//
-	// TODO(dan): document it
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use ClusterNetwork instead
 	//
 	// +immutable
 	PodCIDR string `json:"podCIDR"`
 
-	// MachineCIDR is...
-	//
-	// TODO(dan): document it
-	//
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use MachineNetwork instead
 	// +immutable
 	MachineCIDR string `json:"machineCIDR"`
+
+	// MachineNetwork is the list of IP address pools for machines.
+	//
+	// +immutable
+	MachineNetwork []MachineNetworkEntry `json:"machineNetwork,omitempty"`
+
+	// ClusterNetwork is the list of IP address pools for pods.
+	//
+	// +immutable
+	ClusterNetwork []ClusterNetworkEntry `json:"clusterNetwork,omitempty"`
+
+	// ServiceNetwork is the list of IP address pools for services.
+	// NOTE: currently only one entry is supported.
+	//
+	// +immutable
+	ServiceNetwork []ServiceNetworkEntry `json:"serviceNetwork,omitempty"`
 
 	// NetworkType specifies the SDN provider used for cluster networking.
 	//
@@ -473,6 +489,31 @@ type ClusterNetworking struct {
 	//
 	// +immutable
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
+}
+
+// MachineNetworkEntry is a single IP address block for node IP blocks.
+type MachineNetworkEntry struct {
+	// CIDR is the IP block address pool for machines within the cluster.
+	CIDR ipnet.IPNet `json:"cidr"`
+}
+
+// ClusterNetworkEntry is a single IP address block for pod IP blocks. IP blocks
+// are allocated with size 2^HostSubnetLength.
+type ClusterNetworkEntry struct {
+	// CIDR is the IP block address pool.
+	CIDR ipnet.IPNet `json:"cidr"`
+
+	// HostPrefix is the prefix size to allocate to each node from the CIDR.
+	// For example, 24 would allocate 2^8=256 adresses to each node. If this
+	// field is not used by the plugin, it can be left unset.
+	// +optional
+	HostPrefix int32 `json:"hostPrefix,omitempty"`
+}
+
+// ServiceNetworkEntry is a single IP address block for the service network.
+type ServiceNetworkEntry struct {
+	// CIDR is the IP block address pool for services within the cluster.
+	CIDR ipnet.IPNet `json:"cidr"`
 }
 
 //+kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
