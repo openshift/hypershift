@@ -22,6 +22,10 @@
     {
       "typeMatchPrefix": "^github\\.com/openshift/api/config/",
       "docsURLTemplate": "https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html"
+    },
+    {
+      "typeMatchPrefix": "^github\\.com/openshift/hypershift/api/util/ipnet\\.IPNet",
+      "docsURLTemplate": "#"
     }
   ],
   "typeDisplayNamePrefixOverrides": {

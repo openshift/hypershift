@@ -28,11 +28,19 @@ import (
 var TopologyMarkers = []*definitionWithHelp{
 	must(markers.MakeDefinition("listMapKey", markers.DescribesField, ListMapKey(""))).
 		WithHelp(ListMapKey("").Help()),
+	must(markers.MakeDefinition("listMapKey", markers.DescribesType, ListMapKey(""))).
+		WithHelp(ListMapKey("").Help()),
 	must(markers.MakeDefinition("listType", markers.DescribesField, ListType(""))).
+		WithHelp(ListType("").Help()),
+	must(markers.MakeDefinition("listType", markers.DescribesType, ListType(""))).
 		WithHelp(ListType("").Help()),
 	must(markers.MakeDefinition("mapType", markers.DescribesField, MapType(""))).
 		WithHelp(MapType("").Help()),
+	must(markers.MakeDefinition("mapType", markers.DescribesType, MapType(""))).
+		WithHelp(MapType("").Help()),
 	must(markers.MakeDefinition("structType", markers.DescribesField, StructType(""))).
+		WithHelp(StructType("").Help()),
+	must(markers.MakeDefinition("structType", markers.DescribesType, StructType(""))).
 		WithHelp(StructType("").Help()),
 }
 
@@ -101,7 +109,7 @@ type StructType string
 
 func (l ListType) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
 	if schema.Type != "array" {
-		return fmt.Errorf("must apply listType to an array")
+		return fmt.Errorf("must apply listType to an array, found %s", schema.Type)
 	}
 	if l != "map" && l != "atomic" && l != "set" {
 		return fmt.Errorf(`ListType must be either "map", "set" or "atomic"`)
@@ -115,7 +123,7 @@ func (l ListType) ApplyFirst() {}
 
 func (l ListMapKey) ApplyToSchema(schema *apiext.JSONSchemaProps) error {
 	if schema.Type != "array" {
-		return fmt.Errorf("must apply listMapKey to an array")
+		return fmt.Errorf("must apply listMapKey to an array, found %s", schema.Type)
 	}
 	if schema.XListType == nil || *schema.XListType != "map" {
 		return fmt.Errorf("must apply listMapKey to an associative-list")
