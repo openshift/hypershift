@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -159,6 +160,9 @@ type HostedClusterReconciler struct {
 	ImageMetadataProvider util.ImageMetadataProvider
 
 	MetricsSet metrics.MetricsSet
+
+	overwriteReconcile func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error)
+	now                func() metav1.Time
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -167,6 +171,9 @@ type HostedClusterReconciler struct {
 func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateProvider) error {
 	if r.Clock == nil {
 		r.Clock = clock.RealClock{}
+	}
+	if r.now == nil {
+		r.now = metav1.Now
 	}
 	r.createOrUpdate = createOrUpdateWithAnnotationFactory(createOrUpdate)
 	// Set up watches for resource types the controller manages. The list basically
@@ -278,6 +285,37 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 	}
 
+	var res reconcile.Result
+	if r.overwriteReconcile != nil {
+		res, err = r.overwriteReconcile(ctx, req, log, hcluster)
+	} else {
+		res, err = r.reconcile(ctx, req, log, hcluster)
+	}
+	condition := metav1.Condition{
+		Type:               string(hyperv1.ReconciliationSucceeded),
+		ObservedGeneration: hcluster.Generation,
+		Status:             metav1.ConditionTrue,
+		Reason:             "ReconciliatonSucceeded",
+		LastTransitionTime: r.now(),
+	}
+	if err != nil {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = "ReconciliationError"
+		condition.Message = err.Error()
+	}
+	old := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ReconciliationSucceeded))
+	if old != nil {
+		old.LastTransitionTime = condition.LastTransitionTime
+	}
+	if !reflect.DeepEqual(old, &condition) {
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+		return res, utilerrors.NewAggregate([]error{err, r.Client.Status().Update(ctx, hcluster)})
+	}
+
+	return res, err
+}
+
+func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
 		// Keep trying to delete until we know it's safe to finalize.
@@ -354,7 +392,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
-	err = r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
+	err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)

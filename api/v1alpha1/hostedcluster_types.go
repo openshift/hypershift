@@ -1611,6 +1611,10 @@ const (
 	// active or paused.
 	ReconciliationActive ConditionType = "ReconciliationActive"
 
+	// ReconciliationSucceeded indicates if the hostedcluster reconciliation
+	// succeeded.
+	ReconciliationSucceeded ConditionType = "ReconciliationSucceeded"
+
 	// ValidOIDCConfiguration indicates if an AWS cluster's OIDC condition is
 	// detected as invalid.
 	ValidOIDCConfiguration ConditionType = "ValidOIDCConfiguration"

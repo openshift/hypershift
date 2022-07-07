@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
@@ -1003,6 +1004,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
 		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}},
+		now:                           metav1.Now,
 	}
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
@@ -2156,5 +2158,149 @@ func TestReconcileDeprecatedGlobalConfig(t *testing.T) {
 	}
 	if !equality.Semantic.DeepEqual(&apiServer.Spec, updatedHc.Spec.Configuration.APIServer) {
 		t.Errorf("unexpected apiserver spec: %#v", updatedHc.Spec.Configuration.APIServer)
+	}
+}
+
+func TestReconciliationSuccessConditionSetting(t *testing.T) {
+
+	// Serialization seems to round to seconds, so we have to do the
+	// same to be able to compare.
+	now := metav1.Time{Time: time.Now().Round(time.Second)}
+	reconcilerNow := metav1.Time{Time: now.Add(time.Second)}
+
+	testCases := []struct {
+		name               string
+		reconcileResult    error
+		existingConditions []metav1.Condition
+		expectedConditions []metav1.Condition
+	}{
+		{
+			name: "Success, success condition gets set",
+			expectedConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "ReconciliatonSucceeded",
+				LastTransitionTime: reconcilerNow,
+			}},
+		},
+		{
+			name: "Succcess, existing success condition transition timestamp stays",
+			existingConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "ReconciliatonSucceeded",
+				LastTransitionTime: now,
+			}},
+			expectedConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "ReconciliatonSucceeded",
+				LastTransitionTime: now,
+			}},
+		},
+		{
+			name: "Success, error condition gets cleared",
+			existingConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionFalse,
+				Message:            "Some error",
+				LastTransitionTime: now,
+			}},
+			expectedConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "ReconciliatonSucceeded",
+				LastTransitionTime: reconcilerNow,
+			}},
+		},
+		{
+			name:            "Error, error gets set",
+			reconcileResult: errors.New("things went sideways"),
+			expectedConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionFalse,
+				Reason:             "ReconciliationError",
+				Message:            "things went sideways",
+				LastTransitionTime: reconcilerNow,
+			}},
+		},
+		{
+			name:            "Error, errors gets updated",
+			reconcileResult: errors.New("things went sideways"),
+			existingConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionFalse,
+				Reason:             "ReconciliationError",
+				Message:            "some old error",
+				LastTransitionTime: reconcilerNow,
+			}},
+			expectedConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionFalse,
+				Reason:             "ReconciliationError",
+				Message:            "things went sideways",
+				LastTransitionTime: reconcilerNow,
+			}},
+		},
+		{
+			name:            "Error, success condition gets cleaned up",
+			reconcileResult: errors.New("things went sideways"),
+			existingConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "ReconciliatonSucceeded",
+				LastTransitionTime: now,
+			}},
+			expectedConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionFalse,
+				Reason:             "ReconciliationError",
+				Message:            "things went sideways",
+				LastTransitionTime: reconcilerNow,
+			}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "hcluster"},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tc.existingConditions,
+				},
+			}
+
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build()
+			r := &HostedClusterReconciler{
+				Client: c,
+				overwriteReconcile: func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
+					return ctrl.Result{}, tc.reconcileResult
+				},
+				now: func() metav1.Time { return reconcilerNow },
+			}
+
+			ctx := context.Background()
+
+			var actualErrString string
+			if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)}); err != nil {
+				actualErrString = err.Error()
+			}
+			var expectedErrString string
+			if tc.reconcileResult != nil {
+				expectedErrString = tc.reconcileResult.Error()
+			}
+			if actualErrString != expectedErrString {
+				t.Errorf("actual error %s doesn't match expected %s", actualErrString, expectedErrString)
+			}
+
+			if err := c.Get(ctx, crclient.ObjectKeyFromObject(hcluster), hcluster); err != nil {
+				t.Fatalf("failed to get hcluster after reconciliation: %v", err)
+			}
+
+			if diff := cmp.Diff(hcluster.Status.Conditions, tc.expectedConditions); diff != "" {
+				t.Errorf("actual conditions differ from expected: %s", diff)
+			}
+		})
 	}
 }

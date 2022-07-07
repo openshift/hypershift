@@ -2673,6 +2673,10 @@ desired platform are valid.</p>
 <td><p>ReconciliationActive indicates if reconciliation of the hostedcluster is
 active or paused.</p>
 </td>
+</tr><tr><td><p>&#34;ReconciliationSucceeded&#34;</p></td>
+<td><p>ReconciliationSucceeded indicates if the hostedcluster reconciliation
+succeeded.</p>
+</td>
 </tr><tr><td><p>&#34;SupportedHostedCluster&#34;</p></td>
 <td><p>SupportedHostedCluster indicates whether a HostedCluster is supported by
 the current configuration of the hypershift-operator.
