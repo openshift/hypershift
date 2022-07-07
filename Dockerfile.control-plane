@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.18-openshift-4.11 AS builder
+FROM registry.ci.openshift.org/ocp/builder:rhel-8-golang-1.18-openshift-4.12 AS builder
 
 WORKDIR /hypershift
 
@@ -6,7 +6,7 @@ COPY . .
 
 RUN make control-plane-operator
 
-FROM registry.ci.openshift.org/ocp/4.11:base
+FROM registry.ci.openshift.org/ocp/4.12:base
 COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plane-operator
 
 ENTRYPOINT /usr/bin/control-plane-operator
