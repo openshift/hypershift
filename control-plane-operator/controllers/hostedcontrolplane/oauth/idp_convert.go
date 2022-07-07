@@ -342,23 +342,26 @@ func convertProviderConfigToIDPData(
 		}
 		data.provider = openIDProvider
 
-		// openshift CR validating in kube-apiserver does not allow
-		// challenge-redirecting IdPs to be configured with OIDC so it is safe
-		// to allow challenge-issuing flow if it's available on the OIDC side
-		challengeFlowsAllowed, err := checkOIDCPasswordGrantFlow(
-			ctx,
-			kclient,
-			openIDProvider.URLs.Token,
-			openIDConfig.ClientID,
-			namespace,
-			openIDConfig.CA,
-			openIDConfig.ClientSecret,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("error attempting password grant flow: %v", err)
+		if configOverride.Challenge != nil {
+			data.challenge = *configOverride.Challenge
+		} else {
+			// openshift CR validating in kube-apiserver does not allow
+			// challenge-redirecting IdPs to be configured with OIDC so it is safe
+			// to allow challenge-issuing flow if it's available on the OIDC side
+			challengeFlowsAllowed, err := checkOIDCPasswordGrantFlow(
+				ctx,
+				kclient,
+				openIDProvider.URLs.Token,
+				openIDConfig.ClientID,
+				namespace,
+				openIDConfig.CA,
+				openIDConfig.ClientSecret,
+			)
+			if err != nil {
+				return nil, fmt.Errorf("error attempting password grant flow: %v", err)
+			}
+			data.challenge = challengeFlowsAllowed
 		}
-		data.challenge = challengeFlowsAllowed
-		data.provider = openIDProvider
 	case configv1.IdentityProviderTypeRequestHeader:
 		requestHeaderConfig := providerConfig.RequestHeader
 		if requestHeaderConfig == nil {
