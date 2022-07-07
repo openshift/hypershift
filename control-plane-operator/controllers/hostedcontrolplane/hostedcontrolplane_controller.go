@@ -243,6 +243,24 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
+	// Reconcile etcd restore status
+	if hostedControlPlane.Spec.Etcd.ManagementType == hyperv1.Managed && len(hostedControlPlane.Spec.Etcd.Managed.Storage.RestoreSnapshotURL) > 0 {
+		restoreCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
+		if restoreCondition == nil {
+			r.Log.Info("Reconciling etcd cluster restore status")
+			sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
+			if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err == nil {
+				newCondition := metav1.Condition{}
+				conditionPtr := r.etcdRestoredCondition(ctx, sts)
+				if conditionPtr != nil {
+					newCondition = *conditionPtr
+					newCondition.ObservedGeneration = hostedControlPlane.Generation
+					meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+				}
+			}
+		}
+	}
+
 	// Reconcile Kube APIServer status
 	{
 		newCondition := metav1.Condition{
@@ -2431,6 +2449,45 @@ func (r *HostedControlPlaneReconciler) hostedControlPlaneInNamespace(resource cl
 		result = append(result, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hcp.Namespace, Name: hcp.Name}})
 	}
 	return result
+}
+
+func (r *HostedControlPlaneReconciler) etcdRestoredCondition(ctx context.Context, sts *appsv1.StatefulSet) *metav1.Condition {
+	if sts.Status.ReadyReplicas == *sts.Spec.Replicas {
+		// Check that all etcd pods have initContainers that started
+		podList := &corev1.PodList{}
+		initContainerCount := int32(0)
+		if err := r.List(ctx, podList, &client.ListOptions{
+			Namespace:     sts.Namespace,
+			LabelSelector: labels.SelectorFromValidatedSet(labels.Set{"app": "etcd"}),
+		}); err == nil {
+			for _, pod := range podList.Items {
+				for _, status := range pod.Status.InitContainerStatuses {
+					if status.Name == "etcd-init" {
+						if status.Ready {
+							initContainerCount += 1
+						} else if status.LastTerminationState.Terminated != nil {
+							if status.LastTerminationState.Terminated.ExitCode != 0 {
+								return &metav1.Condition{
+									Type:   string(hyperv1.EtcdSnapshotRestored),
+									Status: metav1.ConditionFalse,
+									Reason: status.LastTerminationState.Terminated.Reason,
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		if initContainerCount == *sts.Spec.Replicas {
+			return &metav1.Condition{
+				Type:   string(hyperv1.EtcdSnapshotRestored),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.AsExpectedReason,
+			}
+		}
+	}
+	return nil
 }
 
 func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Context, sts *appsv1.StatefulSet) (*metav1.Condition, error) {

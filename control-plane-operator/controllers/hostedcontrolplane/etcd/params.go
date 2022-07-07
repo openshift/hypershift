@@ -2,6 +2,7 @@ package etcd
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -18,6 +19,8 @@ type EtcdParams struct {
 	StorageSpec hyperv1.ManagedEtcdStorageSpec
 
 	Availability hyperv1.AvailabilityPolicy
+
+	SnapshotRestored bool
 }
 
 func etcdPodSelector() map[string]string {
@@ -73,6 +76,11 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 				p.StorageSpec.PersistentVolume.Size = pv.Size
 			}
 		}
+	}
+
+	if len(hcp.Spec.Etcd.Managed.Storage.RestoreSnapshotURL) > 0 {
+		p.StorageSpec.RestoreSnapshotURL = hcp.Spec.Etcd.Managed.Storage.RestoreSnapshotURL
+		p.SnapshotRestored = meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
 	}
 
 	return p

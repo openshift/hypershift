@@ -1881,6 +1881,16 @@ spec:
                                   https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1."
                                 type: string
                             type: object
+                          restoreSnapshotURL:
+                            description: RestoreSnapshotURL allows an optional list
+                              of URLs to be provided where an etcd snapshot can be
+                              downloaded, for example a pre-signed URL referencing
+                              a storage service, one URL per replica. This snapshot
+                              will be restored on initial startup, only when the etcd
+                              PV is empty.
+                            items:
+                              type: string
+                            type: array
                           type:
                             description: Type is the kind of persistent storage implementation
                               to use for etcd.

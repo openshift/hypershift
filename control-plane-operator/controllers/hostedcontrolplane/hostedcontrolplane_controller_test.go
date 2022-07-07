@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/upsert"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -310,6 +311,195 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 					t.Errorf("Did not expect to find \"%s\" in observed arguments", arg)
 				}
 			}
+		})
+	}
+}
+
+func TestEtcdRestoredCondition(t *testing.T) {
+	testsCases := []struct {
+		name              string
+		sts               *appsv1.StatefulSet
+		pods              []corev1.Pod
+		expectedCondition metav1.Condition
+	}{
+		{
+			name: "single replica, pod ready - condition true",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: "thens",
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: pointer.Int32Ptr(1),
+				},
+				Status: appsv1.StatefulSetStatus{
+					Replicas:      1,
+					ReadyReplicas: 1,
+				},
+			},
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-0",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: true,
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdSnapshotRestored),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.AsExpectedReason,
+			},
+		},
+		{
+			name: "Pod not ready - condition false",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: "thens",
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: pointer.Int32Ptr(1),
+				},
+				Status: appsv1.StatefulSetStatus{
+					Replicas:      1,
+					ReadyReplicas: 1,
+				},
+			},
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-0",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: false,
+								LastTerminationState: corev1.ContainerState{
+									Terminated: &corev1.ContainerStateTerminated{
+										ExitCode: 1,
+										Reason:   "somethingfailed",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdSnapshotRestored),
+				Status: metav1.ConditionFalse,
+				Reason: "somethingfailed",
+			},
+		},
+		{
+			name: "multiple replica, pods ready - condition true",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: "thens",
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: pointer.Int32Ptr(3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					Replicas:      3,
+					ReadyReplicas: 3,
+				},
+			},
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-0",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: true,
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-1",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: true,
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-2",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: true,
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdSnapshotRestored),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.AsExpectedReason,
+			},
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			podList := &corev1.PodList{
+				Items: tc.pods,
+			}
+			fakeClient := fake.NewClientBuilder().WithLists(podList).Build()
+			r := &HostedControlPlaneReconciler{
+				Client:                 fakeClient,
+				Log:                    ctrl.LoggerFrom(context.TODO()),
+				CreateOrUpdateProvider: upsert.New(false),
+			}
+
+			conditionPtr := r.etcdRestoredCondition(context.Background(), tc.sts)
+			g.Expect(conditionPtr).ToNot(BeNil())
+			g.Expect(*conditionPtr).To(Equal(tc.expectedCondition))
 		})
 	}
 }
