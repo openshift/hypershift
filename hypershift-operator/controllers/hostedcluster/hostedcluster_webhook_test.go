@@ -13,13 +13,10 @@ import (
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 	"go.uber.org/zap/zaptest"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	utilpointer "k8s.io/utils/pointer"
@@ -248,80 +245,5 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 				t.Errorf("expected error to be %t, was %t", tc.expectError, err != nil)
 			}
 		})
-	}
-}
-
-func TestReconcileDeprecatedGlobalConfig(t *testing.T) {
-	hc := &hyperv1.HostedCluster{}
-	hc.Name = "fake-name"
-	hc.Namespace = "fake-namespace"
-
-	apiServer := &configv1.APIServer{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster",
-		},
-		Spec: configv1.APIServerSpec{
-			ClientCA: configv1.ConfigMapNameReference{
-				Name: "fake-ca",
-			},
-		},
-	}
-	serializedAPIServer, err := util.SerializeResource(apiServer, hyperapi.Scheme)
-	if err != nil {
-		t.Fatalf("failed to serialize apiserver: %v", err)
-	}
-	hc.Spec.Configuration = &hyperv1.ClusterConfiguration{
-		Items: []runtime.RawExtension{
-			{
-				Raw: []byte(serializedAPIServer),
-			},
-		},
-		ConfigMapRefs: []corev1.LocalObjectReference{
-			{
-				Name: "fake-ca",
-			},
-		},
-	}
-
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(hyperapi.Scheme).
-		WithObjects(hc).
-		Build()
-	reconciler := &HostedClusterReconciler{
-		Client: fakeClient,
-	}
-
-	originalSpec := hc.Spec.DeepCopy()
-	if err := reconciler.reconcileDeprecatedGlobalConfig(context.Background(), hc); err != nil {
-		t.Fatalf("unexpected reconcile error: %v", err)
-	}
-
-	// Update fields if required.
-	if !equality.Semantic.DeepEqual(&hc.Spec, originalSpec) {
-		err := reconciler.Client.Update(context.Background(), hc)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-	}
-
-	updatedHc := &hyperv1.HostedCluster{}
-	if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(hc), updatedHc); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if updatedHc.Spec.Configuration == nil {
-		t.Fatalf("unexpected nil configuration")
-	}
-
-	if len(updatedHc.Spec.Configuration.Items) > 0 {
-		t.Errorf("non-empty deprecated configuration")
-	}
-	if len(updatedHc.Spec.Configuration.ConfigMapRefs) > 0 {
-		t.Errorf("non-empty configmap refs")
-	}
-	if len(updatedHc.Spec.Configuration.SecretRefs) > 0 {
-		t.Errorf("non-emtpy secret refs")
-	}
-	if !equality.Semantic.DeepEqual(&apiServer.Spec, updatedHc.Spec.Configuration.APIServer) {
-		t.Errorf("unexpected apiserver spec: %#v", updatedHc.Spec.Configuration.APIServer)
 	}
 }
