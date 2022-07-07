@@ -40,8 +40,8 @@ type KubeAPIServerParams struct {
 	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
 
 	ServiceAccountIssuer string                       `json:"serviceAccountIssuer"`
-	ServiceCIDR          string                       `json:"serviceCIDR"`
-	PodCIDR              string                       `json:"podCIDR"`
+	ServiceCIDRs         []string                     `json:"serviceCIDRs"`
+	ClusterCIDRs         []string                     `json:"clusterCIDRs"`
 	AdvertiseAddress     string                       `json:"advertiseAddress"`
 	ExternalAddress      string                       `json:"externalAddress"`
 	ExternalPort         int32                        `json:"externalPort"`
@@ -80,8 +80,8 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ExternalOAuthAddress: externalOAuthAddress,
 		ExternalOAuthPort:    externalOAuthPort,
 		ServiceAccountIssuer: hcp.Spec.IssuerURL,
-		ServiceCIDR:          hcp.Spec.ServiceCIDR,
-		PodCIDR:              hcp.Spec.PodCIDR,
+		ServiceCIDRs:         util.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork),
+		ClusterCIDRs:         util.ClusterCIDRs(hcp.Spec.Networking.ClusterNetwork),
 		Availability:         hcp.Spec.ControllerAvailabilityPolicy,
 		ConsolePublicURL:     fmt.Sprintf("https://console-openshift-console.%s", dns.Spec.BaseDomain),
 		DisableProfiling:     util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.KASDeployment("").Name),
@@ -101,16 +101,8 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.Image = hcp.Spec.Configuration.Image
 		params.Scheduler = hcp.Spec.Configuration.Scheduler
 	}
-	if hcp.Spec.APIAdvertiseAddress != nil {
-		params.AdvertiseAddress = *hcp.Spec.APIAdvertiseAddress
-	} else {
-		params.AdvertiseAddress = config.DefaultAdvertiseAddress
-	}
-	if hcp.Spec.APIPort != nil {
-		params.APIServerPort = *hcp.Spec.APIPort
-	} else {
-		params.APIServerPort = config.DefaultAPIServerPort
-	}
+	params.AdvertiseAddress = util.AdvertiseAddressWithDefault(hcp, config.DefaultAdvertiseAddress)
+	params.APIServerPort = util.APIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
 		params.Images.Portieris = hcp.Annotations[hyperv1.PortierisImageAnnotation]
 	}
@@ -358,12 +350,12 @@ func (p *KubeAPIServerParams) ExternalIPConfig() *configv1.ExternalIPConfig {
 	}
 }
 
-func (p *KubeAPIServerParams) ClusterNetwork() string {
-	return p.PodCIDR
+func (p *KubeAPIServerParams) ClusterNetwork() []string {
+	return p.ClusterCIDRs
 }
 
-func (p *KubeAPIServerParams) ServiceNetwork() string {
-	return p.ServiceCIDR
+func (p *KubeAPIServerParams) ServiceNetwork() []string {
+	return p.ServiceCIDRs
 }
 
 func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
@@ -392,8 +384,8 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 
 type KubeAPIServerConfigParams struct {
 	ExternalIPConfig             *configv1.ExternalIPConfig
-	ClusterNetwork               string
-	ServiceNetwork               string
+	ClusterNetwork               []string
+	ServiceNetwork               []string
 	NamedCertificates            []configv1.APIServerNamedServingCert
 	APIServerPort                int32
 	TLSSecurityProfile           *configv1.TLSSecurityProfile
@@ -477,17 +469,13 @@ func (p *KubeAPIServerParams) ServiceNodePortRange() string {
 }
 
 func NewKubeAPIServerServiceParams(hcp *hyperv1.HostedControlPlane) *KubeAPIServerServiceParams {
-	port := config.DefaultAPIServerPort
-	if hcp.Spec.APIPort != nil {
-		port = int(*hcp.Spec.APIPort)
-	}
+	port := util.APIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	var allowedCIDRBlocks []string
-	for _, block := range hcp.Spec.APIAllowedCIDRBlocks {
+	for _, block := range util.AllowedCIDRBlocks(hcp) {
 		allowedCIDRBlocks = append(allowedCIDRBlocks, string(block))
 	}
-
 	return &KubeAPIServerServiceParams{
-		APIServerPort:     port,
+		APIServerPort:     int(port),
 		AllowedCIDRBlocks: allowedCIDRBlocks,
 		OwnerReference:    config.ControllerOwnerRef(hcp),
 	}

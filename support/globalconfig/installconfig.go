@@ -6,20 +6,21 @@ import (
 	"text/template"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/util"
 )
 
 // Abbreviated version of the installer's InstallConfig type
 // Bare minimum required to support MCS
 type InstallConfig struct {
-	MachineCIDR string
-	Platform    string
-	Region      string
+	MachineCIDRs []string
+	Platform     string
+	Region       string
 }
 
 func NewInstallConfig(hcp *hyperv1.HostedControlPlane) *InstallConfig {
 	cfg := &InstallConfig{
-		MachineCIDR: hcp.Spec.MachineCIDR,
-		Platform:    string(hcp.Spec.Platform.Type),
+		MachineCIDRs: util.MachineCIDRs(hcp.Spec.Networking.MachineNetwork),
+		Platform:     string(hcp.Spec.Platform.Type),
 	}
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -36,7 +37,9 @@ controlPlane:
   replicas: 1
 networking:
   machineNetwork:
-  - cidr: {{ .MachineCIDR }}
+{{- range .MachineCIDRs }}
+  - cidr: {{ . }}
+{{- end }}
 platform:
 {{- if eq .Platform "AWS" }}
   aws:

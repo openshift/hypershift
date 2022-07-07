@@ -2117,6 +2117,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>Deprecated
 This field will be removed in the next API release.
 Use ServiceNetwork instead</p>
@@ -2130,6 +2131,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>Deprecated
 This field will be removed in the next API release.
 Use ClusterNetwork instead</p>
@@ -2143,6 +2145,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>Deprecated
 This field will be removed in the next API release.
 Use MachineNetwork instead</p>
@@ -2158,7 +2161,9 @@ Use MachineNetwork instead</p>
 </em>
 </td>
 <td>
-<p>MachineNetwork is the list of IP address pools for machines.</p>
+<em>(Optional)</em>
+<p>MachineNetwork is the list of IP address pools for machines.
+TODO: make this required in the next version of the API</p>
 </td>
 </tr>
 <tr>
@@ -2171,7 +2176,9 @@ Use MachineNetwork instead</p>
 </em>
 </td>
 <td>
-<p>ClusterNetwork is the list of IP address pools for pods.</p>
+<em>(Optional)</em>
+<p>ClusterNetwork is the list of IP address pools for pods.
+TODO: make this required in the next version of the API</p>
 </td>
 </tr>
 <tr>
@@ -2184,8 +2191,10 @@ Use MachineNetwork instead</p>
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>ServiceNetwork is the list of IP address pools for services.
-NOTE: currently only one entry is supported.</p>
+NOTE: currently only one entry is supported.
+TODO: make this required in the next version of the API</p>
 </td>
 </tr>
 <tr>
@@ -3128,6 +3137,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>deprecated
 use networking.ServiceNetwork</p>
 </td>
@@ -3140,6 +3150,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>deprecated
 use networking.ClusterNetwork</p>
 </td>
@@ -3152,6 +3163,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>deprecated
 use networking.MachineNetwork</p>
 </td>
@@ -3166,6 +3178,7 @@ NetworkType
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>deprecated
 use networking.NetworkType
 NetworkType specifies the SDN provider used for cluster networking.</p>
@@ -3293,6 +3306,7 @@ inside a worker.</p>
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>deprecated
 use networking.apiServer.APIAllowedCIDRBlocks
 APIAllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer

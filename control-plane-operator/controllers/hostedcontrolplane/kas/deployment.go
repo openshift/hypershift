@@ -82,6 +82,7 @@ func kasLabels() map[string]string {
 }
 
 func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
+	hcp *hyperv1.HostedControlPlane,
 	ownerRef config.OwnerRef,
 	deploymentConfig config.DeploymentConfig,
 	namedCertificates []configv1.APIServerNamedServingCert,
@@ -99,6 +100,10 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	podCIDR string,
 	serviceCIDR string,
 ) error {
+
+	var additionalNoProxyCIDRS []string
+	additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, util.ClusterCIDRs(hcp.Spec.Networking.ClusterNetwork)...)
+	additionalNoProxyCIDRS = append(additionalNoProxyCIDRS, util.ServiceCIDRs(hcp.Spec.Networking.ServiceNetwork)...)
 
 	configBytes, ok := config.Data[KubeAPIServerConfigKey]
 	if !ok {
@@ -149,7 +154,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			},
 			Containers: []corev1.Container{
 				util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
-				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port, podCIDR, serviceCIDR)),
+				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port, additionalNoProxyCIDRS)),
 			},
 			Volumes: []corev1.Volume{
 				util.BuildVolume(kasVolumeBootstrapManifests(), buildKASVolumeBootstrapManifests),
@@ -316,7 +321,7 @@ func kasContainerMain() *corev1.Container {
 	}
 }
 
-func buildKASContainerMain(image string, port int32, podCIDR, serviceCIDR string) func(c *corev1.Container) {
+func buildKASContainerMain(image string, port int32, noProxyCIDRs []string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
@@ -345,7 +350,7 @@ func buildKASContainerMain(image string, port int32, podCIDR, serviceCIDR string
 		// the the egress transport and that breaks the egress selection/konnektivity usage.
 		// Using a CIDR is not supported by Go's default ProxyFunc, but Kube uses a custom one by default that does support it:
 		// https://github.com/kubernetes/kubernetes/blob/ab13c85316015cf9f115e29923ba9740bd1564fd/staging/src/k8s.io/apimachinery/pkg/util/net/http.go#L112-L114
-		proxy.SetEnvVars(&c.Env, podCIDR, serviceCIDR)
+		proxy.SetEnvVars(&c.Env, noProxyCIDRs...)
 
 		c.WorkingDir = volumeMounts.Path(c.Name, kasVolumeWorkLogs().Name)
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)

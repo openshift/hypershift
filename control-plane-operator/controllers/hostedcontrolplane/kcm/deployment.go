@@ -316,7 +316,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 	}
 	args = append(args, []string{
 		fmt.Sprintf("--cert-dir=%s", cpath(kcmVolumeCertDir().Name, "")),
-		fmt.Sprintf("--cluster-cidr=%s", p.PodCIDR),
+		fmt.Sprintf("--cluster-cidr=%s", p.ClusterCIDR),
 		fmt.Sprintf("--cluster-signing-cert-file=%s", cpath(kcmVolumeClusterSigner().Name, pki.CASignerCertMapKey)),
 		fmt.Sprintf("--cluster-signing-key-file=%s", cpath(kcmVolumeClusterSigner().Name, pki.CASignerKeyMapKey)),
 		"--configure-cloud-routes=false",
