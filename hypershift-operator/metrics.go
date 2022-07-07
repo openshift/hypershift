@@ -133,8 +133,8 @@ var expectedHCConditionStates = map[hyperv1.ConditionType]bool{
 	hyperv1.ValidHostedClusterConfiguration: true,
 	hyperv1.SupportedHostedCluster:          true,
 	hyperv1.ClusterVersionSucceeding:        true,
-	hyperv1.ReconciliationPaused:            false,
-	hyperv1.OIDCConfigurationInvalid:        false,
+	hyperv1.ReconciliationActive:            true,
+	hyperv1.ValidOIDCConfiguration:          true,
 }
 
 func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.HostedClusterList) {

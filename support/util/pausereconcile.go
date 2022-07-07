@@ -51,9 +51,9 @@ func processPausedUntilField(pausedUntilField *string, now time.Time) (isPaused 
 	return false, time.Duration(0), fmt.Errorf("invalid value specified in pausedUntil field: %q. Considering the resource as not paused", pausedUntilVal)
 }
 
-// GenerateReconciliationPausedCondition will generate the resource condition that reflects the state of reconciliation
+// GenerateReconciliationActiveCondition will generate the resource condition that reflects the state of reconciliation
 // on the resource.
-func GenerateReconciliationPausedCondition(pausedUntilField *string, objectGeneration int64) metav1.Condition {
+func GenerateReconciliationActiveCondition(pausedUntilField *string, objectGeneration int64) metav1.Condition {
 	isPaused, _, err := processPausedUntilField(pausedUntilField, time.Now())
 	var msgString string
 	if isPaused {
@@ -63,8 +63,8 @@ func GenerateReconciliationPausedCondition(pausedUntilField *string, objectGener
 			msgString = fmt.Sprintf("Reconciliation paused until: %s", *pausedUntilField)
 		}
 		return metav1.Condition{
-			Type:               string(hyperv1.ReconciliationPaused),
-			Status:             metav1.ConditionTrue,
+			Type:               string(hyperv1.ReconciliationActive),
+			Status:             metav1.ConditionFalse,
 			Reason:             reconciliationPausedConditionReason,
 			Message:            msgString,
 			ObservedGeneration: objectGeneration,
@@ -77,8 +77,8 @@ func GenerateReconciliationPausedCondition(pausedUntilField *string, objectGener
 		msgString = "Invalid value provided for PausedUntil field"
 	}
 	return metav1.Condition{
-		Type:               string(hyperv1.ReconciliationPaused),
-		Status:             metav1.ConditionFalse,
+		Type:               string(hyperv1.ReconciliationActive),
+		Status:             metav1.ConditionTrue,
 		Reason:             reasonString,
 		Message:            msgString,
 		ObservedGeneration: objectGeneration,

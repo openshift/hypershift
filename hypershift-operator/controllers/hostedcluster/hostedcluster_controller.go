@@ -592,7 +592,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
 	}
-	meta.SetStatusCondition(&hcluster.Status.Conditions, util.GenerateReconciliationPausedCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
+	meta.SetStatusCondition(&hcluster.Status.Conditions, util.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
 	// Set ValidReleaseImage condition
 	{
@@ -1234,8 +1234,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	case hyperv1.AWSPlatform:
 		if err := r.reconcileAWSOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
-				Type:               string(hyperv1.OIDCConfigurationInvalid),
-				Status:             metav1.ConditionTrue,
+				Type:               string(hyperv1.ValidOIDCConfiguration),
+				Status:             metav1.ConditionFalse,
 				Reason:             hyperv1.OIDCConfigurationInvalidReason,
 				ObservedGeneration: hcluster.Generation,
 				Message:            err.Error(),
@@ -1245,8 +1245,14 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile the AWS OIDC documents: %w", err)
 		}
-		if meta.IsStatusConditionTrue(hcluster.Status.Conditions, string(hyperv1.OIDCConfigurationInvalid)) {
-			meta.RemoveStatusCondition(&hcluster.Status.Conditions, string(hyperv1.OIDCConfigurationInvalid))
+		if meta.IsStatusConditionFalse(hcluster.Status.Conditions, string(hyperv1.ValidOIDCConfiguration)) {
+			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.ValidOIDCConfiguration),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				ObservedGeneration: hcluster.Generation,
+				Message:            "OIDC configuration is valid",
+			})
 			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 			}
