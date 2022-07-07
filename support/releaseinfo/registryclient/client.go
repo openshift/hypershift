@@ -1,258 +1,128 @@
 package registryclient
 
 import (
-	"archive/tar"
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/containers/common/pkg/config"
+	"github.com/containers/image/v5/types"
 	"io"
-	"net/http"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
 
-	"github.com/docker/distribution"
-	"github.com/docker/distribution/registry/client/transport"
-	"k8s.io/client-go/rest"
-
-	dockerarchive "github.com/openshift/hypershift/support/thirdparty/docker/pkg/archive"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/registryclient"
-	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest"
-	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest/dockercredentials"
+	"github.com/containers/common/libimage"
+	"github.com/containers/storage"
 )
 
 // ExtractImageFiles extracts a list of files from a registry image given the image reference, pull secret and the
 // list of files to extract. It returns a map with file contents or an error.
 func ExtractImageFiles(ctx context.Context, imageRef string, pullSecret []byte, files ...string) (map[string][]byte, error) {
-	layers, fromBlobs, err := getMetadata(ctx, imageRef, pullSecret)
-	if err != nil {
-		return nil, err
+	if len(files) == 0 {
+		return nil, fmt.Errorf("empty list of files to extract")
 	}
-
 	fileContents := map[string][]byte{}
-	for _, file := range files {
-		fileContents[file] = nil
-	}
-	if len(fileContents) == 0 {
-		return fileContents, nil
+
+	mountedImage, err := mountImage(ctx, imageRef, pullSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to mount image %s %w", imageRef, err)
 	}
 
-	// Iterate over layers in reverse order to find the most recent version of files
-	for i := len(layers) - 1; i >= 0; i-- {
-		layer := layers[i]
-		err := func() error {
-			r, err := fromBlobs.Open(ctx, layer.Digest)
-			if err != nil {
-				return fmt.Errorf("unable to access the source layer %s: %v", layer.Digest, err)
-			}
-			defer r.Close()
-			rc, err := dockerarchive.DecompressStream(r)
-			if err != nil {
-				return err
-			}
-			defer rc.Close()
-			tr := tar.NewReader(rc)
-			for {
-				hdr, err := tr.Next()
-				if err != nil {
-					if err == io.EOF {
-						break
-					}
-					return err
-				}
-				if hdr.Typeflag == tar.TypeReg {
-					value, needFile := fileContents[hdr.Name]
-					if !needFile {
-						continue
-					}
-					// If value already assigned, the content was found in an earlier layer
-					if value != nil {
-						continue
-					}
-					out := &bytes.Buffer{}
-					if _, err := io.Copy(out, tr); err != nil {
-						return err
-					}
-					fileContents[hdr.Name] = out.Bytes()
-				}
-				if allFound(fileContents) {
-					break
-				}
-			}
-			return nil
-		}()
+	for _, file := range files {
+		readFile, err := os.ReadFile(filepath.Join(mountedImage, file))
 		if err != nil {
 			return nil, err
 		}
-		if allFound(fileContents) {
-			break
-		}
+		fileContents[file] = readFile
 	}
+
 	return fileContents, nil
 }
 
-func allFound(content map[string][]byte) bool {
-	for _, v := range content {
-		if v == nil {
-			return false
-		}
-	}
-	return true
-}
-
 func ExtractImageFile(ctx context.Context, imageRef string, pullSecret []byte, file string, out io.Writer) error {
-	layers, fromBlobs, err := getMetadata(ctx, imageRef, pullSecret)
+	mountedImage, err := mountImage(ctx, imageRef, pullSecret)
 	if err != nil {
+		return fmt.Errorf("failed to mount image %s %w", imageRef, err)
+	}
+	readFile, err := os.ReadFile(filepath.Join(mountedImage, file))
+	if err != nil {
+		return fmt.Errorf("failed to read file %s from the mounted image at %s %w", file, mountedImage, err)
+	}
+	if _, err = io.Copy(out, bytes.NewReader(readFile)); err != nil {
 		return err
-	}
-
-	// Iterate over layers in reverse order to find the most recent version of files
-	found := false
-	for i := len(layers) - 1; i >= 0; i-- {
-		layer := layers[i]
-		err := func() error {
-			r, err := fromBlobs.Open(ctx, layer.Digest)
-			if err != nil {
-				return fmt.Errorf("unable to access the source layer %s: %v", layer.Digest, err)
-			}
-			defer r.Close()
-			rc, err := dockerarchive.DecompressStream(r)
-			if err != nil {
-				return err
-			}
-			defer rc.Close()
-			tr := tar.NewReader(rc)
-			for {
-				hdr, err := tr.Next()
-				if err != nil {
-					if err == io.EOF {
-						break
-					}
-					return err
-				}
-				if hdr.Typeflag == tar.TypeReg {
-					if hdr.Name != file {
-						continue
-					}
-					found = true
-					if _, err := io.Copy(out, tr); err != nil {
-						return err
-					}
-					return nil
-				}
-			}
-			return nil
-		}()
-		if err != nil {
-			return err
-		}
-		if found {
-			return nil
-		}
-	}
-	return fmt.Errorf("file not found")
-}
-
-func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []byte, pattern string, outputDir string) error {
-	regex, err := regexp.Compile(pattern)
-	if err != nil {
-		return fmt.Errorf("invalid pattern: %w", err)
-	}
-
-	layers, fromBlobs, err := getMetadata(ctx, imageRef, pullSecret)
-	if err != nil {
-		return err
-	}
-
-	// Iterate over layers in reverse order to find the most recent version of files
-	written := map[string]struct{}{}
-	for i := len(layers) - 1; i >= 0; i-- {
-		layer := layers[i]
-		err := func() error {
-			r, err := fromBlobs.Open(ctx, layer.Digest)
-			if err != nil {
-				return fmt.Errorf("unable to access the source layer %s: %v", layer.Digest, err)
-			}
-			defer r.Close()
-			rc, err := dockerarchive.DecompressStream(r)
-			if err != nil {
-				return err
-			}
-			defer rc.Close()
-			tr := tar.NewReader(rc)
-			for {
-				hdr, err := tr.Next()
-				if err != nil {
-					if err == io.EOF {
-						break
-					}
-					return err
-				}
-				if hdr.Typeflag == tar.TypeReg {
-					// Only copy the file once from the most recent layer
-					if _, exists := written[hdr.Name]; exists {
-						continue
-					}
-					if !regex.MatchString(hdr.Name) {
-						continue
-					}
-					dst := filepath.Join(outputDir, hdr.Name)
-					if err := os.MkdirAll(filepath.Clean(filepath.Dir(dst)), 0755); err != nil {
-						return fmt.Errorf("failed to make dir: %w", err)
-					}
-					dstfd, err := os.Create(dst)
-					if err != nil {
-						return err
-					}
-					if _, err = io.Copy(dstfd, tr); err != nil {
-						dstfd.Close()
-						return err
-					}
-					dstfd.Close()
-					written[hdr.Name] = struct{}{}
-				}
-			}
-			return nil
-		}()
-		if err != nil {
-			return err
-		}
 	}
 	return nil
 }
 
-func getMetadata(ctx context.Context, imageRef string, pullSecret []byte) ([]distribution.Descriptor, distribution.BlobStore, error) {
-	rt, err := rest.TransportFor(&rest.Config{})
+// mountImage mounts an image locally and return the mounted directory, otherwise returns an error.
+func mountImage(ctx context.Context, imageRef string, pullSecret []byte) (string, error) {
+	// write the pull secret to a temp file for now (better to volume mount it under the conventional place)
+	pullSecretFile, err := os.CreateTemp("", "pull-secret")
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create secure transport: %w", err)
+		return "", err
 	}
-	insecureRT, err := rest.TransportFor(&rest.Config{TLSClientConfig: rest.TLSClientConfig{Insecure: true}})
+	_, err = pullSecretFile.Write(pullSecret)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create insecure transport: %w", err)
+		return "", err
 	}
-	credStore, err := dockercredentials.NewFromBytes(pullSecret)
+	storeOptions, err := storage.DefaultStoreOptionsAutoDetectUID()
+	options := libimage.RuntimeOptions{SystemContext: &types.SystemContext{
+		AuthFilePath: pullSecretFile.Name(),
+	}}
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse docker credentials: %w", err)
+		return "", fmt.Errorf("getting store options %w", err)
 	}
-	registryContext := registryclient.NewContext(rt, insecureRT).WithCredentials(credStore).
-		WithRequestModifiers(transport.NewHeaderRequestModifier(http.Header{http.CanonicalHeaderKey("User-Agent"): []string{rest.DefaultKubernetesUserAgent()}}))
 
-	ref, err := reference.Parse(imageRef)
+	runtime, err := libimage.RuntimeFromStoreOptions(&options, &storeOptions)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
+		return "", fmt.Errorf("creating runtime %w", err)
 	}
-	repo, err := registryContext.Repository(ctx, ref.DockerClientDefaults().RegistryURL(), ref.RepositoryName(), false)
+
+	pulledImage, err := runtime.Pull(context.Background(), imageRef, config.PullPolicyAlways, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create repository client for %s: %w", ref.DockerClientDefaults().RegistryURL(), err)
+		return "", fmt.Errorf("pulling image %w", err)
 	}
-	firstManifest, location, err := manifest.FirstManifest(ctx, ref, repo)
+	for _, i := range pulledImage {
+		var mountOpt []string
+		mount, err := i.Mount(context.Background(), mountOpt, "")
+		if err != nil {
+			fmt.Printf("failed to mount %v", err)
+			return "", err
+		}
+		return mount, nil
+	}
+	return "", fmt.Errorf("there are no pulled images for image %s", imageRef)
+}
+
+func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []byte, pattern string, outputDir string) error {
+	mountedImage, err := mountImage(ctx, imageRef, pullSecret)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to obtain root manifest for %s: %w", imageRef, err)
+		return fmt.Errorf("failed to mount image %s %w", imageRef, err)
 	}
-	_, layers, err := manifest.ManifestToImageConfig(ctx, firstManifest, repo.Blobs(ctx), location)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to obtain image layers for %s: %w", imageRef, err)
-	}
-	return layers, repo.Blobs(ctx), nil
+
+	compile, _ := regexp.Compile(filepath.Join(mountedImage, pattern))
+	walk := filepath.WalkDir(mountedImage, func(path string, d fs.DirEntry, err1 error) error {
+		if compile.Match([]byte(path)) {
+			rel, err := filepath.Rel(mountedImage, path)
+			if err != nil {
+				return err
+			}
+			if d.IsDir() {
+				os.MkdirAll(filepath.Join(outputDir, rel), 0755)
+				return nil
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			newFilePath := filepath.Join(outputDir, rel)
+			err = os.WriteFile(newFilePath, data, 0755)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	return walk
 }
