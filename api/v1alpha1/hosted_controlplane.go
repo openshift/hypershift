@@ -34,30 +34,37 @@ type HostedControlPlaneSpec struct {
 
 	// deprecated
 	// use networking.ServiceNetwork
-	ServiceCIDR string `json:"serviceCIDR"`
+	// +optional
+	ServiceCIDR string `json:"serviceCIDR,omitempty"`
 
 	// deprecated
 	// use networking.ClusterNetwork
-	PodCIDR string `json:"podCIDR"`
+	// +optional
+	PodCIDR string `json:"podCIDR,omitempty"`
 
 	// deprecated
 	// use networking.MachineNetwork
-	MachineCIDR string `json:"machineCIDR"`
+	// +optional
+	MachineCIDR string `json:"machineCIDR,omitempty"`
 
 	// deprecated
 	// use networking.NetworkType
 	// NetworkType specifies the SDN provider used for cluster networking.
-	NetworkType NetworkType                 `json:"networkType"`
-	SSHKey      corev1.LocalObjectReference `json:"sshKey"`
+	// +optional
+	NetworkType NetworkType `json:"networkType,omitempty"`
+
+	SSHKey corev1.LocalObjectReference `json:"sshKey"`
+
 	// ClusterID is the unique id that identifies the cluster externally.
 	// Making it optional here allows us to keep compatibility with previous
 	// versions of the control-plane-operator that have no knowledge of this
 	// field.
 	// +optional
-	ClusterID string       `json:"clusterID,omitempty"`
-	InfraID   string       `json:"infraID"`
-	Platform  PlatformSpec `json:"platform"`
-	DNS       DNSSpec      `json:"dns"`
+	ClusterID string `json:"clusterID,omitempty"`
+
+	InfraID  string       `json:"infraID"`
+	Platform PlatformSpec `json:"platform"`
+	DNS      DNSSpec      `json:"dns"`
 
 	// ServiceAccountSigningKey is a reference to a secret containing the private key
 	// used by the service account token issuer. The secret is expected to contain
@@ -72,17 +79,20 @@ type HostedControlPlaneSpec struct {
 	// APIPort is the port at which the APIServer listens inside a worker
 	// +optional
 	APIPort *int32 `json:"apiPort,omitempty"`
+
 	// deprecated
 	// use networking.apiServer.AdvertiseAddress
 	// APIAdvertiseAddress is the address at which the APIServer listens
 	// inside a worker.
 	// +optional
 	APIAdvertiseAddress *string `json:"apiAdvertiseAddress,omitempty"`
+
 	// deprecated
 	// use networking.apiServer.APIAllowedCIDRBlocks
 	// APIAllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
 	// If not specified, traffic is allowed from all addresses.
 	// This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
+	// +optional
 	APIAllowedCIDRBlocks []CIDRBlock `json:"apiAllowedCIDRBlocks,omitempty"`
 
 	// ControllerAvailabilityPolicy specifies whether to run control plane controllers in HA mode

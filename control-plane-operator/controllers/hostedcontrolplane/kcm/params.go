@@ -24,7 +24,7 @@ type KubeControllerManagerParams struct {
 	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
 	Port                int32                        `json:"port"`
 	ServiceCIDR         string
-	PodCIDR             string
+	ClusterCIDR         string
 	APIServer           *configv1.APIServerSpec `json:"apiServer"`
 	DisableProfiling    bool                    `json:"disableProfiling"`
 
@@ -46,8 +46,8 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		HyperkubeImage:          images["hyperkube"],
 		TokenMinterImage:        images["token-minter"],
 		Port:                    DefaultPort,
-		ServiceCIDR:             hcp.Spec.ServiceCIDR,
-		PodCIDR:                 hcp.Spec.PodCIDR,
+		ServiceCIDR:             util.FirstServiceCIDR(hcp.Spec.Networking.ServiceNetwork),
+		ClusterCIDR:             util.FirstClusterCIDR(hcp.Spec.Networking.ClusterNetwork),
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 	}
 	if hcp.Spec.Configuration != nil {

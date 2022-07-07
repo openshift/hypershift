@@ -103,7 +103,7 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 		ImagePolicyConfig:            imagePolicyConfig(p.InternalRegistryHostName, p.ExternalRegistryHostNames),
 		ProjectConfig:                projectConfig(p.DefaultNodeSelector),
 		ServiceAccountPublicKeyFiles: []string{cpath(kasVolumeServiceAccountKey().Name, pki.ServiceSignerPublicKey)},
-		ServicesSubnet:               p.ServiceNetwork,
+		ServicesSubnet:               p.ServiceNetwork[0],
 	}
 	args := kubeAPIServerArgs{}
 	args.Set("advertise-address", p.AdvertiseAddress)
@@ -210,11 +210,13 @@ func externalIPRangerConfig(externalIPConfig *configv1.ExternalIPConfig) runtime
 	return cfg
 }
 
-func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork string) runtime.Object {
+func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork []string) runtime.Object {
 	cfg := &unstructured.Unstructured{}
 	cfg.SetAPIVersion("network.openshift.io/v1")
 	cfg.SetKind("RestrictedEndpointsAdmissionConfig")
-	restrictedCIDRs := []string{clusterNetwork, serviceNetwork}
+	var restrictedCIDRs []string
+	restrictedCIDRs = append(restrictedCIDRs, clusterNetwork...)
+	restrictedCIDRs = append(restrictedCIDRs, serviceNetwork...)
 	unstructured.SetNestedStringSlice(cfg.Object, restrictedCIDRs, "restrictedCIDRs")
 	return cfg
 }

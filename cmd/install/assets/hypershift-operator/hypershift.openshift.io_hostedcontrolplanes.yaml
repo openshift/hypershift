@@ -2032,8 +2032,8 @@ spec:
                         type: integer
                     type: object
                   clusterNetwork:
-                    description: ClusterNetwork is the list of IP address pools for
-                      pods.
+                    description: 'ClusterNetwork is the list of IP address pools for
+                      pods. TODO: make this required in the next version of the API'
                     items:
                       description: ClusterNetworkEntry is a single IP address block
                         for pod IP blocks. IP blocks are allocated with size 2^HostSubnetLength.
@@ -2057,8 +2057,9 @@ spec:
                       API release. Use MachineNetwork instead
                     type: string
                   machineNetwork:
-                    description: MachineNetwork is the list of IP address pools for
-                      machines.
+                    description: 'MachineNetwork is the list of IP address pools for
+                      machines. TODO: make this required in the next version of the
+                      API'
                     items:
                       description: MachineNetworkEntry is a single IP address block
                         for node IP blocks.
@@ -2091,7 +2092,8 @@ spec:
                     type: string
                   serviceNetwork:
                     description: 'ServiceNetwork is the list of IP address pools for
-                      services. NOTE: currently only one entry is supported.'
+                      services. NOTE: currently only one entry is supported. TODO:
+                      make this required in the next version of the API'
                     items:
                       description: ServiceNetworkEntry is a single IP address block
                         for the service network.
@@ -2105,9 +2107,7 @@ spec:
                       type: object
                     type: array
                 required:
-                - machineCIDR
                 - networkType
-                - podCIDR
                 type: object
               olmCatalogPlacement:
                 default: management
@@ -3026,14 +3026,10 @@ spec:
             - etcd
             - infraID
             - issuerURL
-            - machineCIDR
-            - networkType
             - networking
             - platform
-            - podCIDR
             - pullSecret
             - releaseImage
-            - serviceCIDR
             - services
             - sshKey
             type: object

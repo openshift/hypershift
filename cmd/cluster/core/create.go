@@ -54,7 +54,7 @@ type CreateOptions struct {
 	Render                           bool
 	SSHKeyFile                       string
 	ServiceCIDR                      string
-	PodCIDR                          string
+	ClusterCIDR                      string
 	ExternalDNSDomain                string
 	NonePlatform                     NonePlatformCreateOptions
 	KubevirtPlatform                 KubevirtPlatformCreateOptions
@@ -177,7 +177,7 @@ func createCommonFixture(opts *CreateOptions) (*apifixtures.ExampleOptions, erro
 		SSHPublicKey:                     sshKey,
 		EtcdStorageClass:                 opts.EtcdStorageClass,
 		ServiceCIDR:                      opts.ServiceCIDR,
-		PodCIDR:                          opts.PodCIDR,
+		ClusterCIDR:                      opts.ClusterCIDR,
 	}, nil
 }
 

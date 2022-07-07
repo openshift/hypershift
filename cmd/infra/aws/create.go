@@ -40,7 +40,7 @@ type CreateInfraOutput struct {
 	Region          string                   `json:"region"`
 	Zone            string                   `json:"zone"`
 	InfraID         string                   `json:"infraID"`
-	ComputeCIDR     string                   `json:"computeCIDR"`
+	MachineCIDR     string                   `json:"machineCIDR"`
 	VPCID           string                   `json:"vpcID"`
 	Zones           []*CreateInfraOutputZone `json:"zones"`
 	SecurityGroupID string                   `json:"securityGroupID"`
@@ -135,7 +135,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	}
 	result := &CreateInfraOutput{
 		InfraID:     o.InfraID,
-		ComputeCIDR: DefaultCIDRBlock,
+		MachineCIDR: DefaultCIDRBlock,
 		Region:      o.Region,
 		Name:        o.Name,
 		BaseDomain:  o.BaseDomain,

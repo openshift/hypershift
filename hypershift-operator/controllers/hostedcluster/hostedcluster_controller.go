@@ -42,6 +42,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	"github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
@@ -283,6 +284,27 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		log.Info("Deleted hostedcluster", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
+	}
+
+	// Part zero: Handle deprecated fields.
+	// This is done before anything else to prevent other update calls from failing if e.g. they are missing a new required field.
+	// TODO (alberto): drop this as we cut beta and only support >= GA clusters.
+	originalSpec := hcluster.Spec.DeepCopy()
+
+	// Reconcile deprecated global configuration.
+	if err := r.reconcileDeprecatedGlobalConfig(ctx, hcluster); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile deprecated network settings
+	if err := r.reconcileDeprecatedNetworkSettings(hcluster); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Update fields if required.
+	if !equality.Semantic.DeepEqual(&hcluster.Spec, originalSpec) {
+		log.Info("Updating deprecated fields for hosted cluster")
+		return ctrl.Result{}, r.Client.Update(ctx, hcluster)
 	}
 
 	// Part one: update status
@@ -1186,15 +1208,10 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.FIPS = hcluster.Spec.FIPS
 	hcp.Spec.IssuerURL = hcluster.Spec.IssuerURL
 	hcp.Spec.ServiceAccountSigningKey = hcluster.Spec.ServiceAccountSigningKey
-	hcp.Spec.ServiceCIDR = hcluster.Spec.Networking.ServiceCIDR
-	hcp.Spec.PodCIDR = hcluster.Spec.Networking.PodCIDR
-	hcp.Spec.MachineCIDR = hcluster.Spec.Networking.MachineCIDR
-	hcp.Spec.NetworkType = hcluster.Spec.Networking.NetworkType
-	if hcluster.Spec.Networking.APIServer != nil {
-		hcp.Spec.APIAdvertiseAddress = hcluster.Spec.Networking.APIServer.AdvertiseAddress
-		hcp.Spec.APIPort = hcluster.Spec.Networking.APIServer.Port
-		hcp.Spec.APIAllowedCIDRBlocks = hcluster.Spec.Networking.APIServer.AllowedCIDRBlocks
-	}
+
+	hcp.Spec.Networking = hcluster.Spec.Networking
+	// Populate deprecated fields for compatibility with older control plane operators
+	populateDeprecatedNetworkingFields(hcp, hcluster)
 
 	hcp.Spec.ClusterID = hcluster.Spec.ClusterID
 	hcp.Spec.InfraID = hcluster.Spec.InfraID
@@ -4502,7 +4519,64 @@ func (r *HostedClusterReconciler) reconcileDeprecatedGlobalConfig(ctx context.Co
 	return nil
 }
 
+func (r *HostedClusterReconciler) reconcileDeprecatedNetworkSettings(hc *hyperv1.HostedCluster) error {
+	if hc.Spec.Networking.MachineCIDR != "" {
+		cidr, err := ipnet.ParseCIDR(hc.Spec.Networking.MachineCIDR)
+		if err != nil {
+			return fmt.Errorf("failed to parse machine CIDR: %w", err)
+		}
+		hc.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{
+			{
+				CIDR: *cidr,
+			},
+		}
+		hc.Spec.Networking.MachineCIDR = ""
+	}
+	if hc.Spec.Networking.PodCIDR != "" {
+		cidr, err := ipnet.ParseCIDR(hc.Spec.Networking.PodCIDR)
+		if err != nil {
+			return fmt.Errorf("failed to parse pod CIDR: %w", err)
+		}
+		hc.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{
+			{
+				CIDR: *cidr,
+			},
+		}
+		hc.Spec.Networking.PodCIDR = ""
+	}
+	if hc.Spec.Networking.ServiceCIDR != "" {
+		cidr, err := ipnet.ParseCIDR(hc.Spec.Networking.ServiceCIDR)
+		if err != nil {
+			return fmt.Errorf("failed to parse service CIDR: %w", err)
+		}
+		hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{
+			{
+				CIDR: *cidr,
+			},
+		}
+		hc.Spec.Networking.ServiceCIDR = ""
+	}
+	return nil
+}
+
+func populateDeprecatedNetworkingFields(hcp *hyperv1.HostedControlPlane, hc *hyperv1.HostedCluster) {
+	hcp.Spec.ServiceCIDR = util.FirstServiceCIDR(hc.Spec.Networking.ServiceNetwork)
+	hcp.Spec.PodCIDR = util.FirstClusterCIDR(hc.Spec.Networking.ClusterNetwork)
+	hcp.Spec.MachineCIDR = util.FirstMachineCIDR(hc.Spec.Networking.MachineNetwork)
+	hcp.Spec.NetworkType = hc.Spec.Networking.NetworkType
+	if hc.Spec.Networking.APIServer != nil {
+		hcp.Spec.APIAdvertiseAddress = hc.Spec.Networking.APIServer.AdvertiseAddress
+		hcp.Spec.APIPort = hc.Spec.Networking.APIServer.Port
+		hcp.Spec.APIAllowedCIDRBlocks = hc.Spec.Networking.APIServer.AllowedCIDRBlocks
+	} else {
+		hcp.Spec.APIAdvertiseAddress = nil
+		hcp.Spec.APIPort = nil
+		hcp.Spec.APIAllowedCIDRBlocks = nil
+	}
+}
+
 func configurationFieldsToRawExtensions(config *hyperv1.ClusterConfiguration) []runtime.RawExtension {
+
 	var result []runtime.RawExtension
 	if config == nil {
 		return result

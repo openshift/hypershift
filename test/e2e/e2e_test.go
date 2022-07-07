@@ -225,7 +225,7 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 			Memory:                    "4Gi",
 		},
 		ServiceCIDR: "172.31.0.0/16",
-		PodCIDR:     "10.132.0.0/14",
+		ClusterCIDR: "10.132.0.0/14",
 	}
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {

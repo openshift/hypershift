@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
 
+	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
@@ -58,9 +59,9 @@ type ExampleOptions struct {
 	SSHPrivateKey                    []byte
 	NodePoolReplicas                 int32
 	InfraID                          string
-	ComputeCIDR                      string
+	MachineCIDR                      string
 	ServiceCIDR                      string
-	PodCIDR                          string
+	ClusterCIDR                      string
 	BaseDomain                       string
 	PublicZoneID                     string
 	PrivateZoneID                    string
@@ -435,9 +436,6 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			},
 			SecretEncryption: secretEncryption,
 			Networking: hyperv1.ClusterNetworking{
-				ServiceCIDR: o.ServiceCIDR,
-				PodCIDR:     o.PodCIDR,
-				MachineCIDR: o.ComputeCIDR,
 				NetworkType: o.NetworkType,
 			},
 			Services:   services,
@@ -455,6 +453,16 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			InfrastructureAvailabilityPolicy: o.InfrastructureAvailabilityPolicy,
 			Platform:                         platformSpec,
 		},
+	}
+
+	if o.ClusterCIDR != "" {
+		cluster.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR(o.ClusterCIDR)}}
+	}
+	if o.ServiceCIDR != "" {
+		cluster.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR(o.ServiceCIDR)}}
+	}
+	if o.MachineCIDR != "" {
+		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(o.MachineCIDR)}}
 	}
 
 	var userCABundleCM *corev1.ConfigMap
