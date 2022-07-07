@@ -166,7 +166,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		},
 	}
 
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, hcp.Spec.APIPort), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, util.APIPort(hcp)), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	deploymentConfig := config.DeploymentConfig{
 		Replicas: 1,

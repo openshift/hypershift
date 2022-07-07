@@ -139,8 +139,12 @@ func TestReconcileAPIServerService(t *testing.T) {
 					Name:      "test",
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
-					APIPort:              &apiPort,
-					APIAllowedCIDRBlocks: allowCIDR,
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							Port:              &apiPort,
+							AllowedCIDRBlocks: allowCIDR,
+						},
+					},
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{

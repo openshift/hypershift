@@ -447,6 +447,7 @@ type ClusterNetworking struct {
 	// This field will be removed in the next API release.
 	// Use ServiceNetwork instead
 	// +immutable
+	// +optional
 	ServiceCIDR string `json:"serviceCIDR,omitempty"`
 
 	// Deprecated
@@ -454,28 +455,36 @@ type ClusterNetworking struct {
 	// Use ClusterNetwork instead
 	//
 	// +immutable
-	PodCIDR string `json:"podCIDR"`
+	// +optional
+	PodCIDR string `json:"podCIDR,omitempty"`
 
 	// Deprecated
 	// This field will be removed in the next API release.
 	// Use MachineNetwork instead
 	// +immutable
-	MachineCIDR string `json:"machineCIDR"`
+	// +optional
+	MachineCIDR string `json:"machineCIDR,omitempty"`
 
 	// MachineNetwork is the list of IP address pools for machines.
+	// TODO: make this required in the next version of the API
 	//
 	// +immutable
+	// +optional
 	MachineNetwork []MachineNetworkEntry `json:"machineNetwork,omitempty"`
 
 	// ClusterNetwork is the list of IP address pools for pods.
+	// TODO: make this required in the next version of the API
 	//
 	// +immutable
+	// +optional
 	ClusterNetwork []ClusterNetworkEntry `json:"clusterNetwork,omitempty"`
 
 	// ServiceNetwork is the list of IP address pools for services.
 	// NOTE: currently only one entry is supported.
+	// TODO: make this required in the next version of the API
 	//
 	// +immutable
+	// +optional
 	ServiceNetwork []ServiceNetworkEntry `json:"serviceNetwork,omitempty"`
 
 	// NetworkType specifies the SDN provider used for cluster networking.

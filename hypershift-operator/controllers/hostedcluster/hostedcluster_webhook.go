@@ -81,6 +81,13 @@ func filterMutableHostedClusterSpecFields(spec *hyperv1.HostedClusterSpec) {
 		spec.Platform.AWS.ControlPlaneOperatorCreds = corev1.LocalObjectReference{}
 		spec.Platform.AWS.KubeCloudControllerCreds = corev1.LocalObjectReference{}
 	}
+
+	// This is to enable reconcileDeprecatedNetworkSettings
+	// reset everything except network type and apiserver settings
+	spec.Networking = hyperv1.ClusterNetworking{
+		NetworkType: spec.Networking.NetworkType,
+		APIServer:   spec.Networking.APIServer,
+	}
 }
 
 // validateStructDeepEqual walks through a struct and compares each entry.  If it comes across a substruct it

@@ -152,7 +152,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	exampleOptions.BaseDomain = opts.BaseDomain
-	exampleOptions.ComputeCIDR = defaultCIDRBlock
+	exampleOptions.MachineCIDR = defaultCIDRBlock
 	exampleOptions.PrivateZoneID = infra.CisDomainID
 	exampleOptions.PublicZoneID = infra.CisDomainID
 	exampleOptions.InfraID = infraID
