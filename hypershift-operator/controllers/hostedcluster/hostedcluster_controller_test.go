@@ -2048,8 +2048,8 @@ func TestEnsureHCPAWSRolesBackwardCompatibility(t *testing.T) {
 				Name:      "ebs-cloud-credentials",
 			},
 			{
-				ARN:       imageRegistryARN,
-				Namespace: "cloud-network-config-controller",
+				ARN:       networkARN,
+				Namespace: "openshift-cloud-network-config-controller",
 				Name:      "cloud-credentials",
 			},
 		},

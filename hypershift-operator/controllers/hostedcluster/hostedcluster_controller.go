@@ -1405,8 +1405,8 @@ func ensureHCPAWSRolesBackwardCompatibility(hc *hyperv1.HostedCluster, hcp *hype
 			Name:      "ebs-cloud-credentials",
 		},
 		{
-			ARN:       hc.Spec.Platform.AWS.RolesRef.ImageRegistryARN,
-			Namespace: "cloud-network-config-controller",
+			ARN:       hc.Spec.Platform.AWS.RolesRef.NetworkARN,
+			Namespace: "openshift-cloud-network-config-controller",
 			Name:      "cloud-credentials",
 		},
 	}
