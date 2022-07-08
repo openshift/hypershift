@@ -90,6 +90,21 @@ var cpObjects = []client.Object{
 	fakePackageServerService(),
 }
 
+// TestReconcileErrorHandling verifies that the reconcile loop proceeds when
+// errors occur.  The test uses a fake  client with a specific list of initial
+// objects in order to establish a baseline number of expected client create
+// calls.  Then, the test runs the reconcile loop another 100 times starting
+// with the same list of initial objects each time but with the test client
+// configured to inject random errors in response to client get calls; to pass
+// the test, the reconcile loop must make a number of client create calls equal
+// to the baseline plus the number of injected errors, the assumption being that
+// each client get corresponds to a client create and that a failed get will
+// prevent the corresponding client create call from being made.
+//
+// To prevent false positives in this test, any object for which the reconcile
+// loop makes a client get call without a corresponding client create call must
+// be included in the list of initial objects.  Error injection is suppressed
+// for the initial objects.
 func TestReconcileErrorHandling(t *testing.T) {
 
 	// get initial number of creates with no get errors
@@ -98,9 +113,11 @@ func TestReconcileErrorHandling(t *testing.T) {
 		fakeClient := &testClient{
 			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).Build(),
 		}
+		uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 
 		r := &reconciler{
 			client:                 fakeClient,
+			uncachedClient:         uncachedClient,
 			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",

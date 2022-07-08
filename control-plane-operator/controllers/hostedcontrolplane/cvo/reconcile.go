@@ -66,6 +66,7 @@ var (
 		"0000_50_operator-marketplace_09_operator.yaml",
 		"0000_50_operator-marketplace_10_clusteroperator.yaml",
 		"0000_50_operator-marketplace_11_service_monitor.yaml",
+		"0000_70_dns-operator_02-deployment-ibm-cloud-managed.yaml",
 		"0000_50_cluster-ingress-operator_02-deployment-ibm-cloud-managed.yaml",
 		"0000_70_cluster-network-operator_02_rbac.yaml",
 		"0000_70_cluster-network-operator_03_deployment-ibm-cloud-managed.yaml",

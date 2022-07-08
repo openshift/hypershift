@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/dnsoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
@@ -761,6 +762,11 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	r.Log.Info("Reconciling ClusterNetworkOperator")
 	if err := r.reconcileClusterNetworkOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile cluster network operator: %w", err)
+	}
+
+	r.Log.Info("Reconciling DNSOperator")
+	if err := r.reconcileDNSOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile DNS operator: %w", err)
 	}
 
 	r.Log.Info("Reconciling IngressOperator")
@@ -2083,6 +2089,34 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster network operator deployment: %w", err)
 	}
+	return nil
+}
+
+// reconcileDNSOperator ensures that the management cluster has the expected DNS
+// operator deployment and kubeconfig secret for the hosted cluster.
+func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
+	p := dnsoperator.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+
+	rootCASecret := manifests.RootCASecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
+		return err
+	}
+
+	kubeconfig := manifests.DNSOperatorKubeconfig(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kubeconfig, func() error {
+		return pki.ReconcileServiceAccountKubeconfig(kubeconfig, rootCASecret, hcp, "openshift-dns-operator", "dns-operator")
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile dnsoperator kubeconfig: %w", err)
+	}
+
+	deployment := manifests.DNSOperatorDeployment(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, deployment, func() error {
+		dnsoperator.ReconcileDeployment(deployment, p, util.APIPort(hcp))
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile dnsoperator deployment: %w", err)
+	}
+
 	return nil
 }
 
