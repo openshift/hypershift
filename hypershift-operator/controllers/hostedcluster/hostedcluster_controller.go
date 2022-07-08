@@ -4432,7 +4432,7 @@ func (r *HostedClusterReconciler) reconcileDeprecatedAWSRoles(ctx context.Contex
 		case "openshift-cluster-csi-drivers":
 			hc.Spec.Platform.AWS.RolesRef.StorageARN = v.ARN
 		default:
-			log.Info("Invalid namespace for deprecated role: %q", v.Namespace)
+			log.Info("Invalid namespace for deprecated role", "namespace", v.Namespace)
 		}
 	}
 	hc.Spec.Platform.AWS.Roles = nil
