@@ -1832,7 +1832,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 
 	deployment := manifests.OAuthServerDeployment(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, deployment, func() error {
-		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, oauthConfig, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, hcp.Spec.APIPort, p.NamedCertificates())
+		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, oauthConfig, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, hcp.Spec.APIPort, p.NamedCertificates(), p.Socks5ProxyImage)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
