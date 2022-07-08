@@ -230,6 +230,15 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
 	}
 
+	// If something else rotated the token (e.g. running in HA), we fall back to set the cache value from the old one.
+	oldToken, ok := tokenSecret.Data[TokenSecretOldTokenKey]
+	if ok {
+		if value, ok := r.PayloadStore.Get(string(oldToken)); ok {
+			r.PayloadStore.Set(token, value)
+			return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
+		}
+	}
+
 	releaseImage := string(tokenSecret.Data[TokenSecretReleaseKey])
 	compressedConfig := tokenSecret.Data[TokenSecretConfigKey]
 	config, err := Decompress(compressedConfig)
@@ -255,7 +264,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	log.Info("IgnitionProvider generated payload")
 	r.PayloadStore.Set(token, CacheValue{Payload: payload, SecretName: tokenSecret.Name})
-	oldToken, ok := tokenSecret.Data[TokenSecretOldTokenKey]
+	oldToken, ok = tokenSecret.Data[TokenSecretOldTokenKey]
 	if ok {
 		// If we got here and there's an old token e.g ignition server pod was restarted, then we set it as well
 		// So Machines that were given that token right before the restart can succeed.
@@ -322,9 +331,9 @@ func (r *TokenSecretReconciler) rotateToken(ctx context.Context, tokenSecret *co
 		patch.Annotations = make(map[string]string)
 	}
 
-	oldtoken, ok := tokenSecret.Data[TokenSecretOldTokenKey]
+	oldToken, ok := tokenSecret.Data[TokenSecretOldTokenKey]
 	if ok {
-		r.PayloadStore.Delete(string(oldtoken))
+		r.PayloadStore.Delete(string(oldToken))
 
 	}
 
@@ -341,7 +350,7 @@ func (r *TokenSecretReconciler) rotateToken(ctx context.Context, tokenSecret *co
 		// Otherwise, the next reconciliation the token would require a new payload generation because
 		// it wouldn't be in the cache anymore.
 		r.PayloadStore.Delete(newToken)
-		r.PayloadStore.Set(string(oldtoken), value)
+		r.PayloadStore.Set(string(oldToken), value)
 		return err
 	}
 
