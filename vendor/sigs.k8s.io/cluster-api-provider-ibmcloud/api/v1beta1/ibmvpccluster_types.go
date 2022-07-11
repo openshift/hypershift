@@ -18,7 +18,7 @@ package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -29,7 +29,7 @@ const (
 	ClusterFinalizer = "ibmvpccluster.infrastructure.cluster.x-k8s.io"
 )
 
-// IBMVPCClusterSpec defines the desired state of IBMVPCCluster
+// IBMVPCClusterSpec defines the desired state of IBMVPCCluster.
 type IBMVPCClusterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
@@ -37,21 +37,21 @@ type IBMVPCClusterSpec struct {
 	// The IBM Cloud Region the cluster lives in.
 	Region string `json:"region"`
 
-	// The VPC resources should be created under the resource group
+	// The VPC resources should be created under the resource group.
 	ResourceGroup string `json:"resourceGroup"`
 
-	// The Name of VPC
+	// The Name of VPC.
 	VPC string `json:"vpc,omitempty"`
 
-	// The Name of availability zone
+	// The Name of availability zone.
 	Zone string `json:"zone,omitempty"`
 
 	// ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
 	// +optional
-	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint"`
+	ControlPlaneEndpoint capiv1beta1.APIEndpoint `json:"controlPlaneEndpoint"`
 }
 
-// IBMVPCClusterStatus defines the observed state of IBMVPCCluster
+// IBMVPCClusterStatus defines the observed state of IBMVPCCluster.
 type IBMVPCClusterStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
@@ -62,7 +62,7 @@ type IBMVPCClusterStatus struct {
 	VPCEndpoint VPCEndpoint `json:"vpcEndpoint,omitempty"`
 }
 
-// VPC holds the VPC information
+// VPC holds the VPC information.
 type VPC struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -75,7 +75,7 @@ type VPC struct {
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".metadata.labels.cluster\\.x-k8s\\.io/cluster-name",description="Cluster to which this IBMVPCCluster belongs"
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.ready",description="Cluster infrastructure is ready for IBM VPC instances"
 
-// IBMVPCCluster is the Schema for the ibmvpcclusters API
+// IBMVPCCluster is the Schema for the ibmvpcclusters API.
 type IBMVPCCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -86,7 +86,7 @@ type IBMVPCCluster struct {
 
 //+kubebuilder:object:root=true
 
-// IBMVPCClusterList contains a list of IBMVPCCluster
+// IBMVPCClusterList contains a list of IBMVPCCluster.
 type IBMVPCClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

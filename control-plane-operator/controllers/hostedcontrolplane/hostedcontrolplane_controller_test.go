@@ -6,15 +6,19 @@ import (
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/upsert"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -224,6 +228,278 @@ func TestReconcileAPIServerService(t *testing.T) {
 				g.Expect(actualService.Spec).To(Equal(expectedService.Spec))
 				g.Expect(actualService.Annotations).To(Equal(expectedService.Annotations))
 			}
+		})
+	}
+}
+
+// TestClusterAutoscalerArgs checks to make sure that fields specified in a ClusterAutoscaling spec
+// become arguments to the autoscaler.
+func TestClusterAutoscalerArgs(t *testing.T) {
+	tests := map[string]struct {
+		AutoscalerOptions   hyperv1.ClusterAutoscaling
+		ExpectedArgs        []string
+		ExpectedMissingArgs []string
+	}{
+		"contains only default arguments": {
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{},
+			ExpectedArgs: []string{
+				"--cloud-provider=clusterapi",
+				"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
+				"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
+				"--clusterapi-cloud-config-authoritative",
+				"--skip-nodes-with-local-storage=false",
+				"--alsologtostderr",
+				"--v=4",
+			},
+			ExpectedMissingArgs: []string{
+				"--max-nodes-total",
+				"--max-graceful-termination-sec",
+				"--max-node-provision-time",
+				"--expendable-pods-priority-cutoff",
+			},
+		},
+		"contains all optional parameters": {
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				MaxNodesTotal:        pointer.Int32Ptr(100),
+				MaxPodGracePeriod:    pointer.Int32Ptr(300),
+				MaxNodeProvisionTime: "20m",
+				PodPriorityThreshold: pointer.Int32Ptr(-5),
+			},
+			ExpectedArgs: []string{
+				"--cloud-provider=clusterapi",
+				"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
+				"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
+				"--clusterapi-cloud-config-authoritative",
+				"--skip-nodes-with-local-storage=false",
+				"--alsologtostderr",
+				"--v=4",
+				"--max-nodes-total=100",
+				"--max-graceful-termination-sec=300",
+				"--max-node-provision-time=20m",
+				"--expendable-pods-priority-cutoff=-5",
+			},
+			ExpectedMissingArgs: []string{},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			deployment := manifests.AutoscalerDeployment("test-ns")
+			sa := manifests.AutoscalerServiceAccount("test-ns")
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test-ns",
+					Name:      "test-secret",
+				},
+			}
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Name = "name"
+			hcp.Namespace = "namespace"
+			err := autoscaler.ReconcileAutoscalerDeployment(deployment, hcp, sa, secret, test.AutoscalerOptions, "clusterAutoscalerImage", "availabilityProberImage", false)
+			if err != nil {
+				t.Error(err)
+			}
+
+			observedArgs := sets.NewString(deployment.Spec.Template.Spec.Containers[0].Args...)
+			for _, arg := range test.ExpectedArgs {
+				if !observedArgs.Has(arg) {
+					t.Errorf("Expected to find \"%s\" in observed arguments: %v", arg, observedArgs)
+				}
+			}
+
+			for _, arg := range test.ExpectedMissingArgs {
+				if observedArgs.Has(arg) {
+					t.Errorf("Did not expect to find \"%s\" in observed arguments", arg)
+				}
+			}
+		})
+	}
+}
+
+func TestEtcdRestoredCondition(t *testing.T) {
+	testsCases := []struct {
+		name              string
+		sts               *appsv1.StatefulSet
+		pods              []corev1.Pod
+		expectedCondition metav1.Condition
+	}{
+		{
+			name: "single replica, pod ready - condition true",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: "thens",
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: pointer.Int32Ptr(1),
+				},
+				Status: appsv1.StatefulSetStatus{
+					Replicas:      1,
+					ReadyReplicas: 1,
+				},
+			},
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-0",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: true,
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdSnapshotRestored),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.AsExpectedReason,
+			},
+		},
+		{
+			name: "Pod not ready - condition false",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: "thens",
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: pointer.Int32Ptr(1),
+				},
+				Status: appsv1.StatefulSetStatus{
+					Replicas:      1,
+					ReadyReplicas: 1,
+				},
+			},
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-0",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: false,
+								LastTerminationState: corev1.ContainerState{
+									Terminated: &corev1.ContainerStateTerminated{
+										ExitCode: 1,
+										Reason:   "somethingfailed",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdSnapshotRestored),
+				Status: metav1.ConditionFalse,
+				Reason: "somethingfailed",
+			},
+		},
+		{
+			name: "multiple replica, pods ready - condition true",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: "thens",
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: pointer.Int32Ptr(3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					Replicas:      3,
+					ReadyReplicas: 3,
+				},
+			},
+			pods: []corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-0",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: true,
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-1",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: true,
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "etcd-2",
+						Namespace: "thens",
+						Labels: map[string]string{
+							"app": "etcd",
+						},
+					},
+					Status: corev1.PodStatus{
+						InitContainerStatuses: []corev1.ContainerStatus{
+							{
+								Name:  "etcd-init",
+								Ready: true,
+							},
+						},
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdSnapshotRestored),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.AsExpectedReason,
+			},
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			podList := &corev1.PodList{
+				Items: tc.pods,
+			}
+			fakeClient := fake.NewClientBuilder().WithLists(podList).Build()
+			r := &HostedControlPlaneReconciler{
+				Client:                 fakeClient,
+				Log:                    ctrl.LoggerFrom(context.TODO()),
+				CreateOrUpdateProvider: upsert.New(false),
+			}
+
+			conditionPtr := r.etcdRestoredCondition(context.Background(), tc.sts)
+			g.Expect(conditionPtr).ToNot(BeNil())
+			g.Expect(*conditionPtr).To(Equal(tc.expectedCondition))
 		})
 	}
 }

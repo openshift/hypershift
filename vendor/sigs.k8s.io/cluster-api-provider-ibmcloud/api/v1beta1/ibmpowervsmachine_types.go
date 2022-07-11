@@ -17,9 +17,9 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/errors"
 )
 
@@ -31,16 +31,16 @@ const (
 	IBMPowerVSMachineFinalizer = "ibmpowervsmachine.infrastructure.cluster.x-k8s.io"
 )
 
-// IBMPowerVSMachineSpec defines the desired state of IBMPowerVSMachine
+// IBMPowerVSMachineSpec defines the desired state of IBMPowerVSMachine.
 type IBMPowerVSMachineSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// ServiceInstanceID is the id of the power cloud instance where the vsi instance will get deployed
+	// ServiceInstanceID is the id of the power cloud instance where the vsi instance will get deployed.
 	// +kubebuilder:validation:MinLength=1
 	ServiceInstanceID string `json:"serviceInstanceID"`
 
-	// SSHKey is the name of the SSH key pair provided to the vsi for authenticating users
+	// SSHKey is the name of the SSH key pair provided to the vsi for authenticating users.
 	SSHKey string `json:"sshKey,omitempty"`
 
 	// Image is the reference to the Image from which to create the machine instance.
@@ -50,9 +50,9 @@ type IBMPowerVSMachineSpec struct {
 	// ImageRef is an optional reference to a provider-specific resource that holds
 	// the details for provisioning the Image for a Cluster.
 	// +optional
-	ImageRef *v1.LocalObjectReference `json:"imageRef,omitempty"`
+	ImageRef *corev1.LocalObjectReference `json:"imageRef,omitempty"`
 
-	// SysType is the System type used to host the vsi
+	// SysType is the System type used to host the vsi.
 	// +optional
 	SysType string `json:"sysType,omitempty"`
 
@@ -60,8 +60,9 @@ type IBMPowerVSMachineSpec struct {
 	// +optional
 	ProcType string `json:"procType,omitempty"`
 
-	// Processors is Number of processors allocated
+	// Processors is Number of processors allocated.
 	// +optional
+	// +kubebuilder:validation:Pattern=^\d+(\.)?(\d)?(\d)?$
 	Processors string `json:"processors,omitempty"`
 
 	// Memory is Amount of memory allocated (in GB)
@@ -91,7 +92,7 @@ type IBMPowerVSResourceReference struct {
 	Name *string `json:"name,omitempty"`
 }
 
-// IBMPowerVSMachineStatus defines the observed state of IBMPowerVSMachine
+// IBMPowerVSMachineStatus defines the observed state of IBMPowerVSMachine.
 type IBMPowerVSMachineStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
@@ -103,17 +104,17 @@ type IBMPowerVSMachineStatus struct {
 	Ready bool `json:"ready"`
 
 	// Addresses contains the vsi associated addresses.
-	Addresses []v1.NodeAddress `json:"addresses,omitempty"`
+	Addresses []corev1.NodeAddress `json:"addresses,omitempty"`
 
-	// Health is the health of the vsi
+	// Health is the health of the vsi.
 	// +optional
 	Health string `json:"health,omitempty"`
 
-	// InstanceState is the status of the vsi
+	// InstanceState is the status of the vsi.
 	// +optional
 	InstanceState PowerVSInstanceState `json:"instanceState,omitempty"`
 
-	// Fault will report if any fault messages for the vsi
+	// Fault will report if any fault messages for the vsi.
 	// +optional
 	Fault string `json:"fault,omitempty"`
 
@@ -157,12 +158,12 @@ type IBMPowerVSMachineStatus struct {
 
 	// Conditions defines current service state of the IBMPowerVSMachine.
 	// +optional
-	Conditions clusterv1.Conditions `json:"conditions,omitempty"`
+	Conditions capiv1beta1.Conditions `json:"conditions,omitempty"`
 
-	// Region specifies the Power VS Service instance region
+	// Region specifies the Power VS Service instance region.
 	Region *string `json:"region,omitempty"`
 
-	// Zone specifies the Power VS Service instance zone
+	// Zone specifies the Power VS Service instance zone.
 	Zone *string `json:"zone,omitempty"`
 }
 
@@ -174,7 +175,7 @@ type IBMPowerVSMachineStatus struct {
 // +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.instanceState",description="PowerVS instance state"
 // +kubebuilder:printcolumn:name="Health",type="string",JSONPath=".status.health",description="PowerVS instance health"
 
-// IBMPowerVSMachine is the Schema for the ibmpowervsmachines API
+// IBMPowerVSMachine is the Schema for the ibmpowervsmachines API.
 type IBMPowerVSMachine struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -184,18 +185,18 @@ type IBMPowerVSMachine struct {
 }
 
 // GetConditions returns the observations of the operational state of the IBMPowerVSMachine resource.
-func (r *IBMPowerVSMachine) GetConditions() clusterv1.Conditions {
+func (r *IBMPowerVSMachine) GetConditions() capiv1beta1.Conditions {
 	return r.Status.Conditions
 }
 
 // SetConditions sets the underlying service state of the IBMPowerVSMachine to the predescribed clusterv1.Conditions.
-func (r *IBMPowerVSMachine) SetConditions(conditions clusterv1.Conditions) {
+func (r *IBMPowerVSMachine) SetConditions(conditions capiv1beta1.Conditions) {
 	r.Status.Conditions = conditions
 }
 
 //+kubebuilder:object:root=true
 
-// IBMPowerVSMachineList contains a list of IBMPowerVSMachine
+// IBMPowerVSMachineList contains a list of IBMPowerVSMachine.
 type IBMPowerVSMachineList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

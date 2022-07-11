@@ -800,25 +800,35 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 	var errs []error
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		for _, role := range hcp.Spec.Platform.AWS.Roles {
-			secret := manifests.AWSCloudCredsSecret(role)
+		syncSecret := func(secret *corev1.Secret, arn string) error {
 			ns := &corev1.Namespace{}
 			err := r.client.Get(ctx, client.ObjectKey{Name: secret.Namespace}, ns)
 			if err != nil {
 				if apierrors.IsNotFound(err) {
 					log.Info("WARNING: cannot sync cloud credential secret because namespace does not exist", "secret", client.ObjectKeyFromObject(secret))
-				} else {
-					errs = append(errs, err)
+					return nil
 				}
-				continue
+				return fmt.Errorf("failed to get secret namespace %s: %w", secret.Namespace, err)
 			}
 			if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
-				credentials := fmt.Sprintf(awsCredentialsTemplate, role.ARN)
+				credentials := fmt.Sprintf(awsCredentialsTemplate, arn)
 				secret.Data = map[string][]byte{"credentials": []byte(credentials)}
 				secret.Type = corev1.SecretTypeOpaque
 				return nil
 			}); err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile aws cloud credential secret %s/%s: %w", secret.Namespace, secret.Name, err))
+				return fmt.Errorf("failed to reconcile aws cloud credential secret %s/%s: %w", secret.Namespace, secret.Name, err)
+			}
+			return nil
+		}
+		for arn, secret := range map[string]*corev1.Secret{
+			hcp.Spec.Platform.AWS.RolesRef.IngressARN:       manifests.AWSIngressCloudCredsSecret(),
+			hcp.Spec.Platform.AWS.RolesRef.StorageARN:       manifests.AWSStorageCloudCredsSecret(),
+			hcp.Spec.Platform.AWS.RolesRef.ImageRegistryARN: manifests.AWSImageRegistryCloudCredsSecret(),
+			hcp.Spec.Platform.AWS.RolesRef.NetworkARN:       manifests.AWSNetworkCloudCredsSecret(),
+		} {
+			err := syncSecret(secret, arn)
+			if err != nil {
+				errs = append(errs, err)
 			}
 		}
 	case hyperv1.AzurePlatform:

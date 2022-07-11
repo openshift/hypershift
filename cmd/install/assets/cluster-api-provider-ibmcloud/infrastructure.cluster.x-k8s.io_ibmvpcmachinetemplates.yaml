@@ -22,7 +22,7 @@ spec:
     schema:
       openAPIV3Schema:
         description: IBMVPCMachineTemplate is the Schema for the ibmvpcmachinetemplates
-          API
+          API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -37,11 +37,11 @@ spec:
           metadata:
             type: object
           spec:
-            description: IBMVPCMachineTemplateSpec defines the desired state of IBMVPCMachineTemplate
+            description: IBMVPCMachineTemplateSpec defines the desired state of IBMVPCMachineTemplate.
             properties:
               template:
                 description: IBMVPCMachineTemplateResource describes the data needed
-                  to create am IBMVPCMachine from a template
+                  to create am IBMVPCMachine from a template.
                 properties:
                   spec:
                     description: Spec is the specification of the desired behavior
@@ -54,14 +54,14 @@ spec:
                           Example: ibm-ubuntu-18-04-1-minimal-amd64-2'
                         type: string
                       name:
-                        description: Name of the instance
+                        description: Name of the instance.
                         type: string
                       primaryNetworkInterface:
                         description: PrimaryNetworkInterface is required to specify
-                          subnet
+                          subnet.
                         properties:
                           subnet:
-                            description: Subnet ID of the network interface
+                            description: Subnet ID of the network interface.
                             type: string
                         type: object
                       profile:
@@ -75,7 +75,7 @@ spec:
                         type: string
                       sshKeys:
                         description: SSHKeys is the SSH pub keys that will be used
-                          to access VM
+                          to access VM.
                         items:
                           type: string
                         type: array

@@ -81,6 +81,55 @@ func NewDumpCommand() *cobra.Command {
 	return cmd
 }
 
+func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
+	start := time.Now()
+	c, err := util.GetClient()
+	if err != nil {
+		return err
+	}
+	hcluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{
+		Namespace: opts.Namespace,
+		Name:      opts.Name,
+	}}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(hcluster), hcluster); err != nil {
+		return fmt.Errorf("failed to get hostedcluster %s/%s: %w", opts.Namespace, opts.Name, err)
+	}
+	if hcluster.Status.KubeConfig == nil {
+		log.Log.Info("Hostedcluster has no kubeconfig published, skipping guest cluster duming", "namespace", opts.Namespace, "name", opts.Name)
+		return nil
+	}
+	kubeconfigSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+		Namespace: hcluster.Namespace,
+		Name:      hcluster.Status.KubeConfig.Name,
+	}}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret); err != nil {
+		return fmt.Errorf("failed to get guest cluster kubeconfig secret: %w", err)
+	}
+	kubeconfigFile, err := ioutil.TempFile(os.TempDir(), "kubeconfig-")
+	if err != nil {
+		return fmt.Errorf("failed to create tempfile for kubeconfig: %w", err)
+	}
+	defer func() {
+		if err := kubeconfigFile.Close(); err != nil {
+			log.Log.Error(err, "Failed to close kubeconfig file")
+		}
+		if err := os.Remove(kubeconfigFile.Name()); err != nil {
+			log.Log.Error(err, "Failed to cleanup temporary kubeconfig")
+		}
+	}()
+	if _, err := kubeconfigFile.Write(kubeconfigSecret.Data["kubeconfig"]); err != nil {
+		return fmt.Errorf("failed to write kubeconfig data: %w", err)
+	}
+	target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
+	log.Log.Info("Dumping guestcluster", "target", target)
+	if err := DumpGuestCluster(ctx, kubeconfigFile.Name(), target); err != nil {
+		return fmt.Errorf("failed to dump guest cluster: %w", err)
+	}
+	log.Log.Info("Successfully dumped guest cluster", "duration", time.Since(start).String())
+
+	return nil
+}
+
 func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	ocCommand, err := exec.LookPath("oc")
 	if err != nil || len(ocCommand) == 0 {
@@ -175,46 +224,9 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	outputLogs(ctx, kubeClient, opts.ArtifactDir, podList, opts.LogCheckers...)
 
 	if opts.DumpGuestCluster {
-		start := time.Now()
-		hcluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{
-			Namespace: opts.Namespace,
-			Name:      opts.Name,
-		}}
-		if err := c.Get(ctx, client.ObjectKeyFromObject(hcluster), hcluster); err != nil {
-			return fmt.Errorf("failed to get hostedcluster %s/%s: %w", opts.Namespace, opts.Name, err)
+		if err = dumpGuestCluster(ctx, opts); err != nil {
+			log.Log.Error(err, "Failed to dump guest cluster")
 		}
-		if hcluster.Status.KubeConfig == nil {
-			log.Log.Info("Hostedcluster has no kubeconfig published, skipping guest cluster duming", "namespace", opts.Namespace, "name", opts.Name)
-			return nil
-		}
-		kubeconfigSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
-			Namespace: hcluster.Namespace,
-			Name:      hcluster.Status.KubeConfig.Name,
-		}}
-		if err := c.Get(ctx, client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret); err != nil {
-			return fmt.Errorf("failed to get guest cluster kubeconfig secret: %w", err)
-		}
-		kubeconfigFile, err := ioutil.TempFile(os.TempDir(), "kubeconfig-")
-		if err != nil {
-			return fmt.Errorf("failed to create tempfile for kubeconfig: %w", err)
-		}
-		defer func() {
-			if err := kubeconfigFile.Close(); err != nil {
-				log.Log.Error(err, "Failed to close kubeconfig file")
-			}
-			if err := os.Remove(kubeconfigFile.Name()); err != nil {
-				log.Log.Error(err, "Failed to cleanup temporary kubeconfig")
-			}
-		}()
-		if _, err := kubeconfigFile.Write(kubeconfigSecret.Data["kubeconfig"]); err != nil {
-			return fmt.Errorf("failed to write kubeconfig data: %w", err)
-		}
-		target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
-		log.Log.Info("Dumping guestcluster", "target", target)
-		if err := DumpGuestCluster(ctx, kubeconfigFile.Name(), target); err != nil {
-			return fmt.Errorf("failed to dump guest cluster: %w", err)
-		}
-		log.Log.Info("Successfully dumped guest cluster", "duration", time.Since(start).String())
 	}
 
 	files, err := ioutil.ReadDir(opts.ArtifactDir)

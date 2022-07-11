@@ -39,6 +39,7 @@ type OAuthServerParams struct {
 	LoginURLOverride        string
 	AvailabilityProberImage string `json:"availabilityProberImage"`
 	Availability            hyperv1.AvailabilityPolicy
+	Socks5ProxyImage        string
 }
 
 type OAuthConfigParams struct {
@@ -66,8 +67,9 @@ type OAuthConfigParams struct {
 // OpenID api does not support some of the customizations used in the IBMCloud IAM OIDC provider. This can be removed
 // if the public API is adjusted to allow specifying these customizations.
 type ConfigOverride struct {
-	URLs   osinv1.OpenIDURLs   `json:"urls,omitempty"`
-	Claims osinv1.OpenIDClaims `json:"claims,omitempty"`
+	URLs      osinv1.OpenIDURLs   `json:"urls,omitempty"`
+	Claims    osinv1.OpenIDClaims `json:"claims,omitempty"`
+	Challenge *bool               `json:"challenge,omitempty"`
 }
 
 func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, host string, port int32, setDefaultSecurityContext bool) *OAuthServerParams {
@@ -80,6 +82,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 		OAuthServerImage:        images["oauth-server"],
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
+		Socks5ProxyImage:        images["socks5-proxy"],
 	}
 	if hcp.Spec.Configuration != nil {
 		p.APIServer = hcp.Spec.Configuration.APIServer

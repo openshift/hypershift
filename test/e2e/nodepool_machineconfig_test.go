@@ -123,8 +123,9 @@ func TestNodepoolMachineconfigGetsRolledout(t *testing.T) {
 		if !ownedBy(hostedCluster.UID, nodepool.OwnerReferences) {
 			continue
 		}
+		np := nodepool.DeepCopy()
 		nodepool.Spec.Config = append(nodepool.Spec.Config, corev1.LocalObjectReference{Name: machineConfigConfigMap.Name})
-		if err := client.Update(ctx, &nodepool); err != nil {
+		if err := client.Patch(ctx, &nodepool, crclient.MergeFrom(np)); err != nil {
 			t.Fatalf("failed to update nodepool %s after adding machineconfig: %v", nodepool.Name, err)
 		}
 	}

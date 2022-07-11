@@ -138,6 +138,12 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	// +immutable
 	OLMCatalogPlacement OLMCatalogPlacement `json:"olmCatalogPlacement,omitempty"`
+
+	// Autoscaling specifies auto-scaling behavior that applies to all NodePools
+	// associated with the control plane.
+	//
+	// +optional
+	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
 }
 
 // AvailabilityPolicy specifies a high level availability policy for components.
@@ -167,6 +173,7 @@ type ConditionType string
 const (
 	HostedControlPlaneAvailable          ConditionType = "Available"
 	EtcdAvailable                        ConditionType = "EtcdAvailable"
+	EtcdSnapshotRestored                 ConditionType = "EtcdSnapshotRestored"
 	KubeAPIServerAvailable               ConditionType = "KubeAPIServerAvailable"
 	InfrastructureReady                  ConditionType = "InfrastructureReady"
 	ValidHostedControlPlaneConfiguration ConditionType = "ValidHostedControlPlaneConfiguration"

@@ -35,7 +35,7 @@ type PVMInstanceCreate struct {
 	// Required: true
 	Memory *float64 `json:"memory"`
 
-	// Indicates if the server is allowed to migrate between hosts
+	// (deprecated - replaced by pinPolicy) Indicates if the server is allowed to migrate between hosts
 	Migratable *bool `json:"migratable,omitempty"`
 
 	// (deprecated - replaced by networks) List of Network IDs
@@ -73,6 +73,9 @@ type PVMInstanceCreate struct {
 	// Name of the server to create
 	// Required: true
 	ServerName *string `json:"serverName"`
+
+	// The shared processor pool for server deployment
+	SharedProcessorPool string `json:"sharedProcessorPool,omitempty"`
 
 	// The pvm instance Software Licenses
 	SoftwareLicenses *SoftwareLicenses `json:"softwareLicenses,omitempty"`

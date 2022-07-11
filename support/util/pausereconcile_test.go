@@ -74,55 +74,55 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 		expectedCondition metav1.Condition
 	}{
 		{
-			name:             "if the pausedUntil field does not exist then ReconciliationPaused condition is false",
+			name:             "if the pausedUntil field does not exist then ReconciliationActive condition is true",
 			inputPausedField: nil,
 			expectedCondition: metav1.Condition{
-				Type:               string(hyperv1.ReconciliationPaused),
-				Status:             metav1.ConditionFalse,
+				Type:               string(hyperv1.ReconciliationActive),
+				Status:             metav1.ConditionTrue,
 				Reason:             reconciliationActiveConditionReason,
 				Message:            "Reconciliation active on resource",
 				ObservedGeneration: fakeInputGeneration,
 			},
 		},
 		{
-			name:             "if pausedUntil field is later than time.Now ReconciliationPaused condition is true",
+			name:             "if pausedUntil field is later than time.Now ReconciliationActive condition is false",
 			inputPausedField: fakeFutureDate,
 			expectedCondition: metav1.Condition{
-				Type:               string(hyperv1.ReconciliationPaused),
-				Status:             metav1.ConditionTrue,
+				Type:               string(hyperv1.ReconciliationActive),
+				Status:             metav1.ConditionFalse,
 				Reason:             reconciliationPausedConditionReason,
 				Message:            fmt.Sprintf("Reconciliation paused until: %s", *fakeFutureDate),
 				ObservedGeneration: fakeInputGeneration,
 			},
 		},
 		{
-			name:             "if pausedUntil field is before time.Now then ReconciliationPaused condition is false",
+			name:             "if pausedUntil field is before time.Now then ReconciliationActive condition is true",
 			inputPausedField: fakePastDate,
 			expectedCondition: metav1.Condition{
-				Type:               string(hyperv1.ReconciliationPaused),
-				Status:             metav1.ConditionFalse,
+				Type:               string(hyperv1.ReconciliationActive),
+				Status:             metav1.ConditionTrue,
 				Reason:             reconciliationActiveConditionReason,
 				Message:            "Reconciliation active on resource",
 				ObservedGeneration: fakeInputGeneration,
 			},
 		},
 		{
-			name:             "if pausedUntil field is true then ReconciliationPaused condition is true",
+			name:             "if pausedUntil field is true then ReconciliationActive condition is false",
 			inputPausedField: pointer.StringPtr("true"),
 			expectedCondition: metav1.Condition{
-				Type:               string(hyperv1.ReconciliationPaused),
-				Status:             metav1.ConditionTrue,
+				Type:               string(hyperv1.ReconciliationActive),
+				Status:             metav1.ConditionFalse,
 				Reason:             reconciliationPausedConditionReason,
 				Message:            "Reconciliation paused until field removed",
 				ObservedGeneration: fakeInputGeneration,
 			},
 		},
 		{
-			name:             "if pausedUntil field has an improper value then ReconciliationPaused condition is false with a reason indicating invalid value provided",
+			name:             "if pausedUntil field has an improper value then ReconciliationActive condition is true with a reason indicating invalid value provided",
 			inputPausedField: pointer.StringPtr("badValue"),
 			expectedCondition: metav1.Condition{
-				Type:               string(hyperv1.ReconciliationPaused),
-				Status:             metav1.ConditionFalse,
+				Type:               string(hyperv1.ReconciliationActive),
+				Status:             metav1.ConditionTrue,
 				Reason:             reconciliationInvalidPausedUntilConditionReason,
 				Message:            "Invalid value provided for PausedUntil field",
 				ObservedGeneration: fakeInputGeneration,
@@ -132,8 +132,8 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			actualReconciliationPausedCondition := GenerateReconciliationPausedCondition(tc.inputPausedField, fakeInputGeneration)
-			g.Expect(actualReconciliationPausedCondition).To(BeEquivalentTo(tc.expectedCondition))
+			actualReconciliationActiveCondition := GenerateReconciliationActiveCondition(tc.inputPausedField, fakeInputGeneration)
+			g.Expect(actualReconciliationActiveCondition).To(BeEquivalentTo(tc.expectedCondition))
 		})
 	}
 }

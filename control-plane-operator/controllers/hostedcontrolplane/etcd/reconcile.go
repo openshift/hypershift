@@ -1,6 +1,7 @@
 package etcd
 
 import (
+	_ "embed"
 	"fmt"
 	"strconv"
 	"strings"
@@ -25,6 +26,15 @@ func etcdContainer() *corev1.Container {
 		Name: "etcd",
 	}
 }
+
+func etcdInitContainer() *corev1.Container {
+	return &corev1.Container{
+		Name: "etcd-init",
+	}
+}
+
+//go:embed etcd-init.sh
+var etcdInitScript string
 
 func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 	p.OwnerRef.ApplyTo(ss)
@@ -57,6 +67,12 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 		util.BuildContainer(etcdContainer(), buildEtcdContainer(p, ss.Namespace)),
 	}
 
+	if len(p.StorageSpec.RestoreSnapshotURL) > 0 && !p.SnapshotRestored {
+		ss.Spec.Template.Spec.InitContainers = []corev1.Container{
+			util.BuildContainer(etcdInitContainer(), buildEtcdInitContainer(p)),
+		}
+	}
+
 	ss.Spec.Template.Spec.Volumes = []corev1.Volume{
 		{
 			Name: "peer-tls",
@@ -87,6 +103,28 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 	p.DeploymentConfig.ApplyToStatefulSet(ss)
 
 	return nil
+}
+
+func buildEtcdInitContainer(p *EtcdParams) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Env = []corev1.EnvVar{}
+		for i := 0; i < p.DeploymentConfig.Replicas; i++ {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  fmt.Sprintf("RESTORE_URL_ETCD_%d", i),
+				Value: p.StorageSpec.RestoreSnapshotURL[i],
+			})
+		}
+
+		c.Image = p.EtcdImage
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.Command = []string{"/bin/sh", "-ce", etcdInitScript}
+		c.VolumeMounts = []corev1.VolumeMount{
+			{
+				Name:      "data",
+				MountPath: "/var/lib",
+			},
+		}
+	}
 }
 
 func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Container) {

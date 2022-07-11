@@ -18,7 +18,7 @@ package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -29,26 +29,26 @@ const (
 	IBMPowerVSImageFinalizer = "ibmpowervsimage.infrastructure.cluster.x-k8s.io"
 )
 
-// IBMPowerVSImageSpec defines the desired state of IBMPowerVSImage
+// IBMPowerVSImageSpec defines the desired state of IBMPowerVSImage.
 type IBMPowerVSImageSpec struct {
 
 	// ClusterName is the name of the Cluster this object belongs to.
 	// +kubebuilder:validation:MinLength=1
 	ClusterName string `json:"clusterName"`
 
-	// ServiceInstanceID is the id of the power cloud instance where the image will get imported
+	// ServiceInstanceID is the id of the power cloud instance where the image will get imported.
 	ServiceInstanceID string `json:"serviceInstanceID"`
 
 	// Cloud Object Storage bucket name; bucket-name[/optional/folder]
 	Bucket *string `json:"bucket"`
 
-	// Cloud Object Storage image filename
+	// Cloud Object Storage image filename.
 	Object *string `json:"object"`
 
-	// Cloud Object Storage region
+	// Cloud Object Storage region.
 	Region *string `json:"region"`
 
-	// Type of storage, storage pool with the most available space will be selected
+	// Type of storage, storage pool with the most available space will be selected.
 	// +kubebuilder:default=tier1
 	// +kubebuilder:validation:Enum=tier1;tier3
 	// +optional
@@ -61,27 +61,27 @@ type IBMPowerVSImageSpec struct {
 	DeletePolicy string `json:"deletePolicy,omitempty"`
 }
 
-// IBMPowerVSImageStatus defines the observed state of IBMPowerVSImage
+// IBMPowerVSImageStatus defines the observed state of IBMPowerVSImage.
 type IBMPowerVSImageStatus struct {
 
 	// Ready is true when the provider resource is ready.
 	// +optional
 	Ready bool `json:"ready"`
 
-	// ImageID is the id of the imported image
+	// ImageID is the id of the imported image.
 	ImageID string `json:"imageID,omitempty"`
 
-	// ImageState is the status of the imported image
+	// ImageState is the status of the imported image.
 	// +optional
 	ImageState PowerVSImageState `json:"imageState,omitempty"`
 
-	// JobID is the job ID of an import operation
+	// JobID is the job ID of an import operation.
 	// +optional
 	JobID string `json:"jobID,omitempty"`
 
 	// Conditions defines current service state of the IBMPowerVSImage.
 	// +optional
-	Conditions clusterv1.Conditions `json:"conditions,omitempty"`
+	Conditions capiv1beta1.Conditions `json:"conditions,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -90,7 +90,7 @@ type IBMPowerVSImageStatus struct {
 // +kubebuilder:printcolumn:name="State",type="string",JSONPath=".status.imageState",description="PowerVS image state"
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.ready",description="Image is ready for IBM PowerVS instances"
 
-// IBMPowerVSImage is the Schema for the ibmpowervsimages API
+// IBMPowerVSImage is the Schema for the ibmpowervsimages API.
 type IBMPowerVSImage struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -100,18 +100,18 @@ type IBMPowerVSImage struct {
 }
 
 // GetConditions returns the observations of the operational state of the IBMPowerVSImage resource.
-func (r *IBMPowerVSImage) GetConditions() clusterv1.Conditions {
+func (r *IBMPowerVSImage) GetConditions() capiv1beta1.Conditions {
 	return r.Status.Conditions
 }
 
 // SetConditions sets the underlying service state of the IBMPowerVSImage to the predescribed clusterv1.Conditions.
-func (r *IBMPowerVSImage) SetConditions(conditions clusterv1.Conditions) {
+func (r *IBMPowerVSImage) SetConditions(conditions capiv1beta1.Conditions) {
 	r.Status.Conditions = conditions
 }
 
 //+kubebuilder:object:root=true
 
-// IBMPowerVSImageList contains a list of IBMPowerVSImage
+// IBMPowerVSImageList contains a list of IBMPowerVSImage.
 type IBMPowerVSImageList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

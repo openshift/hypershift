@@ -17,7 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -28,12 +28,12 @@ const (
 	MachineFinalizer = "ibmvpcmachine.infrastructure.cluster.x-k8s.io"
 )
 
-// IBMVPCMachineSpec defines the desired state of IBMVPCMachine
+// IBMVPCMachineSpec defines the desired state of IBMVPCMachine.
 type IBMVPCMachineSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Name of the instance
+	// Name of the instance.
 	Name string `json:"name,omitempty"`
 
 	// Image is the id of OS image which would be install on the instance.
@@ -54,14 +54,14 @@ type IBMVPCMachineSpec struct {
 	// +optional
 	ProviderID *string `json:"providerID,omitempty"`
 
-	// PrimaryNetworkInterface is required to specify subnet
+	// PrimaryNetworkInterface is required to specify subnet.
 	PrimaryNetworkInterface NetworkInterface `json:"primaryNetworkInterface,omitempty"`
 
-	// SSHKeys is the SSH pub keys that will be used to access VM
+	// SSHKeys is the SSH pub keys that will be used to access VM.
 	SSHKeys []*string `json:"sshKeys,omitempty"`
 }
 
-// IBMVPCMachineStatus defines the observed state of IBMVPCMachine
+// IBMVPCMachineStatus defines the observed state of IBMVPCMachine.
 type IBMVPCMachineStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
@@ -71,7 +71,7 @@ type IBMVPCMachineStatus struct {
 	Ready bool `json:"ready"`
 
 	// Addresses contains the GCP instance associated addresses.
-	Addresses []v1.NodeAddress `json:"addresses,omitempty"`
+	Addresses []corev1.NodeAddress `json:"addresses,omitempty"`
 
 	// InstanceStatus is the status of the GCP instance for this machine.
 	// +optional
@@ -84,7 +84,7 @@ type IBMVPCMachineStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.ready",description="Cluster infrastructure is ready for IBM VPC instances"
 
-// IBMVPCMachine is the Schema for the ibmvpcmachines API
+// IBMVPCMachine is the Schema for the ibmvpcmachines API.
 type IBMVPCMachine struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -95,7 +95,7 @@ type IBMVPCMachine struct {
 
 //+kubebuilder:object:root=true
 
-// IBMVPCMachineList contains a list of IBMVPCMachine
+// IBMVPCMachineList contains a list of IBMVPCMachine.
 type IBMVPCMachineList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

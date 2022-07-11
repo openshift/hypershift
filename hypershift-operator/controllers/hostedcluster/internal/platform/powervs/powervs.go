@@ -20,7 +20,7 @@ import (
 
 const (
 	// TODO(mkumatag): Move to OpenShift built image
-	imageCAPIBM = "k8s.gcr.io/capi-ibmcloud/cluster-api-ibmcloud-controller:v0.2.0"
+	imageCAPIBM = "k8s.gcr.io/capi-ibmcloud/cluster-api-ibmcloud-controller:v0.2.3"
 )
 
 type PowerVS struct {

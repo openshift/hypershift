@@ -1185,6 +1185,20 @@ the default service endpoint of specific AWS Services.</p>
 </tr>
 <tr>
 <td>
+<code>rolesRef</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSRolesRef">
+AWSRolesRef
+</a>
+</em>
+</td>
+<td>
+<p>RolesRef contains references to various AWS IAM roles required to enable
+integrations such as OIDC.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>roles</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1alpha1.AWSRoleCredentials">
@@ -1193,16 +1207,9 @@ the default service endpoint of specific AWS Services.</p>
 </em>
 </td>
 <td>
-<p>Roles must contain exactly 4 entries representing the locators for roles
-supporting the following OCP services:</p>
-<ul>
-<li>openshift-ingress-operator/cloud-credentials</li>
-<li>openshift-image-registry/installer-cloud-credentials</li>
-<li>openshift-cluster-csi-drivers/ebs-cloud-credentials</li>
-<li>cloud-network-config-controller/cloud-credentials</li>
-</ul>
-<p>Each role has unique permission requirements whose documentation is TBD.</p>
-<p>TODO(dan): revisit this field; it&rsquo;s really 3 required fields with specific content requirements</p>
+<p>Deprecated
+This field will be removed in the next API release.
+Use RolesRef instead.</p>
 </td>
 </tr>
 <tr>
@@ -1215,11 +1222,9 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>KubeCloudControllerCreds is a reference to a secret containing cloud
-credentials with permissions matching the cloud controller policy. The
-secret should have exactly one key, <code>credentials</code>, whose value is an AWS
-credentials file.</p>
-<p>TODO(dan): document the &ldquo;cloud controller policy&rdquo;</p>
+<p>Deprecated
+This field will be removed in the next API release.
+Use RolesRef instead.</p>
 </td>
 </tr>
 <tr>
@@ -1232,11 +1237,9 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>NodePoolManagementCreds is a reference to a secret containing cloud
-credentials with permissions matching the node pool management policy. The
-secret should have exactly one key, <code>credentials</code>, whose value is an AWS
-credentials file.</p>
-<p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
+<p>Deprecated
+This field will be removed in the next API release.
+Use RolesRef instead.</p>
 </td>
 </tr>
 <tr>
@@ -1249,11 +1252,9 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>ControlPlaneOperatorCreds is a reference to a secret containing cloud
-credentials with permissions matching the control-plane-operator policy.
-The secret should have exactly one key, <code>credentials</code>, whose value is
-an AWS credentials file.</p>
-<p>TODO(dan): document the &ldquo;control plane operator policy&rdquo;</p>
+<p>Deprecated
+This field will be removed in the next API release.
+Use RolesRef instead.</p>
 </td>
 </tr>
 <tr>
@@ -1446,6 +1447,409 @@ string
 </em>
 </td>
 <td>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSRolesRef { #hypershift.openshift.io/v1alpha1.AWSRolesRef }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSPlatformSpec">AWSPlatformSpec</a>)
+</p>
+<p>
+<p>AWSRolesRef contains references to various AWS IAM roles required to enable
+integrations such as OIDC.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ingressARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>The referenced role must have a trust relationship that allows it to be assumed via web identity.
+<a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html">https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html</a>.
+Example:
+{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Principal&rdquo;: {
+&ldquo;Federated&rdquo;: &ldquo;{{ .ProviderARN }}&rdquo;
+},
+&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;{{ .ProviderName }}:sub&rdquo;: {{ .ServiceAccounts }}
+}
+}
+}
+]
+}</p>
+<p>IngressARN is an ARN value referencing a role used for ingress OIDC
+integration.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;elasticloadbalancing:DescribeLoadBalancers&rdquo;,
+&ldquo;tag:GetResources&rdquo;,
+&ldquo;route53:ListHostedZones&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+},
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;route53:ChangeResourceRecordSets&rdquo;
+],
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:aws:route53:::PUBLIC_ZONE_ID&rdquo;,
+&ldquo;arn:aws:route53:::PRIVATE_ZONE_ID&rdquo;
+]
+}
+]
+}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageRegistryARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ImageRegistryARN is an ARN value referencing a role used for image
+registry OIDC integration.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;s3:CreateBucket&rdquo;,
+&ldquo;s3:DeleteBucket&rdquo;,
+&ldquo;s3:PutBucketTagging&rdquo;,
+&ldquo;s3:GetBucketTagging&rdquo;,
+&ldquo;s3:PutBucketPublicAccessBlock&rdquo;,
+&ldquo;s3:GetBucketPublicAccessBlock&rdquo;,
+&ldquo;s3:PutEncryptionConfiguration&rdquo;,
+&ldquo;s3:GetEncryptionConfiguration&rdquo;,
+&ldquo;s3:PutLifecycleConfiguration&rdquo;,
+&ldquo;s3:GetLifecycleConfiguration&rdquo;,
+&ldquo;s3:GetBucketLocation&rdquo;,
+&ldquo;s3:ListBucket&rdquo;,
+&ldquo;s3:GetObject&rdquo;,
+&ldquo;s3:PutObject&rdquo;,
+&ldquo;s3:DeleteObject&rdquo;,
+&ldquo;s3:ListBucketMultipartUploads&rdquo;,
+&ldquo;s3:AbortMultipartUpload&rdquo;,
+&ldquo;s3:ListMultipartUploadParts&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+}
+]
+}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storageARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>StorageOIDC is an ARN value referencing a role used for storage driver OIDC
+integration.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:AttachVolume&rdquo;,
+&ldquo;ec2:CreateSnapshot&rdquo;,
+&ldquo;ec2:CreateTags&rdquo;,
+&ldquo;ec2:CreateVolume&rdquo;,
+&ldquo;ec2:DeleteSnapshot&rdquo;,
+&ldquo;ec2:DeleteTags&rdquo;,
+&ldquo;ec2:DeleteVolume&rdquo;,
+&ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeSnapshots&rdquo;,
+&ldquo;ec2:DescribeTags&rdquo;,
+&ldquo;ec2:DescribeVolumes&rdquo;,
+&ldquo;ec2:DescribeVolumesModifications&rdquo;,
+&ldquo;ec2:DetachVolume&rdquo;,
+&ldquo;ec2:ModifyVolume&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+}
+]
+}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networkARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>NetworkOIDC is an ARN value referencing a role used for networking OIDC
+integration.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeInstanceStatus&rdquo;,
+&ldquo;ec2:DescribeInstanceTypes&rdquo;,
+&ldquo;ec2:UnassignPrivateIpAddresses&rdquo;,
+&ldquo;ec2:AssignPrivateIpAddresses&rdquo;,
+&ldquo;ec2:UnassignIpv6Addresses&rdquo;,
+&ldquo;ec2:AssignIpv6Addresses&rdquo;,
+&ldquo;ec2:DescribeSubnets&rdquo;,
+&ldquo;ec2:DescribeNetworkInterfaces&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+}
+]
+}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeCloudControllerARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>KubeCloudControllerARN is an ARN value referencing a role that should contain
+policy permissions matching the cloud controller policy.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeImages&rdquo;,
+&ldquo;ec2:DescribeRegions&rdquo;,
+&ldquo;ec2:DescribeRouteTables&rdquo;,
+&ldquo;ec2:DescribeSecurityGroups&rdquo;,
+&ldquo;ec2:DescribeSubnets&rdquo;,
+&ldquo;ec2:DescribeVolumes&rdquo;,
+&ldquo;ec2:CreateSecurityGroup&rdquo;,
+&ldquo;ec2:CreateTags&rdquo;,
+&ldquo;ec2:CreateVolume&rdquo;,
+&ldquo;ec2:ModifyInstanceAttribute&rdquo;,
+&ldquo;ec2:ModifyVolume&rdquo;,
+&ldquo;ec2:AttachVolume&rdquo;,
+&ldquo;ec2:AuthorizeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:CreateRoute&rdquo;,
+&ldquo;ec2:DeleteRoute&rdquo;,
+&ldquo;ec2:DeleteSecurityGroup&rdquo;,
+&ldquo;ec2:DeleteVolume&rdquo;,
+&ldquo;ec2:DetachVolume&rdquo;,
+&ldquo;ec2:RevokeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:DescribeVpcs&rdquo;,
+&ldquo;elasticloadbalancing:AddTags&rdquo;,
+&ldquo;elasticloadbalancing:AttachLoadBalancerToSubnets&rdquo;,
+&ldquo;elasticloadbalancing:ApplySecurityGroupsToLoadBalancer&rdquo;,
+&ldquo;elasticloadbalancing:CreateLoadBalancer&rdquo;,
+&ldquo;elasticloadbalancing:CreateLoadBalancerPolicy&rdquo;,
+&ldquo;elasticloadbalancing:CreateLoadBalancerListeners&rdquo;,
+&ldquo;elasticloadbalancing:ConfigureHealthCheck&rdquo;,
+&ldquo;elasticloadbalancing:DeleteLoadBalancer&rdquo;,
+&ldquo;elasticloadbalancing:DeleteLoadBalancerListeners&rdquo;,
+&ldquo;elasticloadbalancing:DescribeLoadBalancers&rdquo;,
+&ldquo;elasticloadbalancing:DescribeLoadBalancerAttributes&rdquo;,
+&ldquo;elasticloadbalancing:DetachLoadBalancerFromSubnets&rdquo;,
+&ldquo;elasticloadbalancing:DeregisterInstancesFromLoadBalancer&rdquo;,
+&ldquo;elasticloadbalancing:ModifyLoadBalancerAttributes&rdquo;,
+&ldquo;elasticloadbalancing:RegisterInstancesWithLoadBalancer&rdquo;,
+&ldquo;elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer&rdquo;,
+&ldquo;elasticloadbalancing:AddTags&rdquo;,
+&ldquo;elasticloadbalancing:CreateListener&rdquo;,
+&ldquo;elasticloadbalancing:CreateTargetGroup&rdquo;,
+&ldquo;elasticloadbalancing:DeleteListener&rdquo;,
+&ldquo;elasticloadbalancing:DeleteTargetGroup&rdquo;,
+&ldquo;elasticloadbalancing:DescribeListeners&rdquo;,
+&ldquo;elasticloadbalancing:DescribeLoadBalancerPolicies&rdquo;,
+&ldquo;elasticloadbalancing:DescribeTargetGroups&rdquo;,
+&ldquo;elasticloadbalancing:DescribeTargetHealth&rdquo;,
+&ldquo;elasticloadbalancing:ModifyListener&rdquo;,
+&ldquo;elasticloadbalancing:ModifyTargetGroup&rdquo;,
+&ldquo;elasticloadbalancing:RegisterTargets&rdquo;,
+&ldquo;elasticloadbalancing:SetLoadBalancerPoliciesOfListener&rdquo;,
+&ldquo;iam:CreateServiceLinkedRole&rdquo;,
+&ldquo;kms:DescribeKey&rdquo;
+],
+&ldquo;Resource&rdquo;: [
+&ldquo;*&rdquo;
+],
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;
+}
+]
+}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodePoolManagementARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>NodePoolManagementARN is an ARN value referencing a role that should contain
+policy permissions matching the node pool management policy.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:AllocateAddress&rdquo;,
+&ldquo;ec2:AssociateRouteTable&rdquo;,
+&ldquo;ec2:AttachInternetGateway&rdquo;,
+&ldquo;ec2:AuthorizeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:CreateInternetGateway&rdquo;,
+&ldquo;ec2:CreateNatGateway&rdquo;,
+&ldquo;ec2:CreateRoute&rdquo;,
+&ldquo;ec2:CreateRouteTable&rdquo;,
+&ldquo;ec2:CreateSecurityGroup&rdquo;,
+&ldquo;ec2:CreateSubnet&rdquo;,
+&ldquo;ec2:CreateTags&rdquo;,
+&ldquo;ec2:DeleteInternetGateway&rdquo;,
+&ldquo;ec2:DeleteNatGateway&rdquo;,
+&ldquo;ec2:DeleteRouteTable&rdquo;,
+&ldquo;ec2:DeleteSecurityGroup&rdquo;,
+&ldquo;ec2:DeleteSubnet&rdquo;,
+&ldquo;ec2:DeleteTags&rdquo;,
+&ldquo;ec2:DescribeAccountAttributes&rdquo;,
+&ldquo;ec2:DescribeAddresses&rdquo;,
+&ldquo;ec2:DescribeAvailabilityZones&rdquo;,
+&ldquo;ec2:DescribeImages&rdquo;,
+&ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeInternetGateways&rdquo;,
+&ldquo;ec2:DescribeNatGateways&rdquo;,
+&ldquo;ec2:DescribeNetworkInterfaces&rdquo;,
+&ldquo;ec2:DescribeNetworkInterfaceAttribute&rdquo;,
+&ldquo;ec2:DescribeRouteTables&rdquo;,
+&ldquo;ec2:DescribeSecurityGroups&rdquo;,
+&ldquo;ec2:DescribeSubnets&rdquo;,
+&ldquo;ec2:DescribeVpcs&rdquo;,
+&ldquo;ec2:DescribeVpcAttribute&rdquo;,
+&ldquo;ec2:DescribeVolumes&rdquo;,
+&ldquo;ec2:DetachInternetGateway&rdquo;,
+&ldquo;ec2:DisassociateRouteTable&rdquo;,
+&ldquo;ec2:DisassociateAddress&rdquo;,
+&ldquo;ec2:ModifyInstanceAttribute&rdquo;,
+&ldquo;ec2:ModifyNetworkInterfaceAttribute&rdquo;,
+&ldquo;ec2:ModifySubnetAttribute&rdquo;,
+&ldquo;ec2:ReleaseAddress&rdquo;,
+&ldquo;ec2:RevokeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:TerminateInstances&rdquo;,
+&ldquo;tag:GetResources&rdquo;,
+&ldquo;ec2:CreateLaunchTemplate&rdquo;,
+&ldquo;ec2:CreateLaunchTemplateVersion&rdquo;,
+&ldquo;ec2:DescribeLaunchTemplates&rdquo;,
+&ldquo;ec2:DescribeLaunchTemplateVersions&rdquo;,
+&ldquo;ec2:DeleteLaunchTemplate&rdquo;,
+&ldquo;ec2:DeleteLaunchTemplateVersions&rdquo;
+],
+&ldquo;Resource&rdquo;: [
+&ldquo;<em>&rdquo;
+],
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;
+},
+{
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;iam:AWSServiceName&rdquo;: &ldquo;elasticloadbalancing.amazonaws.com&rdquo;
+}
+},
+&ldquo;Action&rdquo;: [
+&ldquo;iam:CreateServiceLinkedRole&rdquo;
+],
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:</em>:iam::<em>:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing&rdquo;
+],
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;
+},
+{
+&ldquo;Action&rdquo;: [
+&ldquo;iam:PassRole&rdquo;
+],
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:</em>:iam::<em>:role/</em>-worker-role&rdquo;
+],
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;
+}
+]
+}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneOperatorARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ControlPlaneOperatorARN  is an ARN value referencing a role that should contain
+policy permissions matching the control-plane-operator policy.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:CreateVpcEndpoint&rdquo;,
+&ldquo;ec2:DescribeVpcEndpoints&rdquo;,
+&ldquo;ec2:ModifyVpcEndpoint&rdquo;,
+&ldquo;ec2:DeleteVpcEndpoints&rdquo;,
+&ldquo;ec2:CreateTags&rdquo;,
+&ldquo;route53:ListHostedZones&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+},
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;route53:ChangeResourceRecordSets&rdquo;,
+&ldquo;route53:ListResourceRecordSets&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;arn:aws:route53:::%s&rdquo;
+}
+]
+}</p>
 </td>
 </tr>
 </tbody>
@@ -1771,7 +2175,8 @@ string
 ###ClusterAutoscaling { #hypershift.openshift.io/v1alpha1.ClusterAutoscaling }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>)
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
 <p>ClusterAutoscaling specifies auto-scaling behavior that applies to all
@@ -2238,7 +2643,13 @@ has been created for the specified NLB in the management VPC</p>
 version of the HostedCluster as indicated by the Failing condition in the
 underlying cluster&rsquo;s ClusterVersion.</p>
 </td>
+</tr><tr><td><p>&#34;ClusterVersionUpgradeable&#34;</p></td>
+<td><p>ClusterVersionUpgradeable indicates the Upgradeable condition in the
+underlying cluster&rsquo;s ClusterVersion.</p>
+</td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;EtcdSnapshotRestored&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>HostedClusterAvailable indicates whether the HostedCluster has a healthy
@@ -2254,13 +2665,17 @@ HostedCluster is available to handle ignition requests.</p>
 <td></td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
 <td></td>
-</tr><tr><td><p>&#34;OIDCConfigurationInvalid&#34;</p></td>
-<td><p>OIDCConfigurationInvalid indicates if an AWS cluster&rsquo;s OIDC condition is
-detected as invalid.</p>
+</tr><tr><td><p>&#34;PlatformCredentialsFound&#34;</p></td>
+<td><p>PlatformCredentialsFound indicates that credentials required for the
+desired platform are valid.</p>
 </td>
-</tr><tr><td><p>&#34;ReconciliationPaused&#34;</p></td>
-<td><p>ReconciliationPaused indicates if reconciliation of the hostedcluster is
-paused.</p>
+</tr><tr><td><p>&#34;ReconciliationActive&#34;</p></td>
+<td><p>ReconciliationActive indicates if reconciliation of the hostedcluster is
+active or paused.</p>
+</td>
+</tr><tr><td><p>&#34;ReconciliationSucceeded&#34;</p></td>
+<td><p>ReconciliationSucceeded indicates if the hostedcluster reconciliation
+succeeded.</p>
 </td>
 </tr><tr><td><p>&#34;SupportedHostedCluster&#34;</p></td>
 <td><p>SupportedHostedCluster indicates whether a HostedCluster is supported by
@@ -2279,6 +2694,10 @@ ClusterConfiguration specified for the HostedCluster is valid.</p>
 </td>
 </tr><tr><td><p>&#34;ValidHostedControlPlaneConfiguration&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;ValidOIDCConfiguration&#34;</p></td>
+<td><p>ValidOIDCConfiguration indicates if an AWS cluster&rsquo;s OIDC condition is
+detected as invalid.</p>
+</td>
 </tr><tr><td><p>&#34;ValidReleaseImage&#34;</p></td>
 <td><p>ValidReleaseImage indicates if the release image set in the spec is valid
 for the HostedCluster. For example, this can be set false if the
@@ -3424,6 +3843,21 @@ Value must be one of:
 </p>
 </td>
 </tr>
+<tr>
+<td>
+<code>autoscaling</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterAutoscaling">
+ClusterAutoscaling
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Autoscaling specifies auto-scaling behavior that applies to all NodePools
+associated with the control plane.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedControlPlaneStatus { #hypershift.openshift.io/v1alpha1.HostedControlPlaneStatus }
@@ -4416,6 +4850,22 @@ PersistentVolumeEtcdStorageSpec
 With this implementation, a PersistentVolume will be allocated for every
 etcd member (either 1 or 3 depending on the HostedCluster control plane
 availability configuration).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>restoreSnapshotURL</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>RestoreSnapshotURL allows an optional list of URLs to be provided where
+an etcd snapshot can be downloaded, for example a pre-signed URL
+referencing a storage service, one URL per replica.
+This snapshot will be restored on initial startup, only when the etcd PV
+is empty.</p>
 </td>
 </tr>
 </tbody>

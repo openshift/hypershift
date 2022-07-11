@@ -26,6 +26,7 @@ type KubeControllerManagerParams struct {
 	ServiceCIDR         string
 	PodCIDR             string
 	APIServer           *configv1.APIServerSpec `json:"apiServer"`
+	DisableProfiling    bool                    `json:"disableProfiling"`
 
 	config.DeploymentConfig
 	config.OwnerRef
@@ -57,6 +58,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	params.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,
 	}
+	params.DisableProfiling = util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.KCMDeployment("").Name)
 	params.LivenessProbes = config.LivenessProbes{
 		kcmContainerMain().Name: {
 			ProbeHandler: corev1.ProbeHandler{
@@ -105,7 +107,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	case hyperv1.AWSPlatform:
 		params.CloudProvider = aws.Provider
 		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AWSProviderConfig("").Name}
-		params.CloudProviderCreds = &corev1.LocalObjectReference{Name: hcp.Spec.Platform.AWS.KubeCloudControllerCreds.Name}
+		params.CloudProviderCreds = &corev1.LocalObjectReference{Name: aws.KubeCloudControllerCredsSecret("").Name}
 	case hyperv1.AzurePlatform:
 		params.CloudProvider = azure.Provider
 		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AzureProviderConfigWithCredentials("").Name}

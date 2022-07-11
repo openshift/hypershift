@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	jose "gopkg.in/square/go-jose.v2"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/log"
 )
 
@@ -395,11 +394,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	if err != nil {
 		return nil, err
 	}
-	output.Roles = append(output.Roles, hyperv1.AWSRoleCredentials{
-		ARN:       arn,
-		Namespace: "openshift-ingress-operator",
-		Name:      "cloud-credentials",
-	})
+	output.Roles.IngressARN = arn
 
 	registryTrustPolicy := oidcTrustPolicy(providerARN, providerName,
 		"system:serviceaccount:openshift-image-registry:cluster-image-registry-operator",
@@ -408,43 +403,35 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	if err != nil {
 		return nil, err
 	}
-	output.Roles = append(output.Roles, hyperv1.AWSRoleCredentials{
-		ARN:       arn,
-		Namespace: "openshift-image-registry",
-		Name:      "installer-cloud-credentials",
-	})
+	output.Roles.ImageRegistryARN = arn
 
 	csiTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:openshift-cluster-csi-drivers:aws-ebs-csi-driver-controller-sa")
 	arn, err = o.CreateOIDCRole(iamClient, "aws-ebs-csi-driver-controller", csiTrustPolicy, awsEBSCSIPermPolicy)
 	if err != nil {
 		return nil, err
 	}
-	output.Roles = append(output.Roles, hyperv1.AWSRoleCredentials{
-		ARN:       arn,
-		Namespace: "openshift-cluster-csi-drivers",
-		Name:      "ebs-cloud-credentials",
-	})
+	output.Roles.StorageARN = arn
 
 	kubeCloudControllerTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:kube-controller-manager")
 	arn, err = o.CreateOIDCRole(iamClient, "cloud-controller", kubeCloudControllerTrustPolicy, cloudControllerPolicy)
 	if err != nil {
 		return nil, err
 	}
-	output.KubeCloudControllerRoleARN = arn
+	output.Roles.KubeCloudControllerARN = arn
 
 	nodePoolManagementTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:capa-controller-manager")
 	arn, err = o.CreateOIDCRole(iamClient, "node-pool", nodePoolManagementTrustPolicy, nodePoolPolicy)
 	if err != nil {
 		return nil, err
 	}
-	output.NodePoolManagementRoleARN = arn
+	output.Roles.NodePoolManagementARN = arn
 
 	controlPlaneOperatorTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:control-plane-operator")
 	arn, err = o.CreateOIDCRole(iamClient, "control-plane-operator", controlPlaneOperatorTrustPolicy, controlPlaneOperatorPolicy(o.LocalZoneID))
 	if err != nil {
 		return nil, err
 	}
-	output.ControlPlaneOperatorRoleARN = arn
+	output.Roles.ControlPlaneOperatorARN = arn
 
 	if len(o.KMSKeyARN) > 0 {
 		kmsProviderTrustPolicy := oidcTrustPolicy(providerARN, providerName, "system:serviceaccount:kube-system:kms-provider")
@@ -460,11 +447,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	if err != nil {
 		return nil, err
 	}
-	output.Roles = append(output.Roles, hyperv1.AWSRoleCredentials{
-		ARN:       arn,
-		Namespace: "openshift-cloud-network-config-controller",
-		Name:      "cloud-credentials",
-	})
+	output.Roles.NetworkARN = arn
 
 	return output, nil
 }
