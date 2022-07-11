@@ -67,3 +67,8 @@ groups:
           * on (pod, namespace) group_left(app)
             label_replace(kube_pod_labels{label_hypershift_openshift_io_operator_component!=""}, "app", "$1", "label_app", "(.*)")
           )
+  - record: platform:hypershift_hostedclusters:max
+    expr: max by(platform) (hypershift_hostedclusters)
+    
+  - record: platform:hypershift_nodepools:max
+    expr: max by(platform) (hypershift_nodepools)
