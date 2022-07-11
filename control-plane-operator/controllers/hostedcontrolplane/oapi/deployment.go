@@ -98,9 +98,11 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	if err != nil {
 		return fmt.Errorf("failed to parse etcd url: %w", err)
 	}
-	deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
-		configHashAnnotation: configHash,
+	if deployment.Spec.Template.Annotations == nil {
+		deployment.Spec.Template.Annotations = map[string]string{}
 	}
+	deployment.Spec.Template.Annotations[configHashAnnotation] = configHash
+
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		InitContainers:               []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))},
