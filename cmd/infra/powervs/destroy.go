@@ -121,7 +121,12 @@ func (options *DestroyInfraOptions) DestroyInfra(infra *Infra) (err error) {
 		return fmt.Errorf("IBMCLOUD_API_KEY not set")
 	}
 
-	resourceGroupID, err := getResourceGroupID(options.ResourceGroup)
+	accountID, err := getAccount(getIAMAuth())
+	if err != nil {
+		return fmt.Errorf("error retrieving account ID %w", err)
+	}
+
+	resourceGroupID, err := getResourceGroupID(options.ResourceGroup, accountID)
 	if err != nil {
 		return err
 	}
@@ -160,7 +165,7 @@ func (options *DestroyInfraOptions) DestroyInfra(infra *Infra) (err error) {
 
 	var session *ibmpisession.IBMPISession
 	if !skipPowerVs {
-		session, err = createPowerVSSession(options.PowerVSRegion, options.PowerVSZone, options.Debug)
+		session, err = createPowerVSSession(accountID, options.PowerVSRegion, options.PowerVSZone, options.Debug)
 		if err != nil {
 			return err
 		}

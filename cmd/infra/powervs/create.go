@@ -252,7 +252,12 @@ func (infra *Infra) SetupInfra(options *CreateInfraOptions) (err error) {
 		return fmt.Errorf("IBMCLOUD_API_KEY not set")
 	}
 
-	infra.ResourceGroupID, err = getResourceGroupID(options.ResourceGroup)
+	infra.AccountID, err = getAccount(getIAMAuth())
+	if err != nil {
+		return fmt.Errorf("error retrieving account ID %w", err)
+	}
+
+	infra.ResourceGroupID, err = getResourceGroupID(options.ResourceGroup, infra.AccountID)
 	if err != nil {
 		return fmt.Errorf("error getting id for resource group %s, %w", options.ResourceGroup, err)
 	}
@@ -277,7 +282,7 @@ func (infra *Infra) SetupInfra(options *CreateInfraOptions) (err error) {
 		return fmt.Errorf("error setup vpc subnet: %w", err)
 	}
 
-	session, err := createPowerVSSession(options.PowerVSRegion, options.PowerVSZone, options.Debug)
+	session, err := createPowerVSSession(infra.AccountID, options.PowerVSRegion, options.PowerVSZone, options.Debug)
 	infra.AccountID = session.Options.UserAccount
 	if err != nil {
 		return fmt.Errorf("error creating powervs session: %w", err)
@@ -473,7 +478,7 @@ func getCustomEndpointUrl(serviceName string, defaultUrl string) (url string) {
 }
 
 // getResourceGroupID retrieving id of resource group
-func getResourceGroupID(resourceGroup string) (resourceGroupID string, err error) {
+func getResourceGroupID(resourceGroup string, accountID string) (resourceGroupID string, err error) {
 	rmv2, err := resourcemanagerv2.NewResourceManagerV2(&resourcemanagerv2.ResourceManagerV2Options{
 		Authenticator: getIAMAuth(),
 		URL:           getCustomEndpointUrl(platformService, resourcemanagerv2.DefaultServiceURL),
@@ -487,7 +492,7 @@ func getResourceGroupID(resourceGroup string) (resourceGroupID string, err error
 		return
 	}
 
-	rmv2ListResourceGroupOpt := resourcemanagerv2.ListResourceGroupsOptions{Name: &resourceGroup}
+	rmv2ListResourceGroupOpt := resourcemanagerv2.ListResourceGroupsOptions{Name: &resourceGroup, AccountID: &accountID}
 	resourceGroupListResult, _, err := rmv2.ListResourceGroups(&rmv2ListResourceGroupOpt)
 	if err != nil {
 		return
@@ -607,9 +612,8 @@ func getAccount(auth core.Authenticator) (accountID string, err error) {
 }
 
 // createPowerVSSession creates PowerVSSession of type *ibmpisession.IBMPISession
-func createPowerVSSession(powerVSRegion string, powerVSZone string, debug bool) (session *ibmpisession.IBMPISession, err error) {
+func createPowerVSSession(accountID string, powerVSRegion string, powerVSZone string, debug bool) (session *ibmpisession.IBMPISession, err error) {
 	auth := getIAMAuth()
-	account, err := getAccount(auth)
 
 	if err != nil {
 		return
@@ -618,7 +622,7 @@ func createPowerVSSession(powerVSRegion string, powerVSZone string, debug bool) 
 	opt := &ibmpisession.IBMPIOptions{Authenticator: auth,
 		Debug:       debug,
 		URL:         getCustomEndpointUrl(powerVsService, powerVsDefaultUrl(powerVSRegion)),
-		UserAccount: account,
+		UserAccount: accountID,
 		Zone:        powerVSZone}
 
 	session, err = ibmpisession.NewIBMPISession(opt)
