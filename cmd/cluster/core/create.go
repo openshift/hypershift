@@ -40,7 +40,6 @@ type CreateOptions struct {
 	Annotations                      []string
 	AutoRepair                       bool
 	ControlPlaneAvailabilityPolicy   string
-	ControlPlaneOperatorImage        string
 	EtcdStorageClass                 string
 	FIPS                             bool
 	GenerateSSH                      bool
@@ -158,10 +157,6 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		}
 		k, v := pair[0], pair[1]
 		annotations[k] = v
-	}
-
-	if len(opts.ControlPlaneOperatorImage) > 0 {
-		annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = opts.ControlPlaneOperatorImage
 	}
 
 	pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
