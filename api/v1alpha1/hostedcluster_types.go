@@ -503,7 +503,7 @@ type APIServerNetworking struct {
 type NetworkType string
 
 const (
-	// OpenShiftSDN specifies OpenshiftSDN as the SDN provider
+	// OpenShiftSDN specifies OpenShiftSDN as the SDN provider
 	OpenShiftSDN NetworkType = "OpenShiftSDN"
 
 	// Calico specifies Calico as the SDN provider

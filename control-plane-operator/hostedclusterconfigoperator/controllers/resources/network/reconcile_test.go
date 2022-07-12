@@ -39,7 +39,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 		},
 		{
-			name:              "KubeVirt with OpenshiftSDN uses unique default vxlan port",
+			name:              "KubeVirt with OpenShiftSDN uses unique default vxlan port",
 			inputNetwork:      NetworkOperator(),
 			inputNetworkType:  hyperv1.OpenShiftSDN,
 			inputPlatformType: hyperv1.KubevirtPlatform,
@@ -58,7 +58,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 		},
 		{
-			name: "KubeVirt with OpenshiftSDN does not set port when vxlan port already exists",
+			name: "KubeVirt with OpenShiftSDN does not set port when vxlan port already exists",
 			inputNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
