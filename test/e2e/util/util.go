@@ -232,6 +232,7 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 		}
 
 		isAvailable := meta.IsStatusConditionTrue(latest.Status.Conditions, string(hyperv1.HostedClusterAvailable))
+		isProgressing := meta.IsStatusConditionTrue(latest.Status.Conditions, string(hyperv1.HostedClusterProgressing))
 
 		rolloutComplete := latest.Status.Version != nil &&
 			latest.Status.Version.Desired.Image == image &&
@@ -239,8 +240,8 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 			latest.Status.Version.History[0].Image == latest.Status.Version.Desired.Image &&
 			latest.Status.Version.History[0].State == configv1.CompletedUpdate
 
-		if isAvailable && rolloutComplete {
-			t.Logf("Waiting for hostedcluster rollout. Image: %s, isAvailable: %v, rolloutComplete: %v", image, isAvailable, rolloutComplete)
+		if isAvailable && !isProgressing && rolloutComplete {
+			t.Logf("Waiting for hostedcluster rollout. Image: %s, isAvailable: %v, isProgressing: %v, rolloutComplete: %v", image, isAvailable, isProgressing, rolloutComplete)
 			return true, nil
 		}
 		return false, nil

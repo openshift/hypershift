@@ -1745,7 +1745,7 @@ func TestIsUpgradeable(t *testing.T) {
 			err:       false,
 		},
 		{
-			name: "not upgradable, no force annotation",
+			name: "not upgradeable, no force annotation",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Release: hyperv1.Release{
@@ -1770,7 +1770,7 @@ func TestIsUpgradeable(t *testing.T) {
 			err:       true,
 		},
 		{
-			name: "not upgradable, old force annotation",
+			name: "not upgradeable, old force annotation",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -1800,7 +1800,7 @@ func TestIsUpgradeable(t *testing.T) {
 			err:       true,
 		},
 		{
-			name: "not upgradable, force annotation",
+			name: "not upgradeable, force annotation",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -2300,6 +2300,158 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 
 			if diff := cmp.Diff(hcluster.Status.Conditions, tc.expectedConditions); diff != "" {
 				t.Errorf("actual conditions differ from expected: %s", diff)
+			}
+		})
+	}
+}
+
+func TestIsProgressing(t *testing.T) {
+	tests := []struct {
+		name    string
+		hc      *hyperv1.HostedCluster
+		want    bool
+		wantErr bool
+	}{
+		{
+			name: "stable at relase",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.2",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "release-1.2",
+						},
+					},
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name: "cluster is rolling out",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.2",
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "cluster is upgrading",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.3",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "release-1.2",
+						},
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "cluster update is blocked by condition",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.3",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "release-1.2",
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ValidHostedClusterConfiguration),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name: "cluster upgrade is blocked by ClusterVersionUpgradeable",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.3",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "release-1.2",
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name: "cluster upgrade is forced",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ForceUpgradeToAnnotation: "release-1.3",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.3",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "release-1.2",
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := isProgressing(context.TODO(), tt.hc)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("isProgressing() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("isProgressing() = %v, want %v", got, tt.want)
 			}
 		})
 	}

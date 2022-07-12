@@ -2655,6 +2655,10 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 <td><p>HostedClusterAvailable indicates whether the HostedCluster has a healthy
 control plane.</p>
 </td>
+</tr><tr><td><p>&#34;Progressing&#34;</p></td>
+<td><p>HostedClusterProgressing indicates whether the HostedCluster is attempting
+an initial deployment or upgrade.</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;IgnitionEndpointAvailable&#34;</p></td>

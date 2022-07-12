@@ -657,6 +657,29 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Set Progressing condition
+	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.HostedClusterProgressing),
+			ObservedGeneration: hcluster.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            "HostedCluster is at expected version",
+			Reason:             hyperv1.AsExpectedReason,
+		}
+		progressing, err := isProgressing(ctx, hcluster)
+		if err != nil {
+			condition.Status = metav1.ConditionFalse
+			condition.Message = err.Error()
+			condition.Reason = "Blocked"
+		}
+		if progressing {
+			condition.Status = metav1.ConditionTrue
+			condition.Message = "HostedCluster is deploying, upgrading, or reconfiguring"
+			condition.Reason = "Progressing"
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
 	// Persist status updates
 	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 		if apierrors.IsConflict(err) {
@@ -3492,6 +3515,30 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	return isValidReleaseVersion(version, currentVersion, hc.Spec.Networking.NetworkType)
 }
 
+func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
+	for _, condition := range hc.Status.Conditions {
+		switch string(condition.Type) {
+		case string(hyperv1.SupportedHostedCluster), string(hyperv1.ValidHostedClusterConfiguration), string(hyperv1.ValidReleaseImage), string(hyperv1.ReconciliationActive):
+			if condition.Status == metav1.ConditionFalse {
+				return false, fmt.Errorf("%s condition is false", string(condition.Type))
+			}
+		case string(hyperv1.ClusterVersionUpgradeable):
+			_, _, err := isUpgradeable(hc)
+			if err != nil {
+				return false, fmt.Errorf("ClusterVersionUpgradeable condition is false: %w", err)
+			}
+		}
+	}
+
+	if hc.Status.Version == nil || hc.Spec.Release.Image != hc.Status.Version.Desired.Image {
+		// cluster is doing initial rollout or upgrading
+		return true, nil
+	}
+
+	// cluster is conditions are good and is at desired release
+	return false, nil
+}
+
 func isValidReleaseVersion(version semver.Version, currentVersion *semver.Version, networkType hyperv1.NetworkType) error {
 	if version.LT(semver.MustParse("4.8.0")) {
 		return fmt.Errorf("releases before 4.8 are not supported")
@@ -4208,11 +4255,11 @@ func isUpgradeable(hcluster *hyperv1.HostedCluster) (bool, string, error) {
 		if upgradeable != nil && upgradeable.Status == metav1.ConditionFalse {
 			releaseImage, exists := hcluster.Annotations[hyperv1.ForceUpgradeToAnnotation]
 			if !exists {
-				return true, "", fmt.Errorf("cluster version is not upgradable")
+				return true, "", fmt.Errorf("cluster version is not upgradeable")
 			} else if releaseImage != hcluster.Spec.Release.Image {
-				return true, "", fmt.Errorf("cluster version is not upgradable, force annotation is present but does not match desired release image")
+				return true, "", fmt.Errorf("cluster version is not upgradeable, force annotation is present but does not match desired release image")
 			} else {
-				return true, "cluster version is not upgradable, upgrade is forced by annotation", nil
+				return true, "cluster version is not upgradeable, upgrade is forced by annotation", nil
 			}
 		}
 		return true, "", nil
