@@ -4483,7 +4483,7 @@ availability configuration).</p>
 <td><p>OVNKubernetes specifies OVN as the SDN provider</p>
 </td>
 </tr><tr><td><p>&#34;OpenShiftSDN&#34;</p></td>
-<td><p>OpenShiftSDN specifies OpenshiftSDN as the SDN provider</p>
+<td><p>OpenShiftSDN specifies OpenShiftSDN as the SDN provider</p>
 </td>
 </tr><tr><td><p>&#34;Other&#34;</p></td>
 <td><p>Other specifies an undefined SDN provider</p>
