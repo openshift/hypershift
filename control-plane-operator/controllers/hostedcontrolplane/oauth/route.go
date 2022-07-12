@@ -9,6 +9,12 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
+const (
+	// hyperShiftOAuthRouteLabel is a label added to OAuth routes so that they
+	// can be selected via label selector in a dedicated router shard.
+	hyperShiftOAuthRouteLabel = "hypershift.openshift.io/oauth"
+)
+
 func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy, defaultIngressDomain string) error {
 	ownerRef.ApplyTo(route)
 
@@ -22,6 +28,11 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, strategy *hy
 			route.Spec.Host = util.ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
 		}
 	}
+
+	if route.Labels == nil {
+		route.Labels = map[string]string{}
+	}
+	route.Labels[hyperShiftOAuthRouteLabel] = "true"
 
 	if strategy.Route != nil && strategy.Route.Hostname != "" {
 		if route.Annotations == nil {
