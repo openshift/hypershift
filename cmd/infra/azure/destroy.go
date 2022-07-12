@@ -2,9 +2,11 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2020-10-01/resources"
+	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/go-autorest/autorest/azure/auth"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
@@ -77,6 +79,11 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 	resourceGroupClient.Authorizer = authorizer
 	destroyFuture, err := resourceGroupClient.Delete(ctx, resourceGroupName(o.Name, o.InfraID))
 	if err != nil {
+		if detailedErr := *new(autorest.DetailedError); errors.As(err, &detailedErr) {
+			if intStatusCode, isInt := detailedErr.StatusCode.(int); isInt && intStatusCode == 404 {
+				return nil
+			}
+		}
 		return fmt.Errorf("failed to delete resourceGroup: %w", err)
 	}
 	if err := destroyFuture.WaitForCompletionRef(ctx, resourceGroupClient.Client); err != nil {
