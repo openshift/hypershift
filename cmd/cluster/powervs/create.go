@@ -12,7 +12,6 @@ import (
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/spf13/cobra"
 )
@@ -75,7 +74,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		}()
 
 		if err := CreateCluster(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to create cluster")
+			opts.Log.Error(err, "Failed to create cluster")
 			os.Exit(1)
 		}
 	}

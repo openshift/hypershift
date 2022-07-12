@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
+	"github.com/openshift/hypershift/cmd/log"
 )
 
 func NewCreateCommands() *cobra.Command {
@@ -31,6 +32,7 @@ func NewCreateCommands() *cobra.Command {
 		ExternalDNSDomain:              "",
 		AdditionalTrustBundle:          "",
 		ImageContentSources:            "",
+		Log:                            log.Log,
 	}
 	cmd := &cobra.Command{
 		Use:          "cluster",

@@ -10,7 +10,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/spf13/cobra"
@@ -57,7 +56,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		}
 
 		if err := CreateCluster(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to create cluster")
+			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
 		return nil
@@ -114,7 +113,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			EnableProxy:        opts.AWSPlatform.EnableProxy,
 			SSHKeyFile:         opts.SSHKeyFile,
 		}
-		infra, err = opt.CreateInfra(ctx)
+		infra, err = opt.CreateInfra(ctx, opts.Log)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
 		}

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
@@ -27,6 +28,7 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest"
 	"k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -221,7 +223,7 @@ type configurableClusterOptions struct {
 	NetworkType                string
 }
 
-func (o *options) DefaultClusterOptions() core.CreateOptions {
+func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 	createOption := core.CreateOptions{
 		ReleaseImage:              o.LatestReleaseImage,
 		NodePoolReplicas:          int32(o.configurableClusterOptions.NodePoolReplicas),
@@ -252,6 +254,7 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 		ServiceCIDR: "172.31.0.0/16",
 		PodCIDR:     "10.132.0.0/14",
 		BeforeApply: o.BeforeApply,
+		Log:         zapr.NewLogger(zaptest.NewLogger(t)),
 	}
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {
@@ -259,6 +262,7 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 		createOption.AWSPlatform.Zones = []string{"us-east-1a"}
 	} else {
 		createOption.AWSPlatform.Zones = strings.Split(o.configurableClusterOptions.Zone.String(), ",")
+		createOption.AzurePlatform.AvailabilityZones = strings.Split(o.configurableClusterOptions.Zone.String(), ",")
 	}
 
 	if o.configurableClusterOptions.SSHKeyFile == "" {
