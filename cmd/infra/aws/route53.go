@@ -139,7 +139,7 @@ func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client rout
 			return fmt.Errorf("failed to delete wildcard record from public zone %s: %w", id, err)
 		}
 	} else {
-		log.Log.Info("Deleted wildcard record from public hosted zone", "id", id, "name", recordName)
+		o.Log.Info("Deleted wildcard record from public hosted zone", "id", id, "name", recordName)
 	}
 	return nil
 }

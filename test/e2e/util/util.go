@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -14,6 +16,7 @@ import (
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	promconfig "github.com/prometheus/common/config"
 	prommodel "github.com/prometheus/common/model"
+	"go.uber.org/zap/zaptest"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -708,4 +711,8 @@ func createK8sClient() (*k8s.Clientset, error) {
 	}
 
 	return cli, nil
+}
+
+func NewLogr(t *testing.T) logr.Logger {
+	return zapr.NewLogger(zaptest.NewLogger(t))
 }

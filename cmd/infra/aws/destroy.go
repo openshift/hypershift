@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -36,6 +37,7 @@ type DestroyInfraOptions struct {
 	AWSSecretKey       string
 	Name               string
 	BaseDomain         string
+	Log                logr.Logger
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -48,6 +50,7 @@ func NewDestroyCommand() *cobra.Command {
 	opts := DestroyInfraOptions{
 		Region: "us-east-1",
 		Name:   "example",
+		Log:    log.Log,
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag AWS resources (required)")
@@ -62,10 +65,10 @@ func NewDestroyCommand() *cobra.Command {
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Run(cmd.Context()); err != nil {
-			log.Log.Error(err, "Failed to destroy infrastructure")
+			opts.Log.Error(err, "Failed to destroy infrastructure")
 			return err
 		}
-		log.Log.Info("Successfully destroyed infrastructure")
+		opts.Log.Info("Successfully destroyed infrastructure")
 		return nil
 	}
 
@@ -79,7 +82,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 			if !awsutil.IsErrorRetryable(err) {
 				return false, err
 			}
-			log.Log.Info("WARNING: error during destroy, will retry", "error", err.Error())
+			o.Log.Info("WARNING: error during destroy, will retry", "error", err.Error())
 			return false, nil
 		}
 		return true, nil
@@ -102,7 +105,7 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	errs = append(errs, o.DestroyVPCEndpointServices(ctx, ec2Client)...)
 	errs = append(errs, o.DestroyVPCs(ctx, ec2Client, elbClient, elbv2Client, route53Client)...)
 	if err := utilerrors.NewAggregate(errs); err != nil {
-		return utilerrors.NewAggregate(errs)
+		return err
 	}
 	errs = append(errs, o.DestroyEIPs(ctx, ec2Client)...)
 	errs = append(errs, o.DestroyDHCPOptions(ctx, ec2Client)...)
@@ -128,13 +131,13 @@ func (o *DestroyInfraOptions) DestroyS3Buckets(ctx context.Context, client s3ifa
 			})
 			if err != nil {
 				if aerr, ok := err.(awserr.Error); ok && aerr.Code() == s3.ErrCodeNoSuchBucket {
-					log.Log.Info("S3 Bucket already deleted", "name", *bucket.Name)
+					o.Log.Info("S3 Bucket already deleted", "name", *bucket.Name)
 					err = nil
 				} else {
 					errs = append(errs, err)
 				}
 			} else {
-				log.Log.Info("Deleted S3 Bucket", "name", *bucket.Name)
+				o.Log.Info("Deleted S3 Bucket", "name", *bucket.Name)
 			}
 		}
 	}
@@ -168,7 +171,7 @@ func (o *DestroyInfraOptions) DestroyV1ELBs(ctx context.Context, client elbiface
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				log.Log.Info("Deleted ELB", "name", lb.LoadBalancerName)
+				o.Log.Info("Deleted ELB", "name", lb.LoadBalancerName)
 			}
 		}
 		return true
@@ -195,7 +198,7 @@ func (o *DestroyInfraOptions) DestroyV2ELBs(ctx context.Context, client elbv2ifa
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				log.Log.Info("Deleted ELB", "name", lb.LoadBalancerName)
+				o.Log.Info("Deleted ELB", "name", lb.LoadBalancerName)
 			}
 		}
 		return true
@@ -227,7 +230,7 @@ func (o *DestroyInfraOptions) DestroyVPCEndpoints(ctx context.Context, client ec
 				for _, id := range ids {
 					epIDs = append(epIDs, aws.StringValue(id))
 				}
-				log.Log.Info("Deleted VPC endpoints", "IDs", strings.Join(epIDs, " "))
+				o.Log.Info("Deleted VPC endpoints", "IDs", strings.Join(epIDs, " "))
 			}
 		}
 		return true
@@ -266,7 +269,7 @@ func (o *DestroyInfraOptions) DestroyVPCEndpointServices(ctx context.Context, cl
 				errs = append(errs, fmt.Errorf("failed to reject endpoint connections for service %s endpoints %v", aws.StringValue(service), aws.StringValueSlice(endpoints)))
 				return false
 			}
-			log.Log.Info("Deleted endpoint connections", "serviceID", aws.StringValue(service), "endpoints", fmt.Sprintf("%v", aws.StringValueSlice(endpoints)))
+			o.Log.Info("Deleted endpoint connections", "serviceID", aws.StringValue(service), "endpoints", fmt.Sprintf("%v", aws.StringValueSlice(endpoints)))
 		}
 
 		if _, err := client.DeleteVpcEndpointServiceConfigurationsWithContext(ctx, &ec2.DeleteVpcEndpointServiceConfigurationsInput{
@@ -274,7 +277,7 @@ func (o *DestroyInfraOptions) DestroyVPCEndpointServices(ctx context.Context, cl
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to delete vpc endpoint services with ids %v: %w", ids, err))
 		} else {
-			log.Log.Info("Deleted VPC endpoint services", "IDs", ids)
+			o.Log.Info("Deleted VPC endpoint services", "IDs", ids)
 		}
 
 		return true
@@ -306,7 +309,7 @@ func (o *DestroyInfraOptions) DestroyRouteTables(ctx context.Context, client ec2
 					if err != nil {
 						routeErrs = append(routeErrs, err)
 					} else {
-						log.Log.Info("Deleted route from route table", "table", aws.StringValue(routeTable.RouteTableId), "destination", aws.StringValue(route.DestinationCidrBlock))
+						o.Log.Info("Deleted route from route table", "table", aws.StringValue(routeTable.RouteTableId), "destination", aws.StringValue(route.DestinationCidrBlock))
 					}
 				}
 			}
@@ -327,7 +330,7 @@ func (o *DestroyInfraOptions) DestroyRouteTables(ctx context.Context, client ec2
 				if err != nil {
 					assocErrs = append(assocErrs, err)
 				} else {
-					log.Log.Info("Removed route table association", "table", aws.StringValue(routeTable.RouteTableId), "association", aws.StringValue(assoc.RouteTableId))
+					o.Log.Info("Removed route table association", "table", aws.StringValue(routeTable.RouteTableId), "association", aws.StringValue(assoc.RouteTableId))
 				}
 			}
 			if len(assocErrs) > 0 {
@@ -343,7 +346,7 @@ func (o *DestroyInfraOptions) DestroyRouteTables(ctx context.Context, client ec2
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				log.Log.Info("Deleted route table", "table", aws.StringValue(routeTable.RouteTableId))
+				o.Log.Info("Deleted route table", "table", aws.StringValue(routeTable.RouteTableId))
 			}
 		}
 		return false
@@ -371,7 +374,7 @@ func (o *DestroyInfraOptions) DestroySecurityGroups(ctx context.Context, client 
 				if err != nil {
 					permissionErrs = append(permissionErrs, err)
 				} else {
-					log.Log.Info("Revoked security group ingress permissions", "group", aws.StringValue(sg.GroupId))
+					o.Log.Info("Revoked security group ingress permissions", "group", aws.StringValue(sg.GroupId))
 				}
 			}
 
@@ -383,7 +386,7 @@ func (o *DestroyInfraOptions) DestroySecurityGroups(ctx context.Context, client 
 				if err != nil {
 					permissionErrs = append(permissionErrs, err)
 				} else {
-					log.Log.Info("Revoked security group egress permissions", "group", aws.StringValue(sg.GroupId))
+					o.Log.Info("Revoked security group egress permissions", "group", aws.StringValue(sg.GroupId))
 				}
 			}
 			if len(permissionErrs) > 0 {
@@ -399,7 +402,7 @@ func (o *DestroyInfraOptions) DestroySecurityGroups(ctx context.Context, client 
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				log.Log.Info("Deleted security group", "group", aws.StringValue(sg.GroupId))
+				o.Log.Info("Deleted security group", "group", aws.StringValue(sg.GroupId))
 			}
 		}
 
@@ -484,7 +487,7 @@ func (o *DestroyInfraOptions) DestroyInternetGateways(ctx context.Context, clien
 				if err != nil {
 					detachErrs = append(detachErrs, err)
 				} else {
-					log.Log.Info("Detached internet gateway from VPC", "gateway id", aws.StringValue(igw.InternetGatewayId), "vpc", aws.StringValue(attachment.VpcId))
+					o.Log.Info("Detached internet gateway from VPC", "gateway id", aws.StringValue(igw.InternetGatewayId), "vpc", aws.StringValue(attachment.VpcId))
 				}
 			}
 			if len(detachErrs) > 0 {
@@ -497,7 +500,7 @@ func (o *DestroyInfraOptions) DestroyInternetGateways(ctx context.Context, clien
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				log.Log.Info("Deleted internet gateway", "id", aws.StringValue(igw.InternetGatewayId))
+				o.Log.Info("Deleted internet gateway", "id", aws.StringValue(igw.InternetGatewayId))
 			}
 		}
 		return true
@@ -522,7 +525,7 @@ func (o *DestroyInfraOptions) DestroySubnets(ctx context.Context, client ec2ifac
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				log.Log.Info("Deleted subnet", "id", aws.StringValue(subnet.SubnetId))
+				o.Log.Info("Deleted subnet", "id", aws.StringValue(subnet.SubnetId))
 			}
 		}
 		return true
@@ -563,7 +566,7 @@ func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2ifac
 			if err != nil {
 				errs = append(errs, fmt.Errorf("failed to delete vpc with id %s: %w", *vpc.VpcId, err))
 			} else {
-				log.Log.Info("Deleted VPC", "id", aws.StringValue(vpc.VpcId))
+				o.Log.Info("Deleted VPC", "id", aws.StringValue(vpc.VpcId))
 			}
 		}
 		return true
@@ -588,7 +591,7 @@ func (o *DestroyInfraOptions) DestroyDHCPOptions(ctx context.Context, client ec2
 			if err != nil {
 				errs = append(errs, err)
 			} else {
-				log.Log.Info("Deleted DHCP options", "id", aws.StringValue(dhcpOpt.DhcpOptionsId))
+				o.Log.Info("Deleted DHCP options", "id", aws.StringValue(dhcpOpt.DhcpOptionsId))
 			}
 		}
 		return true
@@ -619,7 +622,7 @@ func (o *DestroyInfraOptions) DestroyEIPs(ctx context.Context, client ec2iface.E
 		if err != nil {
 			errs = append(errs, err)
 		} else {
-			log.Log.Info("Deleted EIP", "id", aws.StringValue(addr.AllocationId))
+			o.Log.Info("Deleted EIP", "id", aws.StringValue(addr.AllocationId))
 		}
 	}
 	return errs

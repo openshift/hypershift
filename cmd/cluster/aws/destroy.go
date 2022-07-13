@@ -49,24 +49,26 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	baseDomain := o.AWSPlatform.BaseDomain
 	region := o.AWSPlatform.Region
 
-	log.Log.Info("Destroying infrastructure", "infraID", infraID)
+	o.Log.Info("Destroying infrastructure", "infraID", infraID)
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
 		Region:             region,
 		InfraID:            infraID,
 		AWSCredentialsFile: o.AWSPlatform.AWSCredentialsFile,
 		Name:               o.Name,
 		BaseDomain:         baseDomain,
+		Log:                o.Log,
 	}
 	if err := destroyInfraOpts.Run(ctx); err != nil {
 		return fmt.Errorf("failed to destroy infrastructure: %w", err)
 	}
 
 	if !o.AWSPlatform.PreserveIAM {
-		log.Log.Info("Destroying IAM", "infraID", infraID)
+		o.Log.Info("Destroying IAM", "infraID", infraID)
 		destroyOpts := awsinfra.DestroyIAMOptions{
 			Region:             region,
 			AWSCredentialsFile: o.AWSPlatform.AWSCredentialsFile,
 			InfraID:            infraID,
+			Log:                o.Log,
 		}
 		if err := destroyOpts.Run(ctx); err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)

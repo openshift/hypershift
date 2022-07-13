@@ -5,18 +5,21 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"testing"
 
+	"github.com/go-logr/zapr"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
 	"github.com/openshift/hypershift/support/upsert"
+	"go.uber.org/zap/zaptest"
 	"k8s.io/apimachinery/pkg/util/errors"
 )
 
 // DumpHostedCluster dumps the contents of the hosted cluster to the given artifact
 // directory, and returns an error if any aspect of that operation fails. The loop
 // detector is configured to return an error when any warnings are detected.
-func DumpHostedCluster(ctx context.Context, hc *hyperv1.HostedCluster, dumpGuestCluster bool, artifactDir string) error {
+func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, dumpGuestCluster bool, artifactDir string) error {
 	var allErrors []error
 	findKubeObjectUpdateLoops := func(filename string, content []byte) {
 		if bytes.Contains(content, []byte(upsert.LoopDetectorWarningMessage)) {
@@ -29,6 +32,7 @@ func DumpHostedCluster(ctx context.Context, hc *hyperv1.HostedCluster, dumpGuest
 		ArtifactDir:      artifactDir,
 		LogCheckers:      []core.LogChecker{findKubeObjectUpdateLoops},
 		DumpGuestCluster: dumpGuestCluster,
+		Log:              zapr.NewLogger(zaptest.NewLogger(t)),
 	})
 	if err != nil {
 		allErrors = append(allErrors, fmt.Errorf("failed to dump cluster: %w", err))
