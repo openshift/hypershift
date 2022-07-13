@@ -1579,6 +1579,10 @@ const (
 	// control plane.
 	HostedClusterAvailable ConditionType = "Available"
 
+	// HostedClusterProgressing indicates whether the HostedCluster is attempting
+	// an initial deployment or upgrade.
+	HostedClusterProgressing ConditionType = "Progressing"
+
 	// IgnitionEndpointAvailable indicates whether the ignition server for the
 	// HostedCluster is available to handle ignition requests.
 	IgnitionEndpointAvailable ConditionType = "IgnitionEndpointAvailable"
@@ -1837,7 +1841,7 @@ type ClusterConfiguration struct {
 // +kubebuilder:printcolumn:name="KubeConfig",type="string",JSONPath=".status.kubeconfig.name",description="KubeConfig Secret"
 // +kubebuilder:printcolumn:name="Progress",type="string",JSONPath=".status.version.history[?(@.state!=\"\")].state",description="Progress"
 // +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].status",description="Available"
-// +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason",description="Reason"
+// +kubebuilder:printcolumn:name="Progressing",type="string",JSONPath=".status.conditions[?(@.type==\"Progressing\")].status",description="Progressing"
 // +kubebuilder:printcolumn:name="Message",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].message",description="Message"
 type HostedCluster struct {
 	metav1.TypeMeta   `json:",inline"`
