@@ -24,7 +24,7 @@ const kubevirtDefaultVXLANPort = uint32(9879)
 // 9880 is a currently unassigned IANA port in the user port range.
 const kubevirtDefaultGenevePort = uint32(9880)
 
-func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
+func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) {
 	switch platformType {
 	case hyperv1.KubevirtPlatform:
 		// Modify vxlan port to avoid collisions with management cluster's default vxlan port.
@@ -57,5 +57,4 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 	if network.Spec.ManagementState == "" {
 		network.Spec.ManagementState = "Managed"
 	}
-	return nil
 }
