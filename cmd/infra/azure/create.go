@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
@@ -66,12 +67,13 @@ func NewCreateCommand() *cobra.Command {
 	cmd.MarkFlagRequired("azure-creds")
 	cmd.MarkFlagRequired("name")
 
+	l := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if _, err := opts.Run(cmd.Context()); err != nil {
-			log.Log.Error(err, "Failed to create infrastructure")
+		if _, err := opts.Run(cmd.Context(), l); err != nil {
+			l.Error(err, "Failed to create infrastructure")
 			return err
 		}
-		log.Log.Info("Successfully created infrastructure")
+		l.Info("Successfully created infrastructure")
 		return nil
 	}
 
@@ -111,7 +113,7 @@ func resourceGroupName(clusterName, infraID string) string {
 	return clusterName + "-" + infraID
 }
 
-func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error) {
+func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInfraOutput, error) {
 	creds := o.Credentials
 	if creds == nil {
 		var err error
@@ -119,7 +121,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 		if err != nil {
 			return nil, fmt.Errorf("failed to read the credentials: %w", err)
 		}
-		log.Log.Info("Using credentials from file", "path", o.CredentialsFile)
+		l.Info("Using credentials from file", "path", o.CredentialsFile)
 	}
 
 	authorizer, err := auth.ClientCredentialsConfig{
@@ -156,7 +158,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 		return nil, fmt.Errorf("failed to create resource group: %w", err)
 	}
 	result.ResourceGroupName = *rg.Name
-	log.Log.Info("Successfuly created resourceGroup", "name", *rg.Name)
+	l.Info("Successfuly created resourceGroup", "name", *rg.Name)
 
 	identityClient := msi.NewUserAssignedIdentitiesClient(creds.SubscriptionID)
 	identityClient.Authorizer = authorizer
@@ -185,7 +187,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 		return nil, fmt.Errorf("failed to generate uuid for role assignment name: %w", err)
 	}
 
-	log.Log.Info("Assigning role to managed identity, this may take some time")
+	l.Info("Assigning role to managed identity, this may take some time")
 	for try := 0; try < 100; try++ {
 		_, err := roleAssignmentClient.Create(ctx, *rg.ID, roleAssignmentName, authorization.RoleAssignmentCreateParameters{RoleAssignmentProperties: &authorization.RoleAssignmentProperties{
 			RoleDefinitionID: roleDefinitions.Values()[0].ID,
@@ -204,7 +206,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	securityGroupClient := network.NewSecurityGroupsClient(creds.SubscriptionID)
 	securityGroupClient.Authorizer = authorizer
 
-	log.Log.Info("Creating network security group")
+	l.Info("Creating network security group")
 	securityGroupFuture, err := securityGroupClient.CreateOrUpdate(ctx, resourceGroupName, o.Name+"-"+o.InfraID+"-nsg", network.SecurityGroup{Location: &o.Location})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network security group: %w", err)
@@ -217,7 +219,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 		return nil, fmt.Errorf("failed to get network security group creation result: %w", err)
 	}
 	result.SecurityGroupName = *securityGroup.Name
-	log.Log.Info("Created network security group")
+	l.Info("Created network security group")
 
 	networksClient := network.NewVirtualNetworksClient(creds.SubscriptionID)
 	networksClient.Authorizer = authorizer
@@ -253,7 +255,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	result.SubnetName = *(*vnet.Subnets)[0].Name
 	result.VNetID = *vnet.ID
 	result.VnetName = *vnet.Name
-	log.Log.Info("Successfully created vnet", "name", *vnet.Name, "id", *vnet.ID)
+	l.Info("Successfully created vnet", "name", *vnet.Name, "id", *vnet.ID)
 
 	privateZoneClient := privatedns.NewPrivateZonesClient(creds.SubscriptionID)
 	privateZoneClient.Authorizer = authorizer
@@ -273,7 +275,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 		return nil, fmt.Errorf("failed to get result of private dns zone creation: %w", err)
 	}
 	result.PrivateZoneID = *privateDNSZone.ID
-	log.Log.Info("Successfuly created private DNS zone")
+	l.Info("Successfuly created private DNS zone")
 
 	privateZoneLinkClient := privatedns.NewVirtualNetworkLinksClient(creds.SubscriptionID)
 	privateZoneLinkClient.Authorizer = authorizer
@@ -292,7 +294,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	if err := networkLinkPromise.WaitForCompletionRef(ctx, privateZoneClient.Client); err != nil {
 		return nil, fmt.Errorf("failed waiting for network link for private DNS zone: %w", err)
 	}
-	log.Log.Info("Successfuly created private DNS zone link")
+	l.Info("Successfuly created private DNS zone link")
 
 	storageAccountClient := storage.NewAccountsClient(creds.SubscriptionID)
 	storageAccountClient.Authorizer = authorizer
@@ -308,7 +310,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	if err := storageAccountFuture.WaitForCompletionRef(ctx, storageAccountClient.Client); err != nil {
 		return nil, fmt.Errorf("failed waiting for storage account creation to complete: %w", err)
 	}
-	log.Log.Info("Successfuly created storage account", "name", storageAccountName)
+	l.Info("Successfuly created storage account", "name", storageAccountName)
 
 	blobContainersClient := storage.NewBlobContainersClient(creds.SubscriptionID)
 	blobContainersClient.Authorizer = authorizer
@@ -317,7 +319,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	if err != nil {
 		return nil, fmt.Errorf("failed to create blob container: %w", err)
 	}
-	log.Log.Info("Successflly created blobcontainer", "name", *imageContainer.Name)
+	l.Info("Successflly created blobcontainer", "name", *imageContainer.Name)
 
 	// TODO: Extract this from the release image or require a parameter
 	// Extraction is done like this:
@@ -347,7 +349,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 
 	blobClient := blobs.New()
 	blobClient.Authorizer = blobAuth
-	log.Log.Info("Uploading rhcos image", "source", sourceURL)
+	l.Info("Uploading rhcos image", "source", sourceURL)
 	input := blobs.CopyInput{
 		CopySource: sourceURL,
 		MetaData: map[string]string{
@@ -357,7 +359,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 	if err := blobClient.CopyAndWait(ctx, storageAccountName, "vhd", blobName, input, 5*time.Second); err != nil {
 		return nil, fmt.Errorf("failed to upload rhcos image: %w", err)
 	}
-	log.Log.Info("Successfully uploaded rhcos image")
+	l.Info("Successfully uploaded rhcos image")
 
 	imagesClient := compute.NewImagesClient(creds.SubscriptionID)
 	imagesClient.Authorizer = authorizer
@@ -386,7 +388,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 		return nil, fmt.Errorf("failed to get imageCreationResult: %w", err)
 	}
 	result.BootImageID = *imageCreationResult.ID
-	log.Log.Info("Successfully created image", "resourceID", *imageCreationResult.ID, "result", imageCreationResult)
+	l.Info("Successfully created image", "resourceID", *imageCreationResult.ID, "result", imageCreationResult)
 
 	if o.OutputFile != "" {
 		resultSerialized, err := yaml.Marshal(result)
@@ -395,7 +397,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context) (*CreateInfraOutput, error
 		}
 		if err := ioutil.WriteFile(o.OutputFile, resultSerialized, 0644); err != nil {
 			// Be nice and print the data so it doesn't get lost
-			log.Log.Error(err, "Writing output file failed", "outputfile", o.OutputFile, "data", string(resultSerialized))
+			l.Error(err, "Writing output file failed", "outputfile", o.OutputFile, "data", string(resultSerialized))
 			return nil, fmt.Errorf("failed to write result to --output-file: %w", err)
 		}
 	}

@@ -27,7 +27,7 @@ func TestAutoRepair(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions()
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	numZones := int32(len(clusterOpts.AWSPlatform.Zones))
 	if numZones <= 1 {
 		clusterOpts.NodePoolReplicas = 3

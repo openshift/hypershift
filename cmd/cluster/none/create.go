@@ -7,7 +7,6 @@ import (
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/log"
 )
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
@@ -32,7 +31,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		}
 
 		if err := CreateCluster(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to create cluster")
+			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
 		return nil
@@ -50,7 +49,7 @@ func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 
 func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
 	if opts.NonePlatform.APIServerAddress == "" {
-		if opts.NonePlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx); err != nil {
+		if opts.NonePlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log); err != nil {
 			return err
 		}
 	}

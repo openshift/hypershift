@@ -26,7 +26,7 @@ func TestCreateCluster(t *testing.T) {
 	client, err := e2eutil.GetClient()
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
-	clusterOpts := globalOpts.DefaultClusterOptions()
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
@@ -59,7 +59,7 @@ func TestNoneCreateCluster(t *testing.T) {
 	client, err := e2eutil.GetClient()
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
-	clusterOpts := globalOpts.DefaultClusterOptions()
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ControlPlaneAvailabilityPolicy = "SingleReplica"
 
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir)

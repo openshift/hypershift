@@ -29,12 +29,16 @@ func TestAutoscaling(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions()
+	if len(globalOpts.configurableClusterOptions.Zone) == 0 {
+		t.Fatal("TestAutoscaling requires multiple zones")
+	}
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
 
 	// Get one of the newly created NodePools
-	zone := clusterOpts.AWSPlatform.Zones[0]
+	zone := globalOpts.configurableClusterOptions.Zone[0]
 	nodepool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedCluster.Namespace,
