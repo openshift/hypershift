@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/elb"
@@ -126,7 +127,12 @@ func (o *DestroyInfraOptions) DestroyS3Buckets(ctx context.Context, client s3ifa
 				Bucket: bucket.Name,
 			})
 			if err != nil {
-				errs = append(errs, err)
+				if aerr, ok := err.(awserr.Error); ok && aerr.Code() == s3.ErrCodeNoSuchBucket {
+					log.Log.Info("S3 Bucket already deleted", "name", *bucket.Name)
+					err = nil
+				} else {
+					errs = append(errs, err)
+				}
 			} else {
 				log.Log.Info("Deleted S3 Bucket", "name", *bucket.Name)
 			}
@@ -139,7 +145,14 @@ func emptyBucket(ctx context.Context, client s3iface.S3API, name string) error {
 	iter := s3manager.NewDeleteListIterator(client, &s3.ListObjectsInput{
 		Bucket: aws.String(name),
 	})
-	return s3manager.NewBatchDeleteWithClient(client).Delete(ctx, iter)
+
+	if err := s3manager.NewBatchDeleteWithClient(client).Delete(ctx, iter); err != nil {
+		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == s3.ErrCodeNoSuchBucket {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (o *DestroyInfraOptions) DestroyV1ELBs(ctx context.Context, client elbiface.ELBAPI, vpcID *string) []error {
