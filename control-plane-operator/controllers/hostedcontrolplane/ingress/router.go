@@ -92,7 +92,7 @@ func PrivateRouterImage(images map[string]string) string {
 	return images["haproxy-router"]
 }
 
-func ReconcilePrivateRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image, domain string) error {
+func ReconcilePrivateRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: privateRouterLabels(),

@@ -2308,8 +2308,7 @@ func (r *HostedControlPlaneReconciler) reconcilePrivateRouter(ctx context.Contex
 		return ingress.ReconcilePrivateRouterDeployment(deployment,
 			config.OwnerRefFrom(hcp),
 			ingress.PrivateRouterConfig(hcp, r.SetDefaultSecurityContext),
-			ingress.PrivateRouterImage(releaseInfo.ComponentImages()),
-			fmt.Sprintf("%s.hypershift.local", hcp.Name))
+			ingress.PrivateRouterImage(releaseInfo.ComponentImages()))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile private router deployment: %w", err)
 	}
