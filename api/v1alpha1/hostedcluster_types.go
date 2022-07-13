@@ -777,7 +777,8 @@ type AWSPlatformSpec struct {
 
 	// CloudProviderConfig specifies AWS networking configuration for the control
 	// plane.
-	//
+	// This is mainly used for cloud provider controller config:
+	// https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364
 	// TODO(dan): should this be named AWSNetworkConfig?
 	//
 	// +optional
