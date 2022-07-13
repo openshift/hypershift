@@ -302,6 +302,37 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
+	// Reconcile Degraded status
+	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.HostedControlPlaneDegraded),
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.AsExpectedReason,
+			ObservedGeneration: hostedControlPlane.Generation,
+		}
+		cpoManagedDeploymentList := &appsv1.DeploymentList{}
+		if err := r.List(ctx, cpoManagedDeploymentList, client.MatchingLabels{
+			config.ManagedByLabel: "control-plane-operator",
+		}, client.InNamespace(hostedControlPlane.Namespace)); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to list managed deployments in namespace %s: %w", hostedControlPlane.Namespace, err)
+			}
+		}
+		var errs []error
+		for _, deployment := range cpoManagedDeploymentList.Items {
+			if deployment.Status.UnavailableReplicas > 0 {
+				errs = append(errs, fmt.Errorf("%s deployment has %d unavailable replicas", deployment.Name, deployment.Status.UnavailableReplicas))
+			}
+		}
+		err := utilerrors.NewAggregate(errs)
+		if err != nil {
+			condition.Status = metav1.ConditionTrue
+			condition.Reason = "UnavailableReplicas"
+			condition.Message = err.Error()
+		}
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, condition)
+	}
+
 	// Reconcile infrastructure status
 	{
 		r.Log.Info("Reconciling infrastructure status")

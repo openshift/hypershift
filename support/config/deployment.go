@@ -10,8 +10,8 @@ import (
 	"k8s.io/utils/pointer"
 )
 
-var (
-	managedByLabel = "hypershift.openshift.io/managed-by"
+const (
+	ManagedByLabel = "hypershift.openshift.io/managed-by"
 )
 
 type DeploymentConfig struct {
@@ -208,7 +208,7 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	if deployment.Labels == nil {
 		deployment.Labels = map[string]string{}
 	}
-	deployment.Labels[managedByLabel] = "control-plane-operator"
+	deployment.Labels[ManagedByLabel] = "control-plane-operator"
 
 	c.Scheduling.ApplyTo(&deployment.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&deployment.Spec.Template.ObjectMeta)

@@ -172,6 +172,7 @@ type ConditionType string
 
 const (
 	HostedControlPlaneAvailable          ConditionType = "Available"
+	HostedControlPlaneDegraded           ConditionType = "Degraded"
 	EtcdAvailable                        ConditionType = "EtcdAvailable"
 	EtcdSnapshotRestored                 ConditionType = "EtcdSnapshotRestored"
 	KubeAPIServerAvailable               ConditionType = "KubeAPIServerAvailable"

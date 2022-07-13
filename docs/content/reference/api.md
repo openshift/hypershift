@@ -2661,6 +2661,8 @@ an initial deployment or upgrade.</p>
 </td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;Degraded&#34;</p></td>
+<td></td>
 </tr><tr><td><p>&#34;IgnitionEndpointAvailable&#34;</p></td>
 <td><p>IgnitionEndpointAvailable indicates whether the ignition server for the
 HostedCluster is available to handle ignition requests.</p>
