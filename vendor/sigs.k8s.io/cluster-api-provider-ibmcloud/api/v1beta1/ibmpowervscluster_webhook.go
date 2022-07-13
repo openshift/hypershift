@@ -39,7 +39,7 @@ func (r *IBMPowerVSCluster) SetupWebhookWithManager(mgr ctrl.Manager) error {
 
 var _ webhook.Defaulter = &IBMPowerVSCluster{}
 
-// Default implements webhook.Defaulter so a webhook will be registered for the type
+// Default implements webhook.Defaulter so a webhook will be registered for the type.
 func (r *IBMPowerVSCluster) Default() {
 	ibmpowervsclusterlog.Info("default", "name", r.Name)
 }
@@ -49,19 +49,19 @@ func (r *IBMPowerVSCluster) Default() {
 
 var _ webhook.Validator = &IBMPowerVSCluster{}
 
-// ValidateCreate implements webhook.Validator so a webhook will be registered for the type
+// ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
 func (r *IBMPowerVSCluster) ValidateCreate() error {
 	ibmpowervsclusterlog.Info("validate create", "name", r.Name)
 	return r.validateIBMPowerVSCluster()
 }
 
-// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
+// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
 func (r *IBMPowerVSCluster) ValidateUpdate(old runtime.Object) error {
 	ibmpowervsclusterlog.Info("validate update", "name", r.Name)
 	return r.validateIBMPowerVSCluster()
 }
 
-// ValidateDelete implements webhook.Validator so a webhook will be registered for the type
+// ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
 func (r *IBMPowerVSCluster) ValidateDelete() error {
 	ibmpowervsclusterlog.Info("validate delete", "name", r.Name)
 	return nil

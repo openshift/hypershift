@@ -90,9 +90,18 @@ const (
 	// ExternalDNSHostnameAnnotation is the annotation external-dns uses to register DNS name for different HCP services.
 	ExternalDNSHostnameAnnotation = "external-dns.alpha.kubernetes.io/hostname"
 
+	// ForceUpgradeToAnnotation is the annotation that forces HostedCluster upgrade even if the underlying ClusterVersion
+	// is reporting it is not Upgradeable.  The annotation value must be set to the release image being forced.
+	ForceUpgradeToAnnotation = "hypershift.openshift.io/force-upgrade-to"
+
 	// ServiceAccountSigningKeySecretKey is the name of the secret key that should contain the service account signing
 	// key if specified.
 	ServiceAccountSigningKeySecretKey = "key"
+
+	// DisableProfilingAnnotation is the annotation that allows disabling profiling for control plane components.
+	// Any components specified in this list will have profiling disabled. Profiling is disabled by default for etcd and konnectivity.
+	// Components this annotation can apply to: kube-scheduler, kube-controller-manager, kube-apiserver.
+	DisableProfilingAnnotation = "hypershift.openshift.io/disable-profiling"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
@@ -784,47 +793,35 @@ type AWSPlatformSpec struct {
 	// +immutable
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
-	// Roles must contain exactly 4 entries representing the locators for roles
-	// supporting the following OCP services:
+	// RolesRef contains references to various AWS IAM roles required to enable
+	// integrations such as OIDC.
 	//
-	// - openshift-ingress-operator/cloud-credentials
-	// - openshift-image-registry/installer-cloud-credentials
-	// - openshift-cluster-csi-drivers/ebs-cloud-credentials
-	// - cloud-network-config-controller/cloud-credentials
-	//
-	// Each role has unique permission requirements whose documentation is TBD.
-	//
-	// TODO(dan): revisit this field; it's really 3 required fields with specific content requirements
-	//
+	// +immutable
+	RolesRef AWSRolesRef `json:"rolesRef"`
+
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use RolesRef instead.
 	// +immutable
 	Roles []AWSRoleCredentials `json:"roles,omitempty"`
 
-	// KubeCloudControllerCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the cloud controller policy. The
-	// secret should have exactly one key, `credentials`, whose value is an AWS
-	// credentials file.
-	//
-	// TODO(dan): document the "cloud controller policy"
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use RolesRef instead.
 	//
 	// +immutable
 	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
 
-	// NodePoolManagementCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the node pool management policy. The
-	// secret should have exactly one key, `credentials`, whose value is an AWS
-	// credentials file.
-	//
-	// TODO(dan): document the "node pool management policy"
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use RolesRef instead.
 	//
 	// +immutable
 	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
 
-	// ControlPlaneOperatorCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the control-plane-operator policy.
-	// The secret should have exactly one key, `credentials`, whose value is
-	// an AWS credentials file.
-	//
-	// TODO(dan): document the "control plane operator policy"
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use RolesRef instead.
 	//
 	// +immutable
 	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
@@ -849,6 +846,12 @@ type AWSPlatformSpec struct {
 	EndpointAccess AWSEndpointAccessType `json:"endpointAccess,omitempty"`
 }
 
+type AWSRoleCredentials struct {
+	ARN       string `json:"arn"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
 // AWSResourceTag is a tag to apply to AWS resources created for the cluster.
 type AWSResourceTag struct {
 	// Key is the key of the tag.
@@ -869,10 +872,355 @@ type AWSResourceTag struct {
 	Value string `json:"value"`
 }
 
-type AWSRoleCredentials struct {
-	ARN       string `json:"arn"`
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
+// AWSRolesRef contains references to various AWS IAM roles required to enable
+// integrations such as OIDC.
+type AWSRolesRef struct {
+	// The referenced role must have a trust relationship that allows it to be assumed via web identity.
+	// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
+	// Example:
+	// {
+	//		"Version": "2012-10-17",
+	//		"Statement": [
+	//			{
+	//				"Effect": "Allow",
+	//				"Principal": {
+	//					"Federated": "{{ .ProviderARN }}"
+	//				},
+	//					"Action": "sts:AssumeRoleWithWebIdentity",
+	//				"Condition": {
+	//					"StringEquals": {
+	//						"{{ .ProviderName }}:sub": {{ .ServiceAccounts }}
+	//					}
+	//				}
+	//			}
+	//		]
+	//	}
+	//
+	// IngressARN is an ARN value referencing a role used for ingress OIDC
+	// integration.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//	"Version": "2012-10-17",
+	//	"Statement": [
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"elasticloadbalancing:DescribeLoadBalancers",
+	//				"tag:GetResources",
+	//				"route53:ListHostedZones"
+	//			],
+	//			"Resource": "*"
+	//		},
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"route53:ChangeResourceRecordSets"
+	//			],
+	//			"Resource": [
+	//				"arn:aws:route53:::PUBLIC_ZONE_ID",
+	//				"arn:aws:route53:::PRIVATE_ZONE_ID"
+	//			]
+	//		}
+	//	]
+	// }
+	IngressARN string `json:"ingressARN"`
+
+	// ImageRegistryARN is an ARN value referencing a role used for image
+	// registry OIDC integration.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//	"Version": "2012-10-17",
+	//	"Statement": [
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"s3:CreateBucket",
+	//				"s3:DeleteBucket",
+	//				"s3:PutBucketTagging",
+	//				"s3:GetBucketTagging",
+	//				"s3:PutBucketPublicAccessBlock",
+	//				"s3:GetBucketPublicAccessBlock",
+	//				"s3:PutEncryptionConfiguration",
+	//				"s3:GetEncryptionConfiguration",
+	//				"s3:PutLifecycleConfiguration",
+	//				"s3:GetLifecycleConfiguration",
+	//				"s3:GetBucketLocation",
+	//				"s3:ListBucket",
+	//				"s3:GetObject",
+	//				"s3:PutObject",
+	//				"s3:DeleteObject",
+	//				"s3:ListBucketMultipartUploads",
+	//				"s3:AbortMultipartUpload",
+	//				"s3:ListMultipartUploadParts"
+	//			],
+	//			"Resource": "*"
+	//		}
+	//	]
+	// }
+	ImageRegistryARN string `json:"imageRegistryARN"`
+
+	// StorageOIDC is an ARN value referencing a role used for storage driver OIDC
+	// integration.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//	"Version": "2012-10-17",
+	//	"Statement": [
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"ec2:AttachVolume",
+	//				"ec2:CreateSnapshot",
+	//				"ec2:CreateTags",
+	//				"ec2:CreateVolume",
+	//				"ec2:DeleteSnapshot",
+	//				"ec2:DeleteTags",
+	//				"ec2:DeleteVolume",
+	//				"ec2:DescribeInstances",
+	//				"ec2:DescribeSnapshots",
+	//				"ec2:DescribeTags",
+	//				"ec2:DescribeVolumes",
+	//				"ec2:DescribeVolumesModifications",
+	//				"ec2:DetachVolume",
+	//				"ec2:ModifyVolume"
+	//			],
+	//			"Resource": "*"
+	//		}
+	//	]
+	// }
+	StorageARN string `json:"storageARN"`
+
+	// NetworkOIDC is an ARN value referencing a role used for networking OIDC
+	// integration.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//	"Version": "2012-10-17",
+	//	"Statement": [
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"ec2:DescribeInstances",
+	//        "ec2:DescribeInstanceStatus",
+	//        "ec2:DescribeInstanceTypes",
+	//        "ec2:UnassignPrivateIpAddresses",
+	//        "ec2:AssignPrivateIpAddresses",
+	//        "ec2:UnassignIpv6Addresses",
+	//        "ec2:AssignIpv6Addresses",
+	//        "ec2:DescribeSubnets",
+	//        "ec2:DescribeNetworkInterfaces"
+	//			],
+	//			"Resource": "*"
+	//		}
+	//	]
+	// }
+	NetworkARN string `json:"networkARN"`
+
+	// KubeCloudControllerARN is an ARN value referencing a role that should contain
+	// policy permissions matching the cloud controller policy.
+	//
+	// The following is an example of a valid policy document:
+	//
+	//  {
+	//  "Version": "2012-10-17",
+	//  "Statement": [
+	//    {
+	//      "Action": [
+	//        "ec2:DescribeInstances",
+	//        "ec2:DescribeImages",
+	//        "ec2:DescribeRegions",
+	//        "ec2:DescribeRouteTables",
+	//        "ec2:DescribeSecurityGroups",
+	//        "ec2:DescribeSubnets",
+	//        "ec2:DescribeVolumes",
+	//        "ec2:CreateSecurityGroup",
+	//        "ec2:CreateTags",
+	//        "ec2:CreateVolume",
+	//        "ec2:ModifyInstanceAttribute",
+	//        "ec2:ModifyVolume",
+	//        "ec2:AttachVolume",
+	//        "ec2:AuthorizeSecurityGroupIngress",
+	//        "ec2:CreateRoute",
+	//        "ec2:DeleteRoute",
+	//        "ec2:DeleteSecurityGroup",
+	//        "ec2:DeleteVolume",
+	//        "ec2:DetachVolume",
+	//        "ec2:RevokeSecurityGroupIngress",
+	//        "ec2:DescribeVpcs",
+	//        "elasticloadbalancing:AddTags",
+	//        "elasticloadbalancing:AttachLoadBalancerToSubnets",
+	//        "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+	//        "elasticloadbalancing:CreateLoadBalancer",
+	//        "elasticloadbalancing:CreateLoadBalancerPolicy",
+	//        "elasticloadbalancing:CreateLoadBalancerListeners",
+	//        "elasticloadbalancing:ConfigureHealthCheck",
+	//        "elasticloadbalancing:DeleteLoadBalancer",
+	//        "elasticloadbalancing:DeleteLoadBalancerListeners",
+	//        "elasticloadbalancing:DescribeLoadBalancers",
+	//        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+	//        "elasticloadbalancing:DetachLoadBalancerFromSubnets",
+	//        "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+	//        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+	//        "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+	//        "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
+	//        "elasticloadbalancing:AddTags",
+	//        "elasticloadbalancing:CreateListener",
+	//        "elasticloadbalancing:CreateTargetGroup",
+	//        "elasticloadbalancing:DeleteListener",
+	//        "elasticloadbalancing:DeleteTargetGroup",
+	//        "elasticloadbalancing:DescribeListeners",
+	//        "elasticloadbalancing:DescribeLoadBalancerPolicies",
+	//        "elasticloadbalancing:DescribeTargetGroups",
+	//        "elasticloadbalancing:DescribeTargetHealth",
+	//        "elasticloadbalancing:ModifyListener",
+	//        "elasticloadbalancing:ModifyTargetGroup",
+	//        "elasticloadbalancing:RegisterTargets",
+	//        "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+	//        "iam:CreateServiceLinkedRole",
+	//        "kms:DescribeKey"
+	//      ],
+	//      "Resource": [
+	//        "*"
+	//      ],
+	//      "Effect": "Allow"
+	//    }
+	//  ]
+	// }
+	// +immutable
+	KubeCloudControllerARN string `json:"kubeCloudControllerARN"`
+
+	// NodePoolManagementARN is an ARN value referencing a role that should contain
+	// policy permissions matching the node pool management policy.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//   "Version": "2012-10-17",
+	//  "Statement": [
+	//    {
+	//      "Action": [
+	//        "ec2:AllocateAddress",
+	//        "ec2:AssociateRouteTable",
+	//        "ec2:AttachInternetGateway",
+	//        "ec2:AuthorizeSecurityGroupIngress",
+	//        "ec2:CreateInternetGateway",
+	//        "ec2:CreateNatGateway",
+	//        "ec2:CreateRoute",
+	//        "ec2:CreateRouteTable",
+	//        "ec2:CreateSecurityGroup",
+	//        "ec2:CreateSubnet",
+	//        "ec2:CreateTags",
+	//        "ec2:DeleteInternetGateway",
+	//        "ec2:DeleteNatGateway",
+	//        "ec2:DeleteRouteTable",
+	//        "ec2:DeleteSecurityGroup",
+	//        "ec2:DeleteSubnet",
+	//        "ec2:DeleteTags",
+	//        "ec2:DescribeAccountAttributes",
+	//        "ec2:DescribeAddresses",
+	//        "ec2:DescribeAvailabilityZones",
+	//        "ec2:DescribeImages",
+	//        "ec2:DescribeInstances",
+	//        "ec2:DescribeInternetGateways",
+	//        "ec2:DescribeNatGateways",
+	//        "ec2:DescribeNetworkInterfaces",
+	//        "ec2:DescribeNetworkInterfaceAttribute",
+	//        "ec2:DescribeRouteTables",
+	//        "ec2:DescribeSecurityGroups",
+	//        "ec2:DescribeSubnets",
+	//        "ec2:DescribeVpcs",
+	//        "ec2:DescribeVpcAttribute",
+	//        "ec2:DescribeVolumes",
+	//        "ec2:DetachInternetGateway",
+	//        "ec2:DisassociateRouteTable",
+	//        "ec2:DisassociateAddress",
+	//        "ec2:ModifyInstanceAttribute",
+	//        "ec2:ModifyNetworkInterfaceAttribute",
+	//        "ec2:ModifySubnetAttribute",
+	//        "ec2:ReleaseAddress",
+	//        "ec2:RevokeSecurityGroupIngress",
+	//        "ec2:RunInstances",
+	//        "ec2:TerminateInstances",
+	//        "tag:GetResources",
+	//        "ec2:CreateLaunchTemplate",
+	//        "ec2:CreateLaunchTemplateVersion",
+	//        "ec2:DescribeLaunchTemplates",
+	//        "ec2:DescribeLaunchTemplateVersions",
+	//        "ec2:DeleteLaunchTemplate",
+	//        "ec2:DeleteLaunchTemplateVersions"
+	//      ],
+	//      "Resource": [
+	//        "*"
+	//      ],
+	//      "Effect": "Allow"
+	//    },
+	//    {
+	//      "Condition": {
+	//        "StringLike": {
+	//          "iam:AWSServiceName": "elasticloadbalancing.amazonaws.com"
+	//        }
+	//      },
+	//      "Action": [
+	//        "iam:CreateServiceLinkedRole"
+	//      ],
+	//      "Resource": [
+	//        "arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing"
+	//      ],
+	//      "Effect": "Allow"
+	//    },
+	//    {
+	//      "Action": [
+	//        "iam:PassRole"
+	//      ],
+	//      "Resource": [
+	//        "arn:*:iam::*:role/*-worker-role"
+	//      ],
+	//      "Effect": "Allow"
+	//    }
+	//  ]
+	// }
+	//
+	// +immutable
+	NodePoolManagementARN string `json:"nodePoolManagementARN"`
+
+	// ControlPlaneOperatorARN  is an ARN value referencing a role that should contain
+	// policy permissions matching the control-plane-operator policy.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//	"Version": "2012-10-17",
+	//	"Statement": [
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"ec2:CreateVpcEndpoint",
+	//				"ec2:DescribeVpcEndpoints",
+	//				"ec2:ModifyVpcEndpoint",
+	//				"ec2:DeleteVpcEndpoints",
+	//				"ec2:CreateTags",
+	//				"route53:ListHostedZones"
+	//			],
+	//			"Resource": "*"
+	//		},
+	//		{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"route53:ChangeResourceRecordSets",
+	//				"route53:ListResourceRecordSets"
+	//			],
+	//			"Resource": "arn:aws:route53:::%s"
+	//		}
+	//	]
+	// }
+	// +immutable
+	ControlPlaneOperatorARN string `json:"controlPlaneOperatorARN"`
 }
 
 // AWSServiceEndpoint stores the configuration for services to
@@ -1016,6 +1364,16 @@ type ManagedEtcdStorageSpec struct {
 	//
 	// +optional
 	PersistentVolume *PersistentVolumeEtcdStorageSpec `json:"persistentVolume,omitempty"`
+
+	// RestoreSnapshotURL allows an optional list of URLs to be provided where
+	// an etcd snapshot can be downloaded, for example a pre-signed URL
+	// referencing a storage service, one URL per replica.
+	// This snapshot will be restored on initial startup, only when the etcd PV
+	// is empty.
+	//
+	// +optional
+	// +immutable
+	RestoreSnapshotURL []string `json:"restoreSnapshotURL"`
 }
 
 // PersistentVolumeEtcdStorageSpec is the configuration for PersistentVolume
@@ -1245,19 +1603,31 @@ const (
 	// underlying cluster's ClusterVersion.
 	ClusterVersionSucceeding ConditionType = "ClusterVersionSucceeding"
 
-	// ReconciliationPaused indicates if reconciliation of the hostedcluster is
-	// paused.
-	ReconciliationPaused ConditionType = "ReconciliationPaused"
+	// ClusterVersionUpgradeable indicates the Upgradeable condition in the
+	// underlying cluster's ClusterVersion.
+	ClusterVersionUpgradeable ConditionType = "ClusterVersionUpgradeable"
 
-	// OIDCConfigurationInvalid indicates if an AWS cluster's OIDC condition is
+	// ReconciliationActive indicates if reconciliation of the hostedcluster is
+	// active or paused.
+	ReconciliationActive ConditionType = "ReconciliationActive"
+
+	// ReconciliationSucceeded indicates if the hostedcluster reconciliation
+	// succeeded.
+	ReconciliationSucceeded ConditionType = "ReconciliationSucceeded"
+
+	// ValidOIDCConfiguration indicates if an AWS cluster's OIDC condition is
 	// detected as invalid.
-	OIDCConfigurationInvalid ConditionType = "OIDCConfigurationInvalid"
+	ValidOIDCConfiguration ConditionType = "ValidOIDCConfiguration"
 
 	// ValidReleaseImage indicates if the release image set in the spec is valid
 	// for the HostedCluster. For example, this can be set false if the
 	// HostedCluster itself attempts an unsupported version before 4.9 or an
 	// unsupported upgrade e.g y-stream upgrade before 4.11.
 	ValidReleaseImage ConditionType = "ValidReleaseImage"
+
+	// PlatformCredentialsFound indicates that credentials required for the
+	// desired platform are valid.
+	PlatformCredentialsFound ConditionType = "PlatformCredentialsFound"
 )
 
 const (
@@ -1293,7 +1663,8 @@ const (
 
 	InsufficientClusterCapabilitiesReason = "InsufficientClusterCapabilities"
 
-	OIDCConfigurationInvalidReason = "OIDCConfigurationInvalid"
+	OIDCConfigurationInvalidReason    = "OIDCConfigurationInvalid"
+	PlatformCredentialsNotFoundReason = "PlatformCredentialsNotFound"
 
 	InvalidImageReason = "InvalidImage"
 )

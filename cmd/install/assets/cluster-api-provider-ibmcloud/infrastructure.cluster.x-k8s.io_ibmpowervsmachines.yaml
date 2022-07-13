@@ -36,7 +36,7 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: IBMPowerVSMachine is the Schema for the ibmpowervsmachines API
+        description: IBMPowerVSMachine is the Schema for the ibmpowervsmachines API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -51,7 +51,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: IBMPowerVSMachineSpec defines the desired state of IBMPowerVSMachine
+            description: IBMPowerVSMachineSpec defines the desired state of IBMPowerVSMachine.
             properties:
               image:
                 description: Image is the reference to the Image from which to create
@@ -97,7 +97,8 @@ spec:
                   capped'
                 type: string
               processors:
-                description: Processors is Number of processors allocated
+                description: Processors is Number of processors allocated.
+                pattern: ^\d+(\.)?(\d)?(\d)?$
                 type: string
               providerID:
                 description: ProviderID is the unique identifier as specified by the
@@ -105,22 +106,22 @@ spec:
                 type: string
               serviceInstanceID:
                 description: ServiceInstanceID is the id of the power cloud instance
-                  where the vsi instance will get deployed
+                  where the vsi instance will get deployed.
                 minLength: 1
                 type: string
               sshKey:
                 description: SSHKey is the name of the SSH key pair provided to the
-                  vsi for authenticating users
+                  vsi for authenticating users.
                 type: string
               sysType:
-                description: SysType is the System type used to host the vsi
+                description: SysType is the System type used to host the vsi.
                 type: string
             required:
             - network
             - serviceInstanceID
             type: object
           status:
-            description: IBMPowerVSMachineStatus defines the observed state of IBMPowerVSMachine
+            description: IBMPowerVSMachineStatus defines the observed state of IBMPowerVSMachine.
             properties:
               addresses:
                 description: Addresses contains the vsi associated addresses.
@@ -215,24 +216,24 @@ spec:
                   the Machine object and/or logged in the controller's output."
                 type: string
               fault:
-                description: Fault will report if any fault messages for the vsi
+                description: Fault will report if any fault messages for the vsi.
                 type: string
               health:
-                description: Health is the health of the vsi
+                description: Health is the health of the vsi.
                 type: string
               instanceID:
                 type: string
               instanceState:
-                description: InstanceState is the status of the vsi
+                description: InstanceState is the status of the vsi.
                 type: string
               ready:
                 description: Ready is true when the provider resource is ready.
                 type: boolean
               region:
-                description: Region specifies the Power VS Service instance region
+                description: Region specifies the Power VS Service instance region.
                 type: string
               zone:
-                description: Zone specifies the Power VS Service instance zone
+                description: Zone specifies the Power VS Service instance zone.
                 type: string
             type: object
         type: object

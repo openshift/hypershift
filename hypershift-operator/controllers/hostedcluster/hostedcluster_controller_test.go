@@ -8,20 +8,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
@@ -930,10 +934,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.AWSPlatform,
 					AWS: &hyperv1.AWSPlatformSpec{
-						KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: "secret"},
-						NodePoolManagementCreds:   corev1.LocalObjectReference{Name: "secret"},
-						ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: "secret"},
-						EndpointAccess:            hyperv1.Public,
+						EndpointAccess: hyperv1.Public,
 					},
 				},
 			},
@@ -1003,6 +1004,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
 		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}},
+		now:                           metav1.Now,
 	}
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
@@ -1696,5 +1698,609 @@ func TestConfigurationFieldsToRawExtensions(t *testing.T) {
 	}
 	if proxy.APIVersion == "" || proxy.Kind == "" {
 		t.Errorf("rawObject has no apiVersion or kind set: %+v", proxy.ObjectMeta)
+	}
+}
+
+func TestIsUpgradeable(t *testing.T) {
+	releaseImageFrom := "image:1.2"
+	releaseImageTo := "image:1.3"
+	tests := []struct {
+		name      string
+		hc        *hyperv1.HostedCluster
+		upgrading bool
+		err       bool
+	}{
+		{
+			name: "version not reported yet",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: releaseImageFrom,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: nil,
+				},
+			},
+			upgrading: false,
+			err:       false,
+		},
+		{
+			name: "not upgrading",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: releaseImageFrom,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: releaseImageFrom,
+						},
+					},
+				},
+			},
+			upgrading: false,
+			err:       false,
+		},
+		{
+			name: "not upgradable, no force annotation",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: releaseImageTo,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: releaseImageFrom,
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			upgrading: true,
+			err:       true,
+		},
+		{
+			name: "not upgradable, old force annotation",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ForceUpgradeToAnnotation: releaseImageFrom,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: releaseImageTo,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: releaseImageFrom,
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			upgrading: true,
+			err:       true,
+		},
+		{
+			name: "not upgradable, force annotation",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ForceUpgradeToAnnotation: releaseImageTo,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: releaseImageTo,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: releaseImageFrom,
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			upgrading: true,
+			err:       false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			upgrading, _, err := isUpgradeable(test.hc)
+			if upgrading != test.upgrading {
+				t.Errorf("isUpgradeable() upgrading = %v, want %v", upgrading, test.upgrading)
+			}
+			if (err == nil) == test.err {
+				t.Errorf("isUpgradeable() err = %v, want %v", (err == nil), test.err)
+				return
+			}
+		})
+	}
+}
+
+func TestReconcileDeprecatedAWSRoles(t *testing.T) {
+	testNamespace := "test"
+
+	// Emulate user input secrets pre-created by the CLI.
+	kubeCloudControllerARN := "kubeCloudControllerARN"
+	kubeCloudControllerSecretName := "kubeCloudControllerCreds"
+	kubeCloudControllerSecret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      kubeCloudControllerSecretName,
+		},
+		Data: map[string][]byte{
+			"credentials": []byte(fmt.Sprintf(`[default]
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+`, kubeCloudControllerARN)),
+		},
+	}
+
+	nodePoolManagementARN := "nodePoolManagementARN"
+	nodePoolManagementSecretName := "nodePoolManagementCreds"
+	nodePoolManagementSecret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      nodePoolManagementSecretName,
+		},
+		Data: map[string][]byte{
+			"credentials": []byte(fmt.Sprintf(`[default]
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+`, nodePoolManagementARN)),
+		},
+	}
+
+	controlPlaneOperatorARN := "controlPlaneOperatorARN"
+	controlPlaneOperatorSecretName := "controlPlaneOperatorCreds"
+	controlPlaneOperatorSecret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: testNamespace,
+			Name:      controlPlaneOperatorSecretName,
+		},
+		Data: map[string][]byte{
+			"credentials": []byte(fmt.Sprintf(`[default]
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+`, controlPlaneOperatorARN)),
+		},
+	}
+
+	// Emulate user input.
+	ingressARN := "ingressARN"
+	imageRegistryARN := "registryARN"
+	storageARN := "ebsARN"
+	networkARN := "networkARN"
+
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "",
+			Namespace: testNamespace,
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					RolesRef: hyperv1.AWSRolesRef{
+						IngressARN:              "",
+						ImageRegistryARN:        "",
+						StorageARN:              "",
+						NetworkARN:              "",
+						KubeCloudControllerARN:  "",
+						NodePoolManagementARN:   "",
+						ControlPlaneOperatorARN: "",
+					},
+					Roles: []hyperv1.AWSRoleCredentials{
+						{
+							ARN:       ingressARN,
+							Namespace: "openshift-ingress-operator",
+							Name:      "cloud-credentials",
+						},
+						{
+							ARN:       imageRegistryARN,
+							Namespace: "openshift-image-registry",
+							Name:      "installer-cloud-credentials",
+						},
+						{
+							ARN:       storageARN,
+							Namespace: "openshift-cluster-csi-drivers",
+							Name:      "ebs-cloud-credentials",
+						},
+						{
+							ARN:       networkARN,
+							Namespace: "openshift-cloud-network-config-controller",
+							Name:      "cloud-credentials",
+						},
+					},
+					KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: kubeCloudControllerSecretName},
+					NodePoolManagementCreds:   corev1.LocalObjectReference{Name: nodePoolManagementSecretName},
+					ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: controlPlaneOperatorSecretName},
+				},
+			},
+		},
+		Status: hyperv1.HostedClusterStatus{},
+	}
+
+	// Expect old fields to be migrated.
+	expectedAWSPlatformSpec := &hyperv1.AWSPlatformSpec{
+		Region:              "",
+		CloudProviderConfig: nil,
+		ServiceEndpoints:    nil,
+		RolesRef: hyperv1.AWSRolesRef{
+			IngressARN:              ingressARN,
+			ImageRegistryARN:        imageRegistryARN,
+			StorageARN:              storageARN,
+			NetworkARN:              networkARN,
+			KubeCloudControllerARN:  kubeCloudControllerARN,
+			NodePoolManagementARN:   nodePoolManagementARN,
+			ControlPlaneOperatorARN: controlPlaneOperatorARN,
+		},
+		Roles:                     nil,
+		KubeCloudControllerCreds:  corev1.LocalObjectReference{},
+		NodePoolManagementCreds:   corev1.LocalObjectReference{},
+		ControlPlaneOperatorCreds: corev1.LocalObjectReference{},
+		ResourceTags:              nil,
+		EndpointAccess:            "",
+	}
+
+	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(controlPlaneOperatorSecret, nodePoolManagementSecret, kubeCloudControllerSecret).Build()
+	r := &HostedClusterReconciler{Client: client}
+
+	g := NewGomegaWithT(t)
+	err := r.reconcileDeprecatedAWSRoles(context.Background(), hc)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(hc.Spec.Platform.AWS).To(BeEquivalentTo(expectedAWSPlatformSpec))
+}
+
+func TestEnsureHCPAWSRolesBackwardCompatibility(t *testing.T) {
+	ingressARN := "ingressARN"
+	imageRegistryARN := "imageRegistryARN"
+	storageARN := "storageARN"
+	networkARN := "networkARN"
+
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "",
+			Namespace: "",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					RolesRef: hyperv1.AWSRolesRef{
+						IngressARN:              ingressARN,
+						ImageRegistryARN:        imageRegistryARN,
+						StorageARN:              storageARN,
+						NetworkARN:              networkARN,
+						KubeCloudControllerARN:  "anything",
+						NodePoolManagementARN:   "anything",
+						ControlPlaneOperatorARN: "anything",
+					},
+				},
+			},
+		},
+	}
+
+	expectedAWSPlatformSpec := &hyperv1.AWSPlatformSpec{
+		Region:              "",
+		CloudProviderConfig: nil,
+		ServiceEndpoints:    nil,
+		RolesRef: hyperv1.AWSRolesRef{
+			IngressARN:              ingressARN,
+			ImageRegistryARN:        imageRegistryARN,
+			StorageARN:              storageARN,
+			NetworkARN:              networkARN,
+			KubeCloudControllerARN:  "anything",
+			NodePoolManagementARN:   "anything",
+			ControlPlaneOperatorARN: "anything",
+		},
+		Roles: []hyperv1.AWSRoleCredentials{
+			{
+				ARN:       ingressARN,
+				Namespace: "openshift-ingress-operator",
+				Name:      "cloud-credentials",
+			},
+			{
+				ARN:       imageRegistryARN,
+				Namespace: "openshift-image-registry",
+				Name:      "installer-cloud-credentials",
+			},
+			{
+				ARN:       storageARN,
+				Namespace: "openshift-cluster-csi-drivers",
+				Name:      "ebs-cloud-credentials",
+			},
+			{
+				ARN:       networkARN,
+				Namespace: "openshift-cloud-network-config-controller",
+				Name:      "cloud-credentials",
+			},
+		},
+		KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: platformaws.KubeCloudControllerCredsSecret("").Name},
+		NodePoolManagementCreds:   corev1.LocalObjectReference{},
+		ControlPlaneOperatorCreds: corev1.LocalObjectReference{},
+		ResourceTags:              nil,
+		EndpointAccess:            "",
+	}
+
+	g := NewGomegaWithT(t)
+	hcp := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					Region:                    "",
+					CloudProviderConfig:       nil,
+					ServiceEndpoints:          nil,
+					RolesRef:                  hyperv1.AWSRolesRef{},
+					Roles:                     nil,
+					KubeCloudControllerCreds:  corev1.LocalObjectReference{},
+					NodePoolManagementCreds:   corev1.LocalObjectReference{},
+					ControlPlaneOperatorCreds: corev1.LocalObjectReference{},
+					ResourceTags:              nil,
+					EndpointAccess:            "",
+				},
+			},
+		},
+	}
+	ensureHCPAWSRolesBackwardCompatibility(hc, hcp)
+	g.Expect(hcp.Spec.Platform.AWS).To(BeEquivalentTo(expectedAWSPlatformSpec))
+}
+
+func TestReconcileDeprecatedGlobalConfig(t *testing.T) {
+	hc := &hyperv1.HostedCluster{}
+	hc.Name = "fake-name"
+	hc.Namespace = "fake-namespace"
+
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: configv1.APIServerSpec{
+			ClientCA: configv1.ConfigMapNameReference{
+				Name: "fake-ca",
+			},
+		},
+	}
+	serializedAPIServer, err := util.SerializeResource(apiServer, hyperapi.Scheme)
+	if err != nil {
+		t.Fatalf("failed to serialize apiserver: %v", err)
+	}
+	hc.Spec.Configuration = &hyperv1.ClusterConfiguration{
+		Items: []runtime.RawExtension{
+			{
+				Raw: []byte(serializedAPIServer),
+			},
+		},
+		ConfigMapRefs: []corev1.LocalObjectReference{
+			{
+				Name: "fake-ca",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(hyperapi.Scheme).
+		WithObjects(hc).
+		Build()
+	reconciler := &HostedClusterReconciler{
+		Client: fakeClient,
+	}
+
+	originalSpec := hc.Spec.DeepCopy()
+	if err := reconciler.reconcileDeprecatedGlobalConfig(context.Background(), hc); err != nil {
+		t.Fatalf("unexpected reconcile error: %v", err)
+	}
+
+	// Update fields if required.
+	if !equality.Semantic.DeepEqual(&hc.Spec, originalSpec) {
+		err := reconciler.Client.Update(context.Background(), hc)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	updatedHc := &hyperv1.HostedCluster{}
+	if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(hc), updatedHc); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if updatedHc.Spec.Configuration == nil {
+		t.Fatalf("unexpected nil configuration")
+	}
+
+	if len(updatedHc.Spec.Configuration.Items) > 0 {
+		t.Errorf("non-empty deprecated configuration")
+	}
+	if len(updatedHc.Spec.Configuration.ConfigMapRefs) > 0 {
+		t.Errorf("non-empty configmap refs")
+	}
+	if len(updatedHc.Spec.Configuration.SecretRefs) > 0 {
+		t.Errorf("non-emtpy secret refs")
+	}
+	if !equality.Semantic.DeepEqual(&apiServer.Spec, updatedHc.Spec.Configuration.APIServer) {
+		t.Errorf("unexpected apiserver spec: %#v", updatedHc.Spec.Configuration.APIServer)
+	}
+}
+
+func TestReconciliationSuccessConditionSetting(t *testing.T) {
+
+	// Serialization seems to round to seconds, so we have to do the
+	// same to be able to compare.
+	now := metav1.Time{Time: time.Now().Round(time.Second)}
+	reconcilerNow := metav1.Time{Time: now.Add(time.Second)}
+
+	testCases := []struct {
+		name               string
+		reconcileResult    error
+		existingConditions []metav1.Condition
+		expectedConditions []metav1.Condition
+	}{
+		{
+			name: "Success, success condition gets set",
+			expectedConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "ReconciliatonSucceeded",
+				LastTransitionTime: reconcilerNow,
+			}},
+		},
+		{
+			name: "Succcess, existing success condition transition timestamp stays",
+			existingConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "ReconciliatonSucceeded",
+				LastTransitionTime: now,
+			}},
+			expectedConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "ReconciliatonSucceeded",
+				LastTransitionTime: now,
+			}},
+		},
+		{
+			name: "Success, error condition gets cleared",
+			existingConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionFalse,
+				Message:            "Some error",
+				LastTransitionTime: now,
+			}},
+			expectedConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "ReconciliatonSucceeded",
+				LastTransitionTime: reconcilerNow,
+			}},
+		},
+		{
+			name:            "Error, error gets set",
+			reconcileResult: errors.New("things went sideways"),
+			expectedConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionFalse,
+				Reason:             "ReconciliationError",
+				Message:            "things went sideways",
+				LastTransitionTime: reconcilerNow,
+			}},
+		},
+		{
+			name:            "Error, errors gets updated",
+			reconcileResult: errors.New("things went sideways"),
+			existingConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionFalse,
+				Reason:             "ReconciliationError",
+				Message:            "some old error",
+				LastTransitionTime: reconcilerNow,
+			}},
+			expectedConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionFalse,
+				Reason:             "ReconciliationError",
+				Message:            "things went sideways",
+				LastTransitionTime: reconcilerNow,
+			}},
+		},
+		{
+			name:            "Error, success condition gets cleaned up",
+			reconcileResult: errors.New("things went sideways"),
+			existingConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionTrue,
+				Reason:             "ReconciliatonSucceeded",
+				LastTransitionTime: now,
+			}},
+			expectedConditions: []metav1.Condition{{
+				Type:               string(hyperv1.ReconciliationSucceeded),
+				Status:             metav1.ConditionFalse,
+				Reason:             "ReconciliationError",
+				Message:            "things went sideways",
+				LastTransitionTime: reconcilerNow,
+			}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "hcluster"},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tc.existingConditions,
+				},
+			}
+
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build()
+			r := &HostedClusterReconciler{
+				Client: c,
+				overwriteReconcile: func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
+					return ctrl.Result{}, tc.reconcileResult
+				},
+				now: func() metav1.Time { return reconcilerNow },
+			}
+
+			ctx := context.Background()
+
+			var actualErrString string
+			if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)}); err != nil {
+				actualErrString = err.Error()
+			}
+			var expectedErrString string
+			if tc.reconcileResult != nil {
+				expectedErrString = tc.reconcileResult.Error()
+			}
+			if actualErrString != expectedErrString {
+				t.Errorf("actual error %s doesn't match expected %s", actualErrString, expectedErrString)
+			}
+
+			if err := c.Get(ctx, crclient.ObjectKeyFromObject(hcluster), hcluster); err != nil {
+				t.Fatalf("failed to get hcluster after reconciliation: %v", err)
+			}
+
+			if diff := cmp.Diff(hcluster.Status.Conditions, tc.expectedConditions); diff != "" {
+				t.Errorf("actual conditions differ from expected: %s", diff)
+			}
+		})
 	}
 }

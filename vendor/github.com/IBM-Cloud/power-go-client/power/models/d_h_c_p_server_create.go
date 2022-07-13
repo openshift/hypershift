@@ -18,7 +18,7 @@ import (
 type DHCPServerCreate struct {
 
 	// Optional cloud connection uuid to connect with DHCP private network
-	CloudConnectionID string `json:"cloudConnectionID,omitempty"`
+	CloudConnectionID *string `json:"cloudConnectionID,omitempty"`
 }
 
 // Validate validates this d h c p server create

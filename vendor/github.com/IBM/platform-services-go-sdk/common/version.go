@@ -17,4 +17,4 @@
 package common
 
 // Version of the SDK
-const Version = "0.22.8"
+const Version = "0.24.1"

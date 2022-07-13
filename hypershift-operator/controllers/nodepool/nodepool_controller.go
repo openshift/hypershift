@@ -322,7 +322,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		log.Info("CA Secret is missing tls.crt key")
 		return ctrl.Result{}, nil
 	}
-	removeStatusCondition(&nodePool.Status.Conditions, hyperv1.IgnitionCACertMissingReason)
+	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
 	// Validate and get releaseImage.
 	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Spec.Release.Image)

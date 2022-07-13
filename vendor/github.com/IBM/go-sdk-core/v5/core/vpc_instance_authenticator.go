@@ -127,9 +127,8 @@ func (builder *VpcInstanceAuthenticatorBuilder) Build() (*VpcInstanceAuthenticat
 func (authenticator *VpcInstanceAuthenticator) client() *http.Client {
 	authenticator.clientInit.Do(func() {
 		if authenticator.Client == nil {
-			authenticator.Client = &http.Client{
-				Timeout: vpcauthDefaultTimeout,
-			}
+			authenticator.Client = DefaultHTTPClient()
+			authenticator.Client.Timeout = vpcauthDefaultTimeout
 		}
 	})
 	return authenticator.Client

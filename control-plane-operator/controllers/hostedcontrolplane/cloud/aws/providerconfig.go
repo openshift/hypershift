@@ -3,6 +3,8 @@ package aws
 import (
 	"fmt"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	corev1 "k8s.io/api/core/v1"
 
 	"github.com/openshift/hypershift/support/util"
@@ -26,4 +28,13 @@ func (p *AWSParams) ReconcileCloudConfig(cm *corev1.ConfigMap) error {
 	}
 	cm.Data[ProviderConfigKey] = fmt.Sprintf(configTemplate, p.Zone, p.VPC, p.ClusterID, p.SubnetID)
 	return nil
+}
+
+func KubeCloudControllerCredsSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "cloud-controller-creds",
+		},
+	}
 }

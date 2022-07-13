@@ -20,6 +20,9 @@ const (
 	DefaultAPIServerPort         = 6443
 	DefaultServiceNodePortRange  = "30000-32767"
 	DefaultSecurityContextUser   = 1001
+	RecommendedLeaseDuration     = "137s"
+	RecommendedRenewDeadline     = "107s"
+	RecommendedRetryPeriod       = "26s"
 
 	DefaultIngressDomainEnvVar = "DEFAULT_INGRESS_DOMAIN"
 )

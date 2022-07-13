@@ -36,7 +36,7 @@ func (r *IBMVPCMachineTemplate) SetupWebhookWithManager(mgr ctrl.Manager) error 
 
 var _ webhook.Defaulter = &IBMVPCMachineTemplate{}
 
-// Default implements webhook.Defaulter so a webhook will be registered for the type
+// Default implements webhook.Defaulter so a webhook will be registered for the type.
 func (r *IBMVPCMachineTemplate) Default() {
 	ibmvpcmachinetemplatelog.Info("default", "name", r.Name)
 	defaultIBMVPCMachineSpec(&r.Spec.Template.Spec)
@@ -47,19 +47,19 @@ func (r *IBMVPCMachineTemplate) Default() {
 
 var _ webhook.Validator = &IBMVPCMachineTemplate{}
 
-// ValidateCreate implements webhook.Validator so a webhook will be registered for the type
+// ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
 func (r *IBMVPCMachineTemplate) ValidateCreate() error {
 	ibmvpcmachinetemplatelog.Info("validate create", "name", r.Name)
 	return nil
 }
 
-// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
+// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
 func (r *IBMVPCMachineTemplate) ValidateUpdate(old runtime.Object) error {
 	ibmvpcmachinetemplatelog.Info("validate update", "name", r.Name)
 	return nil
 }
 
-// ValidateDelete implements webhook.Validator so a webhook will be registered for the type
+// ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
 func (r *IBMVPCMachineTemplate) ValidateDelete() error {
 	ibmvpcmachinetemplatelog.Info("validate delete", "name", r.Name)
 	return nil

@@ -46,6 +46,7 @@ nav:
     - how-to/aws/create-infra-iam-separately.md
     - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
     - how-to/aws/deploy-aws-private-clusters.md
+    - how-to/aws/etc-backup-restore.md
   - 'Azure':
     - how-to/azure/create-azure-cluster.md
   - 'Agent':

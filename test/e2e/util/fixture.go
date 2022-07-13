@@ -279,14 +279,12 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 				t.Logf("Failed to dump machine journals; this is nonfatal: %v", err)
 			}
 			return utilerrors.NewAggregate(dumpErrors)
-		case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
+		default:
 			err := dump.DumpHostedCluster(ctx, hc, dumpGuestCluster, dumpDir)
 			if err != nil {
 				return fmt.Errorf("failed to dump hosted cluster: %w", err)
 			}
 			return nil
-		default:
-			return fmt.Errorf("unsupported cluster platform")
 		}
 	}
 }

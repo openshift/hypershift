@@ -61,25 +61,41 @@ func (r *NodePoolReconciler) isHAProxyIgnitionConfigManaged(ctx context.Context,
 }
 
 func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context, releaseImage *releaseinfo.ReleaseImage, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, missing bool, err error) {
+	var apiServerExternalAddress string
+	var apiServerExternalPort int32
+	if util.IsPrivateHC(hcluster) {
+		apiServerExternalAddress = fmt.Sprintf("api.%s.hypershift.local", hcluster.Name)
+		apiServerExternalPort = 6443
+	} else {
+		if hcluster.Status.KubeConfig == nil {
+			return "", true, nil
+		}
+		var kubeconfig corev1.Secret
+		if err := r.Get(ctx, crclient.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Status.KubeConfig.Name}, &kubeconfig); err != nil {
+			return "", true, fmt.Errorf("failed to get kubeconfig: %w", err)
+		}
+		kubeconfigBytes, found := kubeconfig.Data["kubeconfig"]
+		if !found {
+			return "", true, fmt.Errorf("kubeconfig secret %s has no 'kubeconfig' key", crclient.ObjectKeyFromObject(&kubeconfig))
+		}
+		restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
+		if err != nil {
+			return "", true, fmt.Errorf("failed to parse kubeconfig from secret %s: %w", crclient.ObjectKeyFromObject(&kubeconfig), err)
+		}
+		hostURL, err := url.Parse(restConfig.Host)
+		if err != nil {
+			return "", true, fmt.Errorf("failed to parse host in kubeconfig from secret %s as url: %w", crclient.ObjectKeyFromObject(&kubeconfig), err)
+		}
+		apiServerExternalAddress = hostURL.Hostname()
 
-	if hcluster.Status.KubeConfig == nil {
-		return "", true, nil
-	}
-	var kubeconfig corev1.Secret
-	if err := r.Get(ctx, crclient.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Status.KubeConfig.Name}, &kubeconfig); err != nil {
-		return "", true, fmt.Errorf("failed to get kubeconfig: %w", err)
-	}
-	kubeconfigBytes, found := kubeconfig.Data["kubeconfig"]
-	if !found {
-		return "", true, fmt.Errorf("kubeconfig secret %s has no 'kubeconfig' key", crclient.ObjectKeyFromObject(&kubeconfig))
-	}
-	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
-	if err != nil {
-		return "", true, fmt.Errorf("failed to parse kubeconfig from secret %s: %w", crclient.ObjectKeyFromObject(&kubeconfig), err)
-	}
-	hostURL, err := url.Parse(restConfig.Host)
-	if err != nil {
-		return "", true, fmt.Errorf("failed to parse host in kubeconfig from secret %s as url: %w", crclient.ObjectKeyFromObject(&kubeconfig), err)
+		apiServerExternalPort = 443
+		if portFromKubeconfig := hostURL.Port(); portFromKubeconfig != "" {
+			numericPortFromKubeconfig, err := strconv.Atoi(portFromKubeconfig)
+			if err != nil {
+				return "", true, fmt.Errorf("failed to parse port string %q from kubeconfig %s as int: %w", portFromKubeconfig, crclient.ObjectKeyFromObject(&kubeconfig), err)
+			}
+			apiServerExternalPort = int32(numericPortFromKubeconfig)
+		}
 	}
 
 	haProxyImage, ok := releaseImage.ComponentImages()[haProxyRouterImageName]
@@ -105,15 +121,7 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 
 	machineConfig := manifests.MachineConfigAPIServerHAProxy()
 	ignition.SetMachineConfigLabels(machineConfig)
-	externalPort := int32(443)
-	if portFromKubeconfig := hostURL.Port(); portFromKubeconfig != "" {
-		numericPortFromKubeconfig, err := strconv.Atoi(portFromKubeconfig)
-		if err != nil {
-			return "", true, fmt.Errorf("failed to parse port string %q from kubeconfig %s as int: %w", portFromKubeconfig, crclient.ObjectKeyFromObject(&kubeconfig), err)
-		}
-		externalPort = int32(numericPortFromKubeconfig)
-	}
-	serializedConfig, err := apiServerProxyConfig(haProxyImage, controlPlaneOperatorImage, hostURL.Hostname(), apiServerInternalAddress, externalPort, apiServerInternalPort, apiserverProxy)
+	serializedConfig, err := apiServerProxyConfig(haProxyImage, controlPlaneOperatorImage, apiServerExternalAddress, apiServerInternalAddress, apiServerExternalPort, apiServerInternalPort, apiserverProxy)
 	if err != nil {
 		return "", true, fmt.Errorf("failed to create apiserver haproxy config: %w", err)
 	}

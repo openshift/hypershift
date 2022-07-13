@@ -311,6 +311,9 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 	if len(p.CipherSuites()) != 0 {
 		args = append(args, fmt.Sprintf("--tls-cipher-suites=%s", strings.Join(p.CipherSuites(), ",")))
 	}
+	if p.DisableProfiling {
+		args = append(args, "--profiling=false")
+	}
 	args = append(args, []string{
 		fmt.Sprintf("--cert-dir=%s", cpath(kcmVolumeCertDir().Name, "")),
 		fmt.Sprintf("--cluster-cidr=%s", p.PodCIDR),

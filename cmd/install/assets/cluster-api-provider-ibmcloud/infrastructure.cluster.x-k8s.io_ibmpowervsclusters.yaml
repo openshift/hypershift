@@ -19,7 +19,7 @@ spec:
   - name: v1beta1
     schema:
       openAPIV3Schema:
-        description: IBMPowerVSCluster is the Schema for the ibmpowervsclusters API
+        description: IBMPowerVSCluster is the Schema for the ibmpowervsclusters API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -34,7 +34,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: IBMPowerVSClusterSpec defines the desired state of IBMPowerVSCluster
+            description: IBMPowerVSClusterSpec defines the desired state of IBMPowerVSCluster.
             properties:
               controlPlaneEndpoint:
                 description: ControlPlaneEndpoint represents the endpoint used to
@@ -66,7 +66,7 @@ spec:
                 type: object
               serviceInstanceID:
                 description: ServiceInstanceID is the id of the power cloud instance
-                  where the vsi instance will get deployed
+                  where the vsi instance will get deployed.
                 minLength: 1
                 type: string
             required:
@@ -74,7 +74,7 @@ spec:
             - serviceInstanceID
             type: object
           status:
-            description: IBMPowerVSClusterStatus defines the observed state of IBMPowerVSCluster
+            description: IBMPowerVSClusterStatus defines the observed state of IBMPowerVSCluster.
             properties:
               ready:
                 description: 'INSERT ADDITIONAL STATUS FIELD - define observed state

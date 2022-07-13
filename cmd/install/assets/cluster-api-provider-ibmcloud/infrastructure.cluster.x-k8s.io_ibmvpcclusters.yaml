@@ -30,7 +30,7 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: IBMVPCCluster is the Schema for the ibmvpcclusters API
+        description: IBMVPCCluster is the Schema for the ibmvpcclusters API.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -45,7 +45,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: IBMVPCClusterSpec defines the desired state of IBMVPCCluster
+            description: IBMVPCClusterSpec defines the desired state of IBMVPCCluster.
             properties:
               controlPlaneEndpoint:
                 description: ControlPlaneEndpoint represents the endpoint used to
@@ -67,26 +67,26 @@ spec:
                 type: string
               resourceGroup:
                 description: The VPC resources should be created under the resource
-                  group
+                  group.
                 type: string
               vpc:
-                description: The Name of VPC
+                description: The Name of VPC.
                 type: string
               zone:
-                description: The Name of availability zone
+                description: The Name of availability zone.
                 type: string
             required:
             - region
             - resourceGroup
             type: object
           status:
-            description: IBMVPCClusterStatus defines the observed state of IBMVPCCluster
+            description: IBMVPCClusterStatus defines the observed state of IBMVPCCluster.
             properties:
               ready:
                 description: Bastion Instance `json:"bastion,omitempty"`
                 type: boolean
               subnet:
-                description: Subnet describes a subnet
+                description: Subnet describes a subnet.
                 properties:
                   cidr:
                     type: string
@@ -116,7 +116,7 @@ spec:
                 - name
                 type: object
               vpcEndpoint:
-                description: VPCEndpoint describes a VPCEndpoint
+                description: VPCEndpoint describes a VPCEndpoint.
                 properties:
                   address:
                     type: string
