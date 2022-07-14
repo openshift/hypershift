@@ -7,6 +7,16 @@ import (
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 )
 
+type ExampleKubevirtOptions struct {
+	ServicePublishingStrategy string
+	APIServerAddress          string
+	Memory                    string
+	Cores                     uint32
+	Image                     string
+	RootVolumeSize            uint32
+	RootVolumeStorageClass    string
+}
+
 func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoolPlatform {
 	var storageClassName *string
 	volumeSize := apiresource.MustParse(fmt.Sprintf("%vGi", o.RootVolumeSize))

@@ -5,6 +5,11 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type ExampleAgentOptions struct {
+	APIServerAddress string
+	AgentNamespace   string
+}
+
 type ExampleAgentResources struct {
 	CAPIProviderAgentRole *rbacv1.Role
 }
