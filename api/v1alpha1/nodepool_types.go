@@ -621,6 +621,19 @@ type AzureNodePoolPlatform struct {
 	// +kubebuilder:validation:Minimum=16
 	// +optional
 	DiskSizeGB int32 `json:"diskSizeGB,omitempty"`
+	// DiskStorageAccountType is the disk storage account type to use. Valid values are:
+	// * Standard_LRS: HDD
+	// * StandardSSD_LRS: Standard SSD
+	// * Premium_LRS: Premium SDD
+	// * UltraSSD_LRS: Ultra SDD
+	//
+	// Defaults to Premium_LRS. For more details, visit the Azure documentation:
+	// https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison
+	//
+	// +kubebuilder:default:=Premium_LRS
+	// +kubebuilder:validation:Enum=Standard_LRS;StandardSSD_LRS;Premium_LRS;UltraSSD_LRS
+	// +optional
+	DiskStorageAccountType string `json:"diskStorageAccountType,omitempty"`
 	// AvailabilityZone of the nodepool. Must not be specified for clusters
 	// in a location that does not support AvailabilityZone.
 	// +optional
