@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	. "github.com/onsi/gomega"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -20,6 +21,12 @@ import (
 func TestAutoRepair(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
+
+	// The test needs to communicate with the cloud provider to terminate an instance, this
+	// is currently only implemented for AWS.
+	if globalOpts.Platform != hyperv1.AWSPlatform {
+		t.Skipf("TestAutoRepair only supports AWS, skipping on %s", globalOpts.Platform)
+	}
 
 	client, err := e2eutil.GetClient()
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
