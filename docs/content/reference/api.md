@@ -2042,6 +2042,24 @@ int32
 </tr>
 <tr>
 <td>
+<code>diskStorageAccountType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DiskStorageAccountType is the disk storage account type to use. Valid values are:
+* Standard_LRS: HDD
+* StandardSSD_LRS: Standard SSD
+* Premium_LRS: Premium SDD
+* UltraSSD_LRS: Ultra SDD</p>
+<p>Defaults to Premium_LRS. For more details, visit the Azure documentation:
+<a href="https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison">https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison</a></p>
+</td>
+</tr>
+<tr>
+<td>
 <code>availabilityZone</code></br>
 <em>
 string
