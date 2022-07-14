@@ -85,6 +85,7 @@ func NewDestroyCommands() *cobra.Command {
 		Namespace:          "clusters",
 		Name:               "",
 		ClusterGracePeriod: 10 * time.Minute,
+		Log:                log.Log,
 	}
 
 	cmd := &cobra.Command{

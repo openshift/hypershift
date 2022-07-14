@@ -124,7 +124,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 	t.Run(fmt.Sprintf("DestroyCluster_%d", destroyAttempt), func(t *testing.T) {
 		t.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hc.Namespace, hc.Name)
 		err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
-			err := destroyCluster(ctx, hc, opts)
+			err := destroyCluster(ctx, t, hc, opts)
 			if err != nil {
 				t.Logf("Failed to destroy cluster, will retry: %v", err)
 				err := dumpCluster(ctx, t, false)
@@ -222,12 +222,13 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.Cr
 
 // destroyCluster calls the correct cluster destroy CLI function based on the
 // cluster platform and the options used to create the cluster.
-func destroyCluster(ctx context.Context, hc *hyperv1.HostedCluster, createOpts *core.CreateOptions) error {
+func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, createOpts *core.CreateOptions) error {
 	opts := &core.DestroyOptions{
 		Namespace:          hc.Namespace,
 		Name:               hc.Name,
 		InfraID:            createOpts.InfraID,
 		ClusterGracePeriod: 15 * time.Minute,
+		Log:                NewLogr(t),
 	}
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -270,7 +271,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
-			err = dump.DumpHostedCluster(ctx, hc, dumpGuestCluster, dumpDir)
+			err = dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, dumpDir)
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
@@ -280,7 +281,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			}
 			return utilerrors.NewAggregate(dumpErrors)
 		default:
-			err := dump.DumpHostedCluster(ctx, hc, dumpGuestCluster, dumpDir)
+			err := dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, dumpDir)
 			if err != nil {
 				return fmt.Errorf("failed to dump hosted cluster: %w", err)
 			}
