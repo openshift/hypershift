@@ -40,6 +40,7 @@ const (
 // DestroyInfraOptions command line options to destroy infra created in IBMCloud for Hypershift
 type DestroyInfraOptions struct {
 	Name               string
+	Namespace          string
 	InfraID            string
 	InfrastructureJson string
 	BaseDomain         string
@@ -63,9 +64,13 @@ func NewDestroyCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts := DestroyInfraOptions{}
+	opts := DestroyInfraOptions{
+		Namespace: "clusters",
+		Name:      "example",
+	}
 
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "Name of the cluster")
+	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag IBM Cloud resources")
 	cmd.Flags().StringVar(&opts.InfrastructureJson, "infra-json", opts.InfrastructureJson, "Result of ./hypershift infra create powervs")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain of the cluster")
@@ -146,20 +151,25 @@ func (options *DestroyInfraOptions) DestroyInfra(infra *Infra) error {
 		return err
 	}
 
-	var powerVsCloudInstanceID string
-
 	serviceID, servicePlanID, err := getServiceInfo(powerVSService, powerVSServicePlan)
 	if err != nil {
 		return err
 	}
 
-	var skipPowerVs bool
 	errL := make([]error, 0)
 
 	if err = deleteDNSRecords(options); err != nil {
 		errL = append(errL, fmt.Errorf("error deleting dns record from cis domain: %w", err))
 		log(options.InfraID).Error(err, "error deleting dns record from cis domain")
 	}
+
+	if err = deleteSecrets(options, accountID, resourceGroupID); err != nil {
+		errL = append(errL, fmt.Errorf("error deleting secrets: %w", err))
+		log(options.InfraID).Error(err, "error deleting secrets")
+	}
+
+	var powerVsCloudInstanceID string
+	var skipPowerVs bool
 
 	// getting the powervs cloud instance id
 	if infra != nil && infra.CloudInstanceID != "" {
@@ -265,6 +275,30 @@ func deleteDNSRecords(options *DestroyInfraOptions) error {
 	deleteRecordOpt := &dnsrecordsv1.DeleteDnsRecordOptions{DnsrecordIdentifier: record.ID}
 	if _, _, err = dnsRecordsV1.DeleteDnsRecord(deleteRecordOpt); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// deleteSecrets delete secrets generated for control plane components
+func deleteSecrets(options *DestroyInfraOptions, accountID string, resourceGroupID string) error {
+
+	err := deleteServiceID(options.Name, cloudApiKey, accountID, resourceGroupID,
+		kubeCloudControllerManagerCR, kubeCloudControllerManagerCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error deleting kube cloud controller manager secret: %w", err)
+	}
+
+	err = deleteServiceID(options.Name, cloudApiKey, accountID, resourceGroupID,
+		nodePoolManagementCR, nodePoolManagementCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error deleting nodepool management secret: %w", err)
+	}
+
+	err = deleteServiceID(options.Name, cloudApiKey, accountID, "",
+		ingressOperatorCR, ingressOperatorCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error deleting ingress operator secret: %w", err)
 	}
 
 	return nil

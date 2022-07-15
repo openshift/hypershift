@@ -1881,7 +1881,6 @@ func (in *PowerVSPlatformSpec) DeepCopyInto(out *PowerVSPlatformSpec) {
 	}
 	out.KubeCloudControllerCreds = in.KubeCloudControllerCreds
 	out.NodePoolManagementCreds = in.NodePoolManagementCreds
-	out.ControlPlaneOperatorCreds = in.ControlPlaneOperatorCreds
 	out.IngressOperatorCloudCreds = in.IngressOperatorCloudCreds
 }
 

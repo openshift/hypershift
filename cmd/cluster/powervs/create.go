@@ -84,15 +84,10 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 
 func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 	var err error
-	opts.PowerVSPlatform.APIKey, err = powervsinfra.GetAPIKey()
-	if err != nil {
-		return fmt.Errorf("error retrieving IBM Cloud API Key %w", err)
-	}
-
-	if err := validate(opts); err != nil {
+	if err = validate(opts); err != nil {
 		return err
 	}
-	if err := core.Validate(ctx, opts); err != nil {
+	if err = core.Validate(ctx, opts); err != nil {
 		return err
 	}
 	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
@@ -102,11 +97,6 @@ func validate(opts *core.CreateOptions) error {
 	if opts.BaseDomain == "" {
 		return fmt.Errorf("--base-domain can't be empty")
 	}
-
-	if opts.PowerVSPlatform.APIKey == "" {
-		return fmt.Errorf("cloud API Key not set. Set it with IBMCLOUD_API_KEY env var or set file path containing API Key credential in IBMCLOUD_CREDENTIALS")
-	}
-
 	return nil
 }
 
@@ -134,6 +124,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			infraID = infraid.New(opts.Name)
 		}
 		opt := &powervsinfra.CreateInfraOptions{
+			Name:            opts.Name,
+			Namespace:       opts.Namespace,
 			BaseDomain:      opts.BaseDomain,
 			ResourceGroup:   opts.PowerVSPlatform.ResourceGroup,
 			InfraID:         infraID,
@@ -159,7 +151,6 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.PublicZoneID = infra.CISDomainID
 	exampleOptions.InfraID = infraID
 	exampleOptions.PowerVS = &apifixtures.ExamplePowerVSOptions{
-		ApiKey:          opts.PowerVSPlatform.APIKey,
 		AccountID:       infra.AccountID,
 		ResourceGroup:   opts.PowerVSPlatform.ResourceGroup,
 		Region:          opts.PowerVSPlatform.Region,
@@ -176,5 +167,14 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		Processors:      opts.PowerVSPlatform.Processors,
 		Memory:          opts.PowerVSPlatform.Memory,
 	}
+
+	powerVSResources := apifixtures.ExamplePowerVSResources{
+		KubeCloudControllerCreds:  infra.Secrets.KubeCloudControllerManager,
+		NodePoolManagementCreds:   infra.Secrets.NodePoolManagement,
+		IngressOperatorCloudCreds: infra.Secrets.IngressOperator,
+	}
+
+	exampleOptions.PowerVS.Resources = powerVSResources
+
 	return nil
 }

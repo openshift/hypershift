@@ -740,15 +740,6 @@ type PowerVSPlatformSpec struct {
 	// +immutable
 	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
 
-	// ControlPlaneOperatorCreds is a reference to a secret containing cloud
-	// credentials with permissions matching the control-plane-operator policy.
-	// This field is immutable. Once set, It can't be changed.
-	//
-	// TODO(dan): document the "control plane operator policy"
-	//
-	// +immutable
-	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
-
 	// IngressOperatorCloudCreds is a reference to a secret containing ibm cloud
 	// credentials for ingress operator to get authenticated with ibm cloud.
 	//

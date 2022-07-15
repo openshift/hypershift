@@ -340,36 +340,8 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 
 	case o.PowerVS != nil:
-		buildIBMCloudCreds := func(name, apikey string) *corev1.Secret {
-			data := map[string][]byte{
-				"ibm-credentials.env": []byte(fmt.Sprintf(`IBMCLOUD_AUTH_TYPE=iam
- IBMCLOUD_APIKEY=%s
- IBMCLOUD_AUTH_URL=https://iam.cloud.ibm.com
- `, apikey)),
-				"ibmcloud_api_key": []byte(apikey),
-			}
+		resources = o.PowerVS.Resources.AsObjects()
 
-			return &corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "Secret",
-					APIVersion: corev1.SchemeGroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: namespace.Name,
-					Name:      name,
-				},
-				Data: data,
-			}
-		}
-
-		// TODO(dharaneeshvrd): Need exploration to use granular permissions
-		powerVSResources := &ExamplePowerVSResources{
-			buildIBMCloudCreds(o.Name+"-cloud-ctrl-creds", o.PowerVS.ApiKey),
-			buildIBMCloudCreds(o.Name+"-node-mgmt-creds", o.PowerVS.ApiKey),
-			buildIBMCloudCreds(o.Name+"-cpo-creds", o.PowerVS.ApiKey),
-			buildIBMCloudCreds(o.Name+"-ingress-creds", o.PowerVS.ApiKey),
-		}
-		resources = powerVSResources.AsObjects()
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.PowerVSPlatform,
 			PowerVS: &hyperv1.PowerVSPlatformSpec{
@@ -388,10 +360,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					Region: o.PowerVS.VPCRegion,
 					Subnet: o.PowerVS.VPCSubnet,
 				},
-				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: powerVSResources.KubeCloudControllerCreds.Name},
-				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: powerVSResources.NodePoolManagementCreds.Name},
-				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: powerVSResources.ControlPlaneOperatorCreds.Name},
-				IngressOperatorCloudCreds: corev1.LocalObjectReference{Name: powerVSResources.IngressOperatorCloudCreds.Name},
+				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: o.PowerVS.Resources.KubeCloudControllerCreds.Name},
+				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: o.PowerVS.Resources.NodePoolManagementCreds.Name},
+				IngressOperatorCloudCreds: corev1.LocalObjectReference{Name: o.PowerVS.Resources.IngressOperatorCloudCreds.Name},
 			},
 		}
 		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")

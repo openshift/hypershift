@@ -2564,19 +2564,6 @@ spec:
                           can't be changed.
                         pattern: '^crn:'
                         type: string
-                      controlPlaneOperatorCreds:
-                        description: "ControlPlaneOperatorCreds is a reference to
-                          a secret containing cloud credentials with permissions matching
-                          the control-plane-operator policy. This field is immutable.
-                          Once set, It can't be changed. \n TODO(dan): document the
-                          \"control plane operator policy\""
-                        properties:
-                          name:
-                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                              TODO: Add other useful fields. apiVersion, kind, uid?'
-                            type: string
-                        type: object
-                        x-kubernetes-map-type: atomic
                       ingressOperatorCloudCreds:
                         description: IngressOperatorCloudCreds is a reference to a
                           secret containing ibm cloud credentials for ingress operator
@@ -2686,7 +2673,6 @@ spec:
                     required:
                     - accountID
                     - cisInstanceCRN
-                    - controlPlaneOperatorCreds
                     - ingressOperatorCloudCreds
                     - kubeCloudControllerCreds
                     - nodePoolManagementCreds

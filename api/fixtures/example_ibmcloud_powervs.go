@@ -6,7 +6,6 @@ import (
 )
 
 type ExamplePowerVSOptions struct {
-	ApiKey          string
 	AccountID       string
 	ResourceGroup   string
 	Region          string
@@ -19,6 +18,7 @@ type ExamplePowerVSOptions struct {
 	VPCRegion       string
 	VPC             string
 	VPCSubnet       string
+	Resources       ExamplePowerVSResources
 
 	// nodepool related options
 	SysType    string
@@ -30,7 +30,6 @@ type ExamplePowerVSOptions struct {
 type ExamplePowerVSResources struct {
 	KubeCloudControllerCreds  *corev1.Secret
 	NodePoolManagementCreds   *corev1.Secret
-	ControlPlaneOperatorCreds *corev1.Secret
 	IngressOperatorCloudCreds *corev1.Secret
 }
 
@@ -41,9 +40,6 @@ func (o *ExamplePowerVSResources) AsObjects() []crclient.Object {
 	}
 	if o.NodePoolManagementCreds != nil {
 		objects = append(objects, o.NodePoolManagementCreds)
-	}
-	if o.ControlPlaneOperatorCreds != nil {
-		objects = append(objects, o.ControlPlaneOperatorCreds)
 	}
 	if o.IngressOperatorCloudCreds != nil {
 		objects = append(objects, o.IngressOperatorCloudCreds)
