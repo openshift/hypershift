@@ -101,6 +101,10 @@ var vpcDefaultUrl = func(region string) string { return fmt.Sprintf("https://%s.
 
 var log = func(name string) logr.Logger { return hypershiftLog.Log.WithName(name) }
 
+var dhcpServerLimitExceeds = func(dhcpServerCount int) error {
+	return fmt.Errorf("more than one DHCP server is not allowed in a service instance, found %d dhcp servers", dhcpServerCount)
+}
+
 // MarshalJSON custom marshaling func for time.Duration to parse Duration into user-friendly format
 func (d *TimeDuration) MarshalJSON() (b []byte, err error) {
 	return []byte(fmt.Sprintf(`"%s"`, d.Round(time.Millisecond).String())), nil
@@ -298,7 +302,7 @@ func (infra *Infra) SetupInfra(options *CreateInfraOptions) (err error) {
 		return fmt.Errorf("error setup powervs cloud connection: %w", err)
 	}
 
-	err = infra.setupPowerVSDhcp(options, session)
+	err = infra.setupPowerVSDHCP(options, session)
 	if err != nil {
 		return fmt.Errorf("error setup powervs dhcp server: %w", err)
 	}
@@ -986,8 +990,18 @@ func (infra *Infra) createCloudConnection(options *CreateInfraOptions, client *i
 	return
 }
 
-// setupPowerVSDhcp takes care of setting up dhcp in powervs
-func (infra *Infra) setupPowerVSDhcp(options *CreateInfraOptions, session *ibmpisession.IBMPISession) (err error) {
+// useExistingDHCP returns details of existing DHCP server
+func useExistingDHCP(dhcpServers models.DHCPServers) (string, error) {
+	if len(dhcpServers) == 1 {
+		dhcp := dhcpServers[0]
+		return *dhcp.ID, nil
+	}
+
+	return "", dhcpServerLimitExceeds(len(dhcpServers))
+}
+
+// setupPowerVSDHCP takes care of setting up dhcp in powervs
+func (infra *Infra) setupPowerVSDHCP(options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
 	log(infra.ID).Info("Setting up PowerVS DHCP ...")
 	client := instance.NewIBMPIDhcpClient(context.Background(), session, infra.PowerVSCloudInstanceID)
 
@@ -995,24 +1009,27 @@ func (infra *Infra) setupPowerVSDhcp(options *CreateInfraOptions, session *ibmpi
 
 	dhcpServers, err := client.GetAll()
 	if err != nil {
-		return
+		return err
 	}
 
 	// only one dhcp server is allowed per cloud instance
 	// if already a dhcp server existing in cloud instance use that instead of creating a new one
 	if len(dhcpServers) > 0 {
-		for _, dhcp := range dhcpServers {
-			log(infra.ID).Info("Using existing DHCP server present in cloud instance")
-			_, _ = client.Get(*dhcp.ID)
-			dhcpServer = &models.DHCPServerDetail{ID: dhcp.ID, Status: dhcp.Status, Network: dhcp.Network}
-			break
+		log(infra.ID).Info("Using existing DHCP server present in cloud instance")
+		var dhcpServerID string
+		dhcpServerID, err = useExistingDHCP(dhcpServers)
+		if err != nil {
+			return err
 		}
+
+		dhcpServer, err = client.Get(dhcpServerID)
 	} else {
 		log(infra.ID).Info("Creating PowerVS DhcpServer...")
 		dhcpServer, err = infra.createPowerVSDhcp(options, client)
-		if err != nil {
-			return
-		}
+	}
+
+	if err != nil {
+		return err
 	}
 
 	if dhcpServer != nil {
@@ -1024,12 +1041,12 @@ func (infra *Infra) setupPowerVSDhcp(options *CreateInfraOptions, session *ibmpi
 		infra.Stats.DhcpService.Status = *dhcpServer.Status
 	}
 
-	if infra.PowerVSDhcpID == "" && infra.PowerVSDhcpSubnetID == "" {
-		return fmt.Errorf("unable to setup powervs dhcp server and private subnet")
+	if infra.PowerVSDhcpID == "" || infra.PowerVSDhcpSubnetID == "" {
+		return fmt.Errorf("unable to setup powervs dhcp server, dhcp server id or subnet id returned is empty. dhcpServerId: %s, dhcpPrivateSubnetId: %s", infra.PowerVSDhcpID, infra.PowerVSDhcpSubnetID)
 	}
 
 	log(infra.ID).Info("PowerVS DHCP Server and Private Subnet  Ready", "dhcpServerId", infra.PowerVSDhcpID, "dhcpPrivateSubnetId", infra.PowerVSDhcpSubnetID)
-	return
+	return nil
 }
 
 // createPowerVSDhcp creates a new dhcp server in powervs

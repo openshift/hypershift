@@ -297,8 +297,6 @@ func destroyPowerVsCloudInstance(options *DestroyInfraOptions, infra *Infra, clo
 					return
 				}
 
-				log(options.InfraID).Info("resp", "code", resp.StatusCode, "message", resp.String())
-
 				if resp.StatusCode >= 400 {
 					err = fmt.Errorf("retrying due to resp code is %d and message is %s", resp.StatusCode, resp.String())
 					return
