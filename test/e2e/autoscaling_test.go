@@ -6,6 +6,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -23,37 +24,62 @@ func TestAutoscaling(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
 
+	if globalOpts.configurableClusterOptions.NodePoolReplicas != 1 {
+		t.Fatalf("this test must be run with --e2e.node-pool-replicas=1, is configured to run with %d", globalOpts.configurableClusterOptions.NodePoolReplicas)
+	}
+	if len(globalOpts.configurableClusterOptions.Zone) == 0 {
+		t.Fatal("this test must be run with multiple Availability Zones")
+	}
+
 	client, err := e2eutil.GetClient()
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	if len(globalOpts.configurableClusterOptions.Zone) == 0 {
-		t.Fatal("TestAutoscaling requires multiple zones")
-	}
-
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
 
 	// Get one of the newly created NodePools
-	zone := globalOpts.configurableClusterOptions.Zone[0]
-	nodepool := &hyperv1.NodePool{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: hostedCluster.Namespace,
-			Name:      e2eutil.NodePoolName(hostedCluster.Name, zone),
-		},
+	nodepools := &hyperv1.NodePoolList{}
+	if err := client.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
+		t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
 	}
-	err = client.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
-	t.Logf("Created nodepool. Namespace: %s, name: %s", nodepool.Namespace, nodepool.Name)
+
+	var nodepool *hyperv1.NodePool
+	for _, np := range nodepools.Items {
+		if !ownedBy(hostedCluster.UID, np.OwnerReferences) {
+			continue
+		}
+		nodepool = &np
+		break
+	}
+	if nodepool == nil {
+		t.Fatalf("no nodepool in nodepool list %+v matches hostedcluster UID %s", nodepool, hostedCluster.UID)
+	}
+	t.Logf("Found nodepool. Namespace: %s, name: %s", nodepool.Namespace, nodepool.Name)
 
 	// Perform some very basic assertions about the guest cluster
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 	// TODO (alberto): have ability to label and get Nodes by NodePool. NodePool.Status.Nodes?
 	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
 	nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
+
+	// find the zone value. This might not be identical to the zone value passed
+	// in during node creation, e.G. in azure this is $region-$zone, on AWS it is
+	// just $zone.
+	var zone string
+	for _, node := range nodes {
+		if !strings.HasPrefix(node.Annotations["cluster.x-k8s.io/owner-name"], nodepool.Name) {
+			continue
+		}
+		zone = node.Labels["topology.kubernetes.io/zone"]
+		break
+	}
+	if zone == "" {
+		t.Fatalf("Found no node whose 'cluster.x-k8s.io/owner-name' annotation has the nodepool name %s as prefix. Nodes: %+v", nodepool.Name, nodes)
+	}
 
 	// Wait for the rollout to be reported complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)

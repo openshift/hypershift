@@ -292,7 +292,3 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 		}
 	}
 }
-
-func NodePoolName(hcName, zone string) string {
-	return fmt.Sprintf("%s-%s", hcName, zone)
-}
