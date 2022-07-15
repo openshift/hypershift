@@ -12,6 +12,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -82,9 +83,10 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 
 	// If the hosted cluster exists, add a finalizer, delete it, and wait for
 	// the cluster to be cleaned up before destroying its infrastructure.
-	if hostedClusterExists {
+	if hostedClusterExists && !sets.NewString(hostedCluster.Finalizers...).Has(destroyFinalizer) {
+		original := hostedCluster.DeepCopy()
 		controllerutil.AddFinalizer(hostedCluster, destroyFinalizer)
-		if err := c.Update(ctx, hostedCluster); err != nil {
+		if err := c.Patch(ctx, hostedCluster, client.MergeFrom(original)); err != nil {
 			if apierrors.IsNotFound(err) {
 				o.Log.Info("Hosted cluster not found, skipping finalizer update", "namespace", o.Namespace, "name", o.Name)
 			} else {
@@ -138,9 +140,10 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 		o.Log.Info("Deleted CLI generated secrets")
 	}
 
-	if hostedClusterExists {
+	if hostedClusterExists && sets.NewString(hostedCluster.Finalizers...).Has(destroyFinalizer) {
+		original := hostedCluster.DeepCopy()
 		controllerutil.RemoveFinalizer(hostedCluster, destroyFinalizer)
-		if err := c.Update(ctx, hostedCluster); err != nil {
+		if err := c.Patch(ctx, hostedCluster, client.MergeFrom(original)); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("failed to remove finalizer: %w", err)
 			}
