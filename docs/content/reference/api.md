@@ -2675,6 +2675,10 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 <td><p>HostedClusterAvailable indicates whether the HostedCluster has a healthy
 control plane.</p>
 </td>
+</tr><tr><td><p>&#34;Degraded&#34;</p></td>
+<td><p>HostedClusterDegraded indicates whether the HostedCluster is encountering
+an error that may require user intervention to resolve.</p>
+</td>
 </tr><tr><td><p>&#34;Progressing&#34;</p></td>
 <td><p>HostedClusterProgressing indicates whether the HostedCluster is attempting
 an initial deployment or upgrade.</p>

@@ -449,6 +449,25 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
 	}
 
+	// Copy the Degraded condition on the hostedcontrolplane
+	{
+		condition := &metav1.Condition{
+			Type:               string(hyperv1.HostedClusterDegraded),
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
+			ObservedGeneration: hcluster.Generation,
+		}
+		if hcp != nil {
+			degradedCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedControlPlaneDegraded))
+			if degradedCondition != nil {
+				condition = degradedCondition
+				condition.Type = string(hyperv1.HostedClusterDegraded)
+			}
+		}
+		condition.ObservedGeneration = hcluster.Generation
+		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
+	}
+
 	// Reconcile unmanaged etcd client tls secret validation error status. Note only update status on validation error case to
 	// provide clear status to the user on the resource without having to look at operator logs.
 	{
