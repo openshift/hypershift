@@ -126,6 +126,9 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 		err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
 			err := destroyCluster(ctx, t, hc, opts)
 			if err != nil {
+				if strings.Contains(err.Error(), "required inputs are missing") {
+					return false, err
+				}
 				t.Logf("Failed to destroy cluster, will retry: %v", err)
 				err := dumpCluster(ctx, t, false)
 				if err != nil {
