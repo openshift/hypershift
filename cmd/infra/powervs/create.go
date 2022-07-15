@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/go-logr/logr"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
+
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	utilpointer "k8s.io/utils/pointer"
 
@@ -69,6 +71,11 @@ const (
 	powerVsService  = "powervs"
 	vpcService      = "vpc"
 	platformService = "platform"
+
+	// Secret suffix
+	kubeCloudControllerManagerCreds = "cloud-controller-creds"
+	nodePoolManagementCreds         = "node-management-creds"
+	ingressOperatorCreds            = "ingress-creds"
 )
 
 var customEpEnvNameMapping = map[string]string{
@@ -79,6 +86,7 @@ var customEpEnvNameMapping = map[string]string{
 // CreateInfraOptions command line options for setting up infra in IBM PowerVS cloud
 type CreateInfraOptions struct {
 	Name                   string
+	Namespace              string
 	BaseDomain             string
 	ResourceGroup          string
 	InfraID                string
@@ -131,6 +139,12 @@ type InfraCreationStat struct {
 	CloudConnState CreateStat `json:"cloudConnState"`
 }
 
+type Secrets struct {
+	KubeCloudControllerManager *corev1.Secret
+	NodePoolManagement         *corev1.Secret
+	IngressOperator            *corev1.Secret
+}
+
 // Infra resource info in IBM Cloud for setting up hypershift nodepool
 type Infra struct {
 	ID                       string            `json:"id"`
@@ -150,6 +164,7 @@ type Infra struct {
 	VpcSubnetName            string            `json:"vpcSubnetName"`
 	VpcSubnetID              string            `json:"vpcSubnetID"`
 	Stats                    InfraCreationStat `json:"stats"`
+	Secrets                  Secrets           `json:"secrets"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -160,6 +175,7 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := CreateInfraOptions{
+		Namespace:     "clusters",
 		Name:          "example",
 		PowerVSRegion: "us-south",
 		PowerVSZone:   "us-south",
@@ -168,6 +184,7 @@ func NewCreateCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "IBM Cloud CIS Domain")
 	cmd.Flags().StringVar(&opts.ResourceGroup, "resource-group", opts.ResourceGroup, "IBM Cloud Resource Group")
+	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag IBM Cloud resources")
 	cmd.Flags().StringVar(&opts.PowerVSRegion, "powervs-region", opts.PowerVSRegion, "IBM Cloud PowerVS Region")
@@ -298,6 +315,10 @@ func (infra *Infra) SetupInfra(options *CreateInfraOptions) (err error) {
 		return fmt.Errorf("error setup base domain: %w", err)
 	}
 
+	if err = infra.setupSecrets(options); err != nil {
+		return fmt.Errorf("error setup secrets: %w", err)
+	}
+
 	v1, err := createVpcService(options.VpcRegion, options.InfraID)
 	if err != nil {
 		return fmt.Errorf("error creating vpc service: %w", err)
@@ -341,6 +362,36 @@ func (infra *Infra) SetupInfra(options *CreateInfraOptions) (err error) {
 
 	log(options.InfraID).Info("Setup infra completed in", "duration", time.Since(startTime).String())
 	return
+}
+
+// setupSecrets generate secrets for control plane components
+func (infra *Infra) setupSecrets(options *CreateInfraOptions) error {
+	var err error
+	log(infra.ID).Info("Creating Secrets ...")
+
+	infra.Secrets = Secrets{}
+
+	infra.Secrets.KubeCloudControllerManager, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, infra.ResourceGroupID,
+		kubeCloudControllerManagerCR, kubeCloudControllerManagerCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error setup kube cloud controller manager secret: %w", err)
+	}
+
+	infra.Secrets.NodePoolManagement, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, infra.ResourceGroupID,
+		nodePoolManagementCR, nodePoolManagementCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error setup nodepool management secret: %w", err)
+	}
+
+	infra.Secrets.IngressOperator, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, "",
+		ingressOperatorCR, ingressOperatorCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error setup ingress operator secret: %w", err)
+	}
+
+	log(infra.ID).Info("Secrets Ready")
+
+	return nil
 }
 
 // getIAMAuth getting core.Authenticator

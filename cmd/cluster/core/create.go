@@ -77,7 +77,6 @@ type CreateOptions struct {
 }
 
 type PowerVSPlatformOptions struct {
-	APIKey          string
 	ResourceGroup   string
 	Region          string
 	Zone            string
