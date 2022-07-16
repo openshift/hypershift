@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -268,6 +269,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to create controller: %w", err)
 		}
+	}
+
+	// Start controller to manage supported versions configmap
+	if err := (supportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
+		SetupWithManager(mgr)); err != nil {
+		return fmt.Errorf("unable to create supported version controller: %w", err)
 	}
 
 	// The mgr and therefore the cache is not started yet, thus we have to construct a client that

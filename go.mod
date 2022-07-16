@@ -15,6 +15,7 @@ require (
 	github.com/aws/aws-sdk-go v1.40.56
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.14.1
+	github.com/coreos/go-semver v0.3.0
 	github.com/coreos/ignition/v2 v2.10.1
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/go-logr/logr v1.2.1
@@ -83,7 +84,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
-	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/coreos/vcontext v0.0.0-20210407161507-4ee6c745c8bd // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
