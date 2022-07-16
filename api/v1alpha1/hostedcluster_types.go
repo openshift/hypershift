@@ -1584,6 +1584,10 @@ const (
 	// an initial deployment or upgrade.
 	HostedClusterProgressing ConditionType = "Progressing"
 
+	// HostedClusterDegraded indicates whether the HostedCluster is encountering
+	// an error that may require user intervention to resolve.
+	HostedClusterDegraded ConditionType = "Degraded"
+
 	// IgnitionEndpointAvailable indicates whether the ignition server for the
 	// HostedCluster is available to handle ignition requests.
 	IgnitionEndpointAvailable ConditionType = "IgnitionEndpointAvailable"
