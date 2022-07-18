@@ -64,6 +64,7 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -3531,7 +3532,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 		currentVersion = &version
 	}
 
-	return isValidReleaseVersion(version, currentVersion, hc.Spec.Networking.NetworkType)
+	return isValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, hc.Spec.Networking.NetworkType)
 }
 
 func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
@@ -3558,7 +3559,7 @@ func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error)
 	return false, nil
 }
 
-func isValidReleaseVersion(version semver.Version, currentVersion *semver.Version, networkType hyperv1.NetworkType) error {
+func isValidReleaseVersion(version, currentVersion, latestVersionSupported *semver.Version, networkType hyperv1.NetworkType) error {
 	if version.LT(semver.MustParse("4.8.0")) {
 		return fmt.Errorf("releases before 4.8 are not supported")
 	}
@@ -3568,6 +3569,11 @@ func isValidReleaseVersion(version semver.Version, currentVersion *semver.Versio
 	if networkType == hyperv1.OpenShiftSDN && currentVersion != nil && currentVersion.Minor < version.Minor {
 		return fmt.Errorf("y-stream upgrade is not for OpenShiftSDN")
 	}
+
+	if (version.Major == latestVersionSupported.Major && version.Minor > latestVersionSupported.Minor) || version.Major > latestVersionSupported.Major {
+		return fmt.Errorf("the latest HostedCluster supported by this Operator is: %q. Attempting to use: %q", supportedversion.LatestSupportedVersion, version.Major)
+	}
+
 	return nil
 }
 

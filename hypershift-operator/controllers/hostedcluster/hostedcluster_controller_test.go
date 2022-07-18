@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
@@ -2455,4 +2456,65 @@ func TestIsProgressing(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsValidReleaseVersion(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		currentVersion         semver.Version
+		nextVersion            semver.Version
+		latestVersionSupported semver.Version
+		networkType            hyperv1.NetworkType
+		expectError            bool
+	}{
+		{
+			name:                   "Releases before 4.8 are not supported",
+			currentVersion:         semver.MustParse("4.8.0"),
+			nextVersion:            semver.MustParse("4.7.0"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			expectError:            true,
+		},
+		{
+			name:                   "y-stream downgrade is not supported",
+			currentVersion:         semver.MustParse("4.10.0"),
+			nextVersion:            semver.MustParse("4.9.0"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			expectError:            true,
+		},
+		{
+			name:                   "y-stream upgrade is not for OpenShiftSDN",
+			currentVersion:         semver.MustParse("4.10.0"),
+			nextVersion:            semver.MustParse("4.11.0"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			networkType:            hyperv1.OpenShiftSDN,
+			expectError:            true,
+		},
+		{
+			name:                   "the latest HostedCluster supported by this Operator is 4.12.0",
+			currentVersion:         semver.MustParse("4.12.0"),
+			nextVersion:            semver.MustParse("4.13.0"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			expectError:            true,
+		},
+		{
+			name:                   "Valid",
+			currentVersion:         semver.MustParse("4.11.0"),
+			nextVersion:            semver.MustParse("4.11.1"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			expectError:            false,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			err := isValidReleaseVersion(&test.nextVersion, &test.currentVersion, &test.latestVersionSupported, test.networkType)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+		})
+	}
+
 }
