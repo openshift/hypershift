@@ -91,8 +91,9 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 }
 
 func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) {
+	operatorName := "ingress-operator"
 	dep.Spec.Replicas = utilpointer.Int32(1)
-	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": "ingress-operator"}}
+	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": operatorName}}
 	dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
 	if dep.Spec.Template.Annotations == nil {
 		dep.Spec.Template.Annotations = map[string]string{}
@@ -101,7 +102,12 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	if dep.Spec.Template.Labels == nil {
 		dep.Spec.Template.Labels = map[string]string{}
 	}
-	dep.Spec.Template.Labels["name"] = "ingress-operator"
+	dep.Spec.Template.Labels = map[string]string{
+		"name":                        operatorName,
+		"app":                         operatorName,
+		hyperv1.ControlPlaneComponent: operatorName,
+	}
+
 	dep.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.BoolPtr(false)
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{
