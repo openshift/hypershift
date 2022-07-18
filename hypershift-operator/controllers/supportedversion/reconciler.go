@@ -22,7 +22,8 @@ import (
 )
 
 const (
-	configMapKey = "supported-versions"
+	configMapKey           = "supported-versions"
+	supportedVersionsLabel = "hypershift.openshift.io/supported-versions"
 )
 
 type Reconciler struct {
@@ -65,6 +66,10 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 func (r *Reconciler) ensureSupportedVersionConfigMap(ctx context.Context) error {
 	cm := manifests.ConfigMap(r.namespace)
+	if cm.Labels == nil {
+		cm.Labels = map[string]string{}
+	}
+	cm.Labels[supportedVersionsLabel] = "true"
 	if _, err := r.CreateOrUpdate(ctx, r, cm, func() error {
 		content := &supportedVersions{
 			Versions: supportedversion.Supported(),
