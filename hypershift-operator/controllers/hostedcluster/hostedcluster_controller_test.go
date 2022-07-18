@@ -935,6 +935,15 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					Type: hyperv1.AWSPlatform,
 					AWS: &hyperv1.AWSPlatformSpec{
 						EndpointAccess: hyperv1.Public,
+						RolesRef: hyperv1.AWSRolesRef{
+							IngressARN:              "ingress-arn",
+							ImageRegistryARN:        "image-registry-arn",
+							StorageARN:              "storage-arn",
+							NetworkARN:              "network-arn",
+							KubeCloudControllerARN:  " kube-cloud-controller-arn",
+							NodePoolManagementARN:   "node-pool-management-arn",
+							ControlPlaneOperatorARN: "control-plane-operator-arn",
+						},
 					},
 				},
 			},
