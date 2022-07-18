@@ -436,7 +436,10 @@ type KubevirtCompute struct {
 	Cores *uint32 `json:"cores"`
 }
 
-// KubevirtPersistentVolume containes the values involved with provisioning persistent storage for a KubeVirt VM.
+// +kubebuilder:validation:Enum=ReadWriteOnce;ReadWriteMany;ReadOnly;ReadWriteOncePod
+type PersistentVolumeAccessMode corev1.PersistentVolumeAccessMode
+
+// KubevirtPersistentVolume contains the values involved with provisioning persistent storage for a KubeVirt VM.
 type KubevirtPersistentVolume struct {
 	// Size is the size of the persistent storage volume
 	//
@@ -447,6 +450,11 @@ type KubevirtPersistentVolume struct {
 	//
 	// +optional
 	StorageClass *string `json:"storageClass,omitempty"`
+	// AccessModes is an array that contains the desired Access Modes the root volume should have.
+	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes
+	//
+	// +optional
+	AccessModes []PersistentVolumeAccessMode `json:"accessModes,omitempty"`
 }
 
 // KubevirtRootVolume represents the volume that the rhcos disk will be stored and run from.

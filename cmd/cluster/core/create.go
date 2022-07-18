@@ -111,6 +111,7 @@ type KubevirtPlatformCreateOptions struct {
 	ContainerDiskImage        string
 	RootVolumeSize            uint32
 	RootVolumeStorageClass    string
+	RootVolumeAccessModes     string
 }
 
 type AWSPlatformOptions struct {

@@ -4735,7 +4735,7 @@ KubevirtCompute
 <a href="#hypershift.openshift.io/v1alpha1.KubevirtVolume">KubevirtVolume</a>)
 </p>
 <p>
-<p>KubevirtPersistentVolume containes the values involved with provisioning persistent storage for a KubeVirt VM.</p>
+<p>KubevirtPersistentVolume contains the values involved with provisioning persistent storage for a KubeVirt VM.</p>
 </p>
 <table>
 <thead>
@@ -4769,6 +4769,21 @@ string
 <td>
 <em>(Optional)</em>
 <p>StorageClass is the storageClass used for the underlying PVC that hosts the volume</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>accessModes</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.PersistentVolumeAccessMode">
+[]PersistentVolumeAccessMode
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AccessModes is an array that contains the desired Access Modes the root volume should have.
+More info: <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes">https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes</a></p>
 </td>
 </tr>
 </tbody>
@@ -5728,6 +5743,13 @@ the management cluster.</p>
 </td>
 </tr></tbody>
 </table>
+###PersistentVolumeAccessMode { #hypershift.openshift.io/v1alpha1.PersistentVolumeAccessMode }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtPersistentVolume">KubevirtPersistentVolume</a>)
+</p>
+<p>
+</p>
 ###PersistentVolumeEtcdStorageSpec { #hypershift.openshift.io/v1alpha1.PersistentVolumeEtcdStorageSpec }
 <p>
 (<em>Appears on:</em>
