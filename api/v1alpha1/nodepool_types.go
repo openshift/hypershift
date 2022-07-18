@@ -18,6 +18,7 @@ const (
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
 	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"
 	NodePoolReadyConditionType                   = "Ready"
+	NodePoolReconciliationActiveConditionType    = "ReconciliationActive"
 	NodePoolAutorepairEnabledConditionType       = "AutorepairEnabled"
 	NodePoolUpdatingVersionConditionType         = "UpdatingVersion"
 	NodePoolUpdatingConfigConditionType          = "UpdatingConfig"

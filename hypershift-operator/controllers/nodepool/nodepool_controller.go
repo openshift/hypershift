@@ -511,6 +511,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
 	}
 
+	// Set ReconciliationActive condition
+	setStatusCondition(&nodePool.Status.Conditions, generateReconciliationActiveCondition(nodePool.Spec.PausedUntil, nodePool.Generation))
+
 	// 2. - Reconcile towards expected state of the world.
 	targetConfigVersionHash := hashStruct(config + targetVersion)
 	compressedConfig, err := compress([]byte(config))
