@@ -129,6 +129,9 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 				if strings.Contains(err.Error(), "required inputs are missing") {
 					return false, err
 				}
+				if strings.Contains(err.Error(), "NoCredentialProviders") {
+					return false, err
+				}
 				t.Logf("Failed to destroy cluster, will retry: %v", err)
 				err := dumpCluster(ctx, t, false)
 				if err != nil {
