@@ -306,7 +306,7 @@ objects:
           - --namespace=$(MY_NAMESPACE)
           - --pod-name=$(MY_NAME)
           - --metrics-addr=:9000
-          - --enable-ocp-cluster-monitoring=false
+          - --platform-monitoring=false
           - --enable-ci-debug-output=false
           - --private-platform=AWS
           - --oidc-storage-provider-s3-bucket-name=${OIDC_S3_NAME}

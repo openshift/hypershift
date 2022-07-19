@@ -147,7 +147,7 @@ type HostedClusterReconciler struct {
 	// Clock is used to determine the time in a testable way.
 	Clock clock.WithTickerAndDelayedExecution
 
-	EnableOCPClusterMonitoring bool
+	PlatformMonitoring bool
 
 	createOrUpdate func(reconcile.Request) upsert.CreateOrUpdateFN
 
@@ -780,7 +780,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			controlPlaneNamespace.Labels = make(map[string]string)
 		}
 		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = ""
-		if r.EnableOCPClusterMonitoring {
+		if r.PlatformMonitoring {
 			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
 		}
 		return nil
@@ -1157,7 +1157,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile cluster prometheus RBAC resources if enabled
-	if r.EnableOCPClusterMonitoring {
+	if r.PlatformMonitoring {
 		if err := r.reconcileClusterPrometheusRBAC(ctx, createOrUpdate, hcp.Namespace); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile RBAC for OCP cluster prometheus: %w", err)
 		}

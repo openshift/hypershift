@@ -79,7 +79,7 @@ type StartOptions struct {
 	PodName                          string
 	MetricsAddr                      string
 	CertDir                          string
-	EnableOCPClusterMonitoring       bool
+	PlatformMonitoring               bool
 	EnableCIDebugOutput              bool
 	ControlPlaneOperatorImage        string
 	RegistryOverrides                map[string]string
@@ -117,7 +117,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.MetricsAddr, "metrics-addr", opts.MetricsAddr, "The address the metric endpoint binds to.")
 	cmd.Flags().StringVar(&opts.CertDir, "cert-dir", opts.CertDir, "Path to the serving key and cert for manager")
 	cmd.Flags().StringVar(&opts.ControlPlaneOperatorImage, "control-plane-operator-image", opts.ControlPlaneOperatorImage, "A control plane operator image to use (defaults to match this operator if running in a deployment)")
-	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
+	cmd.Flags().BoolVar(&opts.PlatformMonitoring, "platform-monitoring", opts.PlatformMonitoring, "Development-only option that will make your OCP cluster unsupported: The cluster Prometheus will be configured to scrape metrics from all HostedControlPlane Namespaces")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
@@ -217,10 +217,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			},
 			RegistryOverrides: opts.RegistryOverrides,
 		},
-		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
-		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
-		ImageMetadataProvider:      &util.RegistryClientImageMetadataProvider{},
-		MetricsSet:                 metricsSet,
+		PlatformMonitoring:    opts.PlatformMonitoring,
+		EnableCIDebugOutput:   opts.EnableCIDebugOutput,
+		ImageMetadataProvider: &util.RegistryClientImageMetadataProvider{},
+		MetricsSet:            metricsSet,
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)

@@ -413,7 +413,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		OperatorImage:                  opts.HyperShiftImage,
 		ServiceAccount:                 operatorServiceAccount,
 		Replicas:                       opts.HyperShiftOperatorReplicas,
-		EnableOCPClusterMonitoring:     opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
+		PlatformMonitoring:             opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
 		EnableCIDebugOutput:            opts.EnableCIDebugOutput,
 		EnableWebhook:                  opts.EnableWebhook,
 		PrivatePlatform:                opts.PrivatePlatform,

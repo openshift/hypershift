@@ -258,7 +258,7 @@ type HyperShiftOperatorDeployment struct {
 	Images                         map[string]string
 	ServiceAccount                 *corev1.ServiceAccount
 	Replicas                       int32
-	EnableOCPClusterMonitoring     bool
+	PlatformMonitoring             bool
 	EnableCIDebugOutput            bool
 	EnableWebhook                  bool
 	PrivatePlatform                string
@@ -279,7 +279,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		"--namespace=$(MY_NAMESPACE)",
 		"--pod-name=$(MY_NAME)",
 		"--metrics-addr=:9000",
-		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
+		fmt.Sprintf("--platform-monitoring=%t", o.PlatformMonitoring),
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
 	}
