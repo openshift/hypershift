@@ -323,30 +323,29 @@ func getIAMAuth() *core.IamAuthenticator {
 	}
 }
 
-// setupBaseDomain get domain id and crn of given base domain
-// TODO(dharaneeshvrd): Currently, resource group provided will be considered only for VPC and PowerVS. Need to look at utilising a common resource group in future for CIS service too and use it while filtering the list
-func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) (err error) {
+// getCISDomainDetails getting CIS domain details like CRN and domainID
+func getCISDomainDetails(baseDomain string) (string, string, error) {
+	var CISCRN, CISDomainID string
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{
 		Authenticator: getIAMAuth(),
 		URL:           getCustomEndpointUrl(platformService, resourcecontrollerv2.DefaultServiceURL),
 	})
 	if err != nil {
-		return
+		return "", "", err
 	}
 
 	if rcv2 == nil {
-		return fmt.Errorf("unable to get resource controller")
+		return "", "", fmt.Errorf("unable to get resource controller")
 	}
 
 	// getting list of resource instance of type cis
 	serviceID, _, err := getServiceInfo(cisService, "")
 
 	if err != nil {
-		err = fmt.Errorf("error retrieving cis service %w", err)
-		return
+		return "", "", fmt.Errorf("error retrieving cis service %w", err)
 	}
 
-	f := func(start string) (isDone bool, nextUrl string, err error) {
+	f := func(start string) (bool, string, error) {
 		listResourceOpt := resourcecontrollerv2.ListResourceInstancesOptions{ResourceID: &serviceID}
 
 		// for getting the next page
@@ -356,12 +355,11 @@ func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) (err error) {
 		resourceList, _, err := rcv2.ListResourceInstances(&listResourceOpt)
 
 		if err != nil {
-			return
+			return false, "", err
 		}
 
 		if resourceList == nil {
-			err = fmt.Errorf("resourceList returned is nil")
-			return
+			return false, "", fmt.Errorf("resourceList returned is nil")
 		}
 
 		// looping through all resource instance of type cis until given base domain is found
@@ -384,11 +382,10 @@ func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) (err error) {
 
 			if zoneList != nil {
 				for _, zone := range zoneList.Result {
-					if *zone.Name == options.BaseDomain {
-						infra.CisCrn = *resource.CRN
-						infra.CisDomainID = *zone.ID
-						isDone = true
-						return
+					if *zone.Name == baseDomain {
+						CISCRN = *resource.CRN
+						CISDomainID = *zone.ID
+						return true, "", nil
 					}
 				}
 			}
@@ -396,25 +393,37 @@ func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) (err error) {
 
 		// For paging over next set of resources getting the start token
 		if resourceList.NextURL != nil && *resourceList.NextURL != "" {
-			nextUrl = *resourceList.NextURL
-			return
+			return false, *resourceList.NextURL, nil
 		}
 
-		isDone = true
-		return
+		return true, "", nil
 	}
 
 	err = pagingHelper(f)
+
 	if err != nil {
-		return
+		return "", "", err
 	}
 
-	if infra.CisCrn == "" || infra.CisDomainID == "" {
-		return fmt.Errorf("unable to get cis information with base domain %s", options.BaseDomain)
+	if CISCRN == "" || CISDomainID == "" {
+		return "", "", fmt.Errorf("unable to get cis information with base domain %s", baseDomain)
+	}
+
+	return CISCRN, CISDomainID, nil
+}
+
+// setupBaseDomain get domain id and crn of given base domain
+// TODO(dharaneeshvrd): Currently, resource group provided will be considered only for VPC and PowerVS. Need to look at utilising a common resource group in future for CIS service too and use it while filtering the list
+func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) error {
+	var err error
+	infra.CisCrn, infra.CisDomainID, err = getCISDomainDetails(options.BaseDomain)
+
+	if err != nil {
+		return fmt.Errorf("error retrieving cis domain details %w", err)
 	}
 
 	log(options.InfraID).Info("BaseDomain Info Ready", "CRN", infra.CisCrn, "DomainID", infra.CisDomainID)
-	return
+	return nil
 }
 
 // getServiceInfo retrieving id info of given service and service plan

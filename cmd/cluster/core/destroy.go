@@ -49,7 +49,10 @@ type AzurePlatformDestroyOptions struct {
 }
 
 type PowerVSPlatformDestroyOptions struct {
+	BaseDomain    string
 	ResourceGroup string
+	CISCRN        string
+	CISDomainID   string
 	Region        string
 	Zone          string
 	VPCRegion     string
