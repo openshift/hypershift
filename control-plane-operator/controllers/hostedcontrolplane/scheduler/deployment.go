@@ -5,6 +5,8 @@ import (
 	"path"
 	"strings"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,8 +32,16 @@ var (
 			schedulerVolumeKubeconfig().Name:  "/etc/kubernetes/kubeconfig",
 		},
 	}
-	schedulerLabels = map[string]string{
-		"app": "kube-scheduler",
+	name   = "kube-scheduler"
+	labels = map[string]string{
+		"app":                         name,
+		hyperv1.ControlPlaneComponent: name,
+	}
+
+	// The selector needs to be invariant for the lifecycle of the project as it's an immutable field,
+	// otherwise changing would prevent an upgrade from happening.
+	selector = map[string]string{
+		"app": name,
 	}
 )
 
@@ -46,14 +56,14 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 
 	maxSurge := intstr.FromInt(3)
 	maxUnavailable := intstr.FromInt(1)
-	selector := deployment.Spec.Selector
+	s := deployment.Spec.Selector
 	if deployment.Spec.Selector == nil {
-		selector = &metav1.LabelSelector{
-			MatchLabels: schedulerLabels,
+		s = &metav1.LabelSelector{
+			MatchLabels: selector,
 		}
 	}
 	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: selector,
+		Selector: s,
 		Strategy: appsv1.DeploymentStrategy{
 			Type: appsv1.RollingUpdateDeploymentStrategyType,
 			RollingUpdate: &appsv1.RollingUpdateDeployment{
@@ -63,7 +73,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: schedulerLabels,
+				Labels: labels,
 			},
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
