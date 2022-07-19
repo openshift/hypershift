@@ -873,8 +873,7 @@ type AWSResourceTag struct {
 	Value string `json:"value"`
 }
 
-// AWSRolesRef contains references to various AWS IAM roles required to enable
-// integrations such as OIDC.
+// AWSRolesRef contains references to various AWS IAM roles required for operators to make calls against the AWS API.
 type AWSRolesRef struct {
 	// The referenced role must have a trust relationship that allows it to be assumed via web identity.
 	// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
@@ -897,8 +896,7 @@ type AWSRolesRef struct {
 	//		]
 	//	}
 	//
-	// IngressARN is an ARN value referencing a role used for ingress OIDC
-	// integration.
+	// IngressARN is an ARN value referencing a role appropriate for the Ingress Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -928,8 +926,7 @@ type AWSRolesRef struct {
 	// }
 	IngressARN string `json:"ingressARN"`
 
-	// ImageRegistryARN is an ARN value referencing a role used for image
-	// registry OIDC integration.
+	// ImageRegistryARN is an ARN value referencing a role appropriate for the Image Registry Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -964,8 +961,7 @@ type AWSRolesRef struct {
 	// }
 	ImageRegistryARN string `json:"imageRegistryARN"`
 
-	// StorageOIDC is an ARN value referencing a role used for storage driver OIDC
-	// integration.
+	// StorageARN is an ARN value referencing a role appropriate for the Storage Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -996,8 +992,7 @@ type AWSRolesRef struct {
 	// }
 	StorageARN string `json:"storageARN"`
 
-	// NetworkOIDC is an ARN value referencing a role used for networking OIDC
-	// integration.
+	// NetworkARN is an ARN value referencing a role appropriate for the Network Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -1023,8 +1018,7 @@ type AWSRolesRef struct {
 	// }
 	NetworkARN string `json:"networkARN"`
 
-	// KubeCloudControllerARN is an ARN value referencing a role that should contain
-	// policy permissions matching the cloud controller policy.
+	// KubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -1096,8 +1090,7 @@ type AWSRolesRef struct {
 	// +immutable
 	KubeCloudControllerARN string `json:"kubeCloudControllerARN"`
 
-	// NodePoolManagementARN is an ARN value referencing a role that should contain
-	// policy permissions matching the node pool management policy.
+	// NodePoolManagementARN is an ARN value referencing a role appropriate for the CAPI Controller.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -1190,8 +1183,7 @@ type AWSRolesRef struct {
 	// +immutable
 	NodePoolManagementARN string `json:"nodePoolManagementARN"`
 
-	// ControlPlaneOperatorARN  is an ARN value referencing a role that should contain
-	// policy permissions matching the control-plane-operator policy.
+	// ControlPlaneOperatorARN  is an ARN value referencing a role appropriate for the Control Plane Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
