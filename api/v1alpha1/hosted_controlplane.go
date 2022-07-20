@@ -175,6 +175,11 @@ type HostedControlPlaneSpec struct {
 	//
 	// +optional
 	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
+
+	// NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.
+	//
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 }
 
 // AvailabilityPolicy specifies a high level availability policy for components.

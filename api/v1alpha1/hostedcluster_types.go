@@ -290,6 +290,11 @@ type HostedClusterSpec struct {
 	// +optional
 	// +immutable
 	OLMCatalogPlacement OLMCatalogPlacement `json:"olmCatalogPlacement,omitempty"`
+
+	// NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.
+	//
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 }
 
 // OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.

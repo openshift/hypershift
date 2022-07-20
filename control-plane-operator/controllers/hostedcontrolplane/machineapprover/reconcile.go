@@ -195,17 +195,14 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, util.APIPort(hcp)), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	deploymentConfig := config.DeploymentConfig{
-		Replicas: 1,
 		Scheduling: config.Scheduling{
 			PriorityClass: config.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
 
-	deploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	deploymentConfig.SetColocation(hcp)
+	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	deploymentConfig.SetControlPlaneIsolation(hcp)
 	deploymentConfig.ApplyTo(deployment)
 
 	return nil

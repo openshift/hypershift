@@ -11,7 +11,21 @@ import (
 )
 
 const (
+	// ManagedByLabel can be used to filter deployments.
 	ManagedByLabel = "hypershift.openshift.io/managed-by"
+
+	// There are used by NodeAffinity to prefer/tolerate Nodes.
+	controlPlaneLabelTolerationKey = "hypershift.openshift.io/control-plane"
+	clusterLabelTolerationKey      = "hypershift.openshift.io/cluster"
+
+	// colocationLabelKey is used by PodAffinity to prefer colocating pods that belong to the same hosted cluster.
+	colocationLabelKey = "hypershift.openshift.io/hosted-control-plane"
+
+	// Specific cluster weight for soft affinity rule to node.
+	clusterNodeSchedulingAffinityWeight = 100
+
+	// Generic control plane workload weight for soft affinity rule to node.
+	controlPlaneNodeSchedulingAffinityWeight = clusterNodeSchedulingAffinityWeight / 2
 )
 
 type DeploymentConfig struct {
@@ -49,136 +63,6 @@ func (c *DeploymentConfig) SetReleaseImageAnnotation(releaseImage string) {
 		c.AdditionalAnnotations = make(AdditionalAnnotations)
 	}
 	c.AdditionalAnnotations[hyperv1.ReleaseImageAnnotation] = releaseImage
-}
-
-func (c *DeploymentConfig) SetMultizoneSpread(labels map[string]string) {
-	if c.Scheduling.Affinity == nil {
-		c.Scheduling.Affinity = &corev1.Affinity{}
-	}
-	if c.Scheduling.Affinity.PodAntiAffinity == nil {
-		c.Scheduling.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
-	}
-	c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution =
-		[]corev1.PodAffinityTerm{
-			{
-				TopologyKey: corev1.LabelTopologyZone,
-				LabelSelector: &metav1.LabelSelector{
-					MatchLabels: labels,
-				},
-			},
-		}
-}
-
-const colocationLabelKey = "hypershift.openshift.io/hosted-control-plane"
-
-func colocationLabel(hcp *hyperv1.HostedControlPlane) string {
-	return clusterKey(hcp)
-}
-
-// SetColocationAnchor sets labels on the deployment to establish pods of this
-// deployment as an anchor for other pods associated with hcp using pod affinity.
-func (c *DeploymentConfig) SetColocationAnchor(hcp *hyperv1.HostedControlPlane) {
-	if c.AdditionalLabels == nil {
-		c.AdditionalLabels = map[string]string{}
-	}
-	c.AdditionalLabels[colocationLabelKey] = colocationLabel(hcp)
-}
-
-// SetColocation sets labels and affinity rules for this deployment so that pods
-// of the deployment will prefer to group with pods of the anchor deployment as
-// established by SetColocationAnchor.
-func (c *DeploymentConfig) SetColocation(hcp *hyperv1.HostedControlPlane) {
-	if c.Scheduling.Affinity == nil {
-		c.Scheduling.Affinity = &corev1.Affinity{}
-	}
-	if c.Scheduling.Affinity.PodAffinity == nil {
-		c.Scheduling.Affinity.PodAffinity = &corev1.PodAffinity{}
-	}
-	if c.AdditionalLabels == nil {
-		c.AdditionalLabels = map[string]string{}
-	}
-	c.AdditionalLabels[colocationLabelKey] = colocationLabel(hcp)
-	c.Scheduling.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution = []corev1.WeightedPodAffinityTerm{
-		{
-			Weight: 100,
-			PodAffinityTerm: corev1.PodAffinityTerm{
-				LabelSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						colocationLabelKey: colocationLabel(hcp),
-					},
-				},
-				TopologyKey: corev1.LabelHostname,
-			},
-		},
-	}
-}
-
-const (
-	controlPlaneWorkloadTolerationKey = "hypershift.openshift.io/control-plane"
-	controlPlaneNodeLabel             = "hypershift.openshift.io/control-plane"
-
-	clusterWorkloadTolerationKey = "hypershift.openshift.io/cluster"
-	clusterNodeLabel             = "hypershift.openshift.io/cluster"
-
-	// cluster-specific weight for soft affinity rule to node
-	clusterNodeSchedulingAffinityWeight = 100
-
-	// generic control plane workload weight for soft affinity rule to node
-	controlPlaneNodeSchedulingAffinityWeight = clusterNodeSchedulingAffinityWeight / 2
-)
-
-func clusterKey(hcp *hyperv1.HostedControlPlane) string {
-	return hcp.Namespace
-}
-
-func (c *DeploymentConfig) SetControlPlaneIsolation(hcp *hyperv1.HostedControlPlane) {
-	c.Scheduling.Tolerations = []corev1.Toleration{
-		{
-			Key:      controlPlaneWorkloadTolerationKey,
-			Operator: corev1.TolerationOpEqual,
-			Value:    "true",
-			Effect:   corev1.TaintEffectNoSchedule,
-		},
-		{
-			Key:      clusterWorkloadTolerationKey,
-			Operator: corev1.TolerationOpEqual,
-			Value:    clusterKey(hcp),
-			Effect:   corev1.TaintEffectNoSchedule,
-		},
-	}
-
-	if c.Scheduling.Affinity == nil {
-		c.Scheduling.Affinity = &corev1.Affinity{}
-	}
-	if c.Scheduling.Affinity.NodeAffinity == nil {
-		c.Scheduling.Affinity.NodeAffinity = &corev1.NodeAffinity{}
-	}
-	c.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution = []corev1.PreferredSchedulingTerm{
-		{
-			Weight: controlPlaneNodeSchedulingAffinityWeight,
-			Preference: corev1.NodeSelectorTerm{
-				MatchExpressions: []corev1.NodeSelectorRequirement{
-					{
-						Key:      controlPlaneNodeLabel,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{"true"},
-					},
-				},
-			},
-		},
-		{
-			Weight: clusterNodeSchedulingAffinityWeight,
-			Preference: corev1.NodeSelectorTerm{
-				MatchExpressions: []corev1.NodeSelectorRequirement{
-					{
-						Key:      clusterNodeLabel,
-						Operator: corev1.NodeSelectorOpIn,
-						Values:   []string{clusterKey(hcp)},
-					},
-				},
-			},
-		},
-	}
 }
 
 func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
@@ -242,4 +126,157 @@ func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
 	c.ReadinessProbes.ApplyTo(&sts.Spec.Template.Spec)
 	c.Resources.ApplyTo(&sts.Spec.Template.Spec)
 	c.AdditionalAnnotations.ApplyTo(&sts.Spec.Template.ObjectMeta)
+}
+
+func clusterKey(hcp *hyperv1.HostedControlPlane) string {
+	return hcp.Namespace
+}
+
+func colocationLabelValue(hcp *hyperv1.HostedControlPlane) string {
+	return clusterKey(hcp)
+}
+
+// setMultizoneSpread sets PodAntiAffinity with corev1.LabelTopologyZone as the topology key for a given set of labels.
+// This is useful to e.g ensure pods are spread across availavility zones.
+func (c *DeploymentConfig) setMultizoneSpread(labels map[string]string) {
+	if labels == nil {
+		return
+	}
+
+	if c.Scheduling.Affinity == nil {
+		c.Scheduling.Affinity = &corev1.Affinity{}
+	}
+	if c.Scheduling.Affinity.PodAntiAffinity == nil {
+		c.Scheduling.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
+	}
+	c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution =
+		[]corev1.PodAffinityTerm{
+			{
+				TopologyKey: corev1.LabelTopologyZone,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: labels,
+				},
+			},
+		}
+}
+
+// setColocation sets labels and PodAffinity rules for this deployment so that pods
+// of the deployment will prefer to group with pods of the anchor deployment.
+func (c *DeploymentConfig) setColocation(hcp *hyperv1.HostedControlPlane) {
+	if c.Scheduling.Affinity == nil {
+		c.Scheduling.Affinity = &corev1.Affinity{}
+	}
+	if c.Scheduling.Affinity.PodAffinity == nil {
+		c.Scheduling.Affinity.PodAffinity = &corev1.PodAffinity{}
+	}
+	if c.AdditionalLabels == nil {
+		c.AdditionalLabels = map[string]string{}
+	}
+	c.AdditionalLabels[colocationLabelKey] = colocationLabelValue(hcp)
+	c.Scheduling.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution = []corev1.WeightedPodAffinityTerm{
+		{
+			Weight: 100,
+			PodAffinityTerm: corev1.PodAffinityTerm{
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						colocationLabelKey: colocationLabelValue(hcp),
+					},
+				},
+				TopologyKey: corev1.LabelHostname,
+			},
+		},
+	}
+}
+
+// setControlPlaneIsolation configures tolerations and NodeAffinity rules to prefer Nodes with controlPlaneNodeLabel and clusterNodeLabel.
+func (c *DeploymentConfig) setControlPlaneIsolation(hcp *hyperv1.HostedControlPlane) {
+	c.Scheduling.Tolerations = []corev1.Toleration{
+		{
+			Key:      controlPlaneLabelTolerationKey,
+			Operator: corev1.TolerationOpEqual,
+			Value:    "true",
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+		{
+			Key:      clusterLabelTolerationKey,
+			Operator: corev1.TolerationOpEqual,
+			Value:    clusterKey(hcp),
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+	}
+
+	if c.Scheduling.Affinity == nil {
+		c.Scheduling.Affinity = &corev1.Affinity{}
+	}
+	if c.Scheduling.Affinity.NodeAffinity == nil {
+		c.Scheduling.Affinity.NodeAffinity = &corev1.NodeAffinity{}
+	}
+	c.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution = []corev1.PreferredSchedulingTerm{
+		{
+			Weight: controlPlaneNodeSchedulingAffinityWeight,
+			Preference: corev1.NodeSelectorTerm{
+				MatchExpressions: []corev1.NodeSelectorRequirement{
+					{
+						Key:      controlPlaneLabelTolerationKey,
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{"true"},
+					},
+				},
+			},
+		},
+		{
+			Weight: clusterNodeSchedulingAffinityWeight,
+			Preference: corev1.NodeSelectorTerm{
+				MatchExpressions: []corev1.NodeSelectorRequirement{
+					{
+						Key:      clusterLabelTolerationKey,
+						Operator: corev1.NodeSelectorOpIn,
+						Values:   []string{clusterKey(hcp)},
+					},
+				},
+			},
+		},
+	}
+}
+
+// setNodeSelector sets a nodeSelector passed through the API.
+// This is useful to e.g ensure control plane pods land in management cluster Infra Nodes.
+func (c *DeploymentConfig) setNodeSelector(hcp *hyperv1.HostedControlPlane) {
+	if hcp.Spec.NodeSelector == nil {
+		return
+	}
+	c.Scheduling.NodeSelector = hcp.Spec.NodeSelector
+}
+
+func (c *DeploymentConfig) setLocation(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string) {
+	c.setNodeSelector(hcp)
+	c.setControlPlaneIsolation(hcp)
+	c.setColocation(hcp)
+	// TODO (alberto): pass labels with deployment hash and set this unconditionally so we don't skew setup.
+	if c.Replicas > 1 {
+		c.setMultizoneSpread(multiZoneSpreadLabels)
+	}
+}
+
+func (c *DeploymentConfig) setReplicas(availability hyperv1.AvailabilityPolicy) {
+	switch availability {
+	case hyperv1.HighlyAvailable:
+		c.Replicas = 3
+	default:
+		c.Replicas = 1
+	}
+}
+
+// SetDefaults populates opinionated default DeploymentConfig for any Deployment.
+func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string, replicas *int) {
+	// If no replicas is specified then infer it from the ControllerAvailabilityPolicy.
+	if replicas == nil {
+		c.setReplicas(hcp.Spec.ControllerAvailabilityPolicy)
+	} else {
+		c.Replicas = *replicas
+	}
+
+	c.setLocation(hcp, multiZoneSpreadLabels)
+	// TODO (alberto): make this private, atm is needed for the konnectivity agent daemonset.
+	c.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
 }

@@ -40,20 +40,12 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, images ma
 			},
 		},
 	}
-	params.DeploymentConfig.SetColocation(hcp)
-	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
-	switch hcp.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		params.DeploymentConfig.Replicas = 3
-		params.DeploymentConfig.SetMultizoneSpread(clusterPolicyControllerLabels)
-	default:
-		params.DeploymentConfig.Replicas = 1
-	}
-	params.OwnerRef = config.OwnerRefFrom(hcp)
 
+	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	params.DeploymentConfig.SetDefaults(hcp, clusterPolicyControllerLabels, nil)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
+
+	params.OwnerRef = config.OwnerRefFrom(hcp)
 
 	return params
 }

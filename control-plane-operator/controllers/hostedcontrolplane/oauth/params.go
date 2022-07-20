@@ -131,17 +131,9 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 			SuccessThreshold:    1,
 		},
 	}
-	p.DeploymentConfig.SetColocation(hcp)
+	p.DeploymentConfig.SetDefaults(hcp, oauthServerLabels, nil)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
-	switch hcp.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		p.DeploymentConfig.SetMultizoneSpread(oauthServerLabels)
-		p.Replicas = 3
-	default:
-		p.Replicas = 1
-	}
+
 	p.OauthConfigOverrides = map[string]*ConfigOverride{}
 	for annotationKey, annotationValue := range hcp.Annotations {
 		if strings.HasPrefix(annotationKey, hyperv1.IdentityProviderOverridesAnnotationPrefix) {

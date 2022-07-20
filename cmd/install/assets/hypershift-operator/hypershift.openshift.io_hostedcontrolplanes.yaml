@@ -2123,6 +2123,12 @@ spec:
                 required:
                 - networkType
                 type: object
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                description: NodeSelector when specified, must be true for the pods
+                  managed by the HostedCluster to be scheduled.
+                type: object
               olmCatalogPlacement:
                 default: management
                 description: OLMCatalogPlacement specifies the placement of OLM catalog

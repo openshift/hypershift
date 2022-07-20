@@ -454,6 +454,18 @@ Value must be one of:
 </p>
 </td>
 </tr>
+<tr>
+<td>
+<code>nodeSelector</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -3438,6 +3450,18 @@ Value must be one of:
 </p>
 </td>
 </tr>
+<tr>
+<td>
+<code>nodeSelector</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1alpha1.HostedClusterStatus }
@@ -4009,6 +4033,18 @@ ClusterAutoscaling
 <em>(Optional)</em>
 <p>Autoscaling specifies auto-scaling behavior that applies to all NodePools
 associated with the control plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodeSelector</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
 </td>
 </tr>
 </tbody>
