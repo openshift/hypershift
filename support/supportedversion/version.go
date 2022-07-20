@@ -11,6 +11,7 @@ import (
 // NOTE: The .0 (z release) should be ignored. It's only here to support
 // semver parsing.
 var LatestSupportedVersion = semver.MustParse("4.12.0")
+var MinSupportedVersion = semver.MustParse(subtractMinor(&LatestSupportedVersion, uint64(SupportedPreviousMinorVersions)).String())
 
 // SupportedPreviousMinorVersions is the number of minor versions prior to current
 // version that are supported.
