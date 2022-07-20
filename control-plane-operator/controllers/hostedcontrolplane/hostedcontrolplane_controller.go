@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 	"strings"
 	"time"
 
@@ -319,6 +320,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			}
 		}
 		var errs []error
+		sort.SliceStable(cpoManagedDeploymentList.Items, func(i, j int) bool {
+			return cpoManagedDeploymentList.Items[i].Name < cpoManagedDeploymentList.Items[j].Name
+		})
 		for _, deployment := range cpoManagedDeploymentList.Items {
 			if deployment.Status.UnavailableReplicas > 0 {
 				errs = append(errs, fmt.Errorf("%s deployment has %d unavailable replicas", deployment.Name, deployment.Status.UnavailableReplicas))
