@@ -10,7 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 )
 
-func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool) error {
+func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool, IsPruvate bool) error {
 	ingressController.Spec.Domain = ingressSubdomain
 	ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
 		Type: operatorv1.LoadBalancerServiceStrategyType,
@@ -41,7 +41,7 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 					Protocol: operatorv1.TCPProtocol,
 				},
 			}
-		} else {
+		} else if  { 
 			ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
 				Type: operatorv1.LoadBalancerServiceStrategyType,
 				LoadBalancer: &operatorv1.LoadBalancerStrategy{
@@ -49,6 +49,16 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 				},
 			}
 		}
+				} else {
+					ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+						Type: Private,
+						Private: &operatorv1.PrivateStrategyType,{
+							Scope: operatorv1.Private,
+						},
+					}
+				}
+		
+		
 		ingressController.Spec.NodePlacement = &operatorv1.NodePlacement{
 			Tolerations: []corev1.Toleration{
 				{
