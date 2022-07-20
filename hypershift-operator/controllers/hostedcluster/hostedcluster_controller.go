@@ -235,7 +235,7 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		managedResources = append(managedResources, &routev1.Route{})
 	}
-	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityConfigOpenshiftIO) {
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityIngress) {
 		managedResources = append(managedResources, &configv1.Ingress{})
 	}
 	return managedResources
@@ -4295,7 +4295,7 @@ func isUpgradeable(hcluster *hyperv1.HostedCluster) (bool, string, error) {
 // defaultAPIPortIfNeeded defaults the apiserver port on Azure management clusters as a workaround
 // for https://bugzilla.redhat.com/show_bug.cgi?id=2060650: Azure LBs with port 6443 don't work
 func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
-	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityConfigOpenshiftIO) {
+	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityInfrastructure) {
 		return nil
 	}
 	infra := &configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
@@ -4323,7 +4323,7 @@ func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hc
 }
 
 func (r *HostedClusterReconciler) defaultIngressDomain(ctx context.Context) (string, error) {
-	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityConfigOpenshiftIO) {
+	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityIngress) {
 		return "", nil
 	}
 	ingress := &configv1.Ingress{

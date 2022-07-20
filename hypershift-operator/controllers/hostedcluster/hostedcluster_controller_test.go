@@ -1008,13 +1008,17 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 
 	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()}
 	r := &HostedClusterReconciler{
-		Client:                        client,
-		Clock:                         clock.RealClock{},
-		ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(capabilities.CapabilityConfigOpenshiftIO),
-		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
-		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}},
-		now:                           metav1.Now,
+		Client: client,
+		Clock:  clock.RealClock{},
+		ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(
+			capabilities.CapabilityInfrastructure,
+			capabilities.CapabilityIngress,
+			capabilities.CapabilityProxy,
+		),
+		createOrUpdate:        func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+		ReleaseProvider:       &fakereleaseprovider.FakeReleaseProvider{},
+		ImageMetadataProvider: &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}},
+		now:                   metav1.Now,
 	}
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
