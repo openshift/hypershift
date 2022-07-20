@@ -56,9 +56,10 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 	if mainContainer != nil {
 		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
-
-	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: oauthLabels(),
+	if deployment.Spec.Selector == nil {
+		deployment.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: oauthLabels(),
+		}
 	}
 	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
 	maxSurge := intstr.FromInt(3)
