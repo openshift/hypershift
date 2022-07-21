@@ -732,16 +732,19 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile ingress operator: %w", err)
 	}
 
-	// Reconcile private router
+	// Reconcile router
+	kasServiceStrategy := servicePublishingStrategyByType(hostedControlPlane, hyperv1.APIServer)
 	if util.IsPrivateHCP(hostedControlPlane) {
 		r.Log.Info("Removing private IngressController")
 		// Ensure that if an ingress controller exists from a previous version, it is removed
 		if err = r.reconcilePrivateIngressController(ctx, hostedControlPlane); err != nil {
 			return fmt.Errorf("failed to reconcile private ingresscontroller: %w", err)
 		}
-		r.Log.Info("Reconciling private router")
-		if err = r.reconcilePrivateRouter(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile private ingresscontroller: %w", err)
+	}
+	if util.IsPrivateHCP(hostedControlPlane) || kasServiceStrategy.Type == hyperv1.Route {
+		r.Log.Info("Reconciling router")
+		if err = r.reconcileRouter(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile router: %w", err)
 		}
 	}
 
@@ -808,7 +811,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultServiceAccount(ctx contex
 func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
 	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.APIServer)
 	if serviceStrategy == nil {
-		return fmt.Errorf("APIServer service strategy not specified")
+		return errors.New("APIServer service strategy not specified")
 	}
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
@@ -818,7 +821,33 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
 
-	if util.IsPrivateHCP(hcp) {
+	if serviceStrategy.Type == hyperv1.Route {
+		if util.IsPublicHCP(hcp) {
+			externalRoute := manifests.KubeAPIServerExternalRoute(hcp.Namespace)
+			if _, err := createOrUpdate(ctx, r.Client, externalRoute, func() error {
+				kas.ReconcileRoute(externalRoute, serviceStrategy.Route.Hostname)
+				if externalRoute.Annotations == nil {
+					externalRoute.Annotations = map[string]string{}
+				}
+				externalRoute.Annotations["external-dns.alpha.kubernetes.io/hostname"] = serviceStrategy.Route.Hostname
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile apiserver external route: %w", err)
+			}
+		}
+
+		// We do not need to enumerate all possible addresses, because we use the KAS as default backend through a custom
+		// router template. That in turn was needed to work around SNI not supporting IP addresses, only hostnames:
+		// https://www.rfc-editor.org/rfc/rfc6066#section-3
+		route := manifests.KubeAPIServerInternalRoute(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, route, func() error {
+			kas.ReconcileRoute(route, "kubernetes.default")
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile apiserver route %s: %w", route.Name, err)
+		}
+
+	} else if util.IsPrivateHCP(hcp) {
 		apiServerPrivateService := manifests.KubeAPIServerPrivateService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, apiServerPrivateService, func() error {
 			return kas.ReconcilePrivateService(apiServerPrivateService, p.OwnerReference)
@@ -872,7 +901,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	}
 	oauthRoute := manifests.OauthServerRoute(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, oauthRoute, func() error {
-		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef, serviceStrategy, r.DefaultIngressDomain)
+		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef, serviceStrategy, r.DefaultIngressDomain, hcp)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth route: %w", err)
 	}
@@ -2355,39 +2384,76 @@ func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx con
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcilePrivateRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseInfo *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
-	sa := manifests.PrivateRouterServiceAccount(hcp.Namespace)
+func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseInfo *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
+	sa := manifests.RouterServiceAccount(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
-		return ingress.ReconcilePrivateRouterServiceAccount(sa, config.OwnerRefFrom(hcp))
+		return ingress.ReconcileRouterServiceAccount(sa, config.OwnerRefFrom(hcp))
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile private router service account: %w", err)
+		return fmt.Errorf("failed to reconcile router service account: %w", err)
 	}
-	role := manifests.PrivateRouterRole(hcp.Namespace)
+	role := manifests.RouterRole(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, role, func() error {
-		return ingress.ReconcilePrivateRouterRole(role, config.OwnerRefFrom(hcp))
+		return ingress.ReconcileRouterRole(role, config.OwnerRefFrom(hcp))
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile private router role: %w", err)
+		return fmt.Errorf("failed to reconcile router role: %w", err)
 	}
-	rb := manifests.PrivateRouterRoleBinding(hcp.Namespace)
+	rb := manifests.RouterRoleBinding(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, rb, func() error {
-		return ingress.ReconcilePrivateRouterRoleBinding(rb, config.OwnerRefFrom(hcp))
+		return ingress.ReconcileRouterRoleBinding(rb, config.OwnerRefFrom(hcp))
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile private router rolebinding: %w", err)
+		return fmt.Errorf("failed to reconcile router rolebinding: %w", err)
 	}
-	deployment := manifests.PrivateRouterDeployment(hcp.Namespace)
+
+	var canonicalHostname string
+	if util.IsPrivateHCP(hcp) {
+		svc := manifests.PrivateRouterService(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, svc, func() error {
+			return ingress.ReconcileRouterService(svc, config.OwnerRefFrom(hcp), util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), true)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile router service: %w", err)
+		}
+		if !util.IsPublicHCP(hcp) && len(svc.Status.LoadBalancer.Ingress) > 0 {
+			canonicalHostname = svc.Status.LoadBalancer.Ingress[0].Hostname
+		}
+	}
+
+	if util.IsPublicHCP(hcp) {
+		pubSvc := manifests.RouterPublicService(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
+			return ingress.ReconcileRouterService(pubSvc, config.OwnerRefFrom(hcp), util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), false)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile router service: %w", err)
+		}
+		if len(pubSvc.Status.LoadBalancer.Ingress) > 0 {
+			canonicalHostname = pubSvc.Status.LoadBalancer.Ingress[0].Hostname
+		}
+	}
+
+	routerTemplate := manifests.RouterTemplateConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r.Client, routerTemplate, func() error {
+		ingress.ReconcileRouterTemplateConfigmap(routerTemplate)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile router template configmap: %w", err)
+	}
+
+	// We have to wait for the LB to be ready, otherwise the router might already admit the KAS route but not populate
+	// the routerCanonicalHostname field, causing external DNS to not create the DNS entry. It doesn't add that field
+	// later for already-admitted routes.
+	if canonicalHostname == "" {
+		return nil
+	}
+
+	deployment := manifests.RouterDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-		return ingress.ReconcilePrivateRouterDeployment(deployment,
+		return ingress.ReconcileRouterDeployment(deployment,
 			config.OwnerRefFrom(hcp),
 			ingress.PrivateRouterConfig(hcp, r.SetDefaultSecurityContext),
-			ingress.PrivateRouterImage(releaseInfo.ComponentImages()))
+			ingress.PrivateRouterImage(releaseInfo.ComponentImages()),
+			canonicalHostname,
+		)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile private router deployment: %w", err)
-	}
-	svc := manifests.PrivateRouterService(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, svc, func() error {
-		return ingress.ReconcilePrivateRouterService(svc, config.OwnerRefFrom(hcp))
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile private router service: %w", err)
+		return fmt.Errorf("failed to reconcile router deployment: %w", err)
 	}
 	return nil
 }

@@ -47,9 +47,13 @@ type AWSEndpointServiceStatus struct {
 	// +optional
 	EndpointID string `json:"endpointID,omitempty"`
 
-	// DNSName is the name for the record created in the hypershift private zone
+	// Deprecated: Use DNSNames instead
 	// +optional
 	DNSName string `json:"dnsName,omitempty"`
+
+	// DNSName are the names for the records created in the hypershift private zone
+	// +optional
+	DNSNames []string `json:"dnsNames,omitempty"`
 
 	// DNSZoneID is ID for the hypershift private zone
 	// +optional

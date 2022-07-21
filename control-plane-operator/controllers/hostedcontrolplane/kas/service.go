@@ -10,7 +10,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -57,6 +60,8 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 		if portSpec.NodePort == 0 && strategy.NodePort != nil {
 			portSpec.NodePort = strategy.NodePort.Port
 		}
+	case hyperv1.Route:
+		svc.Spec.Type = corev1.ServiceTypeClusterIP
 	default:
 		return fmt.Errorf("invalid publishing strategy for Kube API server service: %s", strategy.Type)
 	}
@@ -103,6 +108,9 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 		}
 		port = svc.Spec.Ports[0].NodePort
 		host = strategy.NodePort.Address
+	case hyperv1.Route:
+		host = strategy.Route.Hostname
+		port = int32(apiServerPort)
 	}
 	return
 }
@@ -132,4 +140,22 @@ func ReconcilePrivateService(svc *corev1.Service, owner *metav1.OwnerReference) 
 
 func ReconcilePrivateServiceStatus(hcpName string) (host string, port int32, err error) {
 	return fmt.Sprintf("api.%s.hypershift.local", hcpName), 6443, nil
+}
+
+func ReconcileRoute(route *routev1.Route, hostname string) {
+	if route.Labels == nil {
+		route.Labels = map[string]string{}
+	}
+	route.Labels[ingress.HypershiftRouteLabel] = route.Namespace
+	if route.CreationTimestamp.IsZero() {
+		route.Spec.Host = hostname
+	}
+	route.Spec.To = routev1.RouteTargetReference{
+		Kind: "Service",
+		Name: manifests.KubeAPIServerService("").Name,
+	}
+	route.Spec.TLS = &routev1.TLSConfig{
+		Termination:                   routev1.TLSTerminationPassthrough,
+		InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+	}
 }
