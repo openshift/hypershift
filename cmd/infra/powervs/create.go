@@ -18,6 +18,7 @@ import (
 	"github.com/IBM-Cloud/power-go-client/power/models"
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/networking-go-sdk/directlinkv1"
+	"github.com/IBM/networking-go-sdk/dnsrecordsv1"
 	"github.com/IBM/networking-go-sdk/zonesv1"
 	"github.com/IBM/platform-services-go-sdk/globalcatalogv1"
 	"github.com/IBM/platform-services-go-sdk/iamidentityv1"
@@ -77,6 +78,7 @@ var customEpEnvNameMapping = map[string]string{
 
 // CreateInfraOptions command line options for setting up infra in IBM PowerVS cloud
 type CreateInfraOptions struct {
+	Name                   string
 	BaseDomain             string
 	ResourceGroup          string
 	InfraID                string
@@ -158,6 +160,7 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := CreateInfraOptions{
+		Name:          "example",
 		PowerVSRegion: "us-south",
 		PowerVSZone:   "us-south",
 		VpcRegion:     "us-south",
@@ -165,6 +168,7 @@ func NewCreateCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "IBM Cloud CIS Domain")
 	cmd.Flags().StringVar(&opts.ResourceGroup, "resource-group", opts.ResourceGroup, "IBM Cloud Resource Group")
+	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag IBM Cloud resources")
 	cmd.Flags().StringVar(&opts.PowerVSRegion, "powervs-region", opts.PowerVSRegion, "IBM Cloud PowerVS Region")
 	cmd.Flags().StringVar(&opts.PowerVSZone, "powervs-zone", opts.PowerVSZone, "IBM Cloud PowerVS Zone")
@@ -412,6 +416,28 @@ func getCISDomainDetails(baseDomain string) (string, string, error) {
 	return CISCRN, CISDomainID, nil
 }
 
+// checkForExistingDNSRecord check for existing DNS record with the cluster name
+func checkForExistingDNSRecord(options *CreateInfraOptions, CISCRN string, CISDomainID string) error {
+	dnsRecordsV1, err := dnsrecordsv1.NewDnsRecordsV1(&dnsrecordsv1.DnsRecordsV1Options{Crn: &CISCRN, ZoneIdentifier: &CISDomainID, Authenticator: getIAMAuth()})
+	if err != nil {
+		return fmt.Errorf("error creating dns record client: %w", err)
+	}
+
+	recordName := fmt.Sprintf("*.apps.%s.%s", options.Name, options.BaseDomain)
+	listDnsRecordsOpt := &dnsrecordsv1.ListAllDnsRecordsOptions{Name: &recordName}
+
+	dnsRecordsL, _, err := dnsRecordsV1.ListAllDnsRecords(listDnsRecordsOpt)
+	if err != nil {
+		return err
+	}
+
+	if len(dnsRecordsL.Result) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("existing DNS record '%s' found in base domain %s, cannot proceed to cluster creation when dns record already exists with the cluster name", recordName, options.BaseDomain)
+}
+
 // setupBaseDomain get domain id and crn of given base domain
 // TODO(dharaneeshvrd): Currently, resource group provided will be considered only for VPC and PowerVS. Need to look at utilising a common resource group in future for CIS service too and use it while filtering the list
 func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) error {
@@ -420,6 +446,10 @@ func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) error {
 
 	if err != nil {
 		return fmt.Errorf("error retrieving cis domain details %w", err)
+	}
+
+	if err = checkForExistingDNSRecord(options, infra.CisCrn, infra.CisDomainID); err != nil {
+		return err
 	}
 
 	log(options.InfraID).Info("BaseDomain Info Ready", "CRN", infra.CisCrn, "DomainID", infra.CisDomainID)
