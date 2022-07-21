@@ -50,6 +50,11 @@ const (
 	// PortierisImageAnnotation is an annotation that allows the specification of the portieries component
 	// (performs container image verification).
 	PortierisImageAnnotation = "hypershift.openshift.io/portieris-image"
+	// Configure ingress controller with endpoint publishing strategy as Private.
+	// This overrides any opinionated strategy set by platform in ReconcileDefaultIngressController.
+	// It's used by IBM cloud to support ingress endpoint publishing strategy scope
+	// NOTE: We'll expose this in the API if the use case gets generalised.
+	PrivateIngressControllerAnnotation = "hypershift.openshift.io/private-ingress-controller"
 
 	// ClusterAPIProviderAWSImage overrides the CAPI AWS provider image to use for
 	// a HostedControlPlane.
