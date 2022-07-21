@@ -37,7 +37,7 @@ func TestCreateCluster(t *testing.T) {
 
 	// Wait for Nodes to be Ready
 	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
+	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the rollout to be complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)

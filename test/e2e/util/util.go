@@ -134,14 +134,21 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	return guestClient
 }
 
-func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32) []corev1.Node {
+func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
 	g := NewWithT(t)
 	start := time.Now()
+
+	// waitTimeout for nodes to become Ready
+	waitTimeout := 30 * time.Minute
+	switch platform {
+	case hyperv1.PowerVSPlatform:
+		waitTimeout = 60 * time.Minute
+	}
 
 	t.Logf("Waiting for nodes to become ready. Want: %v", n)
 	nodes := &corev1.NodeList{}
 	readyNodeCount := 0
-	err := wait.PollImmediateWithContext(ctx, 5*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
 		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
 		if err != nil {

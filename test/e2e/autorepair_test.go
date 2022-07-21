@@ -44,7 +44,7 @@ func TestAutoRepair(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 	// TODO (alberto): have ability to label and get Nodes by NodePool. NodePool.Status.Nodes?
 	numNodes := clusterOpts.NodePoolReplicas * numZones
-	nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
+	nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the rollout to be reported complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
@@ -65,7 +65,7 @@ func TestAutoRepair(t *testing.T) {
 	// Wait for nodes to be ready again, without the node that was terminated
 	t.Logf("Waiting for %d available nodes without %s", numNodes, nodeToReplace)
 	err = wait.PollUntil(30*time.Second, func() (done bool, err error) {
-		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
+		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 		for _, node := range nodes {
 			if node.Name == nodeToReplace {
 				return false, nil

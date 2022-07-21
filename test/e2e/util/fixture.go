@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
+	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -221,6 +222,8 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.Cr
 		return kubevirt.CreateCluster(ctx, opts)
 	case hyperv1.AzurePlatform:
 		return azure.CreateCluster(ctx, opts)
+	case hyperv1.PowerVSPlatform:
+		return powervs.CreateCluster(ctx, opts)
 	default:
 		return fmt.Errorf("unsupported platform %s", hc.Spec.Platform.Type)
 	}
@@ -253,6 +256,18 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 			Location:        createOpts.AzurePlatform.Location,
 		}
 		return azure.DestroyCluster(ctx, opts)
+	case hyperv1.PowerVSPlatform:
+		opts.PowerVSPlatform = core.PowerVSPlatformDestroyOptions{
+			BaseDomain:    hc.Spec.DNS.BaseDomain,
+			CISCRN:        hc.Spec.Platform.PowerVS.CISInstanceCRN,
+			CISDomainID:   hc.Spec.DNS.PrivateZoneID,
+			ResourceGroup: createOpts.PowerVSPlatform.ResourceGroup,
+			Region:        createOpts.PowerVSPlatform.Region,
+			Zone:          createOpts.PowerVSPlatform.Zone,
+			VPCRegion:     createOpts.PowerVSPlatform.VpcRegion,
+		}
+		return powervs.DestroyCluster(ctx, opts)
+
 	default:
 		return fmt.Errorf("unsupported cluster platform %s", hc.Spec.Platform.Type)
 	}
