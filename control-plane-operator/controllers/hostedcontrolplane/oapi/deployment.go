@@ -88,8 +88,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			MaxSurge:       &maxSurge,
 		},
 	}
-	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: openShiftAPIServerLabels(),
+	if deployment.Spec.Selector == nil {
+		deployment.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: openShiftAPIServerLabels(),
+		}
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftAPIServerLabels()
 	etcdUrlData, err := url.Parse(etcdURL)

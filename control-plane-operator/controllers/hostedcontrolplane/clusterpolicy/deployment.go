@@ -44,8 +44,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		MaxSurge:       &maxSurge,
 		MaxUnavailable: &maxUnavailable,
 	}
-	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: clusterPolicyControllerLabels,
+	if deployment.Spec.Selector == nil {
+		deployment.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: clusterPolicyControllerLabels,
+		}
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = clusterPolicyControllerLabels
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
