@@ -2192,11 +2192,11 @@ spec:
                         properties:
                           controlPlaneOperatorARN:
                             description: "ControlPlaneOperatorARN  is an ARN value
-                              referencing a role that should contain policy permissions
-                              matching the control-plane-operator policy. \n The following
-                              is an example of a valid policy document: \n { \t\"Version\":
-                              \"2012-10-17\", \t\"Statement\": [ \t\t{ \t\t\t\"Effect\":
-                              \"Allow\", \t\t\t\"Action\": [ \t\t\t\t\"ec2:CreateVpcEndpoint\",
+                              referencing a role appropriate for the Control Plane
+                              Operator. \n The following is an example of a valid
+                              policy document: \n { \t\"Version\": \"2012-10-17\",
+                              \t\"Statement\": [ \t\t{ \t\t\t\"Effect\": \"Allow\",
+                              \t\t\t\"Action\": [ \t\t\t\t\"ec2:CreateVpcEndpoint\",
                               \t\t\t\t\"ec2:DescribeVpcEndpoints\", \t\t\t\t\"ec2:ModifyVpcEndpoint\",
                               \t\t\t\t\"ec2:DeleteVpcEndpoints\", \t\t\t\t\"ec2:CreateTags\",
                               \t\t\t\t\"route53:ListHostedZones\" \t\t\t], \t\t\t\"Resource\":
@@ -2207,8 +2207,8 @@ spec:
                             type: string
                           imageRegistryARN:
                             description: "ImageRegistryARN is an ARN value referencing
-                              a role used for image registry OIDC integration. \n
-                              The following is an example of a valid policy document:
+                              a role appropriate for the Image Registry Operator.
+                              \n The following is an example of a valid policy document:
                               \n { \t\"Version\": \"2012-10-17\", \t\"Statement\":
                               [ \t\t{ \t\t\t\"Effect\": \"Allow\", \t\t\t\"Action\":
                               [ \t\t\t\t\"s3:CreateBucket\", \t\t\t\t\"s3:DeleteBucket\",
@@ -2232,8 +2232,8 @@ spec:
                               \t\t\t\t\"Condition\": { \t\t\t\t\t\"StringEquals\":
                               { \t\t\t\t\t\t\"{{ .ProviderName }}:sub\": {{ .ServiceAccounts
                               }} \t\t\t\t\t} \t\t\t\t} \t\t\t} \t\t] \t} \n IngressARN
-                              is an ARN value referencing a role used for ingress
-                              OIDC integration. \n The following is an example of
+                              is an ARN value referencing a role appropriate for the
+                              Ingress Operator. \n The following is an example of
                               a valid policy document: \n { \t\"Version\": \"2012-10-17\",
                               \t\"Statement\": [ \t\t{ \t\t\t\"Effect\": \"Allow\",
                               \t\t\t\"Action\": [ \t\t\t\t\"elasticloadbalancing:DescribeLoadBalancers\",
@@ -2246,9 +2246,8 @@ spec:
                             type: string
                           kubeCloudControllerARN:
                             description: "KubeCloudControllerARN is an ARN value referencing
-                              a role that should contain policy permissions matching
-                              the cloud controller policy. \n The following is an
-                              example of a valid policy document: \n  {  \"Version\":
+                              a role appropriate for the KCM/KCC. \n The following
+                              is an example of a valid policy document: \n  {  \"Version\":
                               \"2012-10-17\",  \"Statement\": [    {      \"Action\":
                               [        \"ec2:DescribeInstances\",        \"ec2:DescribeImages\",
                               \       \"ec2:DescribeRegions\",        \"ec2:DescribeRouteTables\",
@@ -2290,23 +2289,21 @@ spec:
                               \"Allow\"    }  ] }"
                             type: string
                           networkARN:
-                            description: "NetworkOIDC is an ARN value referencing
-                              a role used for networking OIDC integration. \n The
-                              following is an example of a valid policy document:
-                              \n { \t\"Version\": \"2012-10-17\", \t\"Statement\":
-                              [ \t\t{ \t\t\t\"Effect\": \"Allow\", \t\t\t\"Action\":
-                              [ \t\t\t\t\"ec2:DescribeInstances\",        \"ec2:DescribeInstanceStatus\",
-                              \       \"ec2:DescribeInstanceTypes\",        \"ec2:UnassignPrivateIpAddresses\",
-                              \       \"ec2:AssignPrivateIpAddresses\",        \"ec2:UnassignIpv6Addresses\",
-                              \       \"ec2:AssignIpv6Addresses\",        \"ec2:DescribeSubnets\",
-                              \       \"ec2:DescribeNetworkInterfaces\" \t\t\t], \t\t\t\"Resource\":
-                              \"*\" \t\t} \t] }"
+                            description: "NetworkARN is an ARN value referencing a
+                              role appropriate for the Network Operator. \n The following
+                              is an example of a valid policy document: \n { \t\"Version\":
+                              \"2012-10-17\", \t\"Statement\": [ \t\t{ \t\t\t\"Effect\":
+                              \"Allow\", \t\t\t\"Action\": [ \t\t\t\t\"ec2:DescribeInstances\",
+                              \       \"ec2:DescribeInstanceStatus\",        \"ec2:DescribeInstanceTypes\",
+                              \       \"ec2:UnassignPrivateIpAddresses\",        \"ec2:AssignPrivateIpAddresses\",
+                              \       \"ec2:UnassignIpv6Addresses\",        \"ec2:AssignIpv6Addresses\",
+                              \       \"ec2:DescribeSubnets\",        \"ec2:DescribeNetworkInterfaces\"
+                              \t\t\t], \t\t\t\"Resource\": \"*\" \t\t} \t] }"
                             type: string
                           nodePoolManagementARN:
                             description: "NodePoolManagementARN is an ARN value referencing
-                              a role that should contain policy permissions matching
-                              the node pool management policy. \n The following is
-                              an example of a valid policy document: \n {   \"Version\":
+                              a role appropriate for the CAPI Controller. \n The following
+                              is an example of a valid policy document: \n {   \"Version\":
                               \"2012-10-17\",  \"Statement\": [    {      \"Action\":
                               [        \"ec2:AllocateAddress\",        \"ec2:AssociateRouteTable\",
                               \       \"ec2:AttachInternetGateway\",        \"ec2:AuthorizeSecurityGroupIngress\",
@@ -2344,19 +2341,19 @@ spec:
                               \     \"Effect\": \"Allow\"    }  ] }"
                             type: string
                           storageARN:
-                            description: "StorageOIDC is an ARN value referencing
-                              a role used for storage driver OIDC integration. \n
-                              The following is an example of a valid policy document:
-                              \n { \t\"Version\": \"2012-10-17\", \t\"Statement\":
-                              [ \t\t{ \t\t\t\"Effect\": \"Allow\", \t\t\t\"Action\":
-                              [ \t\t\t\t\"ec2:AttachVolume\", \t\t\t\t\"ec2:CreateSnapshot\",
-                              \t\t\t\t\"ec2:CreateTags\", \t\t\t\t\"ec2:CreateVolume\",
-                              \t\t\t\t\"ec2:DeleteSnapshot\", \t\t\t\t\"ec2:DeleteTags\",
-                              \t\t\t\t\"ec2:DeleteVolume\", \t\t\t\t\"ec2:DescribeInstances\",
-                              \t\t\t\t\"ec2:DescribeSnapshots\", \t\t\t\t\"ec2:DescribeTags\",
-                              \t\t\t\t\"ec2:DescribeVolumes\", \t\t\t\t\"ec2:DescribeVolumesModifications\",
-                              \t\t\t\t\"ec2:DetachVolume\", \t\t\t\t\"ec2:ModifyVolume\"
-                              \t\t\t], \t\t\t\"Resource\": \"*\" \t\t} \t] }"
+                            description: "StorageARN is an ARN value referencing a
+                              role appropriate for the Storage Operator. \n The following
+                              is an example of a valid policy document: \n { \t\"Version\":
+                              \"2012-10-17\", \t\"Statement\": [ \t\t{ \t\t\t\"Effect\":
+                              \"Allow\", \t\t\t\"Action\": [ \t\t\t\t\"ec2:AttachVolume\",
+                              \t\t\t\t\"ec2:CreateSnapshot\", \t\t\t\t\"ec2:CreateTags\",
+                              \t\t\t\t\"ec2:CreateVolume\", \t\t\t\t\"ec2:DeleteSnapshot\",
+                              \t\t\t\t\"ec2:DeleteTags\", \t\t\t\t\"ec2:DeleteVolume\",
+                              \t\t\t\t\"ec2:DescribeInstances\", \t\t\t\t\"ec2:DescribeSnapshots\",
+                              \t\t\t\t\"ec2:DescribeTags\", \t\t\t\t\"ec2:DescribeVolumes\",
+                              \t\t\t\t\"ec2:DescribeVolumesModifications\", \t\t\t\t\"ec2:DetachVolume\",
+                              \t\t\t\t\"ec2:ModifyVolume\" \t\t\t], \t\t\t\"Resource\":
+                              \"*\" \t\t} \t] }"
                             type: string
                         required:
                         - controlPlaneOperatorARN

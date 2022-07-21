@@ -1459,8 +1459,7 @@ string
 <a href="#hypershift.openshift.io/v1alpha1.AWSPlatformSpec">AWSPlatformSpec</a>)
 </p>
 <p>
-<p>AWSRolesRef contains references to various AWS IAM roles required to enable
-integrations such as OIDC.</p>
+<p>AWSRolesRef contains references to various AWS IAM roles required for operators to make calls against the AWS API.</p>
 </p>
 <table>
 <thead>
@@ -1498,8 +1497,7 @@ Example:
 }
 ]
 }</p>
-<p>IngressARN is an ARN value referencing a role used for ingress OIDC
-integration.</p>
+<p>IngressARN is an ARN value referencing a role appropriate for the Ingress Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1535,8 +1533,7 @@ string
 </em>
 </td>
 <td>
-<p>ImageRegistryARN is an ARN value referencing a role used for image
-registry OIDC integration.</p>
+<p>ImageRegistryARN is an ARN value referencing a role appropriate for the Image Registry Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1577,8 +1574,7 @@ string
 </em>
 </td>
 <td>
-<p>StorageOIDC is an ARN value referencing a role used for storage driver OIDC
-integration.</p>
+<p>StorageARN is an ARN value referencing a role appropriate for the Storage Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1615,8 +1611,7 @@ string
 </em>
 </td>
 <td>
-<p>NetworkOIDC is an ARN value referencing a role used for networking OIDC
-integration.</p>
+<p>NetworkARN is an ARN value referencing a role appropriate for the Network Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1648,8 +1643,7 @@ string
 </em>
 </td>
 <td>
-<p>KubeCloudControllerARN is an ARN value referencing a role that should contain
-policy permissions matching the cloud controller policy.</p>
+<p>KubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1726,8 +1720,7 @@ string
 </em>
 </td>
 <td>
-<p>NodePoolManagementARN is an ARN value referencing a role that should contain
-policy permissions matching the node pool management policy.</p>
+<p>NodePoolManagementARN is an ARN value referencing a role appropriate for the CAPI Controller.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1824,8 +1817,7 @@ string
 </em>
 </td>
 <td>
-<p>ControlPlaneOperatorARN  is an ARN value referencing a role that should contain
-policy permissions matching the control-plane-operator policy.</p>
+<p>ControlPlaneOperatorARN  is an ARN value referencing a role appropriate for the Control Plane Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
