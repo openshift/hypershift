@@ -514,6 +514,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// Set ReconciliationActive condition
 	setStatusCondition(&nodePool.Status.Conditions, generateReconciliationActiveCondition(nodePool.Spec.PausedUntil, nodePool.Generation))
 
+	// If reconciliation is paused we return before modifying any state
+	if isPaused, duration := supportutil.IsReconciliationPaused(log, nodePool.Spec.PausedUntil); isPaused {
+		log.Info("Reconciliation paused", "pausedUntil", *nodePool.Spec.PausedUntil)
+		return ctrl.Result{RequeueAfter: duration}, nil
+	}
+
 	// 2. - Reconcile towards expected state of the world.
 	targetConfigVersionHash := hashStruct(config + targetVersion)
 	compressedConfig, err := compress([]byte(config))
