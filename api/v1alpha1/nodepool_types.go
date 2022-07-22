@@ -28,6 +28,7 @@ const (
 	NodePoolInplaceUpgradeFailedConditionReason  = "InplaceUpgradeFailed"
 	NodePoolNotFoundReason                       = "NotFound"
 	NodePoolFailedToGetReason                    = "FailedToGet"
+	NodePoolValidArchPlatform                    = "ValidArchPlatform"
 	// NodePoolLabel is used to label Nodes.
 	NodePoolLabel = "hypershift.openshift.io/nodePool"
 )
@@ -42,6 +43,21 @@ const (
 	// IgnitionServerTokenExpirationTimestampAnnotation holds the time that a ignition token expires and should be
 	// removed from the cluster.
 	IgnitionServerTokenExpirationTimestampAnnotation = "hypershift.openshift.io/ignition-token-expiration-timestamp"
+)
+
+const (
+	ArchitectureAMD64   = "amd64"
+	ArchitectureS390X   = "s390x"
+	ArchitecturePPC64LE = "ppc64le"
+	ArchitectureARM64   = "arm64"
+)
+
+var (
+	// ArchAliases contains the RHCOS release metadata aliases for the different architectures supported as API input.
+	ArchAliases = map[string]string{
+		ArchitectureAMD64: "x86_64",
+		ArchitectureARM64: "aarch64",
+	}
 )
 
 func init() {
@@ -169,6 +185,16 @@ type NodePoolSpec struct {
 	// JSON or YAML of a serialized Tuned.
 	// +kubebuilder:validation:Optional
 	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig,omitempty"`
+
+	// Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
+	// NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
+	//	https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215
+	// TODO Add ppc64le and s390x to enum validation once the architectures are supported
+	//
+	// +kubebuilder:default:=amd64
+	// +kubebuilder:validation:Enum=arm64;amd64
+	// +optional
+	Arch string `json:"arch,omitempty"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.

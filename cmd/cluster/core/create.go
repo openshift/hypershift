@@ -61,6 +61,7 @@ type CreateOptions struct {
 	ServiceCIDR                      string
 	ClusterCIDR                      string
 	ExternalDNSDomain                string
+	Arch                             string
 	NodeSelector                     map[string]string
 	NonePlatform                     NonePlatformCreateOptions
 	KubevirtPlatform                 KubevirtPlatformCreateOptions
@@ -267,6 +268,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		EtcdStorageClass:                 opts.EtcdStorageClass,
 		ServiceCIDR:                      opts.ServiceCIDR,
 		ClusterCIDR:                      opts.ClusterCIDR,
+		Arch:                             opts.Arch,
 		NodeSelector:                     opts.NodeSelector,
 		UpgradeType:                      opts.NodeUpgradeType,
 	}, nil

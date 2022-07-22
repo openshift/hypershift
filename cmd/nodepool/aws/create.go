@@ -23,7 +23,7 @@ type AWSPlatformCreateOptions struct {
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	platformOpts := &AWSPlatformCreateOptions{
-		InstanceType:   "m5.large",
+		InstanceType:   "",
 		RootVolumeType: "gp3",
 		RootVolumeSize: 120,
 		RootVolumeIOPS: 0,
@@ -80,8 +80,22 @@ func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool 
 		}
 		o.SecurityGroupID = *defaultNodePool.Spec.Platform.AWS.SecurityGroups[0].ID
 	}
+
+	var instanceType string
+	if o.InstanceType != "" {
+		instanceType = o.InstanceType
+	} else {
+		// Aligning with AWS IPI instance type defaults
+		switch nodePool.Spec.Arch {
+		case "amd64":
+			instanceType = "m5.large"
+		case "arm64":
+			instanceType = "m6g.large"
+		}
+	}
+
 	nodePool.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
-		InstanceType:    o.InstanceType,
+		InstanceType:    instanceType,
 		InstanceProfile: o.InstanceProfile,
 		Subnet: &hyperv1.AWSResourceReference{
 			ID: &o.SubnetID,

@@ -396,8 +396,8 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		ControlPlaneOperatorImage:        o.configurableClusterOptions.ControlPlaneOperatorImage,
 		ExternalDNSDomain:                o.configurableClusterOptions.ExternalDNSDomain,
 		NodeUpgradeType:                  hyperv1.UpgradeTypeReplace,
+		Arch:                             "amd64",
 		AWSPlatform: core.AWSPlatformOptions{
-			InstanceType:       "m5.large",
 			RootVolumeSize:     64,
 			RootVolumeType:     "gp3",
 			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,

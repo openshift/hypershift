@@ -17,7 +17,9 @@ var (
 )
 
 // https://docs.ci.openshift.org/docs/getting-started/useful-links/#services
-const releaseURL = "https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable/latest"
+const (
+	releaseURL = "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi/latest"
+)
 
 type OCPVersion struct {
 	Name        string `json:"name"`
