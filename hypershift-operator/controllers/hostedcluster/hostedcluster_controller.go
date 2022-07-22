@@ -297,6 +297,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		ObservedGeneration: hcluster.Generation,
 		Status:             metav1.ConditionTrue,
 		Reason:             "ReconciliatonSucceeded",
+		Message:            "Reconciliation completed succesfully",
 		LastTransitionTime: r.now(),
 	}
 	if err != nil {
@@ -418,15 +419,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if hcp != nil {
 			failingCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionFailing))
 			if failingCond != nil {
-				switch failingCond.Status {
-				case metav1.ConditionTrue:
+				condition.Reason = failingCond.Reason
+				condition.Message = failingCond.Message
+				if failingCond.Status == metav1.ConditionTrue {
 					condition.Status = metav1.ConditionFalse
-					condition.Reason = failingCond.Reason
-					condition.Message = failingCond.Message
-				case metav1.ConditionFalse:
+				} else {
 					condition.Status = metav1.ConditionTrue
-					condition.Reason = failingCond.Reason
-					condition.Message = ""
 				}
 			}
 		}
@@ -439,12 +437,16 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			Type:               string(hyperv1.ClusterVersionUpgradeable),
 			Status:             metav1.ConditionUnknown,
 			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
+			Message:            "The hosted control plane is not found",
 			ObservedGeneration: hcluster.Generation,
 		}
 		if hcp != nil {
 			upgradeableCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable))
 			if upgradeableCondition != nil {
 				condition = upgradeableCondition
+				if condition.Status == metav1.ConditionTrue {
+					condition.Message = "The hosted cluster is upgradable"
+				}
 			}
 		}
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
@@ -456,6 +458,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			Type:               string(hyperv1.HostedClusterDegraded),
 			Status:             metav1.ConditionUnknown,
 			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
+			Message:            "The hosted control plane is not found",
 			ObservedGeneration: hcluster.Generation,
 		}
 		if hcp != nil {
@@ -463,6 +466,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if degradedCondition != nil {
 				condition = degradedCondition
 				condition.Type = string(hyperv1.HostedClusterDegraded)
+				if condition.Status == metav1.ConditionFalse {
+					condition.Message = "The hosted cluster is not degraded"
+				}
 			}
 		}
 		condition.ObservedGeneration = hcluster.Generation
@@ -530,7 +536,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			condition.Reason = hyperv1.UnsupportedHostedClusterReason
 		} else {
 			condition.Status = metav1.ConditionTrue
-			condition.Message = "HostedCluster is support by operator configuration"
+			condition.Message = "HostedCluster is supported by operator configuration"
 			condition.Reason = hyperv1.HostedClusterAsExpectedReason
 		}
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
@@ -622,9 +628,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
 			if apierrors.IsNotFound(err) {
 				newCondition = metav1.Condition{
-					Type:   string(hyperv1.IgnitionEndpointAvailable),
-					Status: metav1.ConditionFalse,
-					Reason: hyperv1.IgnitionServerDeploymentNotFoundReason,
+					Type:    string(hyperv1.IgnitionEndpointAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.IgnitionServerDeploymentNotFoundReason,
+					Message: "Ignition server deployment not found",
 				}
 			} else {
 				return ctrl.Result{}, fmt.Errorf("failed to get ignition server deployment: %w", err)
@@ -632,16 +639,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			// Assume the deployment is unavailable until proven otherwise.
 			newCondition = metav1.Condition{
-				Type:   string(hyperv1.IgnitionEndpointAvailable),
-				Status: metav1.ConditionFalse,
-				Reason: hyperv1.IgnitionServerDeploymentUnavailableReason,
+				Type:    string(hyperv1.IgnitionEndpointAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.IgnitionServerDeploymentUnavailableReason,
+				Message: "Ignition server deployment is not yet available",
 			}
 			for _, cond := range deployment.Status.Conditions {
 				if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
 					newCondition = metav1.Condition{
-						Type:   string(hyperv1.IgnitionEndpointAvailable),
-						Status: metav1.ConditionTrue,
-						Reason: hyperv1.IgnitionServerDeploymentAsExpectedReason,
+						Type:    string(hyperv1.IgnitionEndpointAvailable),
+						Status:  metav1.ConditionTrue,
+						Reason:  hyperv1.IgnitionServerDeploymentAsExpectedReason,
+						Message: "Ignition server deployent is available",
 					}
 					break
 				}
@@ -2986,7 +2995,7 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 		hcpAvailableMessage = hcpAvailableCondition.Message
 		if hcpAvailableStatus == metav1.ConditionTrue {
 			hcpAvailableReason = hyperv1.HostedClusterAsExpectedReason
-			hcpAvailableMessage = ""
+			hcpAvailableMessage = "The hosted control plane is available"
 		}
 	}
 	return metav1.Condition{
