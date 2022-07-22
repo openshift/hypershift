@@ -22,6 +22,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
@@ -227,6 +228,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	podList.Items = append(podList.Items, hypershiftNSPodList.Items...)
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
 	outputLogs(ctx, opts.Log, kubeClient, opts.ArtifactDir, podList, opts.LogCheckers...)
+	gatherNetworkLogs(ocCommand, controlPlaneNamespace, opts.ArtifactDir, ctx, c, opts.Log)
 
 	if opts.DumpGuestCluster {
 		if err = dumpGuestCluster(ctx, opts); err != nil {
@@ -397,5 +399,49 @@ func outputLog(ctx context.Context, l logr.Logger, fileName string, req *restcli
 	}
 	if err := ioutil.WriteFile(fileName, b, 0644); err != nil {
 		l.Error(err, "Failed to write file", "file", fileName)
+	}
+}
+
+func gatherNetworkLogs(ocCommand, controlPlaneNamespace, artifactDir string, ctx context.Context, c client.Client, l logr.Logger) {
+	// copy ovn dbs and save db cluster status for all ovnkube-master pods
+	dir := filepath.Join(artifactDir, "network_logs")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		l.Error(err, "Cannot create directory", "directory", dir)
+		return
+	}
+	podList := &corev1.PodList{}
+	if err := c.List(ctx, podList, &client.ListOptions{
+		Namespace:     controlPlaneNamespace,
+		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{"app": "ovnkube-master"}),
+	}); err != nil {
+		l.Error(err, "Cannot list ovnkube pods in controlplane namespace", "namespace", controlPlaneNamespace)
+	}
+	for _, pod := range podList.Items {
+		for _, dbType := range []string{"n", "s"} {
+			allArgs := []string{"cp", fmt.Sprintf("%s/%s:/etc/ovn/ovn%sb_db.db", controlPlaneNamespace, pod.Name, dbType),
+				"-c", fmt.Sprintf("%sbdb", dbType), filepath.Join(dir, fmt.Sprintf("%s_ovn%sb_db.db", pod.Name, dbType))}
+			cmd := exec.CommandContext(ctx, ocCommand, allArgs...)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				l.Info("Copy ovn dbs command returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
+			}
+			var dbName string
+			if dbType == "n" {
+				dbName = "OVN_Northbound"
+			} else {
+				dbName = "OVN_Southbound"
+			}
+			allArgs = []string{"exec", "-n", controlPlaneNamespace, pod.Name, "-c", fmt.Sprintf("%sbdb", dbType),
+				"--", "bash", "-c", fmt.Sprintf("ovn-appctl -t /var/run/ovn/ovn%sb_db.ctl cluster/status %s", dbType, dbName)}
+			cmd = exec.CommandContext(ctx, ocCommand, allArgs...)
+			out, err = cmd.CombinedOutput()
+			if err != nil {
+				l.Info("Get ovn db status command returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
+			}
+			fileName := filepath.Join(dir, fmt.Sprintf("%s_%s_status", pod.Name, dbName))
+			if err := ioutil.WriteFile(fileName, out, 0644); err != nil {
+				l.Error(err, "Failed to write file", "file", fileName)
+			}
+		}
 	}
 }
