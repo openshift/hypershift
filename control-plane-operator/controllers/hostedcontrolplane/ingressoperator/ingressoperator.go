@@ -210,7 +210,12 @@ func ingressOperatorSocks5ProxyContainer(socks5ProxyImage string) corev1.Contain
 		Name:    socks5ProxyContainerName,
 		Image:   socks5ProxyImage,
 		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy"},
-		Args:    []string{"run"},
+		Args: []string{
+			"run",
+			// Do not route cloud provider traffic through konnektivity and thus nodes to speed
+			// up cluster creation. Requires proxy env vars to be set.
+			"--connect-directly-to-cloud-apis=true",
+		},
 		Env: []corev1.EnvVar{{
 			Name:  "KUBECONFIG",
 			Value: "/etc/kubernetes/kubeconfig",
