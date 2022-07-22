@@ -516,6 +516,11 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// If reconciliation is paused we return before modifying any state
 	if isPaused, duration := supportutil.IsReconciliationPaused(log, nodePool.Spec.PausedUntil); isPaused {
+		md := machineDeployment(nodePool, controlPlaneNamespace)
+		err := pauseMachineDeployment(ctx, r.Client, md)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to pause MachineDeployment: %w", err)
+		}
 		log.Info("Reconciliation paused", "pausedUntil", *nodePool.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
@@ -714,6 +719,23 @@ func deleteMachineDeployment(ctx context.Context, c client.Client, md *capiv1.Ma
 	return nil
 }
 
+func pauseMachineDeployment(ctx context.Context, c client.Client, md *capiv1.MachineDeployment) error {
+	err := c.Get(ctx, client.ObjectKeyFromObject(md), md)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting MachineDeployment: %w", err)
+	}
+	if md.Annotations == nil {
+		md.Annotations = make(map[string]string)
+	}
+	//FIXME: In future we may want to use the spec field instead
+	// https://github.com/kubernetes-sigs/cluster-api/issues/6966
+	md.Annotations[capiv1.PausedAnnotation] = "true"
+	return c.Update(ctx, md)
+}
+
 func deleteMachineSet(ctx context.Context, c client.Client, ms *capiv1.MachineSet) error {
 	err := c.Get(ctx, client.ObjectKeyFromObject(ms), ms)
 	if err != nil {
@@ -859,6 +881,8 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		machineDeployment.Annotations = map[string]string{}
 	}
 	machineDeployment.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+	// Delete any paused annotation
+	delete(machineDeployment.Annotations, capiv1.PausedAnnotation)
 	if machineDeployment.GetLabels() == nil {
 		machineDeployment.Labels = map[string]string{}
 	}
