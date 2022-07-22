@@ -188,7 +188,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	log.Info("Successfully reconciled")
-	return ctrl.Result{}, nil
+	return result, nil
 }
 
 func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
@@ -218,7 +218,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// An update event will trigger reconciliation.
 		// TODO (alberto): consider this an condition failure reason when revisiting conditions.
 		log.Error(err, "Invalid infraID, waiting.")
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	}
 
 	// 1. - Reconcile conditions according to current state of the world.
@@ -237,7 +237,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// We don't return the error here as reconciling won't solve the input problem.
 		// An update event will trigger reconciliation.
 		log.Error(err, "validating autoscaling parameters failed")
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	}
 	if isAutoscalingEnabled(nodePool) {
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -268,7 +268,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// We don't return the error here as reconciling won't solve the input problem.
 		// An update event will trigger reconciliation.
 		log.Error(err, "validating management parameters failed")
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	}
 	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolUpdateManagementEnabledConditionType,
@@ -287,7 +287,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			ObservedGeneration: nodePool.Generation,
 		})
 		log.Info("Ignition endpoint not available, waiting")
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	}
 	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
@@ -527,22 +527,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
 		err := r.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret)
 		if err != nil && !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to get token Secret: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to get token Secret: %w", err)
 		}
 		if err == nil {
 			if err := setExpirationTimestampOnToken(ctx, r.Client, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
-				return reconcile.Result{}, fmt.Errorf("failed to set expiration on token Secret: %w", err)
+				return ctrl.Result{}, fmt.Errorf("failed to set expiration on token Secret: %w", err)
 			}
 		}
 
 		userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
 		err = r.Get(ctx, client.ObjectKeyFromObject(userDataSecret), userDataSecret)
 		if err != nil && !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to get user data Secret: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to get user data Secret: %w", err)
 		}
 		if err == nil {
 			if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
-				return reconcile.Result{}, fmt.Errorf("failed to delete user data Secret: %w", err)
+				return ctrl.Result{}, fmt.Errorf("failed to delete user data Secret: %w", err)
 			}
 		}
 	}
