@@ -2473,6 +2473,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 		currentVersion         semver.Version
 		nextVersion            semver.Version
 		latestVersionSupported semver.Version
+		minVersionSupported    semver.Version
 		networkType            hyperv1.NetworkType
 		expectError            bool
 	}{
@@ -2481,6 +2482,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			currentVersion:         semver.MustParse("4.8.0"),
 			nextVersion:            semver.MustParse("4.7.0"),
 			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
 			expectError:            true,
 		},
 		{
@@ -2488,6 +2490,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			currentVersion:         semver.MustParse("4.10.0"),
 			nextVersion:            semver.MustParse("4.9.0"),
 			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
 			expectError:            true,
 		},
 		{
@@ -2495,14 +2498,24 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			currentVersion:         semver.MustParse("4.10.0"),
 			nextVersion:            semver.MustParse("4.11.0"),
 			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
 			networkType:            hyperv1.OpenShiftSDN,
 			expectError:            true,
 		},
 		{
-			name:                   "the latest HostedCluster supported by this Operator is 4.12.0",
+			name:                   "the latest HostedCluster version supported by this Operator is 4.12.0",
 			currentVersion:         semver.MustParse("4.12.0"),
 			nextVersion:            semver.MustParse("4.13.0"),
 			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
+			expectError:            true,
+		},
+		{
+			name:                   "the minimum HostedCluster version supported by this Operator is 4.10.0",
+			currentVersion:         semver.MustParse("4.9.0"),
+			nextVersion:            semver.MustParse("4.9.0"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
 			expectError:            true,
 		},
 		{
@@ -2510,6 +2523,23 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			currentVersion:         semver.MustParse("4.11.0"),
 			nextVersion:            semver.MustParse("4.11.1"),
 			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
+			expectError:            false,
+		},
+		{
+			name:                   "When going to minimum should be valid",
+			currentVersion:         semver.MustParse("4.9.0"),
+			nextVersion:            semver.MustParse("4.10.0"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
+			expectError:            false,
+		},
+		{
+			name:                   "Valid when going to minimum with a dev tag",
+			currentVersion:         semver.MustParse("4.9.0"),
+			nextVersion:            semver.MustParse("4.10.0-nightly-something"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
 			expectError:            false,
 		},
 	}
@@ -2517,7 +2547,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := isValidReleaseVersion(&test.nextVersion, &test.currentVersion, &test.latestVersionSupported, test.networkType)
+			err := isValidReleaseVersion(&test.nextVersion, &test.currentVersion, &test.latestVersionSupported, &test.minVersionSupported, test.networkType)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 				return

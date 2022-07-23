@@ -3532,7 +3532,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 		currentVersion = &version
 	}
 
-	return isValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, hc.Spec.Networking.NetworkType)
+	return isValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &supportedversion.MinSupportedVersion, hc.Spec.Networking.NetworkType)
 }
 
 func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
@@ -3559,19 +3559,25 @@ func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error)
 	return false, nil
 }
 
-func isValidReleaseVersion(version, currentVersion, latestVersionSupported *semver.Version, networkType hyperv1.NetworkType) error {
+func isValidReleaseVersion(version, currentVersion, latestVersionSupported, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType) error {
 	if version.LT(semver.MustParse("4.8.0")) {
 		return fmt.Errorf("releases before 4.8 are not supported")
 	}
+
 	if currentVersion != nil && currentVersion.Minor > version.Minor {
 		return fmt.Errorf("y-stream downgrade is not supported")
 	}
+
 	if networkType == hyperv1.OpenShiftSDN && currentVersion != nil && currentVersion.Minor < version.Minor {
 		return fmt.Errorf("y-stream upgrade is not for OpenShiftSDN")
 	}
 
 	if (version.Major == latestVersionSupported.Major && version.Minor > latestVersionSupported.Minor) || version.Major > latestVersionSupported.Major {
-		return fmt.Errorf("the latest HostedCluster supported by this Operator is: %q. Attempting to use: %q", supportedversion.LatestSupportedVersion, version.Major)
+		return fmt.Errorf("the latest HostedCluster version supported by this Operator is: %q. Attempting to use: %q", supportedversion.LatestSupportedVersion, version)
+	}
+
+	if (version.Major == minSupportedVersion.Major && version.Minor < minSupportedVersion.Minor) || version.Major < minSupportedVersion.Major {
+		return fmt.Errorf("the minimum HostedCluster version supported by this Operator is: %q. Attempting to use: %q", supportedversion.MinSupportedVersion, version)
 	}
 
 	return nil
