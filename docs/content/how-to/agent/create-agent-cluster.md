@@ -114,7 +114,7 @@ oc create ns ${HOSTED_CONTROL_PLANE_NAMESPACE}
 bin/hypershift create cluster agent --name=${HOSTED_CLUSTER_NAME} --pull-secret=${PULL_SECRET_FILE} --agent-namespace=${HOSTED_CONTROL_PLANE_NAMESPACE} --api-server-address=api.${HOSTED_CLUSTER_NAME}.${BASEDOMAIN}
 ~~~
 
-## Create a InfraEnv
+## Create an InfraEnv
 
 An InfraEnv is a enviroment to which hosts booting the live ISO can join as Agents.  In this case, the Agents will be created in the
 same namespace as our HCP
@@ -149,6 +149,24 @@ You can add Agents by manually configuring the machine to boot with the live ISO
 
 The live ISO may be downloaded and used to boot a node (bare metal or VM).  On boot, the node will communicate with the
 assisted-service and register as an Agent in the the same namespace as the InfraEnv.
+
+Once each Agent is created, optionally set its installation_disk_id and hostname in the Spec. Then approve it to
+indicate that the Agent is ready for use.
+
+~~~sh
+$ oc get agents -n ${HOSTED_CONTROL_PLANE_NAMESPACE}
+NAME                                   CLUSTER   APPROVED   ROLE          STAGE
+86f7ac75-4fc4-4b36-8130-40fa12602218                        auto-assign
+e57a637f-745b-496e-971d-1abbf03341ba                        auto-assign
+
+$ oc patch agent 86f7ac75-4fc4-4b36-8130-40fa12602218 -p '{"spec":{"installation_disk_id":"/dev/sda","approved":true,"hostname":"worker-0.example.krnl.es"}}' --type merge
+$ oc patch agent 23d0c614-2caa-43f5-b7d3-0b3564688baa -p '{"spec":{"installation_disk_id":"/dev/sda","approved":true,"hostname":"worker-1.example.krnl.es"}}' --type merge
+
+$ oc get agents -n ${HOSTED_CONTROL_PLANE_NAMESPACE}
+NAME                                   CLUSTER   APPROVED   ROLE          STAGE
+86f7ac75-4fc4-4b36-8130-40fa12602218             true       auto-assign
+e57a637f-745b-496e-971d-1abbf03341ba             true       auto-assign
+~~~
 
 ### metal3
 
@@ -222,24 +240,11 @@ spec:
 EOF
 ~~~
 
-## Configuring Agents
+* If you wish to indicate an installation disk, use the [rootDeviceHints](https://github.com/metal3-io/baremetal-operator/blob/main/docs/api.md#rootdevicehints) in the BMH Spec.
 
-Once the Agents are created, approve them and set their installation_disk_id, hostname, and role
+* If you wish to manually set a hostname, set it via an annotation on the BMH: bmac.agent-install.openshift.io/hostname
 
-~~~sh
-$ oc get agents -n ${HOSTED_CONTROL_PLANE_NAMESPACE}
-NAME                                   CLUSTER   APPROVED   ROLE          STAGE
-86f7ac75-4fc4-4b36-8130-40fa12602218                        auto-assign
-e57a637f-745b-496e-971d-1abbf03341ba                        auto-assign
-
-$ oc patch agent 86f7ac75-4fc4-4b36-8130-40fa12602218 -p '{"spec":{"installation_disk_id":"/dev/sda","approved":true,"hostname":"worker-0.example.krnl.es","role":"worker"}}' --type merge
-$ oc patch agent 23d0c614-2caa-43f5-b7d3-0b3564688baa -p '{"spec":{"installation_disk_id":"/dev/sda","approved":true,"hostname":"worker-1.example.krnl.es","role":"worker"}}' --type merge
-
-$ oc get agents -n ${HOSTED_CONTROL_PLANE_NAMESPACE}
-NAME                                   CLUSTER   APPROVED   ROLE          STAGE
-86f7ac75-4fc4-4b36-8130-40fa12602218             true       worker
-e57a637f-745b-496e-971d-1abbf03341ba             true       worker
-~~~
+* Agent CRs that are created via BMH will automatically be approved.
 
 ## Scale the NodePool
 
