@@ -2195,6 +2195,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 	hyperutil.SetRestartAnnotation(hc.ObjectMeta, deployment)
 	hyperutil.SetControlPlaneIsolation(hc.ObjectMeta, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
+	hyperutil.SetReleaseImageAnnotation(deployment, hc.Spec.Release.Image)
 	return nil
 }
 
