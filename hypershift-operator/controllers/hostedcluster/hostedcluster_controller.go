@@ -4647,6 +4647,9 @@ func configurationFieldsToRawExtensions(config *hyperv1.ClusterConfiguration) ([
 		result = append(result, runtime.RawExtension{
 			Object: &configv1.Ingress{
 				Spec: *config.Ingress,
+				Status: configv1.IngressStatus{
+					DefaultPlacement: configv1.DefaultPlacementWorkers,
+				},
 			},
 		})
 	}
