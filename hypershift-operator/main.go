@@ -141,6 +141,7 @@ func NewStartCommand() *cobra.Command {
 }
 
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
+
 	log.Info("Starting hypershift-operator-manager", "version", version.String())
 
 	restConfig := ctrl.GetConfigOrDie()

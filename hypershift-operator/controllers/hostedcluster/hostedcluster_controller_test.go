@@ -484,8 +484,16 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 			}
 			g := NewGomegaWithT(t)
 			if test.networking != nil {
+				// deprecated values should still be populated
 				g.Expect(hostedControlPlane.Spec.APIPort).To(Equal(test.expectedAPIPort))
 				g.Expect(hostedControlPlane.Spec.APIAdvertiseAddress).To(Equal(test.expectedAPIAdvertiseAddress))
+
+				// new values should also be populated
+				g.Expect(hostedControlPlane.Spec.Networking.APIServer).ToNot(BeNil())
+				g.Expect(hostedControlPlane.Spec.Networking.APIServer.Port).To(Equal(test.expectedAPIPort))
+				g.Expect(hostedControlPlane.Spec.Networking.APIServer.AdvertiseAddress).To(Equal(test.expectedAPIAdvertiseAddress))
+			} else {
+				g.Expect(hostedControlPlane.Spec.Networking.APIServer).To(BeNil())
 			}
 		})
 	}

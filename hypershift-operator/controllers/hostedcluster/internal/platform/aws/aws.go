@@ -225,7 +225,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 			},
 		},
 	}
-	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Namespace, hcp.Spec.APIPort), p.utilitiesImage, &deploymentSpec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Namespace, util.APIPort(hcp)), p.utilitiesImage, &deploymentSpec.Template.Spec)
 	return deploymentSpec, nil
 }
 

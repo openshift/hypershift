@@ -270,7 +270,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			Memory:        32,
 		},
 		ServiceCIDR: "172.31.0.0/16",
-		PodCIDR:     "10.132.0.0/14",
+		ClusterCIDR: "10.132.0.0/14",
 		BeforeApply: o.BeforeApply,
 		Log:         util.NewLogr(t),
 	}

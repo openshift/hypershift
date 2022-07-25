@@ -157,7 +157,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	exampleOptions.BaseDomain = infra.BaseDomain
-	exampleOptions.ComputeCIDR = infra.ComputeCIDR
+	exampleOptions.MachineCIDR = infra.MachineCIDR
 	exampleOptions.IssuerURL = iamInfo.IssuerURL
 	exampleOptions.PrivateZoneID = infra.PrivateZoneID
 	exampleOptions.PublicZoneID = infra.PublicZoneID

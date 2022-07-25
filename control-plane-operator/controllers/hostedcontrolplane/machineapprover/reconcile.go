@@ -192,7 +192,7 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 		},
 	}
 
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, hcp.Spec.APIPort), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, util.APIPort(hcp)), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	deploymentConfig := config.DeploymentConfig{
 		Replicas: 1,
