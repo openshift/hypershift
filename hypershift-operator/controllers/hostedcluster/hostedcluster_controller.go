@@ -3541,8 +3541,13 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 		}
 		currentVersion = &version
 	}
+	minSupportedVersion := supportedversion.MinSupportedVersion
+	if hc.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		//IBM Cloud is allowed to manage 4.9 clusters
+		minSupportedVersion = semver.MustParse("4.9.0")
+	}
 
-	return isValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &supportedversion.MinSupportedVersion, hc.Spec.Networking.NetworkType)
+	return isValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType)
 }
 
 func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
