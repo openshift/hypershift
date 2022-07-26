@@ -124,7 +124,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 								Value: fmt.Sprintf("%s/%s", ccmConfigMapMountPath, ccmConfig.Name),
 							},
 							{
-								Name:  "VPCCTL_PUBLIC_ENDPOINT",
+								Name:  "ENABLE_VPC_PUBLIC_ENDPOINT",
 								Value: "true",
 							},
 						},
