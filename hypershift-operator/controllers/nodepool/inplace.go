@@ -29,6 +29,8 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 		machineSet.Annotations = map[string]string{}
 	}
 	machineSet.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+	// Delete any paused annotation
+	delete(machineSet.Annotations, capiv1.PausedAnnotation)
 	if machineSet.GetLabels() == nil {
 		machineSet.Labels = map[string]string{}
 	}

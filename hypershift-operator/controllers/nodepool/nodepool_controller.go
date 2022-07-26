@@ -521,6 +521,11 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to pause MachineDeployment: %w", err)
 		}
+		ms := machineSet(nodePool, controlPlaneNamespace)
+		err = pauseMachineSet(ctx, r.Client, ms)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to pause MachineSet: %w", err)
+		}
 		log.Info("Reconciliation paused", "pausedUntil", *nodePool.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
@@ -755,6 +760,25 @@ func deleteMachineSet(ctx context.Context, c client.Client, ms *capiv1.MachineSe
 		return fmt.Errorf("error deleting MachineSet: %w", err)
 	}
 	return nil
+}
+
+func pauseMachineSet(ctx context.Context, c client.Client, ms *capiv1.MachineSet) error {
+	err := c.Get(ctx, client.ObjectKeyFromObject(ms), ms)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting MachineSet: %w", err)
+	}
+	if ms.Annotations == nil {
+		ms.Annotations = make(map[string]string)
+	}
+	//FIXME: In future we may want to use the spec field instead
+	// https://github.com/kubernetes-sigs/cluster-api/issues/6966
+	// TODO: Also for paused to be complete we will need to pause all MHC if autorepair
+	// is enabled and remove the autoscaling labels from the MachineDeployment / Machineset
+	ms.Annotations[capiv1.PausedAnnotation] = "true"
+	return c.Update(ctx, ms)
 }
 
 func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.MachineHealthCheck) error {
