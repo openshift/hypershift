@@ -14,6 +14,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -40,7 +41,7 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	}
 	portSpec.Port = int32(apiServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(apiServerPort)
+	portSpec.TargetPort = intstr.FromInt(apiServerListenPort)
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
 	}
@@ -118,8 +119,8 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 	return
 }
 
-func ReconcilePrivateService(svc *corev1.Service, owner *metav1.OwnerReference) error {
-	apiServerPort := 6443
+func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlane, owner *metav1.OwnerReference) error {
+	apiServerPort := util.APIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	util.EnsureOwnerRef(svc, owner)
 	svc.Spec.Selector = kasLabels()
 	var portSpec corev1.ServicePort
@@ -130,7 +131,7 @@ func ReconcilePrivateService(svc *corev1.Service, owner *metav1.OwnerReference) 
 	}
 	portSpec.Port = int32(apiServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(apiServerPort)
+	portSpec.TargetPort = intstr.FromInt(apiServerListenPort)
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
@@ -141,8 +142,8 @@ func ReconcilePrivateService(svc *corev1.Service, owner *metav1.OwnerReference) 
 	return nil
 }
 
-func ReconcilePrivateServiceStatus(hcpName string) (host string, port int32, err error) {
-	return fmt.Sprintf("api.%s.hypershift.local", hcpName), 6443, nil
+func ReconcilePrivateServiceStatus(hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
+	return fmt.Sprintf("api.%s.hypershift.local", hcp.Name), util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), nil
 }
 
 func ReconcileRoute(route *routev1.Route, hostname string) {

@@ -850,7 +850,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	} else if util.IsPrivateHCP(hcp) {
 		apiServerPrivateService := manifests.KubeAPIServerPrivateService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, apiServerPrivateService, func() error {
-			return kas.ReconcilePrivateService(apiServerPrivateService, p.OwnerReference)
+			return kas.ReconcilePrivateService(apiServerPrivateService, hcp, p.OwnerReference)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile API server private service: %w", err)
 		}
@@ -1031,7 +1031,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 		return kas.ReconcileServiceStatus(svc, serviceStrategy, p.APIServerPort, events.NewMessageCollector(ctx, r.Client))
 	}
 
-	host, port, err = kas.ReconcilePrivateServiceStatus(hcp.Name)
+	host, port, err = kas.ReconcilePrivateServiceStatus(hcp)
 	return
 }
 

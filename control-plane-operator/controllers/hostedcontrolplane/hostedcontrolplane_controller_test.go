@@ -174,7 +174,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 					{
 						Protocol:   corev1.ProtocolTCP,
 						Port:       apiPort,
-						TargetPort: intstr.FromInt(int(apiPort)),
+						TargetPort: intstr.FromInt(6443),
 					},
 				},
 				LoadBalancerSourceRanges: allowCIDRString,
@@ -199,9 +199,6 @@ func TestReconcileAPIServerService(t *testing.T) {
 			s.Labels = nil
 
 			s.Spec.LoadBalancerSourceRanges = nil
-
-			s.Spec.Ports[0].Port = 6443
-			s.Spec.Ports[0].TargetPort = intstr.FromInt(6443)
 		})...)
 	}
 	kasPublicRoute := routev1.Route{

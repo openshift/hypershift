@@ -6,7 +6,6 @@ import (
 	"embed"
 	"fmt"
 	"html/template"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -27,9 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/pointer"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -62,40 +59,9 @@ func (r *NodePoolReconciler) isHAProxyIgnitionConfigManaged(ctx context.Context,
 
 func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context, releaseImage *releaseinfo.ReleaseImage, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, missing bool, err error) {
 	var apiServerExternalAddress string
-	var apiServerExternalPort int32
+	apiServerExternalPort := util.APIPortWithDefaultFromHostedCluster(hcluster, config.DefaultAPIServerPort)
 	if util.IsPrivateHC(hcluster) {
 		apiServerExternalAddress = fmt.Sprintf("api.%s.hypershift.local", hcluster.Name)
-		apiServerExternalPort = 6443
-	} else {
-		if hcluster.Status.KubeConfig == nil {
-			return "", true, nil
-		}
-		var kubeconfig corev1.Secret
-		if err := r.Get(ctx, crclient.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Status.KubeConfig.Name}, &kubeconfig); err != nil {
-			return "", true, fmt.Errorf("failed to get kubeconfig: %w", err)
-		}
-		kubeconfigBytes, found := kubeconfig.Data["kubeconfig"]
-		if !found {
-			return "", true, fmt.Errorf("kubeconfig secret %s has no 'kubeconfig' key", crclient.ObjectKeyFromObject(&kubeconfig))
-		}
-		restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigBytes)
-		if err != nil {
-			return "", true, fmt.Errorf("failed to parse kubeconfig from secret %s: %w", crclient.ObjectKeyFromObject(&kubeconfig), err)
-		}
-		hostURL, err := url.Parse(restConfig.Host)
-		if err != nil {
-			return "", true, fmt.Errorf("failed to parse host in kubeconfig from secret %s as url: %w", crclient.ObjectKeyFromObject(&kubeconfig), err)
-		}
-		apiServerExternalAddress = hostURL.Hostname()
-
-		apiServerExternalPort = 443
-		if portFromKubeconfig := hostURL.Port(); portFromKubeconfig != "" {
-			numericPortFromKubeconfig, err := strconv.Atoi(portFromKubeconfig)
-			if err != nil {
-				return "", true, fmt.Errorf("failed to parse port string %q from kubeconfig %s as int: %w", portFromKubeconfig, crclient.ObjectKeyFromObject(&kubeconfig), err)
-			}
-			apiServerExternalPort = int32(numericPortFromKubeconfig)
-		}
 	}
 
 	haProxyImage, ok := releaseImage.ComponentImages()[haProxyRouterImageName]

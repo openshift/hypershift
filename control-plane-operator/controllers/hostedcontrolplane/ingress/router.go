@@ -366,6 +366,10 @@ func ReconcileRouterService(svc *corev1.Service, ownerRef config.OwnerRef, kasPo
 	foundHTTP := false
 	foundHTTPS := false
 	foundKAS := false
+
+	if kasPort == 443 {
+		foundKAS = true
+	}
 	for i, port := range svc.Spec.Ports {
 		switch port.Name {
 		case "http":
