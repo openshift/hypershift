@@ -1469,7 +1469,23 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		if err != nil {
 			return fmt.Errorf("failed to convert configuration fields to raw extension: %w", err)
 		}
+		// TODO: cannot remove until IBM's production fleet (4.9_openshift, 4.10_openshift) of control-plane-operators
+		// are upgraded to versions that read validation information from new sections
 		hcp.Spec.Configuration.Items = items
+		secretRef := []corev1.LocalObjectReference{}
+		configMapRef := []corev1.LocalObjectReference{}
+		for _, secretName := range globalconfig.SecretRefs(hcluster.Spec.Configuration) {
+			secretRef = append(secretRef, corev1.LocalObjectReference{
+				Name: secretName,
+			})
+		}
+		for _, configMapName := range globalconfig.ConfigMapRefs(hcluster.Spec.Configuration) {
+			configMapRef = append(configMapRef, corev1.LocalObjectReference{
+				Name: configMapName,
+			})
+		}
+		hcp.Spec.Configuration.SecretRefs = secretRef
+		hcp.Spec.Configuration.ConfigMapRefs = configMapRef
 	} else {
 		hcp.Spec.Configuration = nil
 	}
