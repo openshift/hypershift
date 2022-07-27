@@ -34,7 +34,7 @@ func ParseGlobalConfig(ctx context.Context, cfg *hyperv1.ClusterConfiguration) (
 	}
 	kinds := sets.NewString() // keeps track of which kinds have been found
 	for i, cfg := range cfg.Items {
-		cfgObject, gvk, err := api.YamlSerializer.Decode(cfg.Raw, nil, nil)
+		cfgObject, gvk, err := api.TolerantYAMLSerializer.Decode(cfg.Raw, nil, nil)
 		if err != nil {
 			return globalConfig, fmt.Errorf("cannot parse configuration at index %d: %w", i, err)
 		}
