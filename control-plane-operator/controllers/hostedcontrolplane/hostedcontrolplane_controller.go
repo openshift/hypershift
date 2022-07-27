@@ -1018,7 +1018,12 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 	}
 
 	if util.IsPublicHCP(hcp) {
-		svc := manifests.KubeAPIServerService(hcp.Namespace)
+		var svc *corev1.Service
+		if serviceStrategy.Type == hyperv1.Route {
+			svc = manifests.RouterPublicService(hcp.Namespace)
+		} else {
+			svc = manifests.KubeAPIServerService(hcp.Namespace)
+		}
 		if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 			if apierrors.IsNotFound(err) {
 				err = nil
@@ -2441,6 +2446,7 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 	// the routerCanonicalHostname field, causing external DNS to not create the DNS entry. It doesn't add that field
 	// later for already-admitted routes.
 	if canonicalHostname == "" {
+		r.Log.Info("Waiting for load balancer to be ready before creating router deployment")
 		return nil
 	}
 

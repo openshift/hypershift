@@ -73,6 +73,9 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, apiServerPort int, messageCollector events.MessageCollector) (host string, port int32, message string, err error) {
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
+		if message, err := collectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
+			return host, port, message, err
+		}
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
 			message = fmt.Sprintf("Kubernetes APIServer load balancer is not provisioned; %v since creation.", duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
 			var eventMessages []string
@@ -111,8 +114,29 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 	case hyperv1.Route:
 		host = strategy.Route.Hostname
 		port = int32(apiServerPort)
+		if message, err := collectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
+			return host, port, message, err
+		}
 	}
 	return
+}
+
+func collectLBMessageIfNotProvisioned(svc *corev1.Service, messageCollector events.MessageCollector) (string, error) {
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		return "", nil
+
+	}
+	message := fmt.Sprintf("Kubernetes APIServer load balancer is not provisioned; %v since creation.", duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
+	var eventMessages []string
+	eventMessages, err := messageCollector.ErrorMessages(svc)
+	if err != nil {
+		return message, fmt.Errorf("failed to get events for service %s/%s: %w", svc.Namespace, svc.Name, err)
+	}
+	if len(eventMessages) > 0 {
+		message = fmt.Sprintf("Kubernetes APIServer load balancer is not provisioned: %s", strings.Join(eventMessages, "; "))
+	}
+
+	return message, nil
 }
 
 func ReconcilePrivateService(svc *corev1.Service, owner *metav1.OwnerReference) error {
