@@ -61,7 +61,7 @@ require (
 	sigs.k8s.io/cluster-api v1.1.4
 	sigs.k8s.io/cluster-api-provider-aws v1.1.0
 	sigs.k8s.io/cluster-api-provider-azure v1.1.1
-	sigs.k8s.io/cluster-api-provider-ibmcloud v0.2.3
+	sigs.k8s.io/cluster-api-provider-ibmcloud v0.2.4
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.0.0-00010101000000-000000000000
 	sigs.k8s.io/controller-runtime v0.12.2
 	sigs.k8s.io/yaml v1.3.0
