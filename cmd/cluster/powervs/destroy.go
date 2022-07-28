@@ -22,6 +22,20 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 		Short:        "Destroys a HostedCluster and its resources on PowerVS",
 		SilenceUsage: true,
 	}
+
+	opts.PowerVSPlatform = core.PowerVSPlatformDestroyOptions{
+		Region:    "us-south",
+		Zone:      "us-south",
+		VPCRegion: "us-south",
+	}
+
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.ResourceGroup, "resource-group", opts.PowerVSPlatform.ResourceGroup, "IBM Cloud Resource group")
+	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag IBM Cloud resources")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.BaseDomain, "base-domain", opts.PowerVSPlatform.BaseDomain, "Cluster's base domain")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.Region, "region", opts.PowerVSPlatform.Region, "IBM Cloud region. Default is us-south")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.Zone, "zone", opts.PowerVSPlatform.Zone, "IBM Cloud zone. Default is us-south")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.VPCRegion, "vpc-region", opts.PowerVSPlatform.VPCRegion, "IBM Cloud VPC Region for VPC resources. Default is us-south")
+
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
