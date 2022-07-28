@@ -30,7 +30,9 @@ type HostedControlPlaneSpec struct {
 	IssuerURL    string                      `json:"issuerURL"`
 
 	// Networking specifies network configuration for the cluster.
-	Networking ClusterNetworking `json:"networking"`
+	// Temporarily optional for backward compatibility, required in future releases.
+	// +optional
+	Networking ClusterNetworking `json:"networking,omitempty"`
 
 	// deprecated
 	// use networking.ServiceNetwork
