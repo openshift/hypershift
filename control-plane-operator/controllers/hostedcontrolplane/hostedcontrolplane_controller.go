@@ -289,11 +289,21 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				Reason: hyperv1.DeploymentStatusUnknownReason,
 			}
 			for _, cond := range deployment.Status.Conditions {
-				if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
-					newCondition = metav1.Condition{
-						Type:   string(hyperv1.KubeAPIServerAvailable),
-						Status: metav1.ConditionTrue,
-						Reason: hyperv1.AsExpectedReason,
+				if cond.Type == appsv1.DeploymentAvailable {
+					if cond.Status == corev1.ConditionTrue {
+						newCondition = metav1.Condition{
+							Type:    string(hyperv1.KubeAPIServerAvailable),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.AsExpectedReason,
+							Message: "Kube APIServer deployment is available",
+						}
+					} else {
+						newCondition = metav1.Condition{
+							Type:    string(hyperv1.KubeAPIServerAvailable),
+							Status:  metav1.ConditionFalse,
+							Reason:  hyperv1.DeploymentWaitingForAvailableReason,
+							Message: "Waiting for Kube APIServer deployment to become available",
+						}
 					}
 					break
 				}
@@ -401,8 +411,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			reason = infrastructureCondition.Reason
 			message = infrastructureCondition.Message
 		case !kubeConfigAvailable:
-			reason = hyperv1.KubeconfigUnavailableReason
-			message = "The hosted control plane kubeconfig is not available"
+			reason = hyperv1.KubeconfigWaitingForCreateReason
+			message = "Waiting for hosted control plane kubeconfig to be created"
 		case etcdCondition != nil && etcdCondition.Status == metav1.ConditionFalse:
 			reason = etcdCondition.Reason
 			message = etcdCondition.Message
@@ -2554,12 +2564,12 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 	}
 
 	if len(message) == 0 {
-		message = "Etcd has not yet reached quorum"
+		message = "Waiting for etcd to reach quorum"
 	}
 	return &metav1.Condition{
 		Type:    string(hyperv1.EtcdAvailable),
 		Status:  metav1.ConditionFalse,
-		Reason:  hyperv1.EtcdQuorumUnavailableReason,
+		Reason:  hyperv1.EtcdWaitingForQuorumReason,
 		Message: message,
 	}, nil
 

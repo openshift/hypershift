@@ -1688,21 +1688,22 @@ const (
 	IgnitionServerDeploymentUnavailableReason   = "IgnitionServerDeploymentUnavailable"
 
 	HostedClusterAsExpectedReason          = "HostedClusterAsExpected"
-	HostedClusterUnhealthyComponentsReason = "UnhealthyControlPlaneComponents"
+	HostedClusterWaitingForAvailableReason = "HostedClusterWaitingForAvailable"
 	InvalidConfigurationReason             = "InvalidConfiguration"
 
-	DeploymentNotFoundReason      = "DeploymentNotFound"
-	DeploymentStatusUnknownReason = "DeploymentStatusUnknown"
+	DeploymentNotFoundReason            = "DeploymentNotFound"
+	DeploymentStatusUnknownReason       = "DeploymentStatusUnknown"
+	DeploymentWaitingForAvailableReason = "DeploymentWaitingForAvailable"
 
 	HostedControlPlaneComponentsUnavailableReason = "ComponentsUnavailable"
-	KubeconfigUnavailableReason                   = "KubeconfigUnavailable"
+	KubeconfigWaitingForCreateReason              = "KubeconfigWaitingForCreate"
 	ClusterVersionStatusUnknownReason             = "ClusterVersionStatusUnknown"
 
 	StatusUnknownReason = "StatusUnknown"
 	AsExpectedReason    = "AsExpected"
 
 	EtcdQuorumAvailableReason     = "QuorumAvailable"
-	EtcdQuorumUnavailableReason   = "QuorumUnavailable"
+	EtcdWaitingForQuorumReason    = "EtcdWaitingForQuorum"
 	EtcdStatusUnknownReason       = "EtcdStatusUnknown"
 	EtcdStatefulSetNotFoundReason = "StatefulSetNotFound"
 

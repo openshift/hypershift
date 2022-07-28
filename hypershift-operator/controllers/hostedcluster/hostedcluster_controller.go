@@ -3003,8 +3003,8 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) metav1.Condition {
 	// Determine whether the hosted control plane is available.
 	hcpAvailableStatus := metav1.ConditionFalse
-	hcpAvailableMessage := "The hosted control plane is unavailable"
-	hcpAvailableReason := hyperv1.HostedClusterUnhealthyComponentsReason
+	hcpAvailableMessage := "Waiting for hosted control plane to be healthy"
+	hcpAvailableReason := hyperv1.HostedClusterWaitingForAvailableReason
 	var hcpAvailableCondition *metav1.Condition
 	if hcp != nil {
 		hcpAvailableCondition = meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
