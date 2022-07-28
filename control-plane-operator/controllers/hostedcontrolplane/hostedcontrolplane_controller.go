@@ -39,6 +39,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/registryoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -768,6 +769,12 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile olm: %w", err)
 	}
 
+	// Reconcile image registry operator
+	r.Log.Info("Reconciling Image Registry Operator")
+	if err = r.reconcileImageRegistryOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile image registry operator: %w", err)
+	}
+
 	// Reconcile Ignition
 	r.Log.Info("Reconciling core machine configs")
 	if err = r.reconcileCoreIgnitionConfig(ctx, hostedControlPlane, createOrUpdate); err != nil {
@@ -1364,6 +1371,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return pki.ReconcileOLMOperatorServingCertSecret(olmOperatorServingCert, rootCASecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
+	}
+
+	// Image Registry Operator Serving Cert
+	imageRegistryOperatorServingCert := manifests.ImageRegistryOperatorServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, imageRegistryOperatorServingCert, func() error {
+		return pki.ReconcileRegistryOperatorServingCert(imageRegistryOperatorServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile image registry operator serving cert: %w", err)
 	}
 
 	kcmServerSecret := manifests.KCMServerCertSecret(hcp.Namespace)
@@ -2282,6 +2297,26 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile collect profiles serviceaccount: %w", err)
 	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
+	params := registryoperator.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+	deployment := manifests.ImageRegistryOperatorDeployment(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, deployment, func() error {
+		return registryoperator.ReconcileDeployment(deployment, params)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile image registry operator deployment: %w", err)
+	}
+
+	pm := manifests.ImageRegistryOperatorPodMonitor(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, pm, func() error {
+		registryoperator.ReconcilePodMonitor(pm, hcp.Spec.ClusterID, r.MetricsSet)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile image registry operator pod monitor: %w", err)
+	}
+
 	return nil
 }
 

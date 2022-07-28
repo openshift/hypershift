@@ -73,6 +73,9 @@ var (
 		"0000_80_machine-config-operator_01_machineconfigpool.crd.yaml",
 		"0000_50_cluster-node-tuning-operator_50-operator-ibm-cloud-managed.yaml",
 		"0000_50_cluster-node-tuning-operator_60-clusteroperator.yaml",
+		"0000_50_cluster-image-registry-operator_07-operator-ibm-cloud-managed.yaml",
+		"0000_50_cluster-image-registry-operator_07-operator-service.yaml",
+		"0000_90_cluster-image-registry-operator_02_operator-servicemonitor.yaml",
 
 		// TODO: Remove these when cluster profiles annotations are fixed
 		// for cco and auth  operators
@@ -233,6 +236,12 @@ func resourcesToRemove() []resourceDesc {
 			name:       "cluster-node-tuning-operator",
 			namespace:  "openshift-cluster-node-tuning-operator",
 		},
+		{
+			apiVersion: "apps/v1",
+			kind:       "Deployment",
+			name:       "cluster-image-registry-operator",
+			namespace:  "openshift-image-registry",
+		},
 	}
 }
 
@@ -251,7 +260,10 @@ func preparePayloadScript() string {
 	}
 	toRemove := resourcesToRemove()
 	if len(toRemove) > 0 {
-		stmts = append(stmts, fmt.Sprintf("cat > %s/release-manifests/cleanup.yaml <<EOF", payloadDir))
+		// NOTE: the name of the cleanup file indicates the CVO runlevel for the cleanup.
+		// A level of 0000_01 forces the cleanup to happen first without waiting for any cluster operators to
+		// become available.
+		stmts = append(stmts, fmt.Sprintf("cat > %s/release-manifests/0000_01_cleanup.yaml <<EOF", payloadDir))
 	}
 	for _, desc := range resourcesToRemove() {
 		stmts = append(stmts,
