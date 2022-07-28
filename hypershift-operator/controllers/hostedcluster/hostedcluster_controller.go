@@ -4247,6 +4247,9 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 	if hcluster.Spec.Platform.AWS == nil {
 		return nil
 	}
+	if hcluster.Spec.InfraID == "" {
+		return nil
+	}
 
 	var existing *hyperv1.AWSResourceTag
 	for idx, tag := range hcluster.Spec.Platform.AWS.ResourceTags {
