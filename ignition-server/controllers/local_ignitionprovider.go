@@ -250,6 +250,9 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		if image, exists := images["mdns-publisher"]; exists {
 			args = append(args, fmt.Sprintf("--mdns-publisher-image=%s", image))
 		}
+		if mcsConfig.Data["user-ca-bundle-config.yaml"] != "" {
+			args = append(args, fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir))
+		}
 		if p.CloudProvider == hyperv1.AzurePlatform {
 			args = append(args, fmt.Sprintf("--cloud-config-file=%s/cloud.conf.configmap.yaml", mcoBaseDir))
 		}
