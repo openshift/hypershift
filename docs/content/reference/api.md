@@ -3598,7 +3598,9 @@ ClusterNetworking
 </em>
 </td>
 <td>
-<p>Networking specifies network configuration for the cluster.</p>
+<em>(Optional)</em>
+<p>Networking specifies network configuration for the cluster.
+Temporarily optional for backward compatibility, required in future releases.</p>
 </td>
 </tr>
 <tr>

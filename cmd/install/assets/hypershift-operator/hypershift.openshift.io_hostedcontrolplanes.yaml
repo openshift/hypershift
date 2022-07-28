@@ -2017,6 +2017,8 @@ spec:
                 type: string
               networking:
                 description: Networking specifies network configuration for the cluster.
+                  Temporarily optional for backward compatibility, required in future
+                  releases.
                 properties:
                   apiServer:
                     description: APIServer contains advanced network settings for
@@ -3027,7 +3029,6 @@ spec:
             - etcd
             - infraID
             - issuerURL
-            - networking
             - platform
             - pullSecret
             - releaseImage
