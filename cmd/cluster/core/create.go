@@ -100,7 +100,8 @@ type AgentPlatformCreateOptions struct {
 }
 
 type NonePlatformCreateOptions struct {
-	APIServerAddress string
+	APIServerAddress          string
+	ExposeThroughLoadBalancer bool
 }
 
 type KubevirtPlatformCreateOptions struct {
