@@ -556,6 +556,14 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	createOrUpdate := r.createOrUpdate(hostedControlPlane)
 
+	kasServiceStrategy := servicePublishingStrategyByType(hostedControlPlane, hyperv1.APIServer)
+	if util.IsPrivateHCP(hostedControlPlane) || kasServiceStrategy.Type == hyperv1.Route {
+		r.Log.Info("Reconciling router")
+		if err = r.reconcileRouter(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile router: %w", err)
+		}
+	}
+
 	r.Log.Info("Reconciling autoscaler")
 	if err := r.reconcileAutoscaler(ctx, hostedControlPlane, releaseImage.ComponentImages(), createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile autoscaler: %w", err)
@@ -733,18 +741,11 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	// Reconcile router
-	kasServiceStrategy := servicePublishingStrategyByType(hostedControlPlane, hyperv1.APIServer)
 	if util.IsPrivateHCP(hostedControlPlane) {
 		r.Log.Info("Removing private IngressController")
 		// Ensure that if an ingress controller exists from a previous version, it is removed
 		if err = r.reconcilePrivateIngressController(ctx, hostedControlPlane); err != nil {
 			return fmt.Errorf("failed to reconcile private ingresscontroller: %w", err)
-		}
-	}
-	if util.IsPrivateHCP(hostedControlPlane) || kasServiceStrategy.Type == hyperv1.Route {
-		r.Log.Info("Reconciling router")
-		if err = r.reconcileRouter(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile router: %w", err)
 		}
 	}
 
