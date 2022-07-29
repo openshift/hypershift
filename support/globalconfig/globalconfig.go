@@ -52,6 +52,11 @@ func ParseGlobalConfig(ctx context.Context, cfg *hyperv1.ClusterConfiguration) (
 		kinds.Insert(gvk.Kind)
 		switch obj := cfgObject.(type) {
 		case *configv1.APIServer:
+			if obj.Spec.Audit.Profile == "" {
+				// Populate kubebuilder default for comparison
+				// https://github.com/openshift/api/blob/f120778bee805ad1a7a4f05a6430332cf5811813/config/v1/types_apiserver.go#L57
+				obj.Spec.Audit.Profile = configv1.DefaultAuditProfileType
+			}
 			globalConfig.APIServer = obj
 		case *configv1.Authentication:
 			globalConfig.Authentication = obj
