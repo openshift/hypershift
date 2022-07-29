@@ -3491,37 +3491,9 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 
 	// TODO: Drop when we no longer need to support versions < 4.11
 	if hc.Spec.Configuration != nil {
-		globalConfig, err := globalconfig.ParseGlobalConfig(ctx, hc.Spec.Configuration)
+		_, err := globalconfig.ParseGlobalConfig(ctx, hc.Spec.Configuration)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to parse cluster configuration: %w", err))
-		} else {
-			if globalConfig.APIServer != nil && hc.Spec.Configuration.APIServer != nil {
-				errs = append(errs, fmt.Errorf("apiServer raw extension config is invalid when APIServer configuration field is set"))
-			}
-			if globalConfig.Authentication != nil && hc.Spec.Configuration.Authentication != nil {
-				errs = append(errs, fmt.Errorf("authentication raw extension config is invalid when Authentication configuration field is set"))
-			}
-			if globalConfig.FeatureGate != nil && hc.Spec.Configuration.FeatureGate != nil {
-				errs = append(errs, fmt.Errorf("featureGate raw extension config is invalid when FeatureGate configuration field is set"))
-			}
-			if globalConfig.Image != nil && hc.Spec.Configuration.Image != nil {
-				errs = append(errs, fmt.Errorf("image raw extension config is invalid when Image configuration field is set"))
-			}
-			if globalConfig.Ingress != nil && hc.Spec.Configuration.Ingress != nil {
-				errs = append(errs, fmt.Errorf("ingress raw extension config is invalid when Ingress configuration field is set"))
-			}
-			if globalConfig.Network != nil && hc.Spec.Configuration.Network != nil {
-				errs = append(errs, fmt.Errorf("network raw extension config is invalid when Network configuration field is set"))
-			}
-			if globalConfig.OAuth != nil && hc.Spec.Configuration.OAuth != nil {
-				errs = append(errs, fmt.Errorf("oAuth raw extension config is invalid when OAuth configuration field is set"))
-			}
-			if globalConfig.Proxy != nil && hc.Spec.Configuration.Proxy != nil {
-				errs = append(errs, fmt.Errorf("proxy raw extension config is invalid when Proxy configuration field is set"))
-			}
-			if globalConfig.Scheduler != nil && hc.Spec.Configuration.Scheduler != nil {
-				errs = append(errs, fmt.Errorf("scheduler raw extension config is invalid when Scheduler configuration field is set"))
-			}
 		}
 	}
 
@@ -4529,40 +4501,34 @@ func (r *HostedClusterReconciler) reconcileDeprecatedGlobalConfig(ctx context.Co
 		return err
 	}
 
-	// Only copy over config from the raw extension if the field is not already populated.
-	// Once populated, the field takes precedence and a conflicting raw extension config
-	// results in an invalid configuration field.
-
-	if gconfig.APIServer != nil && hc.Spec.Configuration.APIServer == nil {
+	// Copy over config from the raw extension
+	if gconfig.APIServer != nil {
 		hc.Spec.Configuration.APIServer = &gconfig.APIServer.Spec
 	}
-	if gconfig.Authentication != nil && hc.Spec.Configuration.Authentication == nil {
+	if gconfig.Authentication != nil {
 		hc.Spec.Configuration.Authentication = &gconfig.Authentication.Spec
 	}
-	if gconfig.FeatureGate != nil && hc.Spec.Configuration.FeatureGate == nil {
+	if gconfig.FeatureGate != nil {
 		hc.Spec.Configuration.FeatureGate = &gconfig.FeatureGate.Spec
 	}
-	if gconfig.Image != nil && hc.Spec.Configuration.Image == nil {
+	if gconfig.Image != nil {
 		hc.Spec.Configuration.Image = &gconfig.Image.Spec
 	}
-	if gconfig.Ingress != nil && hc.Spec.Configuration.Ingress == nil {
+	if gconfig.Ingress != nil {
 		hc.Spec.Configuration.Ingress = &gconfig.Ingress.Spec
 	}
-	if gconfig.Network != nil && hc.Spec.Configuration.Network == nil {
+	if gconfig.Network != nil {
 		hc.Spec.Configuration.Network = &gconfig.Network.Spec
 	}
-	if gconfig.OAuth != nil && hc.Spec.Configuration.OAuth == nil {
+	if gconfig.OAuth != nil {
 		hc.Spec.Configuration.OAuth = &gconfig.OAuth.Spec
 	}
-	if gconfig.Scheduler != nil && hc.Spec.Configuration.Scheduler == nil {
+	if gconfig.Scheduler != nil {
 		hc.Spec.Configuration.Scheduler = &gconfig.Scheduler.Spec
 	}
-	if gconfig.Proxy != nil && hc.Spec.Configuration.Proxy == nil {
+	if gconfig.Proxy != nil {
 		hc.Spec.Configuration.Proxy = &gconfig.Proxy.Spec
 	}
-	hc.Spec.Configuration.Items = nil
-	hc.Spec.Configuration.ConfigMapRefs = nil
-	hc.Spec.Configuration.SecretRefs = nil
 
 	return nil
 }
