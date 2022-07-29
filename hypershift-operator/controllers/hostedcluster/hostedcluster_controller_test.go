@@ -1,6 +1,7 @@
 package hostedcluster
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
@@ -28,6 +30,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	serializerjson "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -1468,4 +1472,123 @@ type fakeImageMetadataProvider struct{}
 
 func (*fakeImageMetadataProvider) ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error) {
 	return &dockerv1client.DockerImageConfig{}, nil
+}
+
+func TestReconcileDeprecatedGlobalConfig(t *testing.T) {
+	hc := &hyperv1.HostedCluster{}
+	hc.Name = "fake-name"
+	hc.Namespace = "fake-namespace"
+
+	apiServer := &configv1.APIServer{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: configv1.SchemeGroupVersion.String(),
+			Kind:       "APIServer",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: configv1.APIServerSpec{
+			Audit: configv1.Audit{
+				// Populate kubebuilder default for comparison
+				// https://github.com/openshift/api/blob/f120778bee805ad1a7a4f05a6430332cf5811813/config/v1/types_apiserver.go#L57
+				Profile: configv1.DefaultAuditProfileType,
+			},
+			ClientCA: configv1.ConfigMapNameReference{
+				Name: "fake-ca",
+			},
+		},
+	}
+
+	jsonSerializer := serializerjson.NewSerializerWithOptions(
+		serializerjson.DefaultMetaFactory, hyperapi.Scheme, hyperapi.Scheme,
+		serializerjson.SerializerOptions{Yaml: false, Pretty: true, Strict: false},
+	)
+
+	serializedAPIServer := &bytes.Buffer{}
+	err := jsonSerializer.Encode(apiServer, serializedAPIServer)
+	if err != nil {
+		t.Fatalf("failed to serialize apiserver: %v", err)
+	}
+
+	hc.Spec.Configuration = &hyperv1.ClusterConfiguration{
+		Items: []runtime.RawExtension{
+			{
+				Raw: serializedAPIServer.Bytes(),
+			},
+		},
+		ConfigMapRefs: []corev1.LocalObjectReference{
+			{
+				Name: "fake-ca",
+			},
+		},
+		SecretRefs: []corev1.LocalObjectReference{
+			{
+				Name: "fake-creds",
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(hyperapi.Scheme).
+		WithObjects(hc).
+		Build()
+	reconciler := &HostedClusterReconciler{
+		Client: fakeClient,
+	}
+
+	originalSpec := hc.Spec.DeepCopy()
+	if err := reconciler.reconcileDeprecatedGlobalConfig(context.Background(), hc); err != nil {
+		t.Fatalf("unexpected reconcile error: %v", err)
+	}
+
+	// Update fields if required.
+	if !equality.Semantic.DeepEqual(&hc.Spec, originalSpec) {
+		err := reconciler.Client.Update(context.Background(), hc)
+		if err != nil {
+			t.Fatalf("unexpected update error: %v", err)
+		}
+	}
+
+	updatedHc := &hyperv1.HostedCluster{}
+	if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(hc), updatedHc); err != nil {
+		t.Fatalf("unexpected get error: %v", err)
+	}
+	if updatedHc.Spec.Configuration == nil {
+		t.Fatalf("unexpected nil configuration")
+	}
+	if len(updatedHc.Spec.Configuration.Items) == 0 {
+		t.Errorf("empty deprecated configuration")
+	}
+	if len(updatedHc.Spec.Configuration.ConfigMapRefs) == 0 {
+		t.Errorf("empty configmap refs")
+	}
+	if len(updatedHc.Spec.Configuration.SecretRefs) == 0 {
+		t.Errorf("emtpy secret refs")
+	}
+	if !equality.Semantic.DeepEqual(&apiServer.Spec, updatedHc.Spec.Configuration.APIServer) {
+		t.Errorf("unexpected apiserver spec: %#v", updatedHc.Spec.Configuration.APIServer)
+	}
+
+	// Update deprecated field, remove test when field is unsupported
+	apiServer.Spec.ClientCA.Name = "updated-ca"
+	serializedAPIServer.Reset()
+	err = jsonSerializer.Encode(apiServer, serializedAPIServer)
+	if err != nil {
+		t.Fatalf("failed to serialize apiserver: %v", err)
+	}
+	updatedHc.Spec.Configuration.Items = []runtime.RawExtension{{Raw: serializedAPIServer.Bytes()}}
+	if err := reconciler.reconcileDeprecatedGlobalConfig(context.Background(), updatedHc); err != nil {
+		t.Fatalf("unexpected reconcile error: %v", err)
+	}
+	err = reconciler.Client.Update(context.Background(), updatedHc)
+	if err != nil {
+		t.Fatalf("unexpected update error: %v", err)
+	}
+	updatedHcAgain := &hyperv1.HostedCluster{}
+	if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(updatedHc), updatedHcAgain); err != nil {
+		t.Fatalf("unexpected get error: %v", err)
+	}
+	if !equality.Semantic.DeepEqual(&apiServer.Spec, updatedHcAgain.Spec.Configuration.APIServer) {
+		t.Errorf("unexpected apiserver spec on update: %#v", updatedHcAgain.Spec.Configuration.APIServer)
+	}
 }
