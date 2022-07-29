@@ -77,19 +77,6 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 		if message, err := collectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
 			return host, port, message, err
 		}
-		if len(svc.Status.LoadBalancer.Ingress) == 0 {
-			message = fmt.Sprintf("Kubernetes APIServer load balancer is not provisioned; %v since creation.", duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
-			var eventMessages []string
-			eventMessages, err = messageCollector.ErrorMessages(svc)
-			if err != nil {
-				err = fmt.Errorf("failed to get events for service %s/%s: %w", svc.Namespace, svc.Name, err)
-				return
-			}
-			if len(eventMessages) > 0 {
-				message = fmt.Sprintf("Kubernetes APIServer load balancer is not provisioned: %s", strings.Join(eventMessages, "; "))
-			}
-			return
-		}
 		port = int32(apiServerPort)
 		switch {
 		case strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "":
@@ -113,6 +100,9 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 		port = svc.Spec.Ports[0].NodePort
 		host = strategy.NodePort.Address
 	case hyperv1.Route:
+		if message, err := collectLBMessageIfNotProvisioned(svc, messageCollector); err != nil || message != "" {
+			return host, port, message, err
+		}
 		host = strategy.Route.Hostname
 		port = int32(apiServerPort)
 	}
@@ -140,6 +130,24 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
 	svc.Spec.Ports[0] = portSpec
 	return nil
+}
+
+func collectLBMessageIfNotProvisioned(svc *corev1.Service, messageCollector events.MessageCollector) (string, error) {
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		return "", nil
+
+	}
+	message := fmt.Sprintf("Kubernetes APIServer load balancer is not provisioned; %v since creation.", duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
+	var eventMessages []string
+	eventMessages, err := messageCollector.ErrorMessages(svc)
+	if err != nil {
+		return message, fmt.Errorf("failed to get events for service %s/%s: %w", svc.Namespace, svc.Name, err)
+	}
+	if len(eventMessages) > 0 {
+		message = fmt.Sprintf("Kubernetes APIServer load balancer is not provisioned: %s", strings.Join(eventMessages, "; "))
+	}
+
+	return message, nil
 }
 
 func ReconcilePrivateServiceStatus(hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
