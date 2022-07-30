@@ -507,6 +507,18 @@ spec:
                               This is the default type used when no storage type is
                               defined.
                             properties:
+                              accessModes:
+                                description: 'AccessModes is an array that contains
+                                  the desired Access Modes the root volume should
+                                  have. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes'
+                                items:
+                                  enum:
+                                  - ReadWriteOnce
+                                  - ReadWriteMany
+                                  - ReadOnly
+                                  - ReadWriteOncePod
+                                  type: string
+                                type: array
                               size:
                                 anyOf:
                                 - type: integer

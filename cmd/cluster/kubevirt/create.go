@@ -100,6 +100,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		Image:                     opts.KubevirtPlatform.ContainerDiskImage,
 		RootVolumeSize:            opts.KubevirtPlatform.RootVolumeSize,
 		RootVolumeStorageClass:    opts.KubevirtPlatform.RootVolumeStorageClass,
+		RootVolumeAccessModes:     opts.KubevirtPlatform.RootVolumeAccessModes,
 	}
 	return nil
 }

@@ -161,9 +161,18 @@ func virtualMachineTemplateBase(image string, kvPlatform *hyperv1.KubevirtNodePo
 	}
 
 	if kvPlatform.RootVolume != nil &&
-		kvPlatform.RootVolume.Persistent != nil &&
-		kvPlatform.RootVolume.Persistent.StorageClass != nil {
-		dataVolume.Spec.Storage.StorageClassName = kvPlatform.RootVolume.Persistent.StorageClass
+		kvPlatform.RootVolume.Persistent != nil {
+		if kvPlatform.RootVolume.Persistent.StorageClass != nil {
+			dataVolume.Spec.Storage.StorageClassName = kvPlatform.RootVolume.Persistent.StorageClass
+		}
+		if len(kvPlatform.RootVolume.Persistent.AccessModes) != 0 {
+			var accessModes []corev1.PersistentVolumeAccessMode
+			for _, am := range kvPlatform.RootVolume.Persistent.AccessModes {
+				amv1 := corev1.PersistentVolumeAccessMode(am)
+				accessModes = append(accessModes, amv1)
+			}
+			dataVolume.Spec.Storage.AccessModes = accessModes
+		}
 	}
 
 	template.Spec.DataVolumeTemplates = []kubevirtv1.DataVolumeTemplateSpec{dataVolume}
