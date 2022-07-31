@@ -184,6 +184,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, opts *core.CreateOptions) (*core.CreateOptions, error) {
 	opts.Namespace = hc.Namespace
 	opts.Name = hc.Name
+	opts.NonePlatform.ExposeThroughLoadBalancer = true
 
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -204,7 +205,6 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 		}
 
 		opts.BaseDomain = defaultIngressOperator.Status.Domain
-
 	}
 
 	return opts, nil
