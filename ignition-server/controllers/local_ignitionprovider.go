@@ -244,6 +244,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			fmt.Sprintf("--dns-config-file=%s/cluster-dns-02-config.yaml", configDir),
 			fmt.Sprintf("--pull-secret=%s/pull-secret.yaml", configDir),
 			fmt.Sprintf("--dest-dir=%s", destDir),
+			fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir),
 		}
 		if image, exists := images["mdns-publisher"]; exists {
 			args = append(args, fmt.Sprintf("--mdns-publisher-image=%s", image))
