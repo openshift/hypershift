@@ -6,12 +6,12 @@ title: Create AWS Hosted Cluster in Multiple Zones
 
 ## Prerequisites
 
-Complete the [Prerequisites](../../getting-started/#prerequisites) and [Before you begin](../../getting-started/#before-you-begin).
+Complete the [Prerequisites](../../../getting-started/#prerequisites) and [Before you begin](../../../getting-started/#before-you-begin).
 
 ## Creating the Hosted Cluster
 
 Create a new cluster, specifying the `BASE_DOMAIN` of the public zone provided in the
-[Prerequisites](../../getting-started/#prerequisites):
+[Prerequisites](../../../getting-started/#prerequisites):
 
 ```shell linenums="1"  hl_lines="15"
 REGION=us-east-1
