@@ -46,16 +46,7 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *E
 	}
 	p.DeploymentConfig.AdditionalLabels[hyperv1.ControlPlaneComponent] = "etcd"
 	p.DeploymentConfig.Scheduling.PriorityClass = config.EtcdPriorityClass
-	p.DeploymentConfig.SetMultizoneSpread(etcdPodSelector())
-	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
-	p.DeploymentConfig.SetColocationAnchor(hcp)
-
-	switch hcp.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		p.DeploymentConfig.Replicas = 3
-	default:
-		p.DeploymentConfig.Replicas = 1
-	}
+	p.DeploymentConfig.SetDefaults(hcp, etcdPodSelector(), nil)
 
 	if hcp.Spec.Etcd.Managed == nil {
 		hcp.Spec.Etcd.Managed = &hyperv1.ManagedEtcdSpec{

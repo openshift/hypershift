@@ -3,6 +3,7 @@ package cvo
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	utilpointer "k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
@@ -42,11 +43,9 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, images map[string]string, set
 		},
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	p.DeploymentConfig.SetColocation(hcp)
+
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
-	p.DeploymentConfig.Replicas = 1
+	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.IntPtr(1))
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	return p

@@ -1363,12 +1363,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
 func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster) error {
-	// Always initialize the HostedControlPlane with an image matching
-	// the HostedCluster.
-	if hcp.ObjectMeta.CreationTimestamp.IsZero() {
-		hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
-	}
-
 	hcp.Annotations = map[string]string{
 		HostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
@@ -1400,6 +1394,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		}
 	}
 
+	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
+
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
 		hcp.Spec.SSHKey = corev1.LocalObjectReference{Name: controlplaneoperator.SSHKey(hcp.Namespace).Name}
@@ -1407,6 +1403,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	if hcluster.Spec.AuditWebhook != nil && len(hcluster.Spec.AuditWebhook.Name) > 0 {
 		hcp.Spec.AuditWebhook = hcluster.Spec.AuditWebhook.DeepCopy()
 	}
+
 	hcp.Spec.FIPS = hcluster.Spec.FIPS
 	hcp.Spec.IssuerURL = hcluster.Spec.IssuerURL
 	hcp.Spec.ServiceAccountSigningKey = hcluster.Spec.ServiceAccountSigningKey
@@ -1438,6 +1435,11 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.SecretEncryption = hcluster.Spec.SecretEncryption.DeepCopy()
 	}
 
+	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
+	hcp.Spec.OLMCatalogPlacement = hcluster.Spec.OLMCatalogPlacement
+	hcp.Spec.Autoscaling = hcluster.Spec.Autoscaling
+	hcp.Spec.NodeSelector = hcluster.Spec.NodeSelector
+
 	// Pass through Platform spec.
 	hcp.Spec.Platform = *hcluster.Spec.Platform.DeepCopy()
 	switch hcluster.Spec.Platform.Type {
@@ -1445,13 +1447,6 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		// Agent platform uses None platform for the hcp.
 		hcp.Spec.Platform.Type = hyperv1.NonePlatform
 	}
-
-	// always reconcile the release image (facilitates rolling forward)
-	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
-
-	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
-	hcp.Spec.OLMCatalogPlacement = hcluster.Spec.OLMCatalogPlacement
-	hcp.Spec.Autoscaling = hcluster.Spec.Autoscaling
 
 	// Backward compatible conversions.
 	// TODO (alberto): Drop this as we go GA in only support targeted release.
@@ -1707,6 +1702,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		}
 
 		hyperutil.SetColocation(hcluster.ObjectMeta, deployment)
+		hyperutil.SetNodeSelector(hcluster, deployment)
 		// TODO (alberto): Reconsider enable this back when we face a real need
 		// with no better solution.
 		// hyperutil.SetRestartAnnotation(hc, deployment)
@@ -2548,6 +2544,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 	}
 
 	hyperutil.SetColocation(hc.ObjectMeta, deployment)
+	hyperutil.SetNodeSelector(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc.ObjectMeta, deployment)
 	hyperutil.SetControlPlaneIsolation(hc.ObjectMeta, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)

@@ -99,10 +99,9 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 			},
 		},
 	}
-	params.DeploymentConfig.SetColocation(hcp)
+	params.DeploymentConfig.SetDefaults(hcp, kcmLabels(), nil)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
+
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		params.CloudProvider = aws.Provider
@@ -111,14 +110,6 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	case hyperv1.AzurePlatform:
 		params.CloudProvider = azure.Provider
 		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AzureProviderConfigWithCredentials("").Name}
-	}
-
-	switch hcp.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		params.Replicas = 3
-		params.DeploymentConfig.SetMultizoneSpread(kcmLabels())
-	default:
-		params.Replicas = 1
 	}
 
 	params.SetDefaultSecurityContext = setDefaultSecurityContext

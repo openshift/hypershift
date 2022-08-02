@@ -273,10 +273,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			},
 		},
 	}
-	params.DeploymentConfig.SetColocation(hcp)
-	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
 
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -297,17 +293,12 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.Images.IBMCloudKMS = hcp.Annotations[hyperv1.IBMCloudKMSProviderImage]
 	}
 
-	switch hcp.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		params.Replicas = 3
-		params.DeploymentConfig.SetMultizoneSpread(kasLabels())
-	default:
-		params.Replicas = 1
-	}
 	params.KubeConfigRef = hcp.Spec.KubeConfig
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 
-	params.SetDefaultSecurityContext = setDefaultSecurityContext
+	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	params.DeploymentConfig.SetDefaults(hcp, kasLabels(), nil)
+	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	return params
 }

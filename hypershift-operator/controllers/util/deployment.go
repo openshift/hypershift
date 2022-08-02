@@ -16,7 +16,7 @@ const (
 	// not API critical but still need elevated priority.
 	DefaultPriorityClass = "hypershift-control-plane"
 
-	// debugDeploymentsAnnotation is applied to a HostedCluster and contains a
+	// DebugDeploymentsAnnotation is applied to a HostedCluster and contains a
 	// comma separated list of deployment names which should always be scaled to 0
 	// for development.
 	DebugDeploymentsAnnotation = "hypershift.openshift.io/debug-deployments"
@@ -142,6 +142,7 @@ func SetControlPlaneIsolation(objectMeta metav1.ObjectMeta, deployment *appsv1.D
 	if deployment.Spec.Template.Spec.Affinity.NodeAffinity == nil {
 		deployment.Spec.Template.Spec.Affinity.NodeAffinity = &corev1.NodeAffinity{}
 	}
+
 	deployment.Spec.Template.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution = []corev1.PreferredSchedulingTerm{
 		{
 			Weight: controlPlaneNodeSchedulingAffinityWeight,
@@ -200,4 +201,12 @@ func SetDeploymentReplicas(hc *hyperv1.HostedCluster, deployment *appsv1.Deploym
 	} else {
 		deployment.Spec.Replicas = k8sutilspointer.Int32Ptr(replicas)
 	}
+}
+
+func SetNodeSelector(hc *hyperv1.HostedCluster, deployment *appsv1.Deployment) {
+	if hc.Spec.NodeSelector == nil {
+		return
+	}
+
+	deployment.Spec.Template.Spec.NodeSelector = hc.Spec.NodeSelector
 }

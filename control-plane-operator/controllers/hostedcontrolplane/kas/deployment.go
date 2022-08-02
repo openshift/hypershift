@@ -10,7 +10,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -112,10 +111,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	}
 	configHash := util.ComputeHash(configBytes)
 
-	ownerRef.ApplyTo(deployment)
-	maxSurge := intstr.FromInt(3)
-	maxUnavailable := intstr.FromInt(0)
-
 	// preserve existing resource requirements for main KAS container
 	mainContainer := util.FindContainer(kasContainerMain().Name, deployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
@@ -126,13 +121,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			MatchLabels: kasLabels(),
 		}
 	}
-	deployment.Spec.Strategy = appsv1.DeploymentStrategy{
-		Type: appsv1.RollingUpdateDeploymentStrategyType,
-		RollingUpdate: &appsv1.RollingUpdateDeployment{
-			MaxSurge:       &maxSurge,
-			MaxUnavailable: &maxUnavailable,
-		},
-	}
+
 	deployment.Spec.Template = corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: kasLabels(),
@@ -285,6 +274,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			// nothing needed to be done
 		}
 	}
+	ownerRef.ApplyTo(deployment)
 	deploymentConfig.ApplyTo(deployment)
 	return nil
 }

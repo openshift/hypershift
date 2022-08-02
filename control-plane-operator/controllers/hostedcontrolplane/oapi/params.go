@@ -105,10 +105,9 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 			},
 		},
 	}
-	params.OpenShiftAPIServerDeploymentConfig.SetColocation(hcp)
 	params.OpenShiftAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.OpenShiftAPIServerDeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	params.OpenShiftAPIServerDeploymentConfig.SetControlPlaneIsolation(hcp)
+	params.OpenShiftAPIServerDeploymentConfig.SetDefaults(hcp, openShiftAPIServerLabels(), nil)
+
 	params.OpenShiftOAuthAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
 			PriorityClass: config.APICriticalPriorityClass,
@@ -157,10 +156,8 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 	params.OpenShiftAPIServerDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
-	params.OpenShiftOAuthAPIServerDeploymentConfig.SetColocation(hcp)
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.OpenShiftOAuthAPIServerDeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	params.OpenShiftOAuthAPIServerDeploymentConfig.SetControlPlaneIsolation(hcp)
+	params.OpenShiftOAuthAPIServerDeploymentConfig.SetDefaults(hcp, openShiftOAuthAPIServerLabels(), nil)
 	switch hcp.Spec.Etcd.ManagementType {
 	case hyperv1.Unmanaged:
 		params.EtcdURL = hcp.Spec.Etcd.Unmanaged.Endpoint
@@ -169,16 +166,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 	default:
 		params.EtcdURL = config.DefaultEtcdURL
 	}
-	switch hcp.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		params.OpenShiftAPIServerDeploymentConfig.Replicas = 3
-		params.OpenShiftOAuthAPIServerDeploymentConfig.Replicas = 3
-		params.OpenShiftOAuthAPIServerDeploymentConfig.SetMultizoneSpread(openShiftOAuthAPIServerLabels())
-		params.OpenShiftAPIServerDeploymentConfig.SetMultizoneSpread(openShiftAPIServerLabels())
-	default:
-		params.OpenShiftAPIServerDeploymentConfig.Replicas = 1
-		params.OpenShiftOAuthAPIServerDeploymentConfig.Replicas = 1
-	}
+
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params
 }

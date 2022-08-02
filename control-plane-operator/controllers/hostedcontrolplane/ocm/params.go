@@ -49,18 +49,8 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observ
 			},
 		},
 	}
-	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
-	switch hcp.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		params.DeploymentConfig.Replicas = 3
-		params.DeploymentConfig.SetMultizoneSpread(openShiftControllerManagerLabels())
-	default:
-		params.DeploymentConfig.Replicas = 1
-	}
-
+	params.DeploymentConfig.SetDefaults(hcp, openShiftControllerManagerLabels(), nil)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.OwnerRef = config.OwnerRefFrom(hcp)

@@ -73,17 +73,8 @@ func PrivateRouterConfig(hcp *hyperv1.HostedControlPlane, setDefaultSecurityCont
 		},
 	}
 	cfg.Scheduling.PriorityClass = config.APICriticalPriorityClass
-	cfg.SetColocation(hcp)
+	cfg.SetDefaults(hcp, privateRouterLabels(), nil)
 	cfg.SetRestartAnnotation(hcp.ObjectMeta)
-	cfg.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	cfg.SetControlPlaneIsolation(hcp)
-	cfg.SetMultizoneSpread(privateRouterLabels())
-	switch hcp.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		cfg.Replicas = 3
-	default:
-		cfg.Replicas = 1
-	}
 	cfg.SetDefaultSecurityContext = setDefaultSecurityContext
 	return cfg
 }

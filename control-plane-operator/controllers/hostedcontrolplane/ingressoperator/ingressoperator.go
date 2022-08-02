@@ -48,11 +48,8 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 		Platform:                platform,
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	p.DeploymentConfig.SetColocation(hcp)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
-	p.DeploymentConfig.Replicas = 1
+	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.IntPtr(1))
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	p.DeploymentConfig.ReadinessProbes = config.ReadinessProbes{
 		ingressOperatorContainerName: {

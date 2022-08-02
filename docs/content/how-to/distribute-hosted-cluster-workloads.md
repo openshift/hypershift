@@ -13,17 +13,24 @@ As a management cluster operator you can leverage the following Node labels and 
 
 `hypershift.openshift.io/cluster: ${HostedControlPlane Namespace}`
 
-- Pods for a Hosted Cluster tolerate taints for control-plane and cluster.
-- Pods for a Hosted Cluster prefer to be scheduled into the same Node.
-- Pods for a Hosted Cluster prefer to be scheduled into control-plane Nodes.
-- Pods for a Hosted Cluster prefer to be scheduled into their own cluster Nodes.
+- Pods for a Hosted Cluster tolerate taints for "control-plane" and "cluster".
+- Pods for a Hosted Cluster prefer to be scheduled into "control-plane" Nodes.
+- Pods for a Hosted Cluster prefer to be scheduled into their own "cluster" Nodes.
 
-If the `ControllerAvailabilityPolicy` is `HighlyAvailable` Pods for each Deployment within a Hosted Cluster will require to be scheduled across different failure domains by setting `topology.kubernetes.io/zone` as the topology key.
+In addition:
+- Pods for a Hosted Cluster prefer to be scheduled into the same Node.
+- If the `ControllerAvailabilityPolicy` is `HighlyAvailable` Pods for each Deployment within a Hosted Cluster will require to be scheduled across different failure domains by setting `topology.kubernetes.io/zone` as the topology key.
+- A HostedCluster can require their Pods to be scheduled into particular Nodes by setting `HostedCluster.spec.nodeSelector`. E.g
+```yaml
+  spec:
+    nodeSelector:
+      role.kubernetes.io/infra: "" 
+```
 
 ## Priority
 
 HyperShift leverages PriorityClasses for driving Priority and Preemption of their managed Pods.
-It will install three four priority classes in a management cluster with the following order of priority from highest to lowest:
+It will install four priority classes in a management cluster with the following order of priority from highest to lowest:
 
 - `hypershift-operator`: Hypershift operator pods
 - `hypershift-etcd`: Pods for etcd.
