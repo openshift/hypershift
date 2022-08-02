@@ -40,8 +40,6 @@ func TestHAEtcdChaos(t *testing.T) {
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.NodePoolReplicas = 0
-	// We have no nodes, enabling private mode is just useless work here
-	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.Public)
 
 	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir)
 
@@ -65,8 +63,6 @@ func TestEtcdChaos(t *testing.T) {
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 	clusterOpts.NodePoolReplicas = 0
-	// We have no nodes, enabling private mode is just useless work here
-	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.Public)
 
 	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir)
 

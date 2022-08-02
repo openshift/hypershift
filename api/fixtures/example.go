@@ -262,7 +262,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		if o.None.APIServerAddress != "" {
 			services = getServicePublishingStrategyMappingByAPIServerAddress(o.None.APIServerAddress, o.NetworkType)
 		} else {
-			services = getIngressServicePublishingStrategyMapping(o.NetworkType)
+			services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 		}
 	case o.Agent != nil:
 		platformSpec = hyperv1.PlatformSpec{
