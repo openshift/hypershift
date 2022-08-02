@@ -87,6 +87,7 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -3485,9 +3486,7 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err)
 	}
 
-	if err := validateClusterID(hc); err != nil {
-		errs = append(errs, err)
-	}
+	errs = append(errs, validateClusterID(hc).ToAggregate())
 
 	// TODO: Drop when we no longer need to support versions < 4.11
 	if hc.Spec.Configuration != nil {
@@ -4373,14 +4372,16 @@ func (r *HostedClusterReconciler) defaultClusterIDsIfNeeded(ctx context.Context,
 	return nil
 }
 
-func validateClusterID(hc *hyperv1.HostedCluster) error {
+func validateClusterID(hc *hyperv1.HostedCluster) field.ErrorList {
+	var errs field.ErrorList
+
 	if len(hc.Spec.ClusterID) > 0 {
 		_, err := uuid.Parse(hc.Spec.ClusterID)
 		if err != nil {
-			return fmt.Errorf("cannot parse cluster ID %q: %w", hc.Spec.ClusterID, err)
+			errs = append(errs, field.Invalid(field.NewPath("HostedCluster.spec.clusterID"), hc.Spec.ClusterID, fmt.Sprintf("Error parsing cluster ID: %s", err)))
 		}
 	}
-	return nil
+	return errs
 }
 
 // getReleaseImage get the releaseInfo releaseImage for a given HC release image reference.

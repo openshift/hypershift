@@ -136,7 +136,7 @@ func (h *hostedClusterUpdateValidatingClient) Update(ctx context.Context, obj cr
 		return fmt.Errorf("failed to validate hostedcluster update: failed to get old hosted cluster: %w", err)
 	}
 
-	if err := validateHostedClusterUpdate(hcluster.DeepCopy(), oldCluster.DeepCopy()); err != nil {
+	if err := validateHostedClusterUpdate(ctx, hcluster.DeepCopy(), oldCluster.DeepCopy()); err != nil {
 		return fmt.Errorf("update rejected by admission: %w", err)
 	}
 
@@ -189,6 +189,17 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 			},
 			expectError:         true,
 			expectedErrorString: "HostedCluster.spec.networking.apiServer.port: Invalid value: 8443: Attempted to change an immutable field",
+		},
+		{
+			name: "Changing invalid cluster uuid, not allowed",
+			old: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{ClusterID: "84e94b91-7cb9-4832-ba4c-77ccfe055006"},
+			},
+			new: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{ClusterID: "asdf"},
+			},
+			expectError:         true,
+			expectedErrorString: "HostedCluster.spec.clusterID: Invalid value: \"asdf\": Error parsing cluster ID: invalid UUID length: 4",
 		},
 		{
 			name: "when .AWSPlatformSpec.RolesRef, .AWSPlatformSpec.roles .AWSPlatformSpec.*Creds are changed it should be allowed",
@@ -293,7 +304,9 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateHostedClusterUpdate(tc.new, tc.old)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			err := validateHostedClusterUpdate(ctx, tc.new, tc.old)
 			if (err != nil) != tc.expectError {
 				t.Errorf("expected error to be %t, was %t", tc.expectError, err != nil)
 			}

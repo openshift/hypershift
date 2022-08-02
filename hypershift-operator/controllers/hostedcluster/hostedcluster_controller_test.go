@@ -1211,7 +1211,7 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
 				ClusterID: "foobar",
 			}},
-			expectedResult: errors.New(`cannot parse cluster ID "foobar": invalid UUID length: 6`),
+			expectedResult: errors.New(`HostedCluster.spec.clusterID: Invalid value: "foobar": Error parsing cluster ID: invalid UUID length: 6`),
 		},
 	}
 

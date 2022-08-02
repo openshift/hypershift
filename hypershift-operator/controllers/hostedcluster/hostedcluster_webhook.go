@@ -48,7 +48,7 @@ func (webhook *Webhook) ValidateUpdate(ctx context.Context, oldObj, newObj runti
 		return apierrors.NewBadRequest(fmt.Sprintf("expected a HostedCluster but got a %T", oldObj))
 	}
 
-	return validateHostedClusterUpdate(newHC, oldHC)
+	return validateHostedClusterUpdate(ctx, newHC, oldHC)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type.
@@ -153,7 +153,10 @@ func validateStructEqual(x any, y any, path *field.Path) field.ErrorList {
 	return validateStructDeepEqual(v1, v2, path, errs)
 }
 
-func validateHostedClusterUpdate(new *hyperv1.HostedCluster, old *hyperv1.HostedCluster) error {
+func validateHostedClusterUpdate(ctx context.Context, new *hyperv1.HostedCluster, old *hyperv1.HostedCluster) error {
+
+	errs := validateClusterID(new)
+
 	filterMutableHostedClusterSpecFields(&new.Spec)
 	filterMutableHostedClusterSpecFields(&old.Spec)
 
@@ -165,7 +168,7 @@ func validateHostedClusterUpdate(new *hyperv1.HostedCluster, old *hyperv1.Hosted
 		old.Spec.Networking.APIServer.Port = new.Spec.Networking.APIServer.Port
 	}
 
-	errs := validateStructEqual(new.Spec, old.Spec, field.NewPath("HostedCluster.spec"))
+	errs = append(errs, validateStructEqual(new.Spec, old.Spec, field.NewPath("HostedCluster.spec"))...)
 
 	return errs.ToAggregate()
 }
