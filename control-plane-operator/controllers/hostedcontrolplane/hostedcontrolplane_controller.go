@@ -556,6 +556,15 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	createOrUpdate := r.createOrUpdate(hostedControlPlane)
 
+	if util.IsPrivateHCP(hostedControlPlane) {
+		r.Log.Info("Removing private IngressController")
+		// Ensure that if an ingress controller exists from a previous version, it is removed
+		if err = r.reconcilePrivateIngressController(ctx, hostedControlPlane); err != nil {
+			return fmt.Errorf("failed to reconcile private ingresscontroller: %w", err)
+		}
+	}
+
+	// Reconcile router
 	kasServiceStrategy := servicePublishingStrategyByType(hostedControlPlane, hyperv1.APIServer)
 	if util.IsPrivateHCP(hostedControlPlane) || kasServiceStrategy.Type == hyperv1.Route {
 		r.Log.Info("Reconciling router")
@@ -740,15 +749,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return fmt.Errorf("failed to reconcile ingress operator: %w", err)
 	}
 
-	// Reconcile router
-	if util.IsPrivateHCP(hostedControlPlane) {
-		r.Log.Info("Removing private IngressController")
-		// Ensure that if an ingress controller exists from a previous version, it is removed
-		if err = r.reconcilePrivateIngressController(ctx, hostedControlPlane); err != nil {
-			return fmt.Errorf("failed to reconcile private ingresscontroller: %w", err)
-		}
-	}
-
 	// Reconcile hosted cluster config operator
 	r.Log.Info("Reconciling Hosted Cluster Config Operator")
 	if err = r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, releaseImage, infraStatus, createOrUpdate); err != nil {
@@ -848,7 +848,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 			return fmt.Errorf("failed to reconcile apiserver route %s: %w", route.Name, err)
 		}
 
-	} else if util.IsPrivateHCP(hcp) {
+	} else if serviceStrategy.Type == hyperv1.LoadBalancer && util.IsPrivateHCP(hcp) {
 		apiServerPrivateService := manifests.KubeAPIServerPrivateService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, apiServerPrivateService, func() error {
 			return kas.ReconcilePrivateService(apiServerPrivateService, hcp, p.OwnerReference)
