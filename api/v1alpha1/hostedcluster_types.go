@@ -178,7 +178,7 @@ type HostedClusterSpec struct {
 	// changed.
 	//
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default={managementType: "Managed"}
+	// +kubebuilder:default={managementType: "Managed", managed: {storage: {type: "PersistentVolume", persistentVolume: {size: "4Gi"}}}}
 	// +immutable
 	Etcd EtcdSpec `json:"etcd"`
 
