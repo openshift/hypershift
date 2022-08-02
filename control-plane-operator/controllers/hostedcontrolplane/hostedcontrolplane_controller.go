@@ -274,7 +274,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Reconcile etcd restore status
-	if hostedControlPlane.Spec.Etcd.ManagementType == hyperv1.Managed && len(hostedControlPlane.Spec.Etcd.Managed.Storage.RestoreSnapshotURL) > 0 {
+	if hostedControlPlane.Spec.Etcd.ManagementType == hyperv1.Managed && hostedControlPlane.Spec.Etcd.Managed != nil && len(hostedControlPlane.Spec.Etcd.Managed.Storage.RestoreSnapshotURL) > 0 {
 		restoreCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
 		if restoreCondition == nil {
 			r.Log.Info("Reconciling etcd cluster restore status")
