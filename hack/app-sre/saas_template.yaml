@@ -21941,6 +21941,11 @@ objects:
                   type: object
                 etcd:
                   default:
+                    managed:
+                      storage:
+                        persistentVolume:
+                          size: 4Gi
+                        type: PersistentVolume
                     managementType: Managed
                   description: Etcd specifies configuration for the control plane
                     etcd cluster. The default ManagementType is Managed. Once set,
