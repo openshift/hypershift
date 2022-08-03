@@ -597,7 +597,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
 	}
 
-	sourceCert := manifests.IngressCert(hcp.Namespace)
+	sourceCert := cpomanifests.IngressCert(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(sourceCert), sourceCert); err != nil {
 		errs = append(errs, fmt.Errorf("failed to get ingress cert (%s/%s) from control plane: %w", sourceCert.Namespace, sourceCert.Name, err))
 	} else {
@@ -761,7 +761,7 @@ func secretHash(data []byte) string {
 }
 
 func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	oauthServingCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
+	oauthServingCert := cpomanifests.OpenShiftOAuthServerCert(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(oauthServingCert), oauthServingCert); err != nil {
 		return fmt.Errorf("cannot get oauth serving cert: %w", err)
 	}
