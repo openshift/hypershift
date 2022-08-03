@@ -807,7 +807,7 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 	}
 	userDataSecret.Data = map[string][]byte{
 		"disableTemplating": []byte(base64.StdEncoding.EncodeToString([]byte("true"))),
-		"value":             userDataValue,
+		"userdata":          userDataValue,
 	}
 	return nil
 }
