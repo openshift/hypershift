@@ -10,7 +10,7 @@ import (
 
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 )
 
@@ -60,7 +60,7 @@ func ReconcileKCMServiceServingCA(cm, combinedCA *corev1.ConfigMap, ownerRef con
 		cm.Data = map[string]string{}
 	}
 	if _, hasKey := cm.Data[ServiceServingCAKey]; !hasKey {
-		cm.Data[ServiceServingCAKey] = combinedCA.Data[pki.CASignerCertMapKey]
+		cm.Data[ServiceServingCAKey] = combinedCA.Data[certs.CASignerCertMapKey]
 	}
 	return nil
 }
