@@ -6,8 +6,8 @@ import (
 	"path"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/certs"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,7 +44,7 @@ func egressSelectorConfiguration() *kasv1beta1.EgressSelectorConfiguration {
 						TCP: &kasv1beta1.TCPTransport{
 							URL: fmt.Sprintf("https://konnectivity-server-local:%d", konnectivity.KonnectivityServerLocalPort),
 							TLSConfig: &kasv1beta1.TLSConfig{
-								CABundle:   cpath(kasVolumeClientCA().Name, pki.CASignerCertMapKey),
+								CABundle:   cpath(kasVolumeClientCA().Name, certs.CASignerCertMapKey),
 								ClientCert: cpath(kasVolumeKonnectivityClientCert().Name, corev1.TLSCertKey),
 								ClientKey:  cpath(kasVolumeKonnectivityClientCert().Name, corev1.TLSPrivateKeyKey),
 							},

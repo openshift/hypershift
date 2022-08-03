@@ -24,8 +24,8 @@ func TestReconcileSignedCertWithKeysAndAddresses(t *testing.T) {
 
 	caSecret := &corev1.Secret{
 		Data: map[string][]byte{
-			CASignerCertMapKey: certs.CertToPem(caCert),
-			CASignerKeyMapKey:  certs.PrivateKeyToPem(caKey),
+			certs.CASignerCertMapKey: certs.CertToPem(caCert),
+			certs.CASignerKeyMapKey:  certs.PrivateKeyToPem(caKey),
 		},
 	}
 
@@ -121,7 +121,7 @@ func TestReconcileSignedCertWithKeysAndAddresses(t *testing.T) {
 				X509UsageServerAuth,
 				corev1.TLSCertKey,
 				corev1.TLSPrivateKeyKey,
-				CASignerCertMapKey,
+				certs.CASignerCertMapKey,
 				[]string{"foo.svc.local"},
 				[]string{"127.0.0.1"},
 			); err != nil {
@@ -133,11 +133,11 @@ func TestReconcileSignedCertWithKeysAndAddresses(t *testing.T) {
 				t.Errorf("expectUpdate: %t differs froma actual %t", tc.expectUpdate, didUpdate)
 			}
 
-			if !hasCAHash(secret, caSecret) {
+			if !certs.HasCAHash(secret, caSecret) {
 				t.Error("secret doesn't have ca hash")
 			}
 
-			if diff := cmp.Diff(string(secret.Data[CASignerCertMapKey]), string(caSecret.Data[CASignerCertMapKey])); diff != "" {
+			if diff := cmp.Diff(string(secret.Data[certs.CASignerCertMapKey]), string(caSecret.Data[certs.CASignerCertMapKey])); diff != "" {
 				t.Errorf("Cacert differs from expected: %s", diff)
 			}
 		})

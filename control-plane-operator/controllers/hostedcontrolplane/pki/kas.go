@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -102,7 +103,7 @@ func isNumericIP(s string) bool {
 
 func ReconcileKubeConfig(secret, cert, ca *corev1.Secret, url string, key string, scope manifests.KubeconfigScope, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(secret)
-	caBytes := ca.Data[CASignerCertMapKey]
+	caBytes := ca.Data[certs.CASignerCertMapKey]
 	crtBytes, keyBytes := cert.Data[corev1.TLSCertKey], cert.Data[corev1.TLSPrivateKeyKey]
 	kubeCfgBytes, err := generateKubeConfig(url, crtBytes, keyBytes, caBytes)
 	if err != nil {

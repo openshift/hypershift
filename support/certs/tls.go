@@ -5,6 +5,7 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"crypto/md5"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
@@ -22,6 +23,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 )
 
@@ -31,6 +33,10 @@ const (
 	ValidityOneDay   = 24 * time.Hour
 	ValidityOneYear  = 365 * ValidityOneDay
 	ValidityTenYears = 10 * ValidityOneYear
+
+	CAHashAnnotation   = "hypershiftlite.openshift.io/ca-hash"
+	CASignerCertMapKey = "ca.crt"
+	CASignerKeyMapKey  = "ca.key"
 )
 
 // CertCfg contains all needed fields to configure a new certificate
@@ -329,4 +335,142 @@ func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemaini
 	}
 
 	return utilerrors.NewAggregate(errs)
+}
+
+// ReconcileSignedCert reconciles a certificate secret using the provided config. It will
+// rotate the cert if there are less than 30 days of validity left.
+func ReconcileSignedCert(
+	secret *corev1.Secret,
+	ca *corev1.Secret,
+	cn string,
+	org []string,
+	extUsages []x509.ExtKeyUsage,
+	crtKey string,
+	keyKey string,
+	caKey string,
+	dnsNames []string,
+	ips []string,
+) error {
+	if !validCA(ca) {
+		return fmt.Errorf("invalid CA signer secret %s for cert(cn=%s,o=%v)", ca.Name, cn, org)
+	}
+	var ipAddresses []net.IP
+	for _, ip := range ips {
+		address := net.ParseIP(ip)
+		if address == nil {
+			return fmt.Errorf("invalid IP address %s for cert(cn=%s,o=%v)", ip, cn, org)
+		}
+		ipAddresses = append(ipAddresses, address)
+	}
+
+	if !HasCAHash(secret, ca) {
+		annotateWithCA(secret, ca)
+	}
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data[caKey] = append([]byte(nil), ca.Data[CASignerCertMapKey]...)
+
+	cfg := &CertCfg{
+		Subject:      pkix.Name{CommonName: cn, Organization: org},
+		KeyUsages:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsages: extUsages,
+		Validity:     ValidityOneYear,
+		DNSNames:     dnsNames,
+		IPAddresses:  ipAddresses,
+	}
+	if err := ValidateKeyPair(secret.Data[keyKey], secret.Data[crtKey], cfg, 30*ValidityOneDay); err == nil {
+		return nil
+	}
+	certBytes, keyBytes, _, err := signCertificate(cfg, ca)
+	if err != nil {
+		return fmt.Errorf("error signing cert(cn=%s,o=%v): %w", cn, org, err)
+	}
+	secret.Data[crtKey] = certBytes
+	secret.Data[keyKey] = keyBytes
+	return nil
+}
+
+// ReconcileSelfSignedCA reconciles a CA secret. It is a oneshot function that will never regenerate the CA unless
+// the cert or key entry is missing from the secret.
+func ReconcileSelfSignedCA(secret *corev1.Secret, cn, ou string) error {
+	if hasKeys(secret, CASignerKeyMapKey, CASignerKeyMapKey) {
+		return nil
+	}
+	cfg := &CertCfg{
+		Subject:   pkix.Name{CommonName: cn, OrganizationalUnit: []string{ou}},
+		KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		Validity:  ValidityTenYears,
+		IsCA:      true,
+	}
+	key, crt, err := GenerateSelfSignedCertificate(cfg)
+	if err != nil {
+		return fmt.Errorf("failed to generate CA (cn=%s,ou=%s): %w", cn, ou, err)
+	}
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data[CASignerCertMapKey] = CertToPem(crt)
+	secret.Data[CASignerKeyMapKey] = PrivateKeyToPem(key)
+	return nil
+}
+
+func validCA(secret *corev1.Secret) bool {
+	return hasKeys(secret, CASignerCertMapKey, CASignerKeyMapKey)
+}
+
+func signCertificate(cfg *CertCfg, ca *corev1.Secret) (crtBytes []byte, keyBytes []byte, caBytes []byte, err error) {
+	caCert, caKey, err := decodeCA(ca)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to decode CA secret: %w", err)
+	}
+	key, crt, err := GenerateSignedCertificate(caKey, caCert, cfg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to generate etcd client secret: %w", err)
+	}
+	return CertToPem(crt), PrivateKeyToPem(key), CertToPem(caCert), nil
+}
+
+func HasCAHash(secret *corev1.Secret, ca *corev1.Secret) bool {
+	if secret.Annotations == nil {
+		return false
+	}
+	actualHash, hasHash := secret.Annotations[CAHashAnnotation]
+	if !hasHash {
+		return false
+	}
+	desiredHash := computeCAHash(ca)
+	return desiredHash == actualHash
+}
+
+func computeCAHash(ca *corev1.Secret) string {
+	return fmt.Sprintf("%x", md5.Sum(append(ca.Data[CASignerCertMapKey], ca.Data[CASignerKeyMapKey]...)))
+}
+
+func annotateWithCA(secret, ca *corev1.Secret) {
+	if secret.Annotations == nil {
+		secret.Annotations = map[string]string{}
+	}
+	secret.Annotations[CAHashAnnotation] = computeCAHash(ca)
+}
+
+func decodeCA(ca *corev1.Secret) (*x509.Certificate, *rsa.PrivateKey, error) {
+	crt, err := PemToCertificate(ca.Data[CASignerCertMapKey])
+	if err != nil {
+		return nil, nil, err
+	}
+	key, err := PemToPrivateKey(ca.Data[CASignerKeyMapKey])
+	if err != nil {
+		return nil, nil, err
+	}
+	return crt, key, nil
+}
+
+func hasKeys(secret *corev1.Secret, keys ...string) bool {
+	for _, key := range keys {
+		if _, hasKey := secret.Data[key]; !hasKey {
+			return false
+		}
+	}
+	return true
 }

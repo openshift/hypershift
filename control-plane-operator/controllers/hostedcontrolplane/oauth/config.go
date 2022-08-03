@@ -13,8 +13,8 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	osinv1 "github.com/openshift/api/osin/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 )
@@ -63,8 +63,8 @@ func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace 
 	}
 
 	caCertPath := ""
-	if _, hasCA := params.ServingCert.Data[pki.CASignerCertMapKey]; hasCA {
-		caCertPath = cpath(oauthVolumeServingCert().Name, pki.CASignerCertMapKey)
+	if _, hasCA := params.ServingCert.Data[certs.CASignerCertMapKey]; hasCA {
+		caCertPath = cpath(oauthVolumeServingCert().Name, certs.CASignerCertMapKey)
 	}
 
 	serverConfig := &osinv1.OsinServerConfig{

@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -317,8 +318,8 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 	args = append(args, []string{
 		fmt.Sprintf("--cert-dir=%s", cpath(kcmVolumeCertDir().Name, "")),
 		fmt.Sprintf("--cluster-cidr=%s", p.ClusterCIDR),
-		fmt.Sprintf("--cluster-signing-cert-file=%s", cpath(kcmVolumeClusterSigner().Name, pki.CASignerCertMapKey)),
-		fmt.Sprintf("--cluster-signing-key-file=%s", cpath(kcmVolumeClusterSigner().Name, pki.CASignerKeyMapKey)),
+		fmt.Sprintf("--cluster-signing-cert-file=%s", cpath(kcmVolumeClusterSigner().Name, certs.CASignerCertMapKey)),
+		fmt.Sprintf("--cluster-signing-key-file=%s", cpath(kcmVolumeClusterSigner().Name, certs.CASignerKeyMapKey)),
 		"--configure-cloud-routes=false",
 		"--controllers=*",
 		"--controllers=-ttl",
@@ -331,7 +332,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		"--leader-elect-resource-lock=configmapsleases",
 		"--leader-elect=true",
 		"--leader-elect-retry-period=3s",
-		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeCombinedCA().Name, pki.CASignerCertMapKey)),
+		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeCombinedCA().Name, certs.CASignerCertMapKey)),
 		fmt.Sprintf("--secure-port=%d", DefaultPort),
 		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),
 		fmt.Sprintf("--service-cluster-ip-range=%s", p.ServiceCIDR),
