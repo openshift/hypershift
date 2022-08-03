@@ -35,6 +35,24 @@ func KubeAPIServerPrivateService(hostedClusterNamespace string) *corev1.Service 
 	}
 }
 
+func KubeAPIServerExternalRoute(hostedClusterNamespace string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver",
+			Namespace: hostedClusterNamespace,
+		},
+	}
+}
+
+func KubeAPIServerInternalRoute(hostedClusterNamespace string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver-internal",
+			Namespace: hostedClusterNamespace,
+		},
+	}
+}
+
 func OauthServerService(hostedClusterNamespace string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{

@@ -302,7 +302,6 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx con
 	hasPrivateRouterEPService := false
 	hasPrivateIngressControllerEPService := false
 	for _, eps := range endpointServices.Items {
-		// If a private-router AWSEndpointService exists, it means that
 		if eps.Name == manifests.PrivateRouterService("").Name {
 			hasPrivateRouterEPService = true
 		}
@@ -310,7 +309,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx con
 			hasPrivateIngressControllerEPService = true
 		}
 	}
-	// Only if both private router and private ingress controller AWSEndpointServices exist, delete the obsolete one
+	// Only if both router and private ingress controller AWSEndpointServices exist, delete the obsolete one
 	if hasPrivateRouterEPService && hasPrivateIngressControllerEPService {
 		privateIngressControllerEPService := &hyperv1.AWSEndpointService{
 			ObjectMeta: metav1.ObjectMeta{

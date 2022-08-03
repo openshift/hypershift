@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
+	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -23,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -30,6 +32,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
 
@@ -592,6 +595,32 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 					}
 				}
 			})
+		}
+	})
+}
+
+func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureAllRoutesUseHCPRouter", func(t *testing.T) {
+		for _, svc := range hostedCluster.Spec.Services {
+			if svc.Service == hyperv1.APIServer && svc.Type != hyperv1.Route {
+				t.Skip("skipping test because APIServer is not exposed through a route")
+			}
+		}
+		// TODO alvaroaleman: This needs to be fixed up in the CNO
+		exceptions := sets.NewString("ovnkube-sbdb")
+		var routes routev1.RouteList
+		if err := hostClient.List(ctx, &routes, crclient.InNamespace(manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name)); err != nil {
+			t.Fatalf("failed to list routes: %v", err)
+		}
+		for _, route := range routes.Items {
+			if exceptions.Has(route.Name) {
+				continue
+			}
+			original := route.DeepCopy()
+			ingress.AddRouteLabel(&route)
+			if diff := cmp.Diff(route.GetLabels(), original.GetLabels()); diff != "" {
+				t.Errorf("route %s is missing the label to use the per-HCP router: %s", route.Name, diff)
+			}
 		}
 	})
 }
