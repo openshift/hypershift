@@ -66,6 +66,13 @@ func APIPortWithDefault(hcp *hyperv1.HostedControlPlane, defaultValue int32) int
 	return defaultValue
 }
 
+func APIPortWithDefaultFromHostedCluster(hc *hyperv1.HostedCluster, defaultValue int32) int32 {
+	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.Port != nil {
+		return *hc.Spec.Networking.APIServer.Port
+	}
+	return defaultValue
+}
+
 func AdvertiseAddress(hcp *hyperv1.HostedControlPlane) *string {
 	if hcp != nil && hcp.Spec.Networking.APIServer != nil {
 		return hcp.Spec.Networking.APIServer.AdvertiseAddress

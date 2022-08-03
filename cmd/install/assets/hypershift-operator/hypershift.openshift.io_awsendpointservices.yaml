@@ -152,9 +152,14 @@ spec:
                   type: object
                 type: array
               dnsName:
-                description: DNSName is the name for the record created in the hypershift
-                  private zone
+                description: 'Deprecated: Use DNSNames instead'
                 type: string
+              dnsNames:
+                description: DNSName are the names for the records created in the
+                  hypershift private zone
+                items:
+                  type: string
+                type: array
               dnsZoneID:
                 description: DNSZoneID is ID for the hypershift private zone
                 type: string

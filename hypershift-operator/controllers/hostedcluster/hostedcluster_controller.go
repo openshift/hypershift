@@ -4307,6 +4307,26 @@ func isUpgradeable(hcluster *hyperv1.HostedCluster) (bool, string, error) {
 // defaultAPIPortIfNeeded defaults the apiserver port on Azure management clusters as a workaround
 // for https://bugzilla.redhat.com/show_bug.cgi?id=2060650: Azure LBs with port 6443 don't work
 func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	if hcluster.Spec.Networking.APIServer != nil && hcluster.Spec.Networking.APIServer.Port != nil {
+		return nil
+	}
+	for _, publishingStrategy := range hcluster.Spec.Services {
+		if publishingStrategy.Service != hyperv1.APIServer {
+			continue
+		}
+		if publishingStrategy.Type == hyperv1.Route {
+			if hcluster.Spec.Networking.APIServer == nil {
+				hcluster.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
+			}
+
+			hcluster.Spec.Networking.APIServer.Port = k8sutilspointer.Int32(443)
+			if err := r.Update(ctx, hcluster); err != nil {
+				return fmt.Errorf("failed to update hostedcluster after defaulting the apiserver port: %w", err)
+			}
+		}
+		break
+	}
+
 	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityInfrastructure) {
 		return nil
 	}
@@ -4320,10 +4340,6 @@ func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hc
 	}
 	if hcluster.Spec.Networking.APIServer == nil {
 		hcluster.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
-	}
-
-	if hcluster.Spec.Networking.APIServer.Port != nil {
-		return nil
 	}
 
 	hcluster.Spec.Networking.APIServer.Port = k8sutilspointer.Int32Ptr(7443)

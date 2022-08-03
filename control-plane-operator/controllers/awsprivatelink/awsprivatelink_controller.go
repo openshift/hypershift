@@ -473,12 +473,8 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		return nil
 	}
 
-	var recordName string
-	if awsEndpointService.Name == manifests.KubeAPIServerPrivateService("").Name {
-		recordName = "api"
-	} else if awsEndpointService.Name == manifests.PrivateRouterService("").Name {
-		recordName = "*.apps"
-	} else {
+	recordNames := recordsForService(awsEndpointService, hcp)
+	if len(recordNames) == 0 {
 		log.Info("WARNING: no mapping from AWSEndpointService to DNS")
 		return nil
 	}
@@ -489,17 +485,43 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		return err
 	}
 
-	fqdn := fmt.Sprintf("%s.%s", recordName, zoneName)
-	err = createRecord(ctx, route53Client, zoneID, fqdn, *(endpointDNSEntries[0].DnsName))
-	if err != nil {
-		return err
+	var fqdns []string
+	for _, recordName := range recordNames {
+		fqdn := fmt.Sprintf("%s.%s", recordName, zoneName)
+		fqdns = append(fqdns, fqdn)
+		err = createRecord(ctx, route53Client, zoneID, fqdn, *(endpointDNSEntries[0].DnsName))
+		if err != nil {
+			return err
+		}
+		log.Info("DNS record created", "fqdn", fqdn)
 	}
-	log.Info("DNS record created", "fqdn", fqdn)
 
-	awsEndpointService.Status.DNSName = fqdn
+	//lint:ignore SA1019 we reset the deprecated field precicely
+	// because it is deprecated.
+	awsEndpointService.Status.DNSName = ""
+	awsEndpointService.Status.DNSNames = fqdns
 	awsEndpointService.Status.DNSZoneID = zoneID
 
 	return nil
+}
+
+func recordsForService(awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane) []string {
+	if awsEndpointService.Name == manifests.KubeAPIServerPrivateService("").Name {
+		return []string{"api"}
+
+	}
+	if awsEndpointService.Name != manifests.PrivateRouterService("").Name {
+		return nil
+	}
+
+	// If the kas is exposed through a route, the router needs to have DNS entries for both
+	// the kas and the apps domain
+	if m := servicePublishingStrategyByType(hcp, hyperv1.APIServer); m != nil && m.Type == hyperv1.Route {
+		return []string{"api", "*.apps"}
+	}
+
+	return []string{"*.apps"}
+
 }
 
 func apiTagToEC2Tag(name string, in []hyperv1.AWSResourceTag) []*ec2.Tag {
@@ -538,28 +560,37 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		log.Info("endpoint deleted", "endpointID", endpointID)
 	}
 
-	fqdn := awsEndpointService.Status.DNSName
 	zoneID := awsEndpointService.Status.DNSZoneID
 	if err != nil {
 		return false, err
 	}
-	if fqdn != "" && zoneID != "" {
-		record, err := findRecord(ctx, route53Client, zoneID, fqdn)
-		if err != nil {
-			return false, err
-		}
-		if record != nil {
-			err = deleteRecord(ctx, route53Client, zoneID, record)
+
+	for _, fqdn := range awsEndpointService.Status.DNSNames {
+		if fqdn != "" && zoneID != "" {
+			record, err := findRecord(ctx, route53Client, zoneID, fqdn)
 			if err != nil {
 				return false, err
 			}
-			log.Info("DNS record deleted", "fqdn", fqdn)
-		} else {
-			log.Info("no DNS record found", "fqdn", fqdn)
+			if record != nil {
+				err = deleteRecord(ctx, route53Client, zoneID, record)
+				if err != nil {
+					return false, err
+				}
+				log.Info("DNS record deleted", "fqdn", fqdn)
+			} else {
+				log.Info("no DNS record found", "fqdn", fqdn)
+			}
 		}
-	} else {
-		log.Info("no DNS status set in AWSEndpointService", "name", awsEndpointService.Name)
 	}
 
 	return true, nil
+}
+
+func servicePublishingStrategyByType(hcp *hyperv1.HostedControlPlane, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
+	for _, mapping := range hcp.Spec.Services {
+		if mapping.Service == svcType {
+			return &mapping.ServicePublishingStrategy
+		}
+	}
+	return nil
 }

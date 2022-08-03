@@ -1,6 +1,8 @@
 package ingress
 
 import (
+	"bytes"
+	_ "embed"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -16,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -83,7 +86,19 @@ func PrivateRouterImage(images map[string]string) string {
 	return images["haproxy-router"]
 }
 
-func ReconcilePrivateRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string) error {
+const (
+	routerTemplateConfigMapKey = "haproxy-config.template"
+	routerTemplateVolumeName   = "happroxy-config"
+)
+
+func ReconcileRouterTemplateConfigmap(cm *corev1.ConfigMap) {
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
+	}
+	cm.Data[routerTemplateConfigMapKey] = string(bytes.Replace(routerTemplate, []byte(`<<namespace>>`), []byte(cm.Namespace), 1))
+}
+
+func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, canonicalHostname string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: privateRouterLabels(),
@@ -94,9 +109,10 @@ func ReconcilePrivateRouterDeployment(deployment *appsv1.Deployment, ownerRef co
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(privateRouterContainerMain(), buildPrivateRouterContainerMain(image, deployment.Namespace)),
+					util.BuildContainer(privateRouterContainerMain(), buildPrivateRouterContainerMain(image, deployment.Namespace, canonicalHostname)),
 				},
-				ServiceAccountName: manifests.PrivateRouterServiceAccount("").Name,
+				ServiceAccountName: manifests.RouterServiceAccount("").Name,
+				Volumes:            []corev1.Volume{{Name: routerTemplateVolumeName, VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.RouterTemplateConfigMap("").Name}}}}},
 			},
 		},
 	}
@@ -113,7 +129,8 @@ func privateRouterContainerMain() *corev1.Container {
 	}
 }
 
-func buildPrivateRouterContainerMain(image, namespace string) func(*corev1.Container) {
+func buildPrivateRouterContainerMain(image, namespace, canonicalHostname string) func(*corev1.Container) {
+	const haproxyTemplateMountPath = "/usr/local/haproxy/hypershift-template"
 	return func(c *corev1.Container) {
 		c.Env = []corev1.EnvVar{
 			{
@@ -123,6 +140,10 @@ func buildPrivateRouterContainerMain(image, namespace string) func(*corev1.Conta
 			{
 				Name:  "ROUTER_ALLOW_WILDCARD_ROUTES",
 				Value: "false",
+			},
+			{
+				Name:  "ROUTER_CANONICAL_HOSTNAME",
+				Value: canonicalHostname,
 			},
 			{
 				Name:  "ROUTER_CIPHERS",
@@ -150,7 +171,7 @@ func buildPrivateRouterContainerMain(image, namespace string) func(*corev1.Conta
 			},
 			{
 				Name:  "ROUTER_SERVICE_NAME",
-				Value: manifests.PrivateRouterService("").Name,
+				Value: manifests.RouterPublicService("").Name,
 			},
 			{
 				Name:  "ROUTER_SERVICE_NAMESPACE",
@@ -192,6 +213,7 @@ func buildPrivateRouterContainerMain(image, namespace string) func(*corev1.Conta
 		c.Image = image
 		c.Args = []string{
 			"--namespace", namespace,
+			"--template=" + haproxyTemplateMountPath + "/" + routerTemplateConfigMapKey,
 		}
 		c.StartupProbe = &corev1.Probe{
 			FailureThreshold: 120,
@@ -223,13 +245,16 @@ func buildPrivateRouterContainerMain(image, namespace string) func(*corev1.Conta
 				Protocol:      corev1.ProtocolTCP,
 			},
 		}
+		c.VolumeMounts = []corev1.VolumeMount{
+			{Name: routerTemplateVolumeName, MountPath: haproxyTemplateMountPath},
+		}
 
 		// Needed for the router pods to work: https://github.com/openshift/cluster-ingress-operator/blob/649fe5dfe2c6f795651592a045be901b00a1f93a/assets/router/deployment.yaml#L22-L23
 		c.SecurityContext = &corev1.SecurityContext{AllowPrivilegeEscalation: utilpointer.Bool(true)}
 	}
 }
 
-func ReconcilePrivateRouterRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
+func ReconcileRouterRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(role)
 	role.Rules = []rbacv1.PolicyRule{
 		{
@@ -290,34 +315,36 @@ func ReconcilePrivateRouterRole(role *rbacv1.Role, ownerRef config.OwnerRef) err
 	return nil
 }
 
-func ReconcilePrivateRouterRoleBinding(rb *rbacv1.RoleBinding, ownerRef config.OwnerRef) error {
+func ReconcileRouterRoleBinding(rb *rbacv1.RoleBinding, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(rb)
 	rb.Subjects = []rbacv1.Subject{
 		{
 			Kind: "ServiceAccount",
-			Name: manifests.PrivateRouterServiceAccount("").Name,
+			Name: manifests.RouterServiceAccount("").Name,
 		},
 	}
 	rb.RoleRef = rbacv1.RoleRef{
 		APIGroup: rbacv1.SchemeGroupVersion.Group,
 		Kind:     "Role",
-		Name:     manifests.PrivateRouterRole("").Name,
+		Name:     manifests.RouterRole("").Name,
 	}
 	return nil
 }
 
-func ReconcilePrivateRouterServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
+func ReconcileRouterServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(sa)
 	util.EnsurePullSecret(sa, common.PullSecret("").Name)
 	return nil
 }
 
-func ReconcilePrivateRouterService(svc *corev1.Service, ownerRef config.OwnerRef) error {
+func ReconcileRouterService(svc *corev1.Service, ownerRef config.OwnerRef, kasPort int32, internal bool) error {
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
 	}
 	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
-	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
+	if internal {
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
+	}
 
 	if svc.Labels == nil {
 		svc.Labels = map[string]string{}
@@ -329,6 +356,11 @@ func ReconcilePrivateRouterService(svc *corev1.Service, ownerRef config.OwnerRef
 	svc.Spec.Selector = privateRouterLabels()
 	foundHTTP := false
 	foundHTTPS := false
+	foundKAS := false
+
+	if kasPort == 443 {
+		foundKAS = true
+	}
 	for i, port := range svc.Spec.Ports {
 		switch port.Name {
 		case "http":
@@ -341,6 +373,11 @@ func ReconcilePrivateRouterService(svc *corev1.Service, ownerRef config.OwnerRef
 			svc.Spec.Ports[i].TargetPort = intstr.FromString("https")
 			svc.Spec.Ports[i].Protocol = corev1.ProtocolTCP
 			foundHTTPS = true
+		case "kube-apiserver":
+			svc.Spec.Ports[i].Port = kasPort
+			svc.Spec.Ports[i].TargetPort = intstr.FromString("https")
+			svc.Spec.Ports[i].Protocol = corev1.ProtocolTCP
+			foundKAS = true
 		}
 	}
 	if !foundHTTP {
@@ -360,5 +397,25 @@ func ReconcilePrivateRouterService(svc *corev1.Service, ownerRef config.OwnerRef
 			Protocol:   corev1.ProtocolTCP,
 		})
 	}
+	if !foundKAS {
+		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
+			Name:       "kube-apiserver",
+			Port:       kasPort,
+			TargetPort: intstr.FromString("https"),
+			Protocol:   corev1.ProtocolTCP,
+		})
+	}
 	return nil
+}
+
+//go:embed router.template
+var routerTemplate []byte
+
+func AddRouteLabel(target crclient.Object) {
+	labels := target.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[HypershiftRouteLabel] = target.GetNamespace()
+	target.SetLabels(labels)
 }

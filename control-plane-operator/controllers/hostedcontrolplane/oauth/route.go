@@ -1,15 +1,18 @@
 package oauth
 
 import (
+	"fmt"
+
 	routev1 "github.com/openshift/api/route/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
 
-func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy, defaultIngressDomain string) error {
+func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy, defaultIngressDomain string, hcp *hyperv1.HostedControlPlane) error {
 	ownerRef.ApplyTo(route)
 
 	// The route host is considered immutable, so set it only once upon creation
@@ -18,6 +21,10 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, strategy *hy
 		switch {
 		case strategy.Route != nil && strategy.Route.Hostname != "":
 			route.Spec.Host = strategy.Route.Hostname
+			ingress.AddRouteLabel(route)
+		case !util.IsPublicHCP(hcp):
+			route.Spec.Host = fmt.Sprintf("oauth.apps.%s.hypershift.local", hcp.Name)
+			ingress.AddRouteLabel(route)
 		default:
 			route.Spec.Host = util.ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
 		}

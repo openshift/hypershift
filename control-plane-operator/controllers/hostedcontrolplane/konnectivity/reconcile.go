@@ -220,7 +220,9 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool
 		switch {
 		case !private && strategy.Route != nil && strategy.Route.Hostname != "":
 			route.Spec.Host = strategy.Route.Hostname
+			ingress.AddRouteLabel(route)
 		case private:
+			ingress.AddRouteLabel(route)
 			route.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", route.Name, ownerRef.Reference.Name)
 		default:
 			route.Spec.Host = util.ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
