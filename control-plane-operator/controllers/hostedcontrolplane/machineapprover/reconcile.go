@@ -1,9 +1,15 @@
 package machineapprover
 
 import (
+	"context"
+	"fmt"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
@@ -13,6 +19,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func ReconcileMachineApproverConfig(cm *corev1.ConfigMap, owner config.OwnerRef) error {
@@ -204,6 +211,50 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)
+
+	return nil
+}
+
+func ReconcileMachineApprover(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, machineApproverImage, availabilityProberImage string, createOrUpdate upsert.CreateOrUpdateFN, setDefaultSecurityContext bool) error {
+	role := manifests.MachineApproverRole(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, c, role, func() error {
+		return ReconcileMachineApproverRole(role, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver role: %w", err)
+	}
+
+	sa := manifests.MachineApproverServiceAccount(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, c, sa, func() error {
+		util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
+		config.OwnerRefFrom(hcp).ApplyTo(sa)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver service account: %w", err)
+	}
+
+	roleBinding := manifests.MachineApproverRoleBinding(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, c, roleBinding, func() error {
+		return ReconcileMachineApproverRoleBinding(roleBinding, role, sa, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver role binding: %w", err)
+	}
+	cm := manifests.ConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, c, cm, func() error {
+		return ReconcileMachineApproverConfig(cm, config.OwnerRefFrom(hcp))
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver config: %w", err)
+	}
+
+	if hcp.Status.KubeConfig != nil {
+		// Resolve the kubeconfig secret for machine-approver
+		kubeconfigSecretName := manifests.KASServiceKubeconfigSecret(hcp.Namespace).Name
+		deployment := manifests.MachineApproverDeployment(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, c, deployment, func() error {
+			return ReconcileMachineApproverDeployment(deployment, hcp, sa, kubeconfigSecretName, cm, machineApproverImage, availabilityProberImage, setDefaultSecurityContext)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
+		}
+	}
 
 	return nil
 }

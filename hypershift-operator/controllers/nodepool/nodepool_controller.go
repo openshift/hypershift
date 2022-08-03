@@ -23,7 +23,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -1444,7 +1443,7 @@ func enqueueParentNodePool(obj client.Object) []reconcile.Request {
 		return []reconcile.Request{}
 	}
 	return []reconcile.Request{
-		{NamespacedName: hyperutil.ParseNamespacedName(nodePoolName)},
+		{NamespacedName: supportutil.ParseNamespacedName(nodePoolName)},
 	}
 }
 

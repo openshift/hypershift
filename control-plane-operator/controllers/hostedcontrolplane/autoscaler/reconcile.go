@@ -1,11 +1,15 @@
 package autoscaler
 
 import (
+	"context"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,6 +18,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoscalerImage, availabilityProberImage string, setDefaultSecurityContext bool) error {
@@ -214,6 +219,61 @@ func ReconcileAutoscalerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Ro
 			Name:      sa.Name,
 			Namespace: sa.Namespace,
 		},
+	}
+
+	return nil
+}
+
+// ReconcileAutoscaler orchestrates reconciliation of autoscaler components.
+func ReconcileAutoscaler(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, autoscalerImage, availabilityProberImage string, createOrUpdate upsert.CreateOrUpdateFN, setDefaultSecurityContext bool) error {
+	autoscalerRole := manifests.AutoscalerRole(hcp.Namespace)
+	_, err := createOrUpdate(ctx, c, autoscalerRole, func() error {
+		return ReconcileAutoscalerRole(autoscalerRole, config.OwnerRefFrom(hcp))
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile autoscaler role: %w", err)
+	}
+
+	autoscalerServiceAccount := manifests.AutoscalerServiceAccount(hcp.Namespace)
+	_, err = createOrUpdate(ctx, c, autoscalerServiceAccount, func() error {
+		util.EnsurePullSecret(autoscalerServiceAccount, controlplaneoperator.PullSecret("").Name)
+		config.OwnerRefFrom(hcp).ApplyTo(autoscalerServiceAccount)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile autoscaler service account: %w", err)
+	}
+
+	autoscalerRoleBinding := manifests.AutoscalerRoleBinding(hcp.Namespace)
+	_, err = createOrUpdate(ctx, c, autoscalerRoleBinding, func() error {
+		return ReconcileAutoscalerRoleBinding(autoscalerRoleBinding, autoscalerRole, autoscalerServiceAccount, config.OwnerRefFrom(hcp))
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile autoscaler role binding: %w", err)
+	}
+
+	// The deployment depends on the kubeconfig being reported.
+	if hcp.Status.KubeConfig != nil {
+		// Resolve the kubeconfig secret for CAPI which the
+		// autoscaler is deployed alongside of.
+		capiKubeConfigSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: hcp.Namespace,
+				Name:      fmt.Sprintf("%s-kubeconfig", hcp.Spec.InfraID),
+			},
+		}
+		err = c.Get(ctx, client.ObjectKeyFromObject(capiKubeConfigSecret), capiKubeConfigSecret)
+		if err != nil {
+			return fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", capiKubeConfigSecret.Name, err)
+		}
+
+		autoscalerDeployment := manifests.AutoscalerDeployment(hcp.Namespace)
+		_, err = createOrUpdate(ctx, c, autoscalerDeployment, func() error {
+			return ReconcileAutoscalerDeployment(autoscalerDeployment, hcp, autoscalerServiceAccount, capiKubeConfigSecret, hcp.Spec.Autoscaling, autoscalerImage, availabilityProberImage, setDefaultSecurityContext)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
+		}
 	}
 
 	return nil

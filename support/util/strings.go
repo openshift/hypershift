@@ -1,6 +1,8 @@
 package util
 
-import "strings"
+import (
+	"strings"
+)
 
 // Contains checks if a comma-delimited string contains a specific string.
 func StringListContains(list string, s string) bool {

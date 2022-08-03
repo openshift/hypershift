@@ -13,7 +13,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
@@ -378,9 +377,10 @@ func ReconcileIgnitionServer(ctx context.Context,
 				RunAsUser: utilpointer.Int64Ptr(config.DefaultSecurityContextUser),
 			}
 		}
-		hyperutil.SetRestartAnnotation(hcp.ObjectMeta, ignitionServerDeployment)
-		hyperutil.SetDefaultPriorityClass(ignitionServerDeployment)
+
 		deploymentConfig := config.DeploymentConfig{}
+		deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+		deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 		deploymentConfig.SetDefaults(hcp, ignitionServerLabels, nil)
 		deploymentConfig.ApplyTo(ignitionServerDeployment)
 

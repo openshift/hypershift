@@ -19,7 +19,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -349,89 +348,6 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 			actualCondition.Message = ""
 			if !equality.Semantic.DeepEqual(test.ExpectedCondition, actualCondition) {
 				t.Errorf(cmp.Diff(test.ExpectedCondition, actualCondition))
-			}
-		})
-	}
-}
-
-// TestClusterAutoscalerArgs checks to make sure that fields specified in a ClusterAutoscaling spec
-// become arguments to the autoscaler.
-func TestClusterAutoscalerArgs(t *testing.T) {
-	tests := map[string]struct {
-		AutoscalerOptions   hyperv1.ClusterAutoscaling
-		ExpectedArgs        []string
-		ExpectedMissingArgs []string
-	}{
-		"contains only default arguments": {
-			AutoscalerOptions: hyperv1.ClusterAutoscaling{},
-			ExpectedArgs: []string{
-				"--cloud-provider=clusterapi",
-				"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
-				"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
-				"--clusterapi-cloud-config-authoritative",
-				"--skip-nodes-with-local-storage=false",
-				"--alsologtostderr",
-				"--v=4",
-			},
-			ExpectedMissingArgs: []string{
-				"--max-nodes-total",
-				"--max-graceful-termination-sec",
-				"--max-node-provision-time",
-				"--expendable-pods-priority-cutoff",
-			},
-		},
-		"contains all optional parameters": {
-			AutoscalerOptions: hyperv1.ClusterAutoscaling{
-				MaxNodesTotal:        pointer.Int32Ptr(100),
-				MaxPodGracePeriod:    pointer.Int32Ptr(300),
-				MaxNodeProvisionTime: "20m",
-				PodPriorityThreshold: pointer.Int32Ptr(-5),
-			},
-			ExpectedArgs: []string{
-				"--cloud-provider=clusterapi",
-				"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
-				"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
-				"--clusterapi-cloud-config-authoritative",
-				"--skip-nodes-with-local-storage=false",
-				"--alsologtostderr",
-				"--v=4",
-				"--max-nodes-total=100",
-				"--max-graceful-termination-sec=300",
-				"--max-node-provision-time=20m",
-				"--expendable-pods-priority-cutoff=-5",
-			},
-			ExpectedMissingArgs: []string{},
-		},
-	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			deployment := autoscaler.AutoScalerDeployment("test-ns")
-			sa := autoscaler.AutoScalerServiceAccount("test-ns")
-			secret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "test-ns",
-					Name:      "test-secret",
-				},
-			}
-			hc := &hyperv1.HostedCluster{}
-			hc.Name = "name"
-			hc.Namespace = "namespace"
-			err := reconcileAutoScalerDeployment(deployment, hc, sa, secret, test.AutoscalerOptions, "clusterAutoscalerImage", "availabilityProberImage", false)
-			if err != nil {
-				t.Error(err)
-			}
-
-			observedArgs := sets.NewString(deployment.Spec.Template.Spec.Containers[0].Args...)
-			for _, arg := range test.ExpectedArgs {
-				if !observedArgs.Has(arg) {
-					t.Errorf("Expected to find \"%s\" in observed arguments: %v", arg, observedArgs)
-				}
-			}
-
-			for _, arg := range test.ExpectedMissingArgs {
-				if observedArgs.Has(arg) {
-					t.Errorf("Did not expect to find \"%s\" in observed arguments", arg)
-				}
 			}
 		})
 	}
