@@ -29,6 +29,27 @@ func TestUpgradeControlPlane(t *testing.T) {
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 
+	// TODO @alvaroaleman: Remove once n-1 supports exposing apiserver through route
+	clusterOpts.BeforeApply = func(o crclient.Object) {
+		if hcluster, ok := o.(*hyperv1.HostedCluster); ok && hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+			for idx, service := range hcluster.Spec.Services {
+				if service.Service != hyperv1.APIServer {
+					continue
+				}
+				hcluster.Spec.Services[idx] = hyperv1.ServicePublishingStrategyMapping{
+					Service: hyperv1.APIServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type:         hyperv1.LoadBalancer,
+						LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{},
+					},
+				}
+				if service.Route != nil {
+					hcluster.Spec.Services[idx].LoadBalancer.Hostname = service.Route.Hostname
+				}
+			}
+		}
+	}
+
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
 
 	// Sanity check the cluster by waiting for the nodes to report ready

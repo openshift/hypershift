@@ -13,3 +13,12 @@ func InstallConfigConfigMap() *corev1.ConfigMap {
 		},
 	}
 }
+
+func APIServerEndpoints() *corev1.Endpoints {
+	return &corev1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "default",
+			Name:      "kubernetes",
+		},
+	}
+}

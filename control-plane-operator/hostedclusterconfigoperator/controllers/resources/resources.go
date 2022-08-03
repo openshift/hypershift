@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
+	"net/url"
+	"strconv"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -75,6 +77,7 @@ type reconciler struct {
 	oauthPort                 int32
 	versions                  map[string]string
 	operateOnReleaseImage     string
+	apiServerPort             int32
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -89,6 +92,19 @@ func eventHandler() handler.EventHandler {
 func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 	if err := imageregistryv1.AddToScheme(opts.Manager.GetScheme()); err != nil {
 		return fmt.Errorf("failed to add to scheme: %w", err)
+	}
+
+	apiServerPort := int32(443)
+	apiServerURL, err := url.Parse(opts.Manager.GetConfig().Host)
+	if err != nil {
+		return fmt.Errorf("failed to parse apiserver host %s as url: %w", opts.Manager.GetConfig().Host, err)
+	}
+	if p := apiServerURL.Port(); p != "" {
+		numericPort, err := strconv.Atoi(p)
+		if err != nil {
+			return fmt.Errorf("failed to parse apiserver port string %s as int: %w", p, err)
+		}
+		apiServerPort = int32(numericPort)
 	}
 	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: &reconciler{
 		client:                    opts.Manager.GetClient(),
@@ -106,6 +122,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		oauthPort:                 opts.OAuthPort,
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
+		apiServerPort:             apiServerPort,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -179,6 +196,18 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling guest cluster crds")
 	if err := r.reconcileCRDs(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile crds: %w", err))
+	}
+
+	log.Info("reconciling kubernetes.default endpoints")
+	endpoints := manifests.APIServerEndpoints()
+	if _, err := r.CreateOrUpdate(ctx, r.client, endpoints, func() error {
+		if len(endpoints.Subsets) == 0 || len(endpoints.Subsets[0].Ports) == 0 {
+			return nil
+		}
+		endpoints.Subsets[0].Ports[0].Port = r.apiServerPort
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoints: %w", err))
 	}
 
 	log.Info("reconciling guest cluster alert rules")

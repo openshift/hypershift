@@ -7,14 +7,20 @@ import (
 
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/gomega"
+	imagev1 "github.com/openshift/api/image/v1"
+	routev1 "github.com/openshift/api/route/v1"
+	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/api"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/testutil"
 	"go.uber.org/zap/zaptest"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -139,15 +145,226 @@ func TestReconcileAPIServerService(t *testing.T) {
 	hostname := "test.example.com"
 	allowCIDR := []hyperv1.CIDRBlock{"1.2.3.4/24"}
 	allowCIDRString := []string{"1.2.3.4/24"}
+
+	ownerRef := metav1.OwnerReference{
+		APIVersion:         "hypershift.openshift.io/v1alpha1",
+		Kind:               "HostedControlPlane",
+		Name:               "test",
+		Controller:         pointer.Bool(true),
+		BlockOwnerDeletion: pointer.Bool(true),
+	}
+	kasPublicService := func(m ...func(*corev1.Service)) corev1.Service {
+		svc := corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: targetNamespace,
+				Name:      manifests.KubeAPIServerService(targetNamespace).Name,
+				Annotations: map[string]string{
+					"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
+					hyperv1.ExternalDNSHostnameAnnotation:               hostname,
+				},
+				Labels: map[string]string{
+					"app": "kube-apiserver",
+					"hypershift.openshift.io/control-plane-component": "kube-apiserver",
+				},
+				OwnerReferences: []metav1.OwnerReference{ownerRef},
+			},
+			Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeLoadBalancer,
+				Ports: []corev1.ServicePort{
+					{
+						Protocol:   corev1.ProtocolTCP,
+						Port:       apiPort,
+						TargetPort: intstr.FromInt(6443),
+					},
+				},
+				LoadBalancerSourceRanges: allowCIDRString,
+				Selector: map[string]string{
+					"app": "kube-apiserver",
+					"hypershift.openshift.io/control-plane-component": "kube-apiserver",
+				},
+			},
+		}
+		for _, m := range m {
+			m(&svc)
+		}
+		return svc
+	}
+	kasPrivateService := func(m ...func(*corev1.Service)) corev1.Service {
+		return kasPublicService(append(m, func(s *corev1.Service) {
+			s.Name = manifests.KubeAPIServerPrivateService(targetNamespace).Name
+
+			delete(s.Annotations, hyperv1.ExternalDNSHostnameAnnotation)
+			s.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
+
+			s.Labels = nil
+
+			s.Spec.LoadBalancerSourceRanges = nil
+		})...)
+	}
+	kasPublicRoute := routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: targetNamespace,
+			Name:      "kube-apiserver",
+			Labels: map[string]string{
+				"hypershift.openshift.io/hosted-control-plane": targetNamespace,
+			},
+			Annotations: map[string]string{
+				"external-dns.alpha.kubernetes.io/hostname": hostname,
+			},
+		},
+		Spec: routev1.RouteSpec{
+			Host: hostname,
+			To: routev1.RouteTargetReference{
+				Kind: "Service",
+				Name: manifests.KubeAPIServerService("").Name,
+			},
+			TLS: &routev1.TLSConfig{
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+				Termination:                   routev1.TLSTerminationPassthrough,
+			},
+		},
+	}
+	kasInternalRoute := routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: targetNamespace,
+			Name:      "kube-apiserver-internal",
+			Labels: map[string]string{
+				"hypershift.openshift.io/hosted-control-plane": targetNamespace,
+			},
+		},
+		Spec: routev1.RouteSpec{
+			Host: "kubernetes.default",
+			To: routev1.RouteTargetReference{
+				Kind: "Service",
+				Name: manifests.KubeAPIServerService("").Name,
+			},
+			TLS: &routev1.TLSConfig{
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+				Termination:                   routev1.TLSTerminationPassthrough,
+			},
+		},
+	}
 	testsCases := []struct {
-		name             string
-		hcp              *hyperv1.HostedControlPlane
-		expectedServices []*corev1.Service
+		name                  string
+		endpointAccess        hyperv1.AWSEndpointAccessType
+		apiPublishingStrategy hyperv1.ServicePublishingStrategy
+
+		expectedServices []corev1.Service
+		expectedRoutes   []routev1.Route
 	}{
 		{
-			name: "EndpointAccess PublicAndPrivate, ServicePublishingStrategy LoadBalancer, hostname, custom port, and allowed CIDR blocks",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
+			name:           "LB strategy, public",
+			endpointAccess: hyperv1.Public,
+			apiPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					Hostname: hostname,
+				},
+			},
+
+			expectedServices: []corev1.Service{
+				kasPublicService(),
+			},
+		},
+		{
+			name:           "LB strategy, publicPrivate",
+			endpointAccess: hyperv1.PublicAndPrivate,
+			apiPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					Hostname: hostname,
+				},
+			},
+
+			expectedServices: []corev1.Service{
+				kasPublicService(),
+				kasPrivateService(),
+			},
+		},
+		{
+			name:           "LB strategy, private",
+			endpointAccess: hyperv1.Private,
+			apiPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					Hostname: hostname,
+				},
+			},
+
+			expectedServices: []corev1.Service{
+				kasPublicService(func(s *corev1.Service) {
+					s.Spec.Type = corev1.ServiceTypeClusterIP
+					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
+				}),
+				kasPrivateService(),
+			},
+		},
+		{
+			name:           "Route strategy, public",
+			endpointAccess: hyperv1.Public,
+			apiPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{
+					Hostname: hostname,
+				},
+			},
+
+			expectedServices: []corev1.Service{
+				kasPublicService(func(s *corev1.Service) {
+					s.Spec.Type = corev1.ServiceTypeClusterIP
+					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
+				}),
+			},
+			expectedRoutes: []routev1.Route{
+				kasPublicRoute,
+				kasInternalRoute,
+			},
+		},
+		{
+			name:           "Route strategy, publicPrivate",
+			endpointAccess: hyperv1.PublicAndPrivate,
+			apiPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{
+					Hostname: hostname,
+				},
+			},
+
+			expectedServices: []corev1.Service{
+				kasPublicService(func(s *corev1.Service) {
+					s.Spec.Type = corev1.ServiceTypeClusterIP
+					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
+				}),
+			},
+			expectedRoutes: []routev1.Route{
+				kasPublicRoute,
+				kasInternalRoute,
+			},
+		},
+		{
+			name:           "Route strategy, private",
+			endpointAccess: hyperv1.Private,
+			apiPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{
+					Hostname: hostname,
+				},
+			},
+
+			expectedServices: []corev1.Service{
+				kasPublicService(func(s *corev1.Service) {
+					s.Spec.Type = corev1.ServiceTypeClusterIP
+					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
+				}),
+			},
+			expectedRoutes: []routev1.Route{
+				kasInternalRoute,
+			},
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: targetNamespace,
 					Name:      "test",
@@ -162,88 +379,43 @@ func TestReconcileAPIServerService(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
-							EndpointAccess: hyperv1.PublicAndPrivate,
+							EndpointAccess: tc.endpointAccess,
 						},
 					},
-					Services: []hyperv1.ServicePublishingStrategyMapping{
-						{
-							Service: hyperv1.APIServer,
-							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-								Type: hyperv1.LoadBalancer,
-								LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
-									Hostname: hostname,
-								},
-							},
-						},
-					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{{
+						Service:                   hyperv1.APIServer,
+						ServicePublishingStrategy: tc.apiPublishingStrategy,
+					}},
 				},
-			},
-			expectedServices: []*corev1.Service{
-				{
-					TypeMeta: metav1.TypeMeta{},
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: targetNamespace,
-						Name:      manifests.KubeAPIServerService(targetNamespace).Name,
-						Annotations: map[string]string{
-							"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
-							hyperv1.ExternalDNSHostnameAnnotation:               hostname,
-						},
-					},
-					Spec: corev1.ServiceSpec{
-						Type: corev1.ServiceTypeLoadBalancer,
-						Ports: []corev1.ServicePort{
-							{
-								Protocol:   corev1.ProtocolTCP,
-								Port:       apiPort,
-								TargetPort: intstr.FromInt(int(apiPort)),
-							},
-						},
-						LoadBalancerSourceRanges: allowCIDRString,
-					},
-				},
-				{
-					TypeMeta: metav1.TypeMeta{},
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: targetNamespace,
-						Name:      manifests.KubeAPIServerPrivateService(targetNamespace).Name,
-						Annotations: map[string]string{
-							"service.beta.kubernetes.io/aws-load-balancer-type":     "nlb",
-							"service.beta.kubernetes.io/aws-load-balancer-internal": "true",
-						},
-					},
-					Spec: corev1.ServiceSpec{
-						Type: corev1.ServiceTypeLoadBalancer,
-						Ports: []corev1.ServicePort{
-							{
-								Protocol:   corev1.ProtocolTCP,
-								Port:       6443,
-								TargetPort: intstr.FromInt(6443),
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	for _, tc := range testsCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-
-			fakeClient := fake.NewClientBuilder().Build()
-			r := &HostedControlPlaneReconciler{
-				Client: fakeClient,
-				Log:    ctrl.LoggerFrom(context.TODO()),
 			}
 
-			err := r.reconcileAPIServerService(context.Background(), tc.hcp, controllerutil.CreateOrUpdate)
-			g.Expect(err).NotTo(HaveOccurred())
-			var actualService corev1.Service
-			for _, expectedService := range tc.expectedServices {
-				err = r.Get(context.Background(), client.ObjectKeyFromObject(expectedService), &actualService)
-				g.Expect(err).NotTo(HaveOccurred())
-				actualService.Spec.Selector = nil
-				g.Expect(actualService.Spec).To(Equal(expectedService.Spec))
-				g.Expect(actualService.Annotations).To(Equal(expectedService.Annotations))
+			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(ctx),
+			}
+
+			if err := r.reconcileAPIServerService(ctx, hcp, controllerutil.CreateOrUpdate); err != nil {
+				t.Fatalf("reconcileAPIServerService failed: %v", err)
+			}
+
+			var actualServices corev1.ServiceList
+			if err := fakeClient.List(ctx, &actualServices); err != nil {
+				t.Fatalf("failed to list services: %v", err)
+			}
+
+			if diff := testutil.MarshalYamlAndDiff(&actualServices, &corev1.ServiceList{Items: tc.expectedServices}, t); diff != "" {
+				t.Errorf("actual services differ from expected: %s", diff)
+			}
+
+			var actualRoutes routev1.RouteList
+			if err := fakeClient.List(ctx, &actualRoutes); err != nil {
+				t.Fatalf("failed to list routes: %v", err)
+			}
+			if diff := testutil.MarshalYamlAndDiff(&actualRoutes, &routev1.RouteList{Items: tc.expectedRoutes}, t); diff != "" {
+				t.Errorf("actual routes differ from expected: %s", diff)
 			}
 		})
 	}
@@ -750,4 +922,239 @@ type createTrackingWorkqueue struct {
 
 func (c *createTrackingWorkqueue) Add(item interface{}) {
 	c.items = append(c.items, item.(reconcile.Request))
+}
+
+func TestReconcileRouter(t *testing.T) {
+	t.Parallel()
+
+	const namespace = "test"
+
+	publicService := func(m ...func(*corev1.Service)) *corev1.Service {
+		svc := corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "router",
+				Namespace: namespace,
+				Annotations: map[string]string{
+					"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
+				},
+				Labels: map[string]string{"app": "private-router"},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:     corev1.ServiceTypeLoadBalancer,
+				Selector: map[string]string{"app": "private-router"},
+				Ports: []corev1.ServicePort{
+					{Name: "http", Port: 80, TargetPort: intstr.FromString("http"), Protocol: corev1.ProtocolTCP},
+					{Name: "https", Port: 443, TargetPort: intstr.FromString("https"), Protocol: corev1.ProtocolTCP},
+					{Name: "kube-apiserver", Port: 6443, TargetPort: intstr.FromString("https"), Protocol: corev1.ProtocolTCP},
+				},
+			},
+		}
+
+		for _, m := range m {
+			m(&svc)
+		}
+		return &svc
+	}
+	privateService := func(m ...func(*corev1.Service)) *corev1.Service {
+		return publicService(append(m, func(s *corev1.Service) {
+			s.Name = "private-router"
+			s.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
+		})...)
+	}
+	testCases := []struct {
+		name                 string
+		endpointAccess       hyperv1.AWSEndpointAccessType
+		existingObjects      []client.Object
+		expectedServices     []corev1.Service
+		expectedDeploynments []appsv1.Deployment
+	}{
+		{
+			name:           "Public HCP gets public LB ony",
+			endpointAccess: hyperv1.Public,
+			expectedServices: []corev1.Service{
+				*publicService(),
+			},
+		},
+		{
+			name:           "PublicPrivate gets public and private LB",
+			endpointAccess: hyperv1.PublicAndPrivate,
+			expectedServices: []corev1.Service{
+				*privateService(),
+				*publicService(),
+			},
+		},
+		{
+			name:           "Private gets private LB only",
+			endpointAccess: hyperv1.Private,
+			expectedServices: []corev1.Service{
+				*privateService(),
+			},
+		},
+		{
+			name:           "Public HCP, deployment is created when service has Ingress hostname set",
+			endpointAccess: hyperv1.Public,
+			existingObjects: []client.Object{publicService(func(s *corev1.Service) {
+				s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+					Hostname: "a27252241e22343d4a704f1ca560e4aa-9ab9cf5317a99da5.elb.ca-central-1.amazonaws.com",
+				}}
+			})},
+			expectedServices: []corev1.Service{
+				*publicService(func(s *corev1.Service) {
+					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+						Hostname: "a27252241e22343d4a704f1ca560e4aa-9ab9cf5317a99da5.elb.ca-central-1.amazonaws.com",
+					}}
+				}),
+			},
+			expectedDeploynments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.PrivateRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						"a27252241e22343d4a704f1ca560e4aa-9ab9cf5317a99da5.elb.ca-central-1.amazonaws.com",
+					)
+
+					return *dep
+				}(),
+			},
+		},
+		{
+			name:           "PublicPrivate HCP, deployment gets hostname from public service",
+			endpointAccess: hyperv1.PublicAndPrivate,
+			existingObjects: []client.Object{
+				publicService(func(s *corev1.Service) {
+					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+						Hostname: "a27252241e22343d4a704f1ca560e4aa-9ab9cf5317a99da5.elb.ca-central-1.amazonaws.com",
+					}}
+				}),
+				privateService(func(s *corev1.Service) {
+					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+						Hostname: "private-lb",
+					}}
+				}),
+			},
+			expectedServices: []corev1.Service{
+				*privateService(func(s *corev1.Service) {
+					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+						Hostname: "private-lb",
+					}}
+				}),
+				*publicService(func(s *corev1.Service) {
+					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+						Hostname: "a27252241e22343d4a704f1ca560e4aa-9ab9cf5317a99da5.elb.ca-central-1.amazonaws.com",
+					}}
+				}),
+			},
+			expectedDeploynments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.PrivateRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						"a27252241e22343d4a704f1ca560e4aa-9ab9cf5317a99da5.elb.ca-central-1.amazonaws.com",
+					)
+
+					return *dep
+				}(),
+			},
+		},
+		{
+			name:           "Private HCP, deployment gets hostname from private service",
+			endpointAccess: hyperv1.Private,
+			existingObjects: []client.Object{
+				privateService(func(s *corev1.Service) {
+					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+						Hostname: "private-lb",
+					}}
+				}),
+			},
+			expectedServices: []corev1.Service{
+				*privateService(func(s *corev1.Service) {
+					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+						Hostname: "private-lb",
+					}}
+				}),
+			},
+			expectedDeploynments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.PrivateRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						"private-lb",
+					)
+
+					return *dep
+				}(),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: tc.endpointAccess,
+						},
+					},
+				},
+			}
+
+			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(tc.existingObjects, hcp)...).Build()
+
+			r := HostedControlPlaneReconciler{
+				Client: client,
+				Log:    ctrl.LoggerFrom(ctx),
+			}
+
+			if err := r.reconcileRouter(ctx, hcp, &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}, controllerutil.CreateOrUpdate); err != nil {
+				t.Fatalf("reconcileRouter failed: %v", err)
+			}
+
+			var services corev1.ServiceList
+			if err := client.List(ctx, &services); err != nil {
+				t.Fatalf("failed to list services: %v", err)
+			}
+			if diff := testutil.MarshalYamlAndDiff(&services, &corev1.ServiceList{Items: tc.expectedServices}, t); diff != "" {
+				t.Errorf("actual services differ from expected: %s", diff)
+			}
+
+			var deployments appsv1.DeploymentList
+			if err := client.List(ctx, &deployments); err != nil {
+				t.Fatalf("failed to list deployments: %v", err)
+			}
+			if diff := testutil.MarshalYamlAndDiff(&deployments, &appsv1.DeploymentList{Items: tc.expectedDeploynments}, t); diff != "" {
+				t.Errorf("actual deployments differ from expected: %s", diff)
+			}
+		})
+	}
 }

@@ -214,13 +214,13 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 			}
 		}
-		services = getIngressServicePublishingStrategyMapping(o.NetworkType)
+		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 		if o.ExternalDNSDomain != "" {
 			for i, svc := range services {
 				switch svc.Service {
 				case hyperv1.APIServer:
 					if endpointAccess != hyperv1.Private {
-						services[i].LoadBalancer = &hyperv1.LoadBalancerPublishingStrategy{
+						services[i].Route = &hyperv1.RoutePublishingStrategy{
 							Hostname: fmt.Sprintf("api-%s.%s", o.Name, o.ExternalDNSDomain),
 						}
 					}
@@ -262,7 +262,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		if o.None.APIServerAddress != "" {
 			services = getServicePublishingStrategyMappingByAPIServerAddress(o.None.APIServerAddress, o.NetworkType)
 		} else {
-			services = getIngressServicePublishingStrategyMapping(o.NetworkType)
+			services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 		}
 	case o.Agent != nil:
 		platformSpec = hyperv1.PlatformSpec{
@@ -300,7 +300,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		case "NodePort":
 			services = getServicePublishingStrategyMappingByAPIServerAddress(o.Kubevirt.APIServerAddress, o.NetworkType)
 		case "Ingress":
-			services = getIngressServicePublishingStrategyMapping(o.NetworkType)
+			services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 		default:
 			panic(fmt.Sprintf("service publishing type %s is not supported", o.Kubevirt.ServicePublishingStrategy))
 		}
@@ -337,7 +337,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				SecurityGroupName: o.Azure.SecurityGroupName,
 			},
 		}
-		services = getIngressServicePublishingStrategyMapping(o.NetworkType)
+		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 
 	case o.PowerVS != nil:
 		buildIBMCloudCreds := func(name, apikey string) *corev1.Secret {
@@ -394,7 +394,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				IngressOperatorCloudCreds: corev1.LocalObjectReference{Name: powerVSResources.IngressOperatorCloudCreds.Name},
 			},
 		}
-		services = getIngressServicePublishingStrategyMapping(o.NetworkType)
+		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 	default:
 		panic("no platform specified")
 	}
@@ -615,13 +615,17 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 	}
 }
 
-func getIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType) []hyperv1.ServicePublishingStrategyMapping {
+func getIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType, usesExternalDNS bool) []hyperv1.ServicePublishingStrategyMapping {
 
+	apiServiceStrategy := hyperv1.LoadBalancer
+	if usesExternalDNS {
+		apiServiceStrategy = hyperv1.Route
+	}
 	ret := []hyperv1.ServicePublishingStrategyMapping{
 		{
 			Service: hyperv1.APIServer,
 			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-				Type: hyperv1.LoadBalancer,
+				Type: apiServiceStrategy,
 			},
 		},
 		{

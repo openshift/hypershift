@@ -10,6 +10,7 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
@@ -67,8 +68,10 @@ func ReconcileIgnitionServer(ctx context.Context,
 				switch {
 				case !util.ConnectsThroughInternetToControlplane(hcp.Spec.Platform):
 					ignitionServerRoute.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", ignitionServerRoute.Name, hcp.Name)
+					ingress.AddRouteLabel(ignitionServerRoute)
 				case serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "":
 					ignitionServerRoute.Spec.Host = serviceStrategy.Route.Hostname
+					ingress.AddRouteLabel(ignitionServerRoute)
 				default:
 					ignitionServerRoute.Spec.Host = util.ShortenRouteHostnameIfNeeded(ignitionServerRoute.Name, ignitionServerRoute.Namespace, defaultIngressDomain)
 				}
@@ -77,14 +80,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 			if ignitionServerRoute.Annotations == nil {
 				ignitionServerRoute.Annotations = map[string]string{}
 			}
-			if hcp.Spec.Platform.Type == hyperv1.AWSPlatform &&
-				(hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.PublicAndPrivate ||
-					hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.Private) {
-				if ignitionServerRoute.Labels == nil {
-					ignitionServerRoute.Labels = map[string]string{}
-				}
-				ignitionServerRoute.Labels[hyperutil.HypershiftRouteLabel] = controlPlaneNamespace
-			} else if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
+			if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 				ignitionServerRoute.ObjectMeta.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = serviceStrategy.Route.Hostname
 			}
 			ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{

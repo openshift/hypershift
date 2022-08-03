@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -8,6 +9,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/yaml"
 )
 
@@ -89,4 +94,52 @@ func sanitizeFilename(s string) string {
 		}
 	}
 	return "zz_fixture_" + result.String()
+}
+
+// RuntimeObjectIgnoreRvTypeMeta compares two kubernetes objects, ignoring their resource
+// version and TypeMeta. It is what you want 99% of the time.
+var RuntimeObjectIgnoreRvTypeMeta = cmp.Comparer(func(x, y runtime.Object) bool {
+	xCopy := x.DeepCopyObject()
+	yCopy := y.DeepCopyObject()
+	CleanRVAndTypeMeta(xCopy)
+	CleanRVAndTypeMeta(yCopy)
+	return cmp.Diff(xCopy, yCopy) == ""
+})
+
+func CleanRVAndTypeMeta(r runtime.Object) {
+	if metaObject, ok := r.(metav1.Object); ok {
+		metaObject.SetResourceVersion("")
+	}
+	if typeObject, ok := r.(interface{ SetGroupVersionKind(schema.GroupVersionKind) }); ok {
+		typeObject.SetGroupVersionKind(schema.GroupVersionKind{})
+	}
+	if _, isList := r.(metav1.ListInterface); isList {
+		objects, err := apimeta.ExtractList(r)
+		// ExtractList only errors if the list is not a list, so this
+		// should never error.
+		if err != nil {
+			panic(fmt.Sprintf("extract list failed: %v", err))
+		}
+		for _, item := range objects {
+			CleanRVAndTypeMeta(item)
+		}
+	}
+}
+
+// MarshalYamlAndDiff diffs the yaml representation of two runtime.Objects,
+// useful for getting a human-readable diff for bigger objects.
+func MarshalYamlAndDiff(a, b runtime.Object, t *testing.T) string {
+	t.Helper()
+
+	CleanRVAndTypeMeta(a)
+	CleanRVAndTypeMeta(b)
+	aYAML, err := yaml.Marshal(a)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+	bYAML, err := yaml.Marshal(b)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+	return cmp.Diff(string(aYAML), string(bYAML))
 }

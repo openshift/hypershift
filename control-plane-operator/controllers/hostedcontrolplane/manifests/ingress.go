@@ -37,37 +37,37 @@ func IngressPrivateIngressController(name string) *operatorv1.IngressController 
 	}
 }
 
-func PrivateRouterServiceAccount(ns string) *corev1.ServiceAccount {
+func RouterServiceAccount(ns string) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "private-router",
+			Name:      "router",
 			Namespace: ns,
 		},
 	}
 }
 
-func PrivateRouterRole(ns string) *rbacv1.Role {
+func RouterRole(ns string) *rbacv1.Role {
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "private-router",
+			Name:      "router",
 			Namespace: ns,
 		},
 	}
 }
 
-func PrivateRouterRoleBinding(ns string) *rbacv1.RoleBinding {
+func RouterRoleBinding(ns string) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "private-router",
+			Name:      "router",
 			Namespace: ns,
 		},
 	}
 }
 
-func PrivateRouterDeployment(ns string) *appsv1.Deployment {
+func RouterDeployment(ns string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "private-router",
+			Name:      "router",
 			Namespace: ns,
 		},
 	}
@@ -77,6 +77,24 @@ func PrivateRouterService(ns string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "private-router",
+			Namespace: ns,
+		},
+	}
+}
+
+func RouterPublicService(ns string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "router",
+			Namespace: ns,
+		},
+	}
+}
+
+func RouterTemplateConfigMap(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "router-template",
 			Namespace: ns,
 		},
 	}

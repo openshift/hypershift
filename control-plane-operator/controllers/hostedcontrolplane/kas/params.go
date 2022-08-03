@@ -69,6 +69,8 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference    *metav1.OwnerReference
 }
 
+const apiServerListenPort = 6443
+
 func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
@@ -76,7 +78,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ExternalAddress:      externalAPIAddress,
 		ExternalPort:         externalAPIPort,
 		InternalAddress:      fmt.Sprintf("api.%s.hypershift.local", hcp.Name),
-		InternalPort:         6443,
 		ExternalOAuthAddress: externalOAuthAddress,
 		ExternalOAuthPort:    externalOAuthPort,
 		ServiceAccountIssuer: hcp.Spec.IssuerURL,
@@ -104,6 +105,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	params.AdvertiseAddress = util.AdvertiseAddressWithDefault(hcp, config.DefaultAdvertiseAddress)
 	params.APIServerPort = util.APIPortWithDefault(hcp, config.DefaultAPIServerPort)
+	params.InternalPort = util.APIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
 		params.Images.Portieris = hcp.Annotations[hyperv1.PortierisImageAnnotation]
 	}
@@ -123,7 +125,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Scheme: corev1.URISchemeHTTPS,
-				Port:   intstr.FromInt(int(params.APIServerPort)),
+				Port:   intstr.FromInt(int(apiServerListenPort)),
 				Path:   "livez?exclude=etcd",
 			},
 		},
@@ -224,7 +226,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
-					Port:   intstr.FromInt(int(params.APIServerPort)),
+					Port:   intstr.FromInt(int(apiServerListenPort)),
 					Path:   "readyz",
 				},
 			},
