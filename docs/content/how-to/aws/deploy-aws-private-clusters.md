@@ -33,6 +33,9 @@ following steps will reference elements of the steps you already performed.
                 "ec2:CreateVpcEndpointServiceConfiguration",
                 "ec2:DescribeVpcEndpointServiceConfigurations",
                 "ec2:DeleteVpcEndpointServiceConfigurations",
+                "ec2:DescribeVpcEndpointServicePermissions",
+                "ec2:ModifyVpcEndpointServicePermissions",
+                "ec2:CreateTags",
                 "elasticloadbalancing:DescribeLoadBalancers"
               ],
               "Resource": "*"
@@ -54,6 +57,8 @@ following steps will reference elements of the steps you already performed.
                 "ec2:CreateVpcEndpointServiceConfiguration",
                 "ec2:DescribeVpcEndpointServiceConfigurations",
                 "ec2:DeleteVpcEndpointServiceConfigurations",
+                "ec2:DescribeVpcEndpointServicePermissions",
+                "ec2:ModifyVpcEndpointServicePermissions",
                 "ec2:CreateTags",
                 "elasticloadbalancing:DescribeLoadBalancers"
               ],
