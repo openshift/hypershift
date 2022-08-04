@@ -47,6 +47,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -196,10 +197,24 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 		return "", fmt.Errorf("couldn't locate operator container on deployment")
 	}
-	operatorImage, err := lookupOperatorImage(opts.ControlPlaneOperatorImage)
-	if err != nil {
-		return fmt.Errorf("failed to find operator image: %w", err)
+	var operatorImage string
+	if err := wait.PollImmediate(5*time.Second, 30*time.Second, func() (bool, error) {
+		operatorImage, err = lookupOperatorImage(opts.ControlPlaneOperatorImage)
+		if err != nil {
+			return false, err
+		}
+		// Apparently this is occasionally set to an empty string
+		if operatorImage == "" {
+			log.Info("operator image is empty, retrying")
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		if err != nil {
+			return fmt.Errorf("failed to find operator image: %w", err)
+		}
 	}
+
 	log.Info("using hosted control plane operator image", "operator-image", operatorImage)
 
 	createOrUpdate := upsert.New(opts.EnableCIDebugOutput)

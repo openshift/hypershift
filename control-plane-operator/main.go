@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -266,8 +267,19 @@ func NewStartCommand() *cobra.Command {
 			}
 			return "", fmt.Errorf("couldn't locate operator container on deployment")
 		}
-		hostedClusterConfigOperatorImage, err = lookupOperatorImage(hostedClusterConfigOperatorImage)
-		if err != nil {
+
+		if err := wait.PollImmediate(5*time.Second, 30*time.Second, func() (bool, error) {
+			hostedClusterConfigOperatorImage, err = lookupOperatorImage(hostedClusterConfigOperatorImage)
+			if err != nil {
+				return false, err
+			}
+			// Apparently this is occasionally set to an empty string
+			if hostedClusterConfigOperatorImage == "" {
+				setupLog.Info("hosted cluster config operator image is empty, retrying")
+				return false, nil
+			}
+			return true, nil
+		}); err != nil {
 			setupLog.Error(err, fmt.Sprintf("failed to find operator image: %s", err), "controller", "hosted-control-plane")
 			os.Exit(1)
 		}
