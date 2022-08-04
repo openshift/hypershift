@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openshift/hypershift/support/util"
+
 	corev1 "k8s.io/api/core/v1"
 
 	imagev1 "github.com/openshift/api/image/v1"
@@ -32,6 +34,10 @@ func (f *FakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecr
 					},
 					{
 						Name: "cluster-machine-approver",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: util.AvailabilityProberImageName,
 						From: &corev1.ObjectReference{Name: ""},
 					},
 				},

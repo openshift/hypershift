@@ -40,7 +40,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
@@ -74,6 +73,9 @@ const (
 	finalizer                  = "hypershift.openshift.io/finalizer"
 	DefaultAdminKubeconfigName = "admin-kubeconfig"
 	DefaultAdminKubeconfigKey  = "kubeconfig"
+
+	ImageStreamAutoscalerImage             = "cluster-autoscaler"
+	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 )
 
 type InfrastructureStatus struct {
@@ -2715,120 +2717,29 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 
 // reconcileAutoscaler orchestrates reconciliation of autoscaler components using
 func (r *HostedControlPlaneReconciler) reconcileAutoscaler(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, createOrUpdate upsert.CreateOrUpdateFN) error {
-	autoscalerRole := manifests.AutoscalerRole(hcp.Namespace)
-	_, err := createOrUpdate(ctx, r.Client, autoscalerRole, func() error {
-		return autoscaler.ReconcileAutoscalerRole(autoscalerRole, config.OwnerRefFrom(hcp))
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile autoscaler role: %w", err)
+	autoscalerImage, ok := images[ImageStreamAutoscalerImage]
+	if !ok {
+		return fmt.Errorf("autoscaler image not found")
 	}
 
-	autoscalerServiceAccount := manifests.AutoscalerServiceAccount(hcp.Namespace)
-	_, err = createOrUpdate(ctx, r.Client, autoscalerServiceAccount, func() error {
-		util.EnsurePullSecret(autoscalerServiceAccount, controlplaneoperator.PullSecret("").Name)
-		config.OwnerRefFrom(hcp).ApplyTo(autoscalerServiceAccount)
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile autoscaler service account: %w", err)
+	availabilityProberImage, ok := images[util.AvailabilityProberImageName]
+	if !ok {
+		return fmt.Errorf("availability prober image not found")
 	}
 
-	autoscalerRoleBinding := manifests.AutoscalerRoleBinding(hcp.Namespace)
-	_, err = createOrUpdate(ctx, r.Client, autoscalerRoleBinding, func() error {
-		return autoscaler.ReconcileAutoscalerRoleBinding(autoscalerRoleBinding, autoscalerRole, autoscalerServiceAccount, config.OwnerRefFrom(hcp))
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile autoscaler role binding: %w", err)
-	}
-
-	// The deployment depends on the kubeconfig being reported.
-	if hcp.Status.KubeConfig != nil {
-		// Resolve the kubeconfig secret for CAPI which the
-		// autoscaler is deployed alongside of.
-		capiKubeConfigSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: hcp.Namespace,
-				Name:      fmt.Sprintf("%s-kubeconfig", hcp.Spec.InfraID),
-			},
-		}
-		err = r.Client.Get(ctx, client.ObjectKeyFromObject(capiKubeConfigSecret), capiKubeConfigSecret)
-		if err != nil {
-			return fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", capiKubeConfigSecret.Name, err)
-		}
-
-		autoscalerImage, ok := images["cluster-autoscaler"]
-		if !ok {
-			return fmt.Errorf("autoscaler image not found")
-		}
-
-		availabilityProberImage, ok := images[util.AvailabilityProberImageName]
-		if !ok {
-			return fmt.Errorf("availability prober image not found")
-		}
-
-		autoscalerDeployment := manifests.AutoscalerDeployment(hcp.Namespace)
-		_, err = createOrUpdate(ctx, r.Client, autoscalerDeployment, func() error {
-			return autoscaler.ReconcileAutoscalerDeployment(autoscalerDeployment, hcp, autoscalerServiceAccount, capiKubeConfigSecret, hcp.Spec.Autoscaling, autoscalerImage, availabilityProberImage, r.SetDefaultSecurityContext)
-		})
-		if err != nil {
-			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
-		}
-	}
-
-	return nil
+	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, autoscalerImage, availabilityProberImage, createOrUpdate, r.SetDefaultSecurityContext)
 }
 
 func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, createOrUpdate upsert.CreateOrUpdateFN) error {
-	role := manifests.MachineApproverRole(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, role, func() error {
-		return machineapprover.ReconcileMachineApproverRole(role, config.OwnerRefFrom(hcp))
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine-approver role: %w", err)
+	machineApproverImage, ok := images[ImageStreamClusterMachineApproverImage]
+	if !ok {
+		return fmt.Errorf("autoscaler image not found")
 	}
 
-	sa := manifests.MachineApproverServiceAccount(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
-		util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
-		config.OwnerRefFrom(hcp).ApplyTo(sa)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine-approver service account: %w", err)
+	availabilityProberImage, ok := images[util.AvailabilityProberImageName]
+	if !ok {
+		return fmt.Errorf("availability prober image not found")
 	}
 
-	roleBinding := manifests.MachineApproverRoleBinding(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, roleBinding, func() error {
-		return machineapprover.ReconcileMachineApproverRoleBinding(roleBinding, role, sa, config.OwnerRefFrom(hcp))
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine-approver role binding: %w", err)
-	}
-	cm := manifests.ConfigMap(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, cm, func() error {
-		return machineapprover.ReconcileMachineApproverConfig(cm, config.OwnerRefFrom(hcp))
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine-approver config: %w", err)
-	}
-
-	if hcp.Status.KubeConfig != nil {
-		// Resolve the kubeconfig secret for machine-approver
-		kubeconfigSecretName := manifests.KASServiceKubeconfigSecret(hcp.Namespace).Name
-
-		machineApproverImage, ok := images["cluster-machine-approver"]
-		if !ok {
-			return fmt.Errorf("autoscaler image not found")
-		}
-
-		availabilityProberImage, ok := images[util.AvailabilityProberImageName]
-		if !ok {
-			return fmt.Errorf("availability prober image not found")
-		}
-
-		deployment := manifests.MachineApproverDeployment(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-			return machineapprover.ReconcileMachineApproverDeployment(deployment, hcp, sa, kubeconfigSecretName, cm, machineApproverImage, availabilityProberImage, r.SetDefaultSecurityContext)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
-		}
-	}
-
-	return nil
+	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, availabilityProberImage, createOrUpdate, r.SetDefaultSecurityContext)
 }

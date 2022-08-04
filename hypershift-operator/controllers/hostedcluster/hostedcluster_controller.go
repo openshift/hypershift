@@ -44,18 +44,16 @@ import (
 	"github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	ignitionserverreconciliation "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/autoscaler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/machineapprover"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
-	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -67,9 +65,9 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
+	hyperutil "github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"gopkg.in/ini.v1"
+	ini "gopkg.in/ini.v1"
 	jose "gopkg.in/square/go-jose.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -102,7 +100,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -160,7 +157,7 @@ type HostedClusterReconciler struct {
 	OIDCStorageProviderS3BucketName string
 	S3Client                        s3iface.S3API
 
-	ImageMetadataProvider util.ImageMetadataProvider
+	ImageMetadataProvider hyperutil.ImageMetadataProvider
 
 	MetricsSet metrics.MetricsSet
 
@@ -666,7 +663,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		newCondition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
 	}
-	meta.SetStatusCondition(&hcluster.Status.Conditions, util.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
+	meta.SetStatusCondition(&hcluster.Status.Conditions, hyperutil.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
 	// Set ValidReleaseImage condition
 	{
@@ -738,7 +735,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// if paused: ensure associated HostedControlPlane (if it exists) is also paused and stop reconciliation
-	if isPaused, duration := util.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
+	if isPaused, duration := hyperutil.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
 		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -822,15 +819,15 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
 	cpoHasUtilities := false
-	if _, hasLabel := util.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorSubcommandsLabel]; hasLabel {
+	if _, hasLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorSubcommandsLabel]; hasLabel {
 		cpoHasUtilities = true
 	}
 	utilitiesImage := controlPlaneOperatorImage
 	if !cpoHasUtilities {
 		utilitiesImage = r.HypershiftOperatorImage
 	}
-	_, ignitionServerHasHealthzHandler := util.ImageLabels(controlPlaneOperatorImageMetadata)[ignitionServerHealthzHandlerLabel]
-	_, controlplaneOperatorManagesIgnitionServer := util.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
+	_, ignitionServerHasHealthzHandler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[ignitionServerHealthzHandlerLabel]
+	_, controlplaneOperatorManagesIgnitionServer := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
 
 	p, err := platform.GetPlatform(hcluster, utilitiesImage)
 	if err != nil {
@@ -1262,28 +1259,28 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the CAPI manager components
-	err = r.reconcileCAPIManager(ctx, createOrUpdate, hcluster)
+	err = r.reconcileCAPIManager(ctx, createOrUpdate, hcluster, hcp)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
 	}
 
 	// Reconcile the CAPI provider components
-	if err = r.reconcileCAPIProvider(ctx, createOrUpdate, hcluster, capiProviderDeploymentSpec, p); err != nil {
+	if err = r.reconcileCAPIProvider(ctx, createOrUpdate, hcluster, hcp, capiProviderDeploymentSpec, p); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
 	// In >= 4.11 We want to move most of the components reconciliation down to the CPO https://issues.redhat.com/browse/HOSTEDCP-375.
 	// For IBM existing clusters < 4.11 we need to stay consistent and keep deploying existing pods to satisfy validations.
 	// TODO (alberto): drop this after dropping < 4.11 support.
-	if _, hasLabel := util.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]; !hasLabel {
-		// Reconcile the autoscaler
+	if _, hasLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]; !hasLabel {
+		// Reconcile the autoscaler.
 		err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
 		}
 	}
-	if _, hasLabel := util.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]; !hasLabel {
-		// Reconcile the machine approver
+	if _, hasLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]; !hasLabel {
+		// Reconcile the machine approver.
 		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
 		}
@@ -1518,7 +1515,7 @@ func ensureHCPAWSRolesBackwardCompatibility(hc *hyperv1.HostedCluster, hcp *hype
 }
 
 // reconcileCAPIManager orchestrates orchestrates of  all CAPI manager components.
-func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -1562,7 +1559,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	// Reconcile CAPI manager service account
 	capiManagerServiceAccount := clusterapi.CAPIManagerServiceAccount(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, capiManagerServiceAccount, func() error {
-		util.EnsurePullSecret(capiManagerServiceAccount, controlplaneoperator.PullSecret("").Name)
+		hyperutil.EnsurePullSecret(capiManagerServiceAccount, controlplaneoperator.PullSecret("").Name)
 		return nil
 	})
 	if err != nil {
@@ -1617,7 +1614,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	_, err = createOrUpdate(ctx, r.Client, capiManagerDeployment, func() error {
 		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api/pull/4709
 		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, capiManagerServiceAccount, capiImage, r.SetDefaultSecurityContext)
+		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, hcp, capiManagerServiceAccount, capiImage, r.SetDefaultSecurityContext)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager deployment: %w", err)
@@ -1628,7 +1625,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 
 // reconcileCAPIProvider orchestrates reconciliation of the CAPI provider
 // components for a given platform.
-func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster,
+func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane,
 	capiProviderDeploymentSpec *appsv1.DeploymentSpec, p platform.Platform) error {
 	if capiProviderDeploymentSpec == nil {
 		// If there's no capiProviderDeploymentSpec implementation return early.
@@ -1653,7 +1650,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 	// Reconcile CAPI provider service account
 	capiProviderServiceAccount := clusterapi.CAPIProviderServiceAccount(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, capiProviderServiceAccount, func() error {
-		util.EnsurePullSecret(capiProviderServiceAccount, controlplaneoperator.PullSecret("").Name)
+		hyperutil.EnsurePullSecret(capiProviderServiceAccount, controlplaneoperator.PullSecret("").Name)
 		return nil
 	})
 	if err != nil {
@@ -1694,35 +1691,19 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		// Enforce ServiceAccount.
 		deployment.Spec.Template.Spec.ServiceAccountName = capiProviderServiceAccount.Name
 
-		// set security context
-		if r.SetDefaultSecurityContext {
-			deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-				RunAsUser: k8sutilspointer.Int64Ptr(config.DefaultSecurityContextUser),
-			}
-		}
-
-		hyperutil.SetColocation(hcluster.ObjectMeta, deployment)
-		hyperutil.SetNodeSelector(hcluster, deployment)
 		// TODO (alberto): Reconsider enable this back when we face a real need
 		// with no better solution.
-		// hyperutil.SetRestartAnnotation(hc, deployment)
-		hyperutil.SetControlPlaneIsolation(hcluster.ObjectMeta, deployment)
-		hyperutil.SetDefaultPriorityClass(deployment)
-
-		switch hcluster.Spec.ControllerAvailabilityPolicy {
-		case hyperv1.HighlyAvailable:
-			maxSurge := intstr.FromInt(1)
-			maxUnavailable := intstr.FromInt(1)
-			deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
-			deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
-				MaxSurge:       &maxSurge,
-				MaxUnavailable: &maxUnavailable,
-			}
-			hyperutil.SetDeploymentReplicas(hcluster, deployment, 3)
-			hyperutil.SetMultizoneSpread(labels, deployment)
-		default:
-			hyperutil.SetDeploymentReplicas(hcluster, deployment, 1)
+		// deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+		deploymentConfig := config.DeploymentConfig{
+			Scheduling: config.Scheduling{
+				PriorityClass: config.DefaultPriorityClass,
+			},
+			SetDefaultSecurityContext: r.SetDefaultSecurityContext,
 		}
+
+		deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+		deploymentConfig.ApplyTo(deployment)
+
 		return nil
 	})
 	if err != nil {
@@ -1808,7 +1789,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	// Reconcile operator deployment
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, controlPlaneOperatorImage, utilitiesImage, r.SetDefaultSecurityContext, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()), defaultIngressDomain, cpoHasUtilities, r.MetricsSet)
+		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, hostedControlPlane, controlPlaneOperatorImage, utilitiesImage, r.SetDefaultSecurityContext, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()), defaultIngressDomain, cpoHasUtilities, r.MetricsSet)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1834,7 +1815,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 			podMonitor.Annotations = map[string]string{}
 		}
 		podMonitor.Annotations[HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
-		util.ApplyClusterIDLabelToPodMonitor(&podMonitor.Spec.PodMetricsEndpoints[0], hcluster.Spec.ClusterID)
+		hyperutil.ApplyClusterIDLabelToPodMonitor(&podMonitor.Spec.PodMetricsEndpoints[0], hcluster.Spec.ClusterID)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator pod monitor: %w", err)
@@ -1868,78 +1849,19 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1
 // both the HostedCluster and the HostedControlPlane which the autoscaler takes
 // inputs from.
 func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string) error {
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
+	clusterAutoscalerImage, err := r.getPayloadImage(ctx, hcluster, ImageStreamAutoscalerImage)
 	if err != nil {
-		return fmt.Errorf("failed to get control plane namespace: %w", err)
+		return fmt.Errorf("failed to get image for machine approver: %w", err)
+	}
+	// TODO: can remove this override when all IBM production clusters upgraded to a version that uses the release image
+	if imageVal, ok := hcluster.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
+		clusterAutoscalerImage = imageVal
 	}
 
-	// Reconcile autoscaler role
-	autoScalerRole := autoscaler.AutoScalerRole(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, autoScalerRole, func() error {
-		return reconcileAutoScalerRole(autoScalerRole)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile autoscaler role: %w", err)
-	}
-
-	// Reconcile autoscaler service account
-	autoScalerServiceAccount := autoscaler.AutoScalerServiceAccount(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, autoScalerServiceAccount, func() error {
-		util.EnsurePullSecret(autoScalerServiceAccount, controlplaneoperator.PullSecret("").Name)
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile autoscaler service account: %w", err)
-	}
-
-	// Reconcile autoscaler role binding
-	autoScalerRoleBinding := autoscaler.AutoScalerRoleBinding(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, autoScalerRoleBinding, func() error {
-		return reconcileAutoScalerRoleBinding(autoScalerRoleBinding, autoScalerRole, autoScalerServiceAccount)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile autoscaler role binding: %w", err)
-	}
-
-	// The deployment depends on the kubeconfig being reported.
-	if hcp.Status.KubeConfig != nil {
-		// Resolve the kubeconfig secret for CAPI which the
-		// autoscaler is deployed alongside of.
-		capiKubeConfigSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: hcp.Namespace,
-				Name:      fmt.Sprintf("%s-kubeconfig", hcluster.Spec.InfraID),
-			},
-		}
-		err = r.Client.Get(ctx, client.ObjectKeyFromObject(capiKubeConfigSecret), capiKubeConfigSecret)
-		if err != nil {
-			return fmt.Errorf("failed to get hosted controlplane kubeconfig secret %q: %w", capiKubeConfigSecret.Name, err)
-		}
-
-		// Reconcile autoscaler deployment
-		clusterAutoscalerImage, err := r.getPayloadImage(ctx, hcluster, ImageStreamAutoscalerImage)
-		if err != nil {
-			return fmt.Errorf("failed to get image for cluster autoscaler: %w", err)
-		}
-		// TODO: can remove this override when all IBM production clusters upgraded to a version that uses the release image
-		if imageVal, ok := hcluster.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
-			clusterAutoscalerImage = imageVal
-		}
-
-		autoScalerDeployment := autoscaler.AutoScalerDeployment(controlPlaneNamespace.Name)
-		_, err = createOrUpdate(ctx, r.Client, autoScalerDeployment, func() error {
-			return reconcileAutoScalerDeployment(autoScalerDeployment, hcluster, autoScalerServiceAccount, capiKubeConfigSecret, hcluster.Spec.Autoscaling, clusterAutoscalerImage, utilitiesImage, r.SetDefaultSecurityContext)
-		})
-		if err != nil {
-			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
-		}
-	}
-
-	return nil
+	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, clusterAutoscalerImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext)
 }
 
-// getControlPlaneOperatorImage resolves the appropriate control plane operator
+// GetControlPlaneOperatorImage resolves the appropriate control plane operator
 // image based on the following order of precedence (from most to least
 // preferred):
 //
@@ -1975,7 +1897,7 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	return hypershiftOperatorImage, nil
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, cpoImage, utilitiesImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine, defaultIngressDomain string, cpoHasUtilities bool, metricsSet metrics.MetricsSet) error {
+func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, cpoImage, utilitiesImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine, defaultIngressDomain string, cpoHasUtilities bool, metricsSet metrics.MetricsSet) error {
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("80Mi"),
@@ -1983,7 +1905,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 		},
 	}
 	// preserve existing resource requirements for main cpo container
-	mainContainer := util.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
+	mainContainer := hyperutil.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
 		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
 			cpoResources = mainContainer.Resources
@@ -2118,10 +2040,8 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 		)
 	}
 
-	mainContainer = util.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
+	mainContainer = hyperutil.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
 	proxy.SetEnvVars(&mainContainer.Env)
-
-	hyperutil.SetDeploymentReplicas(hc, deployment, 1)
 
 	// Add platform specific settings
 	switch hc.Spec.Platform.Type {
@@ -2195,7 +2115,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 
 	if hc.Spec.AdditionalTrustBundle != nil {
 		// Add trusted-ca mount with optional configmap
-		util.DeploymentAddTrustBundleVolume(hc.Spec.AdditionalTrustBundle, deployment)
+		hyperutil.DeploymentAddTrustBundleVolume(hc.Spec.AdditionalTrustBundle, deployment)
 	}
 
 	// set security context
@@ -2205,11 +2125,16 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 		}
 	}
 
-	hyperutil.SetColocation(hc.ObjectMeta, deployment)
-	hyperutil.SetRestartAnnotation(hc.ObjectMeta, deployment)
-	hyperutil.SetControlPlaneIsolation(hc.ObjectMeta, deployment)
-	hyperutil.SetDefaultPriorityClass(deployment)
-	hyperutil.SetReleaseImageAnnotation(deployment, hc.Spec.Release.Image)
+	deploymentConfig := config.DeploymentConfig{
+		Scheduling: config.Scheduling{
+			PriorityClass: config.DefaultPriorityClass,
+		},
+		SetDefaultSecurityContext: setDefaultSecurityContext,
+	}
+
+	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+	deploymentConfig.ApplyTo(deployment)
+	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
 	return nil
 }
 
@@ -2438,7 +2363,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	return nil
 }
 
-func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool) error {
+func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool) error {
 	defaultMode := int32(416)
 	capiManagerLabels := map[string]string{
 		"name":                        "cluster-api",
@@ -2543,26 +2468,16 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 		}
 	}
 
-	hyperutil.SetColocation(hc.ObjectMeta, deployment)
-	hyperutil.SetNodeSelector(hc, deployment)
-	hyperutil.SetRestartAnnotation(hc.ObjectMeta, deployment)
-	hyperutil.SetControlPlaneIsolation(hc.ObjectMeta, deployment)
-	hyperutil.SetDefaultPriorityClass(deployment)
-	switch hc.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		maxSurge := intstr.FromInt(1)
-		maxUnavailable := intstr.FromInt(1)
-		deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
-		deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
-			MaxSurge:       &maxSurge,
-			MaxUnavailable: &maxUnavailable,
-		}
-		hyperutil.SetDeploymentReplicas(hc, deployment, 3)
-		hyperutil.SetMultizoneSpread(capiManagerLabels, deployment)
-	default:
-		hyperutil.SetDeploymentReplicas(hc, deployment, 1)
+	deploymentConfig := config.DeploymentConfig{
+		Scheduling: config.Scheduling{
+			PriorityClass: config.DefaultPriorityClass,
+		},
+		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
 
+	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+	deploymentConfig.ApplyTo(deployment)
+	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
 	return nil
 }
 
@@ -2721,214 +2636,6 @@ func reconcileCAPIProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.
 			Namespace: sa.Namespace,
 		},
 	}
-	return nil
-}
-
-func reconcileAutoScalerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoscalerImage, availabilityProberImage string, setDefaultSecurityContext bool) error {
-	args := []string{
-		"--cloud-provider=clusterapi",
-		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
-		"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
-		"--clusterapi-cloud-config-authoritative",
-		// TODO (alberto): Is this a fair assumption?
-		// There's currently pods with local storage e.g grafana and image-registry.
-		// Without this option after after a scaling out operation and an “unfortunate” reschedule
-		// we might end up locked with three nodes.
-		"--skip-nodes-with-local-storage=false",
-		"--alsologtostderr",
-		fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
-		fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
-		fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
-		"--v=4",
-	}
-
-	// TODO if the options for the cluster autoscaler continues to grow, we should take inspiration
-	// from the cluster-autoscaler-operator and create some utility functions for these assignments.
-	if options.MaxNodesTotal != nil {
-		arg := fmt.Sprintf("%s=%d", "--max-nodes-total", *options.MaxNodesTotal)
-		args = append(args, arg)
-	}
-
-	if options.MaxPodGracePeriod != nil {
-		arg := fmt.Sprintf("%s=%d", "--max-graceful-termination-sec", *options.MaxPodGracePeriod)
-		args = append(args, arg)
-	}
-
-	if options.MaxNodeProvisionTime != "" {
-		arg := fmt.Sprintf("%s=%s", "--max-node-provision-time", options.MaxNodeProvisionTime)
-		args = append(args, arg)
-	}
-
-	if options.PodPriorityThreshold != nil {
-		arg := fmt.Sprintf("%s=%d", "--expendable-pods-priority-cutoff", *options.PodPriorityThreshold)
-		args = append(args, arg)
-	}
-
-	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32Ptr(1),
-		Selector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"app": "cluster-autoscaler",
-			},
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{
-					"app":                         "cluster-autoscaler",
-					hyperv1.ControlPlaneComponent: "cluster-autoscaler",
-				},
-			},
-			Spec: corev1.PodSpec{
-				ServiceAccountName:            sa.Name,
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
-				Tolerations: []corev1.Toleration{
-					{
-						Key:    "node-role.kubernetes.io/master",
-						Effect: corev1.TaintEffectNoSchedule,
-					},
-				},
-				Volumes: []corev1.Volume{
-					{
-						Name: "target-kubeconfig",
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{
-								SecretName: kubeConfigSecret.Name,
-								Items: []corev1.KeyToPath{
-									{
-										// TODO: should the key be published on status?
-										Key:  "value",
-										Path: "target-kubeconfig",
-									},
-								},
-							},
-						},
-					},
-				},
-				Containers: []corev1.Container{
-					{
-						Name:            "cluster-autoscaler",
-						Image:           clusterAutoscalerImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "target-kubeconfig",
-								MountPath: "/mnt/kubeconfig",
-							},
-						},
-						Env: []corev1.EnvVar{
-							{
-								Name: "MY_NAMESPACE",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.namespace",
-									},
-								},
-							},
-							{
-								Name:  "CAPI_GROUP",
-								Value: "cluster.x-k8s.io",
-							},
-						},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("120Mi"),
-								corev1.ResourceCPU:    resource.MustParse("10m"),
-							},
-						},
-						Command: []string{"/usr/bin/cluster-autoscaler"},
-						Args:    args,
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/health-check",
-									Port:   intstr.FromInt(8085),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 60,
-							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    5,
-							TimeoutSeconds:      5,
-						},
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/health-check",
-									Port:   intstr.FromInt(8085),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 15,
-							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    3,
-							TimeoutSeconds:      5,
-						},
-						Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8085}},
-					},
-				},
-			},
-		},
-	}
-	var port *int32
-	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.Port != nil {
-		port = hc.Spec.Networking.APIServer.Port
-	}
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, port), availabilityProberImage, &deployment.Spec.Template.Spec)
-
-	// set security context
-	if setDefaultSecurityContext {
-		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: k8sutilspointer.Int64Ptr(config.DefaultSecurityContextUser),
-		}
-	}
-
-	hyperutil.SetReleaseImageAnnotation(deployment, hc.Spec.Release.Image)
-	hyperutil.SetColocation(hc.ObjectMeta, deployment)
-	hyperutil.SetRestartAnnotation(hc.ObjectMeta, deployment)
-	hyperutil.SetControlPlaneIsolation(hc.ObjectMeta, deployment)
-	hyperutil.SetDefaultPriorityClass(deployment)
-	return nil
-}
-
-func reconcileAutoScalerRole(role *rbacv1.Role) error {
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{"apiextensions.k8s.io"},
-			Resources: []string{"customresourcedefinitions"},
-			Verbs:     []string{"get", "list", "watch"},
-		},
-		{
-			APIGroups: []string{"cluster.x-k8s.io"},
-			Resources: []string{
-				"machinedeployments",
-				"machinedeployments/scale",
-				"machines",
-				"machinesets",
-				"machinesets/scale",
-			},
-			Verbs: []string{"*"},
-		},
-	}
-	return nil
-}
-
-func reconcileAutoScalerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
-	binding.RoleRef = rbacv1.RoleRef{
-		APIGroup: "rbac.authorization.k8s.io",
-		Kind:     "Role",
-		Name:     role.Name,
-	}
-
-	binding.Subjects = []rbacv1.Subject{
-		{
-			Kind:      "ServiceAccount",
-			Name:      sa.Name,
-			Namespace: sa.Namespace,
-		},
-	}
-
 	return nil
 }
 
@@ -3320,63 +3027,16 @@ func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Con
 }
 
 func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string) error {
-	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
-
-	// Reconcile machine-approver role
-	role := machineapprover.Role(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, role, func() error {
-		return reconcileMachineApproverRole(role)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine-approver role: %w", err)
+	machineApproverImage, err := r.getPayloadImage(ctx, hcluster, ImageStreamClusterMachineApproverImage)
+	if err != nil {
+		return fmt.Errorf("failed to get image for machine approver: %w", err)
+	}
+	// TODO: can remove this override when all IBM production clusters upgraded to a version that uses the release image
+	if imageVal, ok := hcluster.Annotations[hyperv1.MachineApproverImage]; ok {
+		machineApproverImage = imageVal
 	}
 
-	// Reconcile machine-approver service account
-	sa := machineapprover.ServiceAccount(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
-		util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine-approver service account: %w", err)
-	}
-
-	// Reconcile machine-approver role binding
-	rolebinding := machineapprover.RoleBinding(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, rolebinding, func() error {
-		return reconcileMachineApproverRoleBinding(rolebinding, role, sa)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine-approver role binding: %w", err)
-	}
-	config := machineapprover.ConfigMap(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, config, func() error {
-		return reconcileMachineApproverConfig(config)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine-approver config: %w", err)
-	}
-
-	// The deployment depends on the kubeconfig being reported.
-	if hcp.Status.KubeConfig != nil {
-		// Resolve the kubeconfig secret for machine-approver
-		kubeconfigSecretName := machineapprover.KASServiceKubeconfigSecret(controlPlaneNamespaceName).Name
-
-		// Reconcile machine-approver deployment
-		machineApproverImage, err := r.getPayloadImage(ctx, hcluster, ImageStreamClusterMachineApproverImage)
-		if err != nil {
-			return fmt.Errorf("failed to get image for machine approver: %w", err)
-		}
-		// TODO: can remove this override when all IBM production clusters upgraded to a version that uses the release image
-		if imageVal, ok := hcluster.Annotations[hyperv1.MachineApproverImage]; ok {
-			machineApproverImage = imageVal
-		}
-
-		deployment := machineapprover.Deployment(controlPlaneNamespaceName)
-		if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-			return reconcileMachineApproverDeployment(deployment, hcluster, sa, kubeconfigSecretName, config, machineApproverImage, utilitiesImage, r.SetDefaultSecurityContext)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
-		}
-	}
-
-	return nil
+	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext)
 }
 
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
@@ -3664,186 +3324,6 @@ type ClusterMachineApproverConfig struct {
 }
 type NodeClientCert struct {
 	Disabled bool `json:"disabled,omitempty"`
-}
-
-func reconcileMachineApproverConfig(cm *corev1.ConfigMap) error {
-	// Enable the client cert csr approval
-	cfg := ClusterMachineApproverConfig{
-		NodeClientCert: NodeClientCert{
-			Disabled: false,
-		},
-	}
-	if b, err := yaml.Marshal(cfg); err != nil {
-		return err
-	} else {
-		if cm.Data == nil {
-			cm.Data = make(map[string]string)
-		}
-		cm.Data["config.yaml"] = string(b)
-	}
-
-	return nil
-}
-
-func reconcileMachineApproverRole(role *rbacv1.Role) error {
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{"cluster.x-k8s.io"},
-			Resources: []string{"machines", "machines/status"},
-			Verbs:     []string{"get", "list", "watch"},
-		},
-	}
-	return nil
-}
-
-func reconcileMachineApproverRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
-	binding.RoleRef = rbacv1.RoleRef{
-		APIGroup: "rbac.authorization.k8s.io",
-		Kind:     "Role",
-		Name:     role.Name,
-	}
-
-	binding.Subjects = []rbacv1.Subject{
-		{
-			Kind:      "ServiceAccount",
-			Name:      sa.Name,
-			Namespace: sa.Namespace,
-		},
-	}
-	return nil
-}
-
-func reconcileMachineApproverDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, sa *corev1.ServiceAccount, kubeconfigSecretName string, cm *corev1.ConfigMap, machineApproverImage, availabilityProberImage string, setDefaultSecurityContext bool) error {
-	// TODO: enable leader election when the flag is added in machine-approver
-	args := []string{
-		"--config=/var/run/configmaps/config/config.yaml",
-		"-v=3",
-		"--logtostderr",
-		"--apigroup=cluster.x-k8s.io",
-		"--workload-cluster-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig",
-		"--machine-namespace=" + deployment.Namespace,
-		"--disable-status-controller",
-	}
-
-	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32Ptr(1),
-		Selector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"app": "machine-approver",
-			},
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{
-					"app": "machine-approver",
-				},
-				Name: "machine-approver",
-			},
-			Spec: corev1.PodSpec{
-				ServiceAccountName: sa.Name,
-				Tolerations: []corev1.Toleration{
-					{
-						Key:    "node-role.kubernetes.io/master",
-						Effect: corev1.TaintEffectNoSchedule,
-					},
-				},
-				Volumes: []corev1.Volume{
-					{
-						Name: "kubeconfig",
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{
-								SecretName: kubeconfigSecretName,
-							},
-						},
-					},
-					{
-						Name: "config",
-						VolumeSource: corev1.VolumeSource{
-							ConfigMap: &corev1.ConfigMapVolumeSource{
-								LocalObjectReference: corev1.LocalObjectReference{
-									Name: cm.Name,
-								},
-								Optional:    k8sutilspointer.BoolPtr(true),
-								DefaultMode: k8sutilspointer.Int32Ptr(440),
-							},
-						},
-					},
-				},
-				Containers: []corev1.Container{
-					{
-						Name:            "machine-approver-controller",
-						Image:           machineApproverImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "kubeconfig",
-								MountPath: "/etc/kubernetes/kubeconfig",
-							},
-							{
-								Name:      "config",
-								MountPath: "/var/run/configmaps/config",
-							},
-						},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("50Mi"),
-								corev1.ResourceCPU:    resource.MustParse("10m"),
-							},
-						},
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/metrics",
-									Port:   intstr.FromInt(9191),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: int32(60),
-							PeriodSeconds:       int32(60),
-							SuccessThreshold:    int32(1),
-							FailureThreshold:    int32(5),
-							TimeoutSeconds:      int32(5),
-						},
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/metrics",
-									Port:   intstr.FromInt(9191),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: int32(15),
-							PeriodSeconds:       int32(60),
-							SuccessThreshold:    int32(1),
-							FailureThreshold:    int32(3),
-							TimeoutSeconds:      int32(5),
-						},
-						Command: []string{"/usr/bin/machine-approver"},
-						Args:    args,
-					},
-				},
-			},
-		},
-	}
-	var port *int32
-	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.Port != nil {
-		port = hc.Spec.Networking.APIServer.Port
-	}
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, port), availabilityProberImage, &deployment.Spec.Template.Spec)
-
-	// set security context
-	if setDefaultSecurityContext {
-		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: k8sutilspointer.Int64Ptr(config.DefaultSecurityContextUser),
-		}
-	}
-
-	hyperutil.SetReleaseImageAnnotation(deployment, hc.Spec.Release.Image)
-	hyperutil.SetColocation(hc.ObjectMeta, deployment)
-	hyperutil.SetRestartAnnotation(hc.ObjectMeta, deployment)
-	hyperutil.SetControlPlaneIsolation(hc.ObjectMeta, deployment)
-	hyperutil.SetDefaultPriorityClass(deployment)
-	return nil
 }
 
 func reconcileOpenshiftIngressNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
@@ -4640,9 +4120,9 @@ func (r *HostedClusterReconciler) reconcileDeprecatedNetworkSettings(hc *hyperv1
 }
 
 func populateDeprecatedNetworkingFields(hcp *hyperv1.HostedControlPlane, hc *hyperv1.HostedCluster) {
-	hcp.Spec.ServiceCIDR = util.FirstServiceCIDR(hc.Spec.Networking.ServiceNetwork)
-	hcp.Spec.PodCIDR = util.FirstClusterCIDR(hc.Spec.Networking.ClusterNetwork)
-	hcp.Spec.MachineCIDR = util.FirstMachineCIDR(hc.Spec.Networking.MachineNetwork)
+	hcp.Spec.ServiceCIDR = hyperutil.FirstServiceCIDR(hc.Spec.Networking.ServiceNetwork)
+	hcp.Spec.PodCIDR = hyperutil.FirstClusterCIDR(hc.Spec.Networking.ClusterNetwork)
+	hcp.Spec.MachineCIDR = hyperutil.FirstMachineCIDR(hc.Spec.Networking.MachineNetwork)
 	hcp.Spec.NetworkType = hc.Spec.Networking.NetworkType
 	if hc.Spec.Networking.APIServer != nil {
 		hcp.Spec.APIAdvertiseAddress = hc.Spec.Networking.APIServer.AdvertiseAddress
