@@ -1725,7 +1725,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		podIdentityWebhookSecret := manifests.AWSPodIdentityWebhookKubeconfig(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, podIdentityWebhookSecret, func() error {
-			return r.reconcileAWSPodIdentityWebhookKubeconfig(ctx, podIdentityWebhookSecret, hcp)
+			return pki.ReconcileServiceAccountKubeconfig(podIdentityWebhookSecret, rootCA, hcp, "openshift-authentication", "aws-pod-identity-webhook")
 		}); err != nil {
 			return fmt.Errorf("failecd to reconcile aws pod identity webhook kubeconfig secret: %w", err)
 		}
@@ -2059,9 +2059,14 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := ingressoperator.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext, hcp.Spec.Platform.Type)
 
+	rootCASecret := manifests.RootCASecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
+		return err
+	}
+
 	kubeconfig := manifests.IngressOperatorKubeconfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kubeconfig, func() error {
-		return r.reconcileIngressOperatorKubeconfig(ctx, kubeconfig, hcp)
+		return pki.ReconcileServiceAccountKubeconfig(kubeconfig, rootCASecret, hcp, "openshift-ingress-operator", "ingress-operator")
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingressoperator kubeconfig: %w", err)
 	}
@@ -2075,19 +2080,6 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 	}
 
 	return nil
-}
-
-func (r *HostedControlPlaneReconciler) reconcileIngressOperatorKubeconfig(ctx context.Context, s *corev1.Secret, hcp *hyperv1.HostedControlPlane) error {
-	rootCASecret := manifests.RootCASecret(hcp.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
-		return err
-	}
-	if err := pki.ReconcileIngressOperatorClientCertSecret(s, rootCASecret, config.OwnerRefFrom(hcp)); err != nil {
-		return err
-	}
-
-	apiServerPort := util.APIPortWithDefault(hcp, config.DefaultAPIServerPort)
-	return kas.ReconcileIngressOperatorKubeconfigSecret(s, rootCASecret, config.OwnerRefFrom(hcp), apiServerPort)
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, packageServerAddress string, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -2680,19 +2672,6 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 		Message: message,
 	}, nil
 
-}
-
-func (r *HostedControlPlaneReconciler) reconcileAWSPodIdentityWebhookKubeconfig(ctx context.Context, s *corev1.Secret, hcp *hyperv1.HostedControlPlane) error {
-	rootCASecret := manifests.RootCASecret(hcp.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCASecret), rootCASecret); err != nil {
-		return err
-	}
-	if err := pki.ReconcileAWSPodIdentityWebhookClientCertSecret(s, rootCASecret, config.OwnerRefFrom(hcp)); err != nil {
-		return err
-	}
-
-	apiServerPort := util.APIPortWithDefault(hcp, config.DefaultAPIServerPort)
-	return kas.ReconcileAWSPodIdentityWebhookKubeconfigSecret(s, rootCASecret, config.OwnerRefFrom(hcp), apiServerPort)
 }
 
 func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
