@@ -1132,7 +1132,7 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 		}
 		expectedCoreConfigResources--
 
-		haproxyIgnitionConfig, missing, err := r.reconcileHAProxyIgnitionConfig(ctx, releaseImage, hcluster, cpoImage)
+		haproxyIgnitionConfig, missing, err := r.reconcileHAProxyIgnitionConfig(ctx, releaseImage.ComponentImages(), hcluster, cpoImage)
 		if err != nil {
 			return "", false, fmt.Errorf("failed to generate haporoxy ignition config: %w", err)
 		}
