@@ -18,7 +18,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	"github.com/vincent-petithory/dataurl"
@@ -60,7 +59,7 @@ func (r *NodePoolReconciler) isHAProxyIgnitionConfigManaged(ctx context.Context,
 	return cpoSkips, controlPlaneOperatorImage, nil
 }
 
-func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context, releaseImage *releaseinfo.ReleaseImage, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, missing bool, err error) {
+func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context, componentImages map[string]string, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, missing bool, err error) {
 	var apiServerExternalAddress string
 	apiServerExternalPort := util.APIPortWithDefaultFromHostedCluster(hcluster, config.DefaultAPIServerPort)
 	if util.IsPrivateHC(hcluster) {
@@ -88,7 +87,7 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 		apiServerExternalAddress = hostURL.Hostname()
 	}
 
-	haProxyImage, ok := releaseImage.ComponentImages()[haProxyRouterImageName]
+	haProxyImage, ok := componentImages[haProxyRouterImageName]
 	if !ok {
 		return "", true, fmt.Errorf("release image doesn't have a %s image", haProxyRouterImageName)
 	}
