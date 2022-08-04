@@ -206,6 +206,8 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 		}
 
 		opts.BaseDomain = defaultIngressOperator.Status.Domain
+	case hyperv1.PowerVSPlatform:
+		opts.InfraID = fmt.Sprintf("%s-infra", hc.Name)
 	}
 
 	return opts, nil
@@ -259,9 +261,7 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 		return azure.DestroyCluster(ctx, opts)
 	case hyperv1.PowerVSPlatform:
 		opts.PowerVSPlatform = core.PowerVSPlatformDestroyOptions{
-			BaseDomain:    hc.Spec.DNS.BaseDomain,
-			CISCRN:        hc.Spec.Platform.PowerVS.CISInstanceCRN,
-			CISDomainID:   hc.Spec.DNS.PrivateZoneID,
+			BaseDomain:    createOpts.BaseDomain,
 			ResourceGroup: createOpts.PowerVSPlatform.ResourceGroup,
 			Region:        createOpts.PowerVSPlatform.Region,
 			Zone:          createOpts.PowerVSPlatform.Zone,
