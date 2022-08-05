@@ -60,8 +60,6 @@ func (webhook *Webhook) ValidateDelete(_ context.Context, obj runtime.Object) er
 // "equal" when we do the comparison below.
 func filterMutableHostedClusterSpecFields(spec *hyperv1.HostedClusterSpec) {
 	spec.Release.Image = ""
-	spec.ClusterID = ""
-	spec.InfraID = ""
 	spec.Configuration = nil
 	spec.AdditionalTrustBundle = nil
 	spec.SecretEncryption = nil
