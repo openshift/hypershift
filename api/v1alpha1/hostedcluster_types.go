@@ -213,6 +213,7 @@ type HostedClusterSpec struct {
 	// +kubebuilder:default:="https://kubernetes.default.svc"
 	// +immutable
 	// +optional
+	// +kubebuilder:validation:Format=uri
 	IssuerURL string `json:"issuerURL,omitempty"`
 
 	// ServiceAccountSigningKey is a reference to a secret containing the private key
@@ -453,6 +454,7 @@ type ClusterNetworking struct {
 	// Use ServiceNetwork instead
 	// +immutable
 	// +optional
+	// +kubebuilder:validation:Format=cidr
 	ServiceCIDR string `json:"serviceCIDR,omitempty"`
 
 	// Deprecated
@@ -461,6 +463,7 @@ type ClusterNetworking struct {
 	//
 	// +immutable
 	// +optional
+	// +kubebuilder:validation:Format=cidr
 	PodCIDR string `json:"podCIDR,omitempty"`
 
 	// Deprecated
@@ -468,6 +471,7 @@ type ClusterNetworking struct {
 	// Use MachineNetwork instead
 	// +immutable
 	// +optional
+	// +kubebuilder:validation:Format=cidr
 	MachineCIDR string `json:"machineCIDR,omitempty"`
 
 	// MachineNetwork is the list of IP address pools for machines.
