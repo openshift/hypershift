@@ -329,3 +329,17 @@ func ControlPlaneOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.
 	// For now, no filtering will occur for the CPO
 	return nil
 }
+
+func RegistryOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+	switch set {
+	case MetricsSetTelemetry:
+		return []*prometheusoperatorv1.RelabelConfig{
+			{
+				Action:       "drop",
+				Regex:        "*",
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
+			},
+		}
+	}
+	return nil
+}
