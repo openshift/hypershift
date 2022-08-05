@@ -271,7 +271,26 @@ type RollingUpdate struct {
 
 // InPlaceUpgrade specifies an upgrade strategy which upgrades nodes in-place
 // without any new nodes being created or any old nodes being deleted.
-type InPlaceUpgrade struct{}
+type InPlaceUpgrade struct {
+	// MaxUnavailable is the maximum number of nodes that can be unavailable
+	// during the update.
+	//
+	// Value can be an absolute number (ex: 5) or a percentage of desired nodes
+	// (ex: 10%).
+	//
+	// Absolute number is calculated from percentage by rounding down.
+	//
+	// Defaults to 0.
+	//
+	// Example: when this is set to 30%, a max of 30% of the nodes can be made
+	// unschedulable/unavailable immediately when the update starts. Once a set
+	// of nodes is updated, more nodes can be made unschedulable for update,
+	// ensuring that the total number of nodes schedulable at all times during
+	// the update is at least 70% of desired nodes.
+	//
+	// +optional
+	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
+}
 
 // NodePoolManagement specifies behavior for managing nodes in a NodePool, such
 // as upgrade strategies and auto-repair behaviors.
