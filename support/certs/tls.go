@@ -350,8 +350,11 @@ func ReconcileSignedCert(
 	caKey string,
 	dnsNames []string,
 	ips []string,
+	o ...func(*CAOpts),
 ) error {
-	if !validCA(ca) {
+	opts := (&CAOpts{}).withDefaults().withOpts(o...)
+
+	if !validCA(ca, opts) {
 		return fmt.Errorf("invalid CA signer secret %s for cert(cn=%s,o=%v)", ca.Name, cn, org)
 	}
 	var ipAddresses []net.IP
@@ -363,13 +366,15 @@ func ReconcileSignedCert(
 		ipAddresses = append(ipAddresses, address)
 	}
 
-	if !HasCAHash(secret, ca) {
-		annotateWithCA(secret, ca)
+	if !HasCAHash(secret, ca, opts) {
+		annotateWithCA(secret, ca, opts)
 	}
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	secret.Data[caKey] = append([]byte(nil), ca.Data[CASignerCertMapKey]...)
+	if caKey != "" {
+		secret.Data[caKey] = append([]byte(nil), ca.Data[opts.CASignerCertMapKey]...)
+	}
 
 	cfg := &CertCfg{
 		Subject:      pkix.Name{CommonName: cn, Organization: org},
@@ -382,7 +387,7 @@ func ReconcileSignedCert(
 	if err := ValidateKeyPair(secret.Data[keyKey], secret.Data[crtKey], cfg, 30*ValidityOneDay); err == nil {
 		return nil
 	}
-	certBytes, keyBytes, _, err := signCertificate(cfg, ca)
+	certBytes, keyBytes, _, err := signCertificate(cfg, ca, opts)
 	if err != nil {
 		return fmt.Errorf("error signing cert(cn=%s,o=%v): %w", cn, org, err)
 	}
@@ -391,10 +396,34 @@ func ReconcileSignedCert(
 	return nil
 }
 
+type CAOpts struct {
+	CASignerCertMapKey string
+	CASignerKeyMapKey  string
+}
+
+func (s *CAOpts) withDefaults() *CAOpts {
+	if s.CASignerCertMapKey == "" {
+		s.CASignerCertMapKey = CASignerCertMapKey
+	}
+	if s.CASignerKeyMapKey == "" {
+		s.CASignerKeyMapKey = CASignerKeyMapKey
+	}
+
+	return s
+}
+
+func (s *CAOpts) withOpts(opts ...func(*CAOpts)) *CAOpts {
+	for _, o := range opts {
+		o(s)
+	}
+	return s
+}
+
 // ReconcileSelfSignedCA reconciles a CA secret. It is a oneshot function that will never regenerate the CA unless
 // the cert or key entry is missing from the secret.
-func ReconcileSelfSignedCA(secret *corev1.Secret, cn, ou string) error {
-	if hasKeys(secret, CASignerKeyMapKey, CASignerKeyMapKey) {
+func ReconcileSelfSignedCA(secret *corev1.Secret, cn, ou string, o ...func(*CAOpts)) error {
+	opts := (&CAOpts{}).withDefaults().withOpts(o...)
+	if hasKeys(secret, opts.CASignerKeyMapKey, opts.CASignerKeyMapKey) {
 		return nil
 	}
 	cfg := &CertCfg{
@@ -410,17 +439,17 @@ func ReconcileSelfSignedCA(secret *corev1.Secret, cn, ou string) error {
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	secret.Data[CASignerCertMapKey] = CertToPem(crt)
-	secret.Data[CASignerKeyMapKey] = PrivateKeyToPem(key)
+	secret.Data[opts.CASignerCertMapKey] = CertToPem(crt)
+	secret.Data[opts.CASignerKeyMapKey] = PrivateKeyToPem(key)
 	return nil
 }
 
-func validCA(secret *corev1.Secret) bool {
-	return hasKeys(secret, CASignerCertMapKey, CASignerKeyMapKey)
+func validCA(secret *corev1.Secret, opts *CAOpts) bool {
+	return hasKeys(secret, opts.CASignerCertMapKey, opts.CASignerKeyMapKey)
 }
 
-func signCertificate(cfg *CertCfg, ca *corev1.Secret) (crtBytes []byte, keyBytes []byte, caBytes []byte, err error) {
-	caCert, caKey, err := decodeCA(ca)
+func signCertificate(cfg *CertCfg, ca *corev1.Secret, opts *CAOpts) (crtBytes []byte, keyBytes []byte, caBytes []byte, err error) {
+	caCert, caKey, err := decodeCA(ca, opts)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to decode CA secret: %w", err)
 	}
@@ -431,7 +460,8 @@ func signCertificate(cfg *CertCfg, ca *corev1.Secret) (crtBytes []byte, keyBytes
 	return CertToPem(crt), PrivateKeyToPem(key), CertToPem(caCert), nil
 }
 
-func HasCAHash(secret *corev1.Secret, ca *corev1.Secret) bool {
+func HasCAHash(secret *corev1.Secret, ca *corev1.Secret, opts *CAOpts) bool {
+	opts = opts.withDefaults()
 	if secret.Annotations == nil {
 		return false
 	}
@@ -439,27 +469,27 @@ func HasCAHash(secret *corev1.Secret, ca *corev1.Secret) bool {
 	if !hasHash {
 		return false
 	}
-	desiredHash := computeCAHash(ca)
+	desiredHash := computeCAHash(ca, opts)
 	return desiredHash == actualHash
 }
 
-func computeCAHash(ca *corev1.Secret) string {
-	return fmt.Sprintf("%x", md5.Sum(append(ca.Data[CASignerCertMapKey], ca.Data[CASignerKeyMapKey]...)))
+func computeCAHash(ca *corev1.Secret, opts *CAOpts) string {
+	return fmt.Sprintf("%x", md5.Sum(append(ca.Data[opts.CASignerCertMapKey], ca.Data[opts.CASignerKeyMapKey]...)))
 }
 
-func annotateWithCA(secret, ca *corev1.Secret) {
+func annotateWithCA(secret, ca *corev1.Secret, opts *CAOpts) {
 	if secret.Annotations == nil {
 		secret.Annotations = map[string]string{}
 	}
-	secret.Annotations[CAHashAnnotation] = computeCAHash(ca)
+	secret.Annotations[CAHashAnnotation] = computeCAHash(ca, opts)
 }
 
-func decodeCA(ca *corev1.Secret) (*x509.Certificate, *rsa.PrivateKey, error) {
-	crt, err := PemToCertificate(ca.Data[CASignerCertMapKey])
+func decodeCA(ca *corev1.Secret, opts *CAOpts) (*x509.Certificate, *rsa.PrivateKey, error) {
+	crt, err := PemToCertificate(ca.Data[opts.CASignerCertMapKey])
 	if err != nil {
 		return nil, nil, err
 	}
-	key, err := PemToPrivateKey(ca.Data[CASignerKeyMapKey])
+	key, err := PemToPrivateKey(ca.Data[opts.CASignerKeyMapKey])
 	if err != nil {
 		return nil, nil, err
 	}

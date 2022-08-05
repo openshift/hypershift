@@ -16,7 +16,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
@@ -234,7 +234,7 @@ func operatorStartScript(startScriptTemplate *template.Template) (string, error)
 	}{
 		WorkerNamespace: workerNamespace,
 		TokenDir:        volumeMounts.Path(containerMain().Name, volumeClientToken().Name),
-		CABundle:        path.Join(volumeMounts.Path(containerMain().Name, volumeCABundle().Name), pki.CASignerCertMapKey),
+		CABundle:        path.Join(volumeMounts.Path(containerMain().Name, volumeCABundle().Name), certs.CASignerCertMapKey),
 		ServingCertDir:  volumeMounts.Path(containerMain().Name, volumeServingCert().Name),
 	}
 	if err := startScriptTemplate.Execute(out, params); err != nil {

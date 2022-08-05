@@ -9,7 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	fuzz "github.com/google/gofuzz"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 
 	"github.com/openshift/hypershift/support/certs"
 )
@@ -171,4 +174,51 @@ func abs(i int) int {
 		return -i
 	}
 	return i
+}
+
+func TestReconcileSignedCertWithCustomCAKeys(t *testing.T) {
+	t.Parallel()
+	ca := &corev1.Secret{Type: corev1.SecretTypeTLS}
+	if err := certs.ReconcileSelfSignedCA(ca, "some-cn", "some-ou", func(o *certs.CAOpts) {
+		o.CASignerCertMapKey = "ca-signer-cert"
+		o.CASignerKeyMapKey = "ca-signer-key"
+	}); err != nil {
+		t.Fatalf("failed to reconcile CA: %v", err)
+	}
+
+	if ca.Type != corev1.SecretTypeTLS {
+		t.Error("ReconcileSelfSignedCA changed ca secret type")
+	}
+
+	certSecret := &corev1.Secret{Type: corev1.SecretTypeTLS}
+	if err := certs.ReconcileSignedCert(
+		certSecret,
+		ca,
+		"some-cn",
+		[]string{"some-ou"},
+		nil,
+		corev1.TLSCertKey,
+		corev1.TLSPrivateKeyKey,
+		"",
+		nil,
+		nil,
+		func(o *certs.CAOpts) {
+			o.CASignerCertMapKey = "ca-signer-cert"
+			o.CASignerKeyMapKey = "ca-signer-key"
+		},
+	); err != nil {
+		t.Fatalf("failed to reconcile cert: %v", err)
+	}
+
+	if certSecret.Type != corev1.SecretTypeTLS {
+		t.Error("ReconcileSignedCert changed cert secret type")
+
+	}
+
+	// Needed because validation of tls certs only allows these two keys
+	expectedKeys, actualKeys := sets.NewString(corev1.TLSCertKey, corev1.TLSPrivateKeyKey), sets.StringKeySet(certSecret.Data)
+	if diff := cmp.Diff(expectedKeys, actualKeys); diff != "" {
+		t.Errorf("unexpected keys in cert secret: %s", diff)
+
+	}
 }

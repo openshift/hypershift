@@ -133,7 +133,7 @@ func TestReconcileSignedCertWithKeysAndAddresses(t *testing.T) {
 				t.Errorf("expectUpdate: %t differs froma actual %t", tc.expectUpdate, didUpdate)
 			}
 
-			if !certs.HasCAHash(secret, caSecret) {
+			if !certs.HasCAHash(secret, caSecret, &certs.CAOpts{}) {
 				t.Error("secret doesn't have ca hash")
 			}
 
