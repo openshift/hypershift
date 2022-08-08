@@ -9,6 +9,7 @@ import (
 
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -362,3 +363,5 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 		})
 	}
 }
+
+var _ manifestReconciler = manifestAndReconcile[*rbacv1.ClusterRole]{}

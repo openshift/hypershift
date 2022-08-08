@@ -126,11 +126,44 @@ func ReconcileIngressToRouteControllerClusterRole(r *rbacv1.ClusterRole) error {
 	return nil
 }
 
+func ReconcileReconcileIngressToRouteControllerRole(r *rbacv1.Role) error {
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups:     []string{"coordination.k8s.io"},
+			Resources:     []string{"leases"},
+			ResourceNames: []string{"openshift-route-controllers"},
+			Verbs:         []string{"get", "update"},
+		},
+		{
+			APIGroups: []string{"coordination.k8s.io"},
+			Resources: []string{"leases"},
+			Verbs:     []string{"create"},
+		},
+	}
+	return nil
+}
+
 func ReconcileIngressToRouteControllerClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
 	r.RoleRef = rbacv1.RoleRef{
 		APIGroup: rbacv1.SchemeGroupVersion.Group,
 		Kind:     "ClusterRole",
 		Name:     hccomanifests.IngressToRouteControllerClusterRole().Name,
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      "ingress-to-route-controller",
+			Namespace: "openshift-infra",
+		},
+	}
+	return nil
+}
+
+func ReconcileIngressToRouteControllerRoleBinding(r *rbacv1.RoleBinding) error {
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "Role",
+		Name:     hccomanifests.IngressToRouteControllerRole().Name,
 	}
 	r.Subjects = []rbacv1.Subject{
 		{
