@@ -554,6 +554,7 @@ func (r *reconciler) reconcileNamespaces(ctx context.Context) error {
 		{manifest: manifests.NamespaceEtcd},
 		{manifest: manifests.NamespaceIngress, reconcile: namespaces.ReconcileOpenShiftIngressNamespace},
 		{manifest: manifests.NamespaceAuthentication},
+		{manifest: manifests.NamespaceRouteControllerManager},
 	}
 
 	var errs []error
@@ -572,44 +573,48 @@ func (r *reconciler) reconcileNamespaces(ctx context.Context) error {
 	return errors.NewAggregate(errs)
 }
 
-func (r *reconciler) reconcileRBAC(ctx context.Context) error {
-	roles := []struct {
-		manifest  func() *rbacv1.ClusterRole
-		reconcile func(*rbacv1.ClusterRole) error
-	}{
-		{manifest: manifests.CSRApproverClusterRole, reconcile: rbac.ReconcileCSRApproverClusterRole},
-		{manifest: manifests.IngressToRouteControllerClusterRole, reconcile: rbac.ReconcileIngressToRouteControllerClusterRole},
-		{manifest: manifests.NamespaceSecurityAllocationControllerClusterRole, reconcile: rbac.ReconcileNamespaceSecurityAllocationControllerClusterRole},
+type manifestAndReconcile[o client.Object] struct {
+	manifest  func() o
+	reconcile func(o) error
+}
+
+func (m manifestAndReconcile[o]) upsert(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+	obj := m.manifest()
+	if _, err := createOrUpdate(ctx, client, obj, func() error {
+		return m.reconcile(obj)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile %T %s: %w", obj, obj.GetName(), err)
 	}
 
-	roleBindings := []struct {
-		manifest  func() *rbacv1.ClusterRoleBinding
-		reconcile func(*rbacv1.ClusterRoleBinding) error
-	}{
-		{manifest: manifests.CSRApproverClusterRoleBinding, reconcile: rbac.ReconcileCSRApproverClusterRoleBinding},
-		{manifest: manifests.IngressToRouteControllerClusterRoleBinding, reconcile: rbac.ReconcileIngressToRouteControllerClusterRoleBinding},
-		{manifest: manifests.NamespaceSecurityAllocationControllerClusterRoleBinding, reconcile: rbac.ReconcileNamespaceSecurityAllocationControllerClusterRoleBinding},
-		{manifest: manifests.NodeBootstrapperClusterRoleBinding, reconcile: rbac.ReconcileNodeBootstrapperClusterRoleBinding},
-		{manifest: manifests.CSRRenewalClusterRoleBinding, reconcile: rbac.ReconcileCSRRenewalClusterRoleBinding},
-		{manifest: manifests.MetricsClientClusterRoleBinding, reconcile: rbac.ReconcileGenericMetricsClusterRoleBinding("system:serviceaccount:hypershift:prometheus")},
+	return nil
+}
+
+type manifestReconciler interface {
+	upsert(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error
+}
+
+func (r *reconciler) reconcileRBAC(ctx context.Context) error {
+	rbac := []manifestReconciler{
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.CSRApproverClusterRole, reconcile: rbac.ReconcileCSRApproverClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.IngressToRouteControllerClusterRole, reconcile: rbac.ReconcileIngressToRouteControllerClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.NamespaceSecurityAllocationControllerClusterRole, reconcile: rbac.ReconcileNamespaceSecurityAllocationControllerClusterRole},
+
+		manifestAndReconcile[*rbacv1.Role]{manifest: manifests.IngressToRouteControllerRole, reconcile: rbac.ReconcileReconcileIngressToRouteControllerRole},
+
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.CSRApproverClusterRoleBinding, reconcile: rbac.ReconcileCSRApproverClusterRoleBinding},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.IngressToRouteControllerClusterRoleBinding, reconcile: rbac.ReconcileIngressToRouteControllerClusterRoleBinding},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.NamespaceSecurityAllocationControllerClusterRoleBinding, reconcile: rbac.ReconcileNamespaceSecurityAllocationControllerClusterRoleBinding},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.NodeBootstrapperClusterRoleBinding, reconcile: rbac.ReconcileNodeBootstrapperClusterRoleBinding},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.CSRRenewalClusterRoleBinding, reconcile: rbac.ReconcileCSRRenewalClusterRoleBinding},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.MetricsClientClusterRoleBinding, reconcile: rbac.ReconcileGenericMetricsClusterRoleBinding("system:serviceaccount:hypershift:prometheus")},
+
+		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.IngressToRouteControllerRoleBinding, reconcile: rbac.ReconcileIngressToRouteControllerRoleBinding},
 	}
 
 	var errs []error
-	for _, m := range roles {
-		role := m.manifest()
-		if _, err := r.CreateOrUpdate(ctx, r.client, role, func() error {
-			return m.reconcile(role)
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile role %s: %w", role.Name, err))
-		}
-	}
-
-	for _, m := range roleBindings {
-		rb := m.manifest()
-		if _, err := r.CreateOrUpdate(ctx, r.client, rb, func() error {
-			return m.reconcile(rb)
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile role binding %s: %w", rb.Name, err))
+	for _, m := range rbac {
+		if err := m.upsert(ctx, r.client, r.CreateOrUpdate); err != nil {
+			errs = append(errs, err)
 		}
 	}
 
