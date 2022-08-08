@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 )
 
@@ -278,6 +279,7 @@ func buildMainContainer(image, registryImage, prunerImage, releaseVersion string
 				Value: "/tmp/azurestackcloud.json",
 			},
 		}
+		proxy.SetEnvVars(&c.Env)
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 		c.Ports = []corev1.ContainerPort{
 			{
