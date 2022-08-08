@@ -26,14 +26,15 @@ const (
 type DestroyPlatformSpecifics = func(ctx context.Context, options *DestroyOptions) error
 
 type DestroyOptions struct {
-	ClusterGracePeriod time.Duration
-	Name               string
-	Namespace          string
-	AWSPlatform        AWSPlatformDestroyOptions
-	AzurePlatform      AzurePlatformDestroyOptions
-	PowerVSPlatform    PowerVSPlatformDestroyOptions
-	InfraID            string
-	Log                logr.Logger
+	ClusterGracePeriod    time.Duration
+	Name                  string
+	Namespace             string
+	AWSPlatform           AWSPlatformDestroyOptions
+	AzurePlatform         AzurePlatformDestroyOptions
+	PowerVSPlatform       PowerVSPlatformDestroyOptions
+	InfraID               string
+	DestroyCloudResources bool
+	Log                   logr.Logger
 }
 
 type AWSPlatformDestroyOptions struct {
@@ -89,6 +90,12 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 	if hostedClusterExists && !sets.NewString(hostedCluster.Finalizers...).Has(destroyFinalizer) {
 		original := hostedCluster.DeepCopy()
 		controllerutil.AddFinalizer(hostedCluster, destroyFinalizer)
+		if o.DestroyCloudResources {
+			if hostedCluster.Annotations == nil {
+				hostedCluster.Annotations = map[string]string{}
+			}
+			hostedCluster.Annotations[hyperv1.CleanupCloudResourcesAnnotation] = "true"
+		}
 		if err := c.Patch(ctx, hostedCluster, client.MergeFrom(original)); err != nil {
 			if apierrors.IsNotFound(err) {
 				o.Log.Info("Hosted cluster not found, skipping finalizer update", "namespace", o.Namespace, "name", o.Name)

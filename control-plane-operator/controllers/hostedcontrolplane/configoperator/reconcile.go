@@ -76,6 +76,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 				"hostedcontrolplanes/status",
 			},
 			Verbs: []string{
+				"patch",
 				"update",
 			},
 		},

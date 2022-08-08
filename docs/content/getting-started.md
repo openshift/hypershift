@@ -179,3 +179,10 @@ To delete a HostedCluster:
 ```shell
 hypershift destroy cluster aws --name $CLUSTER_NAME --aws-creds $AWS_CREDS
 ```
+
+To clean up cloud resources that may have been created by the HostedCluster during its lifetime, add
+the `--destroy-cloud-resources` flag:
+
+```shell
+hypershift destroy cluster aws --name $CLUSTER_NAME --aws-creds $AWS_CREDS --destroy-cloud-resources
+```
