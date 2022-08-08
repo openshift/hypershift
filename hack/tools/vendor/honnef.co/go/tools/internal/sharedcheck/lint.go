@@ -8,11 +8,13 @@ import (
 
 	"honnef.co/go/tools/analysis/code"
 	"honnef.co/go/tools/analysis/edit"
-	"honnef.co/go/tools/analysis/facts"
+	"honnef.co/go/tools/analysis/facts/generated"
+	"honnef.co/go/tools/analysis/facts/tokenfile"
 	"honnef.co/go/tools/analysis/report"
 	"honnef.co/go/tools/go/ast/astutil"
 	"honnef.co/go/tools/go/ir"
 	"honnef.co/go/tools/go/ir/irutil"
+	"honnef.co/go/tools/go/types/typeutil"
 	"honnef.co/go/tools/internal/passes/buildir"
 
 	"golang.org/x/tools/go/analysis"
@@ -34,11 +36,11 @@ func CheckRangeStringRunes(pass *analysis.Pass) (interface{}, error) {
 			if val == nil {
 				return true
 			}
-			Tsrc, ok := val.X.Type().Underlying().(*types.Basic)
+			Tsrc, ok := typeutil.CoreType(val.X.Type()).(*types.Basic)
 			if !ok || Tsrc.Kind() != types.String {
 				return true
 			}
-			Tdst, ok := val.Type().(*types.Slice)
+			Tdst, ok := typeutil.CoreType(val.Type()).(*types.Slice)
 			if !ok {
 				return true
 			}
@@ -117,7 +119,7 @@ func RedundantTypeInDeclarationChecker(verb string, flagHelpfulTypes bool) *anal
 			}
 
 			gen, _ := code.Generator(pass, decl.Pos())
-			if gen == facts.Cgo {
+			if gen == generated.Cgo {
 				// TODO(dh): remove this exception once we can use UsesCgo
 				return
 			}
@@ -202,6 +204,6 @@ func RedundantTypeInDeclarationChecker(verb string, flagHelpfulTypes bool) *anal
 
 	return &analysis.Analyzer{
 		Run:      fn,
-		Requires: []*analysis.Analyzer{facts.Generated, inspect.Analyzer, facts.TokenFile, facts.Generated},
+		Requires: []*analysis.Analyzer{generated.Analyzer, inspect.Analyzer, tokenfile.Analyzer},
 	}
 }
