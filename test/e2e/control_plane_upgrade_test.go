@@ -70,8 +70,9 @@ func TestUpgradeControlPlane(t *testing.T) {
 	t.Logf("Updating cluster image. Image: %s", globalOpts.LatestReleaseImage)
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+	original := hostedCluster.DeepCopy()
 	hostedCluster.Spec.Release.Image = globalOpts.LatestReleaseImage
-	err = client.Update(ctx, hostedCluster)
+	err = client.Patch(ctx, hostedCluster, crclient.MergeFrom(original))
 	g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
 
 	// Wait for the new rollout to be complete

@@ -95,12 +95,13 @@ func TestAutoscaling(t *testing.T) {
 	// that prevent the cluster from ever scaling back down to 1:
 	// aws-ebs-csi-driver-controller
 	var min int32 = 1
+	original := nodepool.DeepCopy()
 	nodepool.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
 		Min: min,
 		Max: max,
 	}
 	nodepool.Spec.Replicas = nil
-	err = client.Update(testContext, nodepool)
+	err = client.Patch(ctx, nodepool, crclient.MergeFrom(original))
 	g.Expect(err).NotTo(HaveOccurred(), "failed to update NodePool")
 	t.Logf("Enabled autoscaling. Namespace: %s, name: %s, min: %v, max: %v", nodepool.Namespace, nodepool.Name, min, max)
 
