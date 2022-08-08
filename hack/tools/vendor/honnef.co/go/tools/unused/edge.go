@@ -52,4 +52,8 @@ const (
 	edgeUsedConstant
 	edgeVarDecl
 	edgeIgnored
+	edgeSamePointer
+	edgeTypeParam
+	edgeTypeArg
+	edgeUnionTerm
 )

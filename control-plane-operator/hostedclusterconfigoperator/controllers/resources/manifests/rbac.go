@@ -29,10 +29,28 @@ func IngressToRouteControllerClusterRole() *rbacv1.ClusterRole {
 	}
 }
 
+func IngressToRouteControllerRole() *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "openshift-route-controller-manager",
+			Name:      "openshift-route-controllers",
+		},
+	}
+}
+
 func IngressToRouteControllerClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "system:openshift:openshift-controller-manager:ingress-to-route-controller",
+		},
+	}
+}
+
+func IngressToRouteControllerRoleBinding() *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "openshift-route-controller-manager",
+			Name:      "openshift-route-controllers",
 		},
 	}
 }
