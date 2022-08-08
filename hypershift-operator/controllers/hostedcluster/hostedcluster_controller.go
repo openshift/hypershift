@@ -1376,6 +1376,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.PortierisImageAnnotation,
 		hyperutil.DebugDeploymentsAnnotation,
 		hyperv1.DisableProfilingAnnotation,
+		hyperv1.PrivateIngressControllerAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
