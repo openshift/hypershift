@@ -1,6 +1,7 @@
 package rbac
 
 import (
+	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	rbacv1 "k8s.io/api/rbac/v1"
 )
 
@@ -52,7 +53,7 @@ func ReconcileCSRApproverClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error 
 	r.RoleRef = rbacv1.RoleRef{
 		APIGroup: rbacv1.SchemeGroupVersion.Group,
 		Kind:     "ClusterRole",
-		Name:     "system:openshift:controller:cluster-csr-approver-controller",
+		Name:     hccomanifests.CSRApproverClusterRoleBinding().Name,
 	}
 	r.Subjects = []rbacv1.Subject{
 		{
@@ -129,7 +130,7 @@ func ReconcileIngressToRouteControllerClusterRoleBinding(r *rbacv1.ClusterRoleBi
 	r.RoleRef = rbacv1.RoleRef{
 		APIGroup: rbacv1.SchemeGroupVersion.Group,
 		Kind:     "ClusterRole",
-		Name:     "system:openshift:openshift-controller-manager:ingress-to-route-controller",
+		Name:     hccomanifests.IngressToRouteControllerClusterRole().Name,
 	}
 	r.Subjects = []rbacv1.Subject{
 		{
@@ -183,7 +184,7 @@ func ReconcileNamespaceSecurityAllocationControllerClusterRoleBinding(r *rbacv1.
 	r.RoleRef = rbacv1.RoleRef{
 		APIGroup: rbacv1.SchemeGroupVersion.Group,
 		Kind:     "ClusterRole",
-		Name:     "system:openshift:controller:namespace-security-allocation-controller",
+		Name:     hccomanifests.NamespaceSecurityAllocationControllerClusterRole().Name,
 	}
 	r.Subjects = []rbacv1.Subject{
 		{
