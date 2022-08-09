@@ -2071,6 +2071,7 @@ spec:
                   machineCIDR:
                     description: Deprecated This field will be removed in the next
                       API release. Use MachineNetwork instead
+                    format: cidr
                     type: string
                   machineNetwork:
                     description: 'MachineNetwork is the list of IP address pools for
@@ -2101,10 +2102,12 @@ spec:
                   podCIDR:
                     description: Deprecated This field will be removed in the next
                       API release. Use ClusterNetwork instead
+                    format: cidr
                     type: string
                   serviceCIDR:
                     description: Deprecated This field will be removed in the next
                       API release. Use ServiceNetwork instead
+                    format: cidr
                     type: string
                   serviceNetwork:
                     description: 'ServiceNetwork is the list of IP address pools for
