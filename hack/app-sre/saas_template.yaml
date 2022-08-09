@@ -270,6 +270,110 @@ objects:
   - kind: ServiceAccount
     name: operator
     namespace: ${NAMESPACE}
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    creationTimestamp: null
+    name: external-dns
+    namespace: ${NAMESPACE}
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRole
+  metadata:
+    creationTimestamp: null
+    name: external-dns
+  rules:
+  - apiGroups:
+    - route.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
+    - ""
+    resources:
+    - endpoints
+    - services
+    - nodes
+    - pods
+    verbs:
+    - get
+    - list
+    - watch
+- apiVersion: rbac.authorization.k8s.io/v1
+  kind: ClusterRoleBinding
+  metadata:
+    creationTimestamp: null
+    name: external-dns
+  roleRef:
+    apiGroup: rbac.authorization.k8s.io
+    kind: ClusterRole
+    name: external-dns
+  subjects:
+  - kind: ServiceAccount
+    name: external-dns
+    namespace: ${NAMESPACE}
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    creationTimestamp: null
+    name: external-dns
+    namespace: ${NAMESPACE}
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        name: external-dns
+    strategy: {}
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: external-dns
+          hypershift.openshift.io/operator-component: external-dns
+          name: external-dns
+      spec:
+        containers:
+        - args:
+          - --source=service
+          - --source=openshift-route
+          - --domain-filter=${EXTERNAL_DNS_DOMAIN_FILTER}
+          - --provider=${EXTERNAL_DNS_PROVIDER}
+          - --registry=txt
+          - --txt-suffix=-external-dns
+          - --txt-owner-id=${EXTERNAL_DNS_TXT_OWNER_ID}
+          command:
+          - /external-dns
+          image: registry.redhat.io/edo/external-dns-rhel8@sha256:c1134bb46172997ef7278b6cefbb0da44e72a9f808a7cd67b3c65d464754cab9
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 5
+            httpGet:
+              path: /healthz
+              port: 7979
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            successThreshold: 1
+            timeoutSeconds: 5
+          name: external-dns
+          ports:
+          - containerPort: 7979
+            name: metrics
+          resources:
+            requests:
+              cpu: 5m
+              memory: 20Mi
+          volumeMounts:
+          - mountPath: /etc/provider
+            name: credentials
+        serviceAccountName: external-dns
+        volumes:
+        - name: credentials
+          secret:
+            secretName: ${EXTERNAL_DNS_CREDS_SECRET}
+  status: {}
 - apiVersion: apps/v1
   kind: Deployment
   metadata:
@@ -27640,5 +27744,13 @@ parameters:
   value: aws-credentials
 - name: AWS_PRIVATE_CREDS_SECRET_KEY
   value: credentials
+- name: EXTERNAL_DNS_PROVIDER
+  value: aws
+- name: EXTERNAL_DNS_DOMAIN_FILTER
+  value: service.hypershift.example.org
+- name: EXTERNAL_DNS_CREDS_SECRET
+  value: dns-credentials
+- name: EXTERNAL_DNS_TXT_OWNER_ID
+  value: txt-owner-id
 - name: OPERATOR_REPLICAS
   value: "1"

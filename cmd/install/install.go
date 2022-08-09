@@ -69,6 +69,7 @@ type Options struct {
 	ExternalDNSCredentials                    string
 	ExternalDNSCredentialsSecret              string
 	ExternalDNSDomainFilter                   string
+	ExternalDNSTxtOwnerId                     string
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
 	MetricsSet                                metrics.MetricsSet
@@ -162,6 +163,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentials, "external-dns-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for managing DNS records using external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentialsSecret, "external-dns-secret", "", "Name of an existing secret containing the external-dns credentials.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specifed domain.")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", false, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
@@ -405,6 +407,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 			Provider:          opts.ExternalDNSProvider,
 			DomainFilter:      opts.ExternalDNSDomainFilter,
 			CredentialsSecret: externalDNSSecret,
+			TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
 		}.Build()
 		objects = append(objects, externalDNSDeployment)
 	}
