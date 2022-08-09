@@ -142,10 +142,15 @@ type ExternalDNSDeployment struct {
 	Provider          string
 	DomainFilter      string
 	CredentialsSecret *corev1.Secret
+	TxtOwnerId        string
 }
 
 func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 	replicas := int32(1)
+	txtOwnerId := o.TxtOwnerId
+	if txtOwnerId == "" {
+		txtOwnerId = uuid.NewString()
+	}
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -185,7 +190,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								fmt.Sprintf("--provider=%s", o.Provider),
 								"--registry=txt",
 								"--txt-suffix=-external-dns",
-								fmt.Sprintf("--txt-owner-id=%s", uuid.NewString()),
+								fmt.Sprintf("--txt-owner-id=%s", txtOwnerId),
 							},
 							Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 7979}},
 							LivenessProbe: &corev1.Probe{
