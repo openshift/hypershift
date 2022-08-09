@@ -136,6 +136,7 @@ func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *
 							"--alsologtostderr",
 							"--v=4",
 							"--leader-elect=true",
+							"--powervs-provider-id-fmt=v2",
 						},
 						Ports: []corev1.ContainerPort{
 							{
