@@ -114,7 +114,7 @@ oc create ns ${HOSTED_CONTROL_PLANE_NAMESPACE}
 bin/hypershift create cluster agent --name=${HOSTED_CLUSTER_NAME} --pull-secret=${PULL_SECRET_FILE} --agent-namespace=${HOSTED_CONTROL_PLANE_NAMESPACE} --api-server-address=api.${HOSTED_CLUSTER_NAME}.${BASEDOMAIN}
 ~~~
 
-## Create a InfraEnv
+## Create an InfraEnv
 
 An InfraEnv is a enviroment to which hosts booting the live ISO can join as Agents.  In this case, the Agents will be created in the
 same namespace as our HCP
@@ -149,6 +149,24 @@ You can add Agents by manually configuring the machine to boot with the live ISO
 
 The live ISO may be downloaded and used to boot a node (bare metal or VM).  On boot, the node will communicate with the
 assisted-service and register as an Agent in the the same namespace as the InfraEnv.
+
+Once each Agent is created, optionally set its installation_disk_id and hostname in the Spec. Then approve it to
+indicate that the Agent is ready for use.
+
+~~~sh
+$ oc get agents -n ${HOSTED_CONTROL_PLANE_NAMESPACE}
+NAME                                   CLUSTER   APPROVED   ROLE          STAGE
+86f7ac75-4fc4-4b36-8130-40fa12602218                        auto-assign
+e57a637f-745b-496e-971d-1abbf03341ba                        auto-assign
+
+$ oc patch agent 86f7ac75-4fc4-4b36-8130-40fa12602218 -p '{"spec":{"installation_disk_id":"/dev/sda","approved":true,"hostname":"worker-0.example.krnl.es"}}' --type merge
+$ oc patch agent 23d0c614-2caa-43f5-b7d3-0b3564688baa -p '{"spec":{"installation_disk_id":"/dev/sda","approved":true,"hostname":"worker-1.example.krnl.es"}}' --type merge
+
+$ oc get agents -n ${HOSTED_CONTROL_PLANE_NAMESPACE}
+NAME                                   CLUSTER   APPROVED   ROLE          STAGE
+86f7ac75-4fc4-4b36-8130-40fa12602218             true       auto-assign
+e57a637f-745b-496e-971d-1abbf03341ba             true       auto-assign
+~~~
 
 ### metal3
 
@@ -222,24 +240,11 @@ spec:
 EOF
 ~~~
 
-## Configuring Agents
+* If you wish to indicate an installation disk, use the [rootDeviceHints](https://github.com/metal3-io/baremetal-operator/blob/main/docs/api.md#rootdevicehints) in the BMH Spec.
 
-Once the Agents are created, approve them and set their installation_disk_id, hostname, and role
+* If you wish to manually set a hostname, set it via an annotation on the BMH: bmac.agent-install.openshift.io/hostname
 
-~~~sh
-$ oc get agents -n ${HOSTED_CONTROL_PLANE_NAMESPACE}
-NAME                                   CLUSTER   APPROVED   ROLE          STAGE
-86f7ac75-4fc4-4b36-8130-40fa12602218                        auto-assign
-e57a637f-745b-496e-971d-1abbf03341ba                        auto-assign
-
-$ oc patch agent 86f7ac75-4fc4-4b36-8130-40fa12602218 -p '{"spec":{"installation_disk_id":"/dev/sda","approved":true,"hostname":"worker-0.example.krnl.es","role":"worker"}}' --type merge
-$ oc patch agent 23d0c614-2caa-43f5-b7d3-0b3564688baa -p '{"spec":{"installation_disk_id":"/dev/sda","approved":true,"hostname":"worker-1.example.krnl.es","role":"worker"}}' --type merge
-
-$ oc get agents -n ${HOSTED_CONTROL_PLANE_NAMESPACE}
-NAME                                   CLUSTER   APPROVED   ROLE          STAGE
-86f7ac75-4fc4-4b36-8130-40fa12602218             true       worker
-e57a637f-745b-496e-971d-1abbf03341ba             true       worker
-~~~
+* Agent CRs that are created via BMH will automatically be approved.
 
 ## Scale the NodePool
 
@@ -278,3 +283,124 @@ $ oc get clusterversion
 NAME      VERSION   AVAILABLE   PROGRESSING   SINCE   STATUS
 version   4.10.18   True        False         16s     Cluster version is 4.10.18
 ~~~
+
+## Handling Ingress
+
+Every OpenShift cluster comes set up with a default application ingress
+controller, which is expected have an external DNS record associated with it.
+
+For example, if a HyperShift cluster named `example` with the base domain
+`krnl.es` is created, then the wildcard domain
+`*.apps.example.krnl.es` is expected to be routable.
+
+### Set up a LoadBalancer and wildcard DNS record for the `*.apps`.
+
+This option requires deploying MetalLB, configuring a new LoadBalancer service that routes to the ingress deployment, as well as assigning a wildcard DNS entry to the LoadBalancer's IP address.
+
+**Step 1**
+
+Set up [MetalLB](https://docs.openshift.com/container-platform/4.10/networking/metallb/about-metallb.html) so that when you create a service of type LoadBalancer, MetalLB will add an external IP address for the service.
+~~~sh
+hypershift create kubeconfig > kubeconfig
+export KUBECONFIG=$PWD/kubeconfig
+
+cat <<"EOF" | oc apply -f -
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: metallb
+  labels:
+    openshift.io/cluster-monitoring: "true"
+  annotations:
+    workload.openshift.io/allowed: management
+EOF
+
+cat <<"EOF" | oc apply -f -
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: metallb-operator-operatorgroup
+  namespace: metallb
+spec:
+  targetNamespaces:
+  - metallb
+EOF
+
+cat <<"EOF" | oc apply -f -
+apiVersion: operators.coreos.com/v1alpha1
+kind: Subscription
+metadata:
+  name: metallb-operator
+  namespace: metallb
+spec:
+  channel: "stable"
+  name: metallb-operator
+  source: redhat-operators
+  sourceNamespace: openshift-marketplace
+EOF
+
+cat <<"EOF" | oc apply -f -
+apiVersion: metallb.io/v1beta1
+kind: MetalLB
+metadata:
+  name: metallb
+  namespace: metallb
+EOF
+~~~
+
+**Step 2**
+
+Create an AddressPool with a single IP address.\
+**_Note:_** The IP address assigned to the service must be on the same subnet as the network used by the cluster nodes.\
+Change the INGRESS_IP variable to fit your environment.
+~~~sh
+export INGRESS_IP=192.168.127.77
+
+envsubst <<"EOF" | oc apply -f -
+apiVersion: metallb.io/v1alpha1
+kind: AddressPool
+metadata:
+  name: ingress-public-ip
+  namespace: metallb
+spec:
+  protocol: layer2
+  autoAssign: false
+  addresses:
+    - ${INGRESS_IP}-${INGRESS_IP}
+EOF
+~~~
+
+**Step 3**
+
+Set up the LoadBalancer Service that routes ingress traffic to the ingress deployment.
+~~~sh
+cat <<"EOF" | oc apply -f -
+kind: Service
+apiVersion: v1
+metadata:
+  annotations:
+    metallb.universe.tf/address-pool: ingress-public-ip
+  name: metallb-ingress
+  namespace: openshift-ingress
+spec:
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 80
+    - name: https
+      protocol: TCP
+      port: 443
+      targetPort: 443
+  selector:
+    ingresscontroller.operator.openshift.io/deployment-ingresscontroller: default
+  type: LoadBalancer
+EOF
+~~~
+
+**Step 4**
+
+Configure wildcard DNS A record or CNAME that references the LoadBalancer Service's external IP.
+Configure a wildcard *.apps.<cluster_name>.<base_domain>. DNS entry referencing the IP stored in
+$INGRESS_IP that is routable both internally and externally to the cluster.
+No newline at end of file

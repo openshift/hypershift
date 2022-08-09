@@ -29,6 +29,9 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 		Image:  &capiazure.Image{ID: utilpointer.String(bootImage(hcluster, nodePool))},
 		OSDisk: capiazure.OSDisk{
 			DiskSizeGB: utilpointer.Int32Ptr(nodePool.Spec.Platform.Azure.DiskSizeGB),
+			ManagedDisk: &capiazure.ManagedDiskParameters{
+				StorageAccountType: nodePool.Spec.Platform.Azure.DiskStorageAccountType,
+			},
 		},
 		SubnetName:             hcluster.Spec.Platform.Azure.SubnetName,
 		Identity:               capiazure.VMIdentityUserAssigned,

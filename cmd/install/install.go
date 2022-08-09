@@ -53,7 +53,7 @@ type Options struct {
 	Template                                  bool
 	Format                                    string
 	ExcludeEtcdManifests                      bool
-	EnableOCPClusterMonitoring                bool
+	PlatformMonitoring                        metrics.PlatformMonitoring
 	EnableCIDebugOutput                       bool
 	PrivatePlatform                           string
 	AWSPrivateCreds                           string
@@ -70,6 +70,7 @@ type Options struct {
 	ExternalDNSCredentialsSecret              string
 	ExternalDNSDomainFilter                   string
 	EnableAdminRBACGeneration                 bool
+	EnableUWMTelemetryRemoteWrite             bool
 	MetricsSet                                metrics.MetricsSet
 }
 
@@ -134,7 +135,7 @@ func NewCommand() *cobra.Command {
 
 	var opts Options
 	if os.Getenv("CI") == "true" {
-		opts.EnableOCPClusterMonitoring = true
+		opts.PlatformMonitoring = metrics.PlatformMonitoringAll
 		opts.EnableCIDebugOutput = true
 	}
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
@@ -145,7 +146,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
 	cmd.PersistentFlags().BoolVar(&opts.EnableWebhook, "enable-webhook", false, "Enable webhook for hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
-	cmd.PersistentFlags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
+	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
 	cmd.PersistentFlags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCreds, "aws-private-creds", opts.AWSPrivateCreds, "Path to an AWS credentials file with privileges sufficient to manage private cluster resources")
@@ -165,6 +166,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
 	cmd.PersistentFlags().Var(&opts.MetricsSet, "metrics-set", "The set of metrics to produce for each HyperShift control plane. Valid values are: Telemetry, SRE, All")
+	cmd.PersistentFlags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, HyperShift operator ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -258,7 +260,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 
 	operatorNamespace := assets.HyperShiftNamespace{
 		Name:                       opts.Namespace,
-		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
+		EnableOCPClusterMonitoring: opts.PlatformMonitoring.IsEnabled(),
 	}.Build()
 	objects = append(objects, operatorNamespace)
 
@@ -413,7 +415,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		OperatorImage:                  opts.HyperShiftImage,
 		ServiceAccount:                 operatorServiceAccount,
 		Replicas:                       opts.HyperShiftOperatorReplicas,
-		EnableOCPClusterMonitoring:     opts.EnableOCPClusterMonitoring,
+		EnableOCPClusterMonitoring:     opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
 		EnableCIDebugOutput:            opts.EnableCIDebugOutput,
 		EnableWebhook:                  opts.EnableWebhook,
 		PrivatePlatform:                opts.PrivatePlatform,
@@ -427,6 +429,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		Images:                         images,
 		MetricsSet:                     opts.MetricsSet,
 		IncludeVersion:                 !opts.Template,
+		UWMTelemetry:                   opts.EnableUWMTelemetryRemoteWrite,
 	}.Build()
 	objects = append(objects, operatorDeployment)
 
@@ -443,7 +446,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	prometheusRoleBinding := assets.HyperShiftOperatorPrometheusRoleBinding{
 		Namespace:                  operatorNamespace,
 		Role:                       prometheusRole,
-		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
+		EnableOCPClusterMonitoring: opts.PlatformMonitoring.IsEnabled(),
 	}.Build()
 	objects = append(objects, prometheusRoleBinding)
 

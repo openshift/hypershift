@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -148,7 +149,7 @@ func fakeHCP() *hyperv1.HostedControlPlane {
 }
 
 func fakeIngressCert() *corev1.Secret {
-	s := manifests.IngressCert("bar")
+	s := cpomanifests.IngressCert("bar")
 	s.Data = map[string][]byte{
 		"tls.crt": []byte("12345"),
 		"tls.key": []byte("12345"),
@@ -201,7 +202,7 @@ func fakeKubeadminPasswordSecret() *corev1.Secret {
 }
 
 func fakeOAuthServingCert() *corev1.Secret {
-	s := manifests.OpenShiftOAuthServerCert("bar")
+	s := cpomanifests.OpenShiftOAuthServerCert("bar")
 	s.Data = map[string][]byte{"tls.crt": []byte("test")}
 	return s
 }

@@ -454,6 +454,18 @@ Value must be one of:
 </p>
 </td>
 </tr>
+<tr>
+<td>
+<code>nodeSelector</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -1163,8 +1175,10 @@ AWSCloudProviderConfig
 <td>
 <em>(Optional)</em>
 <p>CloudProviderConfig specifies AWS networking configuration for the control
-plane.</p>
-<p>TODO(dan): should this be named AWSNetworkConfig?</p>
+plane.
+This is mainly used for cloud provider controller config:
+<a href="https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364">https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364</a>
+TODO(dan): should this be named AWSNetworkConfig?</p>
 </td>
 </tr>
 <tr>
@@ -1457,8 +1471,7 @@ string
 <a href="#hypershift.openshift.io/v1alpha1.AWSPlatformSpec">AWSPlatformSpec</a>)
 </p>
 <p>
-<p>AWSRolesRef contains references to various AWS IAM roles required to enable
-integrations such as OIDC.</p>
+<p>AWSRolesRef contains references to various AWS IAM roles required for operators to make calls against the AWS API.</p>
 </p>
 <table>
 <thead>
@@ -1496,8 +1509,7 @@ Example:
 }
 ]
 }</p>
-<p>IngressARN is an ARN value referencing a role used for ingress OIDC
-integration.</p>
+<p>IngressARN is an ARN value referencing a role appropriate for the Ingress Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1533,8 +1545,7 @@ string
 </em>
 </td>
 <td>
-<p>ImageRegistryARN is an ARN value referencing a role used for image
-registry OIDC integration.</p>
+<p>ImageRegistryARN is an ARN value referencing a role appropriate for the Image Registry Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1575,8 +1586,7 @@ string
 </em>
 </td>
 <td>
-<p>StorageOIDC is an ARN value referencing a role used for storage driver OIDC
-integration.</p>
+<p>StorageARN is an ARN value referencing a role appropriate for the Storage Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1613,8 +1623,7 @@ string
 </em>
 </td>
 <td>
-<p>NetworkOIDC is an ARN value referencing a role used for networking OIDC
-integration.</p>
+<p>NetworkARN is an ARN value referencing a role appropriate for the Network Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1646,8 +1655,7 @@ string
 </em>
 </td>
 <td>
-<p>KubeCloudControllerARN is an ARN value referencing a role that should contain
-policy permissions matching the cloud controller policy.</p>
+<p>KubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1724,8 +1732,7 @@ string
 </em>
 </td>
 <td>
-<p>NodePoolManagementARN is an ARN value referencing a role that should contain
-policy permissions matching the node pool management policy.</p>
+<p>NodePoolManagementARN is an ARN value referencing a role appropriate for the CAPI Controller.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1822,8 +1829,7 @@ string
 </em>
 </td>
 <td>
-<p>ControlPlaneOperatorARN  is an ARN value referencing a role that should contain
-policy permissions matching the control-plane-operator policy.</p>
+<p>ControlPlaneOperatorARN  is an ARN value referencing a role appropriate for the Control Plane Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -2038,6 +2044,24 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
+</td>
+</tr>
+<tr>
+<td>
+<code>diskStorageAccountType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DiskStorageAccountType is the disk storage account type to use. Valid values are:
+* Standard_LRS: HDD
+* StandardSSD_LRS: Standard SSD
+* Premium_LRS: Premium SDD
+* UltraSSD_LRS: Ultra SDD</p>
+<p>Defaults to Premium_LRS. For more details, visit the Azure documentation:
+<a href="https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison">https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison</a></p>
 </td>
 </tr>
 <tr>
@@ -2460,10 +2484,57 @@ github.com/openshift/api/config/v1.ProxySpec
 </tr>
 </tbody>
 </table>
+###ClusterNetworkEntry { #hypershift.openshift.io/v1alpha1.ClusterNetworkEntry }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">ClusterNetworking</a>)
+</p>
+<p>
+<p>ClusterNetworkEntry is a single IP address block for pod IP blocks. IP blocks
+are allocated with size 2^HostSubnetLength.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>cidr</code></br>
+<em>
+<a href="#">
+github.com/openshift/hypershift/api/util/ipnet.IPNet
+</a>
+</em>
+</td>
+<td>
+<p>CIDR is the IP block address pool.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>hostPrefix</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>HostPrefix is the prefix size to allocate to each node from the CIDR.
+For example, 24 would allocate 2^8=256 adresses to each node. If this
+field is not used by the plugin, it can be left unset.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ClusterNetworking { #hypershift.openshift.io/v1alpha1.ClusterNetworking }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>)
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
 <p>ClusterNetworking specifies network configuration for a cluster.</p>
@@ -2484,8 +2555,10 @@ string
 </em>
 </td>
 <td>
-<p>ServiceCIDR is&hellip;</p>
-<p>TODO(dan): document it</p>
+<em>(Optional)</em>
+<p>Deprecated
+This field will be removed in the next API release.
+Use ServiceNetwork instead</p>
 </td>
 </tr>
 <tr>
@@ -2496,8 +2569,10 @@ string
 </em>
 </td>
 <td>
-<p>PodCIDR is&hellip;</p>
-<p>TODO(dan): document it</p>
+<em>(Optional)</em>
+<p>Deprecated
+This field will be removed in the next API release.
+Use ClusterNetwork instead</p>
 </td>
 </tr>
 <tr>
@@ -2508,8 +2583,56 @@ string
 </em>
 </td>
 <td>
-<p>MachineCIDR is&hellip;</p>
-<p>TODO(dan): document it</p>
+<em>(Optional)</em>
+<p>Deprecated
+This field will be removed in the next API release.
+Use MachineNetwork instead</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>machineNetwork</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.MachineNetworkEntry">
+[]MachineNetworkEntry
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>MachineNetwork is the list of IP address pools for machines.
+TODO: make this required in the next version of the API</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterNetwork</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworkEntry">
+[]ClusterNetworkEntry
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ClusterNetwork is the list of IP address pools for pods.
+TODO: make this required in the next version of the API</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceNetwork</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ServiceNetworkEntry">
+[]ServiceNetworkEntry
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ServiceNetwork is the list of IP address pools for services.
+NOTE: currently only one entry is supported.
+TODO: make this required in the next version of the API</p>
 </td>
 </tr>
 <tr>
@@ -2655,7 +2778,17 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 <td><p>HostedClusterAvailable indicates whether the HostedCluster has a healthy
 control plane.</p>
 </td>
+</tr><tr><td><p>&#34;Degraded&#34;</p></td>
+<td><p>HostedClusterDegraded indicates whether the HostedCluster is encountering
+an error that may require user intervention to resolve.</p>
+</td>
+</tr><tr><td><p>&#34;Progressing&#34;</p></td>
+<td><p>HostedClusterProgressing indicates whether the HostedCluster is attempting
+an initial deployment or upgrade.</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Degraded&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;IgnitionEndpointAvailable&#34;</p></td>
 <td><p>IgnitionEndpointAvailable indicates whether the ignition server for the
@@ -3317,6 +3450,18 @@ Value must be one of:
 </p>
 </td>
 </tr>
+<tr>
+<td>
+<code>nodeSelector</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1alpha1.HostedClusterStatus }
@@ -3469,12 +3614,30 @@ string
 </tr>
 <tr>
 <td>
+<code>networking</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">
+ClusterNetworking
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Networking specifies network configuration for the cluster.
+Temporarily optional for backward compatibility, required in future releases.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>serviceCIDR</code></br>
 <em>
 string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>deprecated
+use networking.ServiceNetwork</p>
 </td>
 </tr>
 <tr>
@@ -3485,6 +3648,9 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>deprecated
+use networking.ClusterNetwork</p>
 </td>
 </tr>
 <tr>
@@ -3495,6 +3661,9 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>deprecated
+use networking.MachineNetwork</p>
 </td>
 </tr>
 <tr>
@@ -3507,7 +3676,10 @@ NetworkType
 </em>
 </td>
 <td>
-<p>NetworkType specifies the SDN provider used for cluster networking.</p>
+<em>(Optional)</em>
+<p>deprecated
+use networking.NetworkType
+NetworkType specifies the SDN provider used for cluster networking.</p>
 <p>
 Value must be one of:
 &#34;Calico&#34;, 
@@ -3604,7 +3776,9 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>APIPort is the port at which the APIServer listens inside a worker</p>
+<p>deprecated
+use networking.apiServer.APIPort
+APIPort is the port at which the APIServer listens inside a worker</p>
 </td>
 </tr>
 <tr>
@@ -3616,7 +3790,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>APIAdvertiseAddress is the address at which the APIServer listens
+<p>deprecated
+use networking.apiServer.AdvertiseAddress
+APIAdvertiseAddress is the address at which the APIServer listens
 inside a worker.</p>
 </td>
 </tr>
@@ -3630,7 +3806,10 @@ inside a worker.</p>
 </em>
 </td>
 <td>
-<p>APIAllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+<em>(Optional)</em>
+<p>deprecated
+use networking.apiServer.APIAllowedCIDRBlocks
+APIAllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
 If not specified, traffic is allowed from all addresses.
 This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges</p>
 </td>
@@ -3856,6 +4035,18 @@ ClusterAutoscaling
 <em>(Optional)</em>
 <p>Autoscaling specifies auto-scaling behavior that applies to all NodePools
 associated with the control plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodeSelector</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
 </td>
 </tr>
 </tbody>
@@ -4582,7 +4773,7 @@ KubevirtCompute
 <a href="#hypershift.openshift.io/v1alpha1.KubevirtVolume">KubevirtVolume</a>)
 </p>
 <p>
-<p>KubevirtPersistentVolume containes the values involved with provisioning persistent storage for a KubeVirt VM.</p>
+<p>KubevirtPersistentVolume contains the values involved with provisioning persistent storage for a KubeVirt VM.</p>
 </p>
 <table>
 <thead>
@@ -4616,6 +4807,21 @@ string
 <td>
 <em>(Optional)</em>
 <p>StorageClass is the storageClass used for the underlying PVC that hosts the volume</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>accessModes</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.PersistentVolumeAccessMode">
+[]PersistentVolumeAccessMode
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AccessModes is an array that contains the desired Access Modes the root volume should have.
+More info: <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes">https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes</a></p>
 </td>
 </tr>
 </tbody>
@@ -4770,6 +4976,37 @@ string
 </tr>
 </tbody>
 </table>
+###MachineNetworkEntry { #hypershift.openshift.io/v1alpha1.MachineNetworkEntry }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">ClusterNetworking</a>)
+</p>
+<p>
+<p>MachineNetworkEntry is a single IP address block for node IP blocks.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>cidr</code></br>
+<em>
+<a href="#">
+github.com/openshift/hypershift/api/util/ipnet.IPNet
+</a>
+</em>
+</td>
+<td>
+<p>CIDR is the IP block address pool for machines within the cluster.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ManagedEtcdSpec { #hypershift.openshift.io/v1alpha1.ManagedEtcdSpec }
 <p>
 (<em>Appears on:</em>
@@ -4913,7 +5150,7 @@ is empty.</p>
 <td><p>OVNKubernetes specifies OVN as the SDN provider</p>
 </td>
 </tr><tr><td><p>&#34;OpenShiftSDN&#34;</p></td>
-<td><p>OpenShiftSDN specifies OpenshiftSDN as the SDN provider</p>
+<td><p>OpenShiftSDN specifies OpenShiftSDN as the SDN provider</p>
 </td>
 </tr><tr><td><p>&#34;Other&#34;</p></td>
 <td><p>Other specifies an undefined SDN provider</p>
@@ -5544,6 +5781,13 @@ the management cluster.</p>
 </td>
 </tr></tbody>
 </table>
+###PersistentVolumeAccessMode { #hypershift.openshift.io/v1alpha1.PersistentVolumeAccessMode }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.KubevirtPersistentVolume">KubevirtPersistentVolume</a>)
+</p>
+<p>
+</p>
 ###PersistentVolumeEtcdStorageSpec { #hypershift.openshift.io/v1alpha1.PersistentVolumeEtcdStorageSpec }
 <p>
 (<em>Appears on:</em>
@@ -6469,6 +6713,37 @@ AESCBCSpec
 <td><p>KMS integrates with a cloud provider&rsquo;s key management service to do secret encryption</p>
 </td>
 </tr></tbody>
+</table>
+###ServiceNetworkEntry { #hypershift.openshift.io/v1alpha1.ServiceNetworkEntry }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">ClusterNetworking</a>)
+</p>
+<p>
+<p>ServiceNetworkEntry is a single IP address block for the service network.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>cidr</code></br>
+<em>
+<a href="#">
+github.com/openshift/hypershift/api/util/ipnet.IPNet
+</a>
+</em>
+</td>
+<td>
+<p>CIDR is the IP block address pool for services within the cluster.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###ServicePublishingStrategy { #hypershift.openshift.io/v1alpha1.ServicePublishingStrategy }
 <p>

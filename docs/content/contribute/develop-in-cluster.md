@@ -123,8 +123,8 @@ in a single shot using `publish-ocp.sh` together with the `oc debug` command:
 ```shell hl_lines="3 4"
 oc debug --namespace hypershift deployments/operator --image $(hack/publish-ocp.sh ./hypershift-operator) -- \
   /ko-app/hypershift-operator run \
-  --oidc-storage-provider-s3-region $BUCKET_NAME \
-  --oidc-storage-provider-s3-bucket-name $BUCKET_REGION
+  --oidc-storage-provider-s3-region $BUCKET_REGION \
+  --oidc-storage-provider-s3-bucket-name $BUCKET_NAME
 ```
 
 !!! note

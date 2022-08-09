@@ -78,18 +78,8 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			TimeoutSeconds:      5,
 		},
 	}
-	params.DeploymentConfig.SetColocation(hcp)
+	params.DeploymentConfig.SetDefaults(hcp, labels, nil)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
-	switch hcp.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		params.Replicas = 3
-		params.DeploymentConfig.SetMultizoneSpread(schedulerLabels)
-	default:
-		params.Replicas = 1
-	}
-
 	params.SetDefaultSecurityContext = setDefaultSecurityContext
 	params.DisableProfiling = util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.SchedulerDeployment("").Name)
 

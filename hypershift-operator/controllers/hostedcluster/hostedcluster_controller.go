@@ -42,6 +42,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	"github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	ignitionserverreconciliation "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -64,6 +65,7 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -78,6 +80,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	kjson "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/types"
@@ -234,7 +237,7 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		managedResources = append(managedResources, &routev1.Route{})
 	}
-	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityConfigOpenshiftIO) {
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityIngress) {
 		managedResources = append(managedResources, &configv1.Ingress{})
 	}
 	return managedResources
@@ -296,6 +299,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		ObservedGeneration: hcluster.Generation,
 		Status:             metav1.ConditionTrue,
 		Reason:             "ReconciliatonSucceeded",
+		Message:            "Reconciliation completed succesfully",
 		LastTransitionTime: r.now(),
 	}
 	if err != nil {
@@ -354,6 +358,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.reconcileDeprecatedAWSRoles(ctx, hcluster); err != nil {
 			return ctrl.Result{}, err
 		}
+	}
+
+	// Reconcile deprecated network settings
+	if err := r.reconcileDeprecatedNetworkSettings(hcluster); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Update fields if required.
@@ -417,15 +426,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if hcp != nil {
 			failingCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionFailing))
 			if failingCond != nil {
-				switch failingCond.Status {
-				case metav1.ConditionTrue:
+				condition.Reason = failingCond.Reason
+				condition.Message = failingCond.Message
+				if failingCond.Status == metav1.ConditionTrue {
 					condition.Status = metav1.ConditionFalse
-					condition.Reason = failingCond.Reason
-					condition.Message = failingCond.Message
-				case metav1.ConditionFalse:
+				} else {
 					condition.Status = metav1.ConditionTrue
-					condition.Reason = failingCond.Reason
-					condition.Message = ""
 				}
 			}
 		}
@@ -438,14 +444,41 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			Type:               string(hyperv1.ClusterVersionUpgradeable),
 			Status:             metav1.ConditionUnknown,
 			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
+			Message:            "The hosted control plane is not found",
 			ObservedGeneration: hcluster.Generation,
 		}
 		if hcp != nil {
 			upgradeableCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable))
 			if upgradeableCondition != nil {
 				condition = upgradeableCondition
+				if condition.Status == metav1.ConditionTrue {
+					condition.Message = "The hosted cluster is upgradable"
+				}
 			}
 		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
+	}
+
+	// Copy the Degraded condition on the hostedcontrolplane
+	{
+		condition := &metav1.Condition{
+			Type:               string(hyperv1.HostedClusterDegraded),
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
+			Message:            "The hosted control plane is not found",
+			ObservedGeneration: hcluster.Generation,
+		}
+		if hcp != nil {
+			degradedCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedControlPlaneDegraded))
+			if degradedCondition != nil {
+				condition = degradedCondition
+				condition.Type = string(hyperv1.HostedClusterDegraded)
+				if condition.Status == metav1.ConditionFalse {
+					condition.Message = "The hosted cluster is not degraded"
+				}
+			}
+		}
+		condition.ObservedGeneration = hcluster.Generation
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
 	}
 
@@ -510,7 +543,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			condition.Reason = hyperv1.UnsupportedHostedClusterReason
 		} else {
 			condition.Status = metav1.ConditionTrue
-			condition.Message = "HostedCluster is support by operator configuration"
+			condition.Message = "HostedCluster is supported by operator configuration"
 			condition.Reason = hyperv1.HostedClusterAsExpectedReason
 		}
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
@@ -602,9 +635,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
 			if apierrors.IsNotFound(err) {
 				newCondition = metav1.Condition{
-					Type:   string(hyperv1.IgnitionEndpointAvailable),
-					Status: metav1.ConditionFalse,
-					Reason: hyperv1.IgnitionServerDeploymentNotFoundReason,
+					Type:    string(hyperv1.IgnitionEndpointAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.IgnitionServerDeploymentNotFoundReason,
+					Message: "Ignition server deployment not found",
 				}
 			} else {
 				return ctrl.Result{}, fmt.Errorf("failed to get ignition server deployment: %w", err)
@@ -612,16 +646,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			// Assume the deployment is unavailable until proven otherwise.
 			newCondition = metav1.Condition{
-				Type:   string(hyperv1.IgnitionEndpointAvailable),
-				Status: metav1.ConditionFalse,
-				Reason: hyperv1.IgnitionServerDeploymentUnavailableReason,
+				Type:    string(hyperv1.IgnitionEndpointAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.IgnitionServerDeploymentUnavailableReason,
+				Message: "Ignition server deployment is not yet available",
 			}
 			for _, cond := range deployment.Status.Conditions {
 				if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
 					newCondition = metav1.Condition{
-						Type:   string(hyperv1.IgnitionEndpointAvailable),
-						Status: metav1.ConditionTrue,
-						Reason: hyperv1.IgnitionServerDeploymentAsExpectedReason,
+						Type:    string(hyperv1.IgnitionEndpointAvailable),
+						Status:  metav1.ConditionTrue,
+						Reason:  hyperv1.IgnitionServerDeploymentAsExpectedReason,
+						Message: "Ignition server deployent is available",
 					}
 					break
 				}
@@ -655,6 +691,29 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 		}
+	}
+
+	// Set Progressing condition
+	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.HostedClusterProgressing),
+			ObservedGeneration: hcluster.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            "HostedCluster is at expected version",
+			Reason:             hyperv1.AsExpectedReason,
+		}
+		progressing, err := isProgressing(ctx, hcluster)
+		if err != nil {
+			condition.Status = metav1.ConditionFalse
+			condition.Message = err.Error()
+			condition.Reason = "Blocked"
+		}
+		if progressing {
+			condition.Status = metav1.ConditionTrue
+			condition.Message = "HostedCluster is deploying, upgrading, or reconfiguring"
+			condition.Reason = "Progressing"
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
 
 	// Persist status updates
@@ -1304,12 +1363,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
 func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster) error {
-	// Always initialize the HostedControlPlane with an image matching
-	// the HostedCluster.
-	if hcp.ObjectMeta.CreationTimestamp.IsZero() {
-		hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
-	}
-
 	hcp.Annotations = map[string]string{
 		HostedClusterAnnotation: client.ObjectKeyFromObject(hcluster).String(),
 	}
@@ -1341,6 +1394,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		}
 	}
 
+	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
+
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
 		hcp.Spec.SSHKey = corev1.LocalObjectReference{Name: controlplaneoperator.SSHKey(hcp.Namespace).Name}
@@ -1348,18 +1403,14 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	if hcluster.Spec.AuditWebhook != nil && len(hcluster.Spec.AuditWebhook.Name) > 0 {
 		hcp.Spec.AuditWebhook = hcluster.Spec.AuditWebhook.DeepCopy()
 	}
+
 	hcp.Spec.FIPS = hcluster.Spec.FIPS
 	hcp.Spec.IssuerURL = hcluster.Spec.IssuerURL
 	hcp.Spec.ServiceAccountSigningKey = hcluster.Spec.ServiceAccountSigningKey
-	hcp.Spec.ServiceCIDR = hcluster.Spec.Networking.ServiceCIDR
-	hcp.Spec.PodCIDR = hcluster.Spec.Networking.PodCIDR
-	hcp.Spec.MachineCIDR = hcluster.Spec.Networking.MachineCIDR
-	hcp.Spec.NetworkType = hcluster.Spec.Networking.NetworkType
-	if hcluster.Spec.Networking.APIServer != nil {
-		hcp.Spec.APIAdvertiseAddress = hcluster.Spec.Networking.APIServer.AdvertiseAddress
-		hcp.Spec.APIPort = hcluster.Spec.Networking.APIServer.Port
-		hcp.Spec.APIAllowedCIDRBlocks = hcluster.Spec.Networking.APIServer.AllowedCIDRBlocks
-	}
+
+	hcp.Spec.Networking = hcluster.Spec.Networking
+	// Populate deprecated fields for compatibility with older control plane operators
+	populateDeprecatedNetworkingFields(hcp, hcluster)
 
 	hcp.Spec.ClusterID = hcluster.Spec.ClusterID
 	hcp.Spec.InfraID = hcluster.Spec.InfraID
@@ -1384,6 +1435,11 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.SecretEncryption = hcluster.Spec.SecretEncryption.DeepCopy()
 	}
 
+	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
+	hcp.Spec.OLMCatalogPlacement = hcluster.Spec.OLMCatalogPlacement
+	hcp.Spec.Autoscaling = hcluster.Spec.Autoscaling
+	hcp.Spec.NodeSelector = hcluster.Spec.NodeSelector
+
 	// Pass through Platform spec.
 	hcp.Spec.Platform = *hcluster.Spec.Platform.DeepCopy()
 	switch hcluster.Spec.Platform.Type {
@@ -1391,13 +1447,6 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		// Agent platform uses None platform for the hcp.
 		hcp.Spec.Platform.Type = hyperv1.NonePlatform
 	}
-
-	// always reconcile the release image (facilitates rolling forward)
-	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
-
-	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
-	hcp.Spec.OLMCatalogPlacement = hcluster.Spec.OLMCatalogPlacement
-	hcp.Spec.Autoscaling = hcluster.Spec.Autoscaling
 
 	// Backward compatible conversions.
 	// TODO (alberto): Drop this as we go GA in only support targeted release.
@@ -1416,7 +1465,23 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		if err != nil {
 			return fmt.Errorf("failed to convert configuration fields to raw extension: %w", err)
 		}
+		// TODO: cannot remove until IBM's production fleet (4.9_openshift, 4.10_openshift) of control-plane-operators
+		// are upgraded to versions that read validation information from new sections
 		hcp.Spec.Configuration.Items = items
+		secretRef := []corev1.LocalObjectReference{}
+		configMapRef := []corev1.LocalObjectReference{}
+		for _, secretName := range globalconfig.SecretRefs(hcluster.Spec.Configuration) {
+			secretRef = append(secretRef, corev1.LocalObjectReference{
+				Name: secretName,
+			})
+		}
+		for _, configMapName := range globalconfig.ConfigMapRefs(hcluster.Spec.Configuration) {
+			configMapRef = append(configMapRef, corev1.LocalObjectReference{
+				Name: configMapName,
+			})
+		}
+		hcp.Spec.Configuration.SecretRefs = secretRef
+		hcp.Spec.Configuration.ConfigMapRefs = configMapRef
 	} else {
 		hcp.Spec.Configuration = nil
 	}
@@ -1637,6 +1702,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		}
 
 		hyperutil.SetColocation(hcluster.ObjectMeta, deployment)
+		hyperutil.SetNodeSelector(hcluster, deployment)
 		// TODO (alberto): Reconsider enable this back when we face a real need
 		// with no better solution.
 		// hyperutil.SetRestartAnnotation(hc, deployment)
@@ -2143,6 +2209,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 	hyperutil.SetRestartAnnotation(hc.ObjectMeta, deployment)
 	hyperutil.SetControlPlaneIsolation(hc.ObjectMeta, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
+	hyperutil.SetReleaseImageAnnotation(deployment, hc.Spec.Release.Image)
 	return nil
 }
 
@@ -2477,6 +2544,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 	}
 
 	hyperutil.SetColocation(hc.ObjectMeta, deployment)
+	hyperutil.SetNodeSelector(hc, deployment)
 	hyperutil.SetRestartAnnotation(hc.ObjectMeta, deployment)
 	hyperutil.SetControlPlaneIsolation(hc.ObjectMeta, deployment)
 	hyperutil.SetDefaultPriorityClass(deployment)
@@ -2932,8 +3000,8 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) metav1.Condition {
 	// Determine whether the hosted control plane is available.
 	hcpAvailableStatus := metav1.ConditionFalse
-	hcpAvailableMessage := "The hosted control plane is unavailable"
-	hcpAvailableReason := hyperv1.HostedClusterUnhealthyComponentsReason
+	hcpAvailableMessage := "Waiting for hosted control plane to be healthy"
+	hcpAvailableReason := hyperv1.HostedClusterWaitingForAvailableReason
 	var hcpAvailableCondition *metav1.Condition
 	if hcp != nil {
 		hcpAvailableCondition = meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
@@ -2943,7 +3011,7 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 		hcpAvailableMessage = hcpAvailableCondition.Message
 		if hcpAvailableStatus == metav1.ConditionTrue {
 			hcpAvailableReason = hyperv1.HostedClusterAsExpectedReason
-			hcpAvailableMessage = ""
+			hcpAvailableMessage = "The hosted control plane is available"
 		}
 	}
 	return metav1.Condition{
@@ -3420,37 +3488,9 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 
 	// TODO: Drop when we no longer need to support versions < 4.11
 	if hc.Spec.Configuration != nil {
-		globalConfig, err := globalconfig.ParseGlobalConfig(ctx, hc.Spec.Configuration)
+		_, err := globalconfig.ParseGlobalConfig(ctx, hc.Spec.Configuration)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to parse cluster configuration: %w", err))
-		} else {
-			if globalConfig.APIServer != nil && hc.Spec.Configuration.APIServer != nil {
-				errs = append(errs, fmt.Errorf("apiServer raw extension config is invalid when APIServer configuration field is set"))
-			}
-			if globalConfig.Authentication != nil && hc.Spec.Configuration.Authentication != nil {
-				errs = append(errs, fmt.Errorf("authentication raw extension config is invalid when Authentication configuration field is set"))
-			}
-			if globalConfig.FeatureGate != nil && hc.Spec.Configuration.FeatureGate != nil {
-				errs = append(errs, fmt.Errorf("featureGate raw extension config is invalid when FeatureGate configuration field is set"))
-			}
-			if globalConfig.Image != nil && hc.Spec.Configuration.Image != nil {
-				errs = append(errs, fmt.Errorf("image raw extension config is invalid when Image configuration field is set"))
-			}
-			if globalConfig.Ingress != nil && hc.Spec.Configuration.Ingress != nil {
-				errs = append(errs, fmt.Errorf("ingress raw extension config is invalid when Ingress configuration field is set"))
-			}
-			if globalConfig.Network != nil && hc.Spec.Configuration.Network != nil {
-				errs = append(errs, fmt.Errorf("network raw extension config is invalid when Network configuration field is set"))
-			}
-			if globalConfig.OAuth != nil && hc.Spec.Configuration.OAuth != nil {
-				errs = append(errs, fmt.Errorf("oAuth raw extension config is invalid when OAuth configuration field is set"))
-			}
-			if globalConfig.Proxy != nil && hc.Spec.Configuration.Proxy != nil {
-				errs = append(errs, fmt.Errorf("proxy raw extension config is invalid when Proxy configuration field is set"))
-			}
-			if globalConfig.Scheduler != nil && hc.Spec.Configuration.Scheduler != nil {
-				errs = append(errs, fmt.Errorf("scheduler raw extension config is invalid when Scheduler configuration field is set"))
-			}
 		}
 	}
 
@@ -3488,20 +3528,60 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 		}
 		currentVersion = &version
 	}
+	minSupportedVersion := supportedversion.MinSupportedVersion
+	if hc.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		//IBM Cloud is allowed to manage 4.9 clusters
+		minSupportedVersion = semver.MustParse("4.9.0")
+	}
 
-	return isValidReleaseVersion(version, currentVersion, hc.Spec.Networking.NetworkType)
+	return isValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType)
 }
 
-func isValidReleaseVersion(version semver.Version, currentVersion *semver.Version, networkType hyperv1.NetworkType) error {
+func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
+	for _, condition := range hc.Status.Conditions {
+		switch string(condition.Type) {
+		case string(hyperv1.SupportedHostedCluster), string(hyperv1.ValidHostedClusterConfiguration), string(hyperv1.ValidReleaseImage), string(hyperv1.ReconciliationActive):
+			if condition.Status == metav1.ConditionFalse {
+				return false, fmt.Errorf("%s condition is false", string(condition.Type))
+			}
+		case string(hyperv1.ClusterVersionUpgradeable):
+			_, _, err := isUpgradeable(hc)
+			if err != nil {
+				return false, fmt.Errorf("ClusterVersionUpgradeable condition is false: %w", err)
+			}
+		}
+	}
+
+	if hc.Status.Version == nil || hc.Spec.Release.Image != hc.Status.Version.Desired.Image {
+		// cluster is doing initial rollout or upgrading
+		return true, nil
+	}
+
+	// cluster is conditions are good and is at desired release
+	return false, nil
+}
+
+func isValidReleaseVersion(version, currentVersion, latestVersionSupported, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType) error {
 	if version.LT(semver.MustParse("4.8.0")) {
 		return fmt.Errorf("releases before 4.8 are not supported")
 	}
+
 	if currentVersion != nil && currentVersion.Minor > version.Minor {
 		return fmt.Errorf("y-stream downgrade is not supported")
 	}
+
 	if networkType == hyperv1.OpenShiftSDN && currentVersion != nil && currentVersion.Minor < version.Minor {
 		return fmt.Errorf("y-stream upgrade is not for OpenShiftSDN")
 	}
+
+	if (version.Major == latestVersionSupported.Major && version.Minor > latestVersionSupported.Minor) || version.Major > latestVersionSupported.Major {
+		return fmt.Errorf("the latest HostedCluster version supported by this Operator is: %q. Attempting to use: %q", supportedversion.LatestSupportedVersion, version)
+	}
+
+	if (version.Major == minSupportedVersion.Major && version.Minor < minSupportedVersion.Minor) || version.Major < minSupportedVersion.Major {
+		return fmt.Errorf("the minimum HostedCluster version supported by this Operator is: %q. Attempting to use: %q", supportedversion.MinSupportedVersion, version)
+	}
+
 	return nil
 }
 
@@ -4136,6 +4216,9 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 	if hcluster.Spec.Platform.AWS == nil {
 		return nil
 	}
+	if hcluster.Spec.InfraID == "" {
+		return nil
+	}
 
 	var existing *hyperv1.AWSResourceTag
 	for idx, tag := range hcluster.Spec.Platform.AWS.ResourceTags {
@@ -4208,11 +4291,11 @@ func isUpgradeable(hcluster *hyperv1.HostedCluster) (bool, string, error) {
 		if upgradeable != nil && upgradeable.Status == metav1.ConditionFalse {
 			releaseImage, exists := hcluster.Annotations[hyperv1.ForceUpgradeToAnnotation]
 			if !exists {
-				return true, "", fmt.Errorf("cluster version is not upgradable")
+				return true, "", fmt.Errorf("cluster version is not upgradeable")
 			} else if releaseImage != hcluster.Spec.Release.Image {
-				return true, "", fmt.Errorf("cluster version is not upgradable, force annotation is present but does not match desired release image")
+				return true, "", fmt.Errorf("cluster version is not upgradeable, force annotation is present but does not match desired release image")
 			} else {
-				return true, "cluster version is not upgradable, upgrade is forced by annotation", nil
+				return true, "cluster version is not upgradeable, upgrade is forced by annotation", nil
 			}
 		}
 		return true, "", nil
@@ -4223,7 +4306,7 @@ func isUpgradeable(hcluster *hyperv1.HostedCluster) (bool, string, error) {
 // defaultAPIPortIfNeeded defaults the apiserver port on Azure management clusters as a workaround
 // for https://bugzilla.redhat.com/show_bug.cgi?id=2060650: Azure LBs with port 6443 don't work
 func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
-	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityConfigOpenshiftIO) {
+	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityInfrastructure) {
 		return nil
 	}
 	infra := &configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
@@ -4251,7 +4334,7 @@ func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hc
 }
 
 func (r *HostedClusterReconciler) defaultIngressDomain(ctx context.Context) (string, error) {
-	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityConfigOpenshiftIO) {
+	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityIngress) {
 		return "", nil
 	}
 	ingress := &configv1.Ingress{
@@ -4415,40 +4498,34 @@ func (r *HostedClusterReconciler) reconcileDeprecatedGlobalConfig(ctx context.Co
 		return err
 	}
 
-	// Only copy over config from the raw extension if the field is not already populated.
-	// Once populated, the field takes precedence and a conflicting raw extension config
-	// results in an invalid configuration field.
-
-	if gconfig.APIServer != nil && hc.Spec.Configuration.APIServer == nil {
+	// Copy over config from the raw extension
+	if gconfig.APIServer != nil {
 		hc.Spec.Configuration.APIServer = &gconfig.APIServer.Spec
 	}
-	if gconfig.Authentication != nil && hc.Spec.Configuration.Authentication == nil {
+	if gconfig.Authentication != nil {
 		hc.Spec.Configuration.Authentication = &gconfig.Authentication.Spec
 	}
-	if gconfig.FeatureGate != nil && hc.Spec.Configuration.FeatureGate == nil {
+	if gconfig.FeatureGate != nil {
 		hc.Spec.Configuration.FeatureGate = &gconfig.FeatureGate.Spec
 	}
-	if gconfig.Image != nil && hc.Spec.Configuration.Image == nil {
+	if gconfig.Image != nil {
 		hc.Spec.Configuration.Image = &gconfig.Image.Spec
 	}
-	if gconfig.Ingress != nil && hc.Spec.Configuration.Ingress == nil {
+	if gconfig.Ingress != nil {
 		hc.Spec.Configuration.Ingress = &gconfig.Ingress.Spec
 	}
-	if gconfig.Network != nil && hc.Spec.Configuration.Network == nil {
+	if gconfig.Network != nil {
 		hc.Spec.Configuration.Network = &gconfig.Network.Spec
 	}
-	if gconfig.OAuth != nil && hc.Spec.Configuration.OAuth == nil {
+	if gconfig.OAuth != nil {
 		hc.Spec.Configuration.OAuth = &gconfig.OAuth.Spec
 	}
-	if gconfig.Scheduler != nil && hc.Spec.Configuration.Scheduler == nil {
+	if gconfig.Scheduler != nil {
 		hc.Spec.Configuration.Scheduler = &gconfig.Scheduler.Spec
 	}
-	if gconfig.Proxy != nil && hc.Spec.Configuration.Proxy == nil {
+	if gconfig.Proxy != nil {
 		hc.Spec.Configuration.Proxy = &gconfig.Proxy.Spec
 	}
-	hc.Spec.Configuration.Items = nil
-	hc.Spec.Configuration.ConfigMapRefs = nil
-	hc.Spec.Configuration.SecretRefs = nil
 
 	return nil
 }
@@ -4504,6 +4581,62 @@ func (r *HostedClusterReconciler) reconcileDeprecatedAWSRoles(ctx context.Contex
 	}
 
 	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileDeprecatedNetworkSettings(hc *hyperv1.HostedCluster) error {
+	if hc.Spec.Networking.MachineCIDR != "" {
+		cidr, err := ipnet.ParseCIDR(hc.Spec.Networking.MachineCIDR)
+		if err != nil {
+			return fmt.Errorf("failed to parse machine CIDR: %w", err)
+		}
+		hc.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{
+			{
+				CIDR: *cidr,
+			},
+		}
+		hc.Spec.Networking.MachineCIDR = ""
+	}
+	if hc.Spec.Networking.PodCIDR != "" {
+		cidr, err := ipnet.ParseCIDR(hc.Spec.Networking.PodCIDR)
+		if err != nil {
+			return fmt.Errorf("failed to parse pod CIDR: %w", err)
+		}
+		hc.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{
+			{
+				CIDR: *cidr,
+			},
+		}
+		hc.Spec.Networking.PodCIDR = ""
+	}
+	if hc.Spec.Networking.ServiceCIDR != "" {
+		cidr, err := ipnet.ParseCIDR(hc.Spec.Networking.ServiceCIDR)
+		if err != nil {
+			return fmt.Errorf("failed to parse service CIDR: %w", err)
+		}
+		hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{
+			{
+				CIDR: *cidr,
+			},
+		}
+		hc.Spec.Networking.ServiceCIDR = ""
+	}
+	return nil
+}
+
+func populateDeprecatedNetworkingFields(hcp *hyperv1.HostedControlPlane, hc *hyperv1.HostedCluster) {
+	hcp.Spec.ServiceCIDR = util.FirstServiceCIDR(hc.Spec.Networking.ServiceNetwork)
+	hcp.Spec.PodCIDR = util.FirstClusterCIDR(hc.Spec.Networking.ClusterNetwork)
+	hcp.Spec.MachineCIDR = util.FirstMachineCIDR(hc.Spec.Networking.MachineNetwork)
+	hcp.Spec.NetworkType = hc.Spec.Networking.NetworkType
+	if hc.Spec.Networking.APIServer != nil {
+		hcp.Spec.APIAdvertiseAddress = hc.Spec.Networking.APIServer.AdvertiseAddress
+		hcp.Spec.APIPort = hc.Spec.Networking.APIServer.Port
+		hcp.Spec.APIAllowedCIDRBlocks = hc.Spec.Networking.APIServer.AllowedCIDRBlocks
+	} else {
+		hcp.Spec.APIAdvertiseAddress = nil
+		hcp.Spec.APIPort = nil
+		hcp.Spec.APIAllowedCIDRBlocks = nil
+	}
 }
 
 func (r *HostedClusterReconciler) getARNFromSecret(ctx context.Context, name, namespace string) (string, error) {
@@ -4609,6 +4742,20 @@ func configurationFieldsToRawExtensions(config *hyperv1.ClusterConfiguration) ([
 		if err := serializer.Encode(result[idx].Object, b); err != nil {
 			return nil, fmt.Errorf("failed to marshal %+v: %w", result[idx].Object, err)
 		}
+
+		// Remove the status part of the serialized resource. We only have
+		// spec to begin with and status causes incompatibilities with previous
+		// versions of the CPO
+		unstructuredObject := &unstructured.Unstructured{}
+		if _, _, err := unstructured.UnstructuredJSONScheme.Decode(b.Bytes(), nil, unstructuredObject); err != nil {
+			return nil, fmt.Errorf("failed to decode resource into unstructured: %w", err)
+		}
+		unstructured.RemoveNestedField(unstructuredObject.Object, "status")
+		b = &bytes.Buffer{}
+		if err := unstructured.UnstructuredJSONScheme.Encode(unstructuredObject, b); err != nil {
+			return nil, fmt.Errorf("failed to serialize unstructured resource: %w", err)
+		}
+
 		result[idx].Raw = bytes.TrimSuffix(b.Bytes(), []byte("\n"))
 		result[idx].Object = nil
 	}

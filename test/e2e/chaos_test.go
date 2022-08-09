@@ -37,11 +37,11 @@ func TestHAEtcdChaos(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	// Create a cluster
-	clusterOpts := globalOpts.DefaultClusterOptions()
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.NodePoolReplicas = 0
 
-	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
+	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir)
 
 	t.Run("KillRandomMembers", testKillRandomMembers(ctx, client, cluster))
 	t.Run("KillAllMembers", testKillAllMembers(ctx, client, cluster))
@@ -60,11 +60,11 @@ func TestEtcdChaos(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	// Create a cluster
-	clusterOpts := globalOpts.DefaultClusterOptions()
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 	clusterOpts.NodePoolReplicas = 0
 
-	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
+	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir)
 
 	t.Run("KillAllMembers", testKillAllMembers(ctx, client, cluster))
 }

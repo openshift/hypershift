@@ -40,7 +40,7 @@ func TestNodepoolMachineconfigGetsRolledout(t *testing.T) {
 	client, err := e2eutil.GetClient()
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
-	clusterOpts := globalOpts.DefaultClusterOptions()
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 	clusterOpts.BeforeApply = func(o crclient.Object) {
 		nodePool, isNodepool := o.(*hyperv1.NodePool)
@@ -64,7 +64,7 @@ func TestNodepoolMachineconfigGetsRolledout(t *testing.T) {
 
 	// Wait for Nodes to be Ready
 	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes)
+	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the rollout to be complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)

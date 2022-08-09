@@ -11,7 +11,6 @@ import (
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/yaml"
@@ -50,7 +49,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		}()
 
 		if err := CreateCluster(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to create cluster")
+			opts.Log.Error(err, "Failed to create cluster")
 			os.Exit(1)
 		}
 	}
@@ -84,7 +83,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			InfraID:         infraID,
 			CredentialsFile: opts.AzurePlatform.CredentialsFile,
 			BaseDomain:      opts.BaseDomain,
-		}).Run(ctx)
+		}).Run(ctx, opts.Log)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
 		}

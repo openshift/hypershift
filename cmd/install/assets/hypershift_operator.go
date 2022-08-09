@@ -271,6 +271,7 @@ type HyperShiftOperatorDeployment struct {
 	OIDCStorageProviderS3SecretKey string
 	MetricsSet                     metrics.MetricsSet
 	IncludeVersion                 bool
+	UWMTelemetry                   bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -343,6 +344,10 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				},
 			},
 		})
+	}
+
+	if o.UWMTelemetry {
+		args = append(args, "--enable-uwm-telemetry-remote-write")
 	}
 
 	image := o.OperatorImage

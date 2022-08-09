@@ -4,6 +4,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/config"
@@ -74,11 +75,8 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		},
 	}
 	p.ServerDeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	p.ServerDeploymentConfig.Replicas = 1
-	p.ServerDeploymentConfig.SetColocation(hcp)
+	p.ServerDeploymentConfig.SetDefaults(hcp, nil, pointer.Int(1))
 	p.ServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.ServerDeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	p.ServerDeploymentConfig.SetControlPlaneIsolation(hcp)
 
 	p.AgentDeploymentConfig.Resources = config.ResourcesSpec{
 		konnectivityAgentContainer().Name: {
@@ -105,16 +103,9 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			SuccessThreshold:    1,
 		},
 	}
-	p.AgentDeploymentConfig.Replicas = 1
-	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
-		p.AgentDeploymentConfig.Replicas = 3
-	}
-	p.AgentDeploymentConfig.SetMultizoneSpread(konnectivityAgentLabels())
-	p.AgentDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.AgentDeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	p.AgentDeploymentConfig.SetColocation(hcp)
-	p.AgentDeploymentConfig.SetControlPlaneIsolation(hcp)
 
+	p.AgentDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	p.AgentDeploymentConfig.SetDefaults(hcp, konnectivityAgentLabels(), nil)
 	p.AgentDeamonSetConfig.Resources = config.ResourcesSpec{
 		konnectivityAgentContainer().Name: {
 			Requests: corev1.ResourceList{

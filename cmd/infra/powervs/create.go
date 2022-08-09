@@ -18,6 +18,7 @@ import (
 	"github.com/IBM-Cloud/power-go-client/power/models"
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/networking-go-sdk/directlinkv1"
+	"github.com/IBM/networking-go-sdk/dnsrecordsv1"
 	"github.com/IBM/networking-go-sdk/zonesv1"
 	"github.com/IBM/platform-services-go-sdk/globalcatalogv1"
 	"github.com/IBM/platform-services-go-sdk/iamidentityv1"
@@ -28,7 +29,7 @@ import (
 	hypershiftLog "github.com/openshift/hypershift/cmd/log"
 )
 
-var cloudApiKey = os.Getenv("IBMCLOUD_API_KEY")
+var cloudApiKey string
 
 const (
 	// Resource name suffix for creation
@@ -77,6 +78,7 @@ var customEpEnvNameMapping = map[string]string{
 
 // CreateInfraOptions command line options for setting up infra in IBM PowerVS cloud
 type CreateInfraOptions struct {
+	Name                   string
 	BaseDomain             string
 	ResourceGroup          string
 	InfraID                string
@@ -100,6 +102,10 @@ var powerVsDefaultUrl = func(region string) string { return fmt.Sprintf("https:/
 var vpcDefaultUrl = func(region string) string { return fmt.Sprintf("https://%s.iaas.cloud.ibm.com/v1", region) }
 
 var log = func(name string) logr.Logger { return hypershiftLog.Log.WithName(name) }
+
+var dhcpServerLimitExceeds = func(dhcpServerCount int) error {
+	return fmt.Errorf("more than one DHCP server is not allowed in a service instance, found %d dhcp servers", dhcpServerCount)
+}
 
 // MarshalJSON custom marshaling func for time.Duration to parse Duration into user-friendly format
 func (d *TimeDuration) MarshalJSON() (b []byte, err error) {
@@ -154,6 +160,7 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := CreateInfraOptions{
+		Name:          "example",
 		PowerVSRegion: "us-south",
 		PowerVSZone:   "us-south",
 		VpcRegion:     "us-south",
@@ -161,6 +168,7 @@ func NewCreateCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "IBM Cloud CIS Domain")
 	cmd.Flags().StringVar(&opts.ResourceGroup, "resource-group", opts.ResourceGroup, "IBM Cloud Resource Group")
+	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag IBM Cloud resources")
 	cmd.Flags().StringVar(&opts.PowerVSRegion, "powervs-region", opts.PowerVSRegion, "IBM Cloud PowerVS Region")
 	cmd.Flags().StringVar(&opts.PowerVSZone, "powervs-zone", opts.PowerVSZone, "IBM Cloud PowerVS Zone")
@@ -241,18 +249,46 @@ func checkUnsupportedPowerVSZone(zone string) (err error) {
 	return
 }
 
+func GetAPIKey() (string, error) {
+	apiKey := os.Getenv("IBMCLOUD_API_KEY")
+	if apiKey != "" {
+		return apiKey, nil
+	}
+	apiKeyCredFile := os.Getenv("IBMCLOUD_CREDENTIALS")
+	if apiKeyCredFile != "" {
+		data, err := os.ReadFile(apiKeyCredFile)
+		if err != nil {
+			return "", fmt.Errorf("error reading from IBMCLOUD_CREDENTIALS file %s: %w", apiKeyCredFile, err)
+		}
+		apiKey = strings.Trim(string(data), "\n")
+		return apiKey, nil
+	}
+
+	return "", nil
+}
+
 // SetupInfra infra creation orchestration
 func (infra *Infra) SetupInfra(options *CreateInfraOptions) (err error) {
 	startTime := time.Now()
 
 	log(options.InfraID).Info("Setup infra started")
 
-	// if IBMCLOUD_API_KEY is not set, infra cannot be set up.
-	if cloudApiKey == "" {
-		return fmt.Errorf("IBMCLOUD_API_KEY not set")
+	cloudApiKey, err = GetAPIKey()
+	if err != nil {
+		return fmt.Errorf("error retrieving IBM Cloud API Key: %w", err)
 	}
 
-	infra.ResourceGroupID, err = getResourceGroupID(options.ResourceGroup)
+	// if CLOUD API KEY is not set, infra cannot be set up.
+	if cloudApiKey == "" {
+		return fmt.Errorf("cloud API Key not set. Set it with IBMCLOUD_API_KEY env var or set file path containing API Key credential in IBMCLOUD_CREDENTIALS")
+	}
+
+	infra.AccountID, err = getAccount(getIAMAuth())
+	if err != nil {
+		return fmt.Errorf("error retrieving account ID %w", err)
+	}
+
+	infra.ResourceGroupID, err = getResourceGroupID(options.ResourceGroup, infra.AccountID)
 	if err != nil {
 		return fmt.Errorf("error getting id for resource group %s, %w", options.ResourceGroup, err)
 	}
@@ -277,7 +313,7 @@ func (infra *Infra) SetupInfra(options *CreateInfraOptions) (err error) {
 		return fmt.Errorf("error setup vpc subnet: %w", err)
 	}
 
-	session, err := createPowerVSSession(options.PowerVSRegion, options.PowerVSZone, options.Debug)
+	session, err := createPowerVSSession(infra.AccountID, options.PowerVSRegion, options.PowerVSZone, options.Debug)
 	infra.AccountID = session.Options.UserAccount
 	if err != nil {
 		return fmt.Errorf("error creating powervs session: %w", err)
@@ -293,7 +329,7 @@ func (infra *Infra) SetupInfra(options *CreateInfraOptions) (err error) {
 		return fmt.Errorf("error setup powervs cloud connection: %w", err)
 	}
 
-	err = infra.setupPowerVSDhcp(options, session)
+	err = infra.setupPowerVSDHCP(options, session)
 	if err != nil {
 		return fmt.Errorf("error setup powervs dhcp server: %w", err)
 	}
@@ -314,30 +350,29 @@ func getIAMAuth() *core.IamAuthenticator {
 	}
 }
 
-// setupBaseDomain get domain id and crn of given base domain
-// TODO(dharaneeshvrd): Currently, resource group provided will be considered only for VPC and PowerVS. Need to look at utilising a common resource group in future for CIS service too and use it while filtering the list
-func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) (err error) {
+// getCISDomainDetails getting CIS domain details like CRN and domainID
+func getCISDomainDetails(baseDomain string) (string, string, error) {
+	var CISCRN, CISDomainID string
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{
 		Authenticator: getIAMAuth(),
 		URL:           getCustomEndpointUrl(platformService, resourcecontrollerv2.DefaultServiceURL),
 	})
 	if err != nil {
-		return
+		return "", "", err
 	}
 
 	if rcv2 == nil {
-		return fmt.Errorf("unable to get resource controller")
+		return "", "", fmt.Errorf("unable to get resource controller")
 	}
 
 	// getting list of resource instance of type cis
 	serviceID, _, err := getServiceInfo(cisService, "")
 
 	if err != nil {
-		err = fmt.Errorf("error retrieving cis service %w", err)
-		return
+		return "", "", fmt.Errorf("error retrieving cis service %w", err)
 	}
 
-	f := func(start string) (isDone bool, nextUrl string, err error) {
+	f := func(start string) (bool, string, error) {
 		listResourceOpt := resourcecontrollerv2.ListResourceInstancesOptions{ResourceID: &serviceID}
 
 		// for getting the next page
@@ -347,12 +382,11 @@ func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) (err error) {
 		resourceList, _, err := rcv2.ListResourceInstances(&listResourceOpt)
 
 		if err != nil {
-			return
+			return false, "", err
 		}
 
 		if resourceList == nil {
-			err = fmt.Errorf("resourceList returned is nil")
-			return
+			return false, "", fmt.Errorf("resourceList returned is nil")
 		}
 
 		// looping through all resource instance of type cis until given base domain is found
@@ -375,11 +409,10 @@ func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) (err error) {
 
 			if zoneList != nil {
 				for _, zone := range zoneList.Result {
-					if *zone.Name == options.BaseDomain {
-						infra.CisCrn = *resource.CRN
-						infra.CisDomainID = *zone.ID
-						isDone = true
-						return
+					if *zone.Name == baseDomain {
+						CISCRN = *resource.CRN
+						CISDomainID = *zone.ID
+						return true, "", nil
 					}
 				}
 			}
@@ -387,25 +420,63 @@ func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) (err error) {
 
 		// For paging over next set of resources getting the start token
 		if resourceList.NextURL != nil && *resourceList.NextURL != "" {
-			nextUrl = *resourceList.NextURL
-			return
+			return false, *resourceList.NextURL, nil
 		}
 
-		isDone = true
-		return
+		return true, "", nil
 	}
 
 	err = pagingHelper(f)
+
 	if err != nil {
-		return
+		return "", "", err
 	}
 
-	if infra.CisCrn == "" || infra.CisDomainID == "" {
-		return fmt.Errorf("unable to get cis information with base domain %s", options.BaseDomain)
+	if CISCRN == "" || CISDomainID == "" {
+		return "", "", fmt.Errorf("unable to get cis information with base domain %s", baseDomain)
+	}
+
+	return CISCRN, CISDomainID, nil
+}
+
+// checkForExistingDNSRecord check for existing DNS record with the cluster name
+func checkForExistingDNSRecord(options *CreateInfraOptions, CISCRN string, CISDomainID string) error {
+	dnsRecordsV1, err := dnsrecordsv1.NewDnsRecordsV1(&dnsrecordsv1.DnsRecordsV1Options{Crn: &CISCRN, ZoneIdentifier: &CISDomainID, Authenticator: getIAMAuth()})
+	if err != nil {
+		return fmt.Errorf("error creating dns record client: %w", err)
+	}
+
+	recordName := fmt.Sprintf("*.apps.%s.%s", options.Name, options.BaseDomain)
+	listDnsRecordsOpt := &dnsrecordsv1.ListAllDnsRecordsOptions{Name: &recordName}
+
+	dnsRecordsL, _, err := dnsRecordsV1.ListAllDnsRecords(listDnsRecordsOpt)
+	if err != nil {
+		return err
+	}
+
+	if len(dnsRecordsL.Result) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("existing DNS record '%s' found in base domain %s, cannot proceed to cluster creation when dns record already exists with the cluster name", recordName, options.BaseDomain)
+}
+
+// setupBaseDomain get domain id and crn of given base domain
+// TODO(dharaneeshvrd): Currently, resource group provided will be considered only for VPC and PowerVS. Need to look at utilising a common resource group in future for CIS service too and use it while filtering the list
+func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) error {
+	var err error
+	infra.CisCrn, infra.CisDomainID, err = getCISDomainDetails(options.BaseDomain)
+
+	if err != nil {
+		return fmt.Errorf("error retrieving cis domain details %w", err)
+	}
+
+	if err = checkForExistingDNSRecord(options, infra.CisCrn, infra.CisDomainID); err != nil {
+		return err
 	}
 
 	log(options.InfraID).Info("BaseDomain Info Ready", "CRN", infra.CisCrn, "DomainID", infra.CisDomainID)
-	return
+	return nil
 }
 
 // getServiceInfo retrieving id info of given service and service plan
@@ -473,7 +544,7 @@ func getCustomEndpointUrl(serviceName string, defaultUrl string) (url string) {
 }
 
 // getResourceGroupID retrieving id of resource group
-func getResourceGroupID(resourceGroup string) (resourceGroupID string, err error) {
+func getResourceGroupID(resourceGroup string, accountID string) (resourceGroupID string, err error) {
 	rmv2, err := resourcemanagerv2.NewResourceManagerV2(&resourcemanagerv2.ResourceManagerV2Options{
 		Authenticator: getIAMAuth(),
 		URL:           getCustomEndpointUrl(platformService, resourcemanagerv2.DefaultServiceURL),
@@ -487,7 +558,7 @@ func getResourceGroupID(resourceGroup string) (resourceGroupID string, err error
 		return
 	}
 
-	rmv2ListResourceGroupOpt := resourcemanagerv2.ListResourceGroupsOptions{Name: &resourceGroup}
+	rmv2ListResourceGroupOpt := resourcemanagerv2.ListResourceGroupsOptions{Name: &resourceGroup, AccountID: &accountID}
 	resourceGroupListResult, _, err := rmv2.ListResourceGroups(&rmv2ListResourceGroupOpt)
 	if err != nil {
 		return
@@ -607,9 +678,8 @@ func getAccount(auth core.Authenticator) (accountID string, err error) {
 }
 
 // createPowerVSSession creates PowerVSSession of type *ibmpisession.IBMPISession
-func createPowerVSSession(powerVSRegion string, powerVSZone string, debug bool) (session *ibmpisession.IBMPISession, err error) {
+func createPowerVSSession(accountID string, powerVSRegion string, powerVSZone string, debug bool) (session *ibmpisession.IBMPISession, err error) {
 	auth := getIAMAuth()
-	account, err := getAccount(auth)
 
 	if err != nil {
 		return
@@ -618,7 +688,7 @@ func createPowerVSSession(powerVSRegion string, powerVSZone string, debug bool) 
 	opt := &ibmpisession.IBMPIOptions{Authenticator: auth,
 		Debug:       debug,
 		URL:         getCustomEndpointUrl(powerVsService, powerVsDefaultUrl(powerVSRegion)),
-		UserAccount: account,
+		UserAccount: accountID,
 		Zone:        powerVSZone}
 
 	session, err = ibmpisession.NewIBMPISession(opt)
@@ -982,8 +1052,18 @@ func (infra *Infra) createCloudConnection(options *CreateInfraOptions, client *i
 	return
 }
 
-// setupPowerVSDhcp takes care of setting up dhcp in powervs
-func (infra *Infra) setupPowerVSDhcp(options *CreateInfraOptions, session *ibmpisession.IBMPISession) (err error) {
+// useExistingDHCP returns details of existing DHCP server
+func useExistingDHCP(dhcpServers models.DHCPServers) (string, error) {
+	if len(dhcpServers) == 1 {
+		dhcp := dhcpServers[0]
+		return *dhcp.ID, nil
+	}
+
+	return "", dhcpServerLimitExceeds(len(dhcpServers))
+}
+
+// setupPowerVSDHCP takes care of setting up dhcp in powervs
+func (infra *Infra) setupPowerVSDHCP(options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
 	log(infra.ID).Info("Setting up PowerVS DHCP ...")
 	client := instance.NewIBMPIDhcpClient(context.Background(), session, infra.PowerVSCloudInstanceID)
 
@@ -991,24 +1071,27 @@ func (infra *Infra) setupPowerVSDhcp(options *CreateInfraOptions, session *ibmpi
 
 	dhcpServers, err := client.GetAll()
 	if err != nil {
-		return
+		return err
 	}
 
 	// only one dhcp server is allowed per cloud instance
 	// if already a dhcp server existing in cloud instance use that instead of creating a new one
 	if len(dhcpServers) > 0 {
-		for _, dhcp := range dhcpServers {
-			log(infra.ID).Info("Using existing DHCP server present in cloud instance")
-			_, _ = client.Get(*dhcp.ID)
-			dhcpServer = &models.DHCPServerDetail{ID: dhcp.ID, Status: dhcp.Status, Network: dhcp.Network}
-			break
+		log(infra.ID).Info("Using existing DHCP server present in cloud instance")
+		var dhcpServerID string
+		dhcpServerID, err = useExistingDHCP(dhcpServers)
+		if err != nil {
+			return err
 		}
+
+		dhcpServer, err = client.Get(dhcpServerID)
 	} else {
 		log(infra.ID).Info("Creating PowerVS DhcpServer...")
 		dhcpServer, err = infra.createPowerVSDhcp(options, client)
-		if err != nil {
-			return
-		}
+	}
+
+	if err != nil {
+		return err
 	}
 
 	if dhcpServer != nil {
@@ -1020,12 +1103,12 @@ func (infra *Infra) setupPowerVSDhcp(options *CreateInfraOptions, session *ibmpi
 		infra.Stats.DhcpService.Status = *dhcpServer.Status
 	}
 
-	if infra.PowerVSDhcpID == "" && infra.PowerVSDhcpSubnetID == "" {
-		return fmt.Errorf("unable to setup powervs dhcp server and private subnet")
+	if infra.PowerVSDhcpID == "" || infra.PowerVSDhcpSubnetID == "" {
+		return fmt.Errorf("unable to setup powervs dhcp server, dhcp server id or subnet id returned is empty. dhcpServerId: %s, dhcpPrivateSubnetId: %s", infra.PowerVSDhcpID, infra.PowerVSDhcpSubnetID)
 	}
 
 	log(infra.ID).Info("PowerVS DHCP Server and Private Subnet  Ready", "dhcpServerId", infra.PowerVSDhcpID, "dhcpPrivateSubnetId", infra.PowerVSDhcpSubnetID)
-	return
+	return nil
 }
 
 // createPowerVSDhcp creates a new dhcp server in powervs

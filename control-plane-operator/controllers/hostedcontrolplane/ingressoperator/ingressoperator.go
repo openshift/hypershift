@@ -48,11 +48,8 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 		Platform:                platform,
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	p.DeploymentConfig.SetColocation(hcp)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
-	p.DeploymentConfig.Replicas = 1
+	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.IntPtr(1))
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	p.DeploymentConfig.ReadinessProbes = config.ReadinessProbes{
 		ingressOperatorContainerName: {
@@ -91,8 +88,9 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 }
 
 func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) {
+	operatorName := "ingress-operator"
 	dep.Spec.Replicas = utilpointer.Int32(1)
-	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": "ingress-operator"}}
+	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": operatorName}}
 	dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
 	if dep.Spec.Template.Annotations == nil {
 		dep.Spec.Template.Annotations = map[string]string{}
@@ -101,7 +99,12 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	if dep.Spec.Template.Labels == nil {
 		dep.Spec.Template.Labels = map[string]string{}
 	}
-	dep.Spec.Template.Labels["name"] = "ingress-operator"
+	dep.Spec.Template.Labels = map[string]string{
+		"name":                        operatorName,
+		"app":                         operatorName,
+		hyperv1.ControlPlaneComponent: operatorName,
+	}
+
 	dep.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.BoolPtr(false)
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{
@@ -204,7 +207,12 @@ func ingressOperatorSocks5ProxyContainer(socks5ProxyImage string) corev1.Contain
 		Name:    socks5ProxyContainerName,
 		Image:   socks5ProxyImage,
 		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy"},
-		Args:    []string{"run"},
+		Args: []string{
+			"run",
+			// Do not route cloud provider traffic through konnektivity and thus nodes to speed
+			// up cluster creation. Requires proxy env vars to be set.
+			"--connect-directly-to-cloud-apis=true",
+		},
 		Env: []corev1.EnvVar{{
 			Name:  "KUBECONFIG",
 			Value: "/etc/kubernetes/kubeconfig",

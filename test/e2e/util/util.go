@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -14,6 +16,7 @@ import (
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	promconfig "github.com/prometheus/common/config"
 	prommodel "github.com/prometheus/common/model"
+	"go.uber.org/zap/zaptest"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -131,14 +134,21 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	return guestClient
 }
 
-func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32) []corev1.Node {
+func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
 	g := NewWithT(t)
 	start := time.Now()
+
+	// waitTimeout for nodes to become Ready
+	waitTimeout := 30 * time.Minute
+	switch platform {
+	case hyperv1.PowerVSPlatform:
+		waitTimeout = 60 * time.Minute
+	}
 
 	t.Logf("Waiting for nodes to become ready. Want: %v", n)
 	nodes := &corev1.NodeList{}
 	readyNodeCount := 0
-	err := wait.PollImmediateWithContext(ctx, 5*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
 		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
 		if err != nil {
@@ -232,6 +242,7 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 		}
 
 		isAvailable := meta.IsStatusConditionTrue(latest.Status.Conditions, string(hyperv1.HostedClusterAvailable))
+		isProgressing := meta.IsStatusConditionTrue(latest.Status.Conditions, string(hyperv1.HostedClusterProgressing))
 
 		rolloutComplete := latest.Status.Version != nil &&
 			latest.Status.Version.Desired.Image == image &&
@@ -239,8 +250,8 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 			latest.Status.Version.History[0].Image == latest.Status.Version.Desired.Image &&
 			latest.Status.Version.History[0].State == configv1.CompletedUpdate
 
-		if isAvailable && rolloutComplete {
-			t.Logf("Waiting for hostedcluster rollout. Image: %s, isAvailable: %v, rolloutComplete: %v", image, isAvailable, rolloutComplete)
+		if isAvailable && !isProgressing && rolloutComplete {
+			t.Logf("Waiting for hostedcluster rollout. Image: %s, isAvailable: %v, isProgressing: %v, rolloutComplete: %v", image, isAvailable, isProgressing, rolloutComplete)
 			return true, nil
 		}
 		return false, nil
@@ -707,4 +718,8 @@ func createK8sClient() (*k8s.Clientset, error) {
 	}
 
 	return cli, nil
+}
+
+func NewLogr(t *testing.T) logr.Logger {
+	return zapr.NewLogger(zaptest.NewLogger(t))
 }

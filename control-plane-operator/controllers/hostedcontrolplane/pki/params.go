@@ -6,6 +6,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 )
 
 type PKIParams struct {
@@ -13,9 +14,9 @@ type PKIParams struct {
 	// Subnet for cluster services
 	ServiceCIDR string `json:"serviceCIDR"`
 
-	// PodCIDR
+	// ClusterCIDR
 	// Subnet for pods
-	PodCIDR string `json:"podCIDR"`
+	ClusterCIDR string `json:"clusterCIDR"`
 
 	// ExternalAPIAddress
 	// An externally accessible DNS name or IP for the API server. Currently obtained from the load balancer DNS name.
@@ -53,8 +54,8 @@ func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 	oauthExternalAddress,
 	konnectivityExternalAddress string) *PKIParams {
 	p := &PKIParams{
-		ServiceCIDR:                  hcp.Spec.ServiceCIDR,
-		PodCIDR:                      hcp.Spec.PodCIDR,
+		ServiceCIDR:                  util.FirstServiceCIDR(hcp.Spec.Networking.ServiceNetwork),
+		ClusterCIDR:                  util.FirstClusterCIDR(hcp.Spec.Networking.ClusterNetwork),
 		Namespace:                    hcp.Namespace,
 		ExternalAPIAddress:           apiExternalAddress,
 		InternalAPIAddress:           fmt.Sprintf("api.%s.hypershift.local", hcp.Name),
@@ -63,10 +64,6 @@ func NewPKIParams(hcp *hyperv1.HostedControlPlane,
 		IngressSubdomain:             config.IngressSubdomain(hcp),
 		OwnerRef:                     config.OwnerRefFrom(hcp),
 	}
-	if hcp.Spec.APIAdvertiseAddress != nil {
-		p.NodeInternalAPIServerIP = *hcp.Spec.APIAdvertiseAddress
-	} else {
-		p.NodeInternalAPIServerIP = config.DefaultAdvertiseAddress
-	}
+	p.NodeInternalAPIServerIP = util.AdvertiseAddressWithDefault(hcp, config.DefaultAdvertiseAddress)
 	return p
 }

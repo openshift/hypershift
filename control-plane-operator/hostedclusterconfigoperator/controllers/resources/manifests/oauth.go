@@ -17,15 +17,6 @@ func OAuthCABundle() *corev1.ConfigMap {
 	}
 }
 
-func OpenShiftOAuthServerCert(ns string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "oauth-server-crt",
-			Namespace: ns,
-		},
-	}
-}
-
 func OAuthServerChallengingClient() *oauthv1.OAuthClient {
 	return &oauthv1.OAuthClient{
 		ObjectMeta: metav1.ObjectMeta{

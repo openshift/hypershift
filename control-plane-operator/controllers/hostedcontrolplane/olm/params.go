@@ -4,6 +4,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+	"k8s.io/utils/pointer"
 )
 
 var packageServerLabels = map[string]string{
@@ -36,34 +37,21 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images m
 		OwnerRef:                config.OwnerRefFrom(hcp),
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
-		Replicas: 1,
 		Scheduling: config.Scheduling{
 			PriorityClass: config.DefaultPriorityClass,
 		},
 	}
-	params.DeploymentConfig.SetColocation(hcp)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	params.DeploymentConfig.SetControlPlaneIsolation(hcp)
+	params.DeploymentConfig.SetDefaults(hcp, nil, pointer.Int(1))
+	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.PackageServerConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
 			PriorityClass: config.APICriticalPriorityClass,
 		},
 	}
-	params.PackageServerConfig.SetColocation(hcp)
+	params.PackageServerConfig.SetDefaults(hcp, packageServerLabels, nil)
 	params.PackageServerConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.PackageServerConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	params.PackageServerConfig.SetControlPlaneIsolation(hcp)
-	switch hcp.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		params.PackageServerConfig.Replicas = 3
-		params.PackageServerConfig.SetMultizoneSpread(packageServerLabels)
-	default:
-		params.PackageServerConfig.Replicas = 1
-	}
-
-	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	params.PackageServerConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	if hcp.Spec.OLMCatalogPlacement == "management" {

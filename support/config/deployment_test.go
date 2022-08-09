@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -55,7 +56,7 @@ func TestSetMultizoneSpread(t *testing.T) {
 		hyperv1.ControlPlaneComponent: "etcd",
 	}
 	cfg := &DeploymentConfig{}
-	cfg.SetMultizoneSpread(labels)
+	cfg.setMultizoneSpread(labels)
 	if cfg.Scheduling.Affinity == nil {
 		t.Fatalf("Expecting affinity to be set on config")
 	}
@@ -78,7 +79,7 @@ func TestSetColocation(t *testing.T) {
 	hcp.Name = "hcp-name"
 	hcp.Namespace = "hcp-namespace"
 	cfg := &DeploymentConfig{}
-	cfg.SetColocation(hcp)
+	cfg.setColocation(hcp)
 
 	if cfg.Scheduling.Affinity == nil {
 		t.Fatalf("expecting affinity to be set on config")
@@ -111,13 +112,13 @@ func TestSetControlPlaneIsolation(t *testing.T) {
 	hcp.Name = "hcp-name"
 	hcp.Namespace = "hcp-namespace"
 	cfg := &DeploymentConfig{}
-	cfg.SetControlPlaneIsolation(hcp)
+	cfg.setControlPlaneIsolation(hcp)
 	if len(cfg.Scheduling.Tolerations) == 0 {
 		t.Fatalf("No tolerations were set")
 	}
 	expectedTolerations := []corev1.Toleration{
 		{
-			Key:      controlPlaneWorkloadTolerationKey,
+			Key:      controlPlaneLabelTolerationKey,
 			Operator: corev1.TolerationOpEqual,
 			Value:    "true",
 			Effect:   corev1.TaintEffectNoSchedule,
@@ -161,4 +162,124 @@ func TestSetControlPlaneIsolation(t *testing.T) {
 	if !reflect.DeepEqual(expectedAffinityRules, cfg.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution) {
 		t.Fatalf("unexpected node affinity rules")
 	}
+}
+
+func TestSetLocation(t *testing.T) {
+	expectedNodeSelector := map[string]string{
+		"role.kubernetes.io/infra": "",
+	}
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "name",
+			Namespace: "namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			NodeSelector: expectedNodeSelector,
+		},
+		Status: hyperv1.HostedControlPlaneStatus{},
+	}
+
+	cfg := &DeploymentConfig{
+		Replicas: 2,
+	}
+	labels := map[string]string{
+		"app":                         "test",
+		hyperv1.ControlPlaneComponent: "test",
+	}
+
+	g := NewGomegaWithT(t)
+	cfg.setLocation(hcp, labels)
+
+	expected := &DeploymentConfig{
+		Scheduling: Scheduling{
+			NodeSelector: expectedNodeSelector,
+		},
+	}
+
+	// setNodeSelector expectations.
+	g.Expect(expected.Scheduling.NodeSelector).To(BeEquivalentTo(cfg.Scheduling.NodeSelector))
+
+	// setControlPlaneIsolation expectations. NodeAffinity.
+	expected.Scheduling.Tolerations = []corev1.Toleration{
+		{
+			Key:      controlPlaneLabelTolerationKey,
+			Operator: corev1.TolerationOpEqual,
+			Value:    "true",
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+		{
+			Key:      clusterLabelTolerationKey,
+			Operator: corev1.TolerationOpEqual,
+			Value:    hcp.Namespace,
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+	}
+
+	expected.Scheduling.Affinity = &corev1.Affinity{
+		NodeAffinity: &corev1.NodeAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: nil,
+			PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
+				{
+					Weight: 50,
+					Preference: corev1.NodeSelectorTerm{
+						MatchExpressions: []corev1.NodeSelectorRequirement{
+							{
+								Key:      controlPlaneLabelTolerationKey,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{"true"},
+							},
+						},
+					},
+				},
+				{
+					Weight: 100,
+					Preference: corev1.NodeSelectorTerm{
+						MatchExpressions: []corev1.NodeSelectorRequirement{
+							{
+								Key:      clusterLabelTolerationKey,
+								Operator: corev1.NodeSelectorOpIn,
+								Values:   []string{hcp.Namespace},
+							},
+						},
+					},
+				},
+			},
+		},
+		PodAntiAffinity: nil,
+	}
+	g.Expect(expected.Scheduling.Tolerations).To(BeEquivalentTo(cfg.Scheduling.Tolerations))
+	g.Expect(expected.Scheduling.Affinity.NodeAffinity).To(BeEquivalentTo(cfg.Scheduling.Affinity.NodeAffinity))
+
+	// setColocation expectations. PodAffinity.
+	expected.AdditionalLabels = AdditionalLabels{
+		colocationLabelKey: hcp.Namespace,
+	}
+	expected.Scheduling.Affinity.PodAffinity = &corev1.PodAffinity{
+		PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+			{
+				PodAffinityTerm: corev1.PodAffinityTerm{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{colocationLabelKey: hcp.Namespace},
+					},
+					TopologyKey: corev1.LabelHostname,
+				},
+				Weight: 100,
+			},
+		},
+	}
+	g.Expect(expected.Scheduling.Affinity.PodAffinity).To(BeEquivalentTo(cfg.Scheduling.Affinity.PodAffinity))
+	g.Expect(expected.AdditionalLabels).To(BeEquivalentTo(cfg.AdditionalLabels))
+
+	// setMultizoneSpread expectations. PodAntiAffinity.
+	expected.Scheduling.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{
+		RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+			{
+				TopologyKey: corev1.LabelTopologyZone,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: labels,
+				},
+			},
+		},
+	}
+	g.Expect(expected.Scheduling.Affinity.PodAntiAffinity).To(BeEquivalentTo(cfg.Scheduling.Affinity.PodAntiAffinity))
 }

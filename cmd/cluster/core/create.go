@@ -23,9 +23,9 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/blang/semver"
+	"github.com/go-logr/logr"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -58,7 +58,7 @@ type CreateOptions struct {
 	Render                           bool
 	SSHKeyFile                       string
 	ServiceCIDR                      string
-	PodCIDR                          string
+	ClusterCIDR                      string
 	ExternalDNSDomain                string
 	NonePlatform                     NonePlatformCreateOptions
 	KubevirtPlatform                 KubevirtPlatformCreateOptions
@@ -68,6 +68,7 @@ type CreateOptions struct {
 	PowerVSPlatform                  PowerVSPlatformOptions
 	Wait                             bool
 	Timeout                          time.Duration
+	Log                              logr.Logger
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -99,7 +100,8 @@ type AgentPlatformCreateOptions struct {
 }
 
 type NonePlatformCreateOptions struct {
-	APIServerAddress string
+	APIServerAddress          string
+	ExposeThroughLoadBalancer bool
 }
 
 type KubevirtPlatformCreateOptions struct {
@@ -110,6 +112,7 @@ type KubevirtPlatformCreateOptions struct {
 	ContainerDiskImage        string
 	RootVolumeSize            uint32
 	RootVolumeStorageClass    string
+	RootVolumeAccessModes     string
 }
 
 type AWSPlatformOptions struct {
@@ -226,7 +229,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		SSHPublicKey:                     sshKey,
 		EtcdStorageClass:                 opts.EtcdStorageClass,
 		ServiceCIDR:                      opts.ServiceCIDR,
-		PodCIDR:                          opts.PodCIDR,
+		ClusterCIDR:                      opts.ClusterCIDR,
 	}, nil
 }
 
@@ -252,7 +255,7 @@ func generateSSHKeys() ([]byte, []byte, error) {
 	return publicBytes, privatePEM, nil
 }
 
-func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, waitForRollout bool, mutate func(crclient.Object)) error {
+func apply(ctx context.Context, l logr.Logger, exampleOptions *apifixtures.ExampleOptions, waitForRollout bool, mutate func(crclient.Object)) error {
 	exampleObjects := exampleOptions.Resources().AsObjects()
 
 	client, err := util.GetClient()
@@ -278,11 +281,11 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, wait
 		if err != nil {
 			return fmt.Errorf("failed to apply object %q: %w", key, err)
 		}
-		log.Log.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
+		l.Info("Applied Kube resource", "kind", object.GetObjectKind().GroupVersionKind().Kind, "namespace", key.Namespace, "name", key.Name)
 	}
 
 	if waitForRollout {
-		log.Log.Info("Waiting for cluster rollout")
+		l.Info("Waiting for cluster rollout")
 		return wait.PollInfiniteWithContext(ctx, 30*time.Second, func(ctx context.Context) (bool, error) {
 			hostedCluster := hostedCluster.DeepCopy()
 			if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
@@ -290,7 +293,7 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, wait
 			}
 			rolledOut := len(hostedCluster.Status.Version.History) > 0 && hostedCluster.Status.Version.History[0].CompletionTime != nil
 			if !rolledOut {
-				log.Log.Info("Cluster rollout not finished yet, checking again in 30 seconds...")
+				l.Info("Cluster rollout not finished yet, checking again in 30 seconds...")
 			}
 			return rolledOut, nil
 		})
@@ -299,7 +302,7 @@ func apply(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, wait
 	return nil
 }
 
-func GetAPIServerAddressByNode(ctx context.Context) (string, error) {
+func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger) (string, error) {
 	// Fetch a single node and determine possible DNS or IP entries to use
 	// for external node-port communication.
 	// Possible values are considered with the following priority based on the address type:
@@ -335,7 +338,7 @@ func GetAPIServerAddressByNode(ctx context.Context) (string, error) {
 	if apiServerAddress == "" {
 		return "", fmt.Errorf("node %q does not expose any IP addresses, this should not be possible", nodes.Items[0].Name)
 	}
-	log.Log.Info(fmt.Sprintf("detected %q from node %q as external-api-server-address", apiServerAddress, nodes.Items[0].Name))
+	l.Info(fmt.Sprintf("detected %q from node %q as external-api-server-address", apiServerAddress, nodes.Items[0].Name))
 	return apiServerAddress, nil
 }
 
@@ -385,7 +388,7 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 	}
 
 	// Otherwise, apply the objects
-	return apply(ctx, exampleOptions, opts.Wait, opts.BeforeApply)
+	return apply(ctx, opts.Log, exampleOptions, opts.Wait, opts.BeforeApply)
 }
 
 func defaultNetworkType(ctx context.Context, opts *CreateOptions, releaseProvider releaseinfo.Provider, readFile func(string) ([]byte, error)) error {

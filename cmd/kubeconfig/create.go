@@ -52,12 +52,15 @@ func NewCreateCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts := Options{Namespace: "clusters"}
+	opts := Options{}
 
-	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A hostedcluster namespace")
+	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A hostedcluster namespace. Will defalt to 'clusters' if a --name is supplied")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A hostedcluster name")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if opts.Name != "" && opts.Namespace == "" {
+			opts.Namespace = "clusters"
+		}
 		if err := render(cmd.Context(), opts); err != nil {
 			fmt.Fprintf(os.Stderr, "%s\n", err)
 			return err
@@ -86,7 +89,7 @@ func render(ctx context.Context, opts Options) error {
 	var kubeConfig *clientcmdapiv1.Config
 	switch {
 	case len(opts.Name) == 0:
-		config, err := buildCombinedConfig(ctx, c)
+		config, err := buildCombinedConfig(ctx, c, opts.Namespace)
 		if err != nil {
 			return fmt.Errorf("failed to make kubeconfig: %w", err)
 		}
@@ -127,10 +130,10 @@ type NamedConfig struct {
 // buildCombinedConfig finds the kubeconfigs for all HostedClusters which report
 // one and merges them into a single kubeconfig. The generated admin context for
 // each cluster will follow the pattern: {hostedcluster.namespace}-{hostedcluster.name}
-func buildCombinedConfig(ctx context.Context, c client.Client) (*clientcmdapiv1.Config, error) {
+func buildCombinedConfig(ctx context.Context, c client.Client, namespace string) (*clientcmdapiv1.Config, error) {
 	// Select clusters.
 	var clusters hyperv1.HostedClusterList
-	if err := c.List(context.TODO(), &clusters); err != nil {
+	if err := c.List(ctx, &clusters, client.InNamespace(namespace)); err != nil {
 		return nil, fmt.Errorf("failed to list hostedclusters: %w", err)
 	}
 	var filtered []hyperv1.HostedCluster

@@ -2,26 +2,41 @@ package hostedcontrolplane
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
+	"github.com/go-logr/zapr"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/api"
+	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/upsert"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"go.uber.org/zap/zaptest"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
+	"sigs.k8s.io/yaml"
 )
 
 func TestReconcileKubeadminPassword(t *testing.T) {
@@ -93,15 +108,14 @@ spec:
 
 			fakeClient := fake.NewClientBuilder().Build()
 			r := &HostedControlPlaneReconciler{
-				Client:                 fakeClient,
-				Log:                    ctrl.LoggerFrom(context.TODO()),
-				CreateOrUpdateProvider: upsert.New(false),
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(context.TODO()),
 			}
 
 			globalConfig, err := globalconfig.ParseGlobalConfig(context.Background(), tc.hcp.Spec.Configuration)
 			g.Expect(err).NotTo(HaveOccurred())
 
-			err = r.reconcileKubeadminPassword(context.Background(), tc.hcp, globalConfig.OAuth != nil)
+			err = r.reconcileKubeadminPassword(context.Background(), tc.hcp, globalConfig.OAuth != nil, controllerutil.CreateOrUpdate)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			actualSecret := common.KubeadminPasswordSecret(targetNamespace)
@@ -139,8 +153,12 @@ func TestReconcileAPIServerService(t *testing.T) {
 					Name:      "test",
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
-					APIPort:              &apiPort,
-					APIAllowedCIDRBlocks: allowCIDR,
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							Port:              &apiPort,
+							AllowedCIDRBlocks: allowCIDR,
+						},
+					},
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
@@ -213,12 +231,11 @@ func TestReconcileAPIServerService(t *testing.T) {
 
 			fakeClient := fake.NewClientBuilder().Build()
 			r := &HostedControlPlaneReconciler{
-				Client:                 fakeClient,
-				Log:                    ctrl.LoggerFrom(context.TODO()),
-				CreateOrUpdateProvider: upsert.New(false),
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(context.TODO()),
 			}
 
-			err := r.reconcileAPIServerService(context.Background(), tc.hcp)
+			err := r.reconcileAPIServerService(context.Background(), tc.hcp, controllerutil.CreateOrUpdate)
 			g.Expect(err).NotTo(HaveOccurred())
 			var actualService corev1.Service
 			for _, expectedService := range tc.expectedServices {
@@ -492,9 +509,8 @@ func TestEtcdRestoredCondition(t *testing.T) {
 			}
 			fakeClient := fake.NewClientBuilder().WithLists(podList).Build()
 			r := &HostedControlPlaneReconciler{
-				Client:                 fakeClient,
-				Log:                    ctrl.LoggerFrom(context.TODO()),
-				CreateOrUpdateProvider: upsert.New(false),
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(context.TODO()),
 			}
 
 			conditionPtr := r.etcdRestoredCondition(context.Background(), tc.sts)
@@ -502,4 +518,236 @@ func TestEtcdRestoredCondition(t *testing.T) {
 			g.Expect(*conditionPtr).To(Equal(tc.expectedCondition))
 		})
 	}
+}
+
+func TestEventHandling(t *testing.T) {
+	t.Parallel()
+	rawHCP := `apiVersion: hypershift.openshift.io/v1alpha1
+kind: HostedControlPlane
+metadata:
+  annotations:
+    hypershift.openshift.io/cluster: cewong/cewong-dev
+  finalizers:
+  - hypershift.openshift.io/finalizer
+  generation: 1
+  labels:
+    cluster.x-k8s.io/cluster-name: cewong-dev-4nvh8
+  name: foo
+  namespace: bar
+  ownerReferences:
+  - apiVersion: cluster.x-k8s.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: Cluster
+    name: cewong-dev-4nvh8
+    uid: 01657128-83b6-4ed8-8814-1d735a374d24
+  resourceVersion: "216428710"
+  uid: ed1353cb-758d-4c87-b302-233976f93271
+spec:
+  autoscaling: {}
+  clusterID: 5878727a-1200-4fd5-802f-f0218b8af12c
+  controllerAvailabilityPolicy: SingleReplica
+  dns:
+    baseDomain: hypershift.cesarwong.com
+    privateZoneID: Z081271024WU1LT4DEEIV
+    publicZoneID: Z0676342TNL7FZTLRDUL
+  etcd:
+    managed:
+      storage:
+        persistentVolume:
+          size: 4Gi
+        type: PersistentVolume
+    managementType: Managed
+  fips: false
+  infraID: cewong-dev-4nvh8
+  infrastructureAvailabilityPolicy: SingleReplica
+  issuerURL: https://hypershift-ci-1-oidc.s3.us-east-1.amazonaws.com/cewong-dev-4nvh8
+  machineCIDR: 10.0.0.0/16
+  networkType: OVNKubernetes
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    machineNetwork:
+    - cidr: 10.0.0.0/16
+    networkType: OVNKubernetes
+    serviceNetwork:
+    - cidr: 172.29.0.0/16
+  olmCatalogPlacement: management
+  platform:
+    aws:
+      cloudProviderConfig:
+        subnet:
+          id: subnet-099bf416521d0628a
+        vpc: vpc-0d5303991a390921f
+        zone: us-east-2a
+      controlPlaneOperatorCreds: {}
+      endpointAccess: Public
+      kubeCloudControllerCreds:
+        name: cloud-controller-creds
+      nodePoolManagementCreds: {}
+      region: us-east-2
+      resourceTags:
+      - key: kubernetes.io/cluster/cewong-dev-4nvh8
+        value: owned
+      roles:
+      - arn: arn:aws:iam::820196288204:role/cewong-dev-4nvh8-openshift-ingress
+        name: cloud-credentials
+        namespace: openshift-ingress-operator
+      - arn: arn:aws:iam::820196288204:role/cewong-dev-4nvh8-openshift-image-registry
+        name: installer-cloud-credentials
+        namespace: openshift-image-registry
+      - arn: arn:aws:iam::820196288204:role/cewong-dev-4nvh8-aws-ebs-csi-driver-controller
+        name: ebs-cloud-credentials
+        namespace: openshift-cluster-csi-drivers
+      - arn: arn:aws:iam::820196288204:role/cewong-dev-4nvh8-cloud-network-config-controller
+        name: cloud-credentials
+        namespace: openshift-cloud-network-config-controller
+      rolesRef:
+        controlPlaneOperatorARN: arn:aws:iam::820196288204:role/cewong-dev-4nvh8-control-plane-operator
+        imageRegistryARN: arn:aws:iam::820196288204:role/cewong-dev-4nvh8-openshift-image-registry
+        ingressARN: arn:aws:iam::820196288204:role/cewong-dev-4nvh8-openshift-ingress
+        kubeCloudControllerARN: arn:aws:iam::820196288204:role/cewong-dev-4nvh8-cloud-controller
+        networkARN: arn:aws:iam::820196288204:role/cewong-dev-4nvh8-cloud-network-config-controller
+        nodePoolManagementARN: arn:aws:iam::820196288204:role/cewong-dev-4nvh8-node-pool
+        storageARN: arn:aws:iam::820196288204:role/cewong-dev-4nvh8-aws-ebs-csi-driver-controller
+    type: AWS
+  pullSecret:
+    name: pull-secret
+  releaseImage: quay.io/openshift-release-dev/ocp-release:4.11.0-rc.4-x86_64
+  secretEncryption:
+    aescbc:
+      activeKey:
+        name: etcd-encryption-key
+    type: aescbc
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+  - service: OVNSbDb
+    servicePublishingStrategy:
+      type: Route
+  sshKey:
+    name: ssh-key`
+	hcp := &hyperv1.HostedControlPlane{}
+	if err := yaml.Unmarshal([]byte(rawHCP), hcp); err != nil {
+		t.Fatalf("Failed to deserialize reference HCP: %v", err)
+	}
+	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
+	etcdEncryptionKey := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "etcd-encryption-key"},
+		Data:       map[string][]byte{"key": []byte("very-secret")},
+	}
+
+	hcpGVK, err := apiutil.GVKForObject(hcp, api.Scheme)
+	if err != nil {
+		t.Fatalf("failed to determine gvk for %T: %v", hcp, err)
+	}
+	restMapper := meta.NewDefaultRESTMapper(nil)
+	restMapper.Add(hcpGVK, meta.RESTScopeNamespace)
+	c := &createTrackingClient{Client: fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcp, pullSecret, etcdEncryptionKey).
+		WithRESTMapper(restMapper).
+		Build(),
+	}
+
+	readyInfraStatus := InfrastructureStatus{
+		APIHost:          "foo",
+		APIPort:          1,
+		OAuthHost:        "foo",
+		OAuthPort:        1,
+		KonnectivityHost: "foo",
+		KonnectivityPort: 1,
+	}
+	// Selftest, so this doesn't rot over time
+	if !readyInfraStatus.IsReady() {
+		t.Fatal("readyInfraStatus fixture is not actually ready")
+	}
+
+	r := &HostedControlPlaneReconciler{
+		Client:                        c,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
+			return readyInfraStatus, nil
+		},
+	}
+	r.setup(controllerutil.CreateOrUpdate)
+	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+	if _, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(hcp)}); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	eventHandlerList := r.eventHandlers()
+	eventHandlersByObject := make(map[schema.GroupVersionKind]handler.EventHandler, len(eventHandlerList))
+	for _, handler := range eventHandlerList {
+		gvk, err := apiutil.GVKForObject(handler.obj, api.Scheme)
+		if err != nil {
+			t.Errorf("failed to get gvk for %T: %v", handler.obj, err)
+		}
+		eventHandlersByObject[gvk] = handler.handler
+	}
+
+	for _, createdObject := range c.created {
+		t.Run(fmt.Sprintf("%T - %s", createdObject, createdObject.GetName()), func(t *testing.T) {
+			gvk, err := apiutil.GVKForObject(createdObject, api.Scheme)
+			if err != nil {
+				t.Fatalf("failed to get gvk for %T: %v", createdObject, err)
+			}
+			handler, found := eventHandlersByObject[gvk]
+			if !found {
+				t.Fatalf("reconciler creates %T but has no handler for them", createdObject)
+			}
+
+			if injectScheme, ok := handler.(inject.Scheme); ok {
+				if err := injectScheme.InjectScheme(api.Scheme); err != nil {
+					t.Fatalf("failed to inject scheme into handler: %v", err)
+				}
+			}
+			if injectMapper, ok := handler.(inject.Mapper); ok {
+				if err := injectMapper.InjectMapper(c.RESTMapper()); err != nil {
+					t.Fatalf("failed to inject mapper into handler: %v", err)
+				}
+			}
+
+			fakeQueue := &createTrackingWorkqueue{}
+			handler.Create(event.CreateEvent{Object: createdObject}, fakeQueue)
+
+			if len(fakeQueue.items) != 1 || fakeQueue.items[0].Namespace != hcp.Namespace || fakeQueue.items[0].Name != hcp.Name {
+				t.Errorf("object %+v didn't correctly create event", createdObject)
+			}
+		})
+	}
+}
+
+type createTrackingClient struct {
+	created []client.Object
+	client.Client
+}
+
+func (t *createTrackingClient) Create(ctx context.Context, o client.Object, opts ...client.CreateOption) error {
+	if err := t.Client.Create(ctx, o, opts...); err != nil {
+		return err
+	}
+	t.created = append(t.created, o)
+	return nil
+}
+
+type createTrackingWorkqueue struct {
+	items []reconcile.Request
+	workqueue.RateLimitingInterface
+}
+
+func (c *createTrackingWorkqueue) Add(item interface{}) {
+	c.items = append(c.items, item.(reconcile.Request))
 }

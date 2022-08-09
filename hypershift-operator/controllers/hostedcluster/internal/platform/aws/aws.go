@@ -225,7 +225,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 			},
 		},
 	}
-	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Namespace, hcp.Spec.APIPort), p.utilitiesImage, &deploymentSpec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Namespace, util.APIPort(hcp)), p.utilitiesImage, &deploymentSpec.Template.Spec)
 	return deploymentSpec, nil
 }
 
@@ -241,6 +241,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 	// this is not trivial as the CPO deployment itself needs the secret with the ControlPlaneOperatorARN
 	var errs []error
 	syncSecret := func(secret *corev1.Secret, arn string) error {
+		if arn == "" {
+			return fmt.Errorf("ARN is not provided for cloud credential secret %s/%s", secret.Namespace, secret.Name)
+		}
 		if _, err := createOrUpdate(ctx, c, secret, func() error {
 			credentials := fmt.Sprintf(awsCredentialsTemplate, arn)
 			secret.Data = map[string][]byte{"credentials": []byte(credentials)}

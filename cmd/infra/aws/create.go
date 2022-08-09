@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -49,7 +50,7 @@ type CreateInfraOutput struct {
 	Region          string                   `json:"region"`
 	Zone            string                   `json:"zone"`
 	InfraID         string                   `json:"infraID"`
-	ComputeCIDR     string                   `json:"computeCIDR"`
+	MachineCIDR     string                   `json:"machineCIDR"`
 	VPCID           string                   `json:"vpcID"`
 	Zones           []*CreateInfraOutputZone `json:"zones"`
 	SecurityGroupID string                   `json:"securityGroupID"`
@@ -96,20 +97,21 @@ func NewCreateCommand() *cobra.Command {
 	cmd.MarkFlagRequired("aws-creds")
 	cmd.MarkFlagRequired("base-domain")
 
+	l := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := opts.Run(cmd.Context()); err != nil {
-			log.Log.Error(err, "Failed to create infrastructure")
+		if err := opts.Run(cmd.Context(), l); err != nil {
+			l.Error(err, "Failed to create infrastructure")
 			return err
 		}
-		log.Log.Info("Successfully created infrastructure")
+		l.Info("Successfully created infrastructure")
 		return nil
 	}
 
 	return cmd
 }
 
-func (o *CreateInfraOptions) Run(ctx context.Context) error {
-	result, err := o.CreateInfra(ctx)
+func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) error {
+	result, err := o.CreateInfra(ctx, l)
 	if err != nil {
 		return err
 	}
@@ -133,8 +135,8 @@ func (o *CreateInfraOptions) Run(ctx context.Context) error {
 	return nil
 }
 
-func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutput, error) {
-	log.Log.Info("Creating infrastructure", "id", o.InfraID)
+func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*CreateInfraOutput, error) {
+	l.Info("Creating infrastructure", "id", o.InfraID)
 
 	awsSession := awsutil.NewSession("cli-create-infra", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
 	ec2Client := ec2.New(awsSession, awsutil.NewConfig())
@@ -146,13 +148,13 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	}
 	result := &CreateInfraOutput{
 		InfraID:     o.InfraID,
-		ComputeCIDR: DefaultCIDRBlock,
+		MachineCIDR: DefaultCIDRBlock,
 		Region:      o.Region,
 		Name:        o.Name,
 		BaseDomain:  o.BaseDomain,
 	}
 	if len(o.Zones) == 0 {
-		zone, err := o.firstZone(ec2Client)
+		zone, err := o.firstZone(l, ec2Client)
 		if err != nil {
 			return nil, err
 		}
@@ -160,14 +162,14 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	}
 
 	// VPC resources
-	result.VPCID, err = o.createVPC(ec2Client)
+	result.VPCID, err = o.createVPC(l, ec2Client)
 	if err != nil {
 		return nil, err
 	}
-	if err = o.CreateDHCPOptions(ec2Client, result.VPCID); err != nil {
+	if err = o.CreateDHCPOptions(l, ec2Client, result.VPCID); err != nil {
 		return nil, err
 	}
-	igwID, err := o.CreateInternetGateway(ec2Client, result.VPCID)
+	igwID, err := o.CreateInternetGateway(l, ec2Client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}
@@ -188,23 +190,23 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 		return nil, err
 	}
 	for _, zone := range o.Zones {
-		privateSubnetID, err := o.CreatePrivateSubnet(ec2Client, result.VPCID, zone, privateNetwork.String())
+		privateSubnetID, err := o.CreatePrivateSubnet(l, ec2Client, result.VPCID, zone, privateNetwork.String())
 		if err != nil {
 			return nil, err
 		}
-		publicSubnetID, err := o.CreatePublicSubnet(ec2Client, result.VPCID, zone, publicNetwork.String())
+		publicSubnetID, err := o.CreatePublicSubnet(l, ec2Client, result.VPCID, zone, publicNetwork.String())
 		if err != nil {
 			return nil, err
 		}
 		var natGatewayID string
 		publicSubnetIDs = append(publicSubnetIDs, publicSubnetID)
 		if !o.EnableProxy {
-			natGatewayID, err = o.CreateNATGateway(ec2Client, publicSubnetID, zone)
+			natGatewayID, err = o.CreateNATGateway(l, ec2Client, publicSubnetID, zone)
 			if err != nil {
 				return nil, err
 			}
 		}
-		privateRouteTable, err := o.CreatePrivateRouteTable(ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
+		privateRouteTable, err := o.CreatePrivateRouteTable(l, ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
 		if err != nil {
 			return nil, err
 		}
@@ -217,12 +219,12 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 		privateNetwork.IP[2] = privateNetwork.IP[2] + 16
 		publicNetwork.IP[2] = publicNetwork.IP[2] + 16
 	}
-	publicRouteTable, err := o.CreatePublicRouteTable(ec2Client, result.VPCID, igwID, publicSubnetIDs)
+	publicRouteTable, err := o.CreatePublicRouteTable(l, ec2Client, result.VPCID, igwID, publicSubnetIDs)
 	if err != nil {
 		return nil, err
 	}
 	endpointRouteTableIds = append(endpointRouteTableIds, aws.String(publicRouteTable))
-	err = o.CreateVPCS3Endpoint(ec2Client, result.VPCID, endpointRouteTableIds)
+	err = o.CreateVPCS3Endpoint(l, ec2Client, result.VPCID, endpointRouteTableIds)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +249,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 				return nil, fmt.Errorf("failed to read ssh-key-file from %s: %w", o.SSHKeyFile, err)
 			}
 		}
-		result.ProxyAddr, err = o.createProxyHost(ctx, ec2Client, result.Zones[0].SubnetID, result.VPCID, string(sshKeyFile))
+		result.ProxyAddr, err = o.createProxyHost(ctx, l, ec2Client, result.Zones[0].SubnetID, result.VPCID, string(sshKeyFile))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create proxy host: %w", err)
 		}
@@ -256,7 +258,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context) (*CreateInfraOutpu
 	return result, nil
 }
 
-func (o *CreateInfraOptions) createProxyHost(ctx context.Context, client ec2iface.EC2API, subnetID, vpcID string, sshKeys string) (string, error) {
+func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger, client ec2iface.EC2API, subnetID, vpcID string, sshKeys string) (string, error) {
 	const securityGroupName = "proxy-sg"
 	sgCreateResult, err := client.CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
 		GroupName:         aws.String(securityGroupName),
@@ -283,7 +285,7 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, client ec2ifac
 		return "", fmt.Errorf("cannot find security group that was just created (%s)", aws.StringValue(sgCreateResult.GroupId))
 	}
 	sg := sgResult.SecurityGroups[0]
-	log.Log.Info("Created security group", "name", securityGroupName, "id", aws.StringValue(sg.GroupId))
+	l.Info("Created security group", "name", securityGroupName, "id", aws.StringValue(sg.GroupId))
 
 	permissions := []*ec2.IpPermission{
 		{
@@ -310,7 +312,7 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, client ec2ifac
 	if err != nil {
 		return "", fmt.Errorf("failed to authorize security group: %w", err)
 	}
-	log.Log.Info("Authorized security group for proxy")
+	l.Info("Authorized security group for proxy")
 
 	result, err := client.RunInstancesWithContext(ctx, &ec2.RunInstancesInput{
 		ImageId:      aws.String("resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"),
@@ -331,7 +333,7 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, client ec2ifac
 	if err != nil {
 		return "", fmt.Errorf("failed to launch proxy host: %w", err)
 	}
-	log.Log.Info("Created proxy host")
+	l.Info("Created proxy host")
 
 	return fmt.Sprintf("http://%s:3128", *result.Instances[0].PrivateIpAddress), nil
 }

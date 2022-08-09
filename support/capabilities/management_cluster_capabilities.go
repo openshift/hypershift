@@ -7,6 +7,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 )
@@ -25,9 +26,17 @@ const (
 	// supports security context constraints
 	CapabilitySecurityContextConstraint
 
-	// CapabilityConfigOpenshiftIO indicates if the cluster supports the
-	// config.openshift.io api
-	CapabilityConfigOpenshiftIO
+	// CapabilityInfrastructure indicates if the cluster supports the
+	// infrastructures.config.openshift.io api
+	CapabilityInfrastructure
+
+	// CapabilityIngress indicates if the cluster supports the
+	// ingresses.config.openshift.io api
+	CapabilityIngress
+
+	// CapabilityProxy indicates if the cluster supports the
+	// proxies.config.openshift.io api
+	CapabilityProxy
 )
 
 // ManagementClusterCapabilities holds all information about optional capabilities of
@@ -52,26 +61,18 @@ func (m *ManagementClusterCapabilities) Has(capabilities ...CapabilityType) bool
 	return true
 }
 
-// isGroupVersionRegistered determines if a specified groupVersion is registered on the cluster
-func isGroupVersionRegistered(client discovery.ServerResourcesInterface, groupVersion schema.GroupVersion) (bool, error) {
-	_, apis, err := client.ServerGroupsAndResources()
-	if err != nil {
-		if discovery.IsGroupDiscoveryFailedError(err) {
-			// If the group we are looking for can't be fully discovered,
-			// that does still mean that it exists.
-			// Continue with the search in the discovered groups if not present here.
-			e := err.(*discovery.ErrGroupDiscoveryFailed)
-			if _, exists := e.Groups[groupVersion]; exists {
-				return true, nil
-			}
-		} else {
-			return false, err
-		}
+// isAPIResourceRegistered determines if a specified API resource is registered on the cluster
+func isAPIResourceRegistered(client discovery.ServerResourcesInterface, groupVersion schema.GroupVersion, resourceName string) (bool, error) {
+	apis, err := client.ServerResourcesForGroupVersion(groupVersion.String())
+	if err != nil && !errors.IsNotFound(err) {
+		return false, err
 	}
 
-	for _, api := range apis {
-		if api.GroupVersion == groupVersion.String() {
-			return true, nil
+	if apis != nil {
+		for _, api := range apis.APIResources {
+			if api.Name == resourceName || api.SingularName == resourceName {
+				return true, nil
+			}
 		}
 	}
 
@@ -82,16 +83,16 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 	discoveredCapabilities := map[CapabilityType]struct{}{}
 
 	// check for route capability
-	hasRoutesCap, err := isGroupVersionRegistered(client, routev1.GroupVersion)
+	hasRouteCap, err := isAPIResourceRegistered(client, routev1.GroupVersion, "routes")
 	if err != nil {
 		return nil, err
 	}
-	if hasRoutesCap {
+	if hasRouteCap {
 		discoveredCapabilities[CapabilityRoute] = struct{}{}
 	}
 
 	// check for scc capability
-	hasSccCap, err := isGroupVersionRegistered(client, securityv1.GroupVersion)
+	hasSccCap, err := isAPIResourceRegistered(client, securityv1.GroupVersion, "securitycontextconstraints")
 	if err != nil {
 		return nil, err
 	}
@@ -99,12 +100,31 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 		discoveredCapabilities[CapabilitySecurityContextConstraint] = struct{}{}
 	}
 
-	hasConfigCap, err := isGroupVersionRegistered(client, configv1.GroupVersion)
+	// check for infrastructure capability
+	hasInfraCap, err := isAPIResourceRegistered(client, configv1.GroupVersion, "infrastructures")
 	if err != nil {
 		return nil, err
 	}
-	if hasConfigCap {
-		discoveredCapabilities[CapabilityConfigOpenshiftIO] = struct{}{}
+	if hasInfraCap {
+		discoveredCapabilities[CapabilityInfrastructure] = struct{}{}
+	}
+
+	// check for ingress capability
+	hasIngressCap, err := isAPIResourceRegistered(client, configv1.GroupVersion, "ingresses")
+	if err != nil {
+		return nil, err
+	}
+	if hasIngressCap {
+		discoveredCapabilities[CapabilityIngress] = struct{}{}
+	}
+
+	// check for proxy capability
+	hasProxyCap, err := isAPIResourceRegistered(client, configv1.GroupVersion, "proxies")
+	if err != nil {
+		return nil, err
+	}
+	if hasProxyCap {
+		discoveredCapabilities[CapabilityProxy] = struct{}{}
 	}
 
 	return &ManagementClusterCapabilities{capabilities: discoveredCapabilities}, nil

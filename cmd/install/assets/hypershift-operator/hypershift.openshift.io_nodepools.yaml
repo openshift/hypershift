@@ -1,10 +1,9 @@
-
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.5.0
+    controller-gen.kubebuilder.io/version: v0.9.2
   creationTimestamp: null
   name: nodepools.hypershift.openshift.io
 spec:
@@ -117,6 +116,7 @@ spec:
                         TODO: Add other useful fields. apiVersion, kind, uid?'
                       type: string
                   type: object
+                  x-kubernetes-map-type: atomic
                 type: array
               management:
                 description: Management specifies behavior for managing nodes in the
@@ -264,6 +264,7 @@ spec:
                               only "value". The requirements are ANDed.
                             type: object
                         type: object
+                        x-kubernetes-map-type: atomic
                     type: object
                   aws:
                     description: AWS specifies the configuration used when operating
@@ -428,6 +429,19 @@ spec:
                         format: int32
                         minimum: 16
                         type: integer
+                      diskStorageAccountType:
+                        default: Premium_LRS
+                        description: "DiskStorageAccountType is the disk storage account
+                          type to use. Valid values are: * Standard_LRS: HDD * StandardSSD_LRS:
+                          Standard SSD * Premium_LRS: Premium SDD * UltraSSD_LRS:
+                          Ultra SDD \n Defaults to Premium_LRS. For more details,
+                          visit the Azure documentation: https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison"
+                        enum:
+                        - Standard_LRS
+                        - StandardSSD_LRS
+                        - Premium_LRS
+                        - UltraSSD_LRS
+                        type: string
                       imageID:
                         description: 'ImageID is the id of the image to boot from.
                           If unset, the default image at the location below will be
@@ -493,6 +507,18 @@ spec:
                               This is the default type used when no storage type is
                               defined.
                             properties:
+                              accessModes:
+                                description: 'AccessModes is an array that contains
+                                  the desired Access Modes the root volume should
+                                  have. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes'
+                                items:
+                                  enum:
+                                  - ReadWriteOnce
+                                  - ReadWriteMany
+                                  - ReadOnly
+                                  - ReadWriteOncePod
+                                  type: string
+                                type: array
                               size:
                                 anyOf:
                                 - type: integer
@@ -741,9 +767,3 @@ spec:
         specReplicasPath: .spec.replicas
         statusReplicasPath: .status.replicas
       status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []
