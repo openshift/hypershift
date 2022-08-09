@@ -247,7 +247,8 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool
 		Name: manifests.KonnectivityServerRoute(route.Namespace).Name,
 	}
 	route.Spec.TLS = &routev1.TLSConfig{
-		Termination: routev1.TLSTerminationPassthrough,
+		Termination:                   routev1.TLSTerminationPassthrough,
+		InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
 	}
 	route.Spec.Port = &routev1.RoutePort{
 		TargetPort: intstr.FromInt(KonnectivityServerPort),

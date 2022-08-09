@@ -83,7 +83,8 @@ func ReconcileIgnitionServer(ctx context.Context,
 				ignitionServerRoute.ObjectMeta.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = serviceStrategy.Route.Hostname
 			}
 			ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{
-				Termination: routev1.TLSTerminationPassthrough,
+				Termination:                   routev1.TLSTerminationPassthrough,
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
 			}
 			ignitionServerRoute.Spec.To = routev1.RouteTargetReference{
 				Kind:   "Service",
