@@ -17,6 +17,7 @@ type KubevirtPlatformCreateOptions struct {
 	ContainerDiskImage     string
 	RootVolumeSize         uint32
 	RootVolumeStorageClass string
+	RootVolumeAccessModes  string
 }
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
@@ -35,13 +36,8 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().Uint32Var(&platformOpts.Cores, "cores", platformOpts.Cores, "The number of cores inside the vmi, Must be a value greater or equal 1")
 	cmd.Flags().StringVar(&platformOpts.RootVolumeStorageClass, "root-volume-storage-class", platformOpts.RootVolumeStorageClass, "The storage class to use for machines in the NodePool")
 	cmd.Flags().Uint32Var(&platformOpts.RootVolumeSize, "root-volume-size", platformOpts.RootVolumeSize, "The size of the root volume for machines in the NodePool in Gi")
+	cmd.Flags().StringVar(&platformOpts.RootVolumeAccessModes, "root-volume-access-modes", platformOpts.RootVolumeAccessModes, "The access modes of the root volume to use for machines in the NodePool (comma-delimited list)")
 	cmd.Flags().StringVar(&platformOpts.ContainerDiskImage, "containerdisk", platformOpts.ContainerDiskImage, "A reference to docker image with the embedded disk to be used to create the machines")
-
-	// TODO (nargaman): replace with official container image, after RFE-2501 is completed
-	// As long as there is no official container image
-	// The image must be provided by user
-	// Otherwise it must fail
-	cmd.MarkFlagRequired("containerdisk")
 
 	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
@@ -55,6 +51,7 @@ func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePo
 		Image:                  o.ContainerDiskImage,
 		RootVolumeSize:         o.RootVolumeSize,
 		RootVolumeStorageClass: o.RootVolumeStorageClass,
+		RootVolumeAccessModes:  o.RootVolumeAccessModes,
 	})
 	return nil
 }

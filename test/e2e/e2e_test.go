@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
+	"github.com/openshift/hypershift/test/e2e/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap/zapcore"
@@ -56,7 +57,8 @@ func init() {
 func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
 	flag.StringVar(&globalOpts.configurableClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
-	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.aws-zones", "AWS zones for clusters")
+	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.aws-zones", "Deprecated, use -e2e.availability-zones instead")
+	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.availability-zones", "Availability zones for clusters")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
 	flag.StringVar(&globalOpts.configurableClusterOptions.ExternalDNSDomain, "e2e.external-dns-domain", "", "domain that external-dns will use to create DNS records for HCP endpoints")
@@ -74,6 +76,10 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
 	flag.StringVar(&globalOpts.platformRaw, "e2e.platform", string(hyperv1.AWSPlatform), "The platform to use for the tests")
 	flag.StringVar(&globalOpts.configurableClusterOptions.NetworkType, "network-type", "", "The network type to use. If unset, will default based on the OCP version.")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSResourceGroup, "e2e.powervs-resource-group", "", "IBM Cloud Resource group")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSRegion, "e2e.powervs-region", "us-south", "IBM Cloud region. Default is us-south")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSZone, "e2e.powervs-zone", "us-south", "IBM Cloud zone. Default is us-sout")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSVpcRegion, "e2e.powervs-vpc-region", "us-south", "IBM Cloud VPC Region for VPC resources. Default is us-south")
 
 	flag.Parse()
 
@@ -219,9 +225,13 @@ type configurableClusterOptions struct {
 	NodePoolReplicas           int
 	SSHKeyFile                 string
 	NetworkType                string
+	PowerVSResourceGroup       string
+	PowerVSRegion              string
+	PowerVSZone                string
+	PowerVSVpcRegion           string
 }
 
-func (o *options) DefaultClusterOptions() core.CreateOptions {
+func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 	createOption := core.CreateOptions{
 		ReleaseImage:              o.LatestReleaseImage,
 		NodePoolReplicas:          int32(o.configurableClusterOptions.NodePoolReplicas),
@@ -249,9 +259,20 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 			InstanceType:    "Standard_D4s_v4",
 			DiskSizeGB:      120,
 		},
+		PowerVSPlatform: core.PowerVSPlatformOptions{
+			ResourceGroup: o.configurableClusterOptions.PowerVSResourceGroup,
+			Region:        o.configurableClusterOptions.PowerVSRegion,
+			Zone:          o.configurableClusterOptions.PowerVSZone,
+			VpcRegion:     o.configurableClusterOptions.PowerVSVpcRegion,
+			SysType:       "s922",
+			ProcType:      "shared",
+			Processors:    "0.5",
+			Memory:        32,
+		},
 		ServiceCIDR: "172.31.0.0/16",
-		PodCIDR:     "10.132.0.0/14",
+		ClusterCIDR: "10.132.0.0/14",
 		BeforeApply: o.BeforeApply,
+		Log:         util.NewLogr(t),
 	}
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {
@@ -259,6 +280,7 @@ func (o *options) DefaultClusterOptions() core.CreateOptions {
 		createOption.AWSPlatform.Zones = []string{"us-east-1a"}
 	} else {
 		createOption.AWSPlatform.Zones = strings.Split(o.configurableClusterOptions.Zone.String(), ",")
+		createOption.AzurePlatform.AvailabilityZones = strings.Split(o.configurableClusterOptions.Zone.String(), ",")
 	}
 
 	if o.configurableClusterOptions.SSHKeyFile == "" {

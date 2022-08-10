@@ -73,17 +73,8 @@ func PrivateRouterConfig(hcp *hyperv1.HostedControlPlane, setDefaultSecurityCont
 		},
 	}
 	cfg.Scheduling.PriorityClass = config.APICriticalPriorityClass
-	cfg.SetColocation(hcp)
+	cfg.SetDefaults(hcp, privateRouterLabels(), nil)
 	cfg.SetRestartAnnotation(hcp.ObjectMeta)
-	cfg.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	cfg.SetControlPlaneIsolation(hcp)
-	cfg.SetMultizoneSpread(privateRouterLabels())
-	switch hcp.Spec.ControllerAvailabilityPolicy {
-	case hyperv1.HighlyAvailable:
-		cfg.Replicas = 3
-	default:
-		cfg.Replicas = 1
-	}
 	cfg.SetDefaultSecurityContext = setDefaultSecurityContext
 	return cfg
 }
@@ -92,7 +83,7 @@ func PrivateRouterImage(images map[string]string) string {
 	return images["haproxy-router"]
 }
 
-func ReconcilePrivateRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image, domain string) error {
+func ReconcilePrivateRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: privateRouterLabels(),

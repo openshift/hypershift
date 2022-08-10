@@ -128,11 +128,13 @@ func setupMetrics(mgr manager.Manager) error {
 
 var expectedHCConditionStates = map[hyperv1.ConditionType]bool{
 	hyperv1.HostedClusterAvailable:          true,
+	hyperv1.HostedClusterProgressing:        false,
 	hyperv1.IgnitionEndpointAvailable:       true,
 	hyperv1.UnmanagedEtcdAvailable:          true,
 	hyperv1.ValidHostedClusterConfiguration: true,
 	hyperv1.SupportedHostedCluster:          true,
 	hyperv1.ClusterVersionSucceeding:        true,
+	hyperv1.ClusterVersionUpgradeable:       true,
 	hyperv1.ReconciliationActive:            true,
 	hyperv1.ValidOIDCConfiguration:          true,
 }

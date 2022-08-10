@@ -1,6 +1,7 @@
 package hostedcluster
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
@@ -25,7 +27,6 @@ import (
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
@@ -33,7 +34,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	serializerjson "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -483,8 +486,16 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 			}
 			g := NewGomegaWithT(t)
 			if test.networking != nil {
+				// deprecated values should still be populated
 				g.Expect(hostedControlPlane.Spec.APIPort).To(Equal(test.expectedAPIPort))
 				g.Expect(hostedControlPlane.Spec.APIAdvertiseAddress).To(Equal(test.expectedAPIAdvertiseAddress))
+
+				// new values should also be populated
+				g.Expect(hostedControlPlane.Spec.Networking.APIServer).ToNot(BeNil())
+				g.Expect(hostedControlPlane.Spec.Networking.APIServer.Port).To(Equal(test.expectedAPIPort))
+				g.Expect(hostedControlPlane.Spec.Networking.APIServer.AdvertiseAddress).To(Equal(test.expectedAPIAdvertiseAddress))
+			} else {
+				g.Expect(hostedControlPlane.Spec.Networking.APIServer).To(BeNil())
 			}
 		})
 	}
@@ -935,6 +946,15 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					Type: hyperv1.AWSPlatform,
 					AWS: &hyperv1.AWSPlatformSpec{
 						EndpointAccess: hyperv1.Public,
+						RolesRef: hyperv1.AWSRolesRef{
+							IngressARN:              "ingress-arn",
+							ImageRegistryARN:        "image-registry-arn",
+							StorageARN:              "storage-arn",
+							NetworkARN:              "network-arn",
+							KubeCloudControllerARN:  " kube-cloud-controller-arn",
+							NodePoolManagementARN:   "node-pool-management-arn",
+							ControlPlaneOperatorARN: "control-plane-operator-arn",
+						},
 					},
 				},
 			},
@@ -998,13 +1018,17 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 
 	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()}
 	r := &HostedClusterReconciler{
-		Client:                        client,
-		Clock:                         clock.RealClock{},
-		ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(capabilities.CapabilityConfigOpenshiftIO),
-		createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
-		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}},
-		now:                           metav1.Now,
+		Client: client,
+		Clock:  clock.RealClock{},
+		ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(
+			capabilities.CapabilityInfrastructure,
+			capabilities.CapabilityIngress,
+			capabilities.CapabilityProxy,
+		),
+		createOrUpdate:        func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+		ReleaseProvider:       &fakereleaseprovider.FakeReleaseProvider{},
+		ImageMetadataProvider: &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}},
+		now:                   metav1.Now,
 	}
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
@@ -1670,10 +1694,29 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 }
 
 func TestConfigurationFieldsToRawExtensions(t *testing.T) {
-	config := &hyperv1.ClusterConfiguration{Proxy: &configv1.ProxySpec{HTTPProxy: "http://10.0.136.57:3128", HTTPSProxy: "http://10.0.136.57:3128"}}
+	config := &hyperv1.ClusterConfiguration{
+		Ingress: &configv1.IngressSpec{Domain: "example.com"},
+		Proxy:   &configv1.ProxySpec{HTTPProxy: "http://10.0.136.57:3128", HTTPSProxy: "http://10.0.136.57:3128"},
+	}
 	result, err := configurationFieldsToRawExtensions(config)
 	if err != nil {
 		t.Fatalf("configurationFieldsToRawExtensions: %v", err)
+	}
+
+	// Check that serialized resources do not contain a status section
+	for i, rawExt := range result {
+		unstructuredObj := &unstructured.Unstructured{}
+		_, _, err := unstructured.UnstructuredJSONScheme.Decode(rawExt.Raw, nil, unstructuredObj)
+		if err != nil {
+			t.Fatalf("unexpected decode error: %v", err)
+		}
+		_, exists, err := unstructured.NestedFieldNoCopy(unstructuredObj.Object, "status")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if exists {
+			t.Errorf("status field exists for resource %d", i)
+		}
 	}
 
 	serialized, err := json.Marshal(result)
@@ -1692,13 +1735,28 @@ func TestConfigurationFieldsToRawExtensions(t *testing.T) {
 		t.Errorf("output does not match a json-roundtripped version: %s", diff)
 	}
 
+	var ingress configv1.Ingress
+	if err := json.Unmarshal(result[0].Raw, &ingress); err != nil {
+		t.Fatalf("failed to unmarshal raw data: %v", err)
+	}
+	if ingress.APIVersion == "" || ingress.Kind == "" {
+		t.Errorf("rawObject has no apiVersion or kind set: %+v", ingress.ObjectMeta)
+	}
+	if ingress.Spec.Domain != "example.com" {
+		t.Errorf("ingress does not have expected domain: %q", ingress.Spec.Domain)
+	}
+
 	var proxy configv1.Proxy
-	if err := json.Unmarshal(result[0].Raw, &proxy); err != nil {
+	if err := json.Unmarshal(result[1].Raw, &proxy); err != nil {
 		t.Fatalf("failed to unmarshal raw data: %v", err)
 	}
 	if proxy.APIVersion == "" || proxy.Kind == "" {
 		t.Errorf("rawObject has no apiVersion or kind set: %+v", proxy.ObjectMeta)
 	}
+	if proxy.Spec.HTTPProxy != "http://10.0.136.57:3128" {
+		t.Errorf("proxy does not have expected HTTPProxy: %q", proxy.Spec.HTTPProxy)
+	}
+
 }
 
 func TestIsUpgradeable(t *testing.T) {
@@ -1745,7 +1803,7 @@ func TestIsUpgradeable(t *testing.T) {
 			err:       false,
 		},
 		{
-			name: "not upgradable, no force annotation",
+			name: "not upgradeable, no force annotation",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Release: hyperv1.Release{
@@ -1770,7 +1828,7 @@ func TestIsUpgradeable(t *testing.T) {
 			err:       true,
 		},
 		{
-			name: "not upgradable, old force annotation",
+			name: "not upgradeable, old force annotation",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -1800,7 +1858,7 @@ func TestIsUpgradeable(t *testing.T) {
 			err:       true,
 		},
 		{
-			name: "not upgradable, force annotation",
+			name: "not upgradeable, force annotation",
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
@@ -2092,28 +2150,50 @@ func TestReconcileDeprecatedGlobalConfig(t *testing.T) {
 	hc.Namespace = "fake-namespace"
 
 	apiServer := &configv1.APIServer{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: configv1.SchemeGroupVersion.String(),
+			Kind:       "APIServer",
+		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "cluster",
 		},
 		Spec: configv1.APIServerSpec{
+			Audit: configv1.Audit{
+				// Populate kubebuilder default for comparison
+				// https://github.com/openshift/api/blob/f120778bee805ad1a7a4f05a6430332cf5811813/config/v1/types_apiserver.go#L57
+				Profile: configv1.DefaultAuditProfileType,
+			},
 			ClientCA: configv1.ConfigMapNameReference{
 				Name: "fake-ca",
 			},
 		},
 	}
-	serializedAPIServer, err := util.SerializeResource(apiServer, hyperapi.Scheme)
+
+	jsonSerializer := serializerjson.NewSerializerWithOptions(
+		serializerjson.DefaultMetaFactory, hyperapi.Scheme, hyperapi.Scheme,
+		serializerjson.SerializerOptions{Yaml: false, Pretty: true, Strict: false},
+	)
+
+	serializedAPIServer := &bytes.Buffer{}
+	err := jsonSerializer.Encode(apiServer, serializedAPIServer)
 	if err != nil {
 		t.Fatalf("failed to serialize apiserver: %v", err)
 	}
+
 	hc.Spec.Configuration = &hyperv1.ClusterConfiguration{
 		Items: []runtime.RawExtension{
 			{
-				Raw: []byte(serializedAPIServer),
+				Raw: serializedAPIServer.Bytes(),
 			},
 		},
 		ConfigMapRefs: []corev1.LocalObjectReference{
 			{
 				Name: "fake-ca",
+			},
+		},
+		SecretRefs: []corev1.LocalObjectReference{
+			{
+				Name: "fake-creds",
 			},
 		},
 	}
@@ -2135,29 +2215,51 @@ func TestReconcileDeprecatedGlobalConfig(t *testing.T) {
 	if !equality.Semantic.DeepEqual(&hc.Spec, originalSpec) {
 		err := reconciler.Client.Update(context.Background(), hc)
 		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
+			t.Fatalf("unexpected update error: %v", err)
 		}
 	}
 
 	updatedHc := &hyperv1.HostedCluster{}
 	if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(hc), updatedHc); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected get error: %v", err)
 	}
 	if updatedHc.Spec.Configuration == nil {
 		t.Fatalf("unexpected nil configuration")
 	}
-
-	if len(updatedHc.Spec.Configuration.Items) > 0 {
-		t.Errorf("non-empty deprecated configuration")
+	if len(updatedHc.Spec.Configuration.Items) == 0 {
+		t.Errorf("empty deprecated configuration")
 	}
-	if len(updatedHc.Spec.Configuration.ConfigMapRefs) > 0 {
-		t.Errorf("non-empty configmap refs")
+	if len(updatedHc.Spec.Configuration.ConfigMapRefs) == 0 {
+		t.Errorf("empty configmap refs")
 	}
-	if len(updatedHc.Spec.Configuration.SecretRefs) > 0 {
-		t.Errorf("non-emtpy secret refs")
+	if len(updatedHc.Spec.Configuration.SecretRefs) == 0 {
+		t.Errorf("emtpy secret refs")
 	}
 	if !equality.Semantic.DeepEqual(&apiServer.Spec, updatedHc.Spec.Configuration.APIServer) {
 		t.Errorf("unexpected apiserver spec: %#v", updatedHc.Spec.Configuration.APIServer)
+	}
+
+	// Update deprecated field, remove test when field is unsupported
+	apiServer.Spec.ClientCA.Name = "updated-ca"
+	serializedAPIServer.Reset()
+	err = jsonSerializer.Encode(apiServer, serializedAPIServer)
+	if err != nil {
+		t.Fatalf("failed to serialize apiserver: %v", err)
+	}
+	updatedHc.Spec.Configuration.Items = []runtime.RawExtension{{Raw: serializedAPIServer.Bytes()}}
+	if err := reconciler.reconcileDeprecatedGlobalConfig(context.Background(), updatedHc); err != nil {
+		t.Fatalf("unexpected reconcile error: %v", err)
+	}
+	err = reconciler.Client.Update(context.Background(), updatedHc)
+	if err != nil {
+		t.Fatalf("unexpected update error: %v", err)
+	}
+	updatedHcAgain := &hyperv1.HostedCluster{}
+	if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(updatedHc), updatedHcAgain); err != nil {
+		t.Fatalf("unexpected get error: %v", err)
+	}
+	if !equality.Semantic.DeepEqual(&apiServer.Spec, updatedHcAgain.Spec.Configuration.APIServer) {
+		t.Errorf("unexpected apiserver spec on update: %#v", updatedHcAgain.Spec.Configuration.APIServer)
 	}
 }
 
@@ -2180,6 +2282,7 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 				Type:               string(hyperv1.ReconciliationSucceeded),
 				Status:             metav1.ConditionTrue,
 				Reason:             "ReconciliatonSucceeded",
+				Message:            "Reconciliation completed succesfully",
 				LastTransitionTime: reconcilerNow,
 			}},
 		},
@@ -2188,6 +2291,7 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 			existingConditions: []metav1.Condition{{
 				Type:               string(hyperv1.ReconciliationSucceeded),
 				Status:             metav1.ConditionTrue,
+				Message:            "Reconciliation completed succesfully",
 				Reason:             "ReconciliatonSucceeded",
 				LastTransitionTime: now,
 			}},
@@ -2195,6 +2299,7 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 				Type:               string(hyperv1.ReconciliationSucceeded),
 				Status:             metav1.ConditionTrue,
 				Reason:             "ReconciliatonSucceeded",
+				Message:            "Reconciliation completed succesfully",
 				LastTransitionTime: now,
 			}},
 		},
@@ -2210,6 +2315,7 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 				Type:               string(hyperv1.ReconciliationSucceeded),
 				Status:             metav1.ConditionTrue,
 				Reason:             "ReconciliatonSucceeded",
+				Message:            "Reconciliation completed succesfully",
 				LastTransitionTime: reconcilerNow,
 			}},
 		},
@@ -2303,4 +2409,247 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestIsProgressing(t *testing.T) {
+	tests := []struct {
+		name    string
+		hc      *hyperv1.HostedCluster
+		want    bool
+		wantErr bool
+	}{
+		{
+			name: "stable at relase",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.2",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "release-1.2",
+						},
+					},
+				},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name: "cluster is rolling out",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.2",
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "cluster is upgrading",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.3",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "release-1.2",
+						},
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "cluster update is blocked by condition",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.3",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "release-1.2",
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ValidHostedClusterConfiguration),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name: "cluster upgrade is blocked by ClusterVersionUpgradeable",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.3",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "release-1.2",
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			want:    false,
+			wantErr: true,
+		},
+		{
+			name: "cluster upgrade is forced",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.ForceUpgradeToAnnotation: "release-1.3",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.3",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: hyperv1.Release{
+							Image: "release-1.2",
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			want:    true,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := isProgressing(context.TODO(), tt.hc)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("isProgressing() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("isProgressing() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsValidReleaseVersion(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		currentVersion         semver.Version
+		nextVersion            semver.Version
+		latestVersionSupported semver.Version
+		minVersionSupported    semver.Version
+		networkType            hyperv1.NetworkType
+		expectError            bool
+	}{
+		{
+			name:                   "Releases before 4.8 are not supported",
+			currentVersion:         semver.MustParse("4.8.0"),
+			nextVersion:            semver.MustParse("4.7.0"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
+			expectError:            true,
+		},
+		{
+			name:                   "y-stream downgrade is not supported",
+			currentVersion:         semver.MustParse("4.10.0"),
+			nextVersion:            semver.MustParse("4.9.0"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
+			expectError:            true,
+		},
+		{
+			name:                   "y-stream upgrade is not for OpenShiftSDN",
+			currentVersion:         semver.MustParse("4.10.0"),
+			nextVersion:            semver.MustParse("4.11.0"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
+			networkType:            hyperv1.OpenShiftSDN,
+			expectError:            true,
+		},
+		{
+			name:                   "the latest HostedCluster version supported by this Operator is 4.12.0",
+			currentVersion:         semver.MustParse("4.12.0"),
+			nextVersion:            semver.MustParse("4.13.0"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
+			expectError:            true,
+		},
+		{
+			name:                   "the minimum HostedCluster version supported by this Operator is 4.10.0",
+			currentVersion:         semver.MustParse("4.9.0"),
+			nextVersion:            semver.MustParse("4.9.0"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
+			expectError:            true,
+		},
+		{
+			name:                   "Valid",
+			currentVersion:         semver.MustParse("4.11.0"),
+			nextVersion:            semver.MustParse("4.11.1"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
+			expectError:            false,
+		},
+		{
+			name:                   "When going to minimum should be valid",
+			currentVersion:         semver.MustParse("4.9.0"),
+			nextVersion:            semver.MustParse("4.10.0"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
+			expectError:            false,
+		},
+		{
+			name:                   "Valid when going to minimum with a dev tag",
+			currentVersion:         semver.MustParse("4.9.0"),
+			nextVersion:            semver.MustParse("4.10.0-nightly-something"),
+			latestVersionSupported: semver.MustParse("4.12.0"),
+			minVersionSupported:    semver.MustParse("4.10.0"),
+			expectError:            false,
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			err := isValidReleaseVersion(&test.nextVersion, &test.currentVersion, &test.latestVersionSupported, &test.minVersionSupported, test.networkType)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+		})
+	}
+
 }

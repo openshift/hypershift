@@ -11,6 +11,7 @@ import (
 )
 
 const amiName = "ami"
+const infraName = "test"
 
 var volume = hyperv1.Volume{
 	Size: 16,
@@ -19,6 +20,7 @@ var volume = hyperv1.Volume{
 }
 
 func TestAWSMachineTemplate(t *testing.T) {
+	infraName := "test"
 	testCases := []struct {
 		name     string
 		cluster  hyperv1.HostedClusterSpec
@@ -53,7 +55,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 			}}},
 
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
-				tmpl.Spec.Template.Spec.AdditionalTags = capiaws.Tags{"key": "value"}
+				tmpl.Spec.Template.Spec.AdditionalTags["key"] = "value"
 			}),
 		},
 		{
@@ -65,7 +67,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 			}}},
 
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
-				tmpl.Spec.Template.Spec.AdditionalTags = capiaws.Tags{"key": "value"}
+				tmpl.Spec.Template.Spec.AdditionalTags["key"] = "value"
 			}),
 		},
 		{
@@ -84,11 +86,9 @@ func TestAWSMachineTemplate(t *testing.T) {
 			}}},
 
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
-				tmpl.Spec.Template.Spec.AdditionalTags = capiaws.Tags{
-					"cluster-only":         "value",
-					"cluster-and-nodepool": "cluster",
-					"nodepool-only":        "value",
-				}
+				tmpl.Spec.Template.Spec.AdditionalTags["cluster-only"] = "value"
+				tmpl.Spec.Template.Spec.AdditionalTags["cluster-and-nodepool"] = "cluster"
+				tmpl.Spec.Template.Spec.AdditionalTags["nodepool-only"] = "value"
 			}),
 		},
 	}
@@ -100,7 +100,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 			if tc.nodePool.Platform.AWS == nil {
 				tc.nodePool.Platform.AWS = &hyperv1.AWSNodePoolPlatform{}
 			}
-			result := awsMachineTemplateSpec("testi", amiName, &hyperv1.HostedCluster{Spec: tc.cluster}, &hyperv1.NodePool{Spec: tc.nodePool})
+			result := awsMachineTemplateSpec(infraName, amiName, &hyperv1.HostedCluster{Spec: tc.cluster}, &hyperv1.NodePool{Spec: tc.nodePool})
 			if !equality.Semantic.DeepEqual(&tc.expected.Spec, result) {
 				t.Errorf(cmp.Diff(tc.expected.Spec, result))
 			}
@@ -126,7 +126,10 @@ func defaultAWSMachineTemplate(modify ...func(*capiaws.AWSMachineTemplate)) *cap
 					AMI: capiaws.AMIReference{
 						ID: k8sutilspointer.StringPtr(amiName),
 					},
-					IAMInstanceProfile:       "testi-worker-profile",
+					AdditionalTags: capiaws.Tags{
+						awsClusterCloudProviderTagKey(infraName): infraLifecycleOwned,
+					},
+					IAMInstanceProfile:       infraName + "-worker-profile",
 					AdditionalSecurityGroups: []capiaws.AWSResourceReference{},
 					Subnet:                   &capiaws.AWSResourceReference{},
 					UncompressedUserData:     k8sutilspointer.BoolPtr(true),

@@ -39,6 +39,10 @@ var (
 		json.DefaultMetaFactory, Scheme, Scheme,
 		json.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
 	)
+	TolerantYAMLSerializer = json.NewSerializerWithOptions(
+		json.DefaultMetaFactory, Scheme, Scheme,
+		json.SerializerOptions{Yaml: true, Pretty: true, Strict: false},
+	)
 )
 
 func init() {

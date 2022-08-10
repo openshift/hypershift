@@ -8,6 +8,18 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 )
 
+const (
+	// infraLifecycleOwned is the value we use when tagging infra resources to indicate
+	// that the resource is considered owned and managed by the cluster.
+	infraLifecycleOwned = "owned"
+)
+
+// awsClusterCloudProviderTagKey generates the key for infra resources associated to a cluster.
+// https://github.com/kubernetes/cloud-provider-aws/blob/5f394ba297bf280ceb3edfc38922630b4bd83f46/pkg/providers/v2/tags.go#L31-L37
+func awsClusterCloudProviderTagKey(id string) string {
+	return fmt.Sprintf("kubernetes.io/cluster/%s", id)
+}
+
 func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) *capiaws.AWSMachineTemplateSpec {
 	subnet := &capiaws.AWSResourceReference{}
 	if nodePool.Spec.Platform.AWS.Subnet != nil {
@@ -61,12 +73,16 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 
 	instanceType := nodePool.Spec.Platform.AWS.InstanceType
 
-	var tags capiaws.Tags
+	tags := capiaws.Tags{}
 	for _, tag := range append(nodePool.Spec.Platform.AWS.ResourceTags, hostedCluster.Spec.Platform.AWS.ResourceTags...) {
-		if tags == nil {
-			tags = capiaws.Tags{}
-		}
 		tags[tag.Key] = tag.Value
+	}
+
+	// We enforce the AWS cluster cloud provider tag here.
+	// Otherwise, this would race with the HC defaulting itself hostedCluster.Spec.Platform.AWS.ResourceTags.
+	key := awsClusterCloudProviderTagKey(infraName)
+	if _, ok := tags[key]; !ok {
+		tags[key] = infraLifecycleOwned
 	}
 
 	awsMachineTemplateSpec := &capiaws.AWSMachineTemplateSpec{

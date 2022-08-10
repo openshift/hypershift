@@ -257,11 +257,6 @@ func ReconcileServerServiceStatus(svc *corev1.Service, route *routev1.Route, str
 
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
-		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
-			host = strategy.LoadBalancer.Hostname
-			port = int32(KonnectivityServerPort)
-			return
-		}
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
 			message = fmt.Sprintf("Konnectivity load balancer is not provisioned; %v since creation", duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
 			var messages []string
@@ -275,13 +270,14 @@ func ReconcileServerServiceStatus(svc *corev1.Service, route *routev1.Route, str
 			}
 			return
 		}
+		port = int32(KonnectivityServerPort)
 		switch {
+		case strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "":
+			host = strategy.LoadBalancer.Hostname
 		case svc.Status.LoadBalancer.Ingress[0].Hostname != "":
 			host = svc.Status.LoadBalancer.Ingress[0].Hostname
-			port = int32(KonnectivityServerPort)
 		case svc.Status.LoadBalancer.Ingress[0].IP != "":
 			host = svc.Status.LoadBalancer.Ingress[0].IP
-			port = int32(KonnectivityServerPort)
 		}
 	case hyperv1.NodePort:
 		if strategy.NodePort == nil {

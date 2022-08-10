@@ -90,11 +90,8 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 	}
 
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	p.DeploymentConfig.SetColocation(hcp)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	p.DeploymentConfig.SetControlPlaneIsolation(hcp)
-	p.DeploymentConfig.Replicas = 1
+	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.IntPtr(1))
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	if util.IsPrivateHCP(hcp) {
 		p.APIServerAddress = fmt.Sprintf("api.%s.hypershift.local", hcp.Name)
@@ -198,7 +195,12 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	if dep.Spec.Template.Labels == nil {
 		dep.Spec.Template.Labels = map[string]string{}
 	}
-	dep.Spec.Template.Labels["name"] = operatorName
+	dep.Spec.Template.Labels = map[string]string{
+		"name":                        operatorName,
+		"app":                         operatorName,
+		hyperv1.ControlPlaneComponent: operatorName,
+	}
+
 	cnoArgs := []string{"start",
 		"--listen=0.0.0.0:9104",
 		"--kubeconfig=/etc/hosted-kubernetes/kubeconfig",

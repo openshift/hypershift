@@ -231,7 +231,7 @@ func applyIBMCloudKMSConfig(podSpec *corev1.PodSpec, ibmCloud *hyperv1.IBMCloudK
 	if err != nil {
 		return fmt.Errorf("failed to generate kmsKPInfo env var: %w", err)
 	}
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket))
+	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket), util.BuildVolume(kasVolumeIBMCloudKMSKP(), buildVolumeIBMCloudKMSKP))
 	var customerAPIKeyReference *corev1.EnvVarSource
 	switch ibmCloud.Auth.Type {
 	case hyperv1.IBMCloudKMSUnmanagedAuth:
@@ -248,7 +248,6 @@ func applyIBMCloudKMSConfig(podSpec *corev1.PodSpec, ibmCloud *hyperv1.IBMCloudK
 		}
 		podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeIBMCloudKMSCustomerCredentials(), buildVolumeIBMCloudKMSCustomerCredentials(ibmCloud.Auth.Unmanaged.Credentials.Name)))
 	case hyperv1.IBMCloudKMSManagedAuth:
-		podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeIBMCloudKMSKP(), buildVolumeIBMCloudKMSKP))
 	default:
 		return fmt.Errorf("unrecognized ibmcloud kms auth type %s", ibmCloud.Auth.Type)
 	}

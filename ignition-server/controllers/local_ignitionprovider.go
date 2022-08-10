@@ -57,6 +57,8 @@ type LocalIgnitionProvider struct {
 	// deleted after use.
 	PreserveOutput bool
 
+	ImageFileCache *imageFileCache
+
 	lock sync.Mutex
 }
 
@@ -204,7 +206,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			if err := file.Chmod(0777); err != nil {
 				return fmt.Errorf("failed to chmod file: %w", err)
 			}
-			if err := registryclient.ExtractImageFile(ctx, mcoImage, pullSecret, filepath.Join("usr/bin/", name), file); err != nil {
+			if err := p.ImageFileCache.extractImageFile(ctx, mcoImage, pullSecret, filepath.Join("usr/bin/", name), file); err != nil {
 				return fmt.Errorf("failed to extract image file: %w", err)
 			}
 			if err := file.Close(); err != nil {
@@ -244,9 +246,13 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			fmt.Sprintf("--dns-config-file=%s/cluster-dns-02-config.yaml", configDir),
 			fmt.Sprintf("--pull-secret=%s/pull-secret.yaml", configDir),
 			fmt.Sprintf("--dest-dir=%s", destDir),
+			fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir),
 		}
 		if image, exists := images["mdns-publisher"]; exists {
 			args = append(args, fmt.Sprintf("--mdns-publisher-image=%s", image))
+		}
+		if mcsConfig.Data["user-ca-bundle-config.yaml"] != "" {
+			args = append(args, fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir))
 		}
 		if p.CloudProvider == hyperv1.AzurePlatform {
 			args = append(args, fmt.Sprintf("--cloud-config-file=%s/cloud.conf.configmap.yaml", mcoBaseDir))

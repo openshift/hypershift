@@ -92,6 +92,7 @@ github.com/IBM/go-sdk-core/v5/core
 ## explicit; go 1.14
 github.com/IBM/networking-go-sdk/common
 github.com/IBM/networking-go-sdk/directlinkv1
+github.com/IBM/networking-go-sdk/dnsrecordsv1
 github.com/IBM/networking-go-sdk/zonesv1
 # github.com/IBM/platform-services-go-sdk v0.24.1
 ## explicit; go 1.14
@@ -478,8 +479,8 @@ github.com/pborman/uuid
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.51.1
-## explicit; go 1.14
+# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.57.0
+## explicit; go 1.17
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1
 # github.com/prometheus/client_golang v1.12.1
@@ -1127,7 +1128,7 @@ sigs.k8s.io/cluster-api-provider-aws/pkg/hash
 ## explicit; go 1.16
 sigs.k8s.io/cluster-api-provider-azure/api/v1beta1
 sigs.k8s.io/cluster-api-provider-azure/util/ssh
-# sigs.k8s.io/cluster-api-provider-ibmcloud v0.2.3
+# sigs.k8s.io/cluster-api-provider-ibmcloud v0.2.4
 ## explicit; go 1.17
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1
 # sigs.k8s.io/cluster-api-provider-kubevirt v0.0.0-00010101000000-000000000000 => github.com/openshift/cluster-api-provider-kubevirt v0.0.0-20211223062810-ef64d5ff1cde

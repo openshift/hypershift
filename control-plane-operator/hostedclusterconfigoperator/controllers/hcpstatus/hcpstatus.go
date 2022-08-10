@@ -90,6 +90,7 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 				Message: fmt.Sprintf("failed to get clusterversion: %v", err),
 			}
 		}
+		message := ""
 		for _, cond := range clusterVersion.Status.Conditions {
 			if cond.Type == "Failing" {
 				if cond.Status == configv1.ConditionTrue {
@@ -101,11 +102,15 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 					}
 				}
 			}
+			if cond.Type == "Progressing" {
+				message = cond.Message
+			}
 		}
 		return metav1.Condition{
-			Type:   string(hyperv1.ClusterVersionFailing),
-			Status: metav1.ConditionFalse,
-			Reason: hyperv1.AsExpectedReason,
+			Type:    string(hyperv1.ClusterVersionFailing),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.AsExpectedReason,
+			Message: message,
 		}
 	}()
 	upgradeableCondition := func() metav1.Condition {

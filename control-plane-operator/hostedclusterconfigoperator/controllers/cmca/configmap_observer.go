@@ -45,6 +45,13 @@ type ManagedCAObserver struct {
 	Log logr.Logger
 }
 
+func (r *ManagedCAObserver) managedDeployments() []string {
+	return []string{
+		manifests.KCMDeployment(r.Namespace).Name,
+		manifests.OpenShiftAPIServerDeployment(r.Namespace).Name,
+	}
+}
+
 // Reconcile periodically watches for changes in the CA configmaps and updates
 // the kube-controller-manager-ca configmap in the management cluster with their
 // content.
@@ -86,11 +93,10 @@ func (r *ManagedCAObserver) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	if err := r.ensureAnnotationOnDeployment(ctx, manifests.KCMDeployment(r.Namespace).Name, hash); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to ensure annotation on %s deployment: %w", manifests.KCMDeployment(r.Namespace).Name, err)
-	}
-	if err := r.ensureAnnotationOnDeployment(ctx, manifests.OpenShiftAPIServerDeployment(r.Namespace).Name, hash); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to ensure annotation on %s deployment: %w", manifests.OpenShiftAPIServerDeployment(r.Namespace).Name, err)
+	for _, deployment := range r.managedDeployments() {
+		if err := r.ensureAnnotationOnDeployment(ctx, deployment, hash); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to ensure annotation on %s deployment: %w", deployment, err)
+		}
 	}
 
 	return ctrl.Result{}, nil

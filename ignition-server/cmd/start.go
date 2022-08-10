@@ -117,6 +117,12 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return nil, fmt.Errorf("unable to set up ready check: %w", err)
 	}
+
+	imageFileCache, err := controllers.NewImageFileCache(cacheDir)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create image file cache: %w", err)
+	}
+
 	if err = (&controllers.TokenSecretReconciler{
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
@@ -128,10 +134,11 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 				},
 				RegistryOverrides: registryOverrides,
 			},
-			Client:        mgr.GetClient(),
-			Namespace:     os.Getenv(namespaceEnvVariableName),
-			CloudProvider: cloudProvider,
-			WorkDir:       cacheDir,
+			Client:         mgr.GetClient(),
+			Namespace:      os.Getenv(namespaceEnvVariableName),
+			CloudProvider:  cloudProvider,
+			WorkDir:        cacheDir,
+			ImageFileCache: imageFileCache,
 		},
 	}).SetupWithManager(ctx, mgr); err != nil {
 		return nil, fmt.Errorf("unable to create controller: %w", err)

@@ -2,17 +2,40 @@ package fixtures
 
 import (
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 )
 
+type ExampleKubevirtOptions struct {
+	ServicePublishingStrategy string
+	APIServerAddress          string
+	Memory                    string
+	Cores                     uint32
+	Image                     string
+	RootVolumeSize            uint32
+	RootVolumeStorageClass    string
+	RootVolumeAccessModes     string
+}
+
 func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoolPlatform {
 	var storageClassName *string
+	var accessModesStr []string
+	var accessModes []hyperv1.PersistentVolumeAccessMode
 	volumeSize := apiresource.MustParse(fmt.Sprintf("%vGi", o.RootVolumeSize))
 
 	if o.RootVolumeStorageClass != "" {
 		storageClassName = &o.RootVolumeStorageClass
+	}
+
+	if o.RootVolumeAccessModes != "" {
+		accessModesStr = strings.Split(o.RootVolumeAccessModes, ",")
+		for _, ams := range accessModesStr {
+			var am hyperv1.PersistentVolumeAccessMode
+			am = hyperv1.PersistentVolumeAccessMode(ams)
+			accessModes = append(accessModes, am)
+		}
 	}
 
 	exampleTemplate := &hyperv1.KubevirtNodePoolPlatform{
@@ -22,6 +45,7 @@ func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoo
 				Persistent: &hyperv1.KubevirtPersistentVolume{
 					Size:         &volumeSize,
 					StorageClass: storageClassName,
+					AccessModes:  accessModes,
 				},
 			},
 		},

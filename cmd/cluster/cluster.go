@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
+	"github.com/openshift/hypershift/cmd/log"
 )
 
 func NewCreateCommands() *cobra.Command {
@@ -25,12 +26,13 @@ func NewCreateCommands() *cobra.Command {
 		InfrastructureJSON:             "",
 		InfraID:                        "",
 		ServiceCIDR:                    "172.31.0.0/16",
-		PodCIDR:                        "10.132.0.0/14",
+		ClusterCIDR:                    "10.132.0.0/14",
 		Wait:                           false,
 		Timeout:                        0,
 		ExternalDNSDomain:              "",
 		AdditionalTrustBundle:          "",
 		ImageContentSources:            "",
+		Log:                            log.Log,
 	}
 	cmd := &cobra.Command{
 		Use:          "cluster",
@@ -42,7 +44,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.PersistentFlags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomain, "external-dns-domain", opts.ExternalDNSDomain, "Sets hostname to opinionated values in the specificed domain for services with publishing type LoadBalancer or Route.")
-	cmd.PersistentFlags().StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico, OVNKubernetes, OpenshiftSDN or Other.")
+	cmd.PersistentFlags().StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico, OVNKubernetes, OpenShiftSDN or Other.")
 	cmd.PersistentFlags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the cluster")
 	cmd.PersistentFlags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "Path to a pull secret (required)")
 	cmd.PersistentFlags().StringVar(&opts.ControlPlaneAvailabilityPolicy, "control-plane-availability-policy", opts.ControlPlaneAvailabilityPolicy, "Availability policy for hosted cluster components. Supported options: SingleReplica, HighlyAvailable")
@@ -61,7 +63,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.InfrastructureJSON, "infra-json", opts.InfrastructureJSON, "Path to file containing infrastructure information for the cluster. If not specified, infrastructure will be created")
 	cmd.PersistentFlags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for hosted cluster resources.")
 	cmd.PersistentFlags().StringVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network")
-	cmd.PersistentFlags().StringVar(&opts.PodCIDR, "pod-cidr", opts.PodCIDR, "The CIDR of the pod network")
+	cmd.PersistentFlags().StringVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "The CIDR of the cluster network")
 	cmd.PersistentFlags().BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
 	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
 
@@ -83,6 +85,7 @@ func NewDestroyCommands() *cobra.Command {
 		Namespace:          "clusters",
 		Name:               "",
 		ClusterGracePeriod: 10 * time.Minute,
+		Log:                log.Log,
 	}
 
 	cmd := &cobra.Command{

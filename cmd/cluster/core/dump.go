@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
@@ -21,6 +22,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
@@ -47,6 +49,8 @@ type DumpOptions struct {
 	AgentNamespace string
 
 	DumpGuestCluster bool
+
+	Log logr.Logger
 }
 
 func NewDumpCommand() *cobra.Command {
@@ -61,6 +65,7 @@ func NewDumpCommand() *cobra.Command {
 		Name:           "example",
 		ArtifactDir:    "",
 		AgentNamespace: "",
+		Log:            log.Log,
 	}
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace of the hostedcluster to dump")
@@ -73,7 +78,7 @@ func NewDumpCommand() *cobra.Command {
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := DumpCluster(cmd.Context(), opts); err != nil {
-			log.Log.Error(err, "Error")
+			opts.Log.Error(err, "Error")
 			return err
 		}
 		return nil
@@ -95,7 +100,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 		return fmt.Errorf("failed to get hostedcluster %s/%s: %w", opts.Namespace, opts.Name, err)
 	}
 	if hcluster.Status.KubeConfig == nil {
-		log.Log.Info("Hostedcluster has no kubeconfig published, skipping guest cluster duming", "namespace", opts.Namespace, "name", opts.Name)
+		opts.Log.Info("Hostedcluster has no kubeconfig published, skipping guest cluster duming", "namespace", opts.Namespace, "name", opts.Name)
 		return nil
 	}
 	kubeconfigSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
@@ -111,21 +116,21 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	}
 	defer func() {
 		if err := kubeconfigFile.Close(); err != nil {
-			log.Log.Error(err, "Failed to close kubeconfig file")
+			opts.Log.Error(err, "Failed to close kubeconfig file")
 		}
 		if err := os.Remove(kubeconfigFile.Name()); err != nil {
-			log.Log.Error(err, "Failed to cleanup temporary kubeconfig")
+			opts.Log.Error(err, "Failed to cleanup temporary kubeconfig")
 		}
 	}()
 	if _, err := kubeconfigFile.Write(kubeconfigSecret.Data["kubeconfig"]); err != nil {
 		return fmt.Errorf("failed to write kubeconfig data: %w", err)
 	}
 	target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
-	log.Log.Info("Dumping guestcluster", "target", target)
-	if err := DumpGuestCluster(ctx, kubeconfigFile.Name(), target); err != nil {
+	opts.Log.Info("Dumping guestcluster", "target", target)
+	if err := DumpGuestCluster(ctx, opts.Log, kubeconfigFile.Name(), target); err != nil {
 		return fmt.Errorf("failed to dump guest cluster: %w", err)
 	}
-	log.Log.Info("Successfully dumped guest cluster", "duration", time.Since(start).String())
+	opts.Log.Info("Successfully dumped guest cluster", "duration", time.Since(start).String())
 
 	return nil
 }
@@ -145,7 +150,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	}
 	allNodePools := &hyperv1.NodePoolList{}
 	if err = c.List(ctx, allNodePools, client.InNamespace(opts.Namespace)); err != nil {
-		log.Log.Error(err, "Cannot list nodepools")
+		opts.Log.Error(err, "Cannot list nodepools")
 	}
 	nodePools := []*hyperv1.NodePool{}
 	for i := range allNodePools.Items {
@@ -157,6 +162,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		oc:             ocCommand,
 		artifactDir:    opts.ArtifactDir,
 		agentNamespace: opts.AgentNamespace,
+		log:            opts.Log,
 	}
 	objectNames := make([]string, 0, len(nodePools)+1)
 	objectNames = append(objectNames, typedName(&hyperv1.HostedCluster{}, opts.Name))
@@ -213,19 +219,20 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 
 	podList := &corev1.PodList{}
 	if err = c.List(ctx, podList, client.InNamespace(controlPlaneNamespace)); err != nil {
-		log.Log.Error(err, "Cannot list pods in controlplane namespace", "namespace", controlPlaneNamespace)
+		opts.Log.Error(err, "Cannot list pods in controlplane namespace", "namespace", controlPlaneNamespace)
 	}
 	hypershiftNSPodList := &corev1.PodList{}
 	if err := c.List(ctx, hypershiftNSPodList, client.InNamespace("hypershift")); err != nil {
-		log.Log.Error(err, "Failed to list pods in hypershift namespace")
+		opts.Log.Error(err, "Failed to list pods in hypershift namespace")
 	}
 	podList.Items = append(podList.Items, hypershiftNSPodList.Items...)
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
-	outputLogs(ctx, kubeClient, opts.ArtifactDir, podList, opts.LogCheckers...)
+	outputLogs(ctx, opts.Log, kubeClient, opts.ArtifactDir, podList, opts.LogCheckers...)
+	gatherNetworkLogs(ocCommand, controlPlaneNamespace, opts.ArtifactDir, ctx, c, opts.Log)
 
 	if opts.DumpGuestCluster {
 		if err = dumpGuestCluster(ctx, opts); err != nil {
-			log.Log.Error(err, "Failed to dump guest cluster")
+			opts.Log.Error(err, "Failed to dump guest cluster")
 		}
 	}
 
@@ -241,12 +248,12 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	tarCMD := exec.CommandContext(ctx, "tar", args...)
 	tarCMD.Dir = opts.ArtifactDir
 
-	log.Log.Info("Archiving dump", "command", "tar", "args", args)
+	opts.Log.Info("Archiving dump", "command", "tar", "args", args)
 	startArchivingDump := time.Now()
 	if out, err := tarCMD.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to run tar with %v args: got err %w and out \n%s", args, err, string(out))
 	}
-	log.Log.Info("Successfully archied dump", "duration", time.Since(startArchivingDump).String())
+	opts.Log.Info("Successfully archied dump", "duration", time.Since(startArchivingDump).String())
 
 	return nil
 }
@@ -255,7 +262,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 // indicated by the provided kubeconfig. This function assumes that pods aren't
 // able to be scheduled and so can only gather information directly accessible
 // through the api server.
-func DumpGuestCluster(ctx context.Context, kubeconfig string, destDir string) error {
+func DumpGuestCluster(ctx context.Context, log logr.Logger, kubeconfig string, destDir string) error {
 	ocCommand, err := exec.LookPath("oc")
 	if err != nil || len(ocCommand) == 0 {
 		return fmt.Errorf("cannot find oc command")
@@ -264,6 +271,7 @@ func DumpGuestCluster(ctx context.Context, kubeconfig string, destDir string) er
 		oc:          ocCommand,
 		artifactDir: destDir,
 		kubeconfig:  kubeconfig,
+		log:         log,
 	}
 	resources := []client.Object{
 		&apiextensionsv1.CustomResourceDefinition{},
@@ -300,6 +308,7 @@ type OCAdmInspect struct {
 	namespace      string
 	kubeconfig     string
 	agentNamespace string
+	log            logr.Logger
 }
 
 func (i *OCAdmInspect) WithNamespace(namespace string) *OCAdmInspect {
@@ -320,7 +329,7 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		log.Log.Info("oc adm inspect returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
+		i.log.Info("oc adm inspect returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
 	}
 }
 
@@ -355,33 +364,33 @@ func typedName(obj client.Object, name string) string {
 
 type LogChecker func(filename string, content []byte)
 
-func outputLogs(ctx context.Context, c kubeclient.Interface, artifactDir string, podList *corev1.PodList, checker ...LogChecker) {
+func outputLogs(ctx context.Context, l logr.Logger, c kubeclient.Interface, artifactDir string, podList *corev1.PodList, checker ...LogChecker) {
 	for _, pod := range podList.Items {
 		dir := filepath.Join(artifactDir, "namespaces", pod.Namespace, "core", "pods", "logs")
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			log.Log.Error(err, "Cannot create directory", "directory", dir)
+			l.Error(err, "Cannot create directory", "directory", dir)
 			continue
 		}
 		for _, container := range pod.Spec.InitContainers {
-			outputLog(ctx, filepath.Join(dir, fmt.Sprintf("%s-%s.log", pod.Name, container.Name)),
+			outputLog(ctx, l, filepath.Join(dir, fmt.Sprintf("%s-%s.log", pod.Name, container.Name)),
 				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name}), false, checker...)
-			outputLog(ctx, filepath.Join(dir, fmt.Sprintf("%s-%s-previous.log", pod.Name, container.Name)),
+			outputLog(ctx, l, filepath.Join(dir, fmt.Sprintf("%s-%s-previous.log", pod.Name, container.Name)),
 				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, Previous: true}), true, checker...)
 		}
 		for _, container := range pod.Spec.Containers {
-			outputLog(ctx, filepath.Join(dir, fmt.Sprintf("%s-%s.log", pod.Name, container.Name)),
+			outputLog(ctx, l, filepath.Join(dir, fmt.Sprintf("%s-%s.log", pod.Name, container.Name)),
 				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name}), false, checker...)
-			outputLog(ctx, filepath.Join(dir, fmt.Sprintf("%s-%s-previous.log", pod.Name, container.Name)),
+			outputLog(ctx, l, filepath.Join(dir, fmt.Sprintf("%s-%s-previous.log", pod.Name, container.Name)),
 				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, Previous: true}), true, checker...)
 		}
 	}
 }
 
-func outputLog(ctx context.Context, fileName string, req *restclient.Request, skipLogErr bool, checker ...LogChecker) {
+func outputLog(ctx context.Context, l logr.Logger, fileName string, req *restclient.Request, skipLogErr bool, checker ...LogChecker) {
 	b, err := req.DoRaw(ctx)
 	if err != nil {
 		if !skipLogErr {
-			log.Log.Info("Failed to get pod log", "req", req.URL().String(), "error", err.Error())
+			l.Info("Failed to get pod log", "req", req.URL().String(), "error", err.Error())
 		}
 		return
 	}
@@ -389,6 +398,50 @@ func outputLog(ctx context.Context, fileName string, req *restclient.Request, sk
 		c(fileName, b)
 	}
 	if err := ioutil.WriteFile(fileName, b, 0644); err != nil {
-		log.Log.Error(err, "Failed to write file", "file", fileName)
+		l.Error(err, "Failed to write file", "file", fileName)
+	}
+}
+
+func gatherNetworkLogs(ocCommand, controlPlaneNamespace, artifactDir string, ctx context.Context, c client.Client, l logr.Logger) {
+	// copy ovn dbs and save db cluster status for all ovnkube-master pods
+	dir := filepath.Join(artifactDir, "network_logs")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		l.Error(err, "Cannot create directory", "directory", dir)
+		return
+	}
+	podList := &corev1.PodList{}
+	if err := c.List(ctx, podList, &client.ListOptions{
+		Namespace:     controlPlaneNamespace,
+		LabelSelector: labels.SelectorFromValidatedSet(labels.Set{"app": "ovnkube-master"}),
+	}); err != nil {
+		l.Error(err, "Cannot list ovnkube pods in controlplane namespace", "namespace", controlPlaneNamespace)
+	}
+	for _, pod := range podList.Items {
+		for _, dbType := range []string{"n", "s"} {
+			allArgs := []string{"cp", fmt.Sprintf("%s/%s:/etc/ovn/ovn%sb_db.db", controlPlaneNamespace, pod.Name, dbType),
+				"-c", fmt.Sprintf("%sbdb", dbType), filepath.Join(dir, fmt.Sprintf("%s_ovn%sb_db.db", pod.Name, dbType))}
+			cmd := exec.CommandContext(ctx, ocCommand, allArgs...)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				l.Info("Copy ovn dbs command returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
+			}
+			var dbName string
+			if dbType == "n" {
+				dbName = "OVN_Northbound"
+			} else {
+				dbName = "OVN_Southbound"
+			}
+			allArgs = []string{"exec", "-n", controlPlaneNamespace, pod.Name, "-c", fmt.Sprintf("%sbdb", dbType),
+				"--", "bash", "-c", fmt.Sprintf("ovn-appctl -t /var/run/ovn/ovn%sb_db.ctl cluster/status %s", dbType, dbName)}
+			cmd = exec.CommandContext(ctx, ocCommand, allArgs...)
+			out, err = cmd.CombinedOutput()
+			if err != nil {
+				l.Info("Get ovn db status command returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
+			}
+			fileName := filepath.Join(dir, fmt.Sprintf("%s_%s_status", pod.Name, dbName))
+			if err := ioutil.WriteFile(fileName, out, 0644); err != nil {
+				l.Error(err, "Failed to write file", "file", fileName)
+			}
+		}
 	}
 }

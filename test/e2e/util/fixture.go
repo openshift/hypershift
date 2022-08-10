@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
+	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -124,8 +125,14 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 	t.Run(fmt.Sprintf("DestroyCluster_%d", destroyAttempt), func(t *testing.T) {
 		t.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hc.Namespace, hc.Name)
 		err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
-			err := destroyCluster(ctx, hc, opts)
+			err := destroyCluster(ctx, t, hc, opts)
 			if err != nil {
+				if strings.Contains(err.Error(), "required inputs are missing") {
+					return false, err
+				}
+				if strings.Contains(err.Error(), "NoCredentialProviders") {
+					return false, err
+				}
 				t.Logf("Failed to destroy cluster, will retry: %v", err)
 				err := dumpCluster(ctx, t, false)
 				if err != nil {
@@ -177,6 +184,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, opts *core.CreateOptions) (*core.CreateOptions, error) {
 	opts.Namespace = hc.Namespace
 	opts.Name = hc.Name
+	opts.NonePlatform.ExposeThroughLoadBalancer = true
 
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -197,7 +205,6 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 		}
 
 		opts.BaseDomain = defaultIngressOperator.Status.Domain
-
 	}
 
 	return opts, nil
@@ -215,6 +222,8 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.Cr
 		return kubevirt.CreateCluster(ctx, opts)
 	case hyperv1.AzurePlatform:
 		return azure.CreateCluster(ctx, opts)
+	case hyperv1.PowerVSPlatform:
+		return powervs.CreateCluster(ctx, opts)
 	default:
 		return fmt.Errorf("unsupported platform %s", hc.Spec.Platform.Type)
 	}
@@ -222,12 +231,13 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.Cr
 
 // destroyCluster calls the correct cluster destroy CLI function based on the
 // cluster platform and the options used to create the cluster.
-func destroyCluster(ctx context.Context, hc *hyperv1.HostedCluster, createOpts *core.CreateOptions) error {
+func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, createOpts *core.CreateOptions) error {
 	opts := &core.DestroyOptions{
 		Namespace:          hc.Namespace,
 		Name:               hc.Name,
 		InfraID:            createOpts.InfraID,
 		ClusterGracePeriod: 15 * time.Minute,
+		Log:                NewLogr(t),
 	}
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -246,6 +256,18 @@ func destroyCluster(ctx context.Context, hc *hyperv1.HostedCluster, createOpts *
 			Location:        createOpts.AzurePlatform.Location,
 		}
 		return azure.DestroyCluster(ctx, opts)
+	case hyperv1.PowerVSPlatform:
+		opts.PowerVSPlatform = core.PowerVSPlatformDestroyOptions{
+			BaseDomain:    hc.Spec.DNS.BaseDomain,
+			CISCRN:        hc.Spec.Platform.PowerVS.CISInstanceCRN,
+			CISDomainID:   hc.Spec.DNS.PrivateZoneID,
+			ResourceGroup: createOpts.PowerVSPlatform.ResourceGroup,
+			Region:        createOpts.PowerVSPlatform.Region,
+			Zone:          createOpts.PowerVSPlatform.Zone,
+			VPCRegion:     createOpts.PowerVSPlatform.VpcRegion,
+		}
+		return powervs.DestroyCluster(ctx, opts)
+
 	default:
 		return fmt.Errorf("unsupported cluster platform %s", hc.Spec.Platform.Type)
 	}
@@ -270,7 +292,7 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			if err != nil {
 				t.Logf("Failed saving machine console logs; this is nonfatal: %v", err)
 			}
-			err = dump.DumpHostedCluster(ctx, hc, dumpGuestCluster, dumpDir)
+			err = dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, dumpDir)
 			if err != nil {
 				dumpErrors = append(dumpErrors, fmt.Errorf("failed to dump hosted cluster: %w", err))
 			}
@@ -280,15 +302,11 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *core.CreateOptions, artif
 			}
 			return utilerrors.NewAggregate(dumpErrors)
 		default:
-			err := dump.DumpHostedCluster(ctx, hc, dumpGuestCluster, dumpDir)
+			err := dump.DumpHostedCluster(ctx, t, hc, dumpGuestCluster, dumpDir)
 			if err != nil {
 				return fmt.Errorf("failed to dump hosted cluster: %w", err)
 			}
 			return nil
 		}
 	}
-}
-
-func NodePoolName(hcName, zone string) string {
-	return fmt.Sprintf("%s-%s", hcName, zone)
 }

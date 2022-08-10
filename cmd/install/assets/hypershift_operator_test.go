@@ -72,7 +72,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				{
 					Name:      "trusted-ca",
 					ReadOnly:  true,
-					MountPath: "/etc/pki/ca-trust/extracted/pem",
+					MountPath: "/etc/pki/tls/certs",
 				},
 			},
 			expectedVolumes: []corev1.Volume{
@@ -81,7 +81,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 					VolumeSource: corev1.VolumeSource{
 						ConfigMap: &corev1.ConfigMapVolumeSource{
 							LocalObjectReference: corev1.LocalObjectReference{Name: "user-ca-bundle"},
-							Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"}},
+							Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "user-ca-bundle.pem"}},
 						},
 					},
 				},

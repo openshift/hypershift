@@ -28,21 +28,45 @@ type HostedControlPlaneSpec struct {
 	ReleaseImage string                      `json:"releaseImage"`
 	PullSecret   corev1.LocalObjectReference `json:"pullSecret"`
 	IssuerURL    string                      `json:"issuerURL"`
-	ServiceCIDR  string                      `json:"serviceCIDR"`
-	PodCIDR      string                      `json:"podCIDR"`
-	MachineCIDR  string                      `json:"machineCIDR"`
+
+	// Networking specifies network configuration for the cluster.
+	// Temporarily optional for backward compatibility, required in future releases.
+	// +optional
+	Networking ClusterNetworking `json:"networking,omitempty"`
+
+	// deprecated
+	// use networking.ServiceNetwork
+	// +optional
+	ServiceCIDR string `json:"serviceCIDR,omitempty"`
+
+	// deprecated
+	// use networking.ClusterNetwork
+	// +optional
+	PodCIDR string `json:"podCIDR,omitempty"`
+
+	// deprecated
+	// use networking.MachineNetwork
+	// +optional
+	MachineCIDR string `json:"machineCIDR,omitempty"`
+
+	// deprecated
+	// use networking.NetworkType
 	// NetworkType specifies the SDN provider used for cluster networking.
-	NetworkType NetworkType                 `json:"networkType"`
-	SSHKey      corev1.LocalObjectReference `json:"sshKey"`
+	// +optional
+	NetworkType NetworkType `json:"networkType,omitempty"`
+
+	SSHKey corev1.LocalObjectReference `json:"sshKey"`
+
 	// ClusterID is the unique id that identifies the cluster externally.
 	// Making it optional here allows us to keep compatibility with previous
 	// versions of the control-plane-operator that have no knowledge of this
 	// field.
 	// +optional
-	ClusterID string       `json:"clusterID,omitempty"`
-	InfraID   string       `json:"infraID"`
-	Platform  PlatformSpec `json:"platform"`
-	DNS       DNSSpec      `json:"dns"`
+	ClusterID string `json:"clusterID,omitempty"`
+
+	InfraID  string       `json:"infraID"`
+	Platform PlatformSpec `json:"platform"`
+	DNS      DNSSpec      `json:"dns"`
 
 	// ServiceAccountSigningKey is a reference to a secret containing the private key
 	// used by the service account token issuer. The secret is expected to contain
@@ -52,16 +76,25 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	ServiceAccountSigningKey *corev1.LocalObjectReference `json:"serviceAccountSigningKey,omitempty"`
 
+	// deprecated
+	// use networking.apiServer.APIPort
 	// APIPort is the port at which the APIServer listens inside a worker
 	// +optional
 	APIPort *int32 `json:"apiPort,omitempty"`
+
+	// deprecated
+	// use networking.apiServer.AdvertiseAddress
 	// APIAdvertiseAddress is the address at which the APIServer listens
 	// inside a worker.
 	// +optional
 	APIAdvertiseAddress *string `json:"apiAdvertiseAddress,omitempty"`
+
+	// deprecated
+	// use networking.apiServer.APIAllowedCIDRBlocks
 	// APIAllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
 	// If not specified, traffic is allowed from all addresses.
 	// This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
+	// +optional
 	APIAllowedCIDRBlocks []CIDRBlock `json:"apiAllowedCIDRBlocks,omitempty"`
 
 	// ControllerAvailabilityPolicy specifies the availability policy applied to
@@ -144,6 +177,11 @@ type HostedControlPlaneSpec struct {
 	//
 	// +optional
 	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
+
+	// NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.
+	//
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 }
 
 // AvailabilityPolicy specifies a high level availability policy for components.
@@ -172,6 +210,7 @@ type ConditionType string
 
 const (
 	HostedControlPlaneAvailable          ConditionType = "Available"
+	HostedControlPlaneDegraded           ConditionType = "Degraded"
 	EtcdAvailable                        ConditionType = "EtcdAvailable"
 	EtcdSnapshotRestored                 ConditionType = "EtcdSnapshotRestored"
 	KubeAPIServerAvailable               ConditionType = "KubeAPIServerAvailable"

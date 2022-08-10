@@ -436,7 +436,10 @@ type KubevirtCompute struct {
 	Cores *uint32 `json:"cores"`
 }
 
-// KubevirtPersistentVolume containes the values involved with provisioning persistent storage for a KubeVirt VM.
+// +kubebuilder:validation:Enum=ReadWriteOnce;ReadWriteMany;ReadOnly;ReadWriteOncePod
+type PersistentVolumeAccessMode corev1.PersistentVolumeAccessMode
+
+// KubevirtPersistentVolume contains the values involved with provisioning persistent storage for a KubeVirt VM.
 type KubevirtPersistentVolume struct {
 	// Size is the size of the persistent storage volume
 	//
@@ -447,6 +450,11 @@ type KubevirtPersistentVolume struct {
 	//
 	// +optional
 	StorageClass *string `json:"storageClass,omitempty"`
+	// AccessModes is an array that contains the desired Access Modes the root volume should have.
+	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes
+	//
+	// +optional
+	AccessModes []PersistentVolumeAccessMode `json:"accessModes,omitempty"`
 }
 
 // KubevirtRootVolume represents the volume that the rhcos disk will be stored and run from.
@@ -621,6 +629,19 @@ type AzureNodePoolPlatform struct {
 	// +kubebuilder:validation:Minimum=16
 	// +optional
 	DiskSizeGB int32 `json:"diskSizeGB,omitempty"`
+	// DiskStorageAccountType is the disk storage account type to use. Valid values are:
+	// * Standard_LRS: HDD
+	// * StandardSSD_LRS: Standard SSD
+	// * Premium_LRS: Premium SDD
+	// * UltraSSD_LRS: Ultra SDD
+	//
+	// Defaults to Premium_LRS. For more details, visit the Azure documentation:
+	// https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison
+	//
+	// +kubebuilder:default:=Premium_LRS
+	// +kubebuilder:validation:Enum=Standard_LRS;StandardSSD_LRS;Premium_LRS;UltraSSD_LRS
+	// +optional
+	DiskStorageAccountType string `json:"diskStorageAccountType,omitempty"`
 	// AvailabilityZone of the nodepool. Must not be specified for clusters
 	// in a location that does not support AvailabilityZone.
 	// +optional

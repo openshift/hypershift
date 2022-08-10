@@ -1154,6 +1154,9 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 						InsecureSkipSecretsManager: true,
 						SecureSecretsBackend:       "secrets-manager",
 					},
+					AdditionalTags: capiaws.Tags{
+						awsClusterCloudProviderTagKey(infraID): infraLifecycleOwned,
+					},
 					RootVolume: &capiaws.Volume{
 						Size: 16,
 						Type: "io1",

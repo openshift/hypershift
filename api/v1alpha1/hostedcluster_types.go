@@ -7,6 +7,8 @@ import (
 	runtime "k8s.io/apimachinery/pkg/runtime"
 
 	configv1 "github.com/openshift/api/config/v1"
+
+	"github.com/openshift/hypershift/api/util/ipnet"
 )
 
 func init() {
@@ -178,7 +180,7 @@ type HostedClusterSpec struct {
 	// changed.
 	//
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default={managementType: "Managed"}
+	// +kubebuilder:default={managementType: "Managed", managed: {storage: {type: "PersistentVolume", persistentVolume: {size: "4Gi"}}}}
 	// +immutable
 	Etcd EtcdSpec `json:"etcd"`
 
@@ -288,6 +290,11 @@ type HostedClusterSpec struct {
 	// +optional
 	// +immutable
 	OLMCatalogPlacement OLMCatalogPlacement `json:"olmCatalogPlacement,omitempty"`
+
+	// NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.
+	//
+	// +optional
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 }
 
 // OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.
@@ -441,26 +448,49 @@ type DNSSpec struct {
 
 // ClusterNetworking specifies network configuration for a cluster.
 type ClusterNetworking struct {
-	// ServiceCIDR is...
-	//
-	// TODO(dan): document it
-	//
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use ServiceNetwork instead
 	// +immutable
-	ServiceCIDR string `json:"serviceCIDR"`
+	// +optional
+	ServiceCIDR string `json:"serviceCIDR,omitempty"`
 
-	// PodCIDR is...
-	//
-	// TODO(dan): document it
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use ClusterNetwork instead
 	//
 	// +immutable
-	PodCIDR string `json:"podCIDR"`
+	// +optional
+	PodCIDR string `json:"podCIDR,omitempty"`
 
-	// MachineCIDR is...
-	//
-	// TODO(dan): document it
+	// Deprecated
+	// This field will be removed in the next API release.
+	// Use MachineNetwork instead
+	// +immutable
+	// +optional
+	MachineCIDR string `json:"machineCIDR,omitempty"`
+
+	// MachineNetwork is the list of IP address pools for machines.
+	// TODO: make this required in the next version of the API
 	//
 	// +immutable
-	MachineCIDR string `json:"machineCIDR"`
+	// +optional
+	MachineNetwork []MachineNetworkEntry `json:"machineNetwork,omitempty"`
+
+	// ClusterNetwork is the list of IP address pools for pods.
+	// TODO: make this required in the next version of the API
+	//
+	// +immutable
+	// +optional
+	ClusterNetwork []ClusterNetworkEntry `json:"clusterNetwork,omitempty"`
+
+	// ServiceNetwork is the list of IP address pools for services.
+	// NOTE: currently only one entry is supported.
+	// TODO: make this required in the next version of the API
+	//
+	// +immutable
+	// +optional
+	ServiceNetwork []ServiceNetworkEntry `json:"serviceNetwork,omitempty"`
 
 	// NetworkType specifies the SDN provider used for cluster networking.
 	//
@@ -473,6 +503,31 @@ type ClusterNetworking struct {
 	//
 	// +immutable
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
+}
+
+// MachineNetworkEntry is a single IP address block for node IP blocks.
+type MachineNetworkEntry struct {
+	// CIDR is the IP block address pool for machines within the cluster.
+	CIDR ipnet.IPNet `json:"cidr"`
+}
+
+// ClusterNetworkEntry is a single IP address block for pod IP blocks. IP blocks
+// are allocated with size 2^HostSubnetLength.
+type ClusterNetworkEntry struct {
+	// CIDR is the IP block address pool.
+	CIDR ipnet.IPNet `json:"cidr"`
+
+	// HostPrefix is the prefix size to allocate to each node from the CIDR.
+	// For example, 24 would allocate 2^8=256 adresses to each node. If this
+	// field is not used by the plugin, it can be left unset.
+	// +optional
+	HostPrefix int32 `json:"hostPrefix,omitempty"`
+}
+
+// ServiceNetworkEntry is a single IP address block for the service network.
+type ServiceNetworkEntry struct {
+	// CIDR is the IP block address pool for services within the cluster.
+	CIDR ipnet.IPNet `json:"cidr"`
 }
 
 //+kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
@@ -503,7 +558,7 @@ type APIServerNetworking struct {
 type NetworkType string
 
 const (
-	// OpenShiftSDN specifies OpenshiftSDN as the SDN provider
+	// OpenShiftSDN specifies OpenShiftSDN as the SDN provider
 	OpenShiftSDN NetworkType = "OpenShiftSDN"
 
 	// Calico specifies Calico as the SDN provider
@@ -777,7 +832,8 @@ type AWSPlatformSpec struct {
 
 	// CloudProviderConfig specifies AWS networking configuration for the control
 	// plane.
-	//
+	// This is mainly used for cloud provider controller config:
+	// https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364
 	// TODO(dan): should this be named AWSNetworkConfig?
 	//
 	// +optional
@@ -872,8 +928,7 @@ type AWSResourceTag struct {
 	Value string `json:"value"`
 }
 
-// AWSRolesRef contains references to various AWS IAM roles required to enable
-// integrations such as OIDC.
+// AWSRolesRef contains references to various AWS IAM roles required for operators to make calls against the AWS API.
 type AWSRolesRef struct {
 	// The referenced role must have a trust relationship that allows it to be assumed via web identity.
 	// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
@@ -896,8 +951,7 @@ type AWSRolesRef struct {
 	//		]
 	//	}
 	//
-	// IngressARN is an ARN value referencing a role used for ingress OIDC
-	// integration.
+	// IngressARN is an ARN value referencing a role appropriate for the Ingress Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -927,8 +981,7 @@ type AWSRolesRef struct {
 	// }
 	IngressARN string `json:"ingressARN"`
 
-	// ImageRegistryARN is an ARN value referencing a role used for image
-	// registry OIDC integration.
+	// ImageRegistryARN is an ARN value referencing a role appropriate for the Image Registry Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -963,8 +1016,7 @@ type AWSRolesRef struct {
 	// }
 	ImageRegistryARN string `json:"imageRegistryARN"`
 
-	// StorageOIDC is an ARN value referencing a role used for storage driver OIDC
-	// integration.
+	// StorageARN is an ARN value referencing a role appropriate for the Storage Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -995,8 +1047,7 @@ type AWSRolesRef struct {
 	// }
 	StorageARN string `json:"storageARN"`
 
-	// NetworkOIDC is an ARN value referencing a role used for networking OIDC
-	// integration.
+	// NetworkARN is an ARN value referencing a role appropriate for the Network Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -1022,8 +1073,7 @@ type AWSRolesRef struct {
 	// }
 	NetworkARN string `json:"networkARN"`
 
-	// KubeCloudControllerARN is an ARN value referencing a role that should contain
-	// policy permissions matching the cloud controller policy.
+	// KubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -1095,8 +1145,7 @@ type AWSRolesRef struct {
 	// +immutable
 	KubeCloudControllerARN string `json:"kubeCloudControllerARN"`
 
-	// NodePoolManagementARN is an ARN value referencing a role that should contain
-	// policy permissions matching the node pool management policy.
+	// NodePoolManagementARN is an ARN value referencing a role appropriate for the CAPI Controller.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -1189,8 +1238,7 @@ type AWSRolesRef struct {
 	// +immutable
 	NodePoolManagementARN string `json:"nodePoolManagementARN"`
 
-	// ControlPlaneOperatorARN  is an ARN value referencing a role that should contain
-	// policy permissions matching the control-plane-operator policy.
+	// ControlPlaneOperatorARN  is an ARN value referencing a role appropriate for the Control Plane Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -1579,6 +1627,14 @@ const (
 	// control plane.
 	HostedClusterAvailable ConditionType = "Available"
 
+	// HostedClusterProgressing indicates whether the HostedCluster is attempting
+	// an initial deployment or upgrade.
+	HostedClusterProgressing ConditionType = "Progressing"
+
+	// HostedClusterDegraded indicates whether the HostedCluster is encountering
+	// an error that may require user intervention to resolve.
+	HostedClusterDegraded ConditionType = "Degraded"
+
 	// IgnitionEndpointAvailable indicates whether the ignition server for the
 	// HostedCluster is available to handle ignition requests.
 	IgnitionEndpointAvailable ConditionType = "IgnitionEndpointAvailable"
@@ -1637,21 +1693,22 @@ const (
 	IgnitionServerDeploymentUnavailableReason   = "IgnitionServerDeploymentUnavailable"
 
 	HostedClusterAsExpectedReason          = "HostedClusterAsExpected"
-	HostedClusterUnhealthyComponentsReason = "UnhealthyControlPlaneComponents"
+	HostedClusterWaitingForAvailableReason = "HostedClusterWaitingForAvailable"
 	InvalidConfigurationReason             = "InvalidConfiguration"
 
-	DeploymentNotFoundReason      = "DeploymentNotFound"
-	DeploymentStatusUnknownReason = "DeploymentStatusUnknown"
+	DeploymentNotFoundReason            = "DeploymentNotFound"
+	DeploymentStatusUnknownReason       = "DeploymentStatusUnknown"
+	DeploymentWaitingForAvailableReason = "DeploymentWaitingForAvailable"
 
 	HostedControlPlaneComponentsUnavailableReason = "ComponentsUnavailable"
-	KubeconfigUnavailableReason                   = "KubeconfigUnavailable"
+	KubeconfigWaitingForCreateReason              = "KubeconfigWaitingForCreate"
 	ClusterVersionStatusUnknownReason             = "ClusterVersionStatusUnknown"
 
 	StatusUnknownReason = "StatusUnknown"
 	AsExpectedReason    = "AsExpected"
 
 	EtcdQuorumAvailableReason     = "QuorumAvailable"
-	EtcdQuorumUnavailableReason   = "QuorumUnavailable"
+	EtcdWaitingForQuorumReason    = "EtcdWaitingForQuorum"
 	EtcdStatusUnknownReason       = "EtcdStatusUnknown"
 	EtcdStatefulSetNotFoundReason = "StatefulSetNotFound"
 
@@ -1837,7 +1894,7 @@ type ClusterConfiguration struct {
 // +kubebuilder:printcolumn:name="KubeConfig",type="string",JSONPath=".status.kubeconfig.name",description="KubeConfig Secret"
 // +kubebuilder:printcolumn:name="Progress",type="string",JSONPath=".status.version.history[?(@.state!=\"\")].state",description="Progress"
 // +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].status",description="Available"
-// +kubebuilder:printcolumn:name="Reason",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].reason",description="Reason"
+// +kubebuilder:printcolumn:name="Progressing",type="string",JSONPath=".status.conditions[?(@.type==\"Progressing\")].status",description="Progressing"
 // +kubebuilder:printcolumn:name="Message",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].message",description="Message"
 type HostedCluster struct {
 	metav1.TypeMeta   `json:",inline"`

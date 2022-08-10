@@ -57,19 +57,24 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		args = append(args, arg)
 	}
 
+	labels := map[string]string{
+		"app":                         "cluster-autoscaler",
+		hyperv1.ControlPlaneComponent: "cluster-autoscaler",
+	}
+	// The selector needs to be invariant for the lifecycle of the project as it's an immutable field,
+	// otherwise changing would prevent an upgrade from happening.
+	selector := map[string]string{
+		"app": "cluster-autoscaler",
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Selector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"app": "cluster-autoscaler",
-			},
+			MatchLabels: selector,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{
-					"app":                         "cluster-autoscaler",
-					hyperv1.ControlPlaneComponent: "cluster-autoscaler",
-				},
+				Labels: labels,
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName:            sa.Name,
@@ -161,16 +166,17 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		},
 	}
 
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, hcp.Spec.APIPort), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, util.APIPort(hcp)), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	deploymentConfig := config.DeploymentConfig{
-		Replicas:                  1,
+		Scheduling: config.Scheduling{
+			PriorityClass: config.DefaultPriorityClass,
+		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
-	deploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	deploymentConfig.SetColocation(hcp)
+
+	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	deploymentConfig.SetControlPlaneIsolation(hcp)
 	deploymentConfig.ApplyTo(deployment)
 
 	return nil

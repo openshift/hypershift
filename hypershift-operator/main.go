@@ -33,7 +33,9 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	hyperutil "github.com/openshift/hypershift/hypershift-operator/controllers/util"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/metrics"
@@ -86,6 +88,7 @@ type StartOptions struct {
 	OIDCStorageProviderS3BucketName  string
 	OIDCStorageProviderS3Region      string
 	OIDCStorageProviderS3Credentials string
+	EnableUWMTelemetryRemoteWrite    bool
 }
 
 func NewStartCommand() *cobra.Command {
@@ -123,6 +126,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", opts.OIDCStorageProviderS3Region, "Region in which the OIDC bucket is located. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
+	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -137,6 +141,7 @@ func NewStartCommand() *cobra.Command {
 }
 
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
+
 	log.Info("Starting hypershift-operator-manager", "version", version.String())
 
 	restConfig := ctrl.GetConfigOrDie()
@@ -253,7 +258,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 
-	if mgmtClusterCaps.Has(capabilities.CapabilityConfigOpenshiftIO) {
+	if mgmtClusterCaps.Has(capabilities.CapabilityProxy) {
 		if err := proxy.Setup(mgr, opts.Namespace, opts.DeploymentName); err != nil {
 			return fmt.Errorf("failed to set up the proxy controller: %w", err)
 		}
@@ -267,6 +272,24 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			CreateOrUpdateProvider: createOrUpdate,
 		}).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to create controller: %w", err)
+		}
+	}
+
+	// Start controller to manage supported versions configmap
+	if err := (supportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
+		SetupWithManager(mgr)); err != nil {
+		return fmt.Errorf("unable to create supported version controller: %w", err)
+	}
+
+	// If enabled, start controller to ensure UWM stack is enabled and configured
+	// to remote write telemetry metrics
+	if opts.EnableUWMTelemetryRemoteWrite {
+		if err := (&uwmtelemetry.Reconciler{
+			Namespace:              opts.Namespace,
+			Client:                 mgr.GetClient(),
+			CreateOrUpdateProvider: createOrUpdate,
+		}).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create uwm telemetry controller: %w", err)
 		}
 	}
 

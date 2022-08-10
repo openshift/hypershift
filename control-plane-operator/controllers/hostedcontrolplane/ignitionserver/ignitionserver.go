@@ -383,23 +383,10 @@ func ReconcileIgnitionServer(ctx context.Context,
 			}
 		}
 		hyperutil.SetRestartAnnotation(hcp.ObjectMeta, ignitionServerDeployment)
-		hyperutil.SetColocation(hcp.ObjectMeta, ignitionServerDeployment)
-		hyperutil.SetControlPlaneIsolation(hcp.ObjectMeta, ignitionServerDeployment)
 		hyperutil.SetDefaultPriorityClass(ignitionServerDeployment)
-		switch hcp.Spec.ControllerAvailabilityPolicy {
-		case hyperv1.HighlyAvailable:
-			maxSurge := intstr.FromInt(1)
-			maxUnavailable := intstr.FromInt(1)
-			ignitionServerDeployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
-			ignitionServerDeployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
-				MaxSurge:       &maxSurge,
-				MaxUnavailable: &maxUnavailable,
-			}
-			ignitionServerDeployment.Spec.Replicas = utilpointer.Int32Ptr(3)
-			hyperutil.SetMultizoneSpread(ignitionServerLabels, ignitionServerDeployment)
-		default:
-			ignitionServerDeployment.Spec.Replicas = utilpointer.Int32(1)
-		}
+		deploymentConfig := config.DeploymentConfig{}
+		deploymentConfig.SetDefaults(hcp, ignitionServerLabels, nil)
+		deploymentConfig.ApplyTo(ignitionServerDeployment)
 
 		return nil
 	}); err != nil {

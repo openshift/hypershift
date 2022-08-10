@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
+	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -59,9 +60,9 @@ type ExampleOptions struct {
 	NodePoolReplicas                 int32
 	ImageContentSources              []hyperv1.ImageContentSource
 	InfraID                          string
-	ComputeCIDR                      string
+	MachineCIDR                      string
 	ServiceCIDR                      string
-	PodCIDR                          string
+	ClusterCIDR                      string
 	BaseDomain                       string
 	PublicZoneID                     string
 	PrivateZoneID                    string
@@ -79,73 +80,6 @@ type ExampleOptions struct {
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
-}
-
-type ExampleNoneOptions struct {
-	APIServerAddress string
-}
-
-type ExampleAgentOptions struct {
-	APIServerAddress string
-	AgentNamespace   string
-}
-
-type ExampleKubevirtOptions struct {
-	ServicePublishingStrategy string
-	APIServerAddress          string
-	Memory                    string
-	Cores                     uint32
-	Image                     string
-	RootVolumeSize            uint32
-	RootVolumeStorageClass    string
-}
-
-type ExampleAWSOptionsZones struct {
-	Name     string
-	SubnetID *string
-}
-
-type ExampleAWSOptions struct {
-	Region             string
-	Zones              []ExampleAWSOptionsZones
-	VPCID              string
-	SecurityGroupID    string
-	InstanceProfile    string
-	InstanceType       string
-	Roles              hyperv1.AWSRolesRef
-	KMSProviderRoleARN string
-	KMSKeyARN          string
-	RootVolumeSize     int64
-	RootVolumeType     string
-	RootVolumeIOPS     int64
-	ResourceTags       []hyperv1.AWSResourceTag
-	EndpointAccess     string
-	ProxyAddress       string
-}
-
-type ExampleAzureOptions struct {
-	Creds             AzureCreds
-	Location          string
-	ResourceGroupName string
-	VnetName          string
-	VnetID            string
-	SubnetName        string
-	BootImageID       string
-	MachineIdentityID string
-	InstanceType      string
-	SecurityGroupName string
-	DiskSizeGB        int32
-	AvailabilityZones []string
-}
-
-// AzureCreds is the fileformat we expect for credentials. It is copied from the installer
-// to allow using the same crededentials file for both:
-// https://github.com/openshift/installer/blob/8fca1ade5b096d9b2cd312c4599881d099439288/pkg/asset/installconfig/azure/session.go#L36
-type AzureCreds struct {
-	SubscriptionID string `json:"subscriptionId,omitempty"`
-	ClientID       string `json:"clientId,omitempty"`
-	ClientSecret   string `json:"clientSecret,omitempty"`
-	TenantID       string `json:"tenantId,omitempty"`
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -325,7 +259,11 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.NonePlatform,
 		}
-		services = getServicePublishingStrategyMappingByAPIServerAddress(o.None.APIServerAddress, o.NetworkType)
+		if o.None.APIServerAddress != "" {
+			services = getServicePublishingStrategyMappingByAPIServerAddress(o.None.APIServerAddress, o.NetworkType)
+		} else {
+			services = getIngressServicePublishingStrategyMapping(o.NetworkType)
+		}
 	case o.Agent != nil:
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AgentPlatform,
@@ -507,9 +445,6 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			},
 			SecretEncryption: secretEncryption,
 			Networking: hyperv1.ClusterNetworking{
-				ServiceCIDR: o.ServiceCIDR,
-				PodCIDR:     o.PodCIDR,
-				MachineCIDR: o.ComputeCIDR,
 				NetworkType: o.NetworkType,
 			},
 			Services:   services,
@@ -527,6 +462,16 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			InfrastructureAvailabilityPolicy: o.InfrastructureAvailabilityPolicy,
 			Platform:                         platformSpec,
 		},
+	}
+
+	if o.ClusterCIDR != "" {
+		cluster.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR(o.ClusterCIDR)}}
+	}
+	if o.ServiceCIDR != "" {
+		cluster.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR(o.ServiceCIDR)}}
+	}
+	if o.MachineCIDR != "" {
+		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(o.MachineCIDR)}}
 	}
 
 	if len(globalOpts) > 0 {
@@ -695,56 +640,6 @@ func getIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType) []h
 			Service: hyperv1.Ignition,
 			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
 				Type: hyperv1.Route,
-			},
-		},
-	}
-	if netType == hyperv1.OVNKubernetes {
-		ret = append(ret, hyperv1.ServicePublishingStrategyMapping{
-			Service: hyperv1.OVNSbDb,
-			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-				Type: hyperv1.Route,
-			},
-		})
-	}
-	return ret
-}
-
-func getIngressWithHostnameServicePublishingStrategyMapping(name, domain string, endpointAcesss hyperv1.AWSEndpointAccessType, netType hyperv1.NetworkType) []hyperv1.ServicePublishingStrategyMapping {
-	ret := []hyperv1.ServicePublishingStrategyMapping{
-		{
-			Service: hyperv1.APIServer,
-			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-				Type: hyperv1.LoadBalancer,
-				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
-					Hostname: fmt.Sprintf("api-%s.%s", name, domain),
-				},
-			},
-		},
-		{
-			Service: hyperv1.OAuthServer,
-			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-				Type: hyperv1.Route,
-				Route: &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("oauth-%s.%s", name, domain),
-				},
-			},
-		},
-		{
-			Service: hyperv1.Konnectivity,
-			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-				Type: hyperv1.Route,
-				Route: &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("konnectivity-%s.%s", name, domain),
-				},
-			},
-		},
-		{
-			Service: hyperv1.Ignition,
-			ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-				Type: hyperv1.Route,
-				Route: &hyperv1.RoutePublishingStrategy{
-					Hostname: fmt.Sprintf("ignition-%s.%s", name, domain),
-				},
 			},
 		},
 	}

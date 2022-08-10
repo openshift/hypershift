@@ -25,7 +25,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	t.Logf("Starting control plane upgrade test. FromImage: %s, toImage: %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
 
-	clusterOpts := globalOpts.DefaultClusterOptions()
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 
@@ -37,7 +37,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 	// Wait for Nodes to be Ready
 	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the first rollout to be complete
 	t.Logf("Waiting for initial cluster rollout. Image: %s", globalOpts.PreviousReleaseImage)
