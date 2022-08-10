@@ -97,8 +97,9 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
 		t.Logf("Updating NodePool image. Image: %s", globalOpts.LatestReleaseImage)
+		original := nodePool.DeepCopy()
 		nodePool.Spec.Release.Image = globalOpts.LatestReleaseImage
-		err = client.Update(ctx, &nodePool)
+		err = client.Patch(ctx, &nodePool, crclient.MergeFrom(original))
 		g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool image")
 	}
 
@@ -204,8 +205,9 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
 		t.Logf("Updating NodePool image. Image: %s", globalOpts.LatestReleaseImage)
+		original := nodePool.DeepCopy()
 		nodePool.Spec.Release.Image = globalOpts.LatestReleaseImage
-		err = client.Update(ctx, &nodePool)
+		err = client.Patch(ctx, &nodePool, crclient.MergeFrom(original))
 		g.Expect(err).NotTo(HaveOccurred(), "failed update nodePool image")
 	}
 
