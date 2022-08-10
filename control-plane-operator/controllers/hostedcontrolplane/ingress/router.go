@@ -354,7 +354,6 @@ func ReconcileRouterService(svc *corev1.Service, ownerRef config.OwnerRef, kasPo
 	}
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 	svc.Spec.Selector = privateRouterLabels()
-	foundHTTP := false
 	foundHTTPS := false
 	foundKAS := false
 
@@ -363,11 +362,6 @@ func ReconcileRouterService(svc *corev1.Service, ownerRef config.OwnerRef, kasPo
 	}
 	for i, port := range svc.Spec.Ports {
 		switch port.Name {
-		case "http":
-			svc.Spec.Ports[i].Port = 80
-			svc.Spec.Ports[i].TargetPort = intstr.FromString("http")
-			svc.Spec.Ports[i].Protocol = corev1.ProtocolTCP
-			foundHTTP = true
 		case "https":
 			svc.Spec.Ports[i].Port = 443
 			svc.Spec.Ports[i].TargetPort = intstr.FromString("https")
@@ -379,15 +373,6 @@ func ReconcileRouterService(svc *corev1.Service, ownerRef config.OwnerRef, kasPo
 			svc.Spec.Ports[i].Protocol = corev1.ProtocolTCP
 			foundKAS = true
 		}
-	}
-	if !foundHTTP {
-		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
-
-			Name:       "http",
-			Port:       80,
-			TargetPort: intstr.FromString("http"),
-			Protocol:   corev1.ProtocolTCP,
-		})
 	}
 	if !foundHTTPS {
 		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{

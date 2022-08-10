@@ -43,7 +43,7 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, strategy *hy
 	}
 	route.Spec.TLS = &routev1.TLSConfig{
 		Termination:                   routev1.TLSTerminationPassthrough,
-		InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
+		InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
 	}
 	return nil
 }

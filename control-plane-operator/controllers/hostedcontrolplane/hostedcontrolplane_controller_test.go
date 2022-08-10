@@ -219,8 +219,8 @@ func TestReconcileAPIServerService(t *testing.T) {
 				Name: manifests.KubeAPIServerService("").Name,
 			},
 			TLS: &routev1.TLSConfig{
-				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
 				Termination:                   routev1.TLSTerminationPassthrough,
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
 			},
 		},
 	}
@@ -239,8 +239,8 @@ func TestReconcileAPIServerService(t *testing.T) {
 				Name: manifests.KubeAPIServerService("").Name,
 			},
 			TLS: &routev1.TLSConfig{
-				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
 				Termination:                   routev1.TLSTerminationPassthrough,
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
 			},
 		},
 	}
@@ -943,7 +943,6 @@ func TestReconcileRouter(t *testing.T) {
 				Type:     corev1.ServiceTypeLoadBalancer,
 				Selector: map[string]string{"app": "private-router"},
 				Ports: []corev1.ServicePort{
-					{Name: "http", Port: 80, TargetPort: intstr.FromString("http"), Protocol: corev1.ProtocolTCP},
 					{Name: "https", Port: 443, TargetPort: intstr.FromString("https"), Protocol: corev1.ProtocolTCP},
 					{Name: "kube-apiserver", Port: 6443, TargetPort: intstr.FromString("https"), Protocol: corev1.ProtocolTCP},
 				},
