@@ -2,11 +2,9 @@ package controllers
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -17,6 +15,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -64,17 +63,16 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 
-	compressedConfig, err := compress([]byte(config))
-	if err != nil {
-		return nil, fmt.Errorf("failed to compress config: %w", err)
-	}
-
 	// The ConfigMap requires data stored to be a string.
 	// By base64ing the compressed data we ensure all bytes are decodable back.
 	// Otherwise if we'd just string() the bytes, some might not be a valid UTF-8 sequence
 	// and we might lose data.
-	base64CompressedConfig := base64.StdEncoding.EncodeToString(compressedConfig)
-	mcsConfigConfigMap := machineConfigServerConfigConfigMap(p.Namespace, base64CompressedConfig)
+	compressedAndEncodedConfig, err := util.CompressAndEncode([]byte(config))
+	if err != nil {
+		return nil, fmt.Errorf("failed to compress and encode config: %w", err)
+	}
+
+	mcsConfigConfigMap := machineConfigServerConfigConfigMap(p.Namespace, compressedAndEncodedConfig.String())
 	mcsPod := machineConfigServerPod(p.Namespace, img, mcsConfigConfigMap, p.CloudProvider)
 
 	// Launch the pod and ensure we clean up regardless of outcome
@@ -480,19 +478,4 @@ func machineConfigServerConfigConfigMap(namespace, config string) *corev1.Config
 			TokenSecretConfigKey: config,
 		},
 	}
-}
-
-func compress(content []byte) ([]byte, error) {
-	if len(content) == 0 {
-		return nil, nil
-	}
-	var b bytes.Buffer
-	gz := gzip.NewWriter(&b)
-	if _, err := gz.Write(content); err != nil {
-		return nil, fmt.Errorf("failed to compress content: %w", err)
-	}
-	if err := gz.Close(); err != nil {
-		return nil, fmt.Errorf("compress closure failure %w", err)
-	}
-	return b.Bytes(), nil
 }

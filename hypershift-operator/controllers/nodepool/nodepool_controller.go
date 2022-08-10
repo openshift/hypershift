@@ -2,7 +2,6 @@ package nodepool
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -576,7 +575,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// 2. - Reconcile towards expected state of the world.
 	targetConfigVersionHash := hashStruct(config + targetVersion)
-	compressedConfig, err := compress([]byte(config))
+	compressedConfig, err := supportutil.Compress([]byte(config))
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to compress config: %w", err)
 	}
@@ -609,7 +608,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetConfigVersionHash)
 	if result, err := r.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
-		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig)
+		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes())
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile token Secret: %w", err)
 	} else {
@@ -1738,21 +1737,6 @@ func (r *NodePoolReconciler) listMachineTemplates(nodePool *hyperv1.NodePool) ([
 	}
 
 	return filtered, nil
-}
-
-func compress(content []byte) ([]byte, error) {
-	if len(content) == 0 {
-		return nil, nil
-	}
-	var b bytes.Buffer
-	gz := gzip.NewWriter(&b)
-	if _, err := gz.Write(content); err != nil {
-		return nil, fmt.Errorf("failed to compress content: %w", err)
-	}
-	if err := gz.Close(); err != nil {
-		return nil, fmt.Errorf("compress closure failure %w", err)
-	}
-	return b.Bytes(), nil
 }
 
 func hashStruct(o interface{}) string {

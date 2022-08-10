@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -455,9 +456,14 @@ func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hoste
 func (r *Reconciler) reconcileUpgradeConfigmap(ctx context.Context, configmap *corev1.ConfigMap, targetConfigVersionHash string, payload []byte) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// TODO (jerzhang): should probably parse the data here to reduce size/compress
+	// Base64-encode and gzip the payload to allow larger overall payload sizes.
+	compressedPayload, err := util.CompressAndEncode(payload)
+	if err != nil {
+		return fmt.Errorf("could not compress payload: %w", err)
+	}
+
 	configmap.Data = map[string]string{
-		"config": string(payload),
+		"config": compressedPayload.String(),
 		"hash":   targetConfigVersionHash,
 	}
 

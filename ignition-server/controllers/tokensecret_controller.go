@@ -1,11 +1,8 @@
 package controllers
 
 import (
-	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"sync"
@@ -14,6 +11,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/util"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -241,7 +239,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	releaseImage := string(tokenSecret.Data[TokenSecretReleaseKey])
 	compressedConfig := tokenSecret.Data[TokenSecretConfigKey]
-	config, err := Decompress(compressedConfig)
+	config, err := util.Decompress(compressedConfig)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -249,7 +247,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	PayloadCacheMissTotal.Inc()
 	payload, err := func() ([]byte, error) {
 		start := time.Now()
-		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, string(config))
+		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String())
 		if err != nil {
 			return nil, fmt.Errorf("error getting ignition payload: %v", err)
 		}
@@ -279,22 +277,6 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
-}
-
-func Decompress(content []byte) ([]byte, error) {
-	if len(content) == 0 {
-		return nil, nil
-	}
-	gr, err := gzip.NewReader(bytes.NewBuffer(content))
-	if err != nil {
-		return nil, fmt.Errorf("failed to uncompress content: %w", err)
-	}
-	defer gr.Close()
-	data, err := ioutil.ReadAll(gr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read content: %w", err)
-	}
-	return data, nil
 }
 
 // getTokenIDTimeLived returns the duration a from TokenSecretLastUpdatedTokenIDAnnotation til now.
