@@ -204,22 +204,36 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 		if err != nil {
 			return err
 		}
-		if object.GetObjectKind().GroupVersionKind().Kind == "PriorityClass" {
-			// PriorityClasses can not be patched as the value field is immutable
-			if err := client.Create(ctx, object, &crclient.CreateOptions{}); err != nil {
-				if apierrors.IsAlreadyExists(err) {
-					fmt.Printf("already exists: %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
-				} else {
-					return err
-				}
-			} else {
-				fmt.Printf("created %s %s/%s\n", "PriorityClass", object.GetNamespace(), object.GetName())
-			}
-		} else {
-			if err := client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift")); err != nil {
+
+		kind := object.GetObjectKind().GroupVersionKind().Kind
+		if err := client.Create(ctx, object, &crclient.CreateOptions{}); err != nil {
+			if !apierrors.IsAlreadyExists(err) {
 				return err
 			}
-			fmt.Printf("applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
+			hasBeenPatched := false
+			// PriorityClasses can not be patched as the value field is immutable
+			if kind != "PriorityClass" {
+				if err := client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift")); err == nil {
+					hasBeenPatched = true
+					fmt.Printf("applied %s %s/%s\n", kind, object.GetNamespace(), object.GetName())
+				}
+			}
+			if !hasBeenPatched {
+				// Patch may timeout on large objects due to complexity
+				// Falling back to Delete + Create if that's the case even if this is less subtle than Patch
+				// An alternative could be to use Update but then we have to manage the resource version and keep the existing metadata
+				// This code may fail if the object cannot be deleted due to dependencies... but on the other hand
+				// we are not supposed to rerun `hypershift install` command if it has already been successful in the past.
+				if err := client.Delete(ctx, object); err != nil {
+					return err
+				}
+				if err := client.Create(ctx, object); err != nil {
+					return err
+				}
+				fmt.Printf("re-created %s %s/%s\n", kind, object.GetNamespace(), object.GetName())
+			}
+		} else {
+			fmt.Printf("created %s %s/%s\n", kind, object.GetNamespace(), object.GetName())
 		}
 	}
 	return nil
