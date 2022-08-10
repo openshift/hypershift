@@ -24,7 +24,8 @@ import (
 	"go.uber.org/zap/zaptest"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -131,7 +132,7 @@ spec:
 				g.Expect(actualSecret.Data).To(HaveKey("password"))
 				g.Expect(actualSecret.Data["password"]).ToNot(BeEmpty())
 			} else {
-				if !errors.IsNotFound(err) {
+				if !apierrors.IsNotFound(err) {
 					g.Expect(err).NotTo(HaveOccurred())
 				}
 			}
@@ -961,37 +962,42 @@ func TestReconcileRouter(t *testing.T) {
 		})...)
 	}
 	testCases := []struct {
-		name                 string
-		endpointAccess       hyperv1.AWSEndpointAccessType
-		existingObjects      []client.Object
-		expectedServices     []corev1.Service
-		expectedDeploynments []appsv1.Deployment
+		name                         string
+		endpointAccess               hyperv1.AWSEndpointAccessType
+		exposeAPIServerThroughRouter bool
+		existingObjects              []client.Object
+		expectedServices             []corev1.Service
+		expectedDeploynments         []appsv1.Deployment
 	}{
 		{
-			name:           "Public HCP gets public LB ony",
-			endpointAccess: hyperv1.Public,
+			name:                         "Public HCP gets public LB ony",
+			endpointAccess:               hyperv1.Public,
+			exposeAPIServerThroughRouter: true,
 			expectedServices: []corev1.Service{
 				*publicService(),
 			},
 		},
 		{
-			name:           "PublicPrivate gets public and private LB",
-			endpointAccess: hyperv1.PublicAndPrivate,
+			name:                         "PublicPrivate gets public and private LB",
+			endpointAccess:               hyperv1.PublicAndPrivate,
+			exposeAPIServerThroughRouter: true,
 			expectedServices: []corev1.Service{
 				*privateService(),
 				*publicService(),
 			},
 		},
 		{
-			name:           "Private gets private LB only",
-			endpointAccess: hyperv1.Private,
+			name:                         "Private gets private LB only",
+			endpointAccess:               hyperv1.Private,
+			exposeAPIServerThroughRouter: true,
 			expectedServices: []corev1.Service{
 				*privateService(),
 			},
 		},
 		{
-			name:           "Public HCP, deployment is created when service has Ingress hostname set",
-			endpointAccess: hyperv1.Public,
+			name:                         "Public HCP, deployment is created when service has Ingress hostname set",
+			endpointAccess:               hyperv1.Public,
+			exposeAPIServerThroughRouter: true,
 			existingObjects: []client.Object{publicService(func(s *corev1.Service) {
 				s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
 					Hostname: "a27252241e22343d4a704f1ca560e4aa-9ab9cf5317a99da5.elb.ca-central-1.amazonaws.com",
@@ -1018,6 +1024,7 @@ func TestReconcileRouter(t *testing.T) {
 						ingress.PrivateRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
 						"a27252241e22343d4a704f1ca560e4aa-9ab9cf5317a99da5.elb.ca-central-1.amazonaws.com",
+						true,
 					)
 
 					return *dep
@@ -1025,8 +1032,9 @@ func TestReconcileRouter(t *testing.T) {
 			},
 		},
 		{
-			name:           "PublicPrivate HCP, deployment gets hostname from public service",
-			endpointAccess: hyperv1.PublicAndPrivate,
+			name:                         "PublicPrivate HCP, deployment gets hostname from public service",
+			endpointAccess:               hyperv1.PublicAndPrivate,
+			exposeAPIServerThroughRouter: true,
 			existingObjects: []client.Object{
 				publicService(func(s *corev1.Service) {
 					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
@@ -1065,6 +1073,7 @@ func TestReconcileRouter(t *testing.T) {
 						ingress.PrivateRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
 						"a27252241e22343d4a704f1ca560e4aa-9ab9cf5317a99da5.elb.ca-central-1.amazonaws.com",
+						true,
 					)
 
 					return *dep
@@ -1072,8 +1081,9 @@ func TestReconcileRouter(t *testing.T) {
 			},
 		},
 		{
-			name:           "Private HCP, deployment gets hostname from private service",
-			endpointAccess: hyperv1.Private,
+			name:                         "Private HCP, deployment gets hostname from private service",
+			endpointAccess:               hyperv1.Private,
+			exposeAPIServerThroughRouter: true,
 			existingObjects: []client.Object{
 				privateService(func(s *corev1.Service) {
 					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
@@ -1102,6 +1112,155 @@ func TestReconcileRouter(t *testing.T) {
 						ingress.PrivateRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
 						"private-lb",
+						true,
+					)
+
+					return *dep
+				}(),
+			},
+		},
+		{
+			name:                         "Public HCP apiserver not exposed through router, nothing gets created",
+			endpointAccess:               hyperv1.Public,
+			exposeAPIServerThroughRouter: false,
+		},
+		{
+			name:                         "PublicPrivate HCP apiserver not exposed through router, router without custom template and private router service get created",
+			endpointAccess:               hyperv1.PublicAndPrivate,
+			exposeAPIServerThroughRouter: false,
+			expectedServices: []corev1.Service{
+				*privateService(),
+			},
+			expectedDeploynments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.PrivateRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						"private-lb",
+						false,
+					)
+
+					return *dep
+				}(),
+			},
+		},
+		{
+			name:                         "Private HCP apiserver not exposed through router, router without custom template and porivate router service get created",
+			endpointAccess:               hyperv1.Private,
+			exposeAPIServerThroughRouter: false,
+			expectedServices: []corev1.Service{
+				*privateService(),
+			},
+			expectedDeploynments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.PrivateRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						"private-lb",
+						false,
+					)
+
+					return *dep
+				}(),
+			},
+		},
+		{
+			name:                         "Old router resources get cleaned up when exposed through route",
+			endpointAccess:               hyperv1.PublicAndPrivate,
+			exposeAPIServerThroughRouter: true,
+			existingObjects: []client.Object{
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				publicService(func(s *corev1.Service) {
+					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+						Hostname: "a27252241e22343d4a704f1ca560e4aa-9ab9cf5317a99da5.elb.ca-central-1.amazonaws.com",
+					}}
+				}),
+				privateService(func(s *corev1.Service) {
+					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+						Hostname: "private-lb",
+					}}
+				}),
+			},
+			expectedServices: []corev1.Service{
+				*privateService(func(s *corev1.Service) {
+					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+						Hostname: "private-lb",
+					}}
+				}),
+				*publicService(func(s *corev1.Service) {
+					s.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{
+						Hostname: "a27252241e22343d4a704f1ca560e4aa-9ab9cf5317a99da5.elb.ca-central-1.amazonaws.com",
+					}}
+				}),
+			},
+			expectedDeploynments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.PrivateRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						"a27252241e22343d4a704f1ca560e4aa-9ab9cf5317a99da5.elb.ca-central-1.amazonaws.com",
+						true,
+					)
+
+					return *dep
+				}(),
+			},
+		},
+		{
+			name:                         "Old router resources get cleaned up when exposed through LB",
+			endpointAccess:               hyperv1.PublicAndPrivate,
+			exposeAPIServerThroughRouter: false,
+			existingObjects: []client.Object{
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+			},
+			expectedServices: []corev1.Service{
+				*privateService(),
+			},
+			expectedDeploynments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.PrivateRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						"private-lb",
+						false,
 					)
 
 					return *dep
@@ -1128,19 +1287,19 @@ func TestReconcileRouter(t *testing.T) {
 			}
 
 			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
-			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(tc.existingObjects, hcp)...).Build()
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(tc.existingObjects, hcp)...).Build()
 
 			r := HostedControlPlaneReconciler{
-				Client: client,
+				Client: c,
 				Log:    ctrl.LoggerFrom(ctx),
 			}
 
-			if err := r.reconcileRouter(ctx, hcp, &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}, controllerutil.CreateOrUpdate); err != nil {
+			if err := r.reconcileRouter(ctx, hcp, &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}, controllerutil.CreateOrUpdate, tc.exposeAPIServerThroughRouter); err != nil {
 				t.Fatalf("reconcileRouter failed: %v", err)
 			}
 
 			var services corev1.ServiceList
-			if err := client.List(ctx, &services); err != nil {
+			if err := c.List(ctx, &services); err != nil {
 				t.Fatalf("failed to list services: %v", err)
 			}
 			if diff := testutil.MarshalYamlAndDiff(&services, &corev1.ServiceList{Items: tc.expectedServices}, t); diff != "" {
@@ -1148,11 +1307,23 @@ func TestReconcileRouter(t *testing.T) {
 			}
 
 			var deployments appsv1.DeploymentList
-			if err := client.List(ctx, &deployments); err != nil {
+			if err := c.List(ctx, &deployments); err != nil {
 				t.Fatalf("failed to list deployments: %v", err)
 			}
 			if diff := testutil.MarshalYamlAndDiff(&deployments, &appsv1.DeploymentList{Items: tc.expectedDeploynments}, t); diff != "" {
 				t.Errorf("actual deployments differ from expected: %s", diff)
+			}
+
+			oldRouterResources := []client.Object{
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
+				&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
+				&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
+				&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
+			}
+			for _, r := range oldRouterResources {
+				if err := c.Get(ctx, client.ObjectKeyFromObject(r), r); !apierrors.IsNotFound(err) {
+					t.Errorf("expected %T %s to be deleted, wasn't the case (err=%v)", r, r.GetName(), err)
+				}
 			}
 		})
 	}

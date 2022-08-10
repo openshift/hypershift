@@ -98,7 +98,7 @@ func ReconcileRouterTemplateConfigmap(cm *corev1.ConfigMap) {
 	cm.Data[routerTemplateConfigMapKey] = string(bytes.Replace(routerTemplate, []byte(`<<namespace>>`), []byte(cm.Namespace), 1))
 }
 
-func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, canonicalHostname string) error {
+func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, canonicalHostname string, exposeAPIServerThroughRouter bool) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: privateRouterLabels(),
@@ -109,13 +109,19 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.Ow
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(privateRouterContainerMain(), buildPrivateRouterContainerMain(image, deployment.Namespace, canonicalHostname)),
+					util.BuildContainer(privateRouterContainerMain(), buildPrivateRouterContainerMain(image, deployment.Namespace, canonicalHostname, exposeAPIServerThroughRouter)),
 				},
 				ServiceAccountName: manifests.RouterServiceAccount("").Name,
-				Volumes:            []corev1.Volume{{Name: routerTemplateVolumeName, VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.RouterTemplateConfigMap("").Name}}}}},
+				Volumes:            nil,
 			},
 		},
 	}
+	if exposeAPIServerThroughRouter {
+		deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
+			{Name: routerTemplateVolumeName, VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.RouterTemplateConfigMap("").Name}}}},
+		}
+	}
+
 	ownerRef.ApplyTo(deployment)
 	deploymentConfig.ApplyTo(deployment)
 
@@ -129,7 +135,7 @@ func privateRouterContainerMain() *corev1.Container {
 	}
 }
 
-func buildPrivateRouterContainerMain(image, namespace, canonicalHostname string) func(*corev1.Container) {
+func buildPrivateRouterContainerMain(image, namespace, canonicalHostname string, exposeAPIServerThroughRouter bool) func(*corev1.Container) {
 	const haproxyTemplateMountPath = "/usr/local/haproxy/hypershift-template"
 	return func(c *corev1.Container) {
 		c.Env = []corev1.EnvVar{
@@ -140,10 +146,6 @@ func buildPrivateRouterContainerMain(image, namespace, canonicalHostname string)
 			{
 				Name:  "ROUTER_ALLOW_WILDCARD_ROUTES",
 				Value: "false",
-			},
-			{
-				Name:  "ROUTER_CANONICAL_HOSTNAME",
-				Value: canonicalHostname,
 			},
 			{
 				Name:  "ROUTER_CIPHERS",
@@ -210,10 +212,19 @@ func buildPrivateRouterContainerMain(image, namespace, canonicalHostname string)
 				Value: fmt.Sprintf("%d", metricsPort),
 			},
 		}
+
+		if exposeAPIServerThroughRouter {
+			c.Env = append(c.Env, corev1.EnvVar{
+				Name:  "ROUTER_CANONICAL_HOSTNAME",
+				Value: canonicalHostname,
+			})
+		}
 		c.Image = image
 		c.Args = []string{
 			"--namespace", namespace,
-			"--template=" + haproxyTemplateMountPath + "/" + routerTemplateConfigMapKey,
+		}
+		if exposeAPIServerThroughRouter {
+			c.Args = append(c.Args, "--template="+haproxyTemplateMountPath+"/"+routerTemplateConfigMapKey)
 		}
 		c.StartupProbe = &corev1.Probe{
 			FailureThreshold: 120,
@@ -245,8 +256,13 @@ func buildPrivateRouterContainerMain(image, namespace, canonicalHostname string)
 				Protocol:      corev1.ProtocolTCP,
 			},
 		}
-		c.VolumeMounts = []corev1.VolumeMount{
-			{Name: routerTemplateVolumeName, MountPath: haproxyTemplateMountPath},
+
+		c.VolumeMounts = nil
+		if exposeAPIServerThroughRouter {
+			c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+				Name:      routerTemplateVolumeName,
+				MountPath: haproxyTemplateMountPath,
+			})
 		}
 
 		// Needed for the router pods to work: https://github.com/openshift/cluster-ingress-operator/blob/649fe5dfe2c6f795651592a045be901b00a1f93a/assets/router/deployment.yaml#L22-L23
