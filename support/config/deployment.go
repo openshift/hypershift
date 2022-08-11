@@ -1,12 +1,16 @@
 package config
 
 import (
+	"strings"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/pointer"
 )
 
@@ -38,6 +42,7 @@ type DeploymentConfig struct {
 	LivenessProbes            LivenessProbes        `json:"livenessProbes"`
 	ReadinessProbes           ReadinessProbes       `json:"readinessProbes"`
 	Resources                 ResourcesSpec         `json:"resources"`
+	DebugDeployments          sets.String           `json:"debugDeployments"`
 }
 
 func (c *DeploymentConfig) SetContainerResourcesIfPresent(container *corev1.Container) {
@@ -66,7 +71,11 @@ func (c *DeploymentConfig) SetReleaseImageAnnotation(releaseImage string) {
 }
 
 func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
-	deployment.Spec.Replicas = pointer.Int32Ptr(int32(c.Replicas))
+	if c.DebugDeployments != nil && c.DebugDeployments.Has(deployment.Name) {
+		deployment.Spec.Replicas = pointer.Int32(0)
+	} else {
+		deployment.Spec.Replicas = pointer.Int32Ptr(int32(c.Replicas))
+	}
 	// there are two standard cases currently with hypershift: HA mode where there are 3 replicas spread across
 	// zones and then non ha with one replica. When only 3 zones are available you need to be able to set maxUnavailable
 	// in order to progress the rollout. However, you do not want to set that in the single replica case because it will
@@ -275,8 +284,21 @@ func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, multiZon
 	} else {
 		c.Replicas = *replicas
 	}
+	c.DebugDeployments = debugDeployments(hcp)
 
 	c.setLocation(hcp, multiZoneSpreadLabels)
 	// TODO (alberto): make this private, atm is needed for the konnectivity agent daemonset.
 	c.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
+}
+
+// debugDeployments returns a set of deployments to debug based on the
+// debugDeploymentsAnnotation value, indicating the deployment should be considered to
+// be in development mode.
+func debugDeployments(hc *hyperv1.HostedControlPlane) sets.String {
+	val, exists := hc.Annotations[util.DebugDeploymentsAnnotation]
+	if !exists {
+		return nil
+	}
+	names := strings.Split(val, ",")
+	return sets.NewString(names...)
 }
