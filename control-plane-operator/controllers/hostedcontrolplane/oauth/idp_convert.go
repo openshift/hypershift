@@ -145,21 +145,26 @@ func convertProviderConfigToIDPData(
 		if basicAuthConfig == nil {
 			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
 		}
-
-		data.provider = &osinv1.BasicAuthPasswordIdentityProvider{
+		provider := &osinv1.BasicAuthPasswordIdentityProvider{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "BasicAuthPasswordIdentityProvider",
 				APIVersion: osinv1.GroupVersion.String(),
 			},
 			RemoteConnectionInfo: configv1.RemoteConnectionInfo{
 				URL: basicAuthConfig.URL,
-				CA:  idpVolumeMounts.ConfigMapPath(i, basicAuthConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey),
-				CertInfo: configv1.CertInfo{
-					CertFile: idpVolumeMounts.SecretPath(i, basicAuthConfig.TLSClientCert.Name, "tls-client-key", corev1.TLSCertKey),
-					KeyFile:  idpVolumeMounts.SecretPath(i, basicAuthConfig.TLSClientKey.Name, "tls-client-key", corev1.TLSPrivateKeyKey),
-				},
 			},
 		}
+		if basicAuthConfig.CA.Name != "" {
+			provider.RemoteConnectionInfo.CA = idpVolumeMounts.ConfigMapPath(i, basicAuthConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+		}
+		if basicAuthConfig.TLSClientCert.Name != "" {
+			provider.RemoteConnectionInfo.CertFile = idpVolumeMounts.SecretPath(i, basicAuthConfig.TLSClientCert.Name, "tls-client-key", corev1.TLSCertKey)
+		}
+		if basicAuthConfig.TLSClientKey.Name != "" {
+			provider.RemoteConnectionInfo.KeyFile = idpVolumeMounts.SecretPath(i, basicAuthConfig.TLSClientKey.Name, "tls-client-key", corev1.TLSPrivateKeyKey)
+		}
+
+		data.provider = provider
 		data.challenge = true
 
 	case configv1.IdentityProviderTypeGitHub:
@@ -182,7 +187,7 @@ func convertProviderConfigToIDPData(
 			Teams:         githubConfig.Teams,
 			Hostname:      githubConfig.Hostname,
 		}
-		if len(githubConfig.CA.Name) > 0 {
+		if githubConfig.CA.Name != "" {
 			provider.CA = idpVolumeMounts.ConfigMapPath(i, githubConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
 		}
 		data.provider = provider
@@ -252,22 +257,27 @@ func convertProviderConfigToIDPData(
 			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
 		}
 
-		data.provider = &osinv1.KeystonePasswordIdentityProvider{
+		provider := &osinv1.KeystonePasswordIdentityProvider{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "KeystonePasswordIdentityProvider",
 				APIVersion: osinv1.GroupVersion.String(),
 			},
 			RemoteConnectionInfo: configv1.RemoteConnectionInfo{
 				URL: keystoneConfig.URL,
-				CA:  idpVolumeMounts.ConfigMapPath(i, keystoneConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey),
-				CertInfo: configv1.CertInfo{
-					CertFile: idpVolumeMounts.SecretPath(i, keystoneConfig.TLSClientCert.Name, "tls-client-cert", corev1.TLSCertKey),
-					KeyFile:  idpVolumeMounts.SecretPath(i, keystoneConfig.TLSClientKey.Name, "tls-client-key", corev1.TLSPrivateKeyKey),
-				},
 			},
 			DomainName:          keystoneConfig.DomainName,
 			UseKeystoneIdentity: true, // force use of keystone ID
 		}
+		if keystoneConfig.CA.Name != "" {
+			provider.RemoteConnectionInfo.CA = idpVolumeMounts.ConfigMapPath(i, keystoneConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+		}
+		if keystoneConfig.TLSClientCert.Name != "" {
+			provider.RemoteConnectionInfo.CertInfo.CertFile = idpVolumeMounts.SecretPath(i, keystoneConfig.TLSClientCert.Name, "tls-client-cert", corev1.TLSCertKey)
+		}
+		if keystoneConfig.TLSClientKey.Name != "" {
+			provider.RemoteConnectionInfo.CertInfo.KeyFile = idpVolumeMounts.SecretPath(i, keystoneConfig.TLSClientKey.Name, "tls-client-key", corev1.TLSPrivateKeyKey)
+		}
+		data.provider = provider
 		data.challenge = true
 
 	case configv1.IdentityProviderTypeLDAP:
@@ -276,20 +286,14 @@ func convertProviderConfigToIDPData(
 			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
 		}
 
-		data.provider = &osinv1.LDAPPasswordIdentityProvider{
+		provider := &osinv1.LDAPPasswordIdentityProvider{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "LDAPPasswordIdentityProvider",
 				APIVersion: osinv1.GroupVersion.String(),
 			},
-			URL:    ldapConfig.URL,
-			BindDN: ldapConfig.BindDN,
-			BindPassword: configv1.StringSource{
-				StringSourceSpec: configv1.StringSourceSpec{
-					File: idpVolumeMounts.SecretPath(i, ldapConfig.BindPassword.Name, "bind-password", configv1.BindPasswordKey),
-				},
-			},
+			URL:      ldapConfig.URL,
+			BindDN:   ldapConfig.BindDN,
 			Insecure: ldapConfig.Insecure,
-			CA:       idpVolumeMounts.ConfigMapPath(i, ldapConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey),
 			Attributes: osinv1.LDAPAttributeMapping{
 				ID:                ldapConfig.Attributes.ID,
 				PreferredUsername: ldapConfig.Attributes.PreferredUsername,
@@ -297,6 +301,17 @@ func convertProviderConfigToIDPData(
 				Email:             ldapConfig.Attributes.Email,
 			},
 		}
+		if ldapConfig.BindPassword.Name != "" {
+			provider.BindPassword = configv1.StringSource{
+				StringSourceSpec: configv1.StringSourceSpec{
+					File: idpVolumeMounts.SecretPath(i, ldapConfig.BindPassword.Name, "bind-password", configv1.BindPasswordKey),
+				},
+			}
+		}
+		if ldapConfig.CA.Name != "" {
+			provider.CA = idpVolumeMounts.ConfigMapPath(i, ldapConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+		}
+		data.provider = provider
 		data.challenge = true
 
 	case configv1.IdentityProviderTypeOpenID:
