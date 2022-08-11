@@ -2,8 +2,6 @@ package ignitionserver
 
 import (
 	"context"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"fmt"
 	"net"
 	"strings"
@@ -115,24 +113,11 @@ func ReconcileIgnitionServer(ctx context.Context,
 	// and don't update it for now.
 	caCertSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace)
 	if result, err := createOrUpdate(ctx, c, caCertSecret, func() error {
-		if caCertSecret.CreationTimestamp.IsZero() {
-			cfg := &certs.CertCfg{
-				Subject:   pkix.Name{CommonName: "ignition-root-ca", OrganizationalUnit: []string{"openshift"}},
-				KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-				Validity:  certs.ValidityTenYears,
-				IsCA:      true,
-			}
-			key, crt, err := certs.GenerateSelfSignedCertificate(cfg)
-			if err != nil {
-				return fmt.Errorf("failed to generate CA: %w", err)
-			}
-			caCertSecret.Type = corev1.SecretTypeTLS
-			caCertSecret.Data = map[string][]byte{
-				corev1.TLSCertKey:       certs.CertToPem(crt),
-				corev1.TLSPrivateKeyKey: certs.PrivateKeyToPem(key),
-			}
-		}
-		return nil
+		caCertSecret.Type = corev1.SecretTypeTLS
+		return certs.ReconcileSelfSignedCA(caCertSecret, "ignition-root-ca", "openshift", func(o *certs.CAOpts) {
+			o.CASignerCertMapKey = corev1.TLSCertKey
+			o.CASignerKeyMapKey = corev1.TLSPrivateKeyKey
+		})
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition ca cert: %w", err)
 	} else {
@@ -143,37 +128,31 @@ func ReconcileIgnitionServer(ctx context.Context,
 	// only create this and don't update it for now.
 	servingCertSecret := ignitionserver.IgnitionServingCertSecret(controlPlaneNamespace)
 	if result, err := createOrUpdate(ctx, c, servingCertSecret, func() error {
-		if servingCertSecret.CreationTimestamp.IsZero() {
-			caCert, err := certs.PemToCertificate(caCertSecret.Data[corev1.TLSCertKey])
-			if err != nil {
-				return fmt.Errorf("couldn't get ca cert: %w", err)
-			}
-			caKey, err := certs.PemToPrivateKey(caCertSecret.Data[corev1.TLSPrivateKeyKey])
-			if err != nil {
-				return fmt.Errorf("couldn't get ca key: %w", err)
-			}
-			cfg := &certs.CertCfg{
-				Subject:   pkix.Name{CommonName: "ignition-server", Organization: []string{"openshift"}},
-				KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-				Validity:  certs.ValidityOneYear,
-			}
-			numericIP := net.ParseIP(ignitionServerAddress)
-			if numericIP == nil {
-				cfg.DNSNames = []string{ignitionServerAddress}
-			} else {
-				cfg.IPAddresses = []net.IP{numericIP}
-			}
-			key, crt, err := certs.GenerateSignedCertificate(caKey, caCert, cfg)
-			if err != nil {
-				return fmt.Errorf("failed to generate ignition serving cert: %w", err)
-			}
-			servingCertSecret.Type = corev1.SecretTypeTLS
-			servingCertSecret.Data = map[string][]byte{
-				corev1.TLSCertKey:       certs.CertToPem(crt),
-				corev1.TLSPrivateKeyKey: certs.PrivateKeyToPem(key),
-			}
+		servingCertSecret.Type = corev1.SecretTypeTLS
+
+		var dnsNames, ipAddresses []string
+		numericIP := net.ParseIP(ignitionServerAddress)
+		if numericIP == nil {
+			dnsNames = []string{ignitionServerAddress}
+		} else {
+			ipAddresses = []string{ignitionServerAddress}
 		}
-		return nil
+
+		return certs.ReconcileSignedCert(
+			servingCertSecret,
+			caCertSecret,
+			"ignition-server",
+			[]string{"openshift"},
+			nil,
+			corev1.TLSCertKey,
+			corev1.TLSPrivateKeyKey,
+			"",
+			dnsNames,
+			ipAddresses,
+			func(o *certs.CAOpts) {
+				o.CASignerCertMapKey = corev1.TLSCertKey
+				o.CASignerKeyMapKey = corev1.TLSPrivateKeyKey
+			})
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition serving cert: %w", err)
 	} else {

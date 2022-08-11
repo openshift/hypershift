@@ -8,7 +8,7 @@ import (
 	clientcmd "k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 )
 
@@ -55,8 +55,8 @@ func ReconcileAuthenticationTokenWebhookConfigSecret(secret *corev1.Secret, owne
 	}
 	var ca, crt, key []byte
 	var ok bool
-	if ca, ok = authenticatorSecret.Data[pki.CASignerCertMapKey]; !ok {
-		return fmt.Errorf("expected %s key in authenticator secret", pki.CASignerCertMapKey)
+	if ca, ok = authenticatorSecret.Data[certs.CASignerCertMapKey]; !ok {
+		return fmt.Errorf("expected %s key in authenticator secret", certs.CASignerCertMapKey)
 	}
 	if crt, ok = authenticatorSecret.Data[corev1.TLSCertKey]; !ok {
 		return fmt.Errorf("expected %s key in authenticator secret", corev1.TLSCertKey)

@@ -21,7 +21,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/util"
@@ -111,7 +111,7 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 			"--server-key",
 			cpath(konnectivityVolumeServerCerts().Name, corev1.TLSPrivateKeyKey),
 			"--server-ca-cert",
-			cpath(konnectivityVolumeServerCerts().Name, pki.CASignerCertMapKey),
+			cpath(konnectivityVolumeServerCerts().Name, certs.CASignerCertMapKey),
 			"--server-port",
 			strconv.Itoa(KonnectivityServerLocalPort),
 			"--agent-port",
@@ -374,7 +374,7 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 		c.Args = []string{
 			"--logtostderr=true",
 			"--ca-cert",
-			cpath(konnectivityVolumeAgentCerts().Name, pki.CASignerCertMapKey),
+			cpath(konnectivityVolumeAgentCerts().Name, certs.CASignerCertMapKey),
 			"--agent-cert",
 			cpath(konnectivityVolumeAgentCerts().Name, corev1.TLSCertKey),
 			"--agent-key",

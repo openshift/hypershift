@@ -11,8 +11,8 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -112,7 +112,7 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deploy
 				CertFile: cpath(ocmVolumeServingCert().Name, corev1.TLSCertKey),
 				KeyFile:  cpath(ocmVolumeServingCert().Name, corev1.TLSPrivateKeyKey),
 			},
-			ClientCA:      cpath(ocmVolumeServingCert().Name, pki.CASignerCertMapKey),
+			ClientCA:      cpath(ocmVolumeServingCert().Name, certs.CASignerCertMapKey),
 			MinTLSVersion: minTLSVersion,
 			CipherSuites:  cipherSuites,
 		},

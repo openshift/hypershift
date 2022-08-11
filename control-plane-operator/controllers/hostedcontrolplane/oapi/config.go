@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -66,7 +67,7 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL,
 				CertFile: cpath(oasVolumeServingCert().Name, corev1.TLSCertKey),
 				KeyFile:  cpath(oasVolumeServingCert().Name, corev1.TLSPrivateKeyKey),
 			},
-			ClientCA:      cpath(oasVolumeServingCA().Name, pki.CASignerCertMapKey),
+			ClientCA:      cpath(oasVolumeServingCA().Name, certs.CASignerCertMapKey),
 			CipherSuites:  cipherSuites,
 			MinTLSVersion: minTLSVersion,
 		},
@@ -105,7 +106,7 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL,
 				CertFile: cpath(oasVolumeEtcdClientCert().Name, pki.EtcdClientCrtKey),
 				KeyFile:  cpath(oasVolumeEtcdClientCert().Name, pki.EtcdClientKeyKey),
 			},
-			CA: cpath(oasVolumeEtcdClientCA().Name, pki.CASignerCertMapKey),
+			CA: cpath(oasVolumeEtcdClientCA().Name, certs.CASignerCertMapKey),
 		},
 	}
 }
