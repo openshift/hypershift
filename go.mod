@@ -29,6 +29,7 @@ require (
 	github.com/opencontainers/image-spec v1.0.2
 	github.com/openshift/api v0.0.0-20220525145417-ee5b62754c68
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220227135922-dd6353f609dc
+	github.com/openshift/library-go v0.0.0-20220811164604-fef421ec24f4
 	github.com/operator-framework/api v0.10.7
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.57.0
@@ -51,7 +52,7 @@ require (
 	k8s.io/apiserver v0.24.2
 	k8s.io/client-go v0.24.2
 	k8s.io/component-base v0.24.2
-	k8s.io/kube-aggregator v0.20.2
+	k8s.io/kube-aggregator v0.24.0
 	k8s.io/kube-scheduler v0.23.1
 	k8s.io/pod-security-admission v0.23.5
 	k8s.io/utils v0.0.0-20220210201930-3a6ce19ff2f9
@@ -140,7 +141,7 @@ require (
 	go.mongodb.org/mongo-driver v1.8.3 // indirect
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8 // indirect
+	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5 // indirect
 	golang.org/x/sys v0.0.0-20220330033206-e17cdc41300f // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
 	golang.org/x/text v0.3.7 // indirect
