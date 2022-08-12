@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	capiawsv1beta1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,6 +37,7 @@ var withStatusSubresource = sets.NewString(
 	fmt.Sprintf("%T", &capikubevirt.KubevirtCluster{}),
 	fmt.Sprintf("%T", &capiv1.Cluster{}),
 	fmt.Sprintf("%T", &capiazure.AzureCluster{}),
+	fmt.Sprintf("%T", &capiibmv1.IBMPowerVSCluster{}),
 )
 
 func hasStatusSubResource(o crclient.Object) bool {
