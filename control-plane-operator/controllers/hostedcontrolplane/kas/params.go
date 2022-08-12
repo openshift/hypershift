@@ -313,11 +313,13 @@ func (p *KubeAPIServerParams) NamedCertificates() []configv1.APIServerNamedServi
 	}
 }
 
-func (p *KubeAPIServerParams) AuditPolicyProfile() configv1.AuditProfileType {
+func (p *KubeAPIServerParams) AuditPolicyConfig() configv1.Audit {
 	if p.APIServer != nil {
-		return p.APIServer.Audit.Profile
+		return p.APIServer.Audit
 	} else {
-		return configv1.DefaultAuditProfileType
+		return configv1.Audit{
+			Profile: configv1.DefaultAuditProfileType,
+		}
 	}
 }
 
