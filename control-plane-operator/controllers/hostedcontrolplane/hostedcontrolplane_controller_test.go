@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/gomega"
@@ -693,8 +694,8 @@ func TestEtcdRestoredCondition(t *testing.T) {
 	}
 }
 
-func TestEventHandling(t *testing.T) {
-	t.Parallel()
+func sampleHCP(t *testing.T) *hyperv1.HostedControlPlane {
+	t.Helper()
 	rawHCP := `apiVersion: hypershift.openshift.io/v1alpha1
 kind: HostedControlPlane
 metadata:
@@ -812,8 +813,16 @@ spec:
     name: ssh-key`
 	hcp := &hyperv1.HostedControlPlane{}
 	if err := yaml.Unmarshal([]byte(rawHCP), hcp); err != nil {
-		t.Fatalf("Failed to deserialize reference HCP: %v", err)
+		t.Fatal(err)
 	}
+
+	return hcp
+}
+
+func TestEventHandling(t *testing.T) {
+	t.Parallel()
+
+	hcp := sampleHCP(t)
 	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
 	etcdEncryptionKey := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "etcd-encryption-key"},
@@ -1326,5 +1335,29 @@ func TestReconcileRouter(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
+	hcp := sampleHCP(t)
+	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, pullSecret).Build()
+	r := &HostedControlPlaneReconciler{
+		Client:                        c,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
+			return InfrastructureStatus{}, nil
+		},
+	}
+	r.setup(controllerutil.CreateOrUpdate)
+	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+	result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(hcp)})
+	if err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+	if result.RequeueAfter != time.Minute {
+		t.Errorf("expected requeue after of %s when infrastructure is not ready, got %s", time.Minute, result.RequeueAfter)
 	}
 }

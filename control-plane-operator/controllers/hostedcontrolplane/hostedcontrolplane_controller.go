@@ -509,12 +509,13 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Perform the hosted control plane reconciliation
-	if err := r.update(ctx, hostedControlPlane); err != nil {
+	result, err := r.update(ctx, hostedControlPlane)
+	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update control plane: %w", err)
 	}
 
 	r.Log.Info("Successfully reconciled")
-	return ctrl.Result{}, nil
+	return result, nil
 }
 
 func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(hc *hyperv1.HostedControlPlane) error {
@@ -536,25 +537,25 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	return r.ReleaseProvider.Lookup(lookupCtx, hcp.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 }
 
-func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) error {
+func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) (reconcile.Result, error) {
 
 	// Block here if the cluster configuration does not pass validation
 	{
 		validConfig := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
 		if validConfig != nil && validConfig.Status == metav1.ConditionFalse {
 			r.Log.Info("Configuration is invalid, reconciliation is blocked")
-			return nil
+			return reconcile.Result{}, nil
 		}
 	}
 
 	r.Log.Info("Looking up release image metadata", "image", hostedControlPlane.Spec.ReleaseImage)
 	releaseImage, err := r.LookupReleaseImage(ctx, hostedControlPlane)
 	if err != nil {
-		return fmt.Errorf("failed to look up release image metadata: %w", err)
+		return reconcile.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
 	componentVersions, err := releaseImage.ComponentVersions()
 	if err != nil {
-		return fmt.Errorf("invalid component versions found in release info: %w", err)
+		return reconcile.Result{}, fmt.Errorf("invalid component versions found in release info: %w", err)
 	}
 	r.Log.Info("Found release info for image", "releaseImage", hostedControlPlane.Spec.ReleaseImage, "info", releaseImage, "componentImages", len(releaseImage.ComponentImages()), "componentVersions", componentVersions)
 
@@ -564,7 +565,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		r.Log.Info("Removing private IngressController")
 		// Ensure that if an ingress controller exists from a previous version, it is removed
 		if err = r.reconcilePrivateIngressController(ctx, hostedControlPlane); err != nil {
-			return fmt.Errorf("failed to reconcile private ingresscontroller: %w", err)
+			return reconcile.Result{}, fmt.Errorf("failed to reconcile private ingresscontroller: %w", err)
 		}
 	}
 
@@ -573,36 +574,40 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	if util.IsPrivateHCP(hostedControlPlane) || kasServiceStrategy.Type == hyperv1.Route {
 		r.Log.Info("Reconciling router")
 		if err := r.reconcileRouter(ctx, hostedControlPlane, releaseImage, createOrUpdate, kasServiceStrategy.Type == hyperv1.Route); err != nil {
-			return fmt.Errorf("failed to reconcile router: %w", err)
+			return reconcile.Result{}, fmt.Errorf("failed to reconcile router: %w", err)
 		}
 	}
 
 	r.Log.Info("Reconciling autoscaler")
 	if err := r.reconcileAutoscaler(ctx, hostedControlPlane, releaseImage.ComponentImages(), createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile autoscaler: %w", err)
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
 	}
 
 	r.Log.Info("Reconciling machine approver")
 	if err := r.reconcileMachineApprover(ctx, hostedControlPlane, releaseImage.ComponentImages(), createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile machine approver: %w", err)
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
 	}
 
 	r.Log.Info("Reconciling infrastructure services")
 	if err := r.reconcileInfrastructure(ctx, hostedControlPlane, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to ensure infrastructure: %w", err)
+		return reconcile.Result{}, fmt.Errorf("failed to ensure infrastructure: %w", err)
 	}
 	// Block here until infra status reports readiness
 	// TODO(dmace): This seems a bit heavy handed vs. making more granular bits no-op if
 	// they don't have the specific required inputs
 	infraStatus, err := r.reconcileInfrastructureStatus(ctx, hostedControlPlane)
 	if err != nil {
-		return fmt.Errorf("failed to look up infra status: %w", err)
+		return reconcile.Result{}, fmt.Errorf("failed to look up infra status: %w", err)
 	}
 	if !infraStatus.IsReady() {
 		r.Log.Info("Waiting for infrastructure to be ready before proceeding")
-		return nil
+		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
 
+	return reconcile.Result{}, r.reconcile(ctx, hostedControlPlane, createOrUpdate, releaseImage, infraStatus)
+}
+
+func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImage *releaseinfo.ReleaseImage, infraStatus InfrastructureStatus) error {
 	r.Log.Info("Reconciling ignition server")
 	if err := ignitionserver.ReconcileIgnitionServer(ctx,
 		r.Client,
