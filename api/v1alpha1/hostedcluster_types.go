@@ -1762,7 +1762,8 @@ type HostedClusterStatus struct {
 
 	// Conditions represents the latest available observations of a control
 	// plane's current state.
-	Conditions []metav1.Condition `json:"conditions"`
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // ClusterVersionStatus reports the status of the cluster versioning,
@@ -1893,8 +1894,8 @@ type ClusterConfiguration struct {
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=hostedclusters,shortName=hc;hcs,scope=Namespaced
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:deprecatedversion:warning="v1alpha1 is a deprecated version for HostedCluster"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version.history[?(@.state==\"Completed\")].version",description="Version"
 // +kubebuilder:printcolumn:name="KubeConfig",type="string",JSONPath=".status.kubeconfig.name",description="KubeConfig Secret"
 // +kubebuilder:printcolumn:name="Progress",type="string",JSONPath=".status.version.history[?(@.state!=\"\")].state",description="Progress"

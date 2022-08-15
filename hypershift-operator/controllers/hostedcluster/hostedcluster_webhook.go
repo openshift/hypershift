@@ -7,9 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
-
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -23,10 +21,33 @@ type Webhook struct{}
 
 // SetupWebhookWithManager sets up HostedCluster webhooks.
 func SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
+	err := ctrl.NewWebhookManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
 		WithValidator(&Webhook{}).
 		Complete()
+	if err != nil {
+		return fmt.Errorf("unable to register hostedcluster webhook: %w", err)
+	}
+	err = ctrl.NewWebhookManagedBy(mgr).
+		For(&hyperv1.NodePool{}).
+		Complete()
+	if err != nil {
+		return fmt.Errorf("unable to register nodepool webhook: %w", err)
+	}
+	err = ctrl.NewWebhookManagedBy(mgr).
+		For(&hyperv1.HostedControlPlane{}).
+		Complete()
+	if err != nil {
+		return fmt.Errorf("unable to register hostedcontrolplane webhook: %w", err)
+	}
+	err = ctrl.NewWebhookManagedBy(mgr).
+		For(&hyperv1.AWSEndpointService{}).
+		Complete()
+	if err != nil {
+		return fmt.Errorf("unable to register awsendpointservice webhook: %w", err)
+	}
+	return nil
+
 }
 
 var _ webhook.CustomValidator = &Webhook{}
@@ -76,10 +97,6 @@ func filterMutableHostedClusterSpecFields(spec *hyperv1.HostedClusterSpec) {
 		spec.Platform.AWS.ResourceTags = nil
 		// This is to enable reconcileDeprecatedAWSRoles.
 		spec.Platform.AWS.RolesRef = hyperv1.AWSRolesRef{}
-		spec.Platform.AWS.Roles = []hyperv1.AWSRoleCredentials{}
-		spec.Platform.AWS.NodePoolManagementCreds = corev1.LocalObjectReference{}
-		spec.Platform.AWS.ControlPlaneOperatorCreds = corev1.LocalObjectReference{}
-		spec.Platform.AWS.KubeCloudControllerCreds = corev1.LocalObjectReference{}
 	}
 
 	// This is to enable reconcileDeprecatedNetworkSettings

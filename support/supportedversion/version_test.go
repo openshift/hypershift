@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
 
 func TestSupportedVersions(t *testing.T) {

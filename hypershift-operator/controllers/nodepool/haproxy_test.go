@@ -3,6 +3,7 @@ package nodepool
 import (
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/testutil"
 	"sigs.k8s.io/yaml"
 )

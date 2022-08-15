@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
 
 func IngressSubdomain(hcp *hyperv1.HostedControlPlane) string {

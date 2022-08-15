@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
@@ -107,7 +107,7 @@ func generateNodeTemplate(memory string, cpu uint32, image string, volumeSize st
 		Spec: kubevirtv1.VirtualMachineSpec{
 			RunStrategy: &runAlways,
 			DataVolumeTemplates: []kubevirtv1.DataVolumeTemplateSpec{
-				kubevirtv1.DataVolumeTemplateSpec{
+				{
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "rhcos",

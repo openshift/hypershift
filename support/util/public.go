@@ -1,7 +1,7 @@
 package util
 
 import (
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
 
 // HasPrivateAPIServerConnectivity determines if workloads running inside the guest cluster can access

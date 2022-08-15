@@ -142,8 +142,8 @@ app-sre-saas-template: hypershift
 
 # Run tests
 .PHONY: test
-test: build
-	$(GO) test -race -count=25 ./... -coverprofile cover.out
+test:
+	$(GO) test -race -count=25 -timeout=30m ./... -coverprofile cover.out
 
 .PHONY: e2e
 e2e:
@@ -216,13 +216,14 @@ ci-install-hypershift-private:
 		--oidc-storage-provider-s3-credentials=/etc/hypershift-pool-aws-credentials/credentials \
 		--oidc-storage-provider-s3-bucket-name=hypershift-ci-oidc \
 		--oidc-storage-provider-s3-region=us-east-1 \
-		--enable-webhook \
+		--enable-validating-webhook \
 		--private-platform=AWS \
 		--aws-private-creds=/etc/hypershift-pool-aws-credentials/credentials \
 		--aws-private-region=us-east-1 \
 		--external-dns-provider=aws \
 		--external-dns-credentials=/etc/hypershift-pool-aws-credentials/credentials \
-		--external-dns-domain-filter=service.ci.hypershift.devcluster.openshift.com
+		--external-dns-domain-filter=service.ci.hypershift.devcluster.openshift.com \
+		--wait-until-available
 
 .PHONY: ci-test-e2e
 ci-test-e2e:

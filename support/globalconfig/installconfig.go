@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"text/template"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/util"
 )
 

@@ -8,7 +8,7 @@ import (
 	"github.com/go-logr/zapr"
 	configv1 "github.com/openshift/api/config/v1"
 	hyperapi "github.com/openshift/hypershift/api"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -198,20 +198,6 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
 							RolesRef: hyperv1.AWSRolesRef{},
-							Roles: []hyperv1.AWSRoleCredentials{
-								{
-									ARN:       "test",
-									Namespace: "test",
-									Name:      "test",
-								},
-								{
-									ARN:       "test",
-									Namespace: "test",
-									Name:      "test",
-								}},
-							KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: "test"},
-							NodePoolManagementCreds:   corev1.LocalObjectReference{Name: "test"},
-							ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: "test"},
 						},
 					},
 				},
@@ -230,10 +216,6 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 								NodePoolManagementARN:   "test",
 								ControlPlaneOperatorARN: "test",
 							},
-							Roles:                     nil,
-							KubeCloudControllerCreds:  corev1.LocalObjectReference{},
-							NodePoolManagementCreds:   corev1.LocalObjectReference{},
-							ControlPlaneOperatorCreds: corev1.LocalObjectReference{},
 						},
 					},
 				},
