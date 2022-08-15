@@ -7,13 +7,14 @@ import (
 
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/hypershift/api"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
-	"github.com/openshift/hypershift/support/globalconfig"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"go.uber.org/zap/zaptest"
 	appsv1 "k8s.io/api/apps/v1"
@@ -21,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -41,29 +41,6 @@ import (
 
 func TestReconcileKubeadminPassword(t *testing.T) {
 	targetNamespace := "test"
-	OAuthConfig := `
-apiVersion: config.openshift.io/v1
-kind: OAuth
-metadata:
-  name: "example"
-spec:
-  identityProviders:
-  - openID:
-      claims:
-        email:
-        - email
-        name:
-        - clientid1-secret-name
-        preferredUsername:
-        - preferred_username
-      clientID: clientid1
-      clientSecret:
-        name: clientid1-secret-name
-      issuer: https://example.com/identity
-    mappingMethod: lookup
-    name: IAM
-    type: OpenID
-`
 
 	testsCases := []struct {
 		name                 string
@@ -80,9 +57,27 @@ spec:
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Configuration: &hyperv1.ClusterConfiguration{
-						Items: []runtime.RawExtension{
-							{
-								Raw: []byte(OAuthConfig),
+						OAuth: &configv1.OAuthSpec{
+							IdentityProviders: []configv1.IdentityProvider{
+								{
+									IdentityProviderConfig: configv1.IdentityProviderConfig{
+										Type: configv1.IdentityProviderTypeOpenID,
+										OpenID: &configv1.OpenIDIdentityProvider{
+											ClientID: "clientid1",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "clientid1-secret-name",
+											},
+											Issuer: "https://example.com/identity",
+											Claims: configv1.OpenIDClaims{
+												Email:             []string{"email"},
+												Name:              []string{"clientid1-secret-name"},
+												PreferredUsername: []string{"preferred_username"},
+											},
+										},
+									},
+									Name:          "IAM",
+									MappingMethod: "lookup",
+								},
 							},
 						},
 					},
@@ -111,11 +106,7 @@ spec:
 				Client: fakeClient,
 				Log:    ctrl.LoggerFrom(context.TODO()),
 			}
-
-			globalConfig, err := globalconfig.ParseGlobalConfig(context.Background(), tc.hcp.Spec.Configuration)
-			g.Expect(err).NotTo(HaveOccurred())
-
-			err = r.reconcileKubeadminPassword(context.Background(), tc.hcp, globalConfig.OAuth != nil, controllerutil.CreateOrUpdate)
+			err := r.reconcileKubeadminPassword(context.Background(), tc.hcp, tc.hcp.Spec.Configuration != nil && tc.hcp.Spec.Configuration.OAuth != nil, controllerutil.CreateOrUpdate)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			actualSecret := common.KubeadminPasswordSecret(targetNamespace)
@@ -522,7 +513,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 
 func TestEventHandling(t *testing.T) {
 	t.Parallel()
-	rawHCP := `apiVersion: hypershift.openshift.io/v1alpha1
+	rawHCP := `apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedControlPlane
 metadata:
   annotations:

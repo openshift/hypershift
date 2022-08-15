@@ -6,7 +6,8 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -44,7 +45,8 @@ func init() {
 	capiaws.AddToScheme(Scheme)
 	capiibm.AddToScheme(Scheme)
 	clientgoscheme.AddToScheme(Scheme)
-	hyperv1.AddToScheme(Scheme)
+	hyperv1alpha1.AddToScheme(Scheme)
+	hyperv1beta1.AddToScheme(Scheme)
 	capiv1.AddToScheme(Scheme)
 	configv1.AddToScheme(Scheme)
 	operatorv1.AddToScheme(Scheme)

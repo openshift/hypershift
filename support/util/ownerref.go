@@ -21,7 +21,9 @@ func EnsureOwnerRef(resource client.Object, ownerRef *metav1.OwnerReference) {
 
 func getOwnerRefIndex(list []metav1.OwnerReference, ref *metav1.OwnerReference) int {
 	for i := range list {
-		if list[i].Kind == ref.Kind && list[i].APIVersion == ref.APIVersion && list[i].Name == ref.Name {
+		// NOTE: The APIVersion may have changed with a new API Version, however the UID should remain the
+		// same. Use either to identify the owner reference.
+		if list[i].Kind == ref.Kind && (list[i].APIVersion == ref.APIVersion || list[i].UID == ref.UID) && list[i].Name == ref.Name {
 			return i
 		}
 	}

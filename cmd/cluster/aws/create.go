@@ -7,7 +7,7 @@ import (
 	"io/ioutil"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/util"
@@ -170,6 +170,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			SubnetID: &outputZone.SubnetID,
 		})
 	}
+
 	exampleOptions.AWS = &apifixtures.ExampleAWSOptions{
 		Region:             infra.Region,
 		Zones:              zones,

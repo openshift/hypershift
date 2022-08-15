@@ -13,7 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"

@@ -8,12 +8,11 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/api/util/ipnet"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -133,7 +132,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 	var resources []crclient.Object
 	var services []hyperv1.ServicePublishingStrategyMapping
 	var secretEncryption *hyperv1.SecretEncryptionSpec
-	var globalOpts []runtime.RawExtension
+	var proxyConfig *configv1.ProxySpec
 
 	switch {
 	case o.AWS != nil:
@@ -183,16 +182,10 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		}
 
 		if o.AWS.ProxyAddress != "" {
-			globalOpts = append(globalOpts, runtime.RawExtension{Object: &configv1.Proxy{
-				TypeMeta: metav1.TypeMeta{
-					APIVersion: configv1.GroupVersion.String(),
-					Kind:       "Proxy",
-				},
-				Spec: configv1.ProxySpec{
-					HTTPProxy:  o.AWS.ProxyAddress,
-					HTTPSProxy: o.AWS.ProxyAddress,
-				},
-			}})
+			proxyConfig = &configv1.ProxySpec{
+				HTTPProxy:  o.AWS.ProxyAddress,
+				HTTPSProxy: o.AWS.ProxyAddress,
+			}
 		}
 
 		if kmsCredsSecret != nil {
@@ -474,8 +467,8 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(o.MachineCIDR)}}
 	}
 
-	if len(globalOpts) > 0 {
-		cluster.Spec.Configuration = &hyperv1.ClusterConfiguration{Items: globalOpts}
+	if proxyConfig != nil {
+		cluster.Spec.Configuration = &hyperv1.ClusterConfiguration{Proxy: proxyConfig}
 	}
 
 	var userCABundleCM *corev1.ConfigMap

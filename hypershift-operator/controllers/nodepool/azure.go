@@ -10,7 +10,7 @@ import (
 	utilpointer "k8s.io/utils/pointer"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
 
 func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, existing capiazure.AzureMachineTemplateSpec) (*capiazure.AzureMachineTemplateSpec, error) {

@@ -13,7 +13,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -84,14 +84,15 @@ type IgnitionProvider interface {
 // stores it in the PayloadsStore, and rotates the token ID periodically.
 // A token Secret is by contractual convention:
 // type: Secret
-//   metadata:
-//   annotations:
-// 	   hypershift.openshift.io/ignition-config: "true"
-//	 data:
-//     token: <authz token>
-//     old_token: <authz token>
-//     release: <release image string>
-//     config: |-
+//
+//	  metadata:
+//	  annotations:
+//		   hypershift.openshift.io/ignition-config: "true"
+//		 data:
+//	    token: <authz token>
+//	    old_token: <authz token>
+//	    release: <release image string>
+//	    config: |-
 type TokenSecretReconciler struct {
 	client.Client
 	IgnitionProvider IgnitionProvider

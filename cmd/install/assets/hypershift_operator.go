@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
@@ -1336,7 +1336,7 @@ type HyperShiftValidatingWebhookConfiguration struct {
 
 func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistrationv1.ValidatingWebhookConfiguration {
 	scope := admissionregistrationv1.NamespacedScope
-	path := "/validate-hypershift-openshift-io-v1alpha1-hostedcluster"
+	path := "/validate-hypershift-openshift-io-v1beta1-hostedcluster"
 	sideEffects := admissionregistrationv1.SideEffectClassNone
 	timeout := int32(10)
 	validatingWebhookConfiguration := &admissionregistrationv1.ValidatingWebhookConfiguration{
@@ -1363,7 +1363,7 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 						},
 						Rule: admissionregistrationv1.Rule{
 							APIGroups:   []string{"hypershift.openshift.io"},
-							APIVersions: []string{"v1alpha1"},
+							APIVersions: []string{"v1beta1"},
 							Resources:   []string{"hostedclusters"},
 							Scope:       &scope,
 						},

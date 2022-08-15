@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
