@@ -51,7 +51,7 @@ func init() {
 // independent of the control plane’s underlying machine architecture.
 //
 // +kubebuilder:resource:path=nodepools,shortName=np;nps,scope=Namespaced
-// +kubebuilder:storageversion
+// +kubebuilder:deprecatedversion:warning="v1alpha1 is a deprecated version for NodePool"
 // +kubebuilder:subresource:status
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas
@@ -152,7 +152,8 @@ type NodePoolStatus struct {
 
 	// Conditions represents the latest available observations of the node pool's
 	// current state.
-	Conditions []NodePoolCondition `json:"conditions"`
+	// +optional
+	Conditions []NodePoolCondition `json:"conditions,omitempty"`
 }
 
 // NodePoolList contains a list of NodePools.

@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/go-logr/zapr"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	consolelogsaws "github.com/openshift/hypershift/cmd/consolelogs/aws"
 	"github.com/openshift/hypershift/support/upsert"

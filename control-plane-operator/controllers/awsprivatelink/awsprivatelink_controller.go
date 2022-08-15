@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/upsert"
@@ -496,9 +496,6 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		log.Info("DNS record created", "fqdn", fqdn)
 	}
 
-	//lint:ignore SA1019 we reset the deprecated field precicely
-	// because it is deprecated.
-	awsEndpointService.Status.DNSName = ""
 	awsEndpointService.Status.DNSNames = fqdns
 	awsEndpointService.Status.DNSZoneID = zoneID
 

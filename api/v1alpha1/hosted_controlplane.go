@@ -12,7 +12,6 @@ func init() {
 
 // HostedControlPlane defines the desired state of HostedControlPlane
 // +kubebuilder:resource:path=hostedcontrolplanes,shortName=hcp;hcps,scope=Namespaced,categories=cluster-api
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:object:root=true
 type HostedControlPlane struct {
@@ -280,8 +279,8 @@ type HostedControlPlaneStatus struct {
 
 	// Condition contains details for one aspect of the current state of the HostedControlPlane.
 	// Current condition types are: "Available"
-	// +kubebuilder:validation:Required
-	Conditions []metav1.Condition `json:"conditions"`
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 type APIEndpoint struct {

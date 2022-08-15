@@ -1,102 +1,42 @@
-package globalconfig
+package configrefs
 
 import (
-	"context"
-	"fmt"
-
 	configv1 "github.com/openshift/api/config/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	ctrl "sigs.k8s.io/controller-runtime"
-
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/support/api"
 )
 
-type GlobalConfig struct {
-	APIServer      *configv1.APIServer
-	Authentication *configv1.Authentication
-	FeatureGate    *configv1.FeatureGate
-	Image          *configv1.Image
-	Ingress        *configv1.Ingress
-	Network        *configv1.Network
-	OAuth          *configv1.OAuth
-	Scheduler      *configv1.Scheduler
-	Proxy          *configv1.Proxy
-	Build          *configv1.Build
-	Project        *configv1.Project
+// ClusterConfiguration is an interface for the ClusterConfiguration type in the API
+// It is needed to avoid a circular import reference, given that this package is
+// used by the conversion code in the API package.
+type ClusterConfiguration interface {
+	GetAPIServer() *configv1.APIServerSpec
+	GetAuthentication() *configv1.AuthenticationSpec
+	GetFeatureGate() *configv1.FeatureGateSpec
+	GetImage() *configv1.ImageSpec
+	GetIngress() *configv1.IngressSpec
+	GetNetwork() *configv1.NetworkSpec
+	GetOAuth() *configv1.OAuthSpec
+	GetScheduler() *configv1.SchedulerSpec
+	GetProxy() *configv1.ProxySpec
 }
 
-type ObservedConfig struct {
-	Image   *configv1.Image
-	Build   *configv1.Build
-	Project *configv1.Project
-}
-
-func ParseGlobalConfig(ctx context.Context, cfg *hyperv1.ClusterConfiguration) (GlobalConfig, error) {
-	globalConfig := GlobalConfig{}
-	if cfg == nil {
-		return globalConfig, nil
-	}
-	kinds := sets.NewString() // keeps track of which kinds have been found
-	for i, cfg := range cfg.Items {
-		cfgObject, gvk, err := api.TolerantYAMLSerializer.Decode(cfg.Raw, nil, nil)
-		if err != nil {
-			return globalConfig, fmt.Errorf("cannot parse configuration at index %d: %w", i, err)
-		}
-		if gvk.GroupVersion().String() != configv1.GroupVersion.String() {
-			return globalConfig, fmt.Errorf("invalid resource type found in configuration: kind: %s, apiVersion: %s", gvk.Kind, gvk.GroupVersion().String())
-		}
-		if kinds.Has(gvk.Kind) {
-			return globalConfig, fmt.Errorf("duplicate config type found: %s", gvk.Kind)
-		}
-		kinds.Insert(gvk.Kind)
-		switch obj := cfgObject.(type) {
-		case *configv1.APIServer:
-			if obj.Spec.Audit.Profile == "" {
-				// Populate kubebuilder default for comparison
-				// https://github.com/openshift/api/blob/f120778bee805ad1a7a4f05a6430332cf5811813/config/v1/types_apiserver.go#L57
-				obj.Spec.Audit.Profile = configv1.DefaultAuditProfileType
-			}
-			globalConfig.APIServer = obj
-		case *configv1.Authentication:
-			globalConfig.Authentication = obj
-		case *configv1.FeatureGate:
-			globalConfig.FeatureGate = obj
-		case *configv1.Ingress:
-			globalConfig.Ingress = obj
-		case *configv1.Network:
-			globalConfig.Network = obj
-		case *configv1.OAuth:
-			globalConfig.OAuth = obj
-		case *configv1.Scheduler:
-			globalConfig.Scheduler = obj
-		case *configv1.Proxy:
-			globalConfig.Proxy = obj
-		default:
-			log := ctrl.LoggerFrom(ctx)
-			log.Info("WARNING: unrecognized config found", "kind", gvk.Kind)
-		}
-	}
-	return globalConfig, nil
-}
-
-func SecretRefs(cfg *hyperv1.ClusterConfiguration) []string {
+func SecretRefs(cfg ClusterConfiguration) []string {
 	result := sets.NewString()
-	result = result.Union(apiServerSecretRefs(cfg.APIServer))
-	result = result.Union(authenticationSecretRefs(cfg.Authentication))
-	result = result.Union(ingressSecretRefs(cfg.Ingress))
-	result = result.Union(oauthSecretRefs(cfg.OAuth))
+	result = result.Union(apiServerSecretRefs(cfg.GetAPIServer()))
+	result = result.Union(authenticationSecretRefs(cfg.GetAuthentication()))
+	result = result.Union(ingressSecretRefs(cfg.GetIngress()))
+	result = result.Union(oauthSecretRefs(cfg.GetOAuth()))
 	return result.List()
 }
 
-func ConfigMapRefs(cfg *hyperv1.ClusterConfiguration) []string {
+func ConfigMapRefs(cfg ClusterConfiguration) []string {
 	result := sets.NewString()
-	result = result.Union(apiServerConfigMapRefs(cfg.APIServer))
-	result = result.Union(authenticationConfigMapRefs(cfg.Authentication))
-	result = result.Union(imageConfigMapRefs(cfg.Image))
-	result = result.Union(oauthConfigMapRefs(cfg.OAuth))
-	result = result.Union(proxyConfigMapRefs(cfg.Proxy))
-	result = result.Union(schedulerConfigMapRefs(cfg.Scheduler))
+	result = result.Union(apiServerConfigMapRefs(cfg.GetAPIServer()))
+	result = result.Union(authenticationConfigMapRefs(cfg.GetAuthentication()))
+	result = result.Union(imageConfigMapRefs(cfg.GetImage()))
+	result = result.Union(oauthConfigMapRefs(cfg.GetOAuth()))
+	result = result.Union(proxyConfigMapRefs(cfg.GetProxy()))
+	result = result.Union(schedulerConfigMapRefs(cfg.GetScheduler()))
 	return result.List()
 }
 

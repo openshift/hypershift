@@ -65,12 +65,12 @@ type AWSEndpointServiceStatus struct {
 	// and the error reported in the message.
 	//
 	// Current condition types are: "Available"
-	Conditions []metav1.Condition `json:"conditions"`
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=awsendpointservices,scope=Namespaced
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // AWSEndpointService specifies a request for an Endpoint Service in AWS
 type AWSEndpointService struct {
