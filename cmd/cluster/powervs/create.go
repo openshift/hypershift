@@ -9,7 +9,7 @@ import (
 	"syscall"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
 	"github.com/openshift/hypershift/support/infraid"

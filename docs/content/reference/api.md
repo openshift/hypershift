@@ -3628,6 +3628,7 @@ This is populated after the infrastructure is ready.</p>
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>Conditions represents the latest available observations of a control
 plane&rsquo;s current state.</p>
 </td>
@@ -4280,6 +4281,7 @@ for the guest cluster.</p>
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>Condition contains details for one aspect of the current state of the HostedControlPlane.
 Current condition types are: &ldquo;Available&rdquo;</p>
 </td>
@@ -5846,6 +5848,7 @@ the NodePool.</p>
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>Conditions represents the latest available observations of the node pool&rsquo;s
 current state.</p>
 </td>

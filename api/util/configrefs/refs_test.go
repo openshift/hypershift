@@ -1,47 +1,14 @@
-package globalconfig
+package configrefs
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	configv1 "github.com/openshift/api/config/v1"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
-
-var featureGateBytes = `
-apiVersion: config.openshift.io/v1
-kind: FeatureGate
-metadata:
-  name: cluster
-spec:
-  featureSet: LatencySensitive
-  unknownField: example
-`
-
-func TestParseGlobalConfig(t *testing.T) {
-	config := &hyperv1.ClusterConfiguration{
-		Items: []runtime.RawExtension{
-			{
-				Raw: []byte(featureGateBytes),
-			},
-		},
-	}
-
-	globalConfig, err := ParseGlobalConfig(context.Background(), config)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if globalConfig.FeatureGate == nil {
-		t.Fatalf("feature gate config not found")
-	}
-	if globalConfig.FeatureGate.Spec.FeatureSet != configv1.LatencySensitive {
-		t.Errorf("unexpected featureset: %q", globalConfig.FeatureGate.Spec.FeatureSet)
-	}
-}
 
 func TestKnownConfigMapRefs(t *testing.T) {
 	actual := findRefs(reflect.TypeOf(hyperv1.ClusterConfiguration{}), "", "ConfigMapNameReference")
