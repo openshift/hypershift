@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"fmt"
 	"net/url"
+	"reflect"
 	"strconv"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -14,10 +15,11 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/errors"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -62,7 +64,8 @@ const (
 )
 
 type reconciler struct {
-	client client.Client
+	client         client.Client
+	uncachedClient client.Client
 	upsert.CreateOrUpdateProvider
 	platformType              hyperv1.PlatformType
 	rootCA                    string
@@ -106,8 +109,20 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		}
 		apiServerPort = int32(numericPort)
 	}
+	uncachedClient, err := client.New(opts.Manager.GetConfig(), client.Options{
+		Scheme: opts.Manager.GetScheme(),
+		Mapper: opts.Manager.GetRESTMapper(),
+		Opts: client.WarningHandlerOptions{
+			SuppressWarnings: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create uncached client: %w", err)
+	}
+
 	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: &reconciler{
 		client:                    opts.Manager.GetClient(),
+		uncachedClient:            uncachedClient,
 		CreateOrUpdateProvider:    opts.TargetCreateOrUpdateProvider,
 		platformType:              opts.PlatformType,
 		rootCA:                    opts.InitialCA,
@@ -134,6 +149,8 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&corev1.Secret{},
 		&corev1.Service{},
 		&corev1.Endpoints{},
+		&corev1.PersistentVolumeClaim{},
+		&corev1.PersistentVolume{},
 		&rbacv1.ClusterRole{},
 		&rbacv1.ClusterRoleBinding{},
 		&configv1.Infrastructure{},
@@ -152,6 +169,8 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&operatorv1.Network{},
 		&admissionregistrationv1.MutatingWebhookConfiguration{},
 		&prometheusoperatorv1.PrometheusRule{},
+		&operatorv1.IngressController{},
+		&imageregistryv1.Config{},
 	}
 	for _, r := range resourcesToWatch {
 		if err := c.Watch(&source.Kind{Type: r}, eventHandler()); err != nil {
@@ -171,6 +190,17 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	hcp := manifests.HostedControlPlane(r.hcpNamespace, r.hcpName)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get hosted control plane %s/%s: %w", r.hcpNamespace, r.hcpName, err)
+	}
+
+	if !hcp.DeletionTimestamp.IsZero() {
+		if shouldCleanupCloudResources(hcp) {
+			log.Info("Cleaning up hosted cluster cloud resources")
+			err := r.destroyCloudResources(ctx, hcp)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{}, nil
 	}
 
 	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
@@ -1163,7 +1193,7 @@ func (r *reconciler) reconcileAWSIdentityWebhook(ctx context.Context) []error {
 			Name:                    "pod-identity-webhook.amazonaws.com",
 			ClientConfig: admissionregistrationv1.WebhookClientConfig{
 				CABundle: []byte(r.rootCA),
-				URL:      utilpointer.String("https://127.0.0.1:4443/mutate"),
+				URL:      pointer.String("https://127.0.0.1:4443/mutate"),
 			},
 			FailurePolicy: &ignoreFailurePolicy,
 			Rules: []admissionregistrationv1.RuleWithOperations{{
@@ -1182,4 +1212,272 @@ func (r *reconciler) reconcileAWSIdentityWebhook(ctx context.Context) []error {
 	}
 
 	return errs
+}
+
+func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("Ensuring resource creation is blocked in cluster")
+	if err := r.ensureResourceCreationIsBlocked(ctx); err != nil {
+		return err
+	}
+	var errs []error
+	allRemoved := true
+	log.Info("Ensuring image registry storage is removed")
+	removed, err := r.ensureImageRegistryStorageRemoved(ctx)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	allRemoved = allRemoved && removed
+	log.Info("Ensuring ingress controllers are removed")
+	removed, err = r.ensureIngressControllersRemoved(ctx)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	allRemoved = allRemoved && removed
+	log.Info("Ensuring load balancers are removed")
+	removed, err = r.ensureServiceLoadBalancersRemoved(ctx)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	allRemoved = allRemoved && removed
+	log.Info("Ensuring persistent volumes are removed")
+	removed, err = r.ensurePersistentVolumesRemoved(ctx)
+	if err != nil {
+		errs = append(errs, err)
+	}
+	allRemoved = allRemoved && removed
+
+	if len(errs) > 0 {
+		return errors.NewAggregate(errs)
+	}
+
+	if !allRemoved {
+		return nil
+	}
+
+	resourcesDestroyedCond := &metav1.Condition{
+		Type:   string(hyperv1.CloudResourcesDestroyed),
+		Status: metav1.ConditionTrue,
+		Reason: "CloudResourcesDestroyed",
+	}
+
+	meta.SetStatusCondition(&hcp.Status.Conditions, *resourcesDestroyedCond)
+	if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
+		return fmt.Errorf("failed to set resources destroyed condition: %w", err)
+	}
+
+	return nil
+}
+
+func (r *reconciler) ensureResourceCreationIsBlocked(ctx context.Context) error {
+	wh := manifests.ResourceCreationBlockerWebhook()
+	if _, err := r.CreateOrUpdate(ctx, r.client, wh, func() error {
+		reconcileCreationBlockerWebhook(wh)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile resource cleanup webhook: %w", err)
+	}
+	return nil
+}
+
+func reconcileCreationBlockerWebhook(wh *admissionregistrationv1.ValidatingWebhookConfiguration) {
+	failurePolicy := admissionregistrationv1.Fail
+	sideEffectClass := admissionregistrationv1.SideEffectClassNone
+	allScopes := admissionregistrationv1.AllScopes
+	equivalentMatch := admissionregistrationv1.Equivalent
+	wh.Webhooks = []admissionregistrationv1.ValidatingWebhook{
+		{
+			AdmissionReviewVersions: []string{"v1"},
+			Name:                    "block-resources.hypershift.openshift.io",
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{
+				Service: &admissionregistrationv1.ServiceReference{
+					Namespace: "default",
+					Name:      "xxx-invalid-service-xxx",
+					Path:      pointer.String("/validate"),
+					Port:      pointer.Int32(443),
+				},
+			},
+			FailurePolicy: &failurePolicy,
+			Rules: []admissionregistrationv1.RuleWithOperations{
+				{
+					Operations: []admissionregistrationv1.OperationType{
+						admissionregistrationv1.Create,
+					},
+					Rule: admissionregistrationv1.Rule{
+						APIGroups:   []string{""},
+						APIVersions: []string{"v1"},
+						Resources: []string{
+							"pods",
+							"persistentvolumeclaims",
+							"persistentvolumes",
+							"services",
+						},
+						Scope: &allScopes,
+					},
+				},
+				{
+					Operations: []admissionregistrationv1.OperationType{
+						admissionregistrationv1.Create,
+					},
+					Rule: admissionregistrationv1.Rule{
+						APIGroups:   []string{"operator.openshift.io"},
+						APIVersions: []string{"v1"},
+						Resources: []string{
+							"ingresscontrollers",
+						},
+						Scope: &allScopes,
+					},
+				},
+			},
+			MatchPolicy:       &equivalentMatch,
+			SideEffects:       &sideEffectClass,
+			TimeoutSeconds:    pointer.Int32(30),
+			NamespaceSelector: &metav1.LabelSelector{},
+			ObjectSelector:    &metav1.LabelSelector{},
+		},
+	}
+}
+
+func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context) (bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+	ingressControllers := &operatorv1.IngressControllerList{}
+	if err := r.client.List(ctx, ingressControllers); err != nil {
+		return false, fmt.Errorf("failed to list ingress controllers: %w", err)
+	}
+	if len(ingressControllers.Items) == 0 {
+		log.Info("There are no ingresscontrollers, nothing to do")
+		return true, nil
+	}
+	var errs []error
+	for i := range ingressControllers.Items {
+		ic := &ingressControllers.Items[i]
+		if ic.DeletionTimestamp.IsZero() {
+			log.Info("Deleting ingresscontroller", "name", client.ObjectKeyFromObject(ic))
+			if err := r.client.Delete(ctx, ic); err != nil {
+				errs = append(errs, fmt.Errorf("failed to delete %s", client.ObjectKeyFromObject(ic).String()))
+			}
+		}
+	}
+	if len(errs) > 0 {
+		return false, fmt.Errorf("failed to delete ingress controllers: %w", errors.NewAggregate(errs))
+	}
+	return false, nil
+}
+
+func (r *reconciler) ensureImageRegistryStorageRemoved(ctx context.Context) (bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+	registryConfig := manifests.Registry()
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(registryConfig), registryConfig); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("registry operator config does not exist, nothing to do")
+			return true, nil
+		}
+		return false, fmt.Errorf("failed to get registry operator configuration: %w", err)
+	}
+	// If storage has already been removed, nothing to do
+	// When the registry operator has been removed, management state in status is currently cleared.
+	if registryConfig.Status.Storage.ManagementState == "" || registryConfig.Status.Storage.ManagementState == "Removed" {
+		log.Info("Registry operator management state is blank or removed, done cleaning up")
+		return true, nil
+	}
+	log.Info("Setting management state for registry operator to removed")
+	if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
+		registryConfig.Spec.ManagementState = operatorv1.Removed
+		return nil
+	}); err != nil {
+		return false, fmt.Errorf("failed to update image registry management state: %w", err)
+	}
+	return false, nil
+}
+
+func (r *reconciler) ensureServiceLoadBalancersRemoved(ctx context.Context) (bool, error) {
+	found, err := cleanupResources(ctx, r.client, &corev1.ServiceList{}, func(obj client.Object) bool {
+		svc := obj.(*corev1.Service)
+		return svc.Spec.Type == corev1.ServiceTypeLoadBalancer
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to remove load balancer services: %w", err)
+	}
+	return !found, nil
+}
+
+func (r *reconciler) ensurePersistentVolumesRemoved(ctx context.Context) (bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+	pvs := &corev1.PersistentVolumeList{}
+	if err := r.client.List(ctx, pvs); err != nil {
+		return false, fmt.Errorf("cannot list persistent volumes: %w", err)
+	}
+	if len(pvs.Items) == 0 {
+		log.Info("There are no more persistent volumes. Nothing to cleanup.")
+		return true, nil
+	}
+	if _, err := cleanupResources(ctx, r.client, &corev1.PersistentVolumeClaimList{}, nil); err != nil {
+		return false, fmt.Errorf("failed to remove persistent volume claims: %w", err)
+	}
+	if _, err := cleanupResources(ctx, r.uncachedClient, &corev1.PodList{}, func(obj client.Object) bool {
+		pod := obj.(*corev1.Pod)
+		return hasAttachedPVC(pod)
+	}); err != nil {
+		return false, fmt.Errorf("failed to remove pods: %w", err)
+	}
+	return false, nil
+}
+
+func hasAttachedPVC(pod *corev1.Pod) bool {
+	for _, v := range pod.Spec.Volumes {
+		if v.PersistentVolumeClaim != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func shouldCleanupCloudResources(hcp *hyperv1.HostedControlPlane) bool {
+	return hcp.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true" &&
+		meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.CVOScaledDown))
+}
+
+// cleanupResources generically deletes resources of a given type using an optional filter
+// function. The result is a boolean indicating whether resources were found that match
+// the filter and an error if one occurred.
+func cleanupResources(ctx context.Context, c client.Client, list client.ObjectList, filter func(client.Object) bool) (bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+	if err := c.List(ctx, list); err != nil {
+		return false, fmt.Errorf("cannot list %T: %w", list, err)
+	}
+
+	var errs []error
+	foundResource := false
+	a := listAccessor(list)
+	for i := 0; i < a.len(); i++ {
+		obj := a.item(i)
+		if filter == nil || filter(obj) {
+			foundResource = true
+			if obj.GetDeletionTimestamp().IsZero() {
+				log.Info("Deleting resource", "type", fmt.Sprintf("%T", obj), "name", client.ObjectKeyFromObject(obj).String())
+				if err := c.Delete(ctx, obj); err != nil {
+					errs = append(errs, err)
+				}
+			}
+		}
+	}
+	return foundResource, errors.NewAggregate(errs)
+}
+
+type genericListAccessor struct {
+	items reflect.Value
+}
+
+func listAccessor(list client.ObjectList) *genericListAccessor {
+	return &genericListAccessor{
+		items: reflect.ValueOf(list).Elem().FieldByName("Items"),
+	}
+}
+
+func (a *genericListAccessor) len() int {
+	return a.items.Len()
+}
+
+func (a *genericListAccessor) item(i int) client.Object {
+	return (a.items.Index(i).Addr().Interface()).(client.Object)
 }

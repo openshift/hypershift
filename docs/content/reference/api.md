@@ -2759,6 +2759,10 @@ created in the guest VPC</p>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
 </td>
+</tr><tr><td><p>&#34;CVOScaledDown&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;CloudResourcesDestroyed&#34;</p></td>
+<td></td>
 </tr><tr><td><p>&#34;ClusterVersionFailing&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;ClusterVersionSucceeding&#34;</p></td>

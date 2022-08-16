@@ -61,6 +61,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -191,6 +192,15 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
+		if shouldCleanupCloudResources(hostedControlPlane) {
+			done, err := r.removeCloudResources(ctx, hostedControlPlane)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed")
+			}
+			if !done {
+				return ctrl.Result{}, nil
+			}
+		}
 		if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
 			originalHCP := hostedControlPlane.DeepCopy()
 			controllerutil.RemoveFinalizer(hostedControlPlane, finalizer)
@@ -2792,4 +2802,56 @@ func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Cont
 	}
 
 	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, availabilityProberImage, createOrUpdate, r.SetDefaultSecurityContext)
+}
+
+func shouldCleanupCloudResources(hcp *hyperv1.HostedControlPlane) bool {
+	return hcp.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true"
+}
+
+func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("Removing cloud resources")
+
+	// check if resources have been destroyed
+	if meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed)) {
+		log.Info("Guest resources have been destroyed")
+		return true, nil
+	}
+	// if CVO has been scaled down, we're just waiting for resources to be destroyed
+	if meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.CVOScaledDown)) {
+		log.Info("Waiting for guest resources to be destroyed")
+		return false, nil
+	}
+
+	// ensure CVO has been scaled down
+	cvoDeployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
+	err := r.Get(ctx, client.ObjectKeyFromObject(cvoDeployment), cvoDeployment)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return false, fmt.Errorf("failed get CVO deployment: %w", err)
+	}
+	if err == nil && cvoDeployment.Spec.Replicas != nil && *cvoDeployment.Spec.Replicas > 0 {
+		log.Info("Scaling down cluster version operator deployment")
+		cvoDeployment.Spec.Replicas = pointer.Int32(0)
+		if err := r.Update(ctx, cvoDeployment); err != nil {
+			return false, fmt.Errorf("failed to scale down CVO deployment: %w", err)
+		}
+	}
+	if cvoDeployment.Status.Replicas > 0 {
+		log.Info("Waiting for CVO to scale down to 0")
+		return false, nil
+	}
+	cvoScaledDownCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CVOScaledDown))
+	if cvoScaledDownCond == nil || cvoScaledDownCond.Status != metav1.ConditionTrue {
+		cvoScaledDownCond = &metav1.Condition{
+			Type:   string(hyperv1.CVOScaledDown),
+			Status: metav1.ConditionTrue,
+			Reason: "CVOScaledDown",
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, *cvoScaledDownCond)
+		if err := r.Status().Update(ctx, hcp); err != nil {
+			return false, fmt.Errorf("failed to set CVO scaled down condition: %w", err)
+		}
+	}
+	return false, nil
 }

@@ -20,6 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	configv1 "github.com/openshift/api/config/v1"
+	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
@@ -114,8 +115,16 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				&configv1.ClusterVersion{}:  allSelector,
 				&configv1.FeatureGate{}:     allSelector,
 				&configv1.ClusterOperator{}: allSelector,
+
 				// Needed for inplace upgrader.
 				&corev1.Node{}: allSelector,
+
+				// Needed for resource cleanup
+				&corev1.Service{}:               allSelector,
+				&corev1.PersistentVolume{}:      allSelector,
+				&corev1.PersistentVolumeClaim{}: allSelector,
+				&operatorv1.IngressController{}: allSelector,
+				&imageregistryv1.Config{}:       allSelector,
 			},
 			DefaultSelector: cache.ObjectSelector{Label: cacheLabelSelector()},
 		}),

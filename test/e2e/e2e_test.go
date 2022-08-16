@@ -273,6 +273,9 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		ClusterCIDR: "10.132.0.0/14",
 		BeforeApply: o.BeforeApply,
 		Log:         util.NewLogr(t),
+		Annotations: []string{
+			fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
+		},
 	}
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {

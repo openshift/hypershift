@@ -109,6 +109,11 @@ const (
 	// Any components specified in this list will have profiling disabled. Profiling is disabled by default for etcd and konnectivity.
 	// Components this annotation can apply to: kube-scheduler, kube-controller-manager, kube-apiserver.
 	DisableProfilingAnnotation = "hypershift.openshift.io/disable-profiling"
+
+	// CleanupCloudResourcesAnnotation is an annotation that indicates whether a guest cluster's resources should be
+	// removed when deleting the corresponding HostedCluster. If set to "true", resources created on the cloud provider during the life
+	// of the cluster will be removed, including image registry storage, ingress dns records, load balancers, and persistent storage.
+	CleanupCloudResourcesAnnotation = "hypershift.openshift.io/cleanup-cloud-resources"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

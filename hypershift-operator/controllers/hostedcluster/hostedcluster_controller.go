@@ -1377,6 +1377,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperutil.DebugDeploymentsAnnotation,
 		hyperv1.DisableProfilingAnnotation,
 		hyperv1.PrivateIngressControllerAnnotation,
+		hyperv1.CleanupCloudResourcesAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
@@ -2845,6 +2846,25 @@ func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNa
 func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name).Name
 	log := ctrl.LoggerFrom(ctx)
+
+	// ensure that the cleanup annotation has been propagated to the hcp if it is set
+	if hc.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true" {
+		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name)
+		err := r.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("cannot get hosted control plane: %w", err)
+		}
+		if err == nil && hcp.Annotations[hyperv1.CleanupCloudResourcesAnnotation] != "true" {
+			original := hcp.DeepCopy()
+			if hcp.Annotations == nil {
+				hcp.Annotations = map[string]string{}
+			}
+			hcp.Annotations[hyperv1.CleanupCloudResourcesAnnotation] = "true"
+			if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(original)); err != nil {
+				return false, fmt.Errorf("cannot patch hosted control plane with cleanup annotation: %w", err)
+			}
+		}
+	}
 
 	err := r.deleteNodePools(ctx, r.Client, hc.Namespace, hc.Name)
 	if err != nil {
