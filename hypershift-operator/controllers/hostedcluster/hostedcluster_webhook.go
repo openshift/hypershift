@@ -60,8 +60,6 @@ func (webhook *Webhook) ValidateDelete(_ context.Context, obj runtime.Object) er
 // "equal" when we do the comparison below.
 func filterMutableHostedClusterSpecFields(spec *hyperv1.HostedClusterSpec) {
 	spec.Release.Image = ""
-	spec.ClusterID = ""
-	spec.InfraID = ""
 	spec.Configuration = nil
 	spec.AdditionalTrustBundle = nil
 	spec.SecretEncryption = nil
@@ -156,6 +154,14 @@ func validateStructEqual(x any, y any, path *field.Path) field.ErrorList {
 func validateHostedClusterUpdate(new *hyperv1.HostedCluster, old *hyperv1.HostedCluster) error {
 	filterMutableHostedClusterSpecFields(&new.Spec)
 	filterMutableHostedClusterSpecFields(&old.Spec)
+
+	// Only allow these to be set from empty.  Once set they should not be changed.
+	if old.Spec.InfraID == "" {
+		new.Spec.InfraID = ""
+	}
+	if old.Spec.ClusterID == "" {
+		new.Spec.ClusterID = ""
+	}
 
 	// We default the port in Azure management cluster, so we allow setting it from being unset, but no updates.
 	if new.Spec.Networking.APIServer != nil && (old.Spec.Networking.APIServer == nil || old.Spec.Networking.APIServer.Port == nil) {
