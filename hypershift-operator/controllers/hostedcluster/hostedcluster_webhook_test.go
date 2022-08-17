@@ -8,6 +8,7 @@ import (
 	"github.com/go-logr/zapr"
 	configv1 "github.com/openshift/api/config/v1"
 	hyperapi "github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
@@ -299,6 +300,153 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 			}
 			if len(tc.expectedErrorString) > 0 && tc.expectedErrorString != err.Error() {
 				t.Errorf("expected error to be %s, was %s", tc.expectedErrorString, err)
+			}
+
+		})
+	}
+}
+
+func TestValidateHostedClusterCreate(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name string
+		hc   *hyperv1.HostedCluster
+
+		expectedErrorString string
+		expectError         bool
+	}{
+		{
+			name: "Setting network CIDRs, allowed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceCIDR: "192.168.0.0/24",
+						PodCIDR:     "192.168.1.0/24",
+						MachineCIDR: "192.168.2.0/24",
+					},
+				},
+			},
+			expectError:         false,
+			expectedErrorString: "",
+		},
+		{
+			name: "Setting network CIDRs IPv6, allowed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceCIDR: "fd63:c754:4851:46da::/64",
+						PodCIDR:     "fdf3:6f16:b298:b2b1::/64",
+						MachineCIDR: "fd76:c0ee:a695:3b14::/64",
+					},
+				},
+			},
+			expectError:         false,
+			expectedErrorString: "",
+		},
+		{
+			name: "Setting network CIDRs ipv6 with overlap, not allowed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceCIDR: "fd63:c754:4851:46da::/64",
+						PodCIDR:     "fdf3:6f16:b298:b2b1::/64",
+						MachineCIDR: "fd63:c754:4851:46da::/80",
+					},
+				},
+			},
+			expectError:         true,
+			expectedErrorString: `spec.networking.serviceCIDR: Invalid value: "fd63:c754:4851:46da::/64": spec.networking.serviceCIDR and spec.networking.machineCIDR overlap: fd63:c754:4851:46da::/64 and fd63:c754:4851:46da::/80`,
+		},
+		{
+			name: "Setting network CIDRs overlapped, not allowed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceCIDR: "192.168.0.0/24",
+						PodCIDR:     "192.168.1.0/24",
+						MachineCIDR: "192.168.2.0/16",
+					},
+				},
+			},
+			expectError:         true,
+			expectedErrorString: `[spec.networking.serviceCIDR: Invalid value: "192.168.0.0/24": spec.networking.serviceCIDR and spec.networking.machineCIDR overlap: 192.168.0.0/24 and 192.168.0.0/16, spec.networking.podCIDR: Invalid value: "192.168.1.0/24": spec.networking.podCIDR and spec.networking.machineCIDR overlap: 192.168.1.0/24 and 192.168.0.0/16]`,
+		},
+		{
+			name: "Setting network CIDRs overlapped, not allowed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceCIDR: "192.168.0.0/24",
+						PodCIDR:     "192.168.1.0/24",
+						MachineCIDR: "192.168.1.4/30",
+					},
+				},
+			},
+			expectError:         true,
+			expectedErrorString: `spec.networking.podCIDR: Invalid value: "192.168.1.0/24": spec.networking.podCIDR and spec.networking.machineCIDR overlap: 192.168.1.0/24 and 192.168.1.4/30`,
+		},
+		{
+			// Note that more values are set below as they required initialization
+			// with functions
+			name: "Setting overlapping slice network CIDRs in same slice, not allowed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceCIDR: "192.168.0.0/24",
+						PodCIDR:     "192.168.1.0/24",
+						MachineCIDR: "192.168.2.0/24",
+					},
+				},
+			},
+			expectError:         true,
+			expectedErrorString: `spec.networking.ClusterNetwork: Invalid value: "192.168.0.0/24": spec.networking.ClusterNetwork and spec.networking.ClusterNetwork overlap: 192.168.0.0/24 and 192.168.0.80/30`,
+		},
+		{
+			// Note that more values are set below as they required initialization
+			// with functions
+			name: "Setting overlapping slice network CIDRs, not allowed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceCIDR: "192.168.0.0/24",
+						PodCIDR:     "192.168.1.0/24",
+						MachineCIDR: "192.168.2.0/24",
+					},
+				},
+			},
+			expectError:         true,
+			expectedErrorString: `spec.networking.MachineNetwork: Invalid value: "172.16.1.0/24": spec.networking.MachineNetwork and spec.networking.ServiceNetwork overlap: 172.16.1.0/24 and 172.16.1.252/32`,
+		},
+	}
+
+	clusterNet := make([]hyperv1.ClusterNetworkEntry, 2)
+	cidr, _ := ipnet.ParseCIDR("192.168.0.0/24")
+	clusterNet[0].CIDR = *cidr
+	cidr, _ = ipnet.ParseCIDR("192.168.0.80/30")
+	clusterNet[1].CIDR = *cidr
+	testCases[5].hc.Spec.Networking.ClusterNetwork = clusterNet
+
+	machineNet := make([]hyperv1.MachineNetworkEntry, 2)
+	cidr, _ = ipnet.ParseCIDR("172.16.0.0/24")
+	machineNet[0].CIDR = *cidr
+	cidr, _ = ipnet.ParseCIDR("172.16.1.0/24")
+	machineNet[1].CIDR = *cidr
+	serviceNet := make([]hyperv1.ServiceNetworkEntry, 2)
+	cidr, _ = ipnet.ParseCIDR("172.16.1.252/32")
+	serviceNet[0].CIDR = *cidr
+	cidr, _ = ipnet.ParseCIDR("172.16.3.0/24")
+	serviceNet[1].CIDR = *cidr
+	testCases[6].hc.Spec.Networking.ServiceNetwork = serviceNet
+	testCases[6].hc.Spec.Networking.MachineNetwork = machineNet
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateHostedClusterCreate(tc.hc)
+			if (err != nil) != tc.expectError {
+				t.Errorf("expected error to be '%t', was '%t'", tc.expectError, err != nil)
+			}
+			if err != nil && len(tc.expectedErrorString) > 0 && tc.expectedErrorString != err.Error() {
+				t.Errorf("expected error to be '%s', was '%s'", tc.expectedErrorString, err)
 			}
 
 		})
