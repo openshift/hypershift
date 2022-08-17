@@ -258,6 +258,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		hcluster.Spec.Platform.AWS.RolesRef.KubeCloudControllerARN:  KubeCloudControllerCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.AWS.RolesRef.NodePoolManagementARN:   NodePoolManagementCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN: ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.AWS.RolesRef.NetworkARN:              CloudNetworkConfigControllerCredsSecret(controlPlaneNamespace),
 	} {
 		err := syncSecret(secret, arn)
 		if err != nil {
@@ -363,6 +364,15 @@ func ControlPlaneOperatorCredsSecret(controlPlaneNamespace string) *corev1.Secre
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      "control-plane-operator-creds",
+		},
+	}
+}
+
+func CloudNetworkConfigControllerCredsSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "cloud-network-config-controller-creds",
 		},
 	}
 }
