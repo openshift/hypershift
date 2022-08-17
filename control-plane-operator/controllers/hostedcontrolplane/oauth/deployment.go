@@ -143,6 +143,10 @@ func buildOAuthContainerMain(image string) func(c *corev1.Container) {
 				Value: fmt.Sprintf("socks5://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
 			},
 			{
+				Name:  "ALL_PROXY",
+				Value: fmt.Sprintf("socks5://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
+			},
+			{
 				Name:  "NO_PROXY",
 				Value: manifests.KubeAPIServerService("").Name,
 			},
@@ -246,7 +250,7 @@ func socks5ProxyContainer(socks5ProxyImage string) corev1.Container {
 	c := corev1.Container{
 		Name:    socks5ProxyContainerName,
 		Image:   socks5ProxyImage,
-		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy"},
+		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--resolve-from-guest-cluster-dns=true"},
 		Args:    []string{"run"},
 		Env: []corev1.EnvVar{{
 			Name:  "KUBECONFIG",
@@ -263,5 +267,6 @@ func socks5ProxyContainer(socks5ProxyImage string) corev1.Container {
 			{Name: "konnectivity-proxy-cert", MountPath: "/etc/konnectivity-proxy-tls"},
 		},
 	}
+
 	return c
 }
