@@ -35,6 +35,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.Region, "region", opts.PowerVSPlatform.Region, "IBM Cloud region. Default is us-south")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.Zone, "zone", opts.PowerVSPlatform.Zone, "IBM Cloud zone. Default is us-south")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.VPCRegion, "vpc-region", opts.PowerVSPlatform.VPCRegion, "IBM Cloud VPC Region for VPC resources. Default is us-south")
+	cmd.Flags().BoolVar(&opts.PowerVSPlatform.Debug, "debug", opts.PowerVSPlatform.Debug, "Enabling this will print PowerVS API Request & Response logs")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -103,8 +104,9 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		CISCRN:        o.PowerVSPlatform.CISCRN,
 		CISDomainID:   o.PowerVSPlatform.CISDomainID,
 		ResourceGroup: o.PowerVSPlatform.ResourceGroup,
-		PowerVSRegion: o.PowerVSPlatform.Region,
-		PowerVSZone:   o.PowerVSPlatform.Zone,
-		VpcRegion:     o.PowerVSPlatform.VPCRegion,
+		Region:        o.PowerVSPlatform.Region,
+		Zone:          o.PowerVSPlatform.Zone,
+		VPCRegion:     o.PowerVSPlatform.VPCRegion,
+		Debug:         o.PowerVSPlatform.Debug,
 	}).Run(ctx)
 }

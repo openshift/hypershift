@@ -263,7 +263,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			ResourceGroup: o.configurableClusterOptions.PowerVSResourceGroup,
 			Region:        o.configurableClusterOptions.PowerVSRegion,
 			Zone:          o.configurableClusterOptions.PowerVSZone,
-			VpcRegion:     o.configurableClusterOptions.PowerVSVpcRegion,
+			VPCRegion:     o.configurableClusterOptions.PowerVSVpcRegion,
 			SysType:       "s922",
 			ProcType:      "shared",
 			Processors:    "0.5",

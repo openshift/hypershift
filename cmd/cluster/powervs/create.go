@@ -30,7 +30,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	opts.PowerVSPlatform = core.PowerVSPlatformOptions{
 		Region:     "us-south",
 		Zone:       "us-south",
-		VpcRegion:  "us-south",
+		VPCRegion:  "us-south",
 		SysType:    "s922",
 		ProcType:   "shared",
 		Processors: "0.5",
@@ -42,12 +42,13 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.Zone, "zone", opts.PowerVSPlatform.Zone, "IBM Cloud zone. Default is us-south")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.CloudInstanceID, "cloud-instance-id", "", "IBM Cloud PowerVS Service Instance ID")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.CloudConnection, "cloud-connection", "", "Cloud Connection in given zone")
-	cmd.Flags().StringVar(&opts.PowerVSPlatform.VpcRegion, "vpc-region", opts.PowerVSPlatform.VpcRegion, "IBM Cloud VPC Region for VPC resources. Default is us-south")
-	cmd.Flags().StringVar(&opts.PowerVSPlatform.Vpc, "vpc", "", "IBM Cloud VPC Name")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.VPCRegion, "vpc-region", opts.PowerVSPlatform.VPCRegion, "IBM Cloud VPC Region for VPC resources. Default is us-south")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.VPC, "vpc", "", "IBM Cloud VPC Name")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.SysType, "sys-type", opts.PowerVSPlatform.SysType, "System type used to host the instance(e.g: s922, e980, e880). Default is s922")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.ProcType, "proc-type", opts.PowerVSPlatform.ProcType, "Processor type (dedicated, shared, capped). Default is shared")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.Processors, "processors", opts.PowerVSPlatform.Processors, "Number of processors allocated. Default is 0.5")
 	cmd.Flags().Int32Var(&opts.PowerVSPlatform.Memory, "memory", opts.PowerVSPlatform.Memory, "Amount of memory allocated (in GB). Default is 32")
+	cmd.Flags().BoolVar(&opts.PowerVSPlatform.Debug, "debug", opts.PowerVSPlatform.Debug, "Enabling this will print PowerVS API Request & Response logs")
 
 	cmd.MarkFlagRequired("resource-group")
 
@@ -133,18 +134,19 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			infraID = infraid.New(opts.Name)
 		}
 		opt := &powervsinfra.CreateInfraOptions{
-			BaseDomain:             opts.BaseDomain,
-			ResourceGroup:          opts.PowerVSPlatform.ResourceGroup,
-			InfraID:                infraID,
-			OutputFile:             opts.InfrastructureJSON,
-			PowerVSRegion:          opts.PowerVSPlatform.Region,
-			PowerVSZone:            opts.PowerVSPlatform.Zone,
-			PowerVSCloudInstanceID: opts.PowerVSPlatform.CloudInstanceID,
-			PowerVSCloudConnection: opts.PowerVSPlatform.CloudConnection,
-			VpcRegion:              opts.PowerVSPlatform.VpcRegion,
-			Vpc:                    opts.PowerVSPlatform.Vpc,
+			BaseDomain:      opts.BaseDomain,
+			ResourceGroup:   opts.PowerVSPlatform.ResourceGroup,
+			InfraID:         infraID,
+			OutputFile:      opts.InfrastructureJSON,
+			Region:          opts.PowerVSPlatform.Region,
+			Zone:            opts.PowerVSPlatform.Zone,
+			CloudInstanceID: opts.PowerVSPlatform.CloudInstanceID,
+			CloudConnection: opts.PowerVSPlatform.CloudConnection,
+			VPCRegion:       opts.PowerVSPlatform.VPCRegion,
+			VPC:             opts.PowerVSPlatform.VPC,
+			Debug:           opts.PowerVSPlatform.Debug,
 		}
-		infra = &powervsinfra.Infra{}
+		infra = &powervsinfra.Infra{ID: opts.InfraID}
 		err = infra.SetupInfra(opt)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
@@ -153,8 +155,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 
 	exampleOptions.BaseDomain = opts.BaseDomain
 	exampleOptions.MachineCIDR = defaultCIDRBlock
-	exampleOptions.PrivateZoneID = infra.CisDomainID
-	exampleOptions.PublicZoneID = infra.CisDomainID
+	exampleOptions.PrivateZoneID = infra.CISDomainID
+	exampleOptions.PublicZoneID = infra.CISDomainID
 	exampleOptions.InfraID = infraID
 	exampleOptions.PowerVS = &apifixtures.ExamplePowerVSOptions{
 		ApiKey:          opts.PowerVSPlatform.APIKey,
@@ -162,13 +164,13 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		ResourceGroup:   opts.PowerVSPlatform.ResourceGroup,
 		Region:          opts.PowerVSPlatform.Region,
 		Zone:            opts.PowerVSPlatform.Zone,
-		CISInstanceCRN:  infra.CisCrn,
-		CloudInstanceID: infra.PowerVSCloudInstanceID,
-		Subnet:          infra.PowerVSDhcpSubnet,
-		SubnetID:        infra.PowerVSDhcpSubnetID,
-		VpcRegion:       opts.PowerVSPlatform.VpcRegion,
-		Vpc:             infra.VpcName,
-		VpcSubnet:       infra.VpcSubnetName,
+		CISInstanceCRN:  infra.CISCRN,
+		CloudInstanceID: infra.CloudInstanceID,
+		Subnet:          infra.DHCPSubnet,
+		SubnetID:        infra.DHCPSubnetID,
+		VPCRegion:       opts.PowerVSPlatform.VPCRegion,
+		VPC:             infra.VPCName,
+		VPCSubnet:       infra.VPCSubnetName,
 		SysType:         opts.PowerVSPlatform.SysType,
 		ProcType:        opts.PowerVSPlatform.ProcType,
 		Processors:      opts.PowerVSPlatform.Processors,

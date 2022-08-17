@@ -83,9 +83,10 @@ type PowerVSPlatformOptions struct {
 	Zone            string
 	CloudInstanceID string
 	CloudConnection string
-	VpcRegion       string
-	Vpc             string
-	VpcSubnet       string
+	VPCRegion       string
+	VPC             string
+	VPCSubnet       string
+	Debug           bool
 
 	// nodepool related options
 	SysType    string
