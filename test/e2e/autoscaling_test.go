@@ -49,7 +49,7 @@ func TestAutoscaling(t *testing.T) {
 
 	var nodepool *hyperv1.NodePool
 	for _, np := range nodepools.Items {
-		if !ownedBy(hostedCluster.UID, np.OwnerReferences) {
+		if np.Spec.ClusterName != hostedCluster.Name {
 			continue
 		}
 		nodepool = &np

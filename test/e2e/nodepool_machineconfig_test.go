@@ -21,7 +21,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	utilpointer "k8s.io/utils/pointer"
@@ -120,7 +119,7 @@ func TestNodepoolMachineconfigGetsRolledout(t *testing.T) {
 	}
 
 	for _, nodepool := range nodepools.Items {
-		if !ownedBy(hostedCluster.UID, nodepool.OwnerReferences) {
+		if nodepool.Spec.ClusterName != hostedCluster.Name {
 			continue
 		}
 		np := nodepool.DeepCopy()
@@ -171,16 +170,6 @@ func TestNodepoolMachineconfigGetsRolledout(t *testing.T) {
 	e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, client, hostedCluster)
 	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNoPodsWithTooHighPriority(t, ctx, client, hostedCluster)
-}
-
-func ownedBy(uid types.UID, ownerRefs []metav1.OwnerReference) bool {
-	for _, ownerRef := range ownerRefs {
-		if ownerRef.UID == uid {
-			return true
-		}
-	}
-
-	return false
 }
 
 //go:embed nodepool_machineconfig_verification_ds.yaml
