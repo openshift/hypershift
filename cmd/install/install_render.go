@@ -27,7 +27,6 @@ var (
 	TemplateParamAWSPrivateCredsSecret    = "AWS_PRIVATE_CREDS_SECRET"
 	TemplateParamAWSPrivateCredsSecretKey = "AWS_PRIVATE_CREDS_SECRET_KEY"
 	TemplateParamOperatorReplicas         = "OPERATOR_REPLICAS"
-	TemplateParamExternalDNSProvider      = "EXTERNAL_DNS_PROVIDER"
 	TemplateParamExternalDNSCredsSecret   = "EXTERNAL_DNS_CREDS_SECRET"
 	TemplateParamExternalDNSDomainFilter  = "EXTERNAL_DNS_DOMAIN_FILTER"
 	TemplateParamExternalDNSTxtOwnerID    = "EXTERNAL_DNS_TXT_OWNER_ID"
@@ -138,11 +137,9 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 	if opts.ExternalDNSProvider != "" && opts.ExternalDNSDomainFilter != "" && opts.ExternalDNSCredentialsSecret != "" {
 		templateParameters = append(
 			templateParameters,
-			map[string]string{"name": TemplateParamExternalDNSProvider, "value": opts.ExternalDNSProvider},
 			map[string]string{"name": TemplateParamExternalDNSDomainFilter, "value": opts.ExternalDNSDomainFilter},
 			map[string]string{"name": TemplateParamExternalDNSCredsSecret, "value": opts.ExternalDNSCredentialsSecret},
 		)
-		opts.ExternalDNSProvider = fmt.Sprintf("${%s}", TemplateParamExternalDNSProvider)
 		opts.ExternalDNSDomainFilter = fmt.Sprintf("${%s}", TemplateParamExternalDNSDomainFilter)
 		opts.ExternalDNSCredentialsSecret = fmt.Sprintf("${%s}", TemplateParamExternalDNSCredsSecret)
 
