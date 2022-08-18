@@ -270,7 +270,7 @@ frontend public_ssl
   # non SNI requests should enter a default termination backend rather than the custom cert SNI backend since it
   # will not be able to match a cert to an SNI host
   #default_backend be_no_sni
-  default_backend be_tcp:<<namespace>>:kube-apiserver
+  default_backend be_tcp:<<namespace>>:kube-apiserver-internal
   # HYPERSHIFT CHANGE END
 
 ##########################################################################
