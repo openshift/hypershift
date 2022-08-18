@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -641,4 +642,58 @@ func TestListAccessor(t *testing.T) {
 	g.Expect(a.len()).To(Equal(2))
 	g.Expect(a.item(0).GetName()).To(Equal("test1"))
 	g.Expect(a.item(1).GetName()).To(Equal("test2"))
+}
+
+func TestReconcileClusterVersion(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			ClusterID: "test-cluster-id",
+		},
+	}
+	testOverrides := []configv1.ComponentOverride{
+		{
+			Kind:      "Pod",
+			Group:     "",
+			Name:      "test",
+			Namespace: "default",
+			Unmanaged: true,
+		},
+	}
+	clusterVersion := &configv1.ClusterVersion{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Spec: configv1.ClusterVersionSpec{
+			ClusterID: "some-other-id",
+			Capabilities: &configv1.ClusterVersionCapabilitiesSpec{
+				AdditionalEnabledCapabilities: []configv1.ClusterVersionCapability{
+					"foo",
+					"bar",
+				},
+			},
+			Channel: "fast",
+			DesiredUpdate: &configv1.Update{
+				Version: "4.12.5",
+				Image:   "exmple.com/imagens/image:latest",
+				Force:   true,
+			},
+			Upstream:  configv1.URL("https://upstream.example.com"),
+			Overrides: testOverrides,
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(clusterVersion).Build()
+	g := NewWithT(t)
+	r := &reconciler{
+		client:                 fakeClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+	}
+	err := r.reconcileClusterVersion(context.Background(), hcp)
+	g.Expect(err).ToNot(HaveOccurred())
+	err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(clusterVersion.Spec.ClusterID).To(Equal(configv1.ClusterID("test-cluster-id")))
+	g.Expect(clusterVersion.Spec.Capabilities).To(BeNil())
+	g.Expect(clusterVersion.Spec.DesiredUpdate).To(BeNil())
+	g.Expect(clusterVersion.Spec.Overrides).To(Equal(testOverrides))
+	g.Expect(clusterVersion.Spec.Channel).To(BeEmpty())
 }
