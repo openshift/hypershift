@@ -41,7 +41,7 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	}
 	portSpec.Port = int32(apiServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(apiServerListenPort)
+	portSpec.TargetPort = intstr.FromInt(APIServerListenPort)
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
 	}
@@ -121,7 +121,7 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	}
 	portSpec.Port = int32(apiServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(apiServerListenPort)
+	portSpec.TargetPort = intstr.FromInt(APIServerListenPort)
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
