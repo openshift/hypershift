@@ -339,12 +339,18 @@ objects:
           - --source=service
           - --source=openshift-route
           - --domain-filter=${EXTERNAL_DNS_DOMAIN_FILTER}
-          - --provider=${EXTERNAL_DNS_PROVIDER}
+          - --provider=aws
           - --registry=txt
           - --txt-suffix=-external-dns
           - --txt-owner-id=${EXTERNAL_DNS_TXT_OWNER_ID}
+          - --aws-zone-type=public
           command:
           - /external-dns
+          env:
+          - name: AWS_SHARED_CREDENTIALS_FILE
+            value: /etc/provider/credentials
+          - name: AWS_REGION
+            value: us-east-1
           image: registry.redhat.io/edo/external-dns-rhel8@sha256:c1134bb46172997ef7278b6cefbb0da44e72a9f808a7cd67b3c65d464754cab9
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -27744,8 +27750,6 @@ parameters:
   value: aws-credentials
 - name: AWS_PRIVATE_CREDS_SECRET_KEY
   value: credentials
-- name: EXTERNAL_DNS_PROVIDER
-  value: aws
 - name: EXTERNAL_DNS_DOMAIN_FILTER
   value: service.hypershift.example.org
 - name: EXTERNAL_DNS_CREDS_SECRET
