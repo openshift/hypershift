@@ -1372,7 +1372,7 @@ func TestValidateReleaseImage(t *testing.T) {
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Networking: hyperv1.ClusterNetworking{
-						NetworkType: hyperv1.OVNKubernetes,
+						NetworkType: hyperv1.OpenShiftSDN,
 					},
 					PullSecret: corev1.LocalObjectReference{
 						Name: "pull-secret",
@@ -2480,78 +2480,118 @@ func TestIsProgressing(t *testing.T) {
 }
 
 func TestIsValidReleaseVersion(t *testing.T) {
+	v := func(str string) *semver.Version {
+		result := semver.MustParse(str)
+		return &result
+	}
 	testCases := []struct {
 		name                   string
-		currentVersion         semver.Version
-		nextVersion            semver.Version
-		latestVersionSupported semver.Version
-		minVersionSupported    semver.Version
+		currentVersion         *semver.Version
+		nextVersion            *semver.Version
+		latestVersionSupported *semver.Version
+		minVersionSupported    *semver.Version
 		networkType            hyperv1.NetworkType
 		expectError            bool
 	}{
 		{
 			name:                   "Releases before 4.8 are not supported",
-			currentVersion:         semver.MustParse("4.8.0"),
-			nextVersion:            semver.MustParse("4.7.0"),
-			latestVersionSupported: semver.MustParse("4.12.0"),
-			minVersionSupported:    semver.MustParse("4.10.0"),
+			currentVersion:         v("4.8.0"),
+			nextVersion:            v("4.7.0"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
 			expectError:            true,
 		},
 		{
 			name:                   "y-stream downgrade is not supported",
-			currentVersion:         semver.MustParse("4.10.0"),
-			nextVersion:            semver.MustParse("4.9.0"),
-			latestVersionSupported: semver.MustParse("4.12.0"),
-			minVersionSupported:    semver.MustParse("4.10.0"),
+			currentVersion:         v("4.10.0"),
+			nextVersion:            v("4.9.0"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
 			expectError:            true,
 		},
 		{
 			name:                   "y-stream upgrade is not for OpenShiftSDN",
-			currentVersion:         semver.MustParse("4.10.0"),
-			nextVersion:            semver.MustParse("4.11.0"),
-			latestVersionSupported: semver.MustParse("4.12.0"),
-			minVersionSupported:    semver.MustParse("4.10.0"),
+			currentVersion:         v("4.10.0"),
+			nextVersion:            v("4.11.0"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
 			networkType:            hyperv1.OpenShiftSDN,
 			expectError:            true,
 		},
 		{
 			name:                   "the latest HostedCluster version supported by this Operator is 4.12.0",
-			currentVersion:         semver.MustParse("4.12.0"),
-			nextVersion:            semver.MustParse("4.13.0"),
-			latestVersionSupported: semver.MustParse("4.12.0"),
-			minVersionSupported:    semver.MustParse("4.10.0"),
+			currentVersion:         v("4.12.0"),
+			nextVersion:            v("4.13.0"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
 			expectError:            true,
 		},
 		{
 			name:                   "the minimum HostedCluster version supported by this Operator is 4.10.0",
-			currentVersion:         semver.MustParse("4.9.0"),
-			nextVersion:            semver.MustParse("4.9.0"),
-			latestVersionSupported: semver.MustParse("4.12.0"),
-			minVersionSupported:    semver.MustParse("4.10.0"),
+			currentVersion:         v("4.9.0"),
+			nextVersion:            v("4.9.0"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
 			expectError:            true,
 		},
 		{
 			name:                   "Valid",
-			currentVersion:         semver.MustParse("4.11.0"),
-			nextVersion:            semver.MustParse("4.11.1"),
-			latestVersionSupported: semver.MustParse("4.12.0"),
-			minVersionSupported:    semver.MustParse("4.10.0"),
+			currentVersion:         v("4.11.0"),
+			nextVersion:            v("4.11.1"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
 			expectError:            false,
 		},
 		{
 			name:                   "When going to minimum should be valid",
-			currentVersion:         semver.MustParse("4.9.0"),
-			nextVersion:            semver.MustParse("4.10.0"),
-			latestVersionSupported: semver.MustParse("4.12.0"),
-			minVersionSupported:    semver.MustParse("4.10.0"),
+			currentVersion:         v("4.9.0"),
+			nextVersion:            v("4.10.0"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
 			expectError:            false,
 		},
 		{
 			name:                   "Valid when going to minimum with a dev tag",
-			currentVersion:         semver.MustParse("4.9.0"),
-			nextVersion:            semver.MustParse("4.10.0-nightly-something"),
-			latestVersionSupported: semver.MustParse("4.12.0"),
-			minVersionSupported:    semver.MustParse("4.10.0"),
+			currentVersion:         v("4.9.0"),
+			nextVersion:            v("4.10.0-nightly-something"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
+			expectError:            false,
+		},
+		{
+			name:                   "Invalid when installing with OpenShiftSDN and version > 4.10",
+			currentVersion:         nil,
+			nextVersion:            v("4.11.5"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
+			networkType:            hyperv1.OpenShiftSDN,
+			expectError:            true,
+		},
+		{
+			name:                   "Valid when installing with OpenShift SDN and version <= 4.10",
+			currentVersion:         nil,
+			nextVersion:            v("4.10.3"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
+			networkType:            hyperv1.OpenShiftSDN,
+			expectError:            false,
+		},
+		{
+			name:                   "Invalid when isntalling with OVNKubernetes and version < 4.11",
+			currentVersion:         nil,
+			nextVersion:            v("4.10.5"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
+			networkType:            hyperv1.OVNKubernetes,
+			expectError:            true,
+		},
+		{
+			name:                   "Valid when isntalling with OVNKubernetes and version >= 4.11",
+			currentVersion:         nil,
+			nextVersion:            v("4.11.1"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
+			networkType:            hyperv1.OVNKubernetes,
 			expectError:            false,
 		},
 	}
@@ -2559,7 +2599,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := isValidReleaseVersion(&test.nextVersion, &test.currentVersion, &test.latestVersionSupported, &test.minVersionSupported, test.networkType)
+			err := isValidReleaseVersion(test.nextVersion, test.currentVersion, test.latestVersionSupported, test.minVersionSupported, test.networkType)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 				return
