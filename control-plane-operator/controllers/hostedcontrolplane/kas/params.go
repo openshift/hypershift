@@ -69,7 +69,7 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference    *metav1.OwnerReference
 }
 
-const apiServerListenPort = 6443
+const APIServerListenPort = 6443
 
 func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
 	dns := globalconfig.DNSConfig()
@@ -125,7 +125,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Scheme: corev1.URISchemeHTTPS,
-				Port:   intstr.FromInt(int(apiServerListenPort)),
+				Port:   intstr.FromInt(int(APIServerListenPort)),
 				Path:   "livez?exclude=etcd",
 			},
 		},
@@ -226,7 +226,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
-					Port:   intstr.FromInt(int(apiServerListenPort)),
+					Port:   intstr.FromInt(int(APIServerListenPort)),
 					Path:   "readyz",
 				},
 			},
