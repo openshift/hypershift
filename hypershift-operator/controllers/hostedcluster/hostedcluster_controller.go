@@ -3255,6 +3255,15 @@ func isValidReleaseVersion(version, currentVersion, latestVersionSupported, minS
 		return fmt.Errorf("y-stream upgrade is not for OpenShiftSDN")
 	}
 
+	versionMinorOnly := &semver.Version{Major: version.Major, Minor: version.Minor}
+	if networkType == hyperv1.OpenShiftSDN && currentVersion == nil && versionMinorOnly.GT(semver.MustParse("4.10.0")) {
+		return fmt.Errorf("cannot use OpenShiftSDN with OCP version > 4.10")
+	}
+
+	if networkType == hyperv1.OVNKubernetes && currentVersion == nil && versionMinorOnly.LTE(semver.MustParse("4.10.0")) {
+		return fmt.Errorf("cannot use OVNKubernetes with OCP version < 4.11")
+	}
+
 	if (version.Major == latestVersionSupported.Major && version.Minor > latestVersionSupported.Minor) || version.Major > latestVersionSupported.Major {
 		return fmt.Errorf("the latest HostedCluster version supported by this Operator is: %q. Attempting to use: %q", supportedversion.LatestSupportedVersion, version)
 	}
