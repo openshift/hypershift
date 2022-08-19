@@ -6,6 +6,8 @@ import (
 	"github.com/blang/semver"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
@@ -46,16 +48,17 @@ type Images struct {
 }
 
 type Params struct {
-	ReleaseVersion                        string
-	AvailabilityProberImage               string
-	HostedClusterName                     string
-	APIServerAddress                      string
-	APIServerPort                         int32
-	TokenAudience                         string
-	Images                                Images
-	OwnerRef                              config.OwnerRef
-	DeploymentConfig                      config.DeploymentConfig
-	ConnectsThroughInternetToControlplane bool
+	ReleaseVersion              string
+	AvailabilityProberImage     string
+	HostedClusterName           string
+	APIServerAddress            string
+	APIServerPort               int32
+	TokenAudience               string
+	Images                      Images
+	OwnerRef                    config.OwnerRef
+	DeploymentConfig            config.DeploymentConfig
+	IsPrivate                   bool
+	ExposedThroughPrivateRouter bool
 }
 
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool) Params {
@@ -83,10 +86,11 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 			TokenMinter:                  images["token-minter"],
 			CLI:                          images["cli"],
 		},
-		ReleaseVersion:                        version,
-		AvailabilityProberImage:               images[util.AvailabilityProberImageName],
-		OwnerRef:                              config.OwnerRefFrom(hcp),
-		ConnectsThroughInternetToControlplane: util.ConnectsThroughInternetToControlplane(hcp.Spec.Platform),
+		ReleaseVersion:              version,
+		AvailabilityProberImage:     images[util.AvailabilityProberImageName],
+		OwnerRef:                    config.OwnerRefFrom(hcp),
+		IsPrivate:                   util.IsPrivateHCP(hcp),
+		ExposedThroughPrivateRouter: isOVNSBDBExposedThroughPrivateRouter(hcp),
 	}
 
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
@@ -222,10 +226,18 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		cnoArgs = append(cnoArgs, "--extra-clusters=management=/configs/management")
 	}
 
-	if params.ConnectsThroughInternetToControlplane {
+	if params.IsPrivate {
+		cnoEnv = append(cnoEnv, corev1.EnvVar{
+			Name: "OVN_SBDB_ROUTE_HOST", Value: "ovnkube-sbdb." + awsprivatelink.RouterZoneName(params.HostedClusterName),
+		})
+	} else {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
 			Name: "PROXY_INTERNAL_APISERVER_ADDRESS", Value: "true",
 		})
+	}
+
+	if params.ExposedThroughPrivateRouter {
+		cnoEnv = append(cnoEnv, corev1.EnvVar{Name: "OVN_SBDB_ROUTE_LABELS", Value: ingress.HypershiftRouteLabel + "=" + dep.Namespace})
 	}
 
 	dep.Spec.Template.Spec.InitContainers = []corev1.Container{
@@ -361,4 +373,17 @@ kubectl --kubeconfig $kc config use-context default`,
 		}
 	})
 	return nil
+}
+
+func isOVNSBDBExposedThroughPrivateRouter(hcp *hyperv1.HostedControlPlane) bool {
+	publishingStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OVNSbDb)
+	if publishingStrategy == nil || publishingStrategy.Type != hyperv1.Route {
+		return false
+	}
+
+	if util.IsPrivateHCP(hcp) {
+		return true
+	}
+
+	return util.HasPublicLoadBalancerForPrivateRouter(hcp) && publishingStrategy.Route.Hostname != ""
 }
