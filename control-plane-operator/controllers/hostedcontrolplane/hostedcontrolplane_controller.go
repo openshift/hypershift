@@ -166,6 +166,7 @@ func (r *HostedControlPlaneReconciler) eventHandlers() []eventHandler {
 		{obj: &policyv1.PodDisruptionBudget{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
 		{obj: &prometheusoperatorv1.PodMonitor{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
 		{obj: &prometheusoperatorv1.ServiceMonitor{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
+		{obj: &prometheusoperatorv1.PrometheusRule{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
 		{obj: &rbacv1.Role{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
 		{obj: &rbacv1.RoleBinding{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
 	}
@@ -1750,6 +1751,16 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile kas service monitor: %w", err)
 	} else {
 		r.Log.Info("Reconciled api server service monitor", "result", result)
+	}
+
+	recordingRules := manifests.ControlPlaneRecordingRules(hcp.Namespace)
+	if result, err := createOrUpdate(ctx, r, recordingRules, func() error {
+		kas.ReconcileRecordingRules(recordingRules, hcp.Spec.ClusterID)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile control plane recording rules: %w", err)
+	} else {
+		r.Log.Info("Reconciled control plane recording rules", "result", result)
 	}
 
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {

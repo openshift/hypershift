@@ -20,6 +20,13 @@ func ApplyClusterIDLabelToPodMonitor(ep *prometheusoperatorv1.PodMetricsEndpoint
 	ep.MetricRelabelConfigs = append(ep.MetricRelabelConfigs, clusterIDRelabelConfig(clusterID))
 }
 
+func ApplyClusterIDLabelToRecordingRule(rule *prometheusoperatorv1.Rule, clusterID string) {
+	if rule.Labels == nil {
+		rule.Labels = map[string]string{}
+	}
+	rule.Labels[clusterIDLabel] = clusterID
+}
+
 func clusterIDRelabelConfig(clusterID string) *prometheusoperatorv1.RelabelConfig {
 	return &prometheusoperatorv1.RelabelConfig{
 		TargetLabel: clusterIDLabel,

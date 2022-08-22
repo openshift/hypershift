@@ -1,6 +1,9 @@
 package kas
 
 import (
+	"bytes"
+	_ "embed"
+
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -8,6 +11,7 @@ import (
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
 func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, apiServerPort int, ownerRef config.OwnerRef, clusterID string, metricsSet metrics.MetricsSet) error {
@@ -57,4 +61,24 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, apiServerP
 	util.ApplyClusterIDLabel(&sm.Spec.Endpoints[0], clusterID)
 
 	return nil
+}
+
+//go:embed assets/recording-rules.yaml
+var recordingRulesBytes []byte
+var recordingRules prometheusoperatorv1.PrometheusRuleSpec
+
+func init() {
+	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(recordingRulesBytes), 100).Decode(&recordingRules); err != nil {
+		panic(err)
+	}
+}
+
+func ReconcileRecordingRules(r *prometheusoperatorv1.PrometheusRule, clusterID string) {
+	r.Spec = recordingRules
+	for gi := range r.Spec.Groups {
+		for ri := range r.Spec.Groups[gi].Rules {
+			rule := &r.Spec.Groups[gi].Rules[ri]
+			util.ApplyClusterIDLabelToRecordingRule(rule, clusterID)
+		}
+	}
 }

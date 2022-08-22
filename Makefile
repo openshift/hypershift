@@ -167,7 +167,7 @@ vet:
 
 .PHONY: promtool
 promtool:
-	cd $(TOOLS_DIR); $(PROMTOOL) check rules ../../cmd/install/assets/recordingrules/*.yaml
+	cd $(TOOLS_DIR); $(PROMTOOL) check rules ../../cmd/install/assets/recordingrules/*.yaml ../../control-plane-operator/controllers/hostedcontrolplane/kas/assets/*.yaml
 
 # Updates Go modules
 .PHONY: deps

@@ -156,3 +156,12 @@ func KASServiceMonitor(ns string) *prometheusoperatorv1.ServiceMonitor {
 		},
 	}
 }
+
+func ControlPlaneRecordingRules(ns string) *prometheusoperatorv1.PrometheusRule {
+	return &prometheusoperatorv1.PrometheusRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "recording-rules",
+			Namespace: ns,
+		},
+	}
+}
