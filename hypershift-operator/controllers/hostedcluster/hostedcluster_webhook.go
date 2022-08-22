@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"reflect"
 	"strings"
 
@@ -33,7 +34,104 @@ var _ webhook.CustomValidator = &Webhook{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type.
 func (webhook *Webhook) ValidateCreate(ctx context.Context, obj runtime.Object) error {
+	hostedCluster, ok := obj.(*hyperv1.HostedCluster)
+	if !ok {
+		return apierrors.NewBadRequest(fmt.Sprintf("expected a HostedCluster but got a %T", obj))
+	}
+
+	return validateHostedClusterCreate(hostedCluster)
+}
+
+type cidrEntry struct {
+	net  net.IPNet
+	path field.Path
+}
+
+func cidrsOverlap(net1 *net.IPNet, net2 *net.IPNet) error {
+	if net1.Contains(net2.IP) || net2.Contains(net1.IP) {
+		return fmt.Errorf("%s and %s", net1.String(), net2.String())
+	}
 	return nil
+}
+
+func compareCIDREntries(ce []cidrEntry) field.ErrorList {
+	var errs field.ErrorList
+
+	for o := range ce {
+		for i := o + 1; i < len(ce); i++ {
+			if err := cidrsOverlap(&ce[o].net, &ce[i].net); err != nil {
+				errs = append(errs, field.Invalid(&ce[o].path, ce[o].net.String(), fmt.Sprintf("%s and %s overlap: %s", ce[o].path.String(), ce[i].path.String(), err)))
+			}
+		}
+	}
+	return errs
+}
+
+func validateNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
+	var errs field.ErrorList
+	var cidrEntries []cidrEntry
+
+	podCIDR := hc.Spec.Networking.PodCIDR
+	serviceCIDR := hc.Spec.Networking.ServiceCIDR
+	machineCIDR := hc.Spec.Networking.MachineCIDR
+
+	// Validate CIDR format..
+	_, serviceNet, err := net.ParseCIDR(serviceCIDR)
+	if err != nil {
+		errs = append(errs, field.Invalid(field.NewPath("spec.networking.serviceCIDR"), serviceCIDR, err.Error()))
+	} else {
+		ce := cidrEntry{*serviceNet, *field.NewPath("spec.networking.serviceCIDR")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+
+	_, podNet, err := net.ParseCIDR(podCIDR)
+	if err != nil {
+		errs = append(errs, field.Invalid(field.NewPath("spec.networking.podCIDR"), podCIDR, err.Error()))
+	} else {
+		ce := cidrEntry{*podNet, *field.NewPath("spec.networking.podCIDR")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+
+	_, machineNet, err := net.ParseCIDR(machineCIDR)
+	if err != nil {
+		errs = append(errs, field.Invalid(field.NewPath("spec.networking.machineCIDR"), machineCIDR, err.Error()))
+	} else {
+		ce := cidrEntry{*machineNet, *field.NewPath("spec.networking.machineCIDR")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+
+	// Bail if we can't parse.
+	if len(errs) > 0 {
+		return errs
+	}
+
+	return compareCIDREntries(cidrEntries)
+}
+
+func validateSliceNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
+	var cidrEntries []cidrEntry
+
+	for _, cidr := range hc.Spec.Networking.MachineNetwork {
+		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("spec.networking.MachineNetwork")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+	for _, cidr := range hc.Spec.Networking.ServiceNetwork {
+		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("spec.networking.ServiceNetwork")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+	for _, cidr := range hc.Spec.Networking.ClusterNetwork {
+		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("spec.networking.ClusterNetwork")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+
+	return compareCIDREntries(cidrEntries)
+}
+
+func validateHostedClusterCreate(hc *hyperv1.HostedCluster) error {
+	errs := validateNetworkCIDRs(hc)
+	errs = append(errs, validateSliceNetworkCIDRs(hc)...)
+
+	return errs.ToAggregate()
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type.
