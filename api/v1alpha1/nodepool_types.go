@@ -14,6 +14,7 @@ const (
 	NodePoolValidPowerVSImageConditionType       = "ValidPowerVSImage"
 	NodePoolValidKubeVirtImageConditionType      = "ValidKubeVirtImage"
 	NodePoolValidMachineConfigConditionType      = "ValidMachineConfig"
+	NodePoolValidTunedConfigConditionType        = "ValidTunedConfig"
 	NodePoolValidKubevirtConfigConditionType     = "ValidKubevirtConfig"
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
 	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"
@@ -144,6 +145,17 @@ type NodePoolSpec struct {
 	// provided: reconciliation is paused on the resource until the field is removed.
 	// +optional
 	PausedUntil *string `json:"pausedUntil,omitempty"`
+
+	// TunedConfig is a list of references to ConfigMaps containing serialized
+	// Tuned resources to define the tuning configuration to be applied to
+	// nodes in the NodePool. The Tuned API is defined here:
+	//
+	// https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go
+	//
+	// Each ConfigMap must have a single key named "tuned" whose value is the
+	// JSON or YAML of a serialized Tuned.
+	// +kubebuilder:validation:Optional
+	TunedConfig []corev1.LocalObjectReference `json:"tunedConfig,omitempty"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.

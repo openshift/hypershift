@@ -690,6 +690,24 @@ provided: reconciliation is paused on the resource until that date. If the boole
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>tunedConfig</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+[]Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>TunedConfig is a list of references to ConfigMaps containing serialized
+Tuned resources to define the tuning configuration to be applied to
+nodes in the NodePool. The Tuned API is defined here:</p>
+<p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
+<p>Each ConfigMap must have a single key named &ldquo;tuned&rdquo; whose value is the
+JSON or YAML of a serialized Tuned.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -5688,6 +5706,24 @@ string
 Either a date can be provided in RFC3339 format or a boolean. If a date is
 provided: reconciliation is paused on the resource until that date. If the boolean true is
 provided: reconciliation is paused on the resource until the field is removed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>tunedConfig</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+[]Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>TunedConfig is a list of references to ConfigMaps containing serialized
+Tuned resources to define the tuning configuration to be applied to
+nodes in the NodePool. The Tuned API is defined here:</p>
+<p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
+<p>Each ConfigMap must have a single key named &ldquo;tuned&rdquo; whose value is the
+JSON or YAML of a serialized Tuned.</p>
 </td>
 </tr>
 </tbody>
