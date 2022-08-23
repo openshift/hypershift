@@ -581,7 +581,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 	// Reconcile router
 	kasServiceStrategy := servicePublishingStrategyByType(hostedControlPlane, hyperv1.APIServer)
-	if util.IsPrivateHCP(hostedControlPlane) || kasServiceStrategy.Type == hyperv1.Route {
+	if util.IsPrivateHCP(hostedControlPlane) || util.HasPublicLoadBalancerForPrivateRouter(hostedControlPlane) {
 		r.Log.Info("Reconciling router")
 		if err := r.reconcileRouter(ctx, hostedControlPlane, releaseImage, createOrUpdate, kasServiceStrategy.Type == hyperv1.Route); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to reconcile router: %w", err)

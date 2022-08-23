@@ -19,7 +19,7 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, strategy *hy
 	// and ignore updates.
 	if route.CreationTimestamp.IsZero() {
 		switch {
-		case strategy.Route != nil && strategy.Route.Hostname != "":
+		case util.HasPublicLoadBalancerForPrivateRouter(hcp) && strategy.Route != nil && strategy.Route.Hostname != "":
 			route.Spec.Host = strategy.Route.Hostname
 			ingress.AddRouteLabel(route)
 		case !util.IsPublicHCP(hcp):
