@@ -3216,7 +3216,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 		minSupportedVersion = semver.MustParse("4.9.0")
 	}
 
-	return isValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType)
+	return isValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
 }
 
 func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
@@ -3243,7 +3243,7 @@ func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error)
 	return false, nil
 }
 
-func isValidReleaseVersion(version, currentVersion, latestVersionSupported, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType) error {
+func isValidReleaseVersion(version, currentVersion, latestVersionSupported, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
 	if version.LT(semver.MustParse("4.8.0")) {
 		return fmt.Errorf("releases before 4.8 are not supported")
 	}
@@ -3257,7 +3257,7 @@ func isValidReleaseVersion(version, currentVersion, latestVersionSupported, minS
 	}
 
 	versionMinorOnly := &semver.Version{Major: version.Major, Minor: version.Minor}
-	if networkType == hyperv1.OpenShiftSDN && currentVersion == nil && versionMinorOnly.GT(semver.MustParse("4.10.0")) {
+	if networkType == hyperv1.OpenShiftSDN && currentVersion == nil && versionMinorOnly.GT(semver.MustParse("4.10.0")) && platformType != hyperv1.PowerVSPlatform {
 		return fmt.Errorf("cannot use OpenShiftSDN with OCP version > 4.10")
 	}
 
