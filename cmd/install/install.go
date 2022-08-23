@@ -402,7 +402,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		externalDNSDeployment := assets.ExternalDNSDeployment{
 			Namespace: operatorNamespace,
 			// TODO: need to look this up from somewhere
-			Image:             "registry.redhat.io/edo/external-dns-rhel8@sha256:c1134bb46172997ef7278b6cefbb0da44e72a9f808a7cd67b3c65d464754cab9",
+			Image:             "registry.redhat.io/edo/external-dns-rhel8@sha256:e8c50c1c158d08a99b1f388c65860c533209299fd0ff87f5c9fe29d7c9b5a4d1",
 			ServiceAccount:    externalDNSServiceAccount,
 			Provider:          opts.ExternalDNSProvider,
 			DomainFilter:      opts.ExternalDNSDomainFilter,
