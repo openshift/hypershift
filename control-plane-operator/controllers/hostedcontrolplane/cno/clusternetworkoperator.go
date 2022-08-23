@@ -108,7 +108,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 
 func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(role)
-	// Required by CNO to manage ovn-kubernetes control plane components
+	// Required by CNO to manage ovn-kubernetes and cloud-network-config-controller control plane components
 	role.Rules = []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{corev1.SchemeGroupVersion.Group},
@@ -128,7 +128,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 		},
 		{
 			APIGroups: []string{appsv1.SchemeGroupVersion.Group},
-			Resources: []string{"statefulsets"},
+			Resources: []string{"statefulsets", "deployments"},
 			Verbs:     []string{"*"},
 		},
 		{
@@ -331,6 +331,7 @@ kubectl --kubeconfig $kc config use-context default`,
 			{Name: "NETWORK_CHECK_TARGET_IMAGE", Value: params.Images.NetworkCheckTarget},
 			{Name: "CLOUD_NETWORK_CONFIG_CONTROLLER_IMAGE", Value: params.Images.CloudNetworkConfigController},
 			{Name: "TOKEN_MINTER_IMAGE", Value: params.Images.TokenMinter},
+			{Name: "CLI_IMAGE", Value: params.Images.CLI},
 		}...),
 		Name:            operatorName,
 		Image:           params.Images.NetworkOperator,
