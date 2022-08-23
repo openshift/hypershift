@@ -2492,6 +2492,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 		minVersionSupported    *semver.Version
 		networkType            hyperv1.NetworkType
 		expectError            bool
+		platform               hyperv1.PlatformType
 	}{
 		{
 			name:                   "Releases before 4.8 are not supported",
@@ -2500,6 +2501,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			latestVersionSupported: v("4.12.0"),
 			minVersionSupported:    v("4.10.0"),
 			expectError:            true,
+			platform:               hyperv1.NonePlatform,
 		},
 		{
 			name:                   "y-stream downgrade is not supported",
@@ -2508,6 +2510,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			latestVersionSupported: v("4.12.0"),
 			minVersionSupported:    v("4.10.0"),
 			expectError:            true,
+			platform:               hyperv1.NonePlatform,
 		},
 		{
 			name:                   "y-stream upgrade is not for OpenShiftSDN",
@@ -2517,6 +2520,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			minVersionSupported:    v("4.10.0"),
 			networkType:            hyperv1.OpenShiftSDN,
 			expectError:            true,
+			platform:               hyperv1.NonePlatform,
 		},
 		{
 			name:                   "the latest HostedCluster version supported by this Operator is 4.12.0",
@@ -2525,6 +2529,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			latestVersionSupported: v("4.12.0"),
 			minVersionSupported:    v("4.10.0"),
 			expectError:            true,
+			platform:               hyperv1.NonePlatform,
 		},
 		{
 			name:                   "the minimum HostedCluster version supported by this Operator is 4.10.0",
@@ -2533,6 +2538,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			latestVersionSupported: v("4.12.0"),
 			minVersionSupported:    v("4.10.0"),
 			expectError:            true,
+			platform:               hyperv1.NonePlatform,
 		},
 		{
 			name:                   "Valid",
@@ -2541,6 +2547,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			latestVersionSupported: v("4.12.0"),
 			minVersionSupported:    v("4.10.0"),
 			expectError:            false,
+			platform:               hyperv1.NonePlatform,
 		},
 		{
 			name:                   "When going to minimum should be valid",
@@ -2549,6 +2556,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			latestVersionSupported: v("4.12.0"),
 			minVersionSupported:    v("4.10.0"),
 			expectError:            false,
+			platform:               hyperv1.NonePlatform,
 		},
 		{
 			name:                   "Valid when going to minimum with a dev tag",
@@ -2557,6 +2565,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			latestVersionSupported: v("4.12.0"),
 			minVersionSupported:    v("4.10.0"),
 			expectError:            false,
+			platform:               hyperv1.NonePlatform,
 		},
 		{
 			name:                   "Invalid when installing with OpenShiftSDN and version > 4.10",
@@ -2566,6 +2575,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			minVersionSupported:    v("4.10.0"),
 			networkType:            hyperv1.OpenShiftSDN,
 			expectError:            true,
+			platform:               hyperv1.NonePlatform,
 		},
 		{
 			name:                   "Valid when installing with OpenShift SDN and version <= 4.10",
@@ -2575,6 +2585,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			minVersionSupported:    v("4.10.0"),
 			networkType:            hyperv1.OpenShiftSDN,
 			expectError:            false,
+			platform:               hyperv1.NonePlatform,
 		},
 		{
 			name:                   "Invalid when isntalling with OVNKubernetes and version < 4.11",
@@ -2584,6 +2595,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			minVersionSupported:    v("4.10.0"),
 			networkType:            hyperv1.OVNKubernetes,
 			expectError:            true,
+			platform:               hyperv1.NonePlatform,
 		},
 		{
 			name:                   "Valid when isntalling with OVNKubernetes and version >= 4.11",
@@ -2593,13 +2605,24 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			minVersionSupported:    v("4.10.0"),
 			networkType:            hyperv1.OVNKubernetes,
 			expectError:            false,
+			platform:               hyperv1.NonePlatform,
+		},
+		{
+			name:                   "Valid when installing with OpenShift SDN and version >= 4.11 with PowerVS platform",
+			currentVersion:         nil,
+			nextVersion:            v("4.11.0"),
+			latestVersionSupported: v("4.12.0"),
+			minVersionSupported:    v("4.10.0"),
+			networkType:            hyperv1.OpenShiftSDN,
+			expectError:            false,
+			platform:               hyperv1.PowerVSPlatform,
 		},
 	}
 
 	for _, test := range testCases {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := isValidReleaseVersion(test.nextVersion, test.currentVersion, test.latestVersionSupported, test.minVersionSupported, test.networkType)
+			err := isValidReleaseVersion(test.nextVersion, test.currentVersion, test.latestVersionSupported, test.minVersionSupported, test.networkType, test.platform)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 				return
