@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -20,11 +21,11 @@ import (
 )
 
 var (
-	catalogOperatorMetricsService = MustService("assets/catalog-metrics-service.yaml")
-	catalogOperatorDeployment     = MustDeployment("assets/catalog-operator-deployment.yaml")
+	catalogOperatorMetricsService = common.MustService(content.ReadFile, "assets/catalog-metrics-service.yaml")
+	catalogOperatorDeployment     = common.MustDeployment(content.ReadFile, "assets/catalog-operator-deployment.yaml")
 
-	olmOperatorMetricsService = MustService("assets/olm-metrics-service.yaml")
-	olmOperatorDeployment     = MustDeployment("assets/olm-operator-deployment.yaml")
+	olmOperatorMetricsService = common.MustService(content.ReadFile, "assets/olm-metrics-service.yaml")
+	olmOperatorDeployment     = common.MustDeployment(content.ReadFile, "assets/olm-operator-deployment.yaml")
 )
 
 func olmOperatorLabels() map[string]string {
