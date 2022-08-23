@@ -1,0 +1,49 @@
+# *** AUTOMATICALLY GENERATED FILE - DO NOT EDIT ***
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: csi-snapshot-controller-operator-role
+rules:
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - '*'
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - replicasets
+  verbs:
+  - '*'
+- apiGroups:
+  - policy
+  resources:
+  - poddisruptionbudgets
+  verbs:
+  - '*'
+- apiGroups:
+  - ""
+  resources:
+  - serviceaccounts
+  - services
+  - configmaps
+  verbs:
+  - '*'
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+  - update
