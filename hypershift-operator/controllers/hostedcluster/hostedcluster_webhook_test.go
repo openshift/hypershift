@@ -77,6 +77,14 @@ func TestWebhookAllowsHostedClusterReconcilerUpdates(t *testing.T) {
 			tc.hostedCluster.Annotations = map[string]string{
 				hyperv1.ControlPlaneOperatorImageAnnotation: "some-image",
 			}
+			network := &configv1.Network{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: configv1.NetworkSpec{
+					ServiceNetwork: []string{"172.31.0.0/16"},
+				},
+			}
 
 			mgr, err := ctrl.NewManager(&rest.Config{}, ctrl.Options{
 				MetricsBindAddress: "0",
@@ -87,7 +95,7 @@ func TestWebhookAllowsHostedClusterReconcilerUpdates(t *testing.T) {
 					return &hostedClusterUpdateValidatingClient{
 						Client: fake.NewClientBuilder().
 							WithScheme(hyperapi.Scheme).
-							WithObjects(append(tc.additionalObjects, tc.hostedCluster)...).
+							WithObjects(append(tc.additionalObjects, tc.hostedCluster, network)...).
 							Build(),
 					}, nil
 				},
@@ -137,7 +145,11 @@ func (h *hostedClusterUpdateValidatingClient) Update(ctx context.Context, obj cr
 		return fmt.Errorf("failed to validate hostedcluster update: failed to get old hosted cluster: %w", err)
 	}
 
-	if err := validateHostedClusterUpdate(hcluster.DeepCopy(), oldCluster.DeepCopy()); err != nil {
+	serviceNetworkCidrEntries, err := getNetworkServiceCIDRs(ctx, h.Client)
+	if err != nil {
+		return fmt.Errorf("Error getting service network cidr entries %s", err)
+	}
+	if err := validateHostedClusterUpdate(ctx, serviceNetworkCidrEntries, hcluster.DeepCopy(), oldCluster.DeepCopy()); err != nil {
 		return fmt.Errorf("update rejected by admission: %w", err)
 	}
 
@@ -189,7 +201,7 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 				Spec: hyperv1.HostedClusterSpec{Networking: hyperv1.ClusterNetworking{APIServer: &hyperv1.APIServerNetworking{Port: utilpointer.Int32(8443)}}},
 			},
 			expectError:         true,
-			expectedErrorString: "HostedCluster.spec.networking.apiServer.port: Invalid value: 8443: Attempted to change an immutable field",
+			expectedErrorString: `hostedcluster.spec.networking.apiServer.port: Invalid value: 8443: Attempted to change an immutable field`,
 		},
 		{
 			name: "when .AWSPlatformSpec.RolesRef, .AWSPlatformSpec.roles .AWSPlatformSpec.*Creds are changed it should be allowed",
@@ -268,7 +280,7 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 				},
 			},
 			expectError:         true,
-			expectedErrorString: "HostedCluster.spec.services.servicePublishingStrategy.type: Invalid value: \"Route\": Attempted to change an immutable field",
+			expectedErrorString: `hostedcluster.spec.services.servicePublishingStrategy.type: Invalid value: "Route": Attempted to change an immutable field`,
 		},
 		{
 			name: "Multiple immutable fields changed, not allowed",
@@ -288,33 +300,96 @@ func TestValidateHostedClusterUpdate(t *testing.T) {
 				},
 			},
 			expectError:         true,
-			expectedErrorString: "[HostedCluster.spec.dns.baseDomain: Invalid value: \"hypershift2\": Attempted to change an immutable field, HostedCluster.spec.networking.apiServer.port: Invalid value: 8443: Attempted to change an immutable field]",
+			expectedErrorString: `[hostedcluster.spec.dns.baseDomain: Invalid value: "hypershift2": Attempted to change an immutable field, hostedcluster.spec.networking.apiServer.port: Invalid value: 8443: Attempted to change an immutable field]`,
+		},
+		{
+			name: "Updating network settings with overlapping CIDRs, not allowed",
+			old: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceCIDR: "172.30.0.0/16",
+						PodCIDR:     "192.168.1.0/24",
+						MachineCIDR: "192.168.2.0/24",
+					},
+				},
+			},
+			new: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceCIDR: "172.30.0.0/24",
+						PodCIDR:     "192.168.0.0/16",
+						MachineCIDR: "192.168.2.0/24",
+					},
+				},
+			},
+			expectError:         true,
+			expectedErrorString: `hostedcluster.spec.networking.podCIDR: Invalid value: "192.168.0.0/16": hostedcluster.spec.networking.podCIDR and hostedcluster.spec.networking.machineCIDR overlap: 192.168.0.0/16 and 192.168.2.0/24`,
+		},
+		{
+			name: "Setting network cluster service CIDR same as service CIDR, not allowed",
+			old: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceCIDR: "172.30.0.0/16",
+						PodCIDR:     "192.168.1.0/24",
+						MachineCIDR: "192.168.2.0/24",
+					},
+				},
+			},
+			new: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceCIDR: "172.31.1.0/24",
+						PodCIDR:     "192.168.1.0/24",
+						MachineCIDR: "192.168.2.0/24",
+					},
+				},
+			},
+			expectError:         true,
+			expectedErrorString: `hostedcluster.spec.networking.serviceCIDR: Invalid value: "172.31.1.0/24": hostedcluster.spec.networking.serviceCIDR and network.spec.serviceNetwork overlap: 172.31.1.0/24 and 172.31.0.0/16`,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateHostedClusterUpdate(tc.new, tc.old)
+			network := &configv1.Network{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: configv1.NetworkSpec{
+					ServiceNetwork: []string{"172.31.0.0/16"},
+				},
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			ctx = log.IntoContext(ctx, zapr.NewLogger(zaptest.NewLogger(t)))
+			c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(network).Build()
+			serviceNetworkCidrEntries, err := getNetworkServiceCIDRs(ctx, c)
+			if err != nil {
+				t.Errorf("Error getting service network cidr entries %s", err)
+			}
+			err = validateHostedClusterUpdate(ctx, serviceNetworkCidrEntries, tc.new, tc.old)
 			if (err != nil) != tc.expectError {
 				t.Errorf("expected error to be %t, was %t", tc.expectError, err != nil)
 			}
-			if len(tc.expectedErrorString) > 0 && tc.expectedErrorString != err.Error() {
+			if err != nil && len(tc.expectedErrorString) > 0 && tc.expectedErrorString != err.Error() {
 				t.Errorf("expected error to be %s, was %s", tc.expectedErrorString, err)
 			}
-
 		})
 	}
 }
 
+type testCase struct {
+	name string
+	hc   *hyperv1.HostedCluster
+
+	expectedErrorString string
+	expectError         bool
+}
+
 func TestValidateHostedClusterCreate(t *testing.T) {
 	t.Parallel()
-	testCases := []struct {
-		name string
-		hc   *hyperv1.HostedCluster
-
-		expectedErrorString string
-		expectError         bool
-	}{
+	testCases := []testCase{
 		{
 			name: "Setting network CIDRs, allowed",
 			hc: &hyperv1.HostedCluster{
@@ -355,7 +430,7 @@ func TestValidateHostedClusterCreate(t *testing.T) {
 				},
 			},
 			expectError:         true,
-			expectedErrorString: `spec.networking.serviceCIDR: Invalid value: "fd63:c754:4851:46da::/64": spec.networking.serviceCIDR and spec.networking.machineCIDR overlap: fd63:c754:4851:46da::/64 and fd63:c754:4851:46da::/80`,
+			expectedErrorString: `hostedcluster.spec.networking.serviceCIDR: Invalid value: "fd63:c754:4851:46da::/64": hostedcluster.spec.networking.serviceCIDR and hostedcluster.spec.networking.machineCIDR overlap: fd63:c754:4851:46da::/64 and fd63:c754:4851:46da::/80`,
 		},
 		{
 			name: "Setting network CIDRs overlapped, not allowed",
@@ -369,7 +444,7 @@ func TestValidateHostedClusterCreate(t *testing.T) {
 				},
 			},
 			expectError:         true,
-			expectedErrorString: `[spec.networking.serviceCIDR: Invalid value: "192.168.0.0/24": spec.networking.serviceCIDR and spec.networking.machineCIDR overlap: 192.168.0.0/24 and 192.168.0.0/16, spec.networking.podCIDR: Invalid value: "192.168.1.0/24": spec.networking.podCIDR and spec.networking.machineCIDR overlap: 192.168.1.0/24 and 192.168.0.0/16]`,
+			expectedErrorString: `[hostedcluster.spec.networking.serviceCIDR: Invalid value: "192.168.0.0/24": hostedcluster.spec.networking.serviceCIDR and hostedcluster.spec.networking.machineCIDR overlap: 192.168.0.0/24 and 192.168.0.0/16, hostedcluster.spec.networking.podCIDR: Invalid value: "192.168.1.0/24": hostedcluster.spec.networking.podCIDR and hostedcluster.spec.networking.machineCIDR overlap: 192.168.1.0/24 and 192.168.0.0/16]`,
 		},
 		{
 			name: "Setting network CIDRs overlapped, not allowed",
@@ -383,48 +458,50 @@ func TestValidateHostedClusterCreate(t *testing.T) {
 				},
 			},
 			expectError:         true,
-			expectedErrorString: `spec.networking.podCIDR: Invalid value: "192.168.1.0/24": spec.networking.podCIDR and spec.networking.machineCIDR overlap: 192.168.1.0/24 and 192.168.1.4/30`,
-		},
-		{
-			// Note that more values are set below as they required initialization
-			// with functions
-			name: "Setting overlapping slice network CIDRs in same slice, not allowed",
-			hc: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Networking: hyperv1.ClusterNetworking{
-						ServiceCIDR: "192.168.0.0/24",
-						PodCIDR:     "192.168.1.0/24",
-						MachineCIDR: "192.168.2.0/24",
-					},
-				},
-			},
-			expectError:         true,
-			expectedErrorString: `spec.networking.ClusterNetwork: Invalid value: "192.168.0.0/24": spec.networking.ClusterNetwork and spec.networking.ClusterNetwork overlap: 192.168.0.0/24 and 192.168.0.80/30`,
-		},
-		{
-			// Note that more values are set below as they required initialization
-			// with functions
-			name: "Setting overlapping slice network CIDRs, not allowed",
-			hc: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Networking: hyperv1.ClusterNetworking{
-						ServiceCIDR: "192.168.0.0/24",
-						PodCIDR:     "192.168.1.0/24",
-						MachineCIDR: "192.168.2.0/24",
-					},
-				},
-			},
-			expectError:         true,
-			expectedErrorString: `spec.networking.MachineNetwork: Invalid value: "172.16.1.0/24": spec.networking.MachineNetwork and spec.networking.ServiceNetwork overlap: 172.16.1.0/24 and 172.16.1.252/32`,
+			expectedErrorString: `hostedcluster.spec.networking.podCIDR: Invalid value: "192.168.1.0/24": hostedcluster.spec.networking.podCIDR and hostedcluster.spec.networking.machineCIDR overlap: 192.168.1.0/24 and 192.168.1.4/30`,
 		},
 	}
 
+	// These test cases are set up like this as they require functions to
+	// initialize variables.
+	tc := testCase{
+		// Note that more values are set below as they required initialization
+		// with functions
+		name: "Setting overlapping slice network CIDRs in same slice, not allowed",
+		hc: &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Networking: hyperv1.ClusterNetworking{
+					ServiceCIDR: "192.168.0.0/24",
+					PodCIDR:     "192.168.1.0/24",
+					MachineCIDR: "192.168.2.0/24",
+				},
+			},
+		},
+		expectError:         true,
+		expectedErrorString: `hostedcluster.spec.networking.clusterNetwork: Invalid value: "192.168.0.0/24": hostedcluster.spec.networking.clusterNetwork and hostedcluster.spec.networking.clusterNetwork overlap: 192.168.0.0/24 and 192.168.0.80/30`,
+	}
 	clusterNet := make([]hyperv1.ClusterNetworkEntry, 2)
 	cidr, _ := ipnet.ParseCIDR("192.168.0.0/24")
 	clusterNet[0].CIDR = *cidr
 	cidr, _ = ipnet.ParseCIDR("192.168.0.80/30")
 	clusterNet[1].CIDR = *cidr
-	testCases[5].hc.Spec.Networking.ClusterNetwork = clusterNet
+	tc.hc.Spec.Networking.ClusterNetwork = clusterNet
+	testCases = append(testCases, tc)
+
+	tc = testCase{
+		name: "Setting overlapping slice network CIDRs, not allowed",
+		hc: &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Networking: hyperv1.ClusterNetworking{
+					ServiceCIDR: "192.168.0.0/24",
+					PodCIDR:     "192.168.1.0/24",
+					MachineCIDR: "192.168.2.0/24",
+				},
+			},
+		},
+		expectError:         true,
+		expectedErrorString: `hostedcluster.spec.networking.machineNetwork: Invalid value: "172.16.1.0/24": hostedcluster.spec.networking.machineNetwork and hostedcluster.spec.networking.serviceNetwork overlap: 172.16.1.0/24 and 172.16.1.252/32`,
+	}
 
 	machineNet := make([]hyperv1.MachineNetworkEntry, 2)
 	cidr, _ = ipnet.ParseCIDR("172.16.0.0/24")
@@ -436,13 +513,52 @@ func TestValidateHostedClusterCreate(t *testing.T) {
 	serviceNet[0].CIDR = *cidr
 	cidr, _ = ipnet.ParseCIDR("172.16.3.0/24")
 	serviceNet[1].CIDR = *cidr
-	testCases[6].hc.Spec.Networking.ServiceNetwork = serviceNet
-	testCases[6].hc.Spec.Networking.MachineNetwork = machineNet
+	tc.hc.Spec.Networking.ServiceNetwork = serviceNet
+	tc.hc.Spec.Networking.MachineNetwork = machineNet
+	testCases = append(testCases, tc)
+
+	tc = testCase{
+		name: "Setting network service CIDR overlapping slice network CIDR, not allowed",
+		hc: &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Networking: hyperv1.ClusterNetworking{
+					ServiceCIDR: "192.168.0.0/24",
+					PodCIDR:     "192.168.1.0/24",
+					MachineCIDR: "192.168.2.0/24",
+				},
+			},
+		},
+		expectError:         true,
+		expectedErrorString: `hostedcluster.spec.networking.serviceNetwork: Invalid value: "172.31.0.0/24": hostedcluster.spec.networking.serviceNetwork and network.spec.serviceNetwork overlap: 172.31.0.0/24 and 172.31.0.0/16`,
+	}
+	serviceNet = make([]hyperv1.ServiceNetworkEntry, 1)
+	cidr, _ = ipnet.ParseCIDR("172.31.0.0/24")
+	serviceNet[0].CIDR = *cidr
+	tc.hc.Spec.Networking.ServiceNetwork = serviceNet
+	testCases = append(testCases, tc)
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateHostedClusterCreate(tc.hc)
+			network := &configv1.Network{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: configv1.NetworkSpec{
+					ServiceNetwork: []string{"172.31.0.0/16"},
+				},
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			ctx = log.IntoContext(ctx, zapr.NewLogger(zaptest.NewLogger(t)))
+			c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(network).Build()
+			serviceNetworkCidrEntries, err := getNetworkServiceCIDRs(ctx, c)
+			if err != nil {
+				t.Errorf("Error getting service network cidr entries %s", err)
+			}
+			err = validateHostedClusterCreate(ctx, serviceNetworkCidrEntries, tc.hc)
 			if (err != nil) != tc.expectError {
+				t.Logf("error is '%t'", err)
 				t.Errorf("expected error to be '%t', was '%t'", tc.expectError, err != nil)
 			}
 			if err != nil && len(tc.expectedErrorString) > 0 && tc.expectedErrorString != err.Error() {

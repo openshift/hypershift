@@ -10,23 +10,40 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 // Webhook implements a validating webhook for HostedCluster.
-type Webhook struct{}
+type Webhook struct {
+	serviceNetworkCidrEntries []cidrEntry
+}
+
+type cidrEntry struct {
+	net  net.IPNet
+	path field.Path
+}
 
 // SetupWebhookWithManager sets up HostedCluster webhooks.
-func SetupWebhookWithManager(mgr ctrl.Manager) error {
+func SetupWebhookWithManager(ctx context.Context, mgr ctrl.Manager, log logr.Logger) error {
+	var webhook Webhook
+	var err error
+
+	webhook.serviceNetworkCidrEntries, err = getNetworkServiceCIDRs(ctx, mgr.GetAPIReader())
+	if err != nil {
+		log.Info("Failed to get network service CIDRs: %w", err)
+	}
 	return ctrl.NewWebhookManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
-		WithValidator(&Webhook{}).
+		WithValidator(&webhook).
 		Complete()
 }
 
@@ -39,99 +56,7 @@ func (webhook *Webhook) ValidateCreate(ctx context.Context, obj runtime.Object) 
 		return apierrors.NewBadRequest(fmt.Sprintf("expected a HostedCluster but got a %T", obj))
 	}
 
-	return validateHostedClusterCreate(hostedCluster)
-}
-
-type cidrEntry struct {
-	net  net.IPNet
-	path field.Path
-}
-
-func cidrsOverlap(net1 *net.IPNet, net2 *net.IPNet) error {
-	if net1.Contains(net2.IP) || net2.Contains(net1.IP) {
-		return fmt.Errorf("%s and %s", net1.String(), net2.String())
-	}
-	return nil
-}
-
-func compareCIDREntries(ce []cidrEntry) field.ErrorList {
-	var errs field.ErrorList
-
-	for o := range ce {
-		for i := o + 1; i < len(ce); i++ {
-			if err := cidrsOverlap(&ce[o].net, &ce[i].net); err != nil {
-				errs = append(errs, field.Invalid(&ce[o].path, ce[o].net.String(), fmt.Sprintf("%s and %s overlap: %s", ce[o].path.String(), ce[i].path.String(), err)))
-			}
-		}
-	}
-	return errs
-}
-
-func validateNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
-	var errs field.ErrorList
-	var cidrEntries []cidrEntry
-
-	podCIDR := hc.Spec.Networking.PodCIDR
-	serviceCIDR := hc.Spec.Networking.ServiceCIDR
-	machineCIDR := hc.Spec.Networking.MachineCIDR
-
-	// Validate CIDR format..
-	_, serviceNet, err := net.ParseCIDR(serviceCIDR)
-	if err != nil {
-		errs = append(errs, field.Invalid(field.NewPath("spec.networking.serviceCIDR"), serviceCIDR, err.Error()))
-	} else {
-		ce := cidrEntry{*serviceNet, *field.NewPath("spec.networking.serviceCIDR")}
-		cidrEntries = append(cidrEntries, ce)
-	}
-
-	_, podNet, err := net.ParseCIDR(podCIDR)
-	if err != nil {
-		errs = append(errs, field.Invalid(field.NewPath("spec.networking.podCIDR"), podCIDR, err.Error()))
-	} else {
-		ce := cidrEntry{*podNet, *field.NewPath("spec.networking.podCIDR")}
-		cidrEntries = append(cidrEntries, ce)
-	}
-
-	_, machineNet, err := net.ParseCIDR(machineCIDR)
-	if err != nil {
-		errs = append(errs, field.Invalid(field.NewPath("spec.networking.machineCIDR"), machineCIDR, err.Error()))
-	} else {
-		ce := cidrEntry{*machineNet, *field.NewPath("spec.networking.machineCIDR")}
-		cidrEntries = append(cidrEntries, ce)
-	}
-
-	// Bail if we can't parse.
-	if len(errs) > 0 {
-		return errs
-	}
-
-	return compareCIDREntries(cidrEntries)
-}
-
-func validateSliceNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
-	var cidrEntries []cidrEntry
-
-	for _, cidr := range hc.Spec.Networking.MachineNetwork {
-		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("spec.networking.MachineNetwork")}
-		cidrEntries = append(cidrEntries, ce)
-	}
-	for _, cidr := range hc.Spec.Networking.ServiceNetwork {
-		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("spec.networking.ServiceNetwork")}
-		cidrEntries = append(cidrEntries, ce)
-	}
-	for _, cidr := range hc.Spec.Networking.ClusterNetwork {
-		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("spec.networking.ClusterNetwork")}
-		cidrEntries = append(cidrEntries, ce)
-	}
-
-	return compareCIDREntries(cidrEntries)
-}
-
-func validateHostedClusterCreate(hc *hyperv1.HostedCluster) error {
-	errs := validateNetworkCIDRs(hc)
-	errs = append(errs, validateSliceNetworkCIDRs(hc)...)
-
-	return errs.ToAggregate()
+	return validateHostedClusterCreate(ctx, webhook.serviceNetworkCidrEntries, hostedCluster)
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type.
@@ -146,12 +71,169 @@ func (webhook *Webhook) ValidateUpdate(ctx context.Context, oldObj, newObj runti
 		return apierrors.NewBadRequest(fmt.Sprintf("expected a HostedCluster but got a %T", oldObj))
 	}
 
-	return validateHostedClusterUpdate(newHC, oldHC)
+	return validateHostedClusterUpdate(ctx, webhook.serviceNetworkCidrEntries, newHC, oldHC)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type.
 func (webhook *Webhook) ValidateDelete(_ context.Context, obj runtime.Object) error {
 	return nil
+}
+
+func getNetworkServiceCIDRs(ctx context.Context, c client.Reader) ([]cidrEntry, error) {
+	var cidrEntries []cidrEntry
+
+	network := &configv1.Network{}
+	err := c.Get(ctx, client.ObjectKey{
+		Name: "cluster",
+	}, network)
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to get network.spec.serviceNetwork: %s", err)
+	}
+
+	for _, cidr := range network.Spec.ServiceNetwork {
+		_, serviceNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return nil, err
+		} else {
+			ce := cidrEntry{*serviceNet, *field.NewPath("network.spec.serviceNetwork")}
+			cidrEntries = append(cidrEntries, ce)
+		}
+	}
+	return cidrEntries, nil
+}
+
+func cidrsOverlap(net1 *net.IPNet, net2 *net.IPNet) error {
+	if net1.Contains(net2.IP) || net2.Contains(net1.IP) {
+		return fmt.Errorf("%s and %s", net1.String(), net2.String())
+	}
+	return nil
+}
+
+func validateNoCIDROverlap(ce []cidrEntry) field.ErrorList {
+	var errs field.ErrorList
+
+	for o := range ce {
+		for i := o + 1; i < len(ce); i++ {
+			if err := cidrsOverlap(&ce[o].net, &ce[i].net); err != nil {
+				errs = append(errs, field.Invalid(&ce[o].path, ce[o].net.String(), fmt.Sprintf("%s and %s overlap: %s", ce[o].path.String(), ce[i].path.String(), err)))
+			}
+		}
+	}
+	return errs
+}
+
+// Validate the old single string format for each CIDR.
+func validateNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
+	var errs field.ErrorList
+	var cidrEntries []cidrEntry
+
+	podCIDR := hc.Spec.Networking.PodCIDR
+	serviceCIDR := hc.Spec.Networking.ServiceCIDR
+	machineCIDR := hc.Spec.Networking.MachineCIDR
+
+	// If these are unset we should ignore them.  They're using the
+	// new API which is a slice of network addresses for each.
+	if podCIDR == "" && serviceCIDR == "" && machineCIDR == "" {
+		return errs
+	}
+
+	// Validate CIDR format.
+	_, serviceNet, err := net.ParseCIDR(serviceCIDR)
+	if err != nil {
+		errs = append(errs, field.Invalid(field.NewPath("hostedcluster.spec.networking.serviceCIDR"), serviceCIDR, err.Error()))
+	} else {
+		ce := cidrEntry{*serviceNet, *field.NewPath("hostedcluster.spec.networking.serviceCIDR")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+
+	_, podNet, err := net.ParseCIDR(podCIDR)
+	if err != nil {
+		errs = append(errs, field.Invalid(field.NewPath("hostedcluster.spec.networking.podCIDR"), podCIDR, err.Error()))
+	} else {
+		ce := cidrEntry{*podNet, *field.NewPath("hostedcluster.spec.networking.podCIDR")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+
+	_, machineNet, err := net.ParseCIDR(machineCIDR)
+	if err != nil {
+		errs = append(errs, field.Invalid(field.NewPath("hostedcluster.spec.networking.machineCIDR"), machineCIDR, err.Error()))
+	} else {
+		ce := cidrEntry{*machineNet, *field.NewPath("hostedcluster.spec.networking.machineCIDR")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+
+	// Bail if we can't parse.
+	if len(errs) > 0 {
+		return errs
+	}
+
+	return validateNoCIDROverlap(cidrEntries)
+}
+
+// Validate the new slice of network CIDRs.
+func validateSliceNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
+	var cidrEntries []cidrEntry
+
+	for _, cidr := range hc.Spec.Networking.MachineNetwork {
+		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("hostedcluster.spec.networking.machineNetwork")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+	for _, cidr := range hc.Spec.Networking.ServiceNetwork {
+		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("hostedcluster.spec.networking.serviceNetwork")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+	for _, cidr := range hc.Spec.Networking.ClusterNetwork {
+		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("hostedcluster.spec.networking.clusterNetwork")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+
+	return validateNoCIDROverlap(cidrEntries)
+}
+
+// This validates the old network settings do not collide with the cluster network settings.
+func validateServiceNetworkNoOverlap(serviceNetworkCidrEntries []cidrEntry, hc *hyperv1.HostedCluster) field.ErrorList {
+	var errs field.ErrorList
+	var cidrEntries []cidrEntry
+
+	serviceCIDR := hc.Spec.Networking.ServiceCIDR
+	if serviceCIDR == "" {
+		return errs
+	}
+
+	_, serviceNet, err := net.ParseCIDR(serviceCIDR)
+	if err != nil {
+		errs = append(errs, field.Invalid(field.NewPath("hostedcluster.spec.networking.serviceCIDR"), serviceCIDR, err.Error()))
+		return errs
+	} else {
+		ce := cidrEntry{*serviceNet, *field.NewPath("hostedcluster.spec.networking.serviceCIDR")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+
+	cidrEntries = append(cidrEntries, serviceNetworkCidrEntries...)
+
+	return validateNoCIDROverlap(cidrEntries)
+}
+
+func validateSliceServiceNetworkNoOverlap(serviceNetworkCidrEntries []cidrEntry, hc *hyperv1.HostedCluster) field.ErrorList {
+	var cidrEntries []cidrEntry
+
+	for _, cidr := range hc.Spec.Networking.ServiceNetwork {
+		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("hostedcluster.spec.networking.serviceNetwork")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+
+	cidrEntries = append(cidrEntries, serviceNetworkCidrEntries...)
+
+	return validateNoCIDROverlap(cidrEntries)
+}
+
+func validateHostedClusterCreate(ctx context.Context, serviceNetworkCidrEntries []cidrEntry, hc *hyperv1.HostedCluster) error {
+	errs := validateNetworkCIDRs(hc)
+	errs = append(errs, validateSliceNetworkCIDRs(hc)...)
+	errs = append(errs, validateSliceServiceNetworkNoOverlap(serviceNetworkCidrEntries, hc)...)
+
+	return errs.ToAggregate()
 }
 
 // filterMutableHostedClusterSpecFields zeros out non-immutable entries so that they are
@@ -227,7 +309,9 @@ func validateStructDeepEqual(x reflect.Value, y reflect.Value, path *field.Path,
 	return errs
 }
 
-func validateEndpointAccess(new *hyperv1.PlatformSpec, old *hyperv1.PlatformSpec) error {
+func validateEndpointAccess(new *hyperv1.PlatformSpec, old *hyperv1.PlatformSpec) field.ErrorList {
+	var errs field.ErrorList
+
 	if old.Type != hyperv1.AWSPlatform || new.Type != hyperv1.AWSPlatform || old.AWS == nil || new.AWS == nil {
 		return nil
 	}
@@ -235,12 +319,14 @@ func validateEndpointAccess(new *hyperv1.PlatformSpec, old *hyperv1.PlatformSpec
 		return nil
 	}
 	if old.AWS.EndpointAccess == hyperv1.Public || new.AWS.EndpointAccess == hyperv1.Public {
-		return fmt.Errorf("transitioning from EndpointAccess %s to %s is not allowed", old.AWS.EndpointAccess, new.AWS.EndpointAccess)
+		errs = append(errs, field.InternalError(field.NewPath("hostedcluster.AWS.EndpointAccess"), fmt.Errorf("transitioning from EndpointAccess %s to %s is not allowed", old.AWS.EndpointAccess, new.AWS.EndpointAccess)))
+		return errs
 	}
 	// Clear EndpointAccess for further validation
 	old.AWS.EndpointAccess = ""
 	new.AWS.EndpointAccess = ""
-	return nil
+
+	return errs
 }
 
 // validateStructEqual uses introspection to walk through the fields of a struct and check
@@ -265,7 +351,12 @@ func validateStructEqual(x any, y any, path *field.Path) field.ErrorList {
 	return validateStructDeepEqual(v1, v2, path, errs)
 }
 
-func validateHostedClusterUpdate(new *hyperv1.HostedCluster, old *hyperv1.HostedCluster) error {
+func validateHostedClusterUpdate(ctx context.Context, serviceNetworkCidrEntries []cidrEntry, new *hyperv1.HostedCluster, old *hyperv1.HostedCluster) error {
+	errs := validateNetworkCIDRs(new)
+	errs = append(errs, validateServiceNetworkNoOverlap(serviceNetworkCidrEntries, new)...)
+
+	// The rest of this deals with checking for immutable fields.
+	// Note that we zero various values in here.
 	filterMutableHostedClusterSpecFields(&new.Spec)
 	filterMutableHostedClusterSpecFields(&old.Spec)
 
@@ -285,11 +376,8 @@ func validateHostedClusterUpdate(new *hyperv1.HostedCluster, old *hyperv1.Hosted
 		old.Spec.Networking.APIServer.Port = new.Spec.Networking.APIServer.Port
 	}
 
-	if err := validateEndpointAccess(&new.Spec.Platform, &old.Spec.Platform); err != nil {
-		return err
-	}
+	errs = append(errs, validateEndpointAccess(&new.Spec.Platform, &old.Spec.Platform)...)
 
-	errs := validateStructEqual(new.Spec, old.Spec, field.NewPath("HostedCluster.spec"))
-
+	errs = append(errs, validateStructEqual(new.Spec, old.Spec, field.NewPath("hostedcluster.spec"))...)
 	return errs.ToAggregate()
 }

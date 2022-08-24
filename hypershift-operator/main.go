@@ -252,7 +252,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 	if opts.CertDir != "" {
-		if err := hostedcluster.SetupWebhookWithManager(mgr); err != nil {
+		if err := hostedcluster.SetupWebhookWithManager(ctx, mgr, log); err != nil {
 			return fmt.Errorf("unable to create webhook: %w", err)
 		}
 	}
