@@ -78,9 +78,9 @@ var (
 		"0000_90_cluster-image-registry-operator_02_operator-servicemonitor.yaml",
 
 		// TODO: Remove these when cluster profiles annotations are fixed
-		// for cco and auth  operators
 		"0000_50_cloud-credential-operator_01-operator-config.yaml",
 		"0000_50_cluster-authentication-operator_02_config.cr.yaml",
+		"0000_90_etcd-operator_03_prometheusrule.yaml",
 	}
 )
 
