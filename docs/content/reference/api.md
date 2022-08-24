@@ -484,6 +484,161 @@ HostedClusterStatus
 </tr>
 </tbody>
 </table>
+##HostedClusterInfrastructure { #hypershift.openshift.io/v1alpha1.HostedClusterInfrastructure }
+<p>
+<p>HostedClusterInfrastructure is the primary representation of a HyperShift cluster&rsquo;s infrastructure.
+It creates the infrastructure required for a hosted cluster. Creating a HostedClusterInfrastructure
+results in a set of provider resources that can be consumed by HostedCluster (hypershift-operator).
+This is not required for HostedCluster, but allows required infrastructure to be managed and staged,
+independent of HostClusters and NodePools</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiVersion</code></br>
+string</td>
+<td>
+<code>
+hypershift.openshift.io/v1alpha1
+</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>kind</code></br>
+string
+</td>
+<td><code>HostedClusterInfrastructure</code></td>
+</tr>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterInfrastructureSpec">
+HostedClusterInfrastructureSpec
+</a>
+</em>
+</td>
+<td>
+<p>Spec is the desired behavior of the HostedClusterInfrastructure.</p>
+<br/>
+<br/>
+<table>
+<tr>
+<td>
+<code>infraID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>InfraID is a globally unique identifier for the cluster. This identifier
+will be used to associate various cloud resources with the HostedCluster
+and its associated NodePools. If not specified the metadata.name for this
+resource is used. When specified, this value is used.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>subDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>SubDomain is the identifier that is used between the *.apps and base-domain
+when building an ingress URL. This will also be the name of the cluster.
+If no value is provided, the infra-id is used
+When SubDomain = my and base-domain = company.com, the resulting ingress URL
+will be *.apps.my.company.com</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.PlatformInfraSpec">
+PlatformInfraSpec
+</a>
+</em>
+</td>
+<td>
+<p>Platform specifies the underlying infrastructure provider for the cluster
+and is used to configure platform specific behavior.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>baseDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>baseDomain is the base domain of the cluster. All managed DNS records will
+be sub-domains of this base.</p>
+<p>For example, given the base domain <code>openshift.example.com</code>, an API server
+DNS record may be created for <code>cluster-api.openshift.example.com</code>.</p>
+<p>Once set, this field cannot be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>cloudProvider</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>CloudProvider secret, contains the Cloud credential and Base Domain
+When not present, we expect all values to populated at create time
+This can be from the hypershift cli or via a kubectl create.</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterInfrastructureStatus">
+HostedClusterInfrastructureStatus
+</a>
+</em>
+</td>
+<td>
+<p>Status is the latest observed status of the HostedClusterInfrastructure.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ##NodePool { #hypershift.openshift.io/v1alpha1.NodePool }
 <p>
 <p>NodePool is a scalable set of worker nodes attached to a HostedCluster.
@@ -1167,6 +1322,316 @@ for the user.</p>
 </tr>
 </tbody>
 </table>
+###AWSPlatformInfraConfigStatus { #hypershift.openshift.io/v1alpha1.AWSPlatformInfraConfigStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.PlatformInfraConfigStatus">PlatformInfraConfigStatus</a>)
+</p>
+<p>
+<p>AWSPlatformInfraConfigStatus specifies configuration for clusters running on Amazon Web Services.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>vpc</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>VPC is the VPC to use for control plane cloud resources.
+HostedCluster.spec.platform.aws.cloudProviderConfig.vpc</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>instanceProfile</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>InstanceProfile is the AWS EC2 instance profile, which is a container for an IAM role that the EC2 instance uses.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>rolesRef</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSRolesRef">
+AWSRolesRef
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>RolesRef contains references to various AWS IAM roles required to enable
+integrations such as OIDC.
+HostedCluster.spec.platform.aws.rolesRef</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>securityGroups</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSResourceReference">
+[]AWSResourceReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>SecurityGroups is an optional set of security groups to associate with node
+instances. One of more of the security groups can be used with nodePool resources
+NodePool.spec.platform.aws.securityGroups[]</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>zones</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSZoneAndSubnetConfigStatus">
+[]AWSZoneAndSubnetConfigStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Zones are availability zones in an AWS region.
+An AWS subnet is created in each zone. The info is then used to populate
+HostedCluster.spec.platform.aws.cloudProviderConfig.zone
+HostedCluster.spec.platform.aws.cloudProviderConfig.subnet
+NodePool.spec.platform.aws.subnet.id</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>indirectResources</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSPlatformInfraIndirectConfigStatus">
+AWSPlatformInfraIndirectConfigStatus
+</a>
+</em>
+</td>
+<td>
+<p>IndirectResources are created as part of the enablement for HostedCluster and NodePool(s). These indirect resources
+are associated with other AWS resources that are directly consumed by HostedCluster and NodePool(s).</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSPlatformInfraIndirectConfigStatus { #hypershift.openshift.io/v1alpha1.AWSPlatformInfraIndirectConfigStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSPlatformInfraConfigStatus">AWSPlatformInfraConfigStatus</a>)
+</p>
+<p>
+<p>AWSPlatformInfraIndirectCosnfigStatus specifies configuration for clusters running on Amazon Web Services.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>dhcpOptionsID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DhcpOptionsID is the AWS DHCP Options resource ID, must exist and be associated with the VPC</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>internetGatewayID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>InternetGatewayID tracks the internet gateway used to communitate with the Internet,
+must be attached to the VPC</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>natGatewayID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NatGatewayID tracks the NAT gateway used for private internal communication</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>publicEndpointRouteTableIds</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PublicEndpointRouteTableID points to the routing table for public routing</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateEndpointRouteTableIds</code></br>
+<em>
+[]*string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PrivateEndpointRouteTableIds points to the routing tables for private routing</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>vpcEndpointId</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>VPCEndpointID points to an endpoint used by S3</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>elasticIpID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ElasticIpID points to an Elastic IP used by the Internet Gateway</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>localZoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>LocalZoneID is the Hosted Zone ID where all the DNS records that are
+locally accessible to the cluster exist.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>oidcProviderARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>OIDCProviderARN is an ARN value referencing a role appropriate for the Provider.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:CreateARN&rdquo;
+],
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:aws:iam:::oidc-provider&rdquo;,
+]
+}
+]
+}</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSPlatformInfraSpec { #hypershift.openshift.io/v1alpha1.AWSPlatformInfraSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.PlatformInfraSpec">PlatformInfraSpec</a>)
+</p>
+<p>
+<p>AWSPlatformSpec specifies configuration for clusters running on Amazon Web Services.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>region</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Region is the AWS region in which the AWS infrastructure resources will be created.
+This also used by HostedCluster and NodePools when creating a cluster
+HostedCluster.spec.platform.aws.region</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceTags</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSResourceTag">
+[]AWSResourceTag
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ResourceTags is a list of additional tags to apply to AWS resources created
+for the cluster. See
+<a href="https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html">https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html</a> for
+information on tagging AWS resources. AWS supports a maximum of 50 tags per
+resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
+for the user.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>zones</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Zones are availability zones in an AWS region.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AWSPlatformSpec { #hypershift.openshift.io/v1alpha1.AWSPlatformSpec }
 <p>
 (<em>Appears on:</em>
@@ -1350,7 +1815,9 @@ Value must be one of:
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1alpha1.AWSCloudProviderConfig">AWSCloudProviderConfig</a>, 
-<a href="#hypershift.openshift.io/v1alpha1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+<a href="#hypershift.openshift.io/v1alpha1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.AWSPlatformInfraConfigStatus">AWSPlatformInfraConfigStatus</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.AWSZoneAndSubnetConfigStatus">AWSZoneAndSubnetConfigStatus</a>)
 </p>
 <p>
 <p>AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
@@ -1411,6 +1878,7 @@ They are applied according to the rules defined by the AWS API:
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1alpha1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.AWSPlatformInfraSpec">AWSPlatformInfraSpec</a>, 
 <a href="#hypershift.openshift.io/v1alpha1.AWSPlatformSpec">AWSPlatformSpec</a>)
 </p>
 <p>
@@ -1501,6 +1969,7 @@ string
 ###AWSRolesRef { #hypershift.openshift.io/v1alpha1.AWSRolesRef }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSPlatformInfraConfigStatus">AWSPlatformInfraConfigStatus</a>, 
 <a href="#hypershift.openshift.io/v1alpha1.AWSPlatformSpec">AWSPlatformSpec</a>)
 </p>
 <p>
@@ -1937,6 +2406,61 @@ This must be provided and cannot be empty.</p>
 </tr>
 </tbody>
 </table>
+###AWSZoneAndSubnetConfigStatus { #hypershift.openshift.io/v1alpha1.AWSZoneAndSubnetConfigStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSPlatformInfraConfigStatus">AWSPlatformInfraConfigStatus</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>subnet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSResourceReference">
+AWSResourceReference
+</a>
+</em>
+</td>
+<td>
+<p>Subnet will be created if value is empty in the specified zone</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>publicSubnet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSResourceReference">
+AWSResourceReference
+</a>
+</em>
+</td>
+<td>
+<p>PublicSubnet will be created for each zone that a private &ldquo;Subnet&rdquo; is created</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>zone</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Zone is the availability zone to be used, a subnet will be created if one is not provided.
+The availability zones must be a memeber of the spec.platform.aws.region</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AgentNodePoolPlatform { #hypershift.openshift.io/v1alpha1.AgentNodePoolPlatform }
 <p>
 (<em>Appears on:</em>
@@ -2115,6 +2639,7 @@ in a location that does not support AvailabilityZone.</p>
 ###AzurePlatformSpec { #hypershift.openshift.io/v1alpha1.AzurePlatformSpec }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.PlatformInfraConfigStatus">PlatformInfraConfigStatus</a>, 
 <a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
 </p>
 <p>
@@ -2704,6 +3229,36 @@ how the APIServer is exposed inside a cluster node.</p>
 </tr>
 </tbody>
 </table>
+###ClusterNetworkingInfraConfigStatus { #hypershift.openshift.io/v1alpha1.ClusterNetworkingInfraConfigStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterInfrastructureConfigStatus">HostedClusterInfrastructureConfigStatus</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>machineNetwork</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.MachineNetworkEntry">
+[]MachineNetworkEntry
+</a>
+</em>
+</td>
+<td>
+<p>MachineNetwork is the list of IP address pools for machines.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ClusterVersionStatus { #hypershift.openshift.io/v1alpha1.ClusterVersionStatus }
 <p>
 (<em>Appears on:</em>
@@ -2835,9 +3390,19 @@ HostedCluster is available to handle ignition requests.</p>
 <td></td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;PlatformInfrastructureConfigured&#34;</p></td>
+<td><p>PlatformConfigured indicates (if status is true) that the
+platform configuration specified for the platform provider has been applied</p>
+</td>
 </tr><tr><td><p>&#34;PlatformCredentialsFound&#34;</p></td>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
 desired platform are valid.</p>
+</td>
+</tr><tr><td><p>&#34;PlatformIAMConfigured&#34;</p></td>
+<td><p>PlatformIAMConfigured indicates (if status is true) that the IAM is configured</p>
+</td>
+</tr><tr><td><p>&#34;ProviderSecretConfigured&#34;</p></td>
+<td><p>ProviderSecretConfigured indicates the state of the secret reference</p>
 </td>
 </tr><tr><td><p>&#34;ReconciliationActive&#34;</p></td>
 <td><p>ReconciliationActive indicates if reconciliation of the hostedcluster is
@@ -2879,6 +3444,7 @@ unsupported upgrade e.g y-stream upgrade before 4.11.</p>
 ###DNSSpec { #hypershift.openshift.io/v1alpha1.DNSSpec }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterInfrastructureConfigStatus">HostedClusterInfrastructureConfigStatus</a>, 
 <a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>, 
 <a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
@@ -3095,6 +3661,220 @@ string
 </td>
 <td>
 <p>Values includes one or more filter values. Filter values are case-sensitive.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HostedClusterInfrastructureConfigStatus { #hypershift.openshift.io/v1alpha1.HostedClusterInfrastructureConfigStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterInfrastructureStatus">HostedClusterInfrastructureStatus</a>)
+</p>
+<p>
+<p>HostedClusterInfrastructureConfigStatus reports the IDs of the platform resources via a status field</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.PlatformInfraConfigStatus">
+PlatformInfraConfigStatus
+</a>
+</em>
+</td>
+<td>
+<p>Platform specifies the underlying infrastructure provider for the cluster
+and is used to configure platform specific behavior.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dns</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.DNSSpec">
+DNSSpec
+</a>
+</em>
+</td>
+<td>
+<p>DNS specifies DNS configuration for the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networking</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworkingInfraConfigStatus">
+ClusterNetworkingInfraConfigStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Networking specifies network configuration for the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>issuerURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>IssuerURL is an OIDC issuer URL which is used as the issuer in all
+ServiceAccount tokens generated by the control plane API server. The
+default value is kubernetes.default.svc, which only works for in-cluster
+validation.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HostedClusterInfrastructureSpec { #hypershift.openshift.io/v1alpha1.HostedClusterInfrastructureSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterInfrastructure">HostedClusterInfrastructure</a>)
+</p>
+<p>
+<p>HostedClusterInfrastructureSpec is the desired behavior of a HostedClusterInfrastructure.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>infraID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>InfraID is a globally unique identifier for the cluster. This identifier
+will be used to associate various cloud resources with the HostedCluster
+and its associated NodePools. If not specified the metadata.name for this
+resource is used. When specified, this value is used.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>subDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>SubDomain is the identifier that is used between the *.apps and base-domain
+when building an ingress URL. This will also be the name of the cluster.
+If no value is provided, the infra-id is used
+When SubDomain = my and base-domain = company.com, the resulting ingress URL
+will be *.apps.my.company.com</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.PlatformInfraSpec">
+PlatformInfraSpec
+</a>
+</em>
+</td>
+<td>
+<p>Platform specifies the underlying infrastructure provider for the cluster
+and is used to configure platform specific behavior.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>baseDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>baseDomain is the base domain of the cluster. All managed DNS records will
+be sub-domains of this base.</p>
+<p>For example, given the base domain <code>openshift.example.com</code>, an API server
+DNS record may be created for <code>cluster-api.openshift.example.com</code>.</p>
+<p>Once set, this field cannot be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>cloudProvider</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>CloudProvider secret, contains the Cloud credential and Base Domain
+When not present, we expect all values to populated at create time
+This can be from the hypershift cli or via a kubectl create.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HostedClusterInfrastructureStatus { #hypershift.openshift.io/v1alpha1.HostedClusterInfrastructureStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterInfrastructure">HostedClusterInfrastructure</a>)
+</p>
+<p>
+<p>HostedClusterInfrastructure defines the observed state of HostedClusterInfrastructure</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<p>Track the conditions for each step in the desired curation that is being
+executed as a job</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>infrastructure</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterInfrastructureConfigStatus">
+HostedClusterInfrastructureConfigStatus
+</a>
+</em>
+</td>
+<td>
+<p>Infrastructure is populated with the created or discovered infrastructure resouce IDs that are
+used when creating HostedCluster and  NodePool</p>
 </td>
 </tr>
 </tbody>
@@ -5055,7 +5835,8 @@ string
 ###MachineNetworkEntry { #hypershift.openshift.io/v1alpha1.MachineNetworkEntry }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">ClusterNetworking</a>)
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworking">ClusterNetworking</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.ClusterNetworkingInfraConfigStatus">ClusterNetworkingInfraConfigStatus</a>)
 </p>
 <p>
 <p>MachineNetworkEntry is a single IP address block for node IP blocks.</p>
@@ -5943,6 +6724,108 @@ k8s.io/apimachinery/pkg/api/resource.Quantity
 </tr>
 </tbody>
 </table>
+###PlatformInfraConfigStatus { #hypershift.openshift.io/v1alpha1.PlatformInfraConfigStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterInfrastructureConfigStatus">HostedClusterInfrastructureConfigStatus</a>)
+</p>
+<p>
+<p>PlatformInfraConfigStatus specifies the underlying infrastructure provider for the cluster
+and is used to configure platform specific behavior.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>aws</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSPlatformInfraConfigStatus">
+AWSPlatformInfraConfigStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AWS specifies configuration for clusters running on Amazon Web Services.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azure</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AzurePlatformSpec">
+AzurePlatformSpec
+</a>
+</em>
+</td>
+<td>
+<p>Azure defines azure specific settings</p>
+</td>
+</tr>
+</tbody>
+</table>
+###PlatformInfraSpec { #hypershift.openshift.io/v1alpha1.PlatformInfraSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterInfrastructureSpec">HostedClusterInfrastructureSpec</a>)
+</p>
+<p>
+<p>PlatformSpec specifies the underlying infrastructure provider for the cluster
+and is used to configure platform specific behavior.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.PlatformType">
+PlatformType
+</a>
+</em>
+</td>
+<td>
+<p>Type is the type of infrastructure provider for the cluster.</p>
+<p>
+Value must be one of:
+&#34;AWS&#34;, 
+&#34;Agent&#34;, 
+&#34;Azure&#34;, 
+&#34;IBMCloud&#34;, 
+&#34;KubeVirt&#34;, 
+&#34;None&#34;, 
+&#34;PowerVS&#34;
+</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>aws</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.AWSPlatformInfraSpec">
+AWSPlatformInfraSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AWS specifies configuration for clusters running on Amazon Web Services.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###PlatformSpec { #hypershift.openshift.io/v1alpha1.PlatformSpec }
 <p>
 (<em>Appears on:</em>
@@ -6059,6 +6942,7 @@ This field is immutable. Once set, It can&rsquo;t be changed.</p>
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolPlatform">NodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.PlatformInfraSpec">PlatformInfraSpec</a>, 
 <a href="#hypershift.openshift.io/v1alpha1.PlatformSpec">PlatformSpec</a>)
 </p>
 <p>
