@@ -10,7 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 )
 
-func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool) error {
+func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool, isPrivate bool) error {
 	ingressController.Spec.Domain = ingressSubdomain
 	ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
 		Type: operatorv1.LoadBalancerServiceStrategyType,
@@ -63,6 +63,12 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 		}
 		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
 			Name: manifests.IngressDefaultIngressControllerCert().Name,
+		}
+	}
+	if isPrivate {
+		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+			Type:    operatorv1.PrivateStrategyType,
+			Private: &operatorv1.PrivateStrategy{},
 		}
 	}
 	return nil
