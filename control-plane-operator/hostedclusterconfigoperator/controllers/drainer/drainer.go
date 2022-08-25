@@ -74,13 +74,12 @@ func (r *Reconciler) handleNodeDrainRequest(ctx context.Context, node *corev1.No
 	// TODO (jerzhang): this name is deterministic, but should make this a const somewhere
 	daemonPodOnNodeName := fmt.Sprintf("machine-config-daemon-%s", node.Name)
 	drainer := &drain.Helper{
-		Client:                          r.guestClusterKubeClient,
-		Force:                           true,
-		IgnoreAllDaemonSets:             true,
-		DeleteEmptyDirData:              true,
-		GracePeriodSeconds:              -1,
-		SkipWaitForDeleteTimeoutSeconds: 300,
-		Timeout:                         90 * time.Second,
+		Client:              r.guestClusterKubeClient,
+		Force:               true,
+		IgnoreAllDaemonSets: true,
+		DeleteEmptyDirData:  true,
+		GracePeriodSeconds:  -1,
+		Timeout:             90 * time.Second,
 		OnPodDeletedOrEvicted: func(pod *corev1.Pod, usingEviction bool) {
 			verbStr := "Deleted"
 			if usingEviction {
@@ -100,6 +99,12 @@ func (r *Reconciler) handleNodeDrainRequest(ctx context.Context, node *corev1.No
 		Out:    writer{log.Info},
 		ErrOut: writer{log.Info},
 		Ctx:    ctx,
+	}
+
+	if isNodeUnreachable(node) {
+		// When the node is unreachable and some pods are not evicted for as long as this timeout, we ignore them.
+		// This is copied from cluster-api to match the drain behaviour there for machines
+		drainer.SkipWaitForDeleteTimeoutSeconds = 60 * 5 // 5 minutes
 	}
 
 	desiredVerb := strings.Split(desiredState, "-")[0]
@@ -155,4 +160,19 @@ type writer struct {
 func (w writer) Write(p []byte) (n int, err error) {
 	w.logFunc(string(p))
 	return len(p), nil
+}
+
+// IsNodeUnreachable returns true if a node is unreachable.
+// Node is considered unreachable when its ready status is "Unknown".
+// Copied from cluster-api to reduce dependencies
+func isNodeUnreachable(node *corev1.Node) bool {
+	if node == nil {
+		return false
+	}
+	for _, c := range node.Status.Conditions {
+		if c.Type == corev1.NodeReady {
+			return c.Status == corev1.ConditionUnknown
+		}
+	}
+	return false
 }
