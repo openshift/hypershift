@@ -19,12 +19,22 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, strategy *hy
 	// and ignore updates.
 	if route.CreationTimestamp.IsZero() {
 		switch {
+		// Private router with public LB, use service domain DNS if present and private router
 		case util.HasPublicLoadBalancerForPrivateRouter(hcp) && strategy.Route != nil && strategy.Route.Hostname != "":
 			route.Spec.Host = strategy.Route.Hostname
 			ingress.AddRouteLabel(route)
+
+		// Public cluster with Service domain DNS without public LB on private router: Use service
+		// domain Hostname, otherwise the name-based virtual hosting on the router won't work
+		case util.IsPublicHCP(hcp) && strategy.Route != nil && strategy.Route.Hostname != "":
+			route.Spec.Host = strategy.Route.Hostname
+
+		// Private cluster: Private DNS
 		case !util.IsPublicHCP(hcp):
 			route.Spec.Host = fmt.Sprintf("oauth.apps.%s.hypershift.local", hcp.Name)
 			ingress.AddRouteLabel(route)
+
+		// Public cluster without service domain: Fall through to using the default router
 		default:
 			route.Spec.Host = util.ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
 		}
