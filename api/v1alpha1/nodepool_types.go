@@ -24,6 +24,8 @@ const (
 	NodePoolAsExpectedConditionReason            = "AsExpected"
 	NodePoolValidationFailedConditionReason      = "ValidationFailed"
 	NodePoolInplaceUpgradeFailedConditionReason  = "InplaceUpgradeFailed"
+	// NodePoolLabel is used to label Nodes.
+	NodePoolLabel = "hypershift.openshift.io/nodePool"
 )
 
 // The following are reasons for the IgnitionEndpointAvailable condition.

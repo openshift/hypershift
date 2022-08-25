@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/cmca"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/hcpstatus"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/node"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/pkg/version"
@@ -52,6 +53,7 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"controller-manager-ca":  cmca.Setup,
 	resources.ControllerName: resources.Setup,
 	"inplaceupgrader":        inplaceupgrader.Setup,
+	"node":                   node.Setup,
 	hcpstatus.ControllerName: hcpstatus.Setup,
 }
 

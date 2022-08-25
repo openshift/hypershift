@@ -13,6 +13,9 @@ import (
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	promconfig "github.com/prometheus/common/config"
@@ -30,10 +33,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
 
 // DeleteNamespace deletes and finalizes the given namespace, logging any failures
@@ -173,11 +172,13 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 			return false, nil
 		}
 		t.Logf("All nodes are ready. Count: %v", len(nodes.Items))
+
 		return true, nil
 	})
 	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
 
 	t.Logf("All nodes for nodepool appear to be ready in %s. Count: %v", time.Since(start).Round(time.Second), n)
+
 	return nodes.Items
 }
 
