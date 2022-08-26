@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	CacheLabelSelectorKey   = "hypershift.io/managed"
+	CacheLabelSelectorKey   = "hypershift.openshift.io/managed"
 	CacheLabelSelectorValue = "true"
 )
 
