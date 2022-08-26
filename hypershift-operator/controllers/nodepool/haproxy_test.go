@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -52,10 +53,10 @@ func TestReconcileHAProxyIgnitionConfig(t *testing.T) {
 		}
 		return hc
 	}
-	const kubeconfig = `apiVersion: v1
+	const kubeconfigTemplate = `apiVersion: v1
 clusters:
 - cluster:
-    server: https://kubeconfig-host:6443
+    server: https://kubeconfig-host:%d
   name: cluster
 contexts:
 - context:
@@ -65,6 +66,11 @@ contexts:
   name: cluster
 current-context: cluster
 kind: Config`
+
+	kubeconfig := func(port int32) string {
+		return fmt.Sprintf(kubeconfigTemplate, port)
+	}
+
 	testCases := []struct {
 		name                         string
 		hc                           *hyperv1.HostedCluster
@@ -114,7 +120,7 @@ kind: Config`
 			other: []crclient.Object{&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: hc().Namespace},
 				Data: map[string][]byte{
-					"kubeconfig": []byte(kubeconfig),
+					"kubeconfig": []byte(kubeconfig(6443)),
 				},
 			}},
 
@@ -130,7 +136,7 @@ kind: Config`
 			other: []crclient.Object{&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: hc().Namespace},
 				Data: map[string][]byte{
-					"kubeconfig": []byte(kubeconfig),
+					"kubeconfig": []byte(kubeconfig(443)),
 				},
 			}},
 

@@ -743,7 +743,7 @@ spec:
 					Data: map[string][]byte{"kubeconfig": []byte(`apiVersion: v1
 clusters:
 - cluster:
-    server: http://localhost:8080
+    server: http://localhost:6443
   name: static-kas
 contexts:
 - context:
