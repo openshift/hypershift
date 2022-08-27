@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	cacheLabelSelectorKey   = "hypershift.io/managed"
+	cacheLabelSelectorKey   = "hypershift.openshift.io/managed"
 	cacheLabelSelectorValue = "true"
 )
 
