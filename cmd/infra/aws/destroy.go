@@ -150,7 +150,7 @@ func emptyBucket(ctx context.Context, client s3iface.S3API, name string) error {
 	})
 
 	if err := s3manager.NewBatchDeleteWithClient(client).Delete(ctx, iter); err != nil {
-		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == s3.ErrCodeNoSuchBucket {
+		if strings.Contains(err.Error(), s3.ErrCodeNoSuchBucket) {
 			return nil
 		}
 		return err
