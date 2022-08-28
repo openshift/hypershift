@@ -61,9 +61,10 @@ func (r *NodePoolReconciler) isHAProxyIgnitionConfigManaged(ctx context.Context,
 
 func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context, componentImages map[string]string, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, missing bool, err error) {
 	var apiServerExternalAddress string
-	apiServerExternalPort := util.APIPortWithDefaultFromHostedCluster(hcluster, config.DefaultAPIServerPort)
+	var apiServerExternalPort int32
 	if util.IsPrivateHC(hcluster) {
 		apiServerExternalAddress = fmt.Sprintf("api.%s.hypershift.local", hcluster.Name)
+		apiServerExternalPort = util.APIPortWithDefaultFromHostedCluster(hcluster, config.DefaultAPIServerPort)
 	} else {
 		if hcluster.Status.KubeConfig == nil {
 			return "", true, nil
@@ -83,6 +84,10 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 		hostURL, err := url.Parse(restConfig.Host)
 		if err != nil {
 			return "", true, fmt.Errorf("failed to parse host in kubeconfig from secret %s as url: %w", crclient.ObjectKeyFromObject(&kubeconfig), err)
+		}
+		apiServerExternalPort, err = urlPort(hostURL)
+		if err != nil {
+			return "", true, fmt.Errorf("cannot determine api server external port: %w", err)
 		}
 		apiServerExternalAddress = hostURL.Hostname()
 	}
@@ -124,6 +129,22 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 	}
 
 	return buf.String(), false, nil
+}
+
+func urlPort(u *url.URL) (int32, error) {
+	portStr := u.Port()
+	if portStr == "" {
+		switch u.Scheme {
+		case "http":
+			return 80, nil
+		case "https":
+			return 443, nil
+		default:
+			return 0, fmt.Errorf("unknown scheme: %s", u.Scheme)
+		}
+	}
+	port, err := strconv.Atoi(portStr)
+	return int32(port), err
 }
 
 type fileToAdd struct {
