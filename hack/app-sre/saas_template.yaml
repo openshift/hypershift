@@ -26966,6 +26966,13 @@ objects:
                     rolling update, which kind of defeats the purpose of the change.
                     In future we plan to propagate this field in-place. https://github.com/kubernetes-sigs/cluster-api/issues/5880'
                   type: string
+                pausedUntil:
+                  description: 'PausedUntil is a field that can be used to pause reconciliation
+                    on a resource. Either a date can be provided in RFC3339 format
+                    or a boolean. If a date is provided: reconciliation is paused
+                    on the resource until that date. If the boolean true is provided:
+                    reconciliation is paused on the resource until the field is removed.'
+                  type: string
                 platform:
                   description: Platform specifies the underlying infrastructure provider
                     for the NodePool and is used to configure platform specific behavior.

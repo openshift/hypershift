@@ -56,7 +56,7 @@ func TestProcessPausedUntilField(t *testing.T) {
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			actualIsPaused, actualDuration, err := processPausedUntilField(tc.inputPausedField, now)
+			actualIsPaused, actualDuration, err := ProcessPausedUntilField(tc.inputPausedField, now)
 			g.Expect(actualIsPaused).To(Equal(tc.expectedPaused))
 			g.Expect(actualDuration).To(Equal(tc.expectedDuration))
 			g.Expect(err != nil).To(Equal(tc.expectedError))

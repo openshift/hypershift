@@ -1,10 +1,20 @@
 package nodepool
 
 import (
+	"fmt"
+	"strconv"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/util"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+const (
+	reconciliationActiveConditionReason             = "ReconciliationActive"
+	reconciliationPausedConditionReason             = "ReconciliationPaused"
+	reconciliationInvalidPausedUntilConditionReason = "InvalidPausedUntilValue"
 )
 
 // These are copies pf metav1.Condition to accept hyperv1.NodePoolCondition
@@ -67,4 +77,39 @@ func findStatusCondition(conditions []hyperv1.NodePoolCondition, conditionType s
 	}
 
 	return nil
+}
+
+// generateReconciliationActiveCondition will generate the resource condition that reflects the state of reconciliation
+// on the resource.
+// (copied from support/util/pausereconcile_test.go and adjusted to use NodePoolCondition)
+func generateReconciliationActiveCondition(pausedUntilField *string, objectGeneration int64) hyperv1.NodePoolCondition {
+	isPaused, _, err := util.ProcessPausedUntilField(pausedUntilField, time.Now())
+	var msgString string
+	if isPaused {
+		if _, err := strconv.ParseBool(*pausedUntilField); err == nil {
+			msgString = "Reconciliation paused until field removed"
+		} else {
+			msgString = fmt.Sprintf("Reconciliation paused until: %s", *pausedUntilField)
+		}
+		return hyperv1.NodePoolCondition{
+			Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
+			Status:             corev1.ConditionFalse,
+			Reason:             reconciliationPausedConditionReason,
+			Message:            msgString,
+			ObservedGeneration: objectGeneration,
+		}
+	}
+	msgString = "Reconciliation active on resource"
+	reasonString := reconciliationActiveConditionReason
+	if err != nil {
+		reasonString = reconciliationInvalidPausedUntilConditionReason
+		msgString = "Invalid value provided for PausedUntil field"
+	}
+	return hyperv1.NodePoolCondition{
+		Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
+		Status:             corev1.ConditionTrue,
+		Reason:             reasonString,
+		Message:            msgString,
+		ObservedGeneration: objectGeneration,
+	}
 }

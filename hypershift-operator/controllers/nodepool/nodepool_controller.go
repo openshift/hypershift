@@ -187,7 +187,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	log.Info("Successfully reconciled")
-	return ctrl.Result{}, nil
+	return result, nil
 }
 
 func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (ctrl.Result, error) {
@@ -217,7 +217,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// An update event will trigger reconciliation.
 		// TODO (alberto): consider this an condition failure reason when revisiting conditions.
 		log.Error(err, "Invalid infraID, waiting.")
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	}
 
 	// 1. - Reconcile conditions according to current state of the world.
@@ -236,7 +236,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// We don't return the error here as reconciling won't solve the input problem.
 		// An update event will trigger reconciliation.
 		log.Error(err, "validating autoscaling parameters failed")
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	}
 	if isAutoscalingEnabled(nodePool) {
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -267,7 +267,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// We don't return the error here as reconciling won't solve the input problem.
 		// An update event will trigger reconciliation.
 		log.Error(err, "validating management parameters failed")
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	}
 	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolUpdateManagementEnabledConditionType,
@@ -286,7 +286,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			ObservedGeneration: nodePool.Generation,
 		})
 		log.Info("Ignition endpoint not available, waiting")
-		return reconcile.Result{}, nil
+		return ctrl.Result{}, nil
 	}
 	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
@@ -510,6 +510,25 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
 	}
 
+	// Set ReconciliationActive condition
+	setStatusCondition(&nodePool.Status.Conditions, generateReconciliationActiveCondition(nodePool.Spec.PausedUntil, nodePool.Generation))
+
+	// If reconciliation is paused we return before modifying any state
+	if isPaused, duration := supportutil.IsReconciliationPaused(log, nodePool.Spec.PausedUntil); isPaused {
+		md := machineDeployment(nodePool, controlPlaneNamespace)
+		err := pauseMachineDeployment(ctx, r.Client, md)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to pause MachineDeployment: %w", err)
+		}
+		ms := machineSet(nodePool, controlPlaneNamespace)
+		err = pauseMachineSet(ctx, r.Client, ms)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to pause MachineSet: %w", err)
+		}
+		log.Info("Reconciliation paused", "pausedUntil", *nodePool.Spec.PausedUntil)
+		return ctrl.Result{RequeueAfter: duration}, nil
+	}
+
 	// 2. - Reconcile towards expected state of the world.
 	targetConfigVersionHash := hashStruct(config + targetVersion)
 	compressedConfig, err := compress([]byte(config))
@@ -523,22 +542,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
 		err := r.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret)
 		if err != nil && !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to get token Secret: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to get token Secret: %w", err)
 		}
 		if err == nil {
 			if err := setExpirationTimestampOnToken(ctx, r.Client, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
-				return reconcile.Result{}, fmt.Errorf("failed to set expiration on token Secret: %w", err)
+				return ctrl.Result{}, fmt.Errorf("failed to set expiration on token Secret: %w", err)
 			}
 		}
 
 		userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
 		err = r.Get(ctx, client.ObjectKeyFromObject(userDataSecret), userDataSecret)
 		if err != nil && !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to get user data Secret: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to get user data Secret: %w", err)
 		}
 		if err == nil {
 			if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
-				return reconcile.Result{}, fmt.Errorf("failed to delete user data Secret: %w", err)
+				return ctrl.Result{}, fmt.Errorf("failed to delete user data Secret: %w", err)
 			}
 		}
 	}
@@ -704,6 +723,23 @@ func deleteMachineDeployment(ctx context.Context, c client.Client, md *capiv1.Ma
 	return nil
 }
 
+func pauseMachineDeployment(ctx context.Context, c client.Client, md *capiv1.MachineDeployment) error {
+	err := c.Get(ctx, client.ObjectKeyFromObject(md), md)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting MachineDeployment: %w", err)
+	}
+	if md.Annotations == nil {
+		md.Annotations = make(map[string]string)
+	}
+	//FIXME: In future we may want to use the spec field instead
+	// https://github.com/kubernetes-sigs/cluster-api/issues/6966
+	md.Annotations[capiv1.PausedAnnotation] = "true"
+	return c.Update(ctx, md)
+}
+
 func deleteMachineSet(ctx context.Context, c client.Client, ms *capiv1.MachineSet) error {
 	err := c.Get(ctx, client.ObjectKeyFromObject(ms), ms)
 	if err != nil {
@@ -723,6 +759,25 @@ func deleteMachineSet(ctx context.Context, c client.Client, ms *capiv1.MachineSe
 		return fmt.Errorf("error deleting MachineSet: %w", err)
 	}
 	return nil
+}
+
+func pauseMachineSet(ctx context.Context, c client.Client, ms *capiv1.MachineSet) error {
+	err := c.Get(ctx, client.ObjectKeyFromObject(ms), ms)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("error getting MachineSet: %w", err)
+	}
+	if ms.Annotations == nil {
+		ms.Annotations = make(map[string]string)
+	}
+	//FIXME: In future we may want to use the spec field instead
+	// https://github.com/kubernetes-sigs/cluster-api/issues/6966
+	// TODO: Also for paused to be complete we will need to pause all MHC if autorepair
+	// is enabled and remove the autoscaling labels from the MachineDeployment / Machineset
+	ms.Annotations[capiv1.PausedAnnotation] = "true"
+	return c.Update(ctx, ms)
 }
 
 func deleteMachineHealthCheck(ctx context.Context, c client.Client, mhc *capiv1.MachineHealthCheck) error {
@@ -849,6 +904,8 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		machineDeployment.Annotations = map[string]string{}
 	}
 	machineDeployment.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+	// Delete any paused annotation
+	delete(machineDeployment.Annotations, capiv1.PausedAnnotation)
 	if machineDeployment.GetLabels() == nil {
 		machineDeployment.Labels = map[string]string{}
 	}

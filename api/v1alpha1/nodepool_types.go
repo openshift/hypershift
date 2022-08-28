@@ -18,6 +18,7 @@ const (
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
 	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"
 	NodePoolReadyConditionType                   = "Ready"
+	NodePoolReconciliationActiveConditionType    = "ReconciliationActive"
 	NodePoolAutorepairEnabledConditionType       = "AutorepairEnabled"
 	NodePoolUpdatingVersionConditionType         = "UpdatingVersion"
 	NodePoolUpdatingConfigConditionType          = "UpdatingConfig"
@@ -134,6 +135,13 @@ type NodePoolSpec struct {
 	// https://github.com/kubernetes-sigs/cluster-api/issues/5880
 	// +optional
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
+
+	// PausedUntil is a field that can be used to pause reconciliation on a resource.
+	// Either a date can be provided in RFC3339 format or a boolean. If a date is
+	// provided: reconciliation is paused on the resource until that date. If the boolean true is
+	// provided: reconciliation is paused on the resource until the field is removed.
+	// +optional
+	PausedUntil *string `json:"pausedUntil,omitempty"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.
