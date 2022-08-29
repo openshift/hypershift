@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -89,7 +90,9 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 	// the cluster to be cleaned up before destroying its infrastructure.
 	if hostedClusterExists && !sets.NewString(hostedCluster.Finalizers...).Has(destroyFinalizer) {
 		original := hostedCluster.DeepCopy()
-		controllerutil.AddFinalizer(hostedCluster, destroyFinalizer)
+		if hostedCluster.DeletionTimestamp == nil {
+			controllerutil.AddFinalizer(hostedCluster, destroyFinalizer)
+		}
 		if o.DestroyCloudResources {
 			if hostedCluster.Annotations == nil {
 				hostedCluster.Annotations = map[string]string{}
@@ -99,7 +102,7 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 		if err := c.Patch(ctx, hostedCluster, client.MergeFrom(original)); err != nil {
 			if apierrors.IsNotFound(err) {
 				o.Log.Info("Hosted cluster not found, skipping finalizer update", "namespace", o.Namespace, "name", o.Name)
-			} else {
+			} else if !strings.Contains(err.Error(), "no new finalizers can be added if the object is being deleted") {
 				return fmt.Errorf("failed to add finalizer to hosted cluster: %w", err)
 			}
 		} else {
