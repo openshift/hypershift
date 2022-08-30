@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/openshift/hypershift/cmd/nodepool/kubevirt"
+	"github.com/openshift/hypershift/cmd/nodepool/powervs"
 )
 
 // The following lines are needed in order to validate that any platform implementing PlatformOptions satisfy the interface
@@ -42,6 +43,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(agent.NewCreateCommand(opts))
 	cmd.AddCommand(azure.NewCreateCommand(opts))
+	cmd.AddCommand(powervs.NewCreateCommand(opts))
 
 	return cmd
 }
