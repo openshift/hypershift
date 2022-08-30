@@ -7,6 +7,8 @@ import (
 	"context"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -38,6 +40,17 @@ func TestCreateCluster(t *testing.T) {
 	// Wait for Nodes to be Ready
 	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
 	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+
+	// TODO (alberto): move into WaitForNReadyNodes after this PR github.com/openshift/hypershift/pull/1702 gets merged so it's validated by any call to the function in any test.
+	// It's has to wait for the PR to merged otherwise the control_plane_upgrade_test would fail.
+	t.Logf("Validating all Nodes have the NodePool label")
+	nodes := &corev1.NodeList{}
+	if err := guestClient.List(ctx, nodes); err != nil {
+		t.Fatalf("failed to list nodes in guest cluster: %v", err)
+	}
+	for _, node := range nodes.Items {
+		g.Expect(node.Labels[hyperv1.NodePoolLabel]).NotTo(BeEmpty())
+	}
 
 	// Wait for the rollout to be complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)

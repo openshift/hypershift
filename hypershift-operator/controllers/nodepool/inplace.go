@@ -56,8 +56,13 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 				resourcesName:           resourcesName,
 				capiv1.ClusterLabelName: CAPIClusterName,
 			},
+			// Annotations here propagate down to Machines
+			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.
 			Annotations: map[string]string{
-				nodePoolAnnotationPlatformMachineTemplate: machineTemplateSpecJSON,
+				// TODO (alberto): Use conditions to signal an in progress rolling upgrade
+				// similar to what we do with nodePoolAnnotationCurrentConfig
+				nodePoolAnnotationPlatformMachineTemplate: machineTemplateSpecJSON, // This will trigger a deployment rolling upgrade when its value changes.
+				nodePoolAnnotation:                        client.ObjectKeyFromObject(nodePool).String(),
 			},
 		},
 
