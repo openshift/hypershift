@@ -47,7 +47,6 @@ cp "{{ .CABundle }}" "{{ .TokenDir }}/ca.crt"
 export KUBERNETES_SERVICE_HOST=kube-apiserver
 export KUBERNETES_SERVICE_PORT=$KUBE_APISERVER_SERVICE_PORT
 exec /usr/bin/cluster-image-registry-operator \
-  --files="{{ .TokenDir }}/token" \
   --files="{{ .ServingCertDir }}/tls.crt" \
   --files="{{ .ServingCertDir }}/tls.key"
 `
