@@ -223,29 +223,8 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 		return fmt.Errorf("failed to create upgrade manifests in hosted cluster: %w", err)
 	}
 
-	// Check the nodes to see if any need our help to progress drain
-	// TODO (jerzhang): actually implement drain logic, likely as separate goroutines to monitor success
-	// TODO (jerzhang): consider what happens if the desiredConfig has changed since the node last upgraded
-	for idx := range nodes {
-		if _, err := r.CreateOrUpdate(ctx, r.guestClusterClient, nodes[idx], func() error {
-			// TODO (jerzhang): delete the pod after we uncordon
-			// desiredVerb := strings.Split(desiredState, "-")[0]
-			// if desiredVerb == DrainerStateUncordon {
-			// }
-
-			// TODO (jerzhang): actually implement the node draining. For now, just set the singal and pretend we drained.
-			if nodes[idx].Annotations == nil {
-				nodes[idx].Annotations = map[string]string{}
-			}
-			nodes[idx].Annotations[LastAppliedDrainerAnnotationKey] = nodes[idx].Annotations[DesiredDrainerAnnotationKey]
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to create upgrade manifests in hosted cluster: %w", err)
-		}
-		// TODO (jerzhang): in the future, consider exiting here and let future syncs handle post-drain functions
-	}
-
 	// Find nodes that can be upgraded
+	// The drain is handled separately, such that if the node is awaiting drain, nothing will happen here.
 	// TODO (jerzhang): add logic to honor maxUnavailable/maxSurge
 	nodesToUpgrade := getNodesToUpgrade(nodes, targetConfigVersionHash, 1)
 	err = r.performNodesUpgrade(ctx, r.guestClusterClient, nodePoolUpgradeAPI.spec.poolRef.GetName(), nodesToUpgrade, targetConfigVersionHash, mcoImage)
@@ -284,9 +263,9 @@ func (r *Reconciler) performNodesUpgrade(ctx context.Context, hostedClusterClien
 			nodes[idx].Annotations[DesiredMachineConfigAnnotationKey] = targetConfigVersionHash
 			return nil
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile node drain annotations: %w", err)
+			return fmt.Errorf("failed to reconcile node desired config annotations: %w", err)
 		} else {
-			log.Info("Reconciled Node drain annotations", "result", result)
+			log.Info("Reconciled Node desired config annotations", "result", result)
 		}
 	}
 	return nil
