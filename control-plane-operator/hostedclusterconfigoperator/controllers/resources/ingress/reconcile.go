@@ -11,6 +11,11 @@ import (
 )
 
 func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool, isPrivate bool) error {
+	// If ingress controller already exists, skip reconciliation to allow day-2 configuration
+	if ingressController.ResourceVersion != "" {
+		return nil
+	}
+
 	ingressController.Spec.Domain = ingressSubdomain
 	ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
 		Type: operatorv1.LoadBalancerServiceStrategyType,

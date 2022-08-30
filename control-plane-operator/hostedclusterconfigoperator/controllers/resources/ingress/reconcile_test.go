@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestReconcileDefaultIngressController(t *testing.T) {
@@ -197,6 +198,26 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 						Name: manifests.IngressDefaultIngressControllerCert().Name,
 					},
 				},
+			},
+		},
+		{
+			name: "Existing ingress controller",
+			inputIngressController: func() *operatorv1.IngressController {
+				ic := manifests.IngressDefaultIngressController()
+				ic.ResourceVersion = "1"
+				return ic
+			}(),
+			inputIngressDomain: fakeIngressDomain,
+			inputReplicas:      fakeInputReplicas,
+			inputIsIBMCloudUPI: false,
+			inputIsPrivate:     false,
+			expectedIngressController: &operatorv1.IngressController{
+				ObjectMeta: func() metav1.ObjectMeta {
+					m := manifests.IngressDefaultIngressController().ObjectMeta
+					m.ResourceVersion = "1"
+					return m
+				}(),
+				Spec: operatorv1.IngressControllerSpec{},
 			},
 		},
 	}
