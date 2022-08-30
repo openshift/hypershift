@@ -68,19 +68,19 @@ func NewPcloudSharedprocessorpoolsGetOK() *PcloudSharedprocessorpoolsGetOK {
 OK
 */
 type PcloudSharedprocessorpoolsGetOK struct {
-	Payload *models.SharedProcessorPool
+	Payload *models.SharedProcessorPoolDetail
 }
 
 func (o *PcloudSharedprocessorpoolsGetOK) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/shared-processor-pools/{shared_processor_pool_id}][%d] pcloudSharedprocessorpoolsGetOK  %+v", 200, o.Payload)
 }
-func (o *PcloudSharedprocessorpoolsGetOK) GetPayload() *models.SharedProcessorPool {
+func (o *PcloudSharedprocessorpoolsGetOK) GetPayload() *models.SharedProcessorPoolDetail {
 	return o.Payload
 }
 
 func (o *PcloudSharedprocessorpoolsGetOK) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
-	o.Payload = new(models.SharedProcessorPool)
+	o.Payload = new(models.SharedProcessorPoolDetail)
 
 	// response payload
 	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {

@@ -8,8 +8,10 @@ package models
 import (
 	"context"
 
+	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
+	"github.com/go-openapi/validate"
 )
 
 // VolumeGroupStorageDetails volume group storage details
@@ -18,7 +20,8 @@ import (
 type VolumeGroupStorageDetails struct {
 
 	// The name of consistency group at storage controller level
-	ConsistencyGroupName string `json:"consistencyGroupName,omitempty"`
+	// Required: true
+	ConsistencyGroupName *string `json:"consistencyGroupName"`
 
 	// Indicates the minimum period in seconds between multiple cycles
 	CyclePeriodSeconds int64 `json:"cyclePeriodSeconds,omitempty"`
@@ -47,6 +50,24 @@ type VolumeGroupStorageDetails struct {
 
 // Validate validates this volume group storage details
 func (m *VolumeGroupStorageDetails) Validate(formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.validateConsistencyGroupName(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+func (m *VolumeGroupStorageDetails) validateConsistencyGroupName(formats strfmt.Registry) error {
+
+	if err := validate.Required("consistencyGroupName", "body", m.ConsistencyGroupName); err != nil {
+		return err
+	}
+
 	return nil
 }
 

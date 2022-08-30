@@ -17,10 +17,10 @@ import (
 // swagger:model SharedProcessorPoolUpdate
 type SharedProcessorPoolUpdate struct {
 
-	// The name of the Shared Processor Pool
+	// The new name for the Shared Processor Pool; minumum of 2 characters, maximum of 12, the only special character allowed is the underscore '_'.
 	Name string `json:"name,omitempty"`
 
-	// The amount of reserved processor cores for the Shared Processor Pool
+	// The amount of reserved processor cores for the Shared Processor Pool; only integers allowed, no fractional values; the amount can be increased (dependent on available resources) or decreased (dependent on currently allocated resources)
 	ReservedCores int64 `json:"reservedCores,omitempty"`
 }
 

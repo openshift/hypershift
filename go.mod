@@ -6,7 +6,7 @@ require (
 	github.com/Azure/azure-sdk-for-go v61.4.0+incompatible
 	github.com/Azure/go-autorest/autorest v0.11.24
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.11
-	github.com/IBM-Cloud/power-go-client v1.1.9
+	github.com/IBM-Cloud/power-go-client v1.1.12
 	github.com/IBM/go-sdk-core/v5 v5.10.1
 	github.com/IBM/networking-go-sdk v0.29.0
 	github.com/IBM/platform-services-go-sdk v0.24.1

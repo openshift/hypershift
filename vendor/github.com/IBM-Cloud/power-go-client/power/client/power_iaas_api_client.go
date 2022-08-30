@@ -15,9 +15,13 @@ import (
 	"github.com/IBM-Cloud/power-go-client/power/client/catalog"
 	"github.com/IBM-Cloud/power-go-client/power/client/hardware_platforms"
 	"github.com/IBM-Cloud/power-go-client/power/client/iaas_service_broker"
+	"github.com/IBM-Cloud/power-go-client/power/client/internal_power_v_s_instances"
+	"github.com/IBM-Cloud/power-go-client/power/client/internal_power_v_s_locations"
 	"github.com/IBM-Cloud/power-go-client/power/client/internal_storage_regions"
+	"github.com/IBM-Cloud/power-go-client/power/client/internal_transit_gateway"
 	"github.com/IBM-Cloud/power-go-client/power/client/open_stacks"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_cloud_connections"
+	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_disaster_recovery"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_events"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_images"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_instances"
@@ -26,6 +30,7 @@ import (
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_p_vm_instances"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_placement_groups"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_s_a_p"
+	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_s_p_p_placement_groups"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_service_d_h_c_p"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_shared_processor_pools"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_snapshots"
@@ -92,9 +97,13 @@ func New(transport runtime.ClientTransport, formats strfmt.Registry) *PowerIaasA
 	cli.Catalog = catalog.New(transport, formats)
 	cli.HardwarePlatforms = hardware_platforms.New(transport, formats)
 	cli.IaasServiceBroker = iaas_service_broker.New(transport, formats)
+	cli.InternalPowervsInstances = internal_power_v_s_instances.New(transport, formats)
+	cli.InternalPowervsLocations = internal_power_v_s_locations.New(transport, formats)
 	cli.InternalStorageRegions = internal_storage_regions.New(transport, formats)
+	cli.InternalTransitGateway = internal_transit_gateway.New(transport, formats)
 	cli.OpenStacks = open_stacks.New(transport, formats)
 	cli.PCloudCloudConnections = p_cloud_cloud_connections.New(transport, formats)
+	cli.PCloudDisasterRecovery = p_cloud_disaster_recovery.New(transport, formats)
 	cli.PCloudEvents = p_cloud_events.New(transport, formats)
 	cli.PCloudImages = p_cloud_images.New(transport, formats)
 	cli.PCloudInstances = p_cloud_instances.New(transport, formats)
@@ -103,6 +112,7 @@ func New(transport runtime.ClientTransport, formats strfmt.Registry) *PowerIaasA
 	cli.PCloudpVMInstances = p_cloud_p_vm_instances.New(transport, formats)
 	cli.PCloudPlacementGroups = p_cloud_placement_groups.New(transport, formats)
 	cli.PCloudsap = p_cloud_s_a_p.New(transport, formats)
+	cli.PCloudsppPlacementGroups = p_cloud_s_p_p_placement_groups.New(transport, formats)
 	cli.PCloudServicedhcp = p_cloud_service_d_h_c_p.New(transport, formats)
 	cli.PCloudSharedProcessorPools = p_cloud_shared_processor_pools.New(transport, formats)
 	cli.PCloudSnapshots = p_cloud_snapshots.New(transport, formats)
@@ -174,11 +184,19 @@ type PowerIaasAPI struct {
 
 	IaasServiceBroker iaas_service_broker.ClientService
 
+	InternalPowervsInstances internal_power_v_s_instances.ClientService
+
+	InternalPowervsLocations internal_power_v_s_locations.ClientService
+
 	InternalStorageRegions internal_storage_regions.ClientService
+
+	InternalTransitGateway internal_transit_gateway.ClientService
 
 	OpenStacks open_stacks.ClientService
 
 	PCloudCloudConnections p_cloud_cloud_connections.ClientService
+
+	PCloudDisasterRecovery p_cloud_disaster_recovery.ClientService
 
 	PCloudEvents p_cloud_events.ClientService
 
@@ -195,6 +213,8 @@ type PowerIaasAPI struct {
 	PCloudPlacementGroups p_cloud_placement_groups.ClientService
 
 	PCloudsap p_cloud_s_a_p.ClientService
+
+	PCloudsppPlacementGroups p_cloud_s_p_p_placement_groups.ClientService
 
 	PCloudServicedhcp p_cloud_service_d_h_c_p.ClientService
 
@@ -241,9 +261,13 @@ func (c *PowerIaasAPI) SetTransport(transport runtime.ClientTransport) {
 	c.Catalog.SetTransport(transport)
 	c.HardwarePlatforms.SetTransport(transport)
 	c.IaasServiceBroker.SetTransport(transport)
+	c.InternalPowervsInstances.SetTransport(transport)
+	c.InternalPowervsLocations.SetTransport(transport)
 	c.InternalStorageRegions.SetTransport(transport)
+	c.InternalTransitGateway.SetTransport(transport)
 	c.OpenStacks.SetTransport(transport)
 	c.PCloudCloudConnections.SetTransport(transport)
+	c.PCloudDisasterRecovery.SetTransport(transport)
 	c.PCloudEvents.SetTransport(transport)
 	c.PCloudImages.SetTransport(transport)
 	c.PCloudInstances.SetTransport(transport)
@@ -252,6 +276,7 @@ func (c *PowerIaasAPI) SetTransport(transport runtime.ClientTransport) {
 	c.PCloudpVMInstances.SetTransport(transport)
 	c.PCloudPlacementGroups.SetTransport(transport)
 	c.PCloudsap.SetTransport(transport)
+	c.PCloudsppPlacementGroups.SetTransport(transport)
 	c.PCloudServicedhcp.SetTransport(transport)
 	c.PCloudSharedProcessorPools.SetTransport(transport)
 	c.PCloudSnapshots.SetTransport(transport)

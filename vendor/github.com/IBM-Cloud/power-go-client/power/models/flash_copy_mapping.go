@@ -23,7 +23,8 @@ type FlashCopyMapping struct {
 	CopyRate int64 `json:"copyRate,omitempty"`
 
 	// Indicates flash copy name of the volume
-	FlashCopyName string `json:"flashCopyName,omitempty"`
+	// Required: true
+	FlashCopyName *string `json:"flashCopyName"`
 
 	// Indicates the progress of flash copy operation
 	Progress int64 `json:"progress,omitempty"`
@@ -46,6 +47,10 @@ type FlashCopyMapping struct {
 func (m *FlashCopyMapping) Validate(formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.validateFlashCopyName(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateStartTime(formats); err != nil {
 		res = append(res, err)
 	}
@@ -53,6 +58,15 @@ func (m *FlashCopyMapping) Validate(formats strfmt.Registry) error {
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *FlashCopyMapping) validateFlashCopyName(formats strfmt.Registry) error {
+
+	if err := validate.Required("flashCopyName", "body", m.FlashCopyName); err != nil {
+		return err
+	}
+
 	return nil
 }
 
