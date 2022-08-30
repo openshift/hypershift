@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
+	"sync"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -61,6 +62,13 @@ const (
 	ControllerName       = "resources"
 	SecretHashAnnotation = "hypershift.openshift.io/kubeadmin-secret-hash"
 	observedConfigKey    = "config"
+)
+
+var (
+	// deleteDNSOperatorDeploymentOnce ensures that the reconciler tries
+	// to delete any existing DNS operator deployment on the hosted cluster
+	// only once.
+	deleteDNSOperatorDeploymentOnce sync.Once
 )
 
 type reconciler struct {
@@ -470,6 +478,22 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		log.Info("removing existing node tuning cluster operator")
 		errs = append(errs, r.client.Delete(ctx, nodeTuningCO))
 	}
+
+	// Delete the DNS operator deployment in the hosted cluster, if it is
+	// present there.  A separate DNS operator deployment runs as part of
+	// the hosted control-plane, but an upgraded cluster might still have
+	// an old DNS operator deployment in the hosted cluster.  The caching
+	// client has a label selector that doesn't match the deployment,
+	// so we must use the uncached client for this delete call.  To avoid
+	// excessive API calls using the uncached client, the delete call is
+	// guarded using a sync.Once.
+	deleteDNSOperatorDeploymentOnce.Do(func() {
+		dnsOperatorDeployment := manifests.DNSOperatorDeployment()
+		log.Info("removing any existing DNS operator deployment")
+		if err := r.uncachedClient.Delete(ctx, dnsOperatorDeployment); err != nil && !apierrors.IsNotFound(err) {
+			errs = append(errs, err)
+		}
+	})
 
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		errs = append(errs, r.reconcileAWSIdentityWebhook(ctx)...)
