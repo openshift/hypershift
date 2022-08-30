@@ -3723,7 +3723,9 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, log
 		Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
 		Delete: &s3.Delete{Objects: objectsToDelete},
 	}); err != nil {
-		return fmt.Errorf("failed to delete OIDC objects from %s S3 bucket: %w", r.OIDCStorageProviderS3BucketName, err)
+		if awsErr := awserr.Error(nil); !errors.As(err, &awsErr) || awsErr.Code() != s3.ErrCodeNoSuchBucket {
+			return fmt.Errorf("failed to delete OIDC objects from %s S3 bucket: %w", r.OIDCStorageProviderS3BucketName, err)
+		}
 	}
 
 	controllerutil.RemoveFinalizer(hcluster, oidcDocumentsFinalizer)
