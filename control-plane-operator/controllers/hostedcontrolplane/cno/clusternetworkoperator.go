@@ -56,9 +56,10 @@ type Params struct {
 	OwnerRef                              config.OwnerRef
 	DeploymentConfig                      config.DeploymentConfig
 	ConnectsThroughInternetToControlplane bool
+	DefaultIngressDomain                  string
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool, defaultIngressDomain string) Params {
 	p := Params{
 		Images: Images{
 			NetworkOperator:              images["cluster-network-operator"],
@@ -102,7 +103,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 	}
 	p.HostedClusterName = hcp.Name
 	p.TokenAudience = hcp.Spec.IssuerURL
-
+	p.DefaultIngressDomain = defaultIngressDomain
 	return p
 }
 
@@ -221,12 +222,14 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	} else {
 		cnoArgs = append(cnoArgs, "--extra-clusters=management=/configs/management")
 	}
-
 	if params.ConnectsThroughInternetToControlplane {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
 			Name: "PROXY_INTERNAL_APISERVER_ADDRESS", Value: "true",
 		})
 	}
+	cnoEnv = append(cnoEnv, corev1.EnvVar{
+		Name: "OVN_SBDB_ROUTE_HOST", Value: util.ShortenRouteHostnameIfNeeded("ovnkube-sbdb", dep.Namespace, params.DefaultIngressDomain),
+	})
 
 	dep.Spec.Template.Spec.InitContainers = []corev1.Container{
 		// Hack: add an initContainer that deletes the old (in-cluster) CNO first
