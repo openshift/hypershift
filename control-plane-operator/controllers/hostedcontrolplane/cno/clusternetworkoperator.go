@@ -59,9 +59,11 @@ type Params struct {
 	DeploymentConfig            config.DeploymentConfig
 	IsPrivate                   bool
 	ExposedThroughPrivateRouter bool
+	SbDbPubStrategy             *hyperv1.ServicePublishingStrategy
+	DefaultIngressDomain        string
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool, defaultIngressDomain string) Params {
 	p := Params{
 		Images: Images{
 			NetworkOperator:              images["cluster-network-operator"],
@@ -91,6 +93,10 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 		OwnerRef:                    config.OwnerRefFrom(hcp),
 		IsPrivate:                   util.IsPrivateHCP(hcp),
 		ExposedThroughPrivateRouter: isOVNSBDBExposedThroughPrivateRouter(hcp),
+		HostedClusterName:           hcp.Name,
+		TokenAudience:               hcp.Spec.IssuerURL,
+		SbDbPubStrategy:             util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OVNSbDb),
+		DefaultIngressDomain:        defaultIngressDomain,
 	}
 
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
@@ -104,8 +110,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 		p.APIServerAddress = hcp.Status.ControlPlaneEndpoint.Host
 		p.APIServerPort = hcp.Status.ControlPlaneEndpoint.Port
 	}
-	p.HostedClusterName = hcp.Name
-	p.TokenAudience = hcp.Spec.IssuerURL
 
 	return p
 }
@@ -226,11 +230,17 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		cnoArgs = append(cnoArgs, "--extra-clusters=management=/configs/management")
 	}
 
+	sbDbRouteHost := util.ShortenRouteHostnameIfNeeded("ovnkube-sbdb", dep.Namespace, params.DefaultIngressDomain)
 	if params.IsPrivate {
-		cnoEnv = append(cnoEnv, corev1.EnvVar{
-			Name: "OVN_SBDB_ROUTE_HOST", Value: "ovnkube-sbdb." + awsprivatelink.RouterZoneName(params.HostedClusterName),
-		})
-	} else {
+		sbDbRouteHost = "ovnkube-sbdb." + awsprivatelink.RouterZoneName(params.HostedClusterName)
+	} else if params.SbDbPubStrategy != nil && params.SbDbPubStrategy.Route != nil && params.SbDbPubStrategy.Route.Hostname != "" {
+		sbDbRouteHost = params.SbDbPubStrategy.Route.Hostname
+	}
+	cnoEnv = append(cnoEnv, corev1.EnvVar{
+		Name: "OVN_SBDB_ROUTE_HOST", Value: sbDbRouteHost,
+	})
+
+	if !params.IsPrivate {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
 			Name: "PROXY_INTERNAL_APISERVER_ADDRESS", Value: "true",
 		})
