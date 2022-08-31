@@ -39,6 +39,7 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -167,6 +168,7 @@ const (
 	finalizer                              = "hypershift.openshift.io/control-plane-operator-finalizer"
 	endpointServiceDeletionRequeueDuration = 5 * time.Second
 	hypershiftLocalZone                    = "hypershift.local"
+	routerDomain                           = "apps"
 )
 
 type AWSEndpointServiceReconciler struct {
@@ -479,7 +481,7 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		return nil
 	}
 
-	zoneName := fmt.Sprintf("%s.%s", hcp.Name, hypershiftLocalZone)
+	zoneName := zoneName(hcp.Name)
 	zoneID, err := lookupZoneID(ctx, route53Client, zoneName)
 	if err != nil {
 		return err
@@ -505,6 +507,14 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 	return nil
 }
 
+func zoneName(hcpName string) string {
+	return fmt.Sprintf("%s.%s", hcpName, hypershiftLocalZone)
+}
+
+func RouterZoneName(hcpName string) string {
+	return routerDomain + "." + zoneName(hcpName)
+}
+
 func recordsForService(awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane) []string {
 	if awsEndpointService.Name == manifests.KubeAPIServerPrivateService("").Name {
 		return []string{"api"}
@@ -516,8 +526,8 @@ func recordsForService(awsEndpointService *hyperv1.AWSEndpointService, hcp *hype
 
 	// If the kas is exposed through a route, the router needs to have DNS entries for both
 	// the kas and the apps domain
-	if m := servicePublishingStrategyByType(hcp, hyperv1.APIServer); m != nil && m.Type == hyperv1.Route {
-		return []string{"api", "*.apps"}
+	if m := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer); m != nil && m.Type == hyperv1.Route {
+		return []string{"api", "*." + routerDomain}
 	}
 
 	return []string{"*.apps"}
@@ -584,13 +594,4 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	}
 
 	return true, nil
-}
-
-func servicePublishingStrategyByType(hcp *hyperv1.HostedControlPlane, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
-	for _, mapping := range hcp.Spec.Services {
-		if mapping.Service == svcType {
-			return &mapping.ServicePublishingStrategy
-		}
-	}
-	return nil
 }

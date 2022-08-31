@@ -15,11 +15,11 @@ func TestReconcileDeployment(t *testing.T) {
 	}{
 		{
 			name:                        "No private apiserver connectivity, proxy apiserver address is set",
-			params:                      Params{ConnectsThroughInternetToControlplane: true},
 			expectProxyAPIServerAddress: true,
 		},
 		{
-			name: "Private apiserver connectivity, proxy apiserver address is unset",
+			name:   "Private apiserver connectivity, proxy apiserver address is unset",
+			params: Params{IsPrivate: true},
 		},
 	}
 

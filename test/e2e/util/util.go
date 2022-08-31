@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -611,16 +610,11 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 				t.Skip("skipping test because APIServer is not exposed through a route")
 			}
 		}
-		// TODO alvaroaleman: This needs to be fixed up in the CNO
-		exceptions := sets.NewString("ovnkube-sbdb")
 		var routes routev1.RouteList
 		if err := hostClient.List(ctx, &routes, crclient.InNamespace(manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name)); err != nil {
 			t.Fatalf("failed to list routes: %v", err)
 		}
 		for _, route := range routes.Items {
-			if exceptions.Has(route.Name) {
-				continue
-			}
 			original := route.DeepCopy()
 			ingress.AddRouteLabel(&route)
 			if diff := cmp.Diff(route.GetLabels(), original.GetLabels()); diff != "" {

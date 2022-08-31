@@ -582,7 +582,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	// Reconcile router
-	kasServiceStrategy := servicePublishingStrategyByType(hostedControlPlane, hyperv1.APIServer)
+	kasServiceStrategy := util.ServicePublishingStrategyByTypeForHCP(hostedControlPlane, hyperv1.APIServer)
 	if util.IsPrivateHCP(hostedControlPlane) || util.HasPublicLoadBalancerForPrivateRouter(hostedControlPlane) {
 		r.Log.Info("Reconciling router")
 		if err := r.reconcileRouter(ctx, hostedControlPlane, releaseImage, createOrUpdate, kasServiceStrategy.Type == hyperv1.Route); err != nil {
@@ -821,15 +821,6 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	return nil
 }
 
-func servicePublishingStrategyByType(hcp *hyperv1.HostedControlPlane, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
-	for _, mapping := range hcp.Spec.Services {
-		if mapping.Service == svcType {
-			return &mapping.ServicePublishingStrategy
-		}
-	}
-	return nil
-}
-
 func (r *HostedControlPlaneReconciler) reconcileDefaultServiceAccount(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
 	defaultSA := common.DefaultServiceAccount(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, defaultSA, func() error {
@@ -842,7 +833,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultServiceAccount(ctx contex
 }
 
 func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
-	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.APIServer)
+	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
 	if serviceStrategy == nil {
 		return errors.New("APIServer service strategy not specified")
 	}
@@ -894,7 +885,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 
 func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := konnectivity.NewKonnectivityServiceParams(hcp)
-	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.Konnectivity)
+	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.Konnectivity)
 	if serviceStrategy == nil {
 		//lint:ignore ST1005 Konnectivity is proper name
 		return fmt.Errorf("Konnectivity service strategy not specified")
@@ -918,7 +909,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
-	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.OAuthServer)
+	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OAuthServer)
 	if serviceStrategy == nil {
 		return fmt.Errorf("OAuthServer service strategy not specified")
 	}
@@ -1045,7 +1036,7 @@ func (r *HostedControlPlaneReconciler) defaultReconcileInfrastructureStatus(ctx 
 }
 
 func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, message string, err error) {
-	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.APIServer)
+	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
 	if serviceStrategy == nil {
 		return "", 0, "", errors.New("APIServer service strategy not specified")
 	}
@@ -1074,7 +1065,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, message string, err error) {
-	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.Konnectivity)
+	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.Konnectivity)
 	if serviceStrategy == nil {
 		err = fmt.Errorf("konnectivity service strategy not specified")
 		return
@@ -1104,7 +1095,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx co
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOAuthServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, message string, err error) {
-	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.OAuthServer)
+	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OAuthServer)
 	if serviceStrategy == nil {
 		err = fmt.Errorf("OAuth strategy not specified")
 		return
