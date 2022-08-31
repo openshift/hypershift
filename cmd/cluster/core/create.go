@@ -291,7 +291,7 @@ func apply(ctx context.Context, l logr.Logger, exampleOptions *apifixtures.Examp
 			if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
 				return false, fmt.Errorf("failed to get hostedcluster %s: %w", crclient.ObjectKeyFromObject(hostedCluster), err)
 			}
-			rolledOut := len(hostedCluster.Status.Version.History) > 0 && hostedCluster.Status.Version.History[0].CompletionTime != nil
+			rolledOut := hostedCluster.Status.Version != nil && len(hostedCluster.Status.Version.History) > 0 && hostedCluster.Status.Version.History[0].CompletionTime != nil
 			if !rolledOut {
 				l.Info("Cluster rollout not finished yet, checking again in 30 seconds...")
 			}
