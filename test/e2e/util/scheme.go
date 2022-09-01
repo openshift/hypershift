@@ -1,6 +1,7 @@
 package util
 
 import (
+	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -19,4 +20,5 @@ func init() {
 	operatorsv1.AddToScheme(scheme)
 	operatorsv1alpha1.AddToScheme(scheme)
 	capikubevirt.AddToScheme(scheme)
+	tunedv1.AddToScheme(scheme)
 }
