@@ -206,6 +206,19 @@ objects:
     verbs:
     - '*'
   - apiGroups:
+    - subresources.kubevirt.io
+    resources:
+    - virtualmachineinstances/addvolume
+    - virtualmachineinstances/removevolume
+    verbs:
+    - '*'
+  - apiGroups:
+    - cdi.kubevirt.io
+    resources:
+    - datavolumes
+    verbs:
+    - '*'
+  - apiGroups:
     - agent-install.openshift.io
     resources:
     - agents
