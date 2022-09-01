@@ -400,6 +400,9 @@ github.com/hashicorp/go-retryablehttp
 # github.com/hashicorp/go-uuid v1.0.1
 ## explicit
 github.com/hashicorp/go-uuid
+# github.com/hoisie/mustache v0.0.0-20160804235033-6375acf62c69
+## explicit
+github.com/hoisie/mustache
 # github.com/imdario/mergo v0.3.12
 ## explicit; go 1.13
 github.com/imdario/mergo

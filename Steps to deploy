@@ -1,0 +1,44 @@
+Steps to deploy
+*create in tenant a ns
+*create in tenant a service account for the node + roles and scc
+*create in infra a service account + roles and scc
+*create a kubeconfig for the infra service account
+*create in tenant a secret from the infra kubeconfig
+*create in tanant the configmap
+*create in tenant the daemonset
+*create in tenant a service account for the controller + roles and scc
+*create in infra the configmap
+*create in infra the deployment
+
+
+WIP: csi-driver-kubevirt
+
+
+hypershift install --hypershift-image quay.io/isaacdorfman/control-plane-operator:v1.0
+
+./bin/hypershift install --hypershift-image $IMG
+quay.io/dvossel/kubevirt-csi-driver:latest
+
+
+export IMG=quay.io/isaacdorfman/hypershift:v1.15 && \
+make docker-build && docker push $IMG
+oc get pod -n clusters-isaac-tenant | grep control-plane-operator
+oc edit hostedcluster -n clusters isaac-tenant
+
+
+
+
+
+
+
+Grant service account kubevirt-csi in infra scc permissions.
+Add the system:serviceaccount:clusters-isaac-infra:kubevirt-csi serviceaccount to the privileged scc
+i.e: to the users field of this scc
+
+
+Remove redundant containers in controller
+
+
+./bin/hypershift destroy cluster kubevirt --name isaac-tenant
+
+./bin/hypershift create cluster kubevirt --name isaac-tenant --control-plane-operator-image $IMG --pull-secret /home/isaakdorfman/code/hypershift/temp/pull_secret

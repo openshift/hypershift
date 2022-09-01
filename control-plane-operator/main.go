@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -211,6 +212,13 @@ func NewStartCommand() *cobra.Command {
 			setupLog.Error(err, "unable to start manager")
 			os.Exit(1)
 		}
+
+		infraCrcClient, err := crclient.New(restConfig, crclient.Options{Scheme: hyperapi.Scheme})
+		if err != nil {
+			setupLog.Error(err, "Failed to create infra controller-runtime client")
+			os.Exit(1)
+		}
+
 		if err = mgr.GetFieldIndexer().IndexField(ctx, &corev1.Event{}, events.EventInvolvedObjectUIDField, func(object crclient.Object) []string {
 			event := object.(*corev1.Event)
 			return []string{string(event.InvolvedObject.UID)}
@@ -352,7 +360,7 @@ func NewStartCommand() *cobra.Command {
 			setupLog.Error(err, "invalid metrics set")
 			os.Exit(1)
 		}
-		setupLog.Info("Using metrics set", "set", metricsSet.String())
+		setupLog.Info("Using metrics set3", "set", metricsSet.String())
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                        mgr.GetClient(),
 			ManagementClusterCapabilities: mgmtClusterCaps,
@@ -361,8 +369,10 @@ func NewStartCommand() *cobra.Command {
 			OperateOnReleaseImage:         os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 			DefaultIngressDomain:          defaultIngressDomain,
 			MetricsSet:                    metricsSet,
+			RestConfig:                    restConfig,
+			InfraCrcClient:                infraCrcClient,
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
+			setupLog.Error(err, "Failed setting up manager")
 			os.Exit(1)
 		}
 

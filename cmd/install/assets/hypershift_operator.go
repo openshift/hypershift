@@ -835,6 +835,16 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"virtualmachineinstances", "virtualmachines"},
 				Verbs:     []string{"*"},
 			},
+			{
+				APIGroups: []string{"subresources.kubevirt.io"},
+				Resources: []string{"virtualmachineinstances/addvolume", "virtualmachineinstances/removevolume"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"cdi.kubevirt.io"},
+				Resources: []string{"datavolumes"},
+				Verbs:     []string{"*"},
+			},
 			{ // This allows hypershift operator to grant RBAC permissions for agents, clusterDeployments and agentClusterInstalls to the capi-provider-agent
 				APIGroups: []string{"agent-install.openshift.io"},
 				Resources: []string{"agents"},
