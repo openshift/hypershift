@@ -67,7 +67,7 @@ type PcloudSharedprocessorpoolsGetParams struct {
 
 	/* SharedProcessorPoolID.
 
-	   Shared Processor Pool ID
+	   Shared Processor Pool ID or Name
 	*/
 	SharedProcessorPoolID string
 

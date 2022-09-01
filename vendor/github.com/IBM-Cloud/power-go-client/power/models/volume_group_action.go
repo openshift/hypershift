@@ -23,7 +23,7 @@ import (
 type VolumeGroupAction struct {
 
 	// reset
-	Reset VolumeGroupActionReset `json:"reset,omitempty"`
+	Reset *VolumeGroupActionReset `json:"reset,omitempty"`
 
 	// start
 	Start *VolumeGroupActionStart `json:"start,omitempty"`
@@ -41,7 +41,7 @@ func (m *VolumeGroupAction) UnmarshalJSON(data []byte) error {
 	var stage1 struct {
 
 		// reset
-		Reset VolumeGroupActionReset `json:"reset,omitempty"`
+		Reset *VolumeGroupActionReset `json:"reset,omitempty"`
 
 		// start
 		Start *VolumeGroupActionStart `json:"start,omitempty"`
@@ -89,7 +89,7 @@ func (m VolumeGroupAction) MarshalJSON() ([]byte, error) {
 	var stage1 struct {
 
 		// reset
-		Reset VolumeGroupActionReset `json:"reset,omitempty"`
+		Reset *VolumeGroupActionReset `json:"reset,omitempty"`
 
 		// start
 		Start *VolumeGroupActionStart `json:"start,omitempty"`
@@ -157,6 +157,10 @@ func (m *VolumeGroupAction) Validate(formats strfmt.Registry) error {
 		return errors.TooManyProperties("", "body", 1)
 	}
 
+	if err := m.validateReset(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateStart(formats); err != nil {
 		res = append(res, err)
 	}
@@ -168,6 +172,25 @@ func (m *VolumeGroupAction) Validate(formats strfmt.Registry) error {
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *VolumeGroupAction) validateReset(formats strfmt.Registry) error {
+	if swag.IsZero(m.Reset) { // not required
+		return nil
+	}
+
+	if m.Reset != nil {
+		if err := m.Reset.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("reset")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("reset")
+			}
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -213,6 +236,10 @@ func (m *VolumeGroupAction) validateStop(formats strfmt.Registry) error {
 func (m *VolumeGroupAction) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
 
+	if err := m.contextValidateReset(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidateStart(ctx, formats); err != nil {
 		res = append(res, err)
 	}
@@ -224,6 +251,22 @@ func (m *VolumeGroupAction) ContextValidate(ctx context.Context, formats strfmt.
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *VolumeGroupAction) contextValidateReset(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.Reset != nil {
+		if err := m.Reset.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("reset")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("reset")
+			}
+			return err
+		}
+	}
+
 	return nil
 }
 

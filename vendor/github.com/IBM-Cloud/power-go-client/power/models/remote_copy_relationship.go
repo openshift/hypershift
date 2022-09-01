@@ -45,7 +45,8 @@ type RemoteCopyRelationship struct {
 	MasterVolumeName string `json:"masterVolumeName,omitempty"`
 
 	// Remote copy relationship name
-	Name string `json:"name,omitempty"`
+	// Required: true
+	Name *string `json:"name"`
 
 	// Indicates whether master/aux volume is playing the primary role
 	PrimaryRole string `json:"primaryRole,omitempty"`
@@ -54,7 +55,8 @@ type RemoteCopyRelationship struct {
 	Progress int64 `json:"progress,omitempty"`
 
 	// Remote copy relationship ID
-	RemoteCopyID string `json:"remoteCopyID,omitempty"`
+	// Required: true
+	RemoteCopyID *string `json:"remoteCopyID"`
 
 	// Indicates the relationship state
 	State string `json:"state,omitempty"`
@@ -71,6 +73,14 @@ func (m *RemoteCopyRelationship) Validate(formats strfmt.Registry) error {
 		res = append(res, err)
 	}
 
+	if err := m.validateName(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateRemoteCopyID(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
@@ -83,6 +93,24 @@ func (m *RemoteCopyRelationship) validateFreezeTime(formats strfmt.Registry) err
 	}
 
 	if err := validate.FormatOf("freezeTime", "body", "date-time", m.FreezeTime.String(), formats); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *RemoteCopyRelationship) validateName(formats strfmt.Registry) error {
+
+	if err := validate.Required("name", "body", m.Name); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *RemoteCopyRelationship) validateRemoteCopyID(formats strfmt.Registry) error {
+
+	if err := validate.Required("remoteCopyID", "body", m.RemoteCopyID); err != nil {
 		return err
 	}
 

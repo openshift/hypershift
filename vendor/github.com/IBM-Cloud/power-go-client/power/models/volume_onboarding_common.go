@@ -8,8 +8,10 @@ package models
 import (
 	"context"
 
+	"github.com/go-openapi/errors"
 	"github.com/go-openapi/strfmt"
 	"github.com/go-openapi/swag"
+	"github.com/go-openapi/validate"
 )
 
 // VolumeOnboardingCommon volume onboarding common
@@ -21,7 +23,8 @@ type VolumeOnboardingCommon struct {
 	Description string `json:"description,omitempty"`
 
 	// Indicates the volume onboarding operation id
-	ID string `json:"id,omitempty"`
+	// Required: true
+	ID *string `json:"id"`
 
 	// List of volumes requested to be onboarded
 	InputVolumes []string `json:"inputVolumes"`
@@ -32,6 +35,24 @@ type VolumeOnboardingCommon struct {
 
 // Validate validates this volume onboarding common
 func (m *VolumeOnboardingCommon) Validate(formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.validateID(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+func (m *VolumeOnboardingCommon) validateID(formats strfmt.Registry) error {
+
+	if err := validate.Required("id", "body", m.ID); err != nil {
+		return err
+	}
+
 	return nil
 }
 

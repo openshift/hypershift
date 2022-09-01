@@ -19,18 +19,18 @@ import (
 // swagger:model SharedProcessorPoolCreate
 type SharedProcessorPoolCreate struct {
 
-	// The host group where the host will be chosen if not provided
+	// The host group; a host from the group will be automatically selected based on available resources
 	// Required: true
 	HostGroup *string `json:"hostGroup"`
 
-	// The name of the Shared Processor Pool
+	// The name of the Shared Processor Pool; minumum of 2 characters, maximum of 12, the only special character allowed is the underscore '_'.
 	// Required: true
 	Name *string `json:"name"`
 
 	// The ID of the placement group
 	PlacementGroupID string `json:"placementGroupID,omitempty"`
 
-	// The amount of reserved processor cores for the Shared Processor Pool
+	// The amount of reserved processor cores for the Shared Processor Pool; only integers allowed, no fractional values
 	// Required: true
 	ReservedCores *int64 `json:"reservedCores"`
 }

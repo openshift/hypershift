@@ -68,20 +68,22 @@ func NewPcloudVolumeOnboardingGetallOK() *PcloudVolumeOnboardingGetallOK {
 OK
 */
 type PcloudVolumeOnboardingGetallOK struct {
-	Payload models.VolumeOnboardings
+	Payload *models.VolumeOnboardings
 }
 
 func (o *PcloudVolumeOnboardingGetallOK) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volumes/onboarding][%d] pcloudVolumeOnboardingGetallOK  %+v", 200, o.Payload)
 }
-func (o *PcloudVolumeOnboardingGetallOK) GetPayload() models.VolumeOnboardings {
+func (o *PcloudVolumeOnboardingGetallOK) GetPayload() *models.VolumeOnboardings {
 	return o.Payload
 }
 
 func (o *PcloudVolumeOnboardingGetallOK) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
+	o.Payload = new(models.VolumeOnboardings)
+
 	// response payload
-	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
 		return err
 	}
 

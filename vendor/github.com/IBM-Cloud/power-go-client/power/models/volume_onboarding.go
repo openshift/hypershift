@@ -26,7 +26,7 @@ type VolumeOnboarding struct {
 	CreationTimestamp strfmt.DateTime `json:"creationTimestamp,omitempty"`
 
 	// Indicates the progress of volume onboarding operation
-	Progress int64 `json:"progress,omitempty"`
+	Progress float64 `json:"progress,omitempty"`
 
 	// results
 	Results *VolumeOnboardingResults `json:"results,omitempty"`
@@ -45,7 +45,7 @@ func (m *VolumeOnboarding) UnmarshalJSON(raw []byte) error {
 	var propsVolumeOnboarding struct {
 		CreationTimestamp strfmt.DateTime `json:"creationTimestamp,omitempty"`
 
-		Progress int64 `json:"progress,omitempty"`
+		Progress float64 `json:"progress,omitempty"`
 
 		Results *VolumeOnboardingResults `json:"results,omitempty"`
 	}
@@ -75,7 +75,7 @@ func (m VolumeOnboarding) MarshalJSON() ([]byte, error) {
 	var propsVolumeOnboarding struct {
 		CreationTimestamp strfmt.DateTime `json:"creationTimestamp,omitempty"`
 
-		Progress int64 `json:"progress,omitempty"`
+		Progress float64 `json:"progress,omitempty"`
 
 		Results *VolumeOnboardingResults `json:"results,omitempty"`
 	}

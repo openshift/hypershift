@@ -1114,7 +1114,8 @@ func (infra *Infra) setupPowerVSDHCP(options *CreateInfraOptions, session *ibmpi
 // createPowerVSDhcp creates a new dhcp server in powervs
 func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *instance.IBMPIDhcpClient) (dhcpServer *models.DHCPServerDetail, err error) {
 	startTime := time.Now()
-	dhcp, err := client.Create(&models.DHCPServerCreate{CloudConnectionID: &infra.PowerVSCloudConnectionID})
+	// With the recent update default DNS server is pointing to loop back address in DHCP. Hence, passed 1.1.1.1 public DNS resolver.
+	dhcp, err := client.Create(&models.DHCPServerCreate{CloudConnectionID: &infra.PowerVSCloudConnectionID, DNSServer: utilpointer.String("1.1.1.1")})
 	if err != nil {
 		return
 	}

@@ -62,20 +62,22 @@ func NewPcloudVolumegroupsGetallDetailsOK() *PcloudVolumegroupsGetallDetailsOK {
 OK
 */
 type PcloudVolumegroupsGetallDetailsOK struct {
-	Payload models.VolumeGroupsDetails
+	Payload *models.VolumeGroupsDetails
 }
 
 func (o *PcloudVolumegroupsGetallDetailsOK) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/details][%d] pcloudVolumegroupsGetallDetailsOK  %+v", 200, o.Payload)
 }
-func (o *PcloudVolumegroupsGetallDetailsOK) GetPayload() models.VolumeGroupsDetails {
+func (o *PcloudVolumegroupsGetallDetailsOK) GetPayload() *models.VolumeGroupsDetails {
 	return o.Payload
 }
 
 func (o *PcloudVolumegroupsGetallDetailsOK) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
+	o.Payload = new(models.VolumeGroupsDetails)
+
 	// response payload
-	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
 		return err
 	}
 

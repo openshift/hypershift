@@ -24,7 +24,7 @@ type VolumeReference struct {
 	AuxVolumeName string `json:"auxVolumeName,omitempty"`
 
 	// true if volume is auxiliary otherwise false
-	Auxiliary bool `json:"auxiliary,omitempty"`
+	Auxiliary *bool `json:"auxiliary,omitempty"`
 
 	// Indicates if the volume is the server's boot volume
 	BootVolume *bool `json:"bootVolume,omitempty"`

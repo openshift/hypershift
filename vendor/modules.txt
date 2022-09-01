@@ -48,7 +48,7 @@ github.com/Azure/go-autorest/logger
 # github.com/Azure/go-autorest/tracing v0.6.0
 ## explicit; go 1.12
 github.com/Azure/go-autorest/tracing
-# github.com/IBM-Cloud/power-go-client v1.1.9
+# github.com/IBM-Cloud/power-go-client v1.1.12
 ## explicit; go 1.17
 github.com/IBM-Cloud/power-go-client/clients/instance
 github.com/IBM-Cloud/power-go-client/errors
@@ -60,9 +60,13 @@ github.com/IBM-Cloud/power-go-client/power/client/bluemix_service_instances
 github.com/IBM-Cloud/power-go-client/power/client/catalog
 github.com/IBM-Cloud/power-go-client/power/client/hardware_platforms
 github.com/IBM-Cloud/power-go-client/power/client/iaas_service_broker
+github.com/IBM-Cloud/power-go-client/power/client/internal_power_v_s_instances
+github.com/IBM-Cloud/power-go-client/power/client/internal_power_v_s_locations
 github.com/IBM-Cloud/power-go-client/power/client/internal_storage_regions
+github.com/IBM-Cloud/power-go-client/power/client/internal_transit_gateway
 github.com/IBM-Cloud/power-go-client/power/client/open_stacks
 github.com/IBM-Cloud/power-go-client/power/client/p_cloud_cloud_connections
+github.com/IBM-Cloud/power-go-client/power/client/p_cloud_disaster_recovery
 github.com/IBM-Cloud/power-go-client/power/client/p_cloud_events
 github.com/IBM-Cloud/power-go-client/power/client/p_cloud_images
 github.com/IBM-Cloud/power-go-client/power/client/p_cloud_instances
@@ -71,6 +75,7 @@ github.com/IBM-Cloud/power-go-client/power/client/p_cloud_networks
 github.com/IBM-Cloud/power-go-client/power/client/p_cloud_p_vm_instances
 github.com/IBM-Cloud/power-go-client/power/client/p_cloud_placement_groups
 github.com/IBM-Cloud/power-go-client/power/client/p_cloud_s_a_p
+github.com/IBM-Cloud/power-go-client/power/client/p_cloud_s_p_p_placement_groups
 github.com/IBM-Cloud/power-go-client/power/client/p_cloud_service_d_h_c_p
 github.com/IBM-Cloud/power-go-client/power/client/p_cloud_shared_processor_pools
 github.com/IBM-Cloud/power-go-client/power/client/p_cloud_snapshots
