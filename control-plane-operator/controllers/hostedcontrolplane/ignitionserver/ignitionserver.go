@@ -109,54 +109,62 @@ func ReconcileIgnitionServer(ctx context.Context,
 		return fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type)
 	}
 
+	// Check if PKI needs to be reconciled
+	_, disablePKIReconciliation := hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation]
+
 	// Reconcile a root CA for ignition serving certificates. We only create this
 	// and don't update it for now.
 	caCertSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace)
-	if result, err := createOrUpdate(ctx, c, caCertSecret, func() error {
-		caCertSecret.Type = corev1.SecretTypeTLS
-		return certs.ReconcileSelfSignedCA(caCertSecret, "ignition-root-ca", "openshift", func(o *certs.CAOpts) {
-			o.CASignerCertMapKey = corev1.TLSCertKey
-			o.CASignerKeyMapKey = corev1.TLSPrivateKeyKey
-		})
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile ignition ca cert: %w", err)
-	} else {
-		log.Info("reconciled ignition CA cert secret", "result", result)
+	if !disablePKIReconciliation {
+		if result, err := createOrUpdate(ctx, c, caCertSecret, func() error {
+			caCertSecret.Type = corev1.SecretTypeTLS
+			return certs.ReconcileSelfSignedCA(caCertSecret, "ignition-root-ca", "openshift", func(o *certs.CAOpts) {
+				o.CASignerCertMapKey = corev1.TLSCertKey
+				o.CASignerKeyMapKey = corev1.TLSPrivateKeyKey
+			})
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ignition ca cert: %w", err)
+		} else {
+			log.Info("reconciled ignition CA cert secret", "result", result)
+		}
 	}
 
 	// Reconcile a ignition serving certificate issued by the generated root CA. We
 	// only create this and don't update it for now.
 	servingCertSecret := ignitionserver.IgnitionServingCertSecret(controlPlaneNamespace)
-	if result, err := createOrUpdate(ctx, c, servingCertSecret, func() error {
-		servingCertSecret.Type = corev1.SecretTypeTLS
+	if !disablePKIReconciliation {
+		if result, err := createOrUpdate(ctx, c, servingCertSecret, func() error {
+			servingCertSecret.Type = corev1.SecretTypeTLS
 
-		var dnsNames, ipAddresses []string
-		numericIP := net.ParseIP(ignitionServerAddress)
-		if numericIP == nil {
-			dnsNames = []string{ignitionServerAddress}
+			var dnsNames, ipAddresses []string
+			numericIP := net.ParseIP(ignitionServerAddress)
+			if numericIP == nil {
+				dnsNames = []string{ignitionServerAddress}
+			} else {
+				ipAddresses = []string{ignitionServerAddress}
+			}
+
+			return certs.ReconcileSignedCert(
+				servingCertSecret,
+				caCertSecret,
+				"ignition-server",
+				[]string{"openshift"},
+				nil,
+				corev1.TLSCertKey,
+				corev1.TLSPrivateKeyKey,
+				"",
+				dnsNames,
+				ipAddresses,
+				func(o *certs.CAOpts) {
+					o.CASignerCertMapKey = corev1.TLSCertKey
+					o.CASignerKeyMapKey = corev1.TLSPrivateKeyKey
+				},
+			)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ignition serving cert: %w", err)
 		} else {
-			ipAddresses = []string{ignitionServerAddress}
+			log.Info("reconciled ignition serving cert secret", "result", result)
 		}
-
-		return certs.ReconcileSignedCert(
-			servingCertSecret,
-			caCertSecret,
-			"ignition-server",
-			[]string{"openshift"},
-			nil,
-			corev1.TLSCertKey,
-			corev1.TLSPrivateKeyKey,
-			"",
-			dnsNames,
-			ipAddresses,
-			func(o *certs.CAOpts) {
-				o.CASignerCertMapKey = corev1.TLSCertKey
-				o.CASignerKeyMapKey = corev1.TLSPrivateKeyKey
-			})
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile ignition serving cert: %w", err)
-	} else {
-		log.Info("reconciled ignition serving cert secret", "result", result)
 	}
 
 	role := ignitionserver.Role(controlPlaneNamespace)
