@@ -2069,7 +2069,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := cno.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+	p := cno.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext, r.DefaultIngressDomain)
 
 	role := manifests.ClusterNetworkOperatorRole(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, role, func() error {
