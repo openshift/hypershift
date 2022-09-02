@@ -20,6 +20,7 @@ spec:
       creationTimestamp: null
       labels:
         hypershift.openshift.io/hosted-control-plane: test-namespace
+        hypershift.openshift.io/pod-template-hash: 589fffdd76
         name: cluster-image-registry-operator
     spec:
       affinity:
@@ -47,6 +48,14 @@ spec:
                   hypershift.openshift.io/hosted-control-plane: test-namespace
               topologyKey: kubernetes.io/hostname
             weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                hypershift.openshift.io/hosted-control-plane: test-namespace
+                hypershift.openshift.io/pod-template-hash: 589fffdd76
+                name: cluster-image-registry-operator
+            topologyKey: topology.kubernetes.io/zone
       automountServiceAccountToken: false
       containers:
       - args:

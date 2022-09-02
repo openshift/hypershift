@@ -827,7 +827,15 @@ func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, h
 		if oauthDeployment.Spec.Template.ObjectMeta.Annotations == nil {
 			oauthDeployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 		}
-		oauthDeployment.Spec.Template.ObjectMeta.Annotations[SecretHashAnnotation] = secretHash(kubeadminPasswordHashSecret.Data["kubeadmin"])
+
+		// We need to conditionalize this to be able to clear the affinity only when we change the field
+		// to not start fighting with the CPO. See setMultizoneSpread in support/config for why
+		// we need to clear the affinity.
+		hash := secretHash(kubeadminPasswordHashSecret.Data["kubeadmin"])
+		if oauthDeployment.Spec.Template.ObjectMeta.Annotations[SecretHashAnnotation] != hash {
+			oauthDeployment.Spec.Template.ObjectMeta.Annotations[SecretHashAnnotation] = hash
+			oauthDeployment.Spec.Template.Spec.Affinity = nil
+		}
 		return nil
 	}); err != nil {
 		return err

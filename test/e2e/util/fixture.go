@@ -96,7 +96,10 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 	t.Cleanup(func() { EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), client, hc) })
 	t.Cleanup(func() { EnsureHCPContainersHaveResourceRequests(t, context.Background(), client, hc) })
 	t.Cleanup(func() { EnsureNoPodsWithTooHighPriority(t, context.Background(), client, hc) })
-	t.Cleanup(func() { NoticePreemptionOrFailedScheduling(t, context.Background(), client, hc) })
+	// TODO @alvaroaleman: Remove once the scheduling fixes are in a promoted payload
+	if !strings.Contains(t.Name(), "UpgradeControlPlane") {
+		t.Cleanup(func() { NoticePreemptionOrFailedScheduling(t, context.Background(), client, hc) })
+	}
 	t.Cleanup(func() { EnsureAllRoutesUseHCPRouter(t, context.Background(), client, hc) })
 
 	return hc
