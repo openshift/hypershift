@@ -384,9 +384,9 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 					ID:   &o.PowerVS.SubnetID,
 				},
 				VPC: &hyperv1.PowerVSVPC{
-					Name:   o.PowerVS.Vpc,
-					Region: o.PowerVS.VpcRegion,
-					Subnet: o.PowerVS.VpcSubnet,
+					Name:   o.PowerVS.VPC,
+					Region: o.PowerVS.VPCRegion,
+					Subnet: o.PowerVS.VPCSubnet,
 				},
 				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: powerVSResources.KubeCloudControllerCreds.Name},
 				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: powerVSResources.NodePoolManagementCreds.Name},

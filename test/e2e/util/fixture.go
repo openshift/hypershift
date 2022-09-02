@@ -265,7 +265,7 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 			ResourceGroup: createOpts.PowerVSPlatform.ResourceGroup,
 			Region:        createOpts.PowerVSPlatform.Region,
 			Zone:          createOpts.PowerVSPlatform.Zone,
-			VPCRegion:     createOpts.PowerVSPlatform.VpcRegion,
+			VPCRegion:     createOpts.PowerVSPlatform.VPCRegion,
 		}
 		return powervs.DestroyCluster(ctx, opts)
 

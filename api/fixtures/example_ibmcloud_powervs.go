@@ -16,9 +16,9 @@ type ExamplePowerVSOptions struct {
 	Subnet          string
 	SubnetID        string
 	CloudConnection string
-	VpcRegion       string
-	Vpc             string
-	VpcSubnet       string
+	VPCRegion       string
+	VPC             string
+	VPCSubnet       string
 
 	// nodepool related options
 	SysType    string

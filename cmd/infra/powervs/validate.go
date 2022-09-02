@@ -14,39 +14,38 @@ var (
 
 // validateCloudInstanceByID
 // validates cloud instance's existence by id
-func validateCloudInstanceByID(cloudInstanceID string) (resourceInstance *resourcecontrollerv2.ResourceInstance, err error) {
+func validateCloudInstanceByID(cloudInstanceID string) (*resourcecontrollerv2.ResourceInstance, error) {
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{Authenticator: getIAMAuth()})
 	if err != nil {
-		return
+		return nil, err
 	}
 
-	resourceInstance, _, err = rcv2.GetResourceInstance(&resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
+	resourceInstance, _, err := rcv2.GetResourceInstance(&resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
 	if err != nil {
-		return
+		return nil, err
 	}
 
 	if resourceInstance == nil {
-		err = fmt.Errorf("%s cloud instance not found", cloudInstanceID)
-		return
+		return nil, fmt.Errorf("%s cloud instance not found", cloudInstanceID)
 	}
 
 	if *resourceInstance.State != "active" {
-		err = fmt.Errorf("provided cloud instance id is not in active state, current state: %s", *resourceInstance.State)
-		return
+		return nil, fmt.Errorf("provided cloud instance id is not in active state, current state: %s", *resourceInstance.State)
 	}
 
-	return
+	return resourceInstance, nil
 }
 
 // validateCloudInstanceByName
 // validates cloud instance's existence by name
-func validateCloudInstanceByName(cloudInstance string, resourceGroupID string, powerVsZone string, serviceID string, servicePlanID string) (resourceInstance *resourcecontrollerv2.ResourceInstance, err error) {
+func validateCloudInstanceByName(cloudInstance string, resourceGroupID string, powerVsZone string, serviceID string, servicePlanID string) (*resourcecontrollerv2.ResourceInstance, error) {
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{Authenticator: getIAMAuth()})
 	if err != nil {
-		return
+		return nil, err
 	}
+	var resourceInstance *resourcecontrollerv2.ResourceInstance
 
-	f := func(start string) (isDone bool, nextUrl string, err error) {
+	f := func(start string) (bool, string, error) {
 		listResourceInstOpt := resourcecontrollerv2.ListResourceInstancesOptions{
 			Name:            &cloudInstance,
 			ResourceGroupID: &resourceGroupID,
@@ -60,86 +59,76 @@ func validateCloudInstanceByName(cloudInstance string, resourceGroupID string, p
 		resourceInstanceL, _, err := rcv2.ListResourceInstances(&listResourceInstOpt)
 
 		if err != nil {
-			return
+			return false, "", err
 		}
 
 		for _, resourceIns := range resourceInstanceL.Resources {
 			if *resourceIns.Name == cloudInstance && *resourceIns.RegionID == powerVsZone {
 				resourceInstance = &resourceIns
-				isDone = true
-				return
+				return true, "", nil
 			}
 		}
 
 		// For paging over next set of resources getting the start token
 		if resourceInstanceL.NextURL != nil && *resourceInstanceL.NextURL != "" {
-			nextUrl = *resourceInstanceL.NextURL
-			return
+			return false, *resourceInstanceL.NextURL, nil
 		}
 
-		isDone = true
-		return
+		return true, "", nil
 	}
 
-	err = pagingHelper(f)
-	if err != nil {
-		return
+	if err = pagingHelper(f); err != nil {
+		return nil, err
 	}
 
 	if resourceInstance == nil {
-		err = cloudInstanceNotFound(cloudInstance)
-		return
+		return nil, cloudInstanceNotFound(cloudInstance)
 	}
 
 	if *resourceInstance.State != "active" {
-		err = fmt.Errorf("provided cloud instance id is not in active state, current state: %s", *resourceInstance.State)
-		return
+		return nil, fmt.Errorf("provided cloud instance id is not in active state, current state: %s", *resourceInstance.State)
 	}
-	return
+	return resourceInstance, nil
 }
 
 // validateVpc
 // validates vpc's existence by name and validate its default security group's inbound rules to allow http & https
-func validateVpc(vpcName string, resourceGroupID string, v1 *vpcv1.VpcV1) (vpc *vpcv1.VPC, err error) {
-	f := func(start string) (isDone bool, nextUrl string, err error) {
+func validateVpc(vpcName string, resourceGroupID string, v1 *vpcv1.VpcV1) (*vpcv1.VPC, error) {
+	var vpc *vpcv1.VPC
+
+	f := func(start string) (bool, string, error) {
 		vpcListOpt := vpcv1.ListVpcsOptions{ResourceGroupID: &resourceGroupID}
 		if start != "" {
 			vpcListOpt.Start = &start
 		}
 		vpcList, _, err := v1.ListVpcs(&vpcListOpt)
 		if err != nil {
-			return
+			return false, "", err
 		}
 		for _, v := range vpcList.Vpcs {
 			if *v.Name == vpcName {
 				vpc = &v
-				isDone = true
-				return
+				return true, "", nil
 			}
 		}
 
 		if vpcList.Next != nil && *vpcList.Next.Href != "" {
-			nextUrl = *vpcList.Next.Href
-			return
+			return false, *vpcList.Next.Href, nil
 		}
 
-		isDone = true
-		return
+		return true, "", nil
 	}
-	err = pagingHelper(f)
-	if err != nil {
-		return
+	if err := pagingHelper(f); err != nil {
+		return nil, err
 	}
 
 	if vpc == nil {
-		err = fmt.Errorf("%s vpc not found", vpcName)
-		return
+		return nil, fmt.Errorf("%s vpc not found", vpcName)
 	}
 
 	vpcSg, _, err := v1.GetSecurityGroup(&vpcv1.GetSecurityGroupOptions{ID: vpc.DefaultSecurityGroup.ID})
 	if err != nil {
-		err = fmt.Errorf("error retrieving security group of vpc %w", err)
-		return
+		return nil, fmt.Errorf("error retrieving security group of vpc %w", err)
 	}
 
 	var httpOk, httpsOk bool
@@ -156,52 +145,50 @@ func validateVpc(vpcName string, resourceGroupID string, v1 *vpcv1.VpcV1) (vpc *
 	}
 
 	if !httpOk || !httpsOk {
-		err = fmt.Errorf("vpc security group does not have the required inbound rules, ports 80 and 443 should be allowed")
+		return nil, fmt.Errorf("vpc security group does not have the required inbound rules, ports 80 and 443 should be allowed")
 	}
 
-	return
+	return vpc, nil
 }
 
 // listAndGetCloudConnection
 // helper func will list the cloud connection and return the matched cloud connection id and total cloud connection count
-func listAndGetCloudConnection(cloudConnName string, client *instance.IBMPICloudConnectionClient) (cloudConnectionCount int, cloudConnID string, err error) {
+func listAndGetCloudConnection(cloudConnName string, client *instance.IBMPICloudConnectionClient) (int, string, error) {
 	cloudConnL, err := client.GetAll()
 	if err != nil {
-		return
+		return 0, "", err
 	}
 
 	if cloudConnL == nil {
-		err = fmt.Errorf("cloud connection list returned is nil")
-		return
+		return 0, "", fmt.Errorf("cloud connection list returned is nil")
 	}
 
-	cloudConnectionCount = len(cloudConnL.CloudConnections)
+	var cloudConnID string
+	cloudConnectionCount := len(cloudConnL.CloudConnections)
 	for _, cc := range cloudConnL.CloudConnections {
 		if cc != nil && *cc.Name == cloudConnName {
 			cloudConnID = *cc.CloudConnectionID
-			return
+			return cloudConnectionCount, cloudConnID, nil
 		}
 	}
 
-	err = cloudConNotFound(cloudConnName)
-	return
+	return 0, "", cloudConNotFound(cloudConnName)
 }
 
 // validateCloudConnectionByName
 // validates cloud connection's existence by name
-func validateCloudConnectionByName(name string, client *instance.IBMPICloudConnectionClient) (cloudConnID string, err error) {
-	_, cloudConnID, err = listAndGetCloudConnection(name, client)
-	return
+func validateCloudConnectionByName(name string, client *instance.IBMPICloudConnectionClient) (string, error) {
+	_, cloudConnID, err := listAndGetCloudConnection(name, client)
+	return cloudConnID, err
 }
 
 // validateCloudConnectionInPowerVSZone
 // while creating a new cloud connection this func validates whether to create a new cloud connection
 // with respect to powervs zone's existing cloud connections
-func validateCloudConnectionInPowerVSZone(name string, client *instance.IBMPICloudConnectionClient) (cloudConnID string, err error) {
+func validateCloudConnectionInPowerVSZone(name string, client *instance.IBMPICloudConnectionClient) (string, error) {
 	cloudConnCount, cloudConnID, err := listAndGetCloudConnection(name, client)
 	if err != nil && err.Error() != cloudConNotFound(name).Error() {
-		err = fmt.Errorf("failed to list cloud connections %w", err)
-		return
+		return "", fmt.Errorf("failed to list cloud connections %w", err)
 	}
 
 	// explicitly setting err to nil since main objective here is to validate the number of cloud connections
@@ -211,5 +198,5 @@ func validateCloudConnectionInPowerVSZone(name string, client *instance.IBMPIClo
 		err = fmt.Errorf("cannot create new cloud connection in powervs zone. only 2 cloud connections allowed")
 	}
 
-	return
+	return cloudConnID, err
 }

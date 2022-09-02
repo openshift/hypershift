@@ -6,15 +6,14 @@ import (
 )
 
 // getStartToken parses the given url string and gets the 'start' query param
-func getStartToken(nextUrlS string) (start string, err error) {
+func getStartToken(nextUrlS string) (string, error) {
 	nextUrl, err := url.Parse(nextUrlS)
 	if err != nil || nextUrl == nil {
-		err = fmt.Errorf("could not parse next url for getting next resources %w", err)
-		return
+		return "", fmt.Errorf("could not parse next url for getting next resources %w", err)
 	}
 
-	start = nextUrl.Query().Get("start")
-	return
+	start := nextUrl.Query().Get("start")
+	return start, nil
 }
 
 // pagingHelper while listing resources, can use this to get the start token for getting the next set of resources for processing
@@ -23,8 +22,9 @@ func getStartToken(nextUrlS string) (start string, err error) {
 // isDone  - represents no need to iterate for getting next set of resources.
 // nextUrl - if nextUrl is present, will try to get the start token and pass it to f for next set of resource processing.
 // e       - if e is not nil, will break and return the error.
-func pagingHelper(f func(string) (bool, string, error)) (err error) {
+func pagingHelper(f func(string) (bool, string, error)) error {
 	start := ""
+	var err error
 	for {
 		isDone, nextUrl, e := f(start)
 
@@ -48,5 +48,5 @@ func pagingHelper(f func(string) (bool, string, error)) (err error) {
 		}
 	}
 
-	return
+	return err
 }

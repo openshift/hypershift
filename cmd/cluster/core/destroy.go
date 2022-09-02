@@ -58,6 +58,7 @@ type PowerVSPlatformDestroyOptions struct {
 	Region        string
 	Zone          string
 	VPCRegion     string
+	Debug         bool
 }
 
 func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster, error) {
