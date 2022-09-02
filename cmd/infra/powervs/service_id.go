@@ -85,6 +85,30 @@ spec:
       - crn:v1:bluemix:public:iam::::role:Editor
 `
 
+var storageOperatorCR = `
+apiVersion: cloudcredential.openshift.io/v1
+kind: CredentialsRequest
+metadata:
+  name: openshift-storage-powervs
+  namespace: openshift-cloud-credential-operator
+spec:
+  providerSpec:
+    apiVersion: cloudcredential.openshift.io/v1
+    kind: IBMCloudPowerVSProviderSpec
+    policies:
+    - attributes:
+      - name: serviceName
+        value: power-iaas
+      roles:
+      - crn:v1:bluemix:public:iam::::serviceRole:Manager
+      - crn:v1:bluemix:public:iam::::role:Editor
+    - attributes:
+      - name: resourceType
+        value: resource-group
+      roles:
+      - crn:v1:bluemix:public:iam::::role:Viewer
+`
+
 // createServiceIDClient creates cloud credential operator's serviceID client
 func createServiceIDClient(name, APIKey, accountID, resourceGroupID, crYaml, secretRefName, secretRefNamespace string) (*cco.ServiceID, error) {
 	ccoIBMClient, err := ccoibmcloud.NewClient(APIKey, &ccoibmcloud.ClientParams{InfraName: name})

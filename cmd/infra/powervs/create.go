@@ -75,6 +75,7 @@ const (
 	kubeCloudControllerManagerCreds = "cloud-controller-creds"
 	nodePoolManagementCreds         = "node-management-creds"
 	ingressOperatorCreds            = "ingress-creds"
+	storageOperatorCreds            = "storage-creds"
 )
 
 var customEpEnvNameMapping = map[string]string{
@@ -143,6 +144,7 @@ type Secrets struct {
 	KubeCloudControllerManager *corev1.Secret
 	NodePoolManagement         *corev1.Secret
 	IngressOperator            *corev1.Secret
+	StorageOperator            *corev1.Secret
 }
 
 // Infra resource info in IBM Cloud for setting up hypershift nodepool
@@ -380,6 +382,12 @@ func (infra *Infra) setupSecrets(options *CreateInfraOptions) error {
 		ingressOperatorCR, ingressOperatorCreds, options.Namespace)
 	if err != nil {
 		return fmt.Errorf("error setup ingress operator secret: %w", err)
+	}
+
+	infra.Secrets.StorageOperator, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, infra.ResourceGroupID,
+		storageOperatorCR, storageOperatorCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error setup storage operator secret: %w", err)
 	}
 
 	log(infra.ID).Info("Secrets Ready")

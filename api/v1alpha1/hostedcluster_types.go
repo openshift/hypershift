@@ -745,6 +745,12 @@ type PowerVSPlatformSpec struct {
 	//
 	// +immutable
 	IngressOperatorCloudCreds corev1.LocalObjectReference `json:"ingressOperatorCloudCreds"`
+
+	// StorageOperatorCloudCreds is a reference to a secret containing ibm cloud
+	// credentials for storage operator to get authenticated with ibm cloud.
+	//
+	// +immutable
+	StorageOperatorCloudCreds corev1.LocalObjectReference `json:"storageOperatorCloudCreds"`
 }
 
 // PowerVSVPC specifies IBM Cloud PowerVS LoadBalancer configuration for the control

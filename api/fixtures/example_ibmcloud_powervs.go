@@ -31,6 +31,7 @@ type ExamplePowerVSResources struct {
 	KubeCloudControllerCreds  *corev1.Secret
 	NodePoolManagementCreds   *corev1.Secret
 	IngressOperatorCloudCreds *corev1.Secret
+	StorageOperatorCloudCreds *corev1.Secret
 }
 
 func (o *ExamplePowerVSResources) AsObjects() []crclient.Object {
@@ -43,6 +44,9 @@ func (o *ExamplePowerVSResources) AsObjects() []crclient.Object {
 	}
 	if o.IngressOperatorCloudCreds != nil {
 		objects = append(objects, o.IngressOperatorCloudCreds)
+	}
+	if o.StorageOperatorCloudCreds != nil {
+		objects = append(objects, o.StorageOperatorCloudCreds)
 	}
 	return objects
 }

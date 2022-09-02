@@ -301,6 +301,12 @@ func deleteSecrets(options *DestroyInfraOptions, accountID string, resourceGroup
 		return fmt.Errorf("error deleting ingress operator secret: %w", err)
 	}
 
+	err = deleteServiceID(options.Name, cloudApiKey, accountID, resourceGroupID,
+		storageOperatorCR, storageOperatorCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error deleting ingress operator secret: %w", err)
+	}
+
 	return nil
 }
 

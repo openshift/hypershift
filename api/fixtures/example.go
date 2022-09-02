@@ -363,6 +363,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: o.PowerVS.Resources.KubeCloudControllerCreds.Name},
 				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: o.PowerVS.Resources.NodePoolManagementCreds.Name},
 				IngressOperatorCloudCreds: corev1.LocalObjectReference{Name: o.PowerVS.Resources.IngressOperatorCloudCreds.Name},
+				StorageOperatorCloudCreds: corev1.LocalObjectReference{Name: o.PowerVS.Resources.StorageOperatorCloudCreds.Name},
 			},
 		}
 		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")

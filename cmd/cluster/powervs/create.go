@@ -172,6 +172,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		KubeCloudControllerCreds:  infra.Secrets.KubeCloudControllerManager,
 		NodePoolManagementCreds:   infra.Secrets.NodePoolManagement,
 		IngressOperatorCloudCreds: infra.Secrets.IngressOperator,
+		StorageOperatorCloudCreds: infra.Secrets.StorageOperator,
 	}
 
 	exampleOptions.PowerVS.Resources = powerVSResources

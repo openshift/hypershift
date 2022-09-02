@@ -2624,6 +2624,17 @@ spec:
                           instance. https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server
                           \n This field is immutable. Once set, It can't be changed."
                         type: string
+                      storageOperatorCloudCreds:
+                        description: StorageOperatorCloudCreds is a reference to a
+                          secret containing ibm cloud credentials for storage operator
+                          to get authenticated with ibm cloud.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
                       subnet:
                         description: Subnet is the subnet to use for control plane
                           cloud resources. This field is immutable. Once set, It can't
@@ -2679,6 +2690,7 @@ spec:
                     - region
                     - resourceGroup
                     - serviceInstanceID
+                    - storageOperatorCloudCreds
                     - subnet
                     - vpc
                     - zone
