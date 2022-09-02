@@ -14,6 +14,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -42,6 +43,7 @@ type OAuthServerParams struct {
 	AvailabilityProberImage string `json:"availabilityProberImage"`
 	Availability            hyperv1.AvailabilityPolicy
 	Socks5ProxyImage        string
+	NoProxy                 []string
 }
 
 type OAuthConfigParams struct {
@@ -85,7 +87,12 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 		OAuthServerImage:        releaseImageProvider.GetImage("oauth-server"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
+<<<<<<< HEAD
 		Socks5ProxyImage:        releaseImageProvider.GetImage("socks5-proxy"),
+=======
+		Socks5ProxyImage:        images["socks5-proxy"],
+		NoProxy:                 []string{manifests.KubeAPIServerService("").Name},
+>>>>>>> 7ab7099c8 (fix(oauth): Do not proxy IBM Cloud IAM endpoints)
 	}
 	if hcp.Spec.Configuration != nil {
 		p.APIServer = hcp.Spec.Configuration.APIServer
@@ -155,6 +162,10 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 	}
 
 	p.SetDefaultSecurityContext = setDefaultSecurityContext
+
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		p.NoProxy = append(p.NoProxy, "iam.cloud.ibm.com", "iam.test.cloud.ibm.com")
+	}
 
 	return p
 }
