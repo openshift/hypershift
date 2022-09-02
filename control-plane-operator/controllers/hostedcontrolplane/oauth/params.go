@@ -12,6 +12,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -40,6 +41,7 @@ type OAuthServerParams struct {
 	AvailabilityProberImage string `json:"availabilityProberImage"`
 	Availability            hyperv1.AvailabilityPolicy
 	Socks5ProxyImage        string
+	NoProxy                 []string
 }
 
 type OAuthConfigParams struct {
@@ -83,6 +85,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 		Socks5ProxyImage:        images["socks5-proxy"],
+		NoProxy:                 []string{manifests.KubeAPIServerService("").Name},
 	}
 	if hcp.Spec.Configuration != nil {
 		p.APIServer = hcp.Spec.Configuration.APIServer
@@ -152,6 +155,10 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 	}
 
 	p.SetDefaultSecurityContext = setDefaultSecurityContext
+
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		p.NoProxy = append(p.NoProxy, "iam.cloud.ibm.com", "iam.test.cloud.ibm.com")
+	}
 
 	return p
 }
