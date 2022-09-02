@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -51,12 +52,8 @@ func TestSetReleaseImageAnnotation(t *testing.T) {
 }
 
 func TestSetMultizoneSpread(t *testing.T) {
-	labels := map[string]string{
-		"app":                         "etcd",
-		hyperv1.ControlPlaneComponent: "etcd",
-	}
 	cfg := &DeploymentConfig{}
-	cfg.setMultizoneSpread(labels)
+	cfg.setMultizoneSpread(&corev1.PodTemplateSpec{})
 	if cfg.Scheduling.Affinity == nil {
 		t.Fatalf("Expecting affinity to be set on config")
 	}
@@ -65,12 +62,14 @@ func TestSetMultizoneSpread(t *testing.T) {
 	}
 	expectedTerm := corev1.PodAffinityTerm{
 		LabelSelector: &metav1.LabelSelector{
-			MatchLabels: labels,
+			MatchLabels: map[string]string{
+				"hypershift.openshift.io/pod-template-hash": "5d8d888c4d",
+			},
 		},
 		TopologyKey: corev1.LabelTopologyZone,
 	}
-	if !reflect.DeepEqual(expectedTerm, cfg.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution[0]) {
-		t.Fatalf("Unexpected anti-affinity term")
+	if diff := cmp.Diff(cfg.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution[0], expectedTerm); diff != "" {
+		t.Fatalf("actual antiaffinity differs from expected: %s", diff)
 	}
 }
 
@@ -182,13 +181,9 @@ func TestSetLocation(t *testing.T) {
 	cfg := &DeploymentConfig{
 		Replicas: 2,
 	}
-	labels := map[string]string{
-		"app":                         "test",
-		hyperv1.ControlPlaneComponent: "test",
-	}
 
 	g := NewGomegaWithT(t)
-	cfg.setLocation(hcp, labels)
+	cfg.setLocation(hcp)
 
 	expected := &DeploymentConfig{
 		Scheduling: Scheduling{
@@ -269,17 +264,4 @@ func TestSetLocation(t *testing.T) {
 	}
 	g.Expect(expected.Scheduling.Affinity.PodAffinity).To(BeEquivalentTo(cfg.Scheduling.Affinity.PodAffinity))
 	g.Expect(expected.AdditionalLabels).To(BeEquivalentTo(cfg.AdditionalLabels))
-
-	// setMultizoneSpread expectations. PodAntiAffinity.
-	expected.Scheduling.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{
-		RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
-			{
-				TopologyKey: corev1.LabelTopologyZone,
-				LabelSelector: &metav1.LabelSelector{
-					MatchLabels: labels,
-				},
-			},
-		},
-	}
-	g.Expect(expected.Scheduling.Affinity.PodAntiAffinity).To(BeEquivalentTo(cfg.Scheduling.Affinity.PodAntiAffinity))
 }

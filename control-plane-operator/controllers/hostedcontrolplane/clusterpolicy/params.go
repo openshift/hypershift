@@ -42,7 +42,7 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, images ma
 	}
 
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, clusterPolicyControllerLabels, nil)
+	params.DeploymentConfig.SetDefaults(hcp, nil)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.OwnerRef = config.OwnerRefFrom(hcp)

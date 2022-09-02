@@ -99,7 +99,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 			},
 		},
 	}
-	params.DeploymentConfig.SetDefaults(hcp, kcmLabels(), nil)
+	params.DeploymentConfig.SetDefaults(hcp, nil)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	switch hcp.Spec.Platform.Type {
