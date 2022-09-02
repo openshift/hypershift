@@ -42,6 +42,7 @@ nav:
   - how-to/debug-nodes.md
   - how-to/external-dns.md
   - how-to/metrics-sets.md
+  - how-to/node-tuning.md
   - 'AWS':
     - how-to/aws/create-infra-iam-separately.md
     - how-to/aws/create-aws-hosted-cluster-multiple-zones.md

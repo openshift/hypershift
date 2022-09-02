@@ -19,6 +19,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/operator/v1alpha1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
+	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -76,6 +77,9 @@ const (
 	TokenSecretTokenKey                       = "token"
 	TokenSecretConfigKey                      = "config"
 	TokenSecretAnnotation                     = "hypershift.openshift.io/ignition-config"
+
+	tunedConfigKey      = "tuned"
+	tunedConfigMapLabel = "hypershift.openshift.io/tuned-config"
 )
 
 type NodePoolReconciler struct {
@@ -510,6 +514,26 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
 	}
 
+	// Validate tunedconfig input.
+	tunedConfig, err := r.getTunedConfig(ctx, nodePool)
+	if err != nil {
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidTunedConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return ctrl.Result{}, fmt.Errorf("failed to get tunedConfig: %w", err)
+	}
+
+	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidTunedConfigConditionType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+		ObservedGeneration: nodePool.Generation,
+	})
+
 	// Set ReconciliationActive condition
 	setStatusCondition(&nodePool.Status.Conditions, generateReconciliationActiveCondition(nodePool.Spec.PausedUntil, nodePool.Generation))
 
@@ -527,6 +551,27 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 		log.Info("Reconciliation paused", "pausedUntil", *nodePool.Spec.PausedUntil)
 		return ctrl.Result{RequeueAfter: duration}, nil
+	}
+
+	tunedConfigMap := TunedConfigMap(controlPlaneNamespace, nodePool.Name)
+	if tunedConfig == "" {
+		err = r.Get(ctx, client.ObjectKeyFromObject(tunedConfigMap), tunedConfigMap)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to get tunedConfig ConfigMap: %w", err)
+		}
+		if err == nil {
+			if err := r.Delete(ctx, tunedConfigMap); err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to delete tunedConfig ConfigMap with no Tuneds defined: %w", err)
+			}
+		}
+	} else {
+		if result, err := r.CreateOrUpdate(ctx, r.Client, tunedConfigMap, func() error {
+			return reconcileTunedConfigMap(tunedConfigMap, nodePool, tunedConfig)
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile Tuned ConfigMap: %w", err)
+		} else {
+			log.Info("Reconciled Tuned ConfigMap", "result", result)
+		}
 	}
 
 	// 2. - Reconcile towards expected state of the world.
@@ -826,6 +871,15 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 		}
 	}
 
+	// Delete any ConfigMap belonging to this NodePool i.e. TunedConfig ConfigMaps.
+	err = r.DeleteAllOf(ctx, &corev1.ConfigMap{},
+		client.InNamespace(controlPlaneNamespace),
+		client.MatchingLabels{nodePoolAnnotation: nodePool.GetName()},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete ConfigMaps with nodePool label: %w", err)
+	}
+
 	if err := deleteMachineDeployment(ctx, r.Client, md); err != nil {
 		return fmt.Errorf("failed to delete MachineDeployment: %w", err)
 	}
@@ -863,6 +917,27 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 		"disableTemplating": []byte(base64.StdEncoding.EncodeToString([]byte("true"))),
 		"value":             userDataValue,
 	}
+	return nil
+}
+
+func reconcileTunedConfigMap(tunedConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, tunedConfig string) error {
+	tunedConfigMap.Immutable = k8sutilspointer.BoolPtr(false)
+	if tunedConfigMap.Annotations == nil {
+		tunedConfigMap.Annotations = make(map[string]string)
+	}
+	if tunedConfigMap.Labels == nil {
+		tunedConfigMap.Labels = make(map[string]string)
+	}
+
+	tunedConfigMap.Labels[tunedConfigMapLabel] = "true"
+	tunedConfigMap.Annotations[nodePoolAnnotation] = nodePool.GetName()
+	tunedConfigMap.Labels[nodePoolAnnotation] = nodePool.GetName()
+
+	if tunedConfigMap.Data == nil {
+		tunedConfigMap.Data = map[string]string{}
+	}
+	tunedConfigMap.Data[tunedConfigKey] = tunedConfig
+
 	return nil
 }
 
@@ -1246,6 +1321,72 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 	return strings.Join(allConfigPlainText, "\n---\n"), missingConfigs, utilerrors.NewAggregate(errors)
 }
 
+func (r *NodePoolReconciler) getTunedConfig(ctx context.Context,
+	nodePool *hyperv1.NodePool,
+) (configsRaw string, err error) {
+	var configs []corev1.ConfigMap
+	var allConfigPlainText []string
+	var errors []error
+
+	for _, config := range nodePool.Spec.TunedConfig {
+		configConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      config.Name,
+				Namespace: nodePool.Namespace,
+			},
+		}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(configConfigMap), configConfigMap); err != nil {
+			errors = append(errors, err)
+			continue
+		}
+		configs = append(configs, *configConfigMap)
+	}
+
+	for _, config := range configs {
+		manifestRaw := config.Data[tunedConfigKey]
+		manifest, err := validateTunedConfigManifest([]byte(manifestRaw))
+		if err != nil {
+			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
+			continue
+		}
+
+		allConfigPlainText = append(allConfigPlainText, string(manifest))
+	}
+
+	// Keep output deterministic to avoid unnecesary no-op changes to Tuned ConfigMap
+	sort.Strings(allConfigPlainText)
+	return strings.Join(allConfigPlainText, "\n---\n"), utilerrors.NewAggregate(errors)
+}
+
+func validateTunedConfigManifest(manifest []byte) ([]byte, error) {
+	scheme := runtime.NewScheme()
+	tunedv1.AddToScheme(scheme)
+
+	yamlSerializer := serializer.NewSerializerWithOptions(
+		serializer.DefaultMetaFactory, scheme, scheme,
+		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
+	)
+
+	cr, _, err := yamlSerializer.Decode(manifest, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding config: %w", err)
+	}
+
+	switch obj := cr.(type) {
+	case *tunedv1.Tuned:
+		buff := bytes.Buffer{}
+		if err := yamlSerializer.Encode(obj, &buff); err != nil {
+			return nil, fmt.Errorf("failed to encode tuned config after defaulting it: %w", err)
+		}
+		manifest = buff.Bytes()
+
+	default:
+		return nil, fmt.Errorf("unsupported tunedConfig object type: %T", obj)
+	}
+
+	return manifest, err
+}
+
 // validateManagement does additional backend validation. API validation/default should
 // prevent this from ever fail.
 func validateManagement(nodePool *hyperv1.NodePool) error {
@@ -1479,16 +1620,37 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(obj client.Object) []reco
 		return result
 	}
 
+	// If the ConfigMap is generated by the NodePool controller and contains Tuned manifests
+	// return the ConfigMaps parent NodePool.
+	if _, ok := obj.GetLabels()[tunedConfigMapLabel]; ok {
+		return enqueueParentNodePool(obj)
+	}
+
 	// Otherwise reconcile NodePools which are referencing the given ConfigMap.
 	for key := range nodePoolList.Items {
+		reconcileNodePool := false
 		for _, v := range nodePoolList.Items[key].Spec.Config {
 			if v.Name == cm.Name {
-				result = append(result,
-					reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
-				)
+				reconcileNodePool = true
 				break
 			}
 		}
+
+		// Check TunedConfig as well, unless ConfigMap was already found in .Spec.Config.
+		if !reconcileNodePool {
+			for _, v := range nodePoolList.Items[key].Spec.TunedConfig {
+				if v.Name == cm.Name {
+					reconcileNodePool = true
+					break
+				}
+			}
+		}
+		if reconcileNodePool {
+			result = append(result,
+				reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
+			)
+		}
+
 	}
 
 	return result

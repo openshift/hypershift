@@ -806,6 +806,228 @@ kind: Config`)},
 	}
 }
 
+func TestGetTunedConfig(t *testing.T) {
+	tuned1 := `
+apiVersion: tuned.openshift.io/v1
+kind: Tuned
+metadata:
+  name: tuned-1
+  namespace: openshift-cluster-node-tuning-operator
+spec:
+  profile:
+  - data: |
+      [main]
+      summary=Custom OpenShift profile
+      include=openshift-node
+
+      [sysctl]
+      vm.dirty_ratio="55"
+    name: tuned-1-profile
+  recommend:
+  - match:
+    - label: tuned-1-node-label
+    priority: 20
+    profile: tuned-1-profile
+`
+	tuned1Defaulted := `apiVersion: tuned.openshift.io/v1
+kind: Tuned
+metadata:
+  creationTimestamp: null
+  name: tuned-1
+  namespace: openshift-cluster-node-tuning-operator
+spec:
+  profile:
+  - data: |
+      [main]
+      summary=Custom OpenShift profile
+      include=openshift-node
+
+      [sysctl]
+      vm.dirty_ratio="55"
+    name: tuned-1-profile
+  recommend:
+  - match:
+    - label: tuned-1-node-label
+    operand:
+      tunedConfig:
+        reapply_sysctl: null
+    priority: 20
+    profile: tuned-1-profile
+status: {}
+`
+	tuned2 := `
+apiVersion: tuned.openshift.io/v1
+kind: Tuned
+metadata:
+  name: tuned-2
+  namespace: openshift-cluster-node-tuning-operator
+spec:
+  profile:
+  - data: |
+      [main]
+      summary=Custom OpenShift profile
+      include=openshift-node
+
+      [sysctl]
+      vm.dirty_background_ratio="25"
+    name: tuned-2-profile
+  recommend:
+  - match:
+    - label: tuned-2-node-label
+    priority: 10
+    profile: tuned-2-profile
+`
+	tuned2Defaulted := `apiVersion: tuned.openshift.io/v1
+kind: Tuned
+metadata:
+  creationTimestamp: null
+  name: tuned-2
+  namespace: openshift-cluster-node-tuning-operator
+spec:
+  profile:
+  - data: |
+      [main]
+      summary=Custom OpenShift profile
+      include=openshift-node
+
+      [sysctl]
+      vm.dirty_background_ratio="25"
+    name: tuned-2-profile
+  recommend:
+  - match:
+    - label: tuned-2-node-label
+    operand:
+      tunedConfig:
+        reapply_sysctl: null
+    priority: 10
+    profile: tuned-2-profile
+status: {}
+`
+
+	namespace := "test"
+	testCases := []struct {
+		name                string
+		nodePool            *hyperv1.NodePool
+		tunedConfig         []client.Object
+		expect              string
+		missingTunedConfigs bool
+		error               bool
+	}{
+		{
+			name: "gets a single valid TunedConfig",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TunedConfig: []corev1.LocalObjectReference{
+						{
+							Name: "tuned-1",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tunedConfig: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tuned-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tunedConfigKey: tuned1,
+					},
+					BinaryData: nil,
+				},
+			},
+			expect: tuned1Defaulted,
+			error:  false,
+		},
+		{
+			name: "gets two valid TunedConfigs",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TunedConfig: []corev1.LocalObjectReference{
+						{
+							Name: "tuned-1",
+						},
+						{
+							Name: "tuned-2",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tunedConfig: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tuned-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tunedConfigKey: tuned1,
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tuned-2",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tunedConfigKey: tuned2,
+					},
+				},
+			},
+			expect: tuned1Defaulted + "\n---\n" + tuned2Defaulted,
+			error:  false,
+		},
+		{
+			name: "fails if a non existent TunedConfig is referenced",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TunedConfig: []corev1.LocalObjectReference{
+						{
+							Name: "does-not-exist",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tunedConfig: []client.Object{},
+			expect:      "",
+			error:       true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			r := NodePoolReconciler{
+				Client: fake.NewClientBuilder().WithObjects(tc.tunedConfig...).Build(),
+			}
+
+			got, err := r.getTunedConfig(context.Background(), tc.nodePool)
+
+			if tc.error {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			if diff := cmp.Diff(got, tc.expect); diff != "" {
+				t.Errorf("actual config differs from expected: %s", diff)
+				t.Logf("got: %s \n, expected: \n %s", got, tc.expect)
+			}
+		})
+	}
+}
+
 func TestSetMachineDeploymentReplicas(t *testing.T) {
 	testCases := []struct {
 		name                        string

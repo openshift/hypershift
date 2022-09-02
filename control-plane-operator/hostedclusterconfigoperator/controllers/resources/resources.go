@@ -468,17 +468,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
 
-	// The node tuning cluster operator resource cannot be removed with an annotation in the CVO
-	// like other resources. The CVO treats cluster operator resources differently and attempts to
-	// pre-create them regardless of the annotations. By removing the manifest from the payload, the
-	// CVO should no longer try to sync the node tuning cluster operator. However, we still need to
-	// remove it if upgrading a cluster that had it before.
-	nodeTuningCO := manifests.NodeTuningClusterOperator()
-	if err = r.client.Get(ctx, client.ObjectKeyFromObject(nodeTuningCO), nodeTuningCO); err == nil {
-		log.Info("removing existing node tuning cluster operator")
-		errs = append(errs, r.client.Delete(ctx, nodeTuningCO))
-	}
-
 	// Delete the DNS operator deployment in the hosted cluster, if it is
 	// present there.  A separate DNS operator deployment runs as part of
 	// the hosted control-plane, but an upgraded cluster might still have
