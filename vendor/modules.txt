@@ -108,6 +108,7 @@ github.com/IBM/networking-go-sdk/zonesv1
 github.com/IBM/platform-services-go-sdk/common
 github.com/IBM/platform-services-go-sdk/globalcatalogv1
 github.com/IBM/platform-services-go-sdk/iamidentityv1
+github.com/IBM/platform-services-go-sdk/iampolicymanagementv1
 github.com/IBM/platform-services-go-sdk/resourcecontrollerv2
 github.com/IBM/platform-services-go-sdk/resourcemanagerv2
 # github.com/IBM/vpc-go-sdk v0.20.0
@@ -507,6 +508,12 @@ github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/osin/v1
 github.com/openshift/api/route/v1
 github.com/openshift/api/security/v1
+# github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
+## explicit; go 1.18
+github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1
+github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning
+github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud
+github.com/openshift/cloud-credential-operator/pkg/ibmcloud
 # github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220227135922-dd6353f609dc
 ## explicit; go 1.16
 github.com/openshift/cluster-api-provider-agent/api/v1alpha1

@@ -242,35 +242,6 @@ func (p PowerVS) ReconcileCredentials(ctx context.Context, c client.Client, crea
 		return fmt.Errorf("failed to reconcile node pool provider creds: %w", err)
 	}
 
-	// Reconcile the platform provider node pool management credentials secret by
-	// resolving  the reference from the HostedCluster and syncing the secret in
-	// the control plane namespace.
-	err = c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.PowerVS.ControlPlaneOperatorCreds.Name}, &src)
-	if err != nil {
-		return fmt.Errorf("failed to get control plane operator provider creds %s: %w", hcluster.Spec.Platform.PowerVS.ControlPlaneOperatorCreds.Name, err)
-	}
-	dest = &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      src.Name,
-		},
-	}
-	_, err = createOrUpdate(ctx, c, dest, func() error {
-		srcData, srcHasData := src.Data["ibm-credentials.env"]
-		if !srcHasData {
-			return fmt.Errorf("control plane operator provider credentials secret %q is missing credentials key", src.Name)
-		}
-		dest.Type = corev1.SecretTypeOpaque
-		if dest.Data == nil {
-			dest.Data = map[string][]byte{}
-		}
-		dest.Data["ibm-credentials.env"] = srcData
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile control plane operator provider creds: %w", err)
-	}
-
 	// Reconcile the platform provider ingress operator credentials secret by
 	// resolving  the reference from the HostedCluster and syncing the secret in
 	// the control plane namespace.
@@ -305,6 +276,42 @@ func (p PowerVS) ReconcileCredentials(ctx context.Context, c client.Client, crea
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile ingress operator provider creds: %w", err)
+	}
+
+	// Reconcile the platform provider storage operator credentials secret by
+	// resolving  the reference from the HostedCluster and syncing the secret in
+	// the control plane namespace.
+	err = c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.PowerVS.StorageOperatorCloudCreds.Name}, &src)
+	if err != nil {
+		return fmt.Errorf("failed to get storage operator provider creds %s: %w", hcluster.Spec.Platform.PowerVS.StorageOperatorCloudCreds.Name, err)
+	}
+	dest = &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      src.Name,
+		},
+	}
+	_, err = createOrUpdate(ctx, c, dest, func() error {
+		apiKeySrcData, apiKeySrcHasData := src.Data["ibmcloud_api_key"]
+		if !apiKeySrcHasData {
+			return fmt.Errorf("hostedcluster storage operator credentials secret %q must have a credentials key ibmcloud_api_key", src.Name)
+		}
+		dest.Type = corev1.SecretTypeOpaque
+		if dest.Data == nil {
+			dest.Data = map[string][]byte{}
+		}
+		dest.Data["ibmcloud_api_key"] = apiKeySrcData
+
+		envSrcData, envSrcHasData := src.Data["ibm-credentials.env"]
+		if !envSrcHasData {
+			return fmt.Errorf("hostedcluster storage operator credentials secret %q must have a credentials key ibm-credentials.env", src.Name)
+		}
+		dest.Data["ibm-credentials.env"] = envSrcData
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile storage operator provider creds: %w", err)
 	}
 	return nil
 }
