@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -51,7 +52,7 @@ func oauthLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, apiPort *int32, namedCertificates []configv1.APIServerNamedServingCert, socks5ProxyImage string) error {
+func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, apiPort *int32, namedCertificates []configv1.APIServerNamedServingCert, socks5ProxyImage string, noProxy []string) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main oauth container
@@ -88,7 +89,7 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: utilpointer.BoolPtr(false),
 		Containers: []corev1.Container{
-			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image)),
+			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image, noProxy)),
 			socks5ProxyContainer(socks5ProxyImage),
 		},
 		Volumes: []corev1.Volume{
@@ -124,7 +125,7 @@ func oauthContainerMain() *corev1.Container {
 	}
 }
 
-func buildOAuthContainerMain(image string) func(c *corev1.Container) {
+func buildOAuthContainerMain(image string, noProxy []string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Args = []string{
@@ -144,7 +145,7 @@ func buildOAuthContainerMain(image string) func(c *corev1.Container) {
 			},
 			{
 				Name:  "NO_PROXY",
-				Value: manifests.KubeAPIServerService("").Name,
+				Value: strings.Join(noProxy, ","),
 			},
 		}
 	}
