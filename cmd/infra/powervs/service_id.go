@@ -121,7 +121,7 @@ func createServiceIDClient(name, APIKey, accountID, resourceGroupID, crYaml, sec
 	if err = decoder.Decode(cr); err != nil {
 		return nil, fmt.Errorf("failed to decode to CredentialsRequest %w", err)
 	}
-	cr.Spec.SecretRef = corev1.ObjectReference{Name: secretRefName, Namespace: secretRefNamespace}
+	cr.Spec.SecretRef = corev1.ObjectReference{Name: fmt.Sprintf("%s-%s", name, secretRefName), Namespace: secretRefNamespace}
 
 	return cco.NewServiceID(ccoIBMClient, name, accountID, resourceGroupID, cr), nil
 }
