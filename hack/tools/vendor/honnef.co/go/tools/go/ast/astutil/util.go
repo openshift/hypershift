@@ -6,6 +6,8 @@ import (
 	"go/token"
 	"reflect"
 	"strings"
+
+	"golang.org/x/exp/typeparams"
 )
 
 func IsIdent(expr ast.Expr, ident string) bool {
@@ -130,6 +132,20 @@ func CopyExpr(node ast.Expr) (ast.Expr, bool) {
 		cp.X, ok1 = CopyExpr(cp.X)
 		cp.Index, ok2 = CopyExpr(cp.Index)
 		return &cp, ok1 && ok2
+	case *typeparams.IndexListExpr:
+		var ok bool
+		cp := *node
+		cp.X, ok = CopyExpr(cp.X)
+		if !ok {
+			return nil, false
+		}
+		for i, v := range node.Indices {
+			cp.Indices[i], ok = CopyExpr(v)
+			if !ok {
+				return nil, false
+			}
+		}
+		return &cp, true
 	case *ast.KeyValueExpr:
 		var ok1, ok2 bool
 		cp := *node
@@ -202,8 +218,8 @@ func CopyExpr(node ast.Expr) (ast.Expr, bool) {
 	case *ast.StructType:
 		cp := *node
 		return &cp, true
-	case *ast.FuncLit:
-		// TODO(dh): implement copying of function literals.
+	case *ast.FuncLit, *ast.FuncType:
+		// TODO(dh): implement copying of function literals and types.
 		return nil, false
 	case *ast.ChanType:
 		var ok bool
@@ -264,6 +280,17 @@ func Equal(a, b ast.Node) bool {
 	case *ast.IndexExpr:
 		b := b.(*ast.IndexExpr)
 		return Equal(a.X, b.X) && Equal(a.Index, b.Index)
+	case *typeparams.IndexListExpr:
+		b := b.(*typeparams.IndexListExpr)
+		if len(a.Indices) != len(b.Indices) {
+			return false
+		}
+		for i, v := range a.Indices {
+			if !Equal(v, b.Indices[i]) {
+				return false
+			}
+		}
+		return Equal(a.X, b.X)
 	case *ast.KeyValueExpr:
 		b := b.(*ast.KeyValueExpr)
 		return Equal(a.Key, b.Key) && Equal(a.Value, b.Value)
