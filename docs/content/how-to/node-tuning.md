@@ -1,6 +1,7 @@
 # Manage node-level tuning with the Node Tuning Operator
 
-If you would like to set some node-level tuning on the nodes in your hosted cluster, you can use the [Node Tuning Operator](https://docs.openshift.com/container-platform/4.11/scalability_and_performance/using-node-tuning-operator.html). In HyperShift, node tuning can be configured by creating ConfigMaps which contain Tuned objects, and referencing these ConfigMaps in your NodePools. Currently Node Tuning is limited to tunables which the TuneD daemon can apply directly like setting `sysctl` values. Tuning that requires setting kernel boot parameters is not yet supported in HyperShift.
+## Creating a simple TuneD profile for setting sysctl settings
+If you would like to set some node-level tuning on the nodes in your hosted cluster, you can use the [Node Tuning Operator](https://docs.openshift.com/container-platform/latest/scalability_and_performance/using-node-tuning-operator.html). In HyperShift, node tuning can be configured by creating ConfigMaps which contain Tuned objects, and referencing these ConfigMaps in your NodePools.
 
 1. Create a ConfigMap which contains a valid Tuned manifest and reference it in a NodePool. The example Tuned manifest below defines a profile which sets `vm.dirty_ratio` to 55, on Nodes which contain the Node label  `tuned-1-node-label` with any value. 
 
@@ -84,7 +85,7 @@ If you would like to set some node-level tuning on the nodes in your hosted clus
     nodepool-1-worker-2            tuned-1-profile  True      False      7m14s
     ```
 
-    As we can see, both worker nodes in the nodepool have the tuned-1-profile applied. Note that if no custom profiles are created, the `openshift-node` profile will be applied by default.
+    As we can see, both worker nodes in the NodePool have the tuned-1-profile applied. Note that if no custom profiles are created, the `openshift-node` profile will be applied by default.
 
 
 3. To confirm the tuning was applied correctly, we can start a debug shell on a Node and check the sysctl values:
@@ -95,4 +96,126 @@ If you would like to set some node-level tuning on the nodes in your hosted clus
     Example output:
     ```
     vm.dirty_ratio = 55
+    ```
+
+## Applying tuning which requires kernel boot parameters 
+You can also use the Node Tuning Operator for more complex tuning which requires setting kernel boot parameters. 
+As an example, the following steps can be followed to create a NodePool with huge pages reserved.
+
+1. Create the following ConfigMap which contains a Tuned object manifest for creating 10 hugepages of size 2M.
+
+    Save this ConfigMap manifest in a file called `tuned-hugepages.yaml`:
+    ```
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: tuned-hugepages
+      namespace: clusters
+    data:
+      tuned: |
+        apiVersion: tuned.openshift.io/v1
+        kind: Tuned
+        metadata:
+          name: hugepages
+          namespace: openshift-cluster-node-tuning-operator
+        spec:
+          profile:
+          - data: |
+              [main]
+              summary=Boot time configuration for hugepages
+              include=openshift-node
+              [bootloader]
+              cmdline_openshift_node_hugepages=hugepagesz=2M hugepages=50
+            name: openshift-node-hugepages
+          recommend:
+          - priority: 20
+            profile: openshift-node-hugepages
+    ```
+    > **_NOTE:_**  The `.spec.recommend.match` field is intentionally left blank. In this case this Tuned will be applied to all Nodes in the NodePool where this ConfigMap is referenced. It is advised to group Nodes with the same hardware configuration into the same NodePool. Not following this practice might result in TuneD operands calculating conflicting kernel parameters for two or more nodes sharing the same NodePool.
+
+    Create the ConfigMap in the management cluster:
+    ```
+    oc --kubeconfig="$MGMT_KUBECONFIG" create -f tuned-hugepages.yaml
+    ```
+
+2. Create a new NodePool manifest YAML file, customize the NodePools upgrade type, and reference the previously created ConfigMap in the `spec.tunedConfig` section before creating it in the management cluster.
+
+    Create the NodePool manifest and save it in a file called `hugepages-nodepool.yaml`:
+    ```
+    NODEPOOL_NAME=hugepages-example
+    INSTANCE_TYPE=m5.2xlarge
+    NODEPOOL_REPLICAS=2
+
+    hypershift create nodepool aws \
+      --cluster-name $CLUSTER_NAME \
+      --name $NODEPOOL_NAME \
+      --node-count $NODEPOOL_REPLICAS \
+      --instance-type $INSTANCE_TYPE \
+      --render > hugepages-nodepool.yaml
+    ```
+
+    Edit `hugepages-nodepool.yaml`. Set `.spec.management.upgradeType` to `InPlace`, and set `.spec.tunedConfig` to reference the `tuned-hugepages` ConfigMap you created.
+    ```
+    apiVersion: hypershift.openshift.io/v1alpha1
+    kind: NodePool
+    metadata:
+      name: hugepages-nodepool
+      namespace: clusters
+      ...
+    spec:
+      management:
+        ...
+        upgradeType: InPlace
+      ...
+      tunedConfig:
+      - name: tuned-hugepages
+    ```
+    > **_NOTE:_**  Setting `.spec.management.upgradeType` to `InPlace` is recommended to avoid unnecessary Node recreations when applying the new MachineConfigs. With the `Replace` upgrade type, Nodes will be fully deleted and new nodes will replace them when applying the new kernel boot parameters that are calculated by the TuneD operand.
+
+    Create the NodePool in the management cluster:
+    ```
+    oc --kubeconfig="$MGMT_KUBECONFIG" create -f hugepages-nodepool.yaml
+    ```
+
+
+3. After the Nodes become available, the containerized TuneD daemon will calculate the required kernel boot parameters based on the applied TuneD profile. After the Nodes become `Ready` and reboot once to apply the generated MachineConfig, you can verify that the Tuned profile is applied and that the kernel boot parameters have been set.
+
+    List the Tuned objects in the hosted cluster:
+    ```
+    oc --kubeconfig="$HC_KUBECONFIG" get Tuneds -n openshift-cluster-node-tuning-operator
+    ```
+
+    Example output:
+    ```
+    NAME                 AGE
+    default              123m
+    hugepages-8dfb1fed   1m23s
+    rendered             123m
+    ```
+   
+    List the Profiles in the hosted cluster:
+    ```
+    oc --kubeconfig="$HC_KUBECONFIG" get Profiles -n openshift-cluster-node-tuning-operator
+    ```
+
+    Example output:
+    ```
+    NAME                           TUNED                      APPLIED   DEGRADED   AGE
+    nodepool-1-worker-1            openshift-node             True      False      132m
+    nodepool-1-worker-2            openshift-node             True      False      131m
+    hugepages-nodepool-worker-1    openshift-node-hugepages   True      False      4m8s
+    hugepages-nodepool-worker-2    openshift-node-hugepages   True      False      3m57s
+    ```
+
+    Both worker nodes in the new NodePool have the `openshift-node-hugepages` profile applied.
+
+
+4. To confirm the tuning was applied correctly, we can start a debug shell on a Node and check `/proc/cmdline`
+    ```
+    oc --kubeconfig="$HC_KUBECONFIG" debug node/nodepool-1-worker-1 -- chroot /host cat /proc/cmdline
+    ```
+
+    Example output:
+    ```
+    BOOT_IMAGE=(hd0,gpt3)/ostree/rhcos-... hugepagesz=2M hugepages=50
     ```
