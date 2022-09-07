@@ -45,6 +45,7 @@ type Images struct {
 	CloudNetworkConfigController string
 	TokenMinter                  string
 	CLI                          string
+	Socks5Proxy                  string
 }
 
 type Params struct {
@@ -87,6 +88,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 			CloudNetworkConfigController: images["cloud-network-config-controller"],
 			TokenMinter:                  images["token-minter"],
 			CLI:                          images["cli"],
+			Socks5Proxy:                  images["socks5-proxy"],
 		},
 		ReleaseVersion:              version,
 		AvailabilityProberImage:     images[util.AvailabilityProberImageName],
@@ -354,6 +356,7 @@ kubectl --kubeconfig $kc config use-context default`,
 			{Name: "CLOUD_NETWORK_CONFIG_CONTROLLER_IMAGE", Value: params.Images.CloudNetworkConfigController},
 			{Name: "TOKEN_MINTER_IMAGE", Value: params.Images.TokenMinter},
 			{Name: "CLI_IMAGE", Value: params.Images.CLI},
+			{Name: "SOCKS5_PROXY_IMAGE", Value: params.Images.Socks5Proxy},
 		}...),
 		Name:            operatorName,
 		Image:           params.Images.NetworkOperator,
