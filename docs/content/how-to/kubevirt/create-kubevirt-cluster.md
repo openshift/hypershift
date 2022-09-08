@@ -48,7 +48,15 @@ hypershift create cluster kubevirt \
 !!! note
 
     A default NodePool will be created for the cluster with 3 replicas per the
-    `--node-pool-replicas` flag.
+    `--node-pool-replicas` flag. 
+
+!!! note
+
+    If you are using `--node-pool-replicas` flag and creating hypershift cluster of kubevirt type
+    on management OCP cluster running on public cloud environments. Then make the underlying instance type of
+    public cloud infrastructure has support for nested virtualization. Some of the cloud instance types supporting 
+    nested virtualzation are Azure(Dv3/Dv4/Dsv3/Dsv4), AWS (c5.metal,c5n.metal,c5d.metal,m5.metal,i3.metal etc)
+    
 
 After a few minutes, check the `hostedclusters` resources in the `clusters`
 namespace and when ready it will look similar to the following:
