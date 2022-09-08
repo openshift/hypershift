@@ -278,3 +278,19 @@ func ReconcileGenericMetricsClusterRoleBinding(cn string) func(*rbacv1.ClusterRo
 		return nil
 	}
 }
+
+func ReconcileAuthenticatedReaderForAuthenticatedUserRolebinding(r *rbacv1.RoleBinding) error {
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "Role",
+		Name:     "extension-apiserver-authentication-reader",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			APIGroup: rbacv1.SchemeGroupVersion.Group,
+			Kind:     "Group",
+			Name:     "system:authenticated",
+		},
+	}
+	return nil
+}
