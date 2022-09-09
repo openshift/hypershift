@@ -50,6 +50,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/olm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/rbac"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -465,6 +466,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	log.Info("reconciling olm resources")
 	errs = append(errs, r.reconcileOLM(ctx, hcp, releaseImage)...)
+
+	log.Info("reconciling storage resources")
+	errs = append(errs, r.reconcileStorage(ctx, hcp, releaseImage)...)
 
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
@@ -1540,4 +1544,17 @@ func (a *genericListAccessor) len() int {
 
 func (a *genericListAccessor) item(i int) client.Object {
 	return (a.items.Index(i).Addr().Interface()).(client.Object)
+}
+
+func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) []error {
+	var errs []error
+
+	cr := manifests.CSISnapshotController()
+	if _, err := r.CreateOrUpdate(ctx, r.client, cr, func() error {
+		storage.ReconcileCSISnapshotController(cr)
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile CSISnapshotController : %w", err))
+	}
+	return errs
 }
