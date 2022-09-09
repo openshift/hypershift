@@ -245,17 +245,20 @@ func ReconcileIgnitionServer(ctx context.Context,
 		if ignitionServerDeployment.Annotations == nil {
 			ignitionServerDeployment.Annotations = map[string]string{}
 		}
-		ignitionServerLabels := map[string]string{
-			"app":                         ignitionserver.ResourceName,
-			hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
+		ignitionServerLabels := func() map[string]string {
+			return map[string]string{
+				"app":                         ignitionserver.ResourceName,
+				hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
+				"hypershift.openshift.io/hosted-control-plane": hcp.Namespace,
+			}
 		}
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{
-				MatchLabels: ignitionServerLabels,
+				MatchLabels: ignitionServerLabels(),
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: ignitionServerLabels,
+					Labels: ignitionServerLabels(),
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName:            sa.Name,
@@ -369,7 +372,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		deploymentConfig := config.DeploymentConfig{}
 		deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 		deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-		deploymentConfig.SetDefaults(hcp, ignitionServerLabels, nil)
+		deploymentConfig.SetDefaults(hcp, nil)
 		deploymentConfig.ApplyTo(ignitionServerDeployment)
 
 		return nil

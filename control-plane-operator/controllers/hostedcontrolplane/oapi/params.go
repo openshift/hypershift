@@ -106,7 +106,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 		},
 	}
 	params.OpenShiftAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.OpenShiftAPIServerDeploymentConfig.SetDefaults(hcp, openShiftAPIServerLabels(), nil)
+	params.OpenShiftAPIServerDeploymentConfig.SetDefaults(hcp, nil)
 
 	params.OpenShiftOAuthAPIServerDeploymentConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
@@ -157,7 +157,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.OpenShiftOAuthAPIServerDeploymentConfig.SetDefaults(hcp, openShiftOAuthAPIServerLabels(), nil)
+	params.OpenShiftOAuthAPIServerDeploymentConfig.SetDefaults(hcp, nil)
 	switch hcp.Spec.Etcd.ManagementType {
 	case hyperv1.Unmanaged:
 		params.EtcdURL = hcp.Spec.Etcd.Unmanaged.Endpoint
