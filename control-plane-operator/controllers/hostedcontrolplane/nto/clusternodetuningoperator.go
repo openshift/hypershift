@@ -146,7 +146,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 	}
 
 	ntoArgs := []string{
-		"-v=2",
+		"-v=0",
 	}
 
 	var ntoEnv []corev1.EnvVar
