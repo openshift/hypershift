@@ -59,6 +59,7 @@ const (
 	dhcpServiceErrorState = "ERROR"
 
 	// Time duration for monitoring the resource readiness
+	dhcpPollingInterval              = time.Minute * 1
 	pollingInterval                  = time.Second * 5
 	vpcCreationTimeout               = time.Minute * 5
 	cloudInstanceCreationTimeout     = time.Minute * 5
@@ -1184,7 +1185,7 @@ func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *insta
 		return false, nil
 	}
 
-	if err = wait.PollImmediate(pollingInterval, dhcpServerCreationTimeout, f); err != nil {
+	if err = wait.PollImmediate(dhcpPollingInterval, dhcpServerCreationTimeout, f); err != nil {
 		return nil, err
 	}
 
