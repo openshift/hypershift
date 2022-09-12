@@ -162,6 +162,7 @@ objects:
     - apps
     resources:
     - deployments
+    - replicasets
     - statefulsets
     verbs:
     - '*'
