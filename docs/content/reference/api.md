@@ -3625,6 +3625,7 @@ string
 </em>
 </td>
 <td>
+<p>ReleaseImage is the release image applied to the hosted control plane.</p>
 </td>
 </tr>
 <tr>
@@ -3647,6 +3648,8 @@ string
 </em>
 </td>
 <td>
+<p>IssuerURL is an OIDC issuer URL which is used as the issuer in all
+used by the service account token issuer. The secret is expected to contain</p>
 </td>
 </tr>
 <tr>

@@ -1990,6 +1990,9 @@ spec:
                   The default value is SingleReplica.
                 type: string
               issuerURL:
+                description: IssuerURL is an OIDC issuer URL which is used as the
+                  issuer in all used by the service account token issuer. The secret
+                  is expected to contain
                 type: string
               kubeconfig:
                 description: KubeConfig specifies the name and key for the kubeconfig
@@ -2724,6 +2727,8 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               releaseImage:
+                description: ReleaseImage is the release image applied to the hosted
+                  control plane.
                 type: string
               secretEncryption:
                 description: SecretEncryption contains metadata about the kubernetes

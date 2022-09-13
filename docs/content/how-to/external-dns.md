@@ -24,10 +24,10 @@ Hypershift uses [external-dns](https://github.com/openshift/external-dns) to ach
 `hypershift install` will create the `external-dns` deployment if the proper flags are set:
 
 ```
-hypershift install --external-dns-provider=aws --external-dns-credentials=route53-aws-creds --external-dns-domain-filter=service.hypershift.example.org ...
+hypershift install --external-dns-domain=service.hypershift.example.org ...
 ```
 
-where `external-dns-provider` is the DNS provider that manages the service-level DNS zone, `external-dns-credentials` is the credentials file appropriate for the specified provider, and `external-dns-domain-filter` is the service-level domain.
+where `external-dns-domain` is the service-level domain.
 
 ## HostedCluster with Service Hostnames
 

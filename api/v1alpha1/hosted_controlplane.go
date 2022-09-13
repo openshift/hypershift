@@ -25,9 +25,12 @@ type HostedControlPlane struct {
 
 // HostedControlPlaneSpec defines the desired state of HostedControlPlane
 type HostedControlPlaneSpec struct {
+	// ReleaseImage is the release image applied to the hosted control plane.
 	ReleaseImage string                      `json:"releaseImage"`
 	PullSecret   corev1.LocalObjectReference `json:"pullSecret"`
-	IssuerURL    string                      `json:"issuerURL"`
+	// IssuerURL is an OIDC issuer URL which is used as the issuer in all
+	// used by the service account token issuer. The secret is expected to contain
+	IssuerURL string `json:"issuerURL"`
 
 	// Networking specifies network configuration for the cluster.
 	// Temporarily optional for backward compatibility, required in future releases.
