@@ -50,7 +50,7 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observ
 		},
 	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, nil)
+	params.DeploymentConfig.SetDefaults(hcp, openShiftControllerManagerLabels(), nil)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.OwnerRef = config.OwnerRefFrom(hcp)

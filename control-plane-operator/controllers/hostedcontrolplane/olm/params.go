@@ -7,6 +7,11 @@ import (
 	"k8s.io/utils/pointer"
 )
 
+var packageServerLabels = map[string]string{
+	"app":                         "packageserver",
+	hyperv1.ControlPlaneComponent: "packageserver",
+}
+
 type OperatorLifecycleManagerParams struct {
 	CLIImage                string
 	OLMImage                string
@@ -37,7 +42,7 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images m
 		},
 	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, pointer.Int(1))
+	params.DeploymentConfig.SetDefaults(hcp, nil, pointer.Int(1))
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.PackageServerConfig = config.DeploymentConfig{
@@ -45,7 +50,7 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images m
 			PriorityClass: config.APICriticalPriorityClass,
 		},
 	}
-	params.PackageServerConfig.SetDefaults(hcp, nil)
+	params.PackageServerConfig.SetDefaults(hcp, packageServerLabels, nil)
 	params.PackageServerConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.PackageServerConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 

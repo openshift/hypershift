@@ -180,7 +180,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
 
-	deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)
 

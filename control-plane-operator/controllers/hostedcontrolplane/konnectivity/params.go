@@ -75,7 +75,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		},
 	}
 	p.ServerDeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	p.ServerDeploymentConfig.SetDefaults(hcp, pointer.Int(1))
+	p.ServerDeploymentConfig.SetDefaults(hcp, nil, pointer.Int(1))
 	p.ServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	p.AgentDeploymentConfig.Resources = config.ResourcesSpec{
@@ -105,7 +105,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 
 	p.AgentDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.AgentDeploymentConfig.SetDefaults(hcp, nil)
+	p.AgentDeploymentConfig.SetDefaults(hcp, konnectivityAgentLabels(), nil)
 	p.AgentDeamonSetConfig.Resources = config.ResourcesSpec{
 		konnectivityAgentContainer().Name: {
 			Requests: corev1.ResourceList{

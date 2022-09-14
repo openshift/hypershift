@@ -24,14 +24,11 @@ var (
 			cpcVolumeKubeconfig().Name:  "/etc/kubernetes/secrets/svc-kubeconfig",
 		},
 	}
-)
-
-func clusterPolicyControllerLabels() map[string]string {
-	return map[string]string{
+	clusterPolicyControllerLabels = map[string]string{
 		"app":                         "cluster-policy-controller",
 		hyperv1.ControlPlaneComponent: "cluster-policy-controller",
 	}
-}
+)
 
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig, availabilityProberImage string, apiServerPort *int32) error {
 	// preserve existing resource requirements for main CPC container
@@ -49,10 +46,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	}
 	if deployment.Spec.Selector == nil {
 		deployment.Spec.Selector = &metav1.LabelSelector{
-			MatchLabels: clusterPolicyControllerLabels(),
+			MatchLabels: clusterPolicyControllerLabels,
 		}
 	}
-	deployment.Spec.Template.ObjectMeta.Labels = clusterPolicyControllerLabels()
+	deployment.Spec.Template.ObjectMeta.Labels = clusterPolicyControllerLabels
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(cpcContainerMain(), buildOCMContainerMain(image)),
 	}

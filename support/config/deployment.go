@@ -1,12 +1,8 @@
 package config
 
 import (
-	"fmt"
-	"hash"
-	"hash/fnv"
 	"strings"
 
-	"github.com/davecgh/go-spew/spew"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -14,7 +10,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/pointer"
 )
@@ -38,16 +33,16 @@ const (
 )
 
 type DeploymentConfig struct {
-	Replicas                  int
-	Scheduling                Scheduling
-	AdditionalLabels          AdditionalLabels
-	AdditionalAnnotations     AdditionalAnnotations
-	SecurityContexts          SecurityContextSpec
-	SetDefaultSecurityContext bool
-	LivenessProbes            LivenessProbes
-	ReadinessProbes           ReadinessProbes
-	Resources                 ResourcesSpec
-	DebugDeployments          sets.String
+	Replicas                  int                   `json:"replicas"`
+	Scheduling                Scheduling            `json:"scheduling"`
+	AdditionalLabels          AdditionalLabels      `json:"additionalLabels"`
+	AdditionalAnnotations     AdditionalAnnotations `json:"additionalAnnotations"`
+	SecurityContexts          SecurityContextSpec   `json:"securityContexts"`
+	SetDefaultSecurityContext bool                  `json:"setDefaultSecurityContext"`
+	LivenessProbes            LivenessProbes        `json:"livenessProbes"`
+	ReadinessProbes           ReadinessProbes       `json:"readinessProbes"`
+	Resources                 ResourcesSpec         `json:"resources"`
+	DebugDeployments          sets.String           `json:"debugDeployments"`
 }
 
 func (c *DeploymentConfig) SetContainerResourcesIfPresent(container *corev1.Container) {
@@ -116,7 +111,6 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	c.ReadinessProbes.ApplyTo(&deployment.Spec.Template.Spec)
 	c.Resources.ApplyTo(&deployment.Spec.Template.Spec)
 	c.AdditionalAnnotations.ApplyTo(&deployment.Spec.Template.ObjectMeta)
-	c.setMultizoneSpread(&deployment.Spec.Template)
 }
 
 func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
@@ -129,7 +123,6 @@ func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
 	c.ReadinessProbes.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.Resources.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.AdditionalAnnotations.ApplyTo(&daemonset.Spec.Template.ObjectMeta)
-	c.setMultizoneSpread(&daemonset.Spec.Template)
 }
 
 func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
@@ -142,7 +135,6 @@ func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
 	c.ReadinessProbes.ApplyTo(&sts.Spec.Template.Spec)
 	c.Resources.ApplyTo(&sts.Spec.Template.Spec)
 	c.AdditionalAnnotations.ApplyTo(&sts.Spec.Template.ObjectMeta)
-	c.setMultizoneSpread(&sts.Spec.Template)
 }
 
 func clusterKey(hcp *hyperv1.HostedControlPlane) string {
@@ -153,25 +145,12 @@ func colocationLabelValue(hcp *hyperv1.HostedControlPlane) string {
 	return clusterKey(hcp)
 }
 
-const podHashLabel = "hypershift.openshift.io/pod-template-hash"
-
 // setMultizoneSpread sets PodAntiAffinity with corev1.LabelTopologyZone as the topology key for a given set of labels.
 // This is useful to e.g ensure pods are spread across availavility zones.
-// There are certain situations where this results in additional roll-outs, most namely when the HCCO updates a deployment
-// to add a checksum label in which case the CPO will instantly issue another update to update the hash label. We can
-// not share this logic though, because the HCCO sees the defaulted deployment wheras the code on the CPO acts on
-// undefaulted workloads. We can also not plug this into CreateOrUpdate, because it's defaulting is based on copying
-// fields from the existing deployment - If we add it there, _all_ workloads will end up getting updated once after
-// creation, which is strictly worse than having this issue just for the ones where the HCCO adds a label.
-// To avoid triggering the "Scheduling failed" verification, the HCCO should clear the affinity field whenever
-// a workload is updated.
-func (c *DeploymentConfig) setMultizoneSpread(pod *corev1.PodTemplateSpec) {
-	pod.Spec.Affinity = nil
-	delete(pod.Labels, podHashLabel)
-	if pod.Labels == nil {
-		pod.Labels = map[string]string{}
+func (c *DeploymentConfig) setMultizoneSpread(labels map[string]string) {
+	if labels == nil {
+		return
 	}
-	pod.Labels[podHashLabel] = computeHash(pod)
 
 	if c.Scheduling.Affinity == nil {
 		c.Scheduling.Affinity = &corev1.Affinity{}
@@ -179,16 +158,15 @@ func (c *DeploymentConfig) setMultizoneSpread(pod *corev1.PodTemplateSpec) {
 	if c.Scheduling.Affinity.PodAntiAffinity == nil {
 		c.Scheduling.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
 	}
-	c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = []corev1.PodAffinityTerm{
-		{
-			TopologyKey: corev1.LabelTopologyZone,
-			LabelSelector: &metav1.LabelSelector{
-				MatchLabels: pod.Labels,
+	c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution =
+		[]corev1.PodAffinityTerm{
+			{
+				TopologyKey: corev1.LabelTopologyZone,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: labels,
+				},
 			},
-		},
-	}
-
-	pod.Spec.Affinity = c.Scheduling.Affinity
+		}
 }
 
 // setColocation sets labels and PodAffinity rules for this deployment so that pods
@@ -279,10 +257,14 @@ func (c *DeploymentConfig) setNodeSelector(hcp *hyperv1.HostedControlPlane) {
 	c.Scheduling.NodeSelector = hcp.Spec.NodeSelector
 }
 
-func (c *DeploymentConfig) setLocation(hcp *hyperv1.HostedControlPlane) {
+func (c *DeploymentConfig) setLocation(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string) {
 	c.setNodeSelector(hcp)
 	c.setControlPlaneIsolation(hcp)
 	c.setColocation(hcp)
+	// TODO (alberto): pass labels with deployment hash and set this unconditionally so we don't skew setup.
+	if c.Replicas > 1 {
+		c.setMultizoneSpread(multiZoneSpreadLabels)
+	}
 }
 
 func (c *DeploymentConfig) setReplicas(availability hyperv1.AvailabilityPolicy) {
@@ -295,7 +277,7 @@ func (c *DeploymentConfig) setReplicas(availability hyperv1.AvailabilityPolicy) 
 }
 
 // SetDefaults populates opinionated default DeploymentConfig for any Deployment.
-func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, replicas *int) {
+func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string, replicas *int) {
 	// If no replicas is specified then infer it from the ControllerAvailabilityPolicy.
 	if replicas == nil {
 		c.setReplicas(hcp.Spec.ControllerAvailabilityPolicy)
@@ -304,7 +286,7 @@ func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, replicas
 	}
 	c.DebugDeployments = debugDeployments(hcp)
 
-	c.setLocation(hcp)
+	c.setLocation(hcp, multiZoneSpreadLabels)
 	// TODO (alberto): make this private, atm is needed for the konnectivity agent daemonset.
 	c.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
 }
@@ -319,28 +301,4 @@ func debugDeployments(hc *hyperv1.HostedControlPlane) sets.String {
 	}
 	names := strings.Split(val, ",")
 	return sets.NewString(names...)
-}
-
-// Borrowed from upstream: https://github.com/kubernetes/kubernetes/blob/d5fdf3135e7c99e5f81e67986ae930f6a2ffb047/pkg/controller/controller_utils.go#L1152-L1167
-// computeHash returns a hash value calculated from pod template.
-// The hash will be safe encoded to avoid bad words.
-func computeHash(template *corev1.PodTemplateSpec) string {
-	podTemplateSpecHasher := fnv.New32a()
-	deepHashObject(podTemplateSpecHasher, *template)
-
-	return rand.SafeEncodeString(fmt.Sprint(podTemplateSpecHasher.Sum32()))
-}
-
-// deepHashObject writes specified object to hash using the spew library
-// which follows pointers and prints actual values of the nested objects
-// ensuring the hash does not change when a pointer changes.
-func deepHashObject(hasher hash.Hash, objectToWrite interface{}) {
-	hasher.Reset()
-	printer := spew.ConfigState{
-		Indent:         " ",
-		SortKeys:       true,
-		DisableMethods: true,
-		SpewKeys:       true,
-	}
-	printer.Fprintf(hasher, "%#v", objectToWrite)
 }
