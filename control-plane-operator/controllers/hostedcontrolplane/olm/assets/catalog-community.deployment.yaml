@@ -19,7 +19,7 @@ spec:
         kubernetes.io/os: linux
       containers:
         - name: registry
-          image: registry.redhat.io/redhat/community-operator-index:v4.9
+          image: registry.redhat.io/redhat/community-operator-index:v4.11
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 50051
@@ -46,6 +46,15 @@ spec:
             periodSeconds: 10
             successThreshold: 1
             failureThreshold: 3
+          startupProbe:
+            exec:
+              command:
+                - grpc_health_probe
+                - '-addr=:50051'
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 15
           resources:
             requests:
               cpu: 10m
