@@ -119,9 +119,6 @@ func (r *ManagedCAObserver) ensureAnnotationOnDeployment(ctx context.Context, de
 	}
 	deployment.Spec.Template.ObjectMeta.Annotations["ca-checksum"] = hash
 
-	// Reset this, the CPO will instanntly update the deployment with a new checksum
-	deployment.Spec.Template.Spec.Affinity = nil
-
 	_, err = r.Client.AppsV1().Deployments(r.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
 	return err
 }

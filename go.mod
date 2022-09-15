@@ -16,7 +16,6 @@ require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.14.1
 	github.com/coreos/ignition/v2 v2.10.1
-	github.com/davecgh/go-spew v1.1.1
 	github.com/docker/distribution v2.8.1+incompatible
 	github.com/go-logr/logr v1.2.1
 	github.com/go-logr/zapr v1.2.0
@@ -94,6 +93,7 @@ require (
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/coreos/vcontext v0.0.0-20210407161507-4ee6c745c8bd // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect

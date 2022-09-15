@@ -134,7 +134,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 			SuccessThreshold:    1,
 		},
 	}
-	p.DeploymentConfig.SetDefaults(hcp, nil)
+	p.DeploymentConfig.SetDefaults(hcp, oauthServerLabels, nil)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	p.OauthConfigOverrides = map[string]*ConfigOverride{}

@@ -1704,7 +1704,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 			SetDefaultSecurityContext: r.SetDefaultSecurityContext,
 		}
 
-		deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1))
+		deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 		deploymentConfig.ApplyTo(deployment)
 
 		return nil
@@ -2135,7 +2135,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
 
-	deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 	deploymentConfig.ApplyTo(deployment)
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
 	return nil
@@ -2478,7 +2478,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
 
-	deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 	deploymentConfig.ApplyTo(deployment)
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
 	return nil

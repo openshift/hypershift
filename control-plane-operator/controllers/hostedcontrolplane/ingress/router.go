@@ -76,7 +76,7 @@ func PrivateRouterConfig(hcp *hyperv1.HostedControlPlane, setDefaultSecurityCont
 		},
 	}
 	cfg.Scheduling.PriorityClass = config.APICriticalPriorityClass
-	cfg.SetDefaults(hcp, nil)
+	cfg.SetDefaults(hcp, privateRouterLabels(), nil)
 	cfg.SetRestartAnnotation(hcp.ObjectMeta)
 	cfg.SetDefaultSecurityContext = setDefaultSecurityContext
 	return cfg
