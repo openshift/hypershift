@@ -16,10 +16,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+const (
+	appName = "machine-approver"
 )
 
 func ReconcileMachineApproverConfig(cm *corev1.ConfigMap, owner config.OwnerRef) error {
@@ -93,25 +96,10 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 		"--disable-status-controller",
 	}
 
-	labels := map[string]string{
-		"app":                         "machine-approver",
-		hyperv1.ControlPlaneComponent: "machine-approver",
-	}
-	// The selector needs to be invariant for the lifecycle of the project as it's an immutable field,
-	// otherwise changing would prevent an upgrade from happening.
-	selector := map[string]string{
-		"app": "machine-approver",
-	}
 	deployment.Spec = appsv1.DeploymentSpec{
+		Selector: deployment.Spec.Selector,
 		Replicas: k8sutilspointer.Int32Ptr(1),
-		Selector: &metav1.LabelSelector{
-			MatchLabels: selector,
-		},
 		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: labels,
-				Name:   "machine-approver",
-			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName: sa.Name,
 				Tolerations: []corev1.Toleration{
@@ -208,7 +196,7 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
 
-	deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1), appName)
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)
 

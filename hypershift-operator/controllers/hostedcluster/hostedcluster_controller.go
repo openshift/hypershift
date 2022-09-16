@@ -1671,11 +1671,6 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 	// Reconcile CAPI provider deployment
 	deployment := clusterapi.CAPIProviderDeployment(controlPlaneNamespace.Name)
-	labels := map[string]string{
-		"control-plane":               "capi-provider-controller-manager",
-		"app":                         "capi-provider-controller-manager",
-		hyperv1.ControlPlaneComponent: "capi-provider-controller-manager",
-	}
 	_, err = createOrUpdate(ctx, r.Client, deployment, func() error {
 		// Enforce provider specifics.
 		deployment.Spec = *capiProviderDeploymentSpec
@@ -1684,12 +1679,6 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		for i := range deployment.Spec.Template.Spec.Containers {
 			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
 		}
-
-		// Enforce labels.
-		deployment.Spec.Selector = &metav1.LabelSelector{
-			MatchLabels: labels,
-		}
-		deployment.Spec.Template.Labels = labels
 
 		// Enforce ServiceAccount.
 		deployment.Spec.Template.Spec.ServiceAccountName = capiProviderServiceAccount.Name
@@ -1704,7 +1693,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 			SetDefaultSecurityContext: r.SetDefaultSecurityContext,
 		}
 
-		deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1))
+		deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1), "capi-provider-controller-manager")
 		deploymentConfig.ApplyTo(deployment)
 
 		return nil
@@ -1901,6 +1890,7 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 }
 
 func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, cpoImage, utilitiesImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine, defaultIngressDomain string, cpoHasUtilities bool, metricsSet metrics.MetricsSet) error {
+	appName := "control-plane-operator"
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("80Mi"),
@@ -1908,7 +1898,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 		},
 	}
 	// preserve existing resource requirements for main cpo container
-	mainContainer := hyperutil.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
+	mainContainer := hyperutil.FindContainer(appName, deployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
 		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
 			cpoResources = mainContainer.Resources
@@ -1918,7 +1908,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 	args := []string{
 		"run",
 		"--namespace", "$(MY_NAMESPACE)",
-		"--deployment-name", "control-plane-operator",
+		"--deployment-name", appName,
 		"--metrics-addr", "0.0.0.0:8080",
 		fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput),
 		fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine),
@@ -1934,15 +1924,15 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{
-				"name": "control-plane-operator",
+				"name": appName,
 			},
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
-					"name":                        "control-plane-operator",
-					"app":                         "control-plane-operator",
-					hyperv1.ControlPlaneComponent: "control-plane-operator",
+					"name":                        appName,
+					"app":                         appName,
+					hyperv1.ControlPlaneComponent: appName,
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -1954,7 +1944,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 				ServiceAccountName: sa.Name,
 				Containers: []corev1.Container{
 					{
-						Name:            "control-plane-operator",
+						Name:            appName,
 						Image:           cpoImage,
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Env: []corev1.EnvVar{
@@ -2043,7 +2033,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 		)
 	}
 
-	mainContainer = hyperutil.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
+	mainContainer = hyperutil.FindContainer(appName, deployment.Spec.Template.Spec.Containers)
 	proxy.SetEnvVars(&mainContainer.Env)
 
 	// Add platform specific settings
@@ -2135,7 +2125,7 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
 
-	deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1), appName)
 	deploymentConfig.ApplyTo(deployment)
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
 	return nil
@@ -2480,7 +2470,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
 
-	deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1), "cluster-api")
 	deploymentConfig.ApplyTo(deployment)
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
 	return nil

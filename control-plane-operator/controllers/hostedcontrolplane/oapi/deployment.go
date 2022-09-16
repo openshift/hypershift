@@ -10,7 +10,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
@@ -58,8 +57,8 @@ var (
 
 func openShiftAPIServerLabels() map[string]string {
 	return map[string]string{
-		"app":                         "openshift-apiserver",
-		hyperv1.ControlPlaneComponent: "openshift-apiserver",
+		"app":                         appNameOpenShiftAPIServer,
+		hyperv1.ControlPlaneComponent: appNameOpenShiftAPIServer,
 	}
 }
 
@@ -88,12 +87,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			MaxSurge:       &maxSurge,
 		},
 	}
-	if deployment.Spec.Selector == nil {
-		deployment.Spec.Selector = &metav1.LabelSelector{
-			MatchLabels: openShiftAPIServerLabels(),
-		}
-	}
-	deployment.Spec.Template.ObjectMeta.Labels = openShiftAPIServerLabels()
+
 	etcdUrlData, err := url.Parse(etcdURL)
 	if err != nil {
 		return fmt.Errorf("failed to parse etcd url: %w", err)

@@ -43,7 +43,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 	}
 
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	p.DeploymentConfig.SetDefaults(hcp, utilpointer.IntPtr(1))
+	p.DeploymentConfig.SetDefaults(hcp, utilpointer.IntPtr(1), operatorName)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext

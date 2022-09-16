@@ -14,6 +14,10 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
+const (
+	appName = "hosted-cluster-config-operator"
+)
+
 type HostedClusterConfigOperatorParams struct {
 	config.DeploymentConfig
 	config.OwnerRef
@@ -79,7 +83,7 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 	}
 
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, utilpointer.IntPtr(1))
+	params.DeploymentConfig.SetDefaults(hcp, utilpointer.IntPtr(1), appName)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	return params

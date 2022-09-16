@@ -18,6 +18,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+const (
+	appName = "kube-apiserver"
+)
+
 type KubeAPIServerImages struct {
 	ClusterConfigOperator      string `json:"clusterConfigOperator"`
 	CLI                        string `json:"cli"`
@@ -299,7 +303,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, nil)
+	params.DeploymentConfig.SetDefaults(hcp, nil, appName)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	return params

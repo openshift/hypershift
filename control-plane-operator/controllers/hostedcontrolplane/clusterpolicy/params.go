@@ -10,6 +10,10 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
+const (
+	appName = "cluster-policy-controller"
+)
+
 type ClusterPolicyControllerParams struct {
 	Image                   string                  `json:"image"`
 	APIServer               *configv1.APIServerSpec `json:"apiServer"`
@@ -21,7 +25,7 @@ type ClusterPolicyControllerParams struct {
 
 func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *ClusterPolicyControllerParams {
 	params := &ClusterPolicyControllerParams{
-		Image:                   images["cluster-policy-controller"],
+		Image:                   images[appName],
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 	}
 	if hcp.Spec.Configuration != nil {
@@ -42,7 +46,7 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, images ma
 	}
 
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, nil)
+	params.DeploymentConfig.SetDefaults(hcp, nil, appName)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.OwnerRef = config.OwnerRefFrom(hcp)

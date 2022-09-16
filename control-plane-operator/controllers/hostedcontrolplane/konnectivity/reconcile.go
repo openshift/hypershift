@@ -12,7 +12,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
@@ -41,32 +40,16 @@ var (
 
 func konnectivityServerLabels() map[string]string {
 	return map[string]string{
-		"app":                         "konnectivity-server",
-		hyperv1.ControlPlaneComponent: "konnectivity-server",
+		"app":                         appNameServer,
+		hyperv1.ControlPlaneComponent: appNameServer,
 	}
 }
-
-func konnectivityAgentLabels() map[string]string {
-	return map[string]string{
-		"app":                         "konnectivity-agent",
-		hyperv1.ControlPlaneComponent: "konnectivity-agent",
-	}
-}
-
-const (
-	KubeconfigKey = "kubeconfig"
-)
 
 func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityServerLabels(),
-		},
+		Selector: deployment.Spec.Selector,
 		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityServerLabels(),
-			},
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				Containers: []corev1.Container{
@@ -331,13 +314,8 @@ func buildKonnectivityVolumeAgentCerts(v *corev1.Volume) {
 func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, ips []string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityAgentLabels(),
-		},
+		Selector: deployment.Spec.Selector,
 		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityAgentLabels(),
-			},
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				Containers: []corev1.Container{

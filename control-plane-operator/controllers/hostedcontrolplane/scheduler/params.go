@@ -78,7 +78,7 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			TimeoutSeconds:      5,
 		},
 	}
-	params.DeploymentConfig.SetDefaults(hcp, nil)
+	params.DeploymentConfig.SetDefaults(hcp, nil, name)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.SetDefaultSecurityContext = setDefaultSecurityContext
 	params.DisableProfiling = util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.SchedulerDeployment("").Name)

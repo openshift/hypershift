@@ -3,11 +3,8 @@ package clusterpolicy
 import (
 	"path"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -26,33 +23,12 @@ var (
 	}
 )
 
-func clusterPolicyControllerLabels() map[string]string {
-	return map[string]string{
-		"app":                         "cluster-policy-controller",
-		hyperv1.ControlPlaneComponent: "cluster-policy-controller",
-	}
-}
-
 func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig, availabilityProberImage string, apiServerPort *int32) error {
 	// preserve existing resource requirements for main CPC container
 	mainContainer := util.FindContainer(cpcContainerMain().Name, deployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
 		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
-
-	maxSurge := intstr.FromInt(1)
-	maxUnavailable := intstr.FromInt(0)
-	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
-	deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
-		MaxSurge:       &maxSurge,
-		MaxUnavailable: &maxUnavailable,
-	}
-	if deployment.Spec.Selector == nil {
-		deployment.Spec.Selector = &metav1.LabelSelector{
-			MatchLabels: clusterPolicyControllerLabels(),
-		}
-	}
-	deployment.Spec.Template.ObjectMeta.Labels = clusterPolicyControllerLabels()
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(cpcContainerMain(), buildOCMContainerMain(image)),
 	}
@@ -70,7 +46,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 
 func cpcContainerMain() *corev1.Container {
 	return &corev1.Container{
-		Name: "cluster-policy-controller",
+		Name: appName,
 	}
 }
 

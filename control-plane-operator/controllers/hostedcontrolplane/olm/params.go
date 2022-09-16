@@ -14,6 +14,7 @@ type OperatorLifecycleManagerParams struct {
 	OperatorRegistryImage   string
 	ReleaseVersion          string
 	DeploymentConfig        config.DeploymentConfig
+	CatalogConfig           config.DeploymentConfig
 	PackageServerConfig     config.DeploymentConfig
 	AvailabilityProberImage string
 	NoProxy                 []string
@@ -37,15 +38,24 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images m
 		},
 	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, pointer.Int(1))
+	params.DeploymentConfig.SetDefaults(hcp, pointer.Int(1), "olm-operator")
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
+
+	params.CatalogConfig = config.DeploymentConfig{
+		Scheduling: config.Scheduling{
+			PriorityClass: config.DefaultPriorityClass,
+		},
+	}
+	params.CatalogConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	params.CatalogConfig.SetDefaults(hcp, pointer.Int(1), "catalog-operator")
+	params.CatalogConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.PackageServerConfig = config.DeploymentConfig{
 		Scheduling: config.Scheduling{
 			PriorityClass: config.APICriticalPriorityClass,
 		},
 	}
-	params.PackageServerConfig.SetDefaults(hcp, nil)
+	params.PackageServerConfig.SetDefaults(hcp, nil, "packageserver")
 	params.PackageServerConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.PackageServerConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 

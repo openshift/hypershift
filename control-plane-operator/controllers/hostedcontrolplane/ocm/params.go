@@ -10,6 +10,10 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 )
 
+const (
+	appName = "openshift-controller-manager"
+)
+
 type OpenShiftControllerManagerParams struct {
 	OpenShiftControllerManagerImage string
 	DockerBuilderImage              string
@@ -50,7 +54,7 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observ
 		},
 	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, nil)
+	params.DeploymentConfig.SetDefaults(hcp, nil, appName)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.OwnerRef = config.OwnerRefFrom(hcp)

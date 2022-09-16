@@ -40,6 +40,7 @@ const (
 type DeploymentConfig struct {
 	Replicas                  int
 	Scheduling                Scheduling
+	LabelSelector             AdditionalLabels
 	AdditionalLabels          AdditionalLabels
 	AdditionalAnnotations     AdditionalAnnotations
 	SecurityContexts          SecurityContextSpec
@@ -107,6 +108,14 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 		deployment.Labels = map[string]string{}
 	}
 	deployment.Labels[ManagedByLabel] = "control-plane-operator"
+
+	// Set default selector if there's none.
+	// This can't be changed as the field is immutable, otherwise would break upgrades.
+	if deployment.Spec.Selector == nil {
+		deployment.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: c.LabelSelector,
+		}
+	}
 
 	c.Scheduling.ApplyTo(&deployment.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&deployment.Spec.Template.ObjectMeta)
@@ -295,7 +304,7 @@ func (c *DeploymentConfig) setReplicas(availability hyperv1.AvailabilityPolicy) 
 }
 
 // SetDefaults populates opinionated default DeploymentConfig for any Deployment.
-func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, replicas *int) {
+func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, replicas *int, appName string) {
 	// If no replicas is specified then infer it from the ControllerAvailabilityPolicy.
 	if replicas == nil {
 		c.setReplicas(hcp.Spec.ControllerAvailabilityPolicy)
@@ -307,6 +316,23 @@ func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, replicas
 	c.setLocation(hcp)
 	// TODO (alberto): make this private, atm is needed for the konnectivity agent daemonset.
 	c.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
+
+	// Set default labelSelector and labels.
+	if c.LabelSelector == nil {
+		c.LabelSelector = make(map[string]string)
+		c.LabelSelector["app"] = appName
+		c.LabelSelector[hyperv1.ControlPlaneComponent] = appName
+	}
+
+	if c.AdditionalLabels == nil {
+		c.AdditionalLabels = make(map[string]string)
+	}
+	c.AdditionalLabels["app"] = appName
+	c.AdditionalLabels[hyperv1.ControlPlaneComponent] = appName
+
+	// TODO (alberto): add this to the setDefault signature.
+	// c.priorityClass = priorityClass
+	// c.SetDefaultSecurityContext = setDefaultSecurityContext
 }
 
 // debugDeployments returns a set of deployments to debug based on the

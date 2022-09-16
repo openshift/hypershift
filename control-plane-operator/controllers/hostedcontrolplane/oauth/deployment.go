@@ -11,7 +11,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -47,8 +46,8 @@ var (
 
 func oauthLabels() map[string]string {
 	return map[string]string{
-		"app":                         "oauth-openshift",
-		hyperv1.ControlPlaneComponent: "oauth-openshift",
+		"app":                         appName,
+		hyperv1.ControlPlaneComponent: appName,
 	}
 }
 
@@ -60,11 +59,7 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 	if mainContainer != nil {
 		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
-	if deployment.Spec.Selector == nil {
-		deployment.Spec.Selector = &metav1.LabelSelector{
-			MatchLabels: oauthLabels(),
-		}
-	}
+
 	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
 	maxSurge := intstr.FromInt(3)
 	maxUnavailable := intstr.FromInt(1)
@@ -72,12 +67,7 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 		MaxSurge:       &maxSurge,
 		MaxUnavailable: &maxUnavailable,
 	}
-	if deployment.Spec.Template.ObjectMeta.Labels == nil {
-		deployment.Spec.Template.ObjectMeta.Labels = map[string]string{}
-	}
-	for k, v := range oauthLabels() {
-		deployment.Spec.Template.ObjectMeta.Labels[k] = v
-	}
+
 	if deployment.Spec.Template.ObjectMeta.Annotations == nil {
 		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 	}

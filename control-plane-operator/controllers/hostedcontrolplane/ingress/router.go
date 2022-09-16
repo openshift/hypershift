@@ -9,7 +9,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilpointer "k8s.io/utils/pointer"
 
@@ -28,9 +27,13 @@ const (
 	routerHTTPSPort      = 8443
 )
 
+const (
+	appName = "private-router"
+)
+
 func privateRouterLabels() map[string]string {
 	return map[string]string{
-		"app": "private-router",
+		"app": appName,
 	}
 }
 
@@ -76,7 +79,7 @@ func PrivateRouterConfig(hcp *hyperv1.HostedControlPlane, setDefaultSecurityCont
 		},
 	}
 	cfg.Scheduling.PriorityClass = config.APICriticalPriorityClass
-	cfg.SetDefaults(hcp, nil)
+	cfg.SetDefaults(hcp, nil, appName)
 	cfg.SetRestartAnnotation(hcp.ObjectMeta)
 	cfg.SetDefaultSecurityContext = setDefaultSecurityContext
 	return cfg
@@ -100,13 +103,7 @@ func ReconcileRouterTemplateConfigmap(cm *corev1.ConfigMap) {
 
 func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, canonicalHostname string, exposeAPIServerThroughRouter bool) error {
 	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: privateRouterLabels(),
-		},
 		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: privateRouterLabels(),
-			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
 					util.BuildContainer(privateRouterContainerMain(), buildPrivateRouterContainerMain(image, deployment.Namespace, canonicalHostname, exposeAPIServerThroughRouter)),
@@ -131,7 +128,7 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.Ow
 func privateRouterContainerMain() *corev1.Container {
 
 	return &corev1.Container{
-		Name: "private-router",
+		Name: appName,
 	}
 }
 

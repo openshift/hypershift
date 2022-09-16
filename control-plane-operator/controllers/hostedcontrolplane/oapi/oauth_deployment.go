@@ -39,8 +39,8 @@ var (
 
 func openShiftOAuthAPIServerLabels() map[string]string {
 	return map[string]string{
-		"app":                         "openshift-oauth-apiserver",
-		hyperv1.ControlPlaneComponent: "openshift-oauth-apiserver",
+		"app":                         appNameOAuth,
+		hyperv1.ControlPlaneComponent: appNameOAuth,
 	}
 }
 
@@ -63,12 +63,7 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 			MaxSurge:       &maxSurge,
 		},
 	}
-	if deployment.Spec.Selector == nil {
-		deployment.Spec.Selector = &metav1.LabelSelector{
-			MatchLabels: openShiftOAuthAPIServerLabels(),
-		}
-	}
-	deployment.Spec.Template.ObjectMeta.Labels = openShiftOAuthAPIServerLabels()
+
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
 		Containers: []corev1.Container{

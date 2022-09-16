@@ -21,6 +21,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	appName = "cluster-autoscaler"
+)
+
 func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoscalerImage, availabilityProberImage string, setDefaultSecurityContext bool) error {
 	config.OwnerRefFrom(hcp).ApplyTo(deployment)
 	args := []string{
@@ -62,25 +66,10 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		args = append(args, arg)
 	}
 
-	labels := map[string]string{
-		"app":                         "cluster-autoscaler",
-		hyperv1.ControlPlaneComponent: "cluster-autoscaler",
-	}
-	// The selector needs to be invariant for the lifecycle of the project as it's an immutable field,
-	// otherwise changing would prevent an upgrade from happening.
-	selector := map[string]string{
-		"app": "cluster-autoscaler",
-	}
-
 	deployment.Spec = appsv1.DeploymentSpec{
+		Selector: deployment.Spec.Selector,
 		Replicas: k8sutilspointer.Int32Ptr(1),
-		Selector: &metav1.LabelSelector{
-			MatchLabels: selector,
-		},
 		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: labels,
-			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName:            sa.Name,
 				TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
@@ -109,7 +98,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 				},
 				Containers: []corev1.Container{
 					{
-						Name:            "cluster-autoscaler",
+						Name:            appName,
 						Image:           clusterAutoscalerImage,
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						VolumeMounts: []corev1.VolumeMount{
@@ -180,7 +169,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
 
-	deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, k8sutilspointer.Int(1), appName)
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)
 

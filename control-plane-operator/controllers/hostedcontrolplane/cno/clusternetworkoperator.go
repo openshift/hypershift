@@ -16,7 +16,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilpointer "k8s.io/utils/pointer"
 )
@@ -101,7 +100,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.DeploymentConfig.SetDefaults(hcp, utilpointer.IntPtr(1))
+	p.DeploymentConfig.SetDefaults(hcp, utilpointer.IntPtr(1), operatorName)
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	if util.IsPrivateHCP(hcp) {
 		p.APIServerAddress = fmt.Sprintf("api.%s.hypershift.local", hcp.Name)
@@ -194,20 +193,11 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	params.OwnerRef.ApplyTo(dep)
 
 	dep.Spec.Replicas = utilpointer.Int32(1)
-	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": operatorName}}
 	dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
 	if dep.Spec.Template.Annotations == nil {
 		dep.Spec.Template.Annotations = map[string]string{}
 	}
 	dep.Spec.Template.Annotations["target.workload.openshift.io/management"] = `{"effect": "PreferredDuringScheduling"}`
-	if dep.Spec.Template.Labels == nil {
-		dep.Spec.Template.Labels = map[string]string{}
-	}
-	dep.Spec.Template.Labels = map[string]string{
-		"name":                        operatorName,
-		"app":                         operatorName,
-		hyperv1.ControlPlaneComponent: operatorName,
-	}
 
 	cnoArgs := []string{"start",
 		"--listen=0.0.0.0:9104",

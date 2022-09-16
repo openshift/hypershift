@@ -245,20 +245,9 @@ func ReconcileIgnitionServer(ctx context.Context,
 		if ignitionServerDeployment.Annotations == nil {
 			ignitionServerDeployment.Annotations = map[string]string{}
 		}
-		ignitionServerLabels := func() map[string]string {
-			return map[string]string{
-				"app":                         ignitionserver.ResourceName,
-				hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
-			}
-		}
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
-			Selector: &metav1.LabelSelector{
-				MatchLabels: ignitionServerLabels(),
-			},
+			Selector: ignitionServerDeployment.Spec.Selector,
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: ignitionServerLabels(),
-				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName:            sa.Name,
 					TerminationGracePeriodSeconds: utilpointer.Int64Ptr(10),
@@ -371,7 +360,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		deploymentConfig := config.DeploymentConfig{}
 		deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 		deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-		deploymentConfig.SetDefaults(hcp, nil)
+		deploymentConfig.SetDefaults(hcp, nil, ignitionserver.ResourceName)
 		deploymentConfig.ApplyTo(ignitionServerDeployment)
 
 		return nil

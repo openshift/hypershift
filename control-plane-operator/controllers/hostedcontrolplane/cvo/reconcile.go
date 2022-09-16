@@ -87,10 +87,10 @@ var (
 
 func cvoLabels() map[string]string {
 	return map[string]string{
-		"app": "cluster-version-operator",
+		"app": appName,
 		// value for compatibility with roks-toolkit clusters
-		"k8s-app":                     "cluster-version-operator",
-		hyperv1.ControlPlaneComponent: "cluster-version-operator",
+		"k8s-app":                     appName,
+		hyperv1.ControlPlaneComponent: appName,
 	}
 }
 
@@ -104,14 +104,8 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	if mainContainer != nil {
 		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
-	selector := deployment.Spec.Selector
-	if selector == nil {
-		selector = &metav1.LabelSelector{
-			MatchLabels: cvoLabels(),
-		}
-	}
 	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: selector,
+		Selector: deployment.Spec.Selector,
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: cvoLabels(),

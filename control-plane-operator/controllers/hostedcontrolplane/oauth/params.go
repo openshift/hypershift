@@ -19,6 +19,7 @@ import (
 
 const (
 	defaultAccessTokenMaxAgeSeconds int32 = 86400
+	appName                               = "oauth-openshift"
 )
 
 type OAuthServerParams struct {
@@ -134,7 +135,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 			SuccessThreshold:    1,
 		},
 	}
-	p.DeploymentConfig.SetDefaults(hcp, nil)
+	p.DeploymentConfig.SetDefaults(hcp, nil, appName)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	p.OauthConfigOverrides = map[string]*ConfigOverride{}

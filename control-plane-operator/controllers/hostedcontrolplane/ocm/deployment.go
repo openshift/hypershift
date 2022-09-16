@@ -7,7 +7,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
@@ -34,8 +33,8 @@ var (
 
 func openShiftControllerManagerLabels() map[string]string {
 	return map[string]string{
-		"app":                         "openshift-controller-manager",
-		hyperv1.ControlPlaneComponent: "openshift-controller-manager",
+		"app":                         appName,
+		hyperv1.ControlPlaneComponent: appName,
 	}
 }
 
@@ -59,12 +58,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		MaxSurge:       &maxSurge,
 		MaxUnavailable: &maxUnavailable,
 	}
-	if deployment.Spec.Selector == nil {
-		deployment.Spec.Selector = &metav1.LabelSelector{
-			MatchLabels: openShiftControllerManagerLabels(),
-		}
-	}
-	deployment.Spec.Template.ObjectMeta.Labels = openShiftControllerManagerLabels()
+
 	deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
 		configHashAnnotation: configHash,
 	}

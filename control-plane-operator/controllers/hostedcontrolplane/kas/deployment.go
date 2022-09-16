@@ -78,8 +78,8 @@ var (
 
 func kasLabels() map[string]string {
 	return map[string]string{
-		"app":                         "kube-apiserver",
-		hyperv1.ControlPlaneComponent: "kube-apiserver",
+		"app":                         appName,
+		hyperv1.ControlPlaneComponent: appName,
 	}
 }
 
@@ -116,15 +116,9 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	if mainContainer != nil {
 		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
 	}
-	if deployment.Spec.Selector == nil {
-		deployment.Spec.Selector = &metav1.LabelSelector{
-			MatchLabels: kasLabels(),
-		}
-	}
 
 	deployment.Spec.Template = corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels: kasLabels(),
 			Annotations: map[string]string{
 				configHashAnnotation: configHash,
 			},
@@ -363,7 +357,7 @@ func buildKASContainerWaitForEtcd(image string, namespace string) func(c *corev1
 
 func kasContainerMain() *corev1.Container {
 	return &corev1.Container{
-		Name: "kube-apiserver",
+		Name: appName,
 	}
 }
 

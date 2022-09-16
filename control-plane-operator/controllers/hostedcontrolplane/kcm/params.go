@@ -37,6 +37,7 @@ type KubeControllerManagerParams struct {
 
 const (
 	DefaultPort = 10257
+	appName     = "kube-controller-manager"
 )
 
 func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *KubeControllerManagerParams {
@@ -99,7 +100,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 			},
 		},
 	}
-	params.DeploymentConfig.SetDefaults(hcp, nil)
+	params.DeploymentConfig.SetDefaults(hcp, nil, appName)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	switch hcp.Spec.Platform.Type {

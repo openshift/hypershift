@@ -13,6 +13,8 @@ import (
 const (
 	healthPort                      = 2041
 	systemNodeCriticalPriorityClass = "system-node-critical"
+	appNameServer                   = "konnectivity-server"
+	appNameAgent                    = "konnectivity-agent"
 )
 
 type KonnectivityParams struct {
@@ -75,7 +77,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 		},
 	}
 	p.ServerDeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	p.ServerDeploymentConfig.SetDefaults(hcp, pointer.Int(1))
+	p.ServerDeploymentConfig.SetDefaults(hcp, pointer.Int(1), appNameServer)
 	p.ServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	p.AgentDeploymentConfig.Resources = config.ResourcesSpec{
@@ -105,7 +107,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	}
 
 	p.AgentDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.AgentDeploymentConfig.SetDefaults(hcp, nil)
+	p.AgentDeploymentConfig.SetDefaults(hcp, nil, appNameAgent)
 	p.AgentDeamonSetConfig.Resources = config.ResourcesSpec{
 		konnectivityAgentContainer().Name: {
 			Requests: corev1.ResourceList{
