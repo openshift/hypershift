@@ -771,6 +771,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 		validReleaseImage := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidReleaseImage))
 		if validReleaseImage != nil && validReleaseImage.Status == metav1.ConditionFalse {
+			if validReleaseImage.Reason == hyperv1.InvalidImageReason {
+				return ctrl.Result{}, fmt.Errorf("release Image validation error: %v", validReleaseImage.Message)
+			}
 			log.Error(fmt.Errorf("release image is invalid"), "reconciliation is blocked", "message", validReleaseImage.Message)
 			return ctrl.Result{}, nil
 		}
@@ -1868,13 +1871,13 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 // image based on the following order of precedence (from most to least
 // preferred):
 //
-// 1. The image specified by the ControlPlaneOperatorImageAnnotation on the
-//    HostedCluster resource itself
-// 2. The hypershift image specified in the release payload indicated by the
-//    HostedCluster's release field
-// 3. The hypershift-operator's own image for release versions 4.9 and 4.10
-// 4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
-//    version 4.8
+//  1. The image specified by the ControlPlaneOperatorImageAnnotation on the
+//     HostedCluster resource itself
+//  2. The hypershift image specified in the release payload indicated by the
+//     HostedCluster's release field
+//  3. The hypershift-operator's own image for release versions 4.9 and 4.10
+//  4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
+//     version 4.8
 //
 // If no image can be found according to these rules, an error is returned.
 func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
