@@ -250,7 +250,12 @@ func resourcesToRemove() []resourceDesc {
 			name:       "cluster-image-registry-operator",
 			namespace:  "openshift-image-registry",
 		},
-	}
+		{
+			apiVersion: "apps/v1",
+			kind:       "Deployment",
+			name:       "csi-snapshot-controller-operator",
+			namespace:  "openshift-cluster-storage-operator",
+		}}
 }
 
 func preparePayloadScript() string {
