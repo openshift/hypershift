@@ -51,6 +51,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/routecm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
@@ -844,6 +845,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	r.Log.Info("Reconciling Image Registry Operator")
 	if err = r.reconcileImageRegistryOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile image registry operator: %w", err)
+	}
+
+	// Reconcile cluster storage operator
+	r.Log.Info("Reconciling cluster storage operator")
+	if err = r.reconcileClusterStorageOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile cluster storage operator: %w", err)
 	}
 
 	// Reconcile Ignition
@@ -3257,6 +3264,42 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 		return snapshotcontroller.ReconcileOperatorRoleBinding(roleBinding, params)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile CSI snapshot controller operator roleBinding: %w", err)
+	}
+
+	// TODO: create custom kubeconfig to the guest cluster + RBAC
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
+	params := storage.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+
+	deployment := manifests.ClusterStorageOperatorDeployment(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, deployment, func() error {
+		return storage.ReconcileOperatorDeployment(deployment, params)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster storage operator deployment: %w", err)
+	}
+
+	sa := manifests.ClusterStorageOperatorServiceAccount(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, sa, func() error {
+		return storage.ReconcileOperatorServiceAccount(sa, params)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster storage operator service account: %w", err)
+	}
+
+	role := manifests.ClusterStorageOperatorRole(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, role, func() error {
+		return storage.ReconcileOperatorRole(role, params)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster storage operator role: %w", err)
+	}
+
+	roleBinding := manifests.ClusterStorageOperatorRoleBinding(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, roleBinding, func() error {
+		return storage.ReconcileOperatorRoleBinding(roleBinding, params)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster storage operator roleBinding: %w", err)
 	}
 
 	// TODO: create custom kubeconfig to the guest cluster + RBAC
