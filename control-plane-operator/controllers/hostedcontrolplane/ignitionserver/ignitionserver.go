@@ -249,7 +249,6 @@ func ReconcileIgnitionServer(ctx context.Context,
 			return map[string]string{
 				"app":                         ignitionserver.ResourceName,
 				hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
-				"hypershift.openshift.io/hosted-control-plane": hcp.Namespace,
 			}
 		}
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{

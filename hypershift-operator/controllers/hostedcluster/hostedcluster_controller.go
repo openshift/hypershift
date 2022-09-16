@@ -2368,18 +2368,20 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 
 func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool) error {
 	defaultMode := int32(416)
-	capiManagerLabels := map[string]string{
-		"name":                        "cluster-api",
-		"app":                         "cluster-api",
-		hyperv1.ControlPlaneComponent: "cluster-api",
+	capiManagerLabels := func() map[string]string {
+		return map[string]string{
+			"name":                        "cluster-api",
+			"app":                         "cluster-api",
+			hyperv1.ControlPlaneComponent: "cluster-api",
+		}
 	}
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: capiManagerLabels,
+			MatchLabels: capiManagerLabels(),
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: capiManagerLabels,
+				Labels: capiManagerLabels(),
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName: sa.Name,
