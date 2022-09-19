@@ -19,6 +19,8 @@ fi
 generate_junit() {
   cat  /tmp/test_out | go tool test2json -t > /tmp/test_out.json
   gotestsum --raw-command --junitfile="${ARTIFACT_DIR}/junit.xml" --format=standard-verbose -- cat /tmp/test_out.json
+  # Ensure generated junit has a useful suite name
+  sed -i 's/\(<testsuite.*\)name=""/\1 name="hypershift-e2e"/' "${ARTIFACT_DIR}/junit.xml"
 }
 trap generate_junit EXIT
 
