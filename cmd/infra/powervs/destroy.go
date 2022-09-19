@@ -123,11 +123,11 @@ func (options *DestroyInfraOptions) Run(ctx context.Context) error {
 		}
 	}
 
-	return options.DestroyInfra(infra)
+	return options.DestroyInfra(ctx, infra)
 }
 
 // DestroyInfra infra destruction orchestration
-func (options *DestroyInfraOptions) DestroyInfra(infra *Infra) error {
+func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Infra) error {
 	log(options.InfraID).Info("Destroy Infra Started")
 	var err error
 
@@ -204,7 +204,7 @@ func (options *DestroyInfraOptions) DestroyInfra(infra *Infra) error {
 			return err
 		}
 
-		if err = destroyPowerVsCloudConnection(options, infra, powerVsCloudInstanceID, session); err != nil {
+		if err = destroyPowerVsCloudConnection(ctx, options, infra, powerVsCloudInstanceID, session); err != nil {
 			errL = append(errL, fmt.Errorf("error destroying powervs cloud connection: %w", err))
 			log(options.InfraID).Error(err, "error destroying powervs cloud connection")
 		}
@@ -226,7 +226,7 @@ func (options *DestroyInfraOptions) DestroyInfra(infra *Infra) error {
 	}
 
 	if !skipPowerVs {
-		if err = destroyPowerVsCloudInstance(options, infra, powerVsCloudInstanceID, session); err != nil {
+		if err = destroyPowerVsCloudInstance(ctx, options, infra, powerVsCloudInstanceID, session); err != nil {
 			errL = append(errL, fmt.Errorf("error destroying powervs cloud instance: %w", err))
 			log(options.InfraID).Error(err, "error destroying powervs cloud instance")
 		}
@@ -311,8 +311,8 @@ func deleteSecrets(options *DestroyInfraOptions, accountID string, resourceGroup
 }
 
 // destroyPowerVsDhcpServer destroying powervs dhcp server
-func destroyPowerVsDhcpServer(infra *Infra, cloudInstanceID string, session *ibmpisession.IBMPISession, infraID string) error {
-	client := instance.NewIBMPIDhcpClient(context.Background(), session, cloudInstanceID)
+func destroyPowerVsDhcpServer(ctx context.Context, infra *Infra, cloudInstanceID string, session *ibmpisession.IBMPISession, infraID string) error {
+	client := instance.NewIBMPIDhcpClient(ctx, session, cloudInstanceID)
 	if infra != nil && infra.DHCPID != "" {
 		log(infraID).Info("Deleting DHCP server", "id", infra.DHCPID)
 		return client.Delete(infra.DHCPID)
@@ -335,7 +335,7 @@ func destroyPowerVsDhcpServer(infra *Infra, cloudInstanceID string, session *ibm
 		return err
 	}
 
-	instanceClient := instance.NewIBMPIInstanceClient(context.Background(), session, cloudInstanceID)
+	instanceClient := instance.NewIBMPIInstanceClient(ctx, session, cloudInstanceID)
 
 	// TO-DO: need to replace the logic of waiting for dhcp service deletion by using jobReference.
 	// jobReference is not yet added in SDK
@@ -367,7 +367,7 @@ func destroyPowerVsDhcpServer(infra *Infra, cloudInstanceID string, session *ibm
 }
 
 // destroyPowerVsCloudInstance destroying powervs cloud instance
-func destroyPowerVsCloudInstance(options *DestroyInfraOptions, infra *Infra, cloudInstanceID string, session *ibmpisession.IBMPISession) error {
+func destroyPowerVsCloudInstance(ctx context.Context, options *DestroyInfraOptions, infra *Infra, cloudInstanceID string, session *ibmpisession.IBMPISession) error {
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{Authenticator: getIAMAuth()})
 	if err != nil {
 		return err
@@ -375,7 +375,7 @@ func destroyPowerVsCloudInstance(options *DestroyInfraOptions, infra *Infra, clo
 
 	if options.CloudInstanceID != "" {
 		// In case of user provided cloud instance delete only DHCP server
-		err = destroyPowerVsDhcpServer(infra, cloudInstanceID, session, options.InfraID)
+		err = destroyPowerVsDhcpServer(ctx, infra, cloudInstanceID, session, options.InfraID)
 	} else {
 		for retry := 0; retry < 5; retry++ {
 			log(options.InfraID).Info("Deleting PowerVS cloud instance", "id", cloudInstanceID)
@@ -437,9 +437,9 @@ func monitorPowerVsJob(id string, client *instance.IBMPIJobClient, infraID strin
 }
 
 // destroyPowerVsCloudConnection destroying powervs cloud connection
-func destroyPowerVsCloudConnection(options *DestroyInfraOptions, infra *Infra, cloudInstanceID string, session *ibmpisession.IBMPISession) error {
-	client := instance.NewIBMPICloudConnectionClient(context.Background(), session, cloudInstanceID)
-	jobClient := instance.NewIBMPIJobClient(context.Background(), session, cloudInstanceID)
+func destroyPowerVsCloudConnection(ctx context.Context, options *DestroyInfraOptions, infra *Infra, cloudInstanceID string, session *ibmpisession.IBMPISession) error {
+	client := instance.NewIBMPICloudConnectionClient(ctx, session, cloudInstanceID)
+	jobClient := instance.NewIBMPIJobClient(ctx, session, cloudInstanceID)
 	var err error
 
 	var cloudConnName string

@@ -139,7 +139,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			Debug:           opts.PowerVSPlatform.Debug,
 		}
 		infra = &powervsinfra.Infra{ID: opts.InfraID}
-		err = infra.SetupInfra(opt)
+		err = infra.SetupInfra(ctx, opt)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
 		}
