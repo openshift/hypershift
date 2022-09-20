@@ -2254,6 +2254,11 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			Resources: []string{"customresourcedefinitions"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
+		{
+			APIGroups: []string{"kubevirt.io"},
+			Resources: []string{"virtualmachines", "virtualmachineinstances"},
+			Verbs:     []string{rbacv1.VerbAll},
+		},
 	}
 	return nil
 }

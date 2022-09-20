@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/kubevirt"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/powervs"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cno"
@@ -2837,6 +2838,44 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 			return powervs.ReconcileCCMDeployment(deployment, hcp, ccmConfig, releaseImage)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile cloud controller manager deployment: %w", err)
+		}
+	case hyperv1.KubevirtPlatform:
+		// Create the cloud-config file used by Kubevirt CCM
+		ccmConfig := kubevirt.CCMConfigMap(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, ccmConfig, func() error {
+			return kubevirt.ReconcileCloudConfig(ccmConfig, hcp)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Kubevirt cloud config: %w", err)
+		}
+
+		// Create the ServiceAccount used by Kubevirt CCM to access
+		// the InfraCluster (which is the ManagementCluster)
+		ownerRef := config.OwnerRefFrom(hcp)
+		sa := kubevirt.CCMServiceAccount(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, sa, func() error {
+			return kubevirt.ReconcileCCMServiceAccount(sa, ownerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Kubevirt cloud provider service account: %w", err)
+		}
+		role := kubevirt.CCMRole(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, role, func() error {
+			return kubevirt.ReconcileCCMRole(role, ownerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Kubevirt cloud provider role: %w", err)
+		}
+		roleBinding := kubevirt.CCMRoleBinding(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, roleBinding, func() error {
+			return kubevirt.ReconcileCCMRoleBinding(roleBinding, ownerRef, sa, role)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Kubevirt cloud provider rolebinding: %w", err)
+		}
+
+		// Deploy Kubevirt CCM
+		deployment := kubevirt.CCMDeployment(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, deployment, func() error {
+			return kubevirt.ReconcileDeployment(deployment, hcp, sa.Name, releaseImage)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ccm deployment: %w", err)
 		}
 	}
 	return nil
