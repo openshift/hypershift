@@ -5,8 +5,8 @@ import (
 	"math/big"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/assets"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -22,10 +22,10 @@ import (
 )
 
 var (
-	certifiedCatalogService         = common.MustService(content.ReadFile, "assets/catalog-certified.service.yaml")
-	communityCatalogService         = common.MustService(content.ReadFile, "assets/catalog-community.service.yaml")
-	redHatMarketplaceCatalogService = common.MustService(content.ReadFile, "assets/catalog-redhat-marketplace.service.yaml")
-	redHatOperatorsCatalogService   = common.MustService(content.ReadFile, "assets/catalog-redhat-operators.service.yaml")
+	certifiedCatalogService         = assets.MustService(content.ReadFile, "assets/catalog-certified.service.yaml")
+	communityCatalogService         = assets.MustService(content.ReadFile, "assets/catalog-community.service.yaml")
+	redHatMarketplaceCatalogService = assets.MustService(content.ReadFile, "assets/catalog-redhat-marketplace.service.yaml")
+	redHatOperatorsCatalogService   = assets.MustService(content.ReadFile, "assets/catalog-redhat-operators.service.yaml")
 )
 
 func catalogLabels() map[string]string {
@@ -62,10 +62,10 @@ func reconcileCatalogService(svc *corev1.Service, ownerRef config.OwnerRef, sour
 }
 
 var (
-	certifiedCatalogDeployment         = common.MustDeployment(content.ReadFile, "assets/catalog-certified.deployment.yaml")
-	communityCatalogDeployment         = common.MustDeployment(content.ReadFile, "assets/catalog-community.deployment.yaml")
-	redHatMarketplaceCatalogDeployment = common.MustDeployment(content.ReadFile, "assets/catalog-redhat-marketplace.deployment.yaml")
-	redHatOperatorsCatalogDeployment   = common.MustDeployment(content.ReadFile, "assets/catalog-redhat-operators.deployment.yaml")
+	certifiedCatalogDeployment         = assets.MustDeployment(content.ReadFile, "assets/catalog-certified.deployment.yaml")
+	communityCatalogDeployment         = assets.MustDeployment(content.ReadFile, "assets/catalog-community.deployment.yaml")
+	redHatMarketplaceCatalogDeployment = assets.MustDeployment(content.ReadFile, "assets/catalog-redhat-marketplace.deployment.yaml")
+	redHatOperatorsCatalogDeployment   = assets.MustDeployment(content.ReadFile, "assets/catalog-redhat-operators.deployment.yaml")
 )
 
 func ReconcileCertifiedOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig) error {
@@ -92,10 +92,10 @@ func reconcileCatalogDeployment(deployment *appsv1.Deployment, ownerRef config.O
 }
 
 var (
-	certifiedCatalogRolloutCronJob         = common.MustCronJob(content.ReadFile, "assets/catalog-certified-rollout.cronjob.yaml")
-	communityCatalogRolloutCronJob         = common.MustCronJob(content.ReadFile, "assets/catalog-community-rollout.cronjob.yaml")
-	redHatMarketplaceCatalogRolloutCronJob = common.MustCronJob(content.ReadFile, "assets/catalog-redhat-marketplace-rollout.cronjob.yaml")
-	redHatOperatorsCatalogRolloutCronJob   = common.MustCronJob(content.ReadFile, "assets/catalog-redhat-operators-rollout.cronjob.yaml")
+	certifiedCatalogRolloutCronJob         = assets.MustCronJob(content.ReadFile, "assets/catalog-certified-rollout.cronjob.yaml")
+	communityCatalogRolloutCronJob         = assets.MustCronJob(content.ReadFile, "assets/catalog-community-rollout.cronjob.yaml")
+	redHatMarketplaceCatalogRolloutCronJob = assets.MustCronJob(content.ReadFile, "assets/catalog-redhat-marketplace-rollout.cronjob.yaml")
+	redHatOperatorsCatalogRolloutCronJob   = assets.MustCronJob(content.ReadFile, "assets/catalog-redhat-operators-rollout.cronjob.yaml")
 )
 
 func ReconcileCertifiedOperatorsCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
@@ -131,8 +131,8 @@ func generateModularDailyCronSchedule(input []byte) string {
 }
 
 var (
-	catalogRolloutRole        = common.MustRole(content.ReadFile, "assets/catalog-rollout.role.yaml")
-	catalogRolloutRoleBinding = common.MustRoleBinding(content.ReadFile, "assets/catalog-rollout.rolebinding.yaml")
+	catalogRolloutRole        = assets.MustRole(content.ReadFile, "assets/catalog-rollout.role.yaml")
+	catalogRolloutRoleBinding = assets.MustRoleBinding(content.ReadFile, "assets/catalog-rollout.rolebinding.yaml")
 )
 
 func ReconcileCatalogRolloutServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {

@@ -1,9 +1,9 @@
 package snapshotcontroller
 
 import (
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller/assets"
+	assets2 "github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -12,10 +12,10 @@ import (
 )
 
 var (
-	operatorDeployment     = common.MustDeployment(assets.ReadFile, "07_deployment-hypershift.yaml")
-	operatorRole           = common.MustRole(assets.ReadFile, "05_operator_role-hypershift.yaml")
-	operatorRoleBinding    = common.MustRoleBinding(assets.ReadFile, "06_operator_rolebinding-hypershift.yaml")
-	operatorServiceAccount = common.MustServiceAccount(assets.ReadFile, "04_serviceaccount-hypershift.yaml")
+	operatorDeployment     = assets2.MustDeployment(assets.ReadFile, "07_deployment-hypershift.yaml")
+	operatorRole           = assets2.MustRole(assets.ReadFile, "05_operator_role-hypershift.yaml")
+	operatorRoleBinding    = assets2.MustRoleBinding(assets.ReadFile, "06_operator_rolebinding-hypershift.yaml")
+	operatorServiceAccount = assets2.MustServiceAccount(assets.ReadFile, "04_serviceaccount-hypershift.yaml")
 )
 
 func ReconcileOperatorDeployment(
