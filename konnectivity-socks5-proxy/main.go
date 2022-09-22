@@ -267,6 +267,7 @@ func (d proxyResolver) ResolveK8sService(ctx context.Context, l logr.Logger, nam
 // DNS domains. The API list can be found below:
 // AWS: https://docs.aws.amazon.com/general/latest/gr/rande.html#regional-endpoints
 // AZURE: https://docs.microsoft.com/en-us/rest/api/azure/#how-to-call-azure-rest-apis-with-curl
+// IBMCLOUD: https://cloud.ibm.com/apidocs/iam-identity-token-api#endpoints
 func isCloudAPI(host string) bool {
-	return strings.HasSuffix(host, ".amazonaws.com") || strings.HasSuffix(host, ".microsoftonline.com") || strings.HasSuffix(host, "azure.com")
+	return strings.HasSuffix(host, ".amazonaws.com") || strings.HasSuffix(host, ".microsoftonline.com") || strings.HasSuffix(host, "azure.com") || strings.HasSuffix(host, "cloud.ibm.com")
 }
