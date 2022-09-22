@@ -26,7 +26,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	opts.AzurePlatform.Location = "eastus"
-	opts.AzurePlatform.InstanceType = "Standard_D4s_v4"
 	opts.AzurePlatform.DiskSizeGB = 120
 
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
@@ -83,7 +82,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			return fmt.Errorf("failed to deserialize infra json file: %w", err)
 		}
 	} else {
-		rhcosImage, err := lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.PullSecretFile)
+		rhcosImageMap, err := lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.PullSecretFile)
 		if err != nil {
 			return fmt.Errorf("failed to retrieve RHCOS image: %w", err)
 		}
@@ -95,11 +94,25 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			InfraID:           infraID,
 			CredentialsFile:   opts.AzurePlatform.CredentialsFile,
 			BaseDomain:        opts.BaseDomain,
-			RHCOSImage:        rhcosImage,
+			RHCOSImage:        rhcosImageMap,
+			Arch:              opts.Arch,
 			ResourceGroupName: opts.AzurePlatform.ResourceGroupName,
 		}).Run(ctx, opts.Log)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
+		}
+	}
+
+	var instanceType string
+	if opts.AzurePlatform.InstanceType != "" {
+		instanceType = opts.AzurePlatform.InstanceType
+	} else {
+		// Aligning with Azure IPI instance type defaults
+		switch opts.Arch {
+		case hyperv1.ArchitectureAMD64:
+			instanceType = "Standard_D4s_v3"
+		case hyperv1.ArchitectureARM64:
+			instanceType = "Standard_D4ps_v5"
 		}
 	}
 
@@ -114,9 +127,9 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		VnetName:            infra.VnetName,
 		VnetID:              infra.VNetID,
 		SubnetName:          infra.SubnetName,
-		BootImageID:         infra.BootImageID,
+		BootImageInfo:       infra.BootImageInfo,
 		MachineIdentityID:   infra.MachineIdentityID,
-		InstanceType:        opts.AzurePlatform.InstanceType,
+		InstanceType:        instanceType,
 		SecurityGroupName:   infra.SecurityGroupName,
 		DiskSizeGB:          opts.AzurePlatform.DiskSizeGB,
 		AvailabilityZones:   opts.AzurePlatform.AvailabilityZones,
@@ -151,30 +164,51 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	return nil
 }
 
-// lookupRHCOSImage looks up a release image and extracts the RHCOS VHD image based on the nodepool arch
-func lookupRHCOSImage(ctx context.Context, arch string, image string, pullSecretFile string) (string, error) {
-	rhcosImage := ""
+// lookupRHCOSImage looks up a release image and extracts appropriate RHCOS images based on the arch
+func lookupRHCOSImage(ctx context.Context, arch string, image string, pullSecretFile string) (map[string]string, error) {
+	rhcosImageMap := make(map[string]string)
 	releaseProvider := &releaseinfo.RegistryClientProvider{}
 
 	pullSecret, err := os.ReadFile(pullSecretFile)
 	if err != nil {
-		return "", fmt.Errorf("lookupRHCOSImage: failed to read pull secret file")
+		return nil, fmt.Errorf("lookupRHCOSImage: failed to read pull secret file")
 	}
 
 	releaseImage, err := releaseProvider.Lookup(ctx, image, pullSecret)
 	if err != nil {
-		return "", fmt.Errorf("lookupRHCOSImage: failed to lookup release image")
+		return nil, fmt.Errorf("lookupRHCOSImage: failed to lookup release image")
 	}
 
+	rhcosImage, err := retrieveRHCOSImageFromArch(releaseImage, arch)
+	if err != nil {
+		return nil, err
+	}
+	rhcosImageMap[arch] = rhcosImage
+
+	// If the arch is arm64, we also need to look up the amd64 RHCOS image so NodePools of both CPU arches can be created in the Hosted Cluster
+	if arch == hyperv1.ArchitectureARM64 {
+		rhcosImage, err = retrieveRHCOSImageFromArch(releaseImage, hyperv1.ArchitectureAMD64)
+		if err != nil {
+			return nil, err
+		}
+
+		rhcosImageMap[hyperv1.ArchitectureAMD64] = rhcosImage
+	}
+
+	return rhcosImageMap, nil
+}
+
+// retrieveRHCOSImageFromArch retrieves the appropriate RHCOS image based on the arch
+func retrieveRHCOSImageFromArch(releaseImage *releaseinfo.ReleaseImage, arch string) (string, error) {
 	// We need to translate amd64 to x86_64 and arm64 to aarch64 since that is what is in the release image stream
 	if _, ok := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[arch]]; !ok {
-		return "", fmt.Errorf("lookupRHCOSImage: arch does not exist in release image, arch: %s", arch)
+		return "", fmt.Errorf("retrieveRHCOSImageFromArch: arch does not exist in release image, arch: %s", arch)
 	}
 
-	rhcosImage = releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[arch]].RHCOS.AzureDisk.URL
+	rhcosImage := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[arch]].RHCOS.AzureDisk.URL
 
 	if rhcosImage == "" {
-		return "", fmt.Errorf("lookupRHCOSImage: RHCOS VHD image is empty")
+		return "", fmt.Errorf("retrieveRHCOSImageFromArch: RHCOS VHD image is empty")
 	}
 
 	return rhcosImage, nil

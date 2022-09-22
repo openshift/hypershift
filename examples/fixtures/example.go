@@ -693,7 +693,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				}
 				nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
 					VMSize:              o.Azure.InstanceType,
-					ImageID:             o.Azure.BootImageID,
+					ImageID:             o.Azure.BootImageInfo[o.Arch].BootImageID,
 					DiskSizeGB:          o.Azure.DiskSizeGB,
 					AvailabilityZone:    availabilityZone,
 					DiskEncryptionSetID: o.Azure.DiskEncryptionSetID,
@@ -708,7 +708,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			}
 			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
 				VMSize:              o.Azure.InstanceType,
-				ImageID:             o.Azure.BootImageID,
+				ImageID:             o.Azure.BootImageInfo[o.Arch].BootImageID,
 				DiskSizeGB:          o.Azure.DiskSizeGB,
 				DiskEncryptionSetID: o.Azure.DiskEncryptionSetID,
 			}

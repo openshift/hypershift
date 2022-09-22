@@ -456,7 +456,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	})
 
 	// Validate modifying CPU arch support for platform
-	if (nodePool.Spec.Arch != "amd64") && (nodePool.Spec.Platform.Type != hyperv1.AWSPlatform) {
+	if (nodePool.Spec.Arch != "amd64") && (nodePool.Spec.Platform.Type != hyperv1.AWSPlatform && nodePool.Spec.Platform.Type != hyperv1.AzurePlatform) {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidArchPlatform,
 			Status:             corev1.ConditionFalse,

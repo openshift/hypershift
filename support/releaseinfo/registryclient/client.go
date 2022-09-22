@@ -20,18 +20,12 @@ import (
 	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	dockerarchive "github.com/openshift/hypershift/support/thirdparty/docker/pkg/archive"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/registryclient"
 	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest"
 	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest/dockercredentials"
-)
-
-const (
-	ArchitectureAMD64   = "amd64"
-	ArchitectureS390X   = "s390x"
-	ArchitecturePPC64LE = "ppc64le"
-	ArchitectureARM64   = "arm64"
 )
 
 // ExtractImageFiles extracts a list of files from a registry image given the image reference, pull secret and the
@@ -313,8 +307,8 @@ func GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distr
 	return digestsManifest, nil
 }
 
-// isMultiArchManifestList determines whether an image is a manifest listed image and contains manifests the following processor architectures: amd64, arm64, s390x, ppc64le
-func isMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []byte) (bool, error) {
+// IsMultiArchManifestList determines whether an image is a manifest listed image and contains manifests the following processor architectures: amd64, arm64, s390x, ppc64le
+func IsMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []byte) (bool, error) {
 	srcManifest, err := GetManifest(ctx, imageRef, pullSecret)
 	if err != nil {
 		return false, fmt.Errorf("failed to retrieve manifest %s: %w", imageRef, err)
@@ -339,7 +333,7 @@ func isMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []
 	count := 0
 	for _, arch := range deserializedManifestList.ManifestList.Manifests {
 		switch arch.Platform.Architecture {
-		case ArchitectureAMD64, ArchitectureS390X, ArchitecturePPC64LE, ArchitectureARM64:
+		case hyperv1.ArchitectureAMD64, hyperv1.ArchitectureS390X, hyperv1.ArchitecturePPC64LE, hyperv1.ArchitectureARM64:
 			count = count + 1
 		}
 	}
@@ -350,8 +344,8 @@ func isMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []
 	return false, nil
 }
 
-// findImageRefByArch finds the appropriate image reference in a multi-arch manifest image based on the current platform's OS and processor architecture
-func findImageRefByArch(ctx context.Context, imageRef string, pullSecret []byte, osToFind string, archToFind string) (manifestImageRef string, err error) {
+// FindImageRefByArch finds the appropriate image reference in a multi-arch manifest image based on the current platform's OS and processor architecture
+func FindImageRefByArch(ctx context.Context, imageRef string, pullSecret []byte, osToFind string, archToFind string) (manifestImageRef string, err error) {
 	manifestList, err := GetManifest(ctx, imageRef, pullSecret)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve manifest from image ref, %s: %w", imageRef, err)
@@ -424,7 +418,7 @@ func findMatchingManifest(ctx context.Context, imageRef string, deserializedMani
 func GetCorrectArchImage(ctx context.Context, component string, imageRef string, pullSecret []byte) (manifestImageRef string, err error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	isMultiArchImage, err := isMultiArchManifestList(ctx, imageRef, pullSecret)
+	isMultiArchImage, err := IsMultiArchManifestList(ctx, imageRef, pullSecret)
 	if err != nil {
 		return "", fmt.Errorf("failed to determine if image is manifest listed: %w", err)
 	}
@@ -435,7 +429,7 @@ func GetCorrectArchImage(ctx context.Context, component string, imageRef string,
 		log.Info(component + " image is a manifest listed image; extracting manifest for os/arch: " + operatingSystem + "/" + arch)
 
 		// Verify MF Image has the right os/arch image
-		imageRef, err = findImageRefByArch(ctx, imageRef, pullSecret, operatingSystem, arch)
+		imageRef, err = FindImageRefByArch(ctx, imageRef, pullSecret, operatingSystem, arch)
 		if err != nil {
 			return "", fmt.Errorf("failed to extract appropriate os/arch manifest from %s: %w", imageRef, err)
 		}
