@@ -1731,8 +1731,8 @@ func (in *NodePoolSpec) DeepCopyInto(out *NodePoolSpec) {
 		*out = new(string)
 		**out = **in
 	}
-	if in.TunedConfig != nil {
-		in, out := &in.TunedConfig, &out.TunedConfig
+	if in.TuningConfig != nil {
+		in, out := &in.TuningConfig, &out.TuningConfig
 		*out = make([]corev1.LocalObjectReference, len(*in))
 		copy(*out, *in)
 	}

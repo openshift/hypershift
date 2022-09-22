@@ -12,7 +12,7 @@ const (
 	NodePoolValidHostedClusterConditionType      = "ValidHostedCluster"
 	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
 	NodePoolValidMachineConfigConditionType      = "ValidMachineConfig"
-	NodePoolValidTunedConfigConditionType        = "ValidTunedConfig"
+	NodePoolValidTuningConfigConditionType       = "ValidTuningConfig"
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
 	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"
 	NodePoolReadyConditionType                   = "Ready"
@@ -143,7 +143,7 @@ type NodePoolSpec struct {
 	// +optional
 	PausedUntil *string `json:"pausedUntil,omitempty"`
 
-	// TunedConfig is a list of references to ConfigMaps containing serialized
+	// TuningConfig is a list of references to ConfigMaps containing serialized
 	// Tuned resources to define the tuning configuration to be applied to
 	// nodes in the NodePool. The Tuned API is defined here:
 	//
@@ -152,7 +152,7 @@ type NodePoolSpec struct {
 	// Each ConfigMap must have a single key named "tuned" whose value is the
 	// JSON or YAML of a serialized Tuned.
 	// +kubebuilder:validation:Optional
-	TunedConfig []corev1.LocalObjectReference `json:"tunedConfig,omitempty"`
+	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig,omitempty"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.

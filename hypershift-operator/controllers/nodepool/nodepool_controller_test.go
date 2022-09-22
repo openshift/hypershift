@@ -808,7 +808,7 @@ kind: Config`)},
 	}
 }
 
-func TestGetTunedConfig(t *testing.T) {
+func TestGetTuningConfig(t *testing.T) {
 	tuned1 := `
 apiVersion: tuned.openshift.io/v1
 kind: Tuned
@@ -908,21 +908,20 @@ status: {}
 
 	namespace := "test"
 	testCases := []struct {
-		name                string
-		nodePool            *hyperv1.NodePool
-		tunedConfig         []client.Object
-		expect              string
-		missingTunedConfigs bool
-		error               bool
+		name         string
+		nodePool     *hyperv1.NodePool
+		tuningConfig []client.Object
+		expect       string
+		error        bool
 	}{
 		{
-			name: "gets a single valid TunedConfig",
+			name: "gets a single valid TuningConfig",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
 				},
 				Spec: hyperv1.NodePoolSpec{
-					TunedConfig: []corev1.LocalObjectReference{
+					TuningConfig: []corev1.LocalObjectReference{
 						{
 							Name: "tuned-1",
 						},
@@ -930,14 +929,14 @@ status: {}
 				},
 				Status: hyperv1.NodePoolStatus{},
 			},
-			tunedConfig: []client.Object{
+			tuningConfig: []client.Object{
 				&corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tuned-1",
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						tunedConfigKey: tuned1,
+						tuningConfigKey: tuned1,
 					},
 					BinaryData: nil,
 				},
@@ -946,13 +945,13 @@ status: {}
 			error:  false,
 		},
 		{
-			name: "gets two valid TunedConfigs",
+			name: "gets two valid TuningConfigs",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
 				},
 				Spec: hyperv1.NodePoolSpec{
-					TunedConfig: []corev1.LocalObjectReference{
+					TuningConfig: []corev1.LocalObjectReference{
 						{
 							Name: "tuned-1",
 						},
@@ -963,14 +962,14 @@ status: {}
 				},
 				Status: hyperv1.NodePoolStatus{},
 			},
-			tunedConfig: []client.Object{
+			tuningConfig: []client.Object{
 				&corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "tuned-1",
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						tunedConfigKey: tuned1,
+						tuningConfigKey: tuned1,
 					},
 				},
 				&corev1.ConfigMap{
@@ -979,7 +978,7 @@ status: {}
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						tunedConfigKey: tuned2,
+						tuningConfigKey: tuned2,
 					},
 				},
 			},
@@ -987,13 +986,13 @@ status: {}
 			error:  false,
 		},
 		{
-			name: "fails if a non existent TunedConfig is referenced",
+			name: "fails if a non existent TuningConfig is referenced",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
 				},
 				Spec: hyperv1.NodePoolSpec{
-					TunedConfig: []corev1.LocalObjectReference{
+					TuningConfig: []corev1.LocalObjectReference{
 						{
 							Name: "does-not-exist",
 						},
@@ -1001,9 +1000,9 @@ status: {}
 				},
 				Status: hyperv1.NodePoolStatus{},
 			},
-			tunedConfig: []client.Object{},
-			expect:      "",
-			error:       true,
+			tuningConfig: []client.Object{},
+			expect:       "",
+			error:        true,
 		},
 	}
 
@@ -1012,10 +1011,10 @@ status: {}
 			g := NewWithT(t)
 
 			r := NodePoolReconciler{
-				Client: fake.NewClientBuilder().WithObjects(tc.tunedConfig...).Build(),
+				Client: fake.NewClientBuilder().WithObjects(tc.tuningConfig...).Build(),
 			}
 
-			got, err := r.getTunedConfig(context.Background(), tc.nodePool)
+			got, err := r.getTuningConfig(context.Background(), tc.nodePool)
 
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())

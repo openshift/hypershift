@@ -43,7 +43,7 @@ spec:
 `
 
 	hypershiftNodePoolNameLabel = "hypershift.openshift.io/nodePoolName" // HyperShift-enabled NTO adds this label to Tuned CRs bound to NodePools
-	tunedConfigKey              = "tuned"
+	tuningConfigKey             = "tuning"
 )
 
 func TestNTOMachineConfigGetsRolledOut(t *testing.T) {
@@ -88,14 +88,14 @@ func TestNTOMachineConfigGetsRolledOut(t *testing.T) {
 	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
-	tunedConfigConfigMap := &corev1.ConfigMap{
+	tuningConfigConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "hugepages-tuned-test",
 			Namespace: hostedCluster.Namespace,
 		},
-		Data: map[string]string{tunedConfigKey: hugepagesTuned},
+		Data: map[string]string{tuningConfigKey: hugepagesTuned},
 	}
-	if err := client.Create(ctx, tunedConfigConfigMap); err != nil {
+	if err := client.Create(ctx, tuningConfigConfigMap); err != nil {
 		t.Fatalf("failed to create configmap for custom Tuned object: %v", err)
 	}
 
@@ -111,7 +111,7 @@ func TestNTOMachineConfigGetsRolledOut(t *testing.T) {
 		}
 
 		np := nodePool.DeepCopy()
-		nodePool.Spec.TunedConfig = append(nodePool.Spec.TunedConfig, corev1.LocalObjectReference{Name: tunedConfigConfigMap.Name})
+		nodePool.Spec.TuningConfig = append(nodePool.Spec.TuningConfig, corev1.LocalObjectReference{Name: tuningConfigConfigMap.Name})
 		if err := client.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
 			t.Fatalf("failed to update nodepool %s after adding Tuned config: %v", nodePool.Name, err)
 		}
@@ -196,14 +196,14 @@ func TestNTOMachineConfigAppliedInPlace(t *testing.T) {
 	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
-	tunedConfigConfigMap := &corev1.ConfigMap{
+	tuningConfigConfigMap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "hugepages-tuned-test",
 			Namespace: hostedCluster.Namespace,
 		},
-		Data: map[string]string{tunedConfigKey: hugepagesTuned},
+		Data: map[string]string{tuningConfigKey: hugepagesTuned},
 	}
-	if err := client.Create(ctx, tunedConfigConfigMap); err != nil {
+	if err := client.Create(ctx, tuningConfigConfigMap); err != nil {
 		t.Fatalf("failed to create configmap for custom Tuned object: %v", err)
 	}
 
@@ -219,7 +219,7 @@ func TestNTOMachineConfigAppliedInPlace(t *testing.T) {
 		}
 
 		np := nodePool.DeepCopy()
-		nodePool.Spec.TunedConfig = append(nodePool.Spec.TunedConfig, corev1.LocalObjectReference{Name: tunedConfigConfigMap.Name})
+		nodePool.Spec.TuningConfig = append(nodePool.Spec.TuningConfig, corev1.LocalObjectReference{Name: tuningConfigConfigMap.Name})
 		if err := client.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
 			t.Fatalf("failed to update nodepool %s after adding Tuned config: %v", nodePool.Name, err)
 		}
