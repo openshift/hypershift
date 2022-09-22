@@ -1,20 +1,36 @@
-## Prerequisites
+# Prerequisites
 
-* Set up the [authentication](#setting-up-ibm-cloud-authentication) by following this section
-* `CIS Domain` Need to have existing CIS Domain in [IBM Cloud Internet Services](https://cloud.ibm.com/docs/cis) which can be used as a `BASEDOMAIN` in create part
+* The HyperShift CLI (`hypershift`).
 
-PowerVS and VPC region zone's possible values can be found [here](https://cluster-api-ibmcloud.sigs.k8s.io/reference/regions-zones-mapping.html)
+    Install it using Go 1.18:
+        ```shell linenums="1"
+        git clone https://github.com/openshift/hypershift.git
+        cd hypershift
+        make build
+        sudo install -m 0755 bin/hypershift /usr/local/bin/hypershift
+        ```
 
-If you want to set up custom endpoints, please see this [section](#setting-custom-endpoints-for-ibm-cloud-services)
+* Admin access to an OpenShift cluster (version 4.8+) specified by the `KUBECONFIG` environment variable.
+* The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
+* A valid [pull secret](https://console.redhat.com/openshift/install/ibm-cloud) file for the `quay.io/openshift-release-dev` repository.
+* Follow below sections for other prerequisites.
 
-### Setting up IBM Cloud Authentication
+## Authentication
 There are two ways to set up authentication
 - Authenticate IBM Cloud Clients by setting the `IBMCLOUD_API_KEY` environment var to your API Key.
 - Authenticate IBM Cloud Clients by setting the `IBMCLOUD_CREDENTIALS` environment var pointing to a file containing your API Key.
 
+## Base Domain
+Need to have existing CIS Domain in [IBM Cloud Internet Services](https://cloud.ibm.com/docs/cis) which can be used as a `BASEDOMAIN` while creating the cluster.
 
-### Setting custom endpoints for IBM Cloud services
-Set the following environment var to set the custom endpoint.
+## Region and Zones
+Refer [this](https://cluster-api-ibmcloud.sigs.k8s.io/reference/regions-zones-mapping.html) to get possible region and zone values. Substitute those with `REGION` `ZONE` and `VPC_REGION` while creating the cluster.
+
+## Release Image
+Use [this](https://multi.ocp.releases.ci.openshift.org) to get latest multi arch nightly build as release image. Substitute it with `RELEASE_IMAGE` while creating the cluster.
+
+## Custom Endpoints
+Use following environment variables to set custom endpoint.
 ```
 IBMCLOUD_POWER_API_ENDPOINT - to setup PowerVS custom endpoint
 IBMCLOUD_VPC_API_ENDPOINT - to setup VPC custom endpoint
