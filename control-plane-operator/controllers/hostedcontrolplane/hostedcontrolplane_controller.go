@@ -43,6 +43,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/registryoperator"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/routecm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
@@ -750,6 +751,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile openshift controller manager: %w", err)
 	}
 
+	// Reconcile openshift route controller manager
+	r.Log.Info("Reconciling OpenShift Route Controller Manager")
+	if err = r.reconcileOpenShiftRouteControllerManager(ctx, hostedControlPlane, observedConfig, releaseImage, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile openshift route controller manager: %w", err)
+	}
+
 	// Reconcile cluster policy controller
 	r.Log.Info("Reconciling Cluster Policy Controller")
 	if err = r.reconcileClusterPolicyController(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
@@ -1305,6 +1312,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return pki.ReconcileOpenShiftControllerManagerCertSecret(openshiftControllerManagerCertSecret, rootCASecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager cert: %w", err)
+	}
+
+	// OpenShift Route ControllerManager Cert
+	openshiftRouteControllerManagerCertSecret := manifests.OpenShiftRouteControllerManagerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, openshiftRouteControllerManagerCertSecret, func() error {
+		return pki.ReconcileOpenShiftControllerManagerCertSecret(openshiftRouteControllerManagerCertSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift route controller manager cert: %w", err)
 	}
 
 	// Cluster Policy Controller Cert
@@ -2026,6 +2041,36 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 		return ocm.ReconcileDeployment(deployment, p.OwnerRef, p.OpenShiftControllerManagerImage, config, p.DeploymentConfig)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager deployment: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftRouteControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
+	p := routecm.NewOpenShiftRouteControllerManagerParams(hcp, observedConfig, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+	config := manifests.OpenShiftControllerManagerConfig(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(config), config); err != nil {
+		return fmt.Errorf("failed to get openshift controller manager config: %w", err)
+	}
+
+	service := manifests.OpenShiftRouteControllerManagerService(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, service, func() error {
+		return routecm.ReconcileService(service, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift route controller manager service: %w", err)
+	}
+
+	serviceMonitor := manifests.OpenShiftRouteControllerManagerServiceMonitor(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
+		return routecm.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift route controller manager service monitor: %w", err)
+	}
+
+	deployment := manifests.OpenShiftRouteControllerManagerDeployment(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, deployment, func() error {
+		return routecm.ReconcileDeployment(deployment, p.OpenShiftControllerManagerImage, config, p.DeploymentConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift route controller manager deployment: %w", err)
 	}
 	return nil
 }
