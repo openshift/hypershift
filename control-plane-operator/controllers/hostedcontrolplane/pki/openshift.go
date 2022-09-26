@@ -5,6 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 )
 
@@ -50,4 +51,14 @@ func ReconcileClusterPolicyControllerCertSecret(secret, ca *corev1.Secret, owner
 		fmt.Sprintf("openshift-controller-manager.%s.svc.cluster.local", secret.Namespace),
 	}
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "cluster-policy-controller", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, nil)
+}
+
+func ReconcileOpenShiftRouteControllerManagerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	svcName := manifests.OpenShiftRouteControllerManagerService("").Name
+	dnsNames := []string{
+		svcName,
+		fmt.Sprintf("%s.%s.svc", svcName, secret.Namespace),
+		fmt.Sprintf("%s.%s.svc.cluster.local", svcName, secret.Namespace),
+	}
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, svcName, []string{"openshift"}, X509UsageClientServerAuth, dnsNames, nil)
 }
