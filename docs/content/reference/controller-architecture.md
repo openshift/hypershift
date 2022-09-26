@@ -5,6 +5,7 @@
 ### Physical layout and operating model
 
 Legend:
+
 - Yellow box: namespace
 - Rounded box: processes
 - Rectangle: CR instances
