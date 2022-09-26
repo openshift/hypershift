@@ -71,8 +71,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 func (r *Reconciler) handleNodeDrainRequest(ctx context.Context, node *corev1.Node, desiredState string) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// TODO (jerzhang): this name is deterministic, but should make this a const somewhere
-	daemonPodOnNodeName := fmt.Sprintf("machine-config-daemon-%s", node.Name)
 	drainer := &drain.Helper{
 		Client:              r.guestClusterKubeClient,
 		Force:               true,
@@ -86,14 +84,6 @@ func (r *Reconciler) handleNodeDrainRequest(ctx context.Context, node *corev1.No
 				verbStr = "Evicted"
 			}
 			log.Info("Pod drained", "Action", verbStr, "Namespace", pod.Namespace, "Pod name", pod.Name)
-		},
-		AdditionalFilters: []drain.PodFilter{
-			func(pod corev1.Pod) drain.PodDeleteStatus {
-				if pod.Name == daemonPodOnNodeName {
-					return drain.MakePodDeleteStatusSkip()
-				}
-				return drain.MakePodDeleteStatusOkay()
-			},
 		},
 		// TODO (jerzhang): properly handle logging here, although this seems to work
 		Out:    writer{log.Info},
