@@ -6,11 +6,14 @@ import (
 	"strconv"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -221,7 +224,7 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 	}
 
 	// Create necessary upgrade manifests, if they do not exist
-	err = r.reconcileInPlaceUpgradeManifests(ctx, r.guestClusterClient, targetConfigVersionHash, tokenSecret.Data[TokenSecretPayloadKey], nodePoolUpgradeAPI.spec.poolRef.GetName())
+	err = r.reconcileInPlaceUpgradeManifests(ctx, r.guestClusterClient, targetConfigVersionHash, tokenSecret.Data[TokenSecretPayloadKey], nodePoolUpgradeAPI.spec.poolRef.GetName(), mcoImage)
 	if err != nil {
 		return fmt.Errorf("failed to create upgrade manifests in hosted cluster: %w", err)
 	}
@@ -240,80 +243,25 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 		return fmt.Errorf("failed to set hosted nodes for inplace upgrade: %w", err)
 	}
 
-	err = r.reconcileUpgradePods(ctx, r.guestClusterClient, nodes, nodePoolUpgradeAPI.spec.poolRef.GetName(), mcoImage)
+	// Update the nodes that require MCD pods to schedule on them
+	err = r.scheduleMachineConfigDaemonPods(ctx, r.guestClusterClient, nodes)
 	if err != nil {
-		return fmt.Errorf("failed to delete idle upgrade pods: %w", err)
+		return fmt.Errorf("failed to schedule daemon pods for inplace upgrade: %w", err)
 	}
-	return nil
 }
 
 func (r *Reconciler) setNodesDesiredConfig(ctx context.Context, hostedClusterClient client.Client, poolName string, nodes []*corev1.Node, targetConfigVersionHash string) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	for _, node := range nodes {
-		if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, node, func() error {
+	for idx := range nodes {
+		if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, nodes[idx], func() error {
 			// Set the actual annotation
-			node.Annotations[DesiredMachineConfigAnnotationKey] = targetConfigVersionHash
+			nodes[idx].Annotations[DesiredMachineConfigAnnotationKey] = targetConfigVersionHash
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile node desired config annotations: %w", err)
 		} else {
 			log.Info("Reconciled Node desired config annotations", "result", result)
-		}
-	}
-	return nil
-}
-
-// reconcileUpgradePods checks if any Machine Config Daemon pods are running on nodes that are not currently performing an update
-func (r *Reconciler) reconcileUpgradePods(ctx context.Context, hostedClusterClient client.Client, nodes []*corev1.Node, poolName, mcoImage string) error {
-	log := ctrl.LoggerFrom(ctx)
-
-	for _, node := range nodes {
-		// Set the upgrade pod
-		// TODO (jerzhang): maybe this can be a daemonset instead, since we are using a state machine MCD now
-		// There are also considerations on how to properly handle multiple upgrades, or to force upgrades
-		// on degraded nodes, etc.
-		namespace := inPlaceUpgradeNamespace(poolName)
-		pod := inPlaceUpgradePod(namespace.Name, node.Name)
-
-		if node.Annotations[CurrentMachineConfigAnnotationKey] == node.Annotations[DesiredMachineConfigAnnotationKey] &&
-			node.Annotations[DesiredDrainerAnnotationKey] == node.Annotations[LastAppliedDrainerAnnotationKey] {
-			// the node is updated and does not require a MCD running
-			if err := hostedClusterClient.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
-				if apierrors.IsNotFound(err) {
-					continue
-				}
-				return fmt.Errorf("error getting upgrade MCD pod: %w", err)
-			}
-			if pod.DeletionTimestamp != nil {
-				continue
-			}
-			if err := hostedClusterClient.Delete(ctx, pod); err != nil {
-				if apierrors.IsNotFound(err) {
-					continue
-				}
-				return fmt.Errorf("error deleting upgrade MCD pod: %w", err)
-			}
-			log.Info("Deleted idle upgrade pod")
-		} else {
-			if err := hostedClusterClient.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}, pod); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return fmt.Errorf("failed to get upgrade pod for node %s: %w", node.Name, err)
-				}
-				pod := inPlaceUpgradePod(namespace.Name, node.Name)
-				if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, pod, func() error {
-					return r.createUpgradePod(
-						pod,
-						node.Name,
-						poolName,
-						mcoImage,
-					)
-				}); err != nil {
-					return fmt.Errorf("failed to create upgrade pod for node %s: %w", node.Name, err)
-				} else {
-					log.Info("create upgrade pod", "result", result)
-				}
-			}
 		}
 	}
 	return nil
@@ -343,96 +291,24 @@ func (r *Reconciler) getPayloadImage(ctx context.Context, imageName string) (str
 	return image, nil
 }
 
-func (r *Reconciler) createUpgradePod(pod *corev1.Pod, nodeName, poolName, mcoImage string) error {
-	configmap := inPlaceUpgradeConfigMap(poolName, pod.Namespace)
-	pod.Spec.Containers = []corev1.Container{
-		{
-			Name:  "machine-config-daemon",
-			Image: mcoImage,
-			Command: []string{
-				"/usr/bin/machine-config-daemon",
-			},
-			Args: []string{
-				"start",
-				"--node-name=" + nodeName,
-				"--root-mount=/rootfs",
-				"--kubeconfig=/var/lib/kubelet/kubeconfig",
-				"--desired-configmap=/etc/machine-config-daemon-desired-config",
-			},
-			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
-			SecurityContext: &corev1.SecurityContext{
-				Privileged: k8sutilspointer.BoolPtr(true),
-			},
-			VolumeMounts: []corev1.VolumeMount{
-				{
-					Name:      "rootfs",
-					MountPath: "/rootfs",
-				},
-				{
-					Name:      "desired-config-mount",
-					MountPath: "/rootfs/etc/machine-config-daemon-desired-config",
-				},
-			},
-		},
-	}
-	pod.Spec.HostNetwork = true
-	pod.Spec.HostPID = true
-	pod.Spec.Tolerations = []corev1.Toleration{
-		{
-			Operator: corev1.TolerationOpExists,
-		},
-	}
-	pod.Spec.NodeSelector = map[string]string{
-		"kubernetes.io/hostname": nodeName,
-	}
-	pod.Spec.Volumes = []corev1.Volume{
-		{
-			Name: "rootfs",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/",
-				},
-			},
-		},
-		{
-			Name: "desired-config-mount",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: configmap.Name,
-					},
-				},
-			},
-		},
-	}
-	pod.Spec.RestartPolicy = corev1.RestartPolicyOnFailure
-
-	return nil
-}
-
 func deleteUpgradeManifests(ctx context.Context, hostedClusterClient client.Client, nodes []*corev1.Node, poolName string) error {
-	// TODO (jerzhang): maybe add a tracker for pods, so we can also use it to sync status
-	// For now attempt to delete all the pods if we are in a done state
-	// TODO (jerzhang): properly delete the other manifests. Right now we just delete the pods
+	// TODO (jerzhang): properly delete the other manifests. Right now we just delete the daemonset
 	namespace := inPlaceUpgradeNamespace(poolName)
-	for _, node := range nodes {
-		pod := inPlaceUpgradePod(namespace.Name, node.Name)
-		if err := hostedClusterClient.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
-			}
-			return fmt.Errorf("error getting upgrade MCD pod: %w", err)
-		}
-		if pod.DeletionTimestamp != nil {
-			continue
-		}
-		if err := hostedClusterClient.Delete(ctx, pod); err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
-			}
-			return fmt.Errorf("error deleting upgrade MCD pod: %w", err)
+	daemonset := inPlaceUpgradeDaemonset(namespace.Name)
+	if err := hostedClusterClient.Get(ctx, client.ObjectKeyFromObject(daemonset), daemonset); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("error getting upgrade daemonset: %w", err)
 		}
 	}
+	if daemonset.DeletionTimestamp != nil {
+		return nil
+	}
+	if err := hostedClusterClient.Delete(ctx, daemonset); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("error deleting upgrade daemonset: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -508,7 +384,7 @@ func getAvailableCandidates(nodes []*corev1.Node, targetConfig string, capacity 
 	return candidateNodes[:capacity]
 }
 
-func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hostedClusterClient client.Client, targetConfigVersionHash string, payload []byte, poolName string) error {
+func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hostedClusterClient client.Client, targetConfigVersionHash string, payload []byte, poolName string, mcoImage string) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	namespace := inPlaceUpgradeNamespace(poolName)
@@ -518,6 +394,33 @@ func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hoste
 		return fmt.Errorf("failed to reconcile upgrade Namespace for hash %s: %w", targetConfigVersionHash, err)
 	} else {
 		log.Info("Reconciled namespace", "result", result)
+	}
+
+	sa := inPlaceUpgradeDaemonServiceAccount(namespace.Name)
+	if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, sa, func() error {
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile upgrade ServiceAccount for hash %s: %w", targetConfigVersionHash, err)
+	} else {
+		log.Info("Reconciled ServiceAccount", "result", result)
+	}
+
+	clusterRole := inPlaceUpgradeDaemonClusterRole(namespace.Name)
+	if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, clusterRole, func() error {
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile upgrade ClusterRole for hash %s: %w", targetConfigVersionHash, err)
+	} else {
+		log.Info("Reconciled ClusterRole", "result", result)
+	}
+
+	clusterRoleBinding := inPlaceUpgradeDaemonClusterRoleBinding(namespace.Name)
+	if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, clusterRoleBinding, func() error {
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile upgrade ClusterRoleBinding for hash %s: %w", targetConfigVersionHash, err)
+	} else {
+		log.Info("Reconciled ClusterRoleBinding", "result", result)
 	}
 
 	configmap := inPlaceUpgradeConfigMap(poolName, namespace.Name)
@@ -530,6 +433,105 @@ func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hoste
 	} else {
 		log.Info("Reconciled ConfigMap", "result", result)
 	}
+
+	// We will deploy the machine-config-daemon daemonset here, so it can be running for future operations
+	daemonset := inPlaceUpgradeDaemonset(namespace.Name)
+	if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, daemonset, func() error {
+		return r.reconcileDaemonset(
+			daemonset,
+			poolName,
+			mcoImage,
+		)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile upgrade daemonset: %w", err)
+	} else {
+		log.Info("Reconciled upgrade daemonset", "result", result)
+	}
+
+	return nil
+}
+
+func (r *Reconciler) reconcileDaemonset(daemonset *appsv1.DaemonSet, poolName, mcoImage string) error {
+	configmap := inPlaceUpgradeConfigMap(poolName, daemonset.Namespace)
+	hostPathType := corev1.HostPathUnset
+	daemonset.Spec.Template.ObjectMeta = metav1.ObjectMeta{
+		Name: "machine-config-daemon",
+		Labels: map[string]string{
+			"k8s-app": "machine-config-daemon",
+		},
+	}
+	daemonset.Spec.Template.Spec.Containers = []corev1.Container{
+		{
+			Name:  "machine-config-daemon",
+			Image: mcoImage,
+			Command: []string{
+				"/usr/bin/machine-config-daemon",
+			},
+			Args: []string{
+				"start",
+				"--root-mount=/rootfs",
+				"--kubeconfig=/var/lib/kubelet/kubeconfig",
+				"--desired-configmap=/etc/machine-config-daemon-desired-config",
+			},
+			Env: []corev1.EnvVar{
+				{
+					Name: "NODE_NAME",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "spec.nodeName",
+						},
+					},
+				},
+			},
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+			SecurityContext: &corev1.SecurityContext{
+				Privileged: k8sutilspointer.BoolPtr(true),
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "rootfs",
+					MountPath: "/rootfs",
+				},
+				{
+					Name:      "desired-config-mount",
+					MountPath: "/rootfs/etc/machine-config-daemon-desired-config",
+				},
+			},
+		},
+	}
+	daemonset.Spec.Template.Spec.HostNetwork = true
+	daemonset.Spec.Template.Spec.HostPID = true
+	daemonset.Spec.Template.Spec.Tolerations = []corev1.Toleration{
+		{
+			Operator: corev1.TolerationOpExists,
+		},
+	}
+	daemonset.Spec.Template.Spec.ServiceAccountName = "machine-config-daemon"
+	daemonset.Spec.Template.Spec.NodeSelector = map[string]string{
+		hyperv1.NodePoolLabel: poolName,
+	}
+	daemonset.Spec.Template.Spec.Volumes = []corev1.Volume{
+		{
+			Name: "rootfs",
+			VolumeSource: corev1.VolumeSource{
+				HostPath: &corev1.HostPathVolumeSource{
+					Path: "/",
+					Type: &hostPathType,
+				},
+			},
+		},
+		{
+			Name: "desired-config-mount",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: configmap.Name,
+					},
+				},
+			},
+		},
+	}
+
 	return nil
 }
 
@@ -661,11 +663,19 @@ func inPlaceUpgradeComplete(nodes []*corev1.Node, currentConfigVersion string, t
 	return true
 }
 
-func inPlaceUpgradePod(namespace, nodeName string) *corev1.Pod {
-	return &corev1.Pod{
+func inPlaceUpgradeDaemonset(namespace string) *appsv1.DaemonSet {
+	return &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      fmt.Sprintf("machine-config-daemon-%s", nodeName),
+			Name:      fmt.Sprintf("machine-config-daemon-%s", namespace),
+		},
+		// This can't be mutated after creation
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"k8s-app": "machine-config-daemon",
+				},
+			},
 		},
 	}
 }
@@ -674,6 +684,11 @@ func inPlaceUpgradeNamespace(name string) *corev1.Namespace {
 	return &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("%s-upgrade", name),
+			Labels: map[string]string{
+				"pod-security.kubernetes.io/enforce": "privileged",
+				"pod-security.kubernetes.io/audit":   "privileged",
+				"pod-security.kubernetes.io/warn":    "privileged",
+			},
 		},
 	}
 }
@@ -683,6 +698,52 @@ func inPlaceUpgradeConfigMap(poolName string, namespace string) *corev1.ConfigMa
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      fmt.Sprintf("%s-upgrade", poolName),
+		},
+	}
+}
+
+func inPlaceUpgradeDaemonServiceAccount(namespace string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "machine-config-daemon",
+		},
+	}
+}
+
+func inPlaceUpgradeDaemonClusterRole(namespace string) *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("machine-config-daemon-%s", namespace),
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups:     []string{"security.openshift.io"},
+				ResourceNames: []string{"privileged"},
+				Resources:     []string{"securitycontextconstraints"},
+				Verbs:         []string{"use"},
+			},
+		},
+	}
+}
+
+func inPlaceUpgradeDaemonClusterRoleBinding(namespace string) *rbacv1.ClusterRoleBinding {
+	clusterRole := inPlaceUpgradeDaemonClusterRole(namespace)
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("machine-config-daemon-%s", namespace),
+		},
+		RoleRef: rbacv1.RoleRef{
+			Kind:     "ClusterRole",
+			APIGroup: "rbac.authorization.k8s.io",
+			Name:     clusterRole.Name,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "machine-config-daemon",
+				Namespace: namespace,
+			},
 		},
 	}
 }
