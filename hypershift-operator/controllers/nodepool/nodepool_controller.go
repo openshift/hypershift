@@ -13,6 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blang/semver"
+	"github.com/openshift/hypershift/support/supportedversion"
+
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
@@ -328,7 +331,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
 	// Validate and get releaseImage.
-	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Spec.Release.Image)
+	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
 	if err != nil {
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
@@ -1454,7 +1457,7 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 	return manifest, err
 }
 
-func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, releaseImage string) (*releaseinfo.ReleaseImage, error) {
+func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, currentVersion string, releaseImage string) (*releaseinfo.ReleaseImage, error) {
 	pullSecret := &corev1.Secret{}
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
 		return nil, fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
@@ -1471,7 +1474,39 @@ func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster 
 		}
 		return img, nil
 	}(ctx)
-	return ReleaseImage, err
+	if err != nil {
+		return nil, err
+	}
+
+	wantedVersion, err := semver.Parse(ReleaseImage.Version())
+	if err != nil {
+		return nil, err
+	}
+
+	var currentVersionParsed semver.Version
+	if currentVersion != "" {
+		currentVersionParsed, err = semver.Parse(currentVersion)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	minSupportedVersion := supportedversion.MinSupportedVersion
+	if hostedCluster.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		//IBM Cloud is allowed to manage 4.9 clusters
+		minSupportedVersion = semver.MustParse("4.9.0")
+	}
+
+	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hostedCluster.Spec.Release.Image, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+	hostedClusterVersion, err := semver.Parse(releaseInfo.Version())
+	if err != nil {
+		return nil, err
+	}
+
+	return ReleaseImage, supportedversion.IsValidReleaseVersion(&wantedVersion, &currentVersionParsed, &hostedClusterVersion, &minSupportedVersion, hostedCluster.Spec.Networking.NetworkType, hostedCluster.Spec.Platform.Type)
 }
 
 func isUpdatingVersion(nodePool *hyperv1.NodePool, targetVersion string) bool {

@@ -3221,7 +3221,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 		minSupportedVersion = semver.MustParse("4.9.0")
 	}
 
-	return isValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
+	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
 }
 
 func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
@@ -3246,39 +3246,6 @@ func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error)
 
 	// cluster is conditions are good and is at desired release
 	return false, nil
-}
-
-func isValidReleaseVersion(version, currentVersion, latestVersionSupported, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
-	if version.LT(semver.MustParse("4.8.0")) {
-		return fmt.Errorf("releases before 4.8 are not supported")
-	}
-
-	if currentVersion != nil && currentVersion.Minor > version.Minor {
-		return fmt.Errorf("y-stream downgrade is not supported")
-	}
-
-	if networkType == hyperv1.OpenShiftSDN && currentVersion != nil && currentVersion.Minor < version.Minor {
-		return fmt.Errorf("y-stream upgrade is not for OpenShiftSDN")
-	}
-
-	versionMinorOnly := &semver.Version{Major: version.Major, Minor: version.Minor}
-	if networkType == hyperv1.OpenShiftSDN && currentVersion == nil && versionMinorOnly.GT(semver.MustParse("4.10.0")) && platformType != hyperv1.PowerVSPlatform {
-		return fmt.Errorf("cannot use OpenShiftSDN with OCP version > 4.10")
-	}
-
-	if networkType == hyperv1.OVNKubernetes && currentVersion == nil && versionMinorOnly.LTE(semver.MustParse("4.10.0")) {
-		return fmt.Errorf("cannot use OVNKubernetes with OCP version < 4.11")
-	}
-
-	if (version.Major == latestVersionSupported.Major && version.Minor > latestVersionSupported.Minor) || version.Major > latestVersionSupported.Major {
-		return fmt.Errorf("the latest HostedCluster version supported by this Operator is: %q. Attempting to use: %q", supportedversion.LatestSupportedVersion, version)
-	}
-
-	if (version.Major == minSupportedVersion.Major && version.Minor < minSupportedVersion.Minor) || version.Major < minSupportedVersion.Major {
-		return fmt.Errorf("the minimum HostedCluster version supported by this Operator is: %q. Attempting to use: %q", supportedversion.MinSupportedVersion, version)
-	}
-
-	return nil
 }
 
 func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {

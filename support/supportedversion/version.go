@@ -1,9 +1,11 @@
 package supportedversion
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/blang/semver"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
 // LatestSupportedVersion is the latest minor OCP version supported by the
@@ -40,4 +42,37 @@ func maxInt64(a, b uint64) uint64 {
 		return a
 	}
 	return b
+}
+
+func IsValidReleaseVersion(version, currentVersion, latestVersionSupported, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
+	if version.LT(semver.MustParse("4.8.0")) {
+		return fmt.Errorf("releases before 4.8 are not supported")
+	}
+
+	if currentVersion != nil && currentVersion.Minor > version.Minor {
+		return fmt.Errorf("y-stream downgrade is not supported")
+	}
+
+	if networkType == hyperv1.OpenShiftSDN && currentVersion != nil && currentVersion.Minor < version.Minor {
+		return fmt.Errorf("y-stream upgrade is not for OpenShiftSDN")
+	}
+
+	versionMinorOnly := &semver.Version{Major: version.Major, Minor: version.Minor}
+	if networkType == hyperv1.OpenShiftSDN && currentVersion == nil && versionMinorOnly.GT(semver.MustParse("4.10.0")) && platformType != hyperv1.PowerVSPlatform {
+		return fmt.Errorf("cannot use OpenShiftSDN with OCP version > 4.10")
+	}
+
+	if networkType == hyperv1.OVNKubernetes && currentVersion == nil && versionMinorOnly.LTE(semver.MustParse("4.10.0")) {
+		return fmt.Errorf("cannot use OVNKubernetes with OCP version < 4.11")
+	}
+
+	if (version.Major == latestVersionSupported.Major && version.Minor > latestVersionSupported.Minor) || version.Major > latestVersionSupported.Major {
+		return fmt.Errorf("the latest version supported is: %q. Attempting to use: %q", LatestSupportedVersion, version)
+	}
+
+	if (version.Major == minSupportedVersion.Major && version.Minor < minSupportedVersion.Minor) || version.Major < minSupportedVersion.Major {
+		return fmt.Errorf("the minimum version supported is: %q. Attempting to use: %q", MinSupportedVersion, version)
+	}
+
+	return nil
 }
