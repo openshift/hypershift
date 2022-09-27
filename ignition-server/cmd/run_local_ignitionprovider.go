@@ -11,6 +11,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/util"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
@@ -77,7 +78,7 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 		return err
 	}
 	compressedConfig := token.Data[controllers.TokenSecretConfigKey]
-	config, err := controllers.Decompress(compressedConfig)
+	config, err := util.Decompress(compressedConfig)
 	if err != nil {
 		return nil
 	}
@@ -90,7 +91,7 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 		PreserveOutput:  true,
 	}
 
-	payload, err := p.GetPayload(ctx, o.Image, string(config))
+	payload, err := p.GetPayload(ctx, o.Image, config.String())
 	if err != nil {
 		return err
 	}
