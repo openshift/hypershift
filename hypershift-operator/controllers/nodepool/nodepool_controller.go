@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/blang/semver"
-	"github.com/openshift/hypershift/support/supportedversion"
-
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
@@ -24,10 +22,12 @@ import (
 	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -39,6 +39,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
+	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
@@ -82,6 +83,8 @@ const (
 
 	tunedConfigKey      = "tuned"
 	tunedConfigMapLabel = "hypershift.openshift.io/tuned-config"
+
+	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
 )
 
 type NodePoolReconciler struct {
@@ -578,9 +581,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// 2. - Reconcile towards expected state of the world.
 	targetConfigVersionHash := hashStruct(config + targetVersion)
-	compressedConfig, err := supportutil.Compress([]byte(config))
+	compressedConfig, err := supportutil.CompressAndEncode([]byte(config))
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to compress config: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to compress and decode config: %w", err)
+	}
+
+	// TODO (alberto): Drop this after dropping < 4.12 support.
+	// So all CPOs ign server will know to decompress and decode.
+	cpoDecompressAndDecodeConfig, err := r.doesCPODecompressAndDecodeConfig(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to check if CPO decompress and encode config: %w", err)
+	}
+	if !cpoDecompressAndDecodeConfig {
+		compressedConfig, err = supportutil.Compress([]byte(config))
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to compress config: %w", err)
+		}
 	}
 
 	// Token Secrets exist for each NodePool config/version and follow "prefixName-configVersionHash" naming convention.
@@ -1949,4 +1965,27 @@ func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSe
 	}
 	tokenSecret.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation] = time.Now().Add(timeUntilExpiry).Format(time.RFC3339)
 	return c.Update(ctx, tokenSecret)
+}
+
+func (r *NodePoolReconciler) doesCPODecompressAndDecodeConfig(ctx context.Context, hcluster *hyperv1.HostedCluster) (bool, error) {
+	var pullSecret corev1.Secret
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return false, fmt.Errorf("failed to get pull secret: %w", err)
+	}
+	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return false, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+	controlPlaneOperatorImage, err := hostedcluster.GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	if err != nil {
+		return false, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
+	}
+
+	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
+	if err != nil {
+		return false, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
+	}
+
+	_, managesDecompressAndDecodeConfig := supportutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesDecompressAndDecodeConfig]
+	return managesDecompressAndDecodeConfig, nil
 }
