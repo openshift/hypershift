@@ -63,6 +63,7 @@ type ExampleOptions struct {
 	MachineCIDR                      string
 	ServiceCIDR                      string
 	ClusterCIDR                      string
+	NodeSelector                     map[string]string
 	BaseDomain                       string
 	PublicZoneID                     string
 	PrivateZoneID                    string
@@ -448,6 +449,10 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 
 	if len(globalOpts) > 0 {
 		cluster.Spec.Configuration = &hyperv1.ClusterConfiguration{Items: globalOpts}
+	}
+
+	if o.NodeSelector != nil {
+		cluster.Spec.NodeSelector = o.NodeSelector
 	}
 
 	var userCABundleCM *corev1.ConfigMap
