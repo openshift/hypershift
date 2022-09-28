@@ -452,3 +452,133 @@ func TestValidateHostedClusterCreate(t *testing.T) {
 		})
 	}
 }
+
+func Test_validateEndpointAccess(t *testing.T) {
+	type args struct {
+		new *hyperv1.PlatformSpec
+		old *hyperv1.PlatformSpec
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+
+		{
+			name: "non-AWS should pass",
+			args: args{
+				new: &hyperv1.PlatformSpec{
+					Type: hyperv1.AgentPlatform,
+				},
+				old: &hyperv1.PlatformSpec{
+					Type: hyperv1.AgentPlatform,
+				},
+			},
+		},
+		{
+			name: "nil AWS platform passes",
+			args: args{
+				new: &hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+				},
+				old: &hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+				},
+			},
+		},
+		{
+			name: "no EndpointAccess changes passes",
+			args: args{
+				new: &hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						EndpointAccess: hyperv1.Public,
+					},
+				},
+				old: &hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						EndpointAccess: hyperv1.Public,
+					},
+				},
+			},
+		},
+		{
+			name: "Private to PublicAndPrivate passes",
+			args: args{
+				new: &hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						EndpointAccess: hyperv1.PublicAndPrivate,
+					},
+				},
+				old: &hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						EndpointAccess: hyperv1.Private,
+					},
+				},
+			},
+		},
+		{
+			name: "PublicAndPrivate to Private passes",
+			args: args{
+				new: &hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						EndpointAccess: hyperv1.Private,
+					},
+				},
+				old: &hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						EndpointAccess: hyperv1.PublicAndPrivate,
+					},
+				},
+			},
+		},
+		{
+			name: "Public to Private fails",
+			args: args{
+				new: &hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						EndpointAccess: hyperv1.Private,
+					},
+				},
+				old: &hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						EndpointAccess: hyperv1.Public,
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "Public to PublicAndPrivate fails",
+			args: args{
+				new: &hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						EndpointAccess: hyperv1.PublicAndPrivate,
+					},
+				},
+				old: &hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						EndpointAccess: hyperv1.Public,
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := validateEndpointAccess(tt.args.new, tt.args.old); (err != nil) != tt.wantErr {
+				t.Errorf("validateEndpointAccess() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
