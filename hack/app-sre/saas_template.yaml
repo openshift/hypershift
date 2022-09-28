@@ -2897,7 +2897,7 @@ objects:
                   description: NodeRefs will point to the corresponding Nodes if it
                     they exist.
                   items:
-                    description: 'ObjectReference contains enough information to let
+                    description: "ObjectReference contains enough information to let
                       you inspect or modify the referred object. --- New uses of this
                       type are discouraged because of difficulty describing its usage
                       when embedded in APIs. 1. Ignored fields.  It includes many
@@ -2905,23 +2905,23 @@ objects:
                       and FieldPath are both very rarely valid in actual usage. 2.
                       Invalid usage help.  It is impossible to add specific help for
                       individual usage.  In most embedded usages, there are particular
-                      restrictions like, "must refer only to types A and B" or "UID
-                      not honored" or "name must be restricted". Those cannot be well
-                      described when embedded. 3. Inconsistent validation.  Because
+                      restrictions like, \"must refer only to types A and B\" or \"UID
+                      not honored\" or \"name must be restricted\". Those cannot be
+                      well described when embedded. 3. Inconsistent validation.  Because
                       the usages are different, the validation rules are different
                       by usage, which makes it hard for users to predict what will
-                      happen. 4. The fields are both imprecise and overly precise.  Kind
-                      is not a precise mapping to a URL. This can produce ambiguity
+                      happen. 4. The fields are both imprecise and overly precise.
+                      \ Kind is not a precise mapping to a URL. This can produce ambiguity
                       during interpretation and require a REST mapping.  In most cases,
                       the dependency is on the group,resource tuple and the version
                       of the actual struct is irrelevant. 5. We cannot easily change
                       it.  Because this type is embedded in many locations, updates
-                      to this type will affect numerous schemas.  Don''t make new
-                      APIs embed an underspecified API type they do not control. Instead
+                      to this type will affect numerous schemas.  Don't make new APIs
+                      embed an underspecified API type they do not control. \n Instead
                       of using this type, create a locally provided and used type
                       that is well-focused on your reference. For example, ServiceReferences
                       for admission registration: https://github.com/kubernetes/api/blob/release-1.17/admissionregistration/v1/types.go#L533
-                      .'
+                      ."
                     properties:
                       apiVersion:
                         description: API version of the referent.
@@ -20051,7 +20051,7 @@ objects:
                     description: "Condition contains details for one aspect of the
                       current state of this API Resource. --- This struct is intended
                       for direct use as an array at the field path .status.conditions.
-                      \ For example, type FooStatus struct{ // Represents the observations
+                      \ For example, \n type FooStatus struct{ // Represents the observations
                       of a foo's current state. // Known .status.conditions.type are:
                       \"Available\", \"Progressing\", and \"Degraded\" // +patchMergeKey=type
                       // +patchStrategy=merge // +listType=map // +listMapKey=type
@@ -20916,6 +20916,10 @@ objects:
                             - namespace
                             type: object
                           type: array
+                          x-kubernetes-list-map-keys:
+                          - namespace
+                          - name
+                          x-kubernetes-list-type: map
                         domain:
                           description: "domain is used to generate a default host
                             name for a route when the route's host name is empty.
@@ -20925,6 +20929,76 @@ objects:
                             follow this pattern: \"*.<domain>\". \n Once set, changing
                             domain is not currently supported."
                           type: string
+                        loadbalancer:
+                          description: loadBalancer contains the load balancer details
+                            in general which are not only specific to the underlying
+                            infrastructure provider of the current cluster and are
+                            required for Ingress Controller to work on OpenShift.
+                          properties:
+                            platform:
+                              description: platform holds configuration specific to
+                                the underlying infrastructure provider for the ingress
+                                load balancers. When omitted, this means the user
+                                has no opinion and the platform is left to choose
+                                reasonable defaults. These defaults are subject to
+                                change over time.
+                              properties:
+                                aws:
+                                  description: aws contains settings specific to the
+                                    Amazon Web Services infrastructure provider.
+                                  properties:
+                                    type:
+                                      description: "type allows user to set a load
+                                        balancer type. When this field is set the
+                                        default ingresscontroller will get created
+                                        using the specified LBType. If this field
+                                        is not set then the default ingress controller
+                                        of LBType Classic will be created. Valid values
+                                        are: \n * \"Classic\": A Classic Load Balancer
+                                        that makes routing decisions at either the
+                                        transport layer (TCP/SSL) or the application
+                                        layer (HTTP/HTTPS). See the following for
+                                        additional details: \n https://docs.aws.amazon.com/AmazonECS/latest/developerguide/load-balancer-types.html#clb
+                                        \n * \"NLB\": A Network Load Balancer that
+                                        makes routing decisions at the transport layer
+                                        (TCP/SSL). See the following for additional
+                                        details: \n https://docs.aws.amazon.com/AmazonECS/latest/developerguide/load-balancer-types.html#nlb"
+                                      enum:
+                                      - NLB
+                                      - Classic
+                                      type: string
+                                  required:
+                                  - type
+                                  type: object
+                                type:
+                                  description: type is the underlying infrastructure
+                                    provider for the cluster. Allowed values are "AWS",
+                                    "Azure", "BareMetal", "GCP", "Libvirt", "OpenStack",
+                                    "VSphere", "oVirt", "KubeVirt", "EquinixMetal",
+                                    "PowerVS", "AlibabaCloud", "Nutanix" and "None".
+                                    Individual components may not support all platforms,
+                                    and must handle unrecognized platforms as None
+                                    if they do not support that platform.
+                                  enum:
+                                  - ""
+                                  - AWS
+                                  - Azure
+                                  - BareMetal
+                                  - GCP
+                                  - Libvirt
+                                  - OpenStack
+                                  - None
+                                  - VSphere
+                                  - oVirt
+                                  - IBMCloud
+                                  - KubeVirt
+                                  - EquinixMetal
+                                  - PowerVS
+                                  - AlibabaCloud
+                                  - Nutanix
+                                  type: string
+                              type: object
+                          type: object
                         requiredHSTSPolicies:
                           description: "requiredHSTSPolicies specifies HSTS policies
                             that are required to be set on newly created  or updated
@@ -23271,7 +23345,7 @@ objects:
                     description: "Condition contains details for one aspect of the
                       current state of this API Resource. --- This struct is intended
                       for direct use as an array at the field path .status.conditions.
-                      \ For example, type FooStatus struct{ // Represents the observations
+                      \ For example, \n type FooStatus struct{ // Represents the observations
                       of a foo's current state. // Known .status.conditions.type are:
                       \"Available\", \"Progressing\", and \"Degraded\" // +patchMergeKey=type
                       // +patchStrategy=merge // +listType=map // +listMapKey=type
@@ -24234,6 +24308,10 @@ objects:
                             - namespace
                             type: object
                           type: array
+                          x-kubernetes-list-map-keys:
+                          - namespace
+                          - name
+                          x-kubernetes-list-type: map
                         domain:
                           description: "domain is used to generate a default host
                             name for a route when the route's host name is empty.
@@ -24243,6 +24321,76 @@ objects:
                             follow this pattern: \"*.<domain>\". \n Once set, changing
                             domain is not currently supported."
                           type: string
+                        loadbalancer:
+                          description: loadBalancer contains the load balancer details
+                            in general which are not only specific to the underlying
+                            infrastructure provider of the current cluster and are
+                            required for Ingress Controller to work on OpenShift.
+                          properties:
+                            platform:
+                              description: platform holds configuration specific to
+                                the underlying infrastructure provider for the ingress
+                                load balancers. When omitted, this means the user
+                                has no opinion and the platform is left to choose
+                                reasonable defaults. These defaults are subject to
+                                change over time.
+                              properties:
+                                aws:
+                                  description: aws contains settings specific to the
+                                    Amazon Web Services infrastructure provider.
+                                  properties:
+                                    type:
+                                      description: "type allows user to set a load
+                                        balancer type. When this field is set the
+                                        default ingresscontroller will get created
+                                        using the specified LBType. If this field
+                                        is not set then the default ingress controller
+                                        of LBType Classic will be created. Valid values
+                                        are: \n * \"Classic\": A Classic Load Balancer
+                                        that makes routing decisions at either the
+                                        transport layer (TCP/SSL) or the application
+                                        layer (HTTP/HTTPS). See the following for
+                                        additional details: \n https://docs.aws.amazon.com/AmazonECS/latest/developerguide/load-balancer-types.html#clb
+                                        \n * \"NLB\": A Network Load Balancer that
+                                        makes routing decisions at the transport layer
+                                        (TCP/SSL). See the following for additional
+                                        details: \n https://docs.aws.amazon.com/AmazonECS/latest/developerguide/load-balancer-types.html#nlb"
+                                      enum:
+                                      - NLB
+                                      - Classic
+                                      type: string
+                                  required:
+                                  - type
+                                  type: object
+                                type:
+                                  description: type is the underlying infrastructure
+                                    provider for the cluster. Allowed values are "AWS",
+                                    "Azure", "BareMetal", "GCP", "Libvirt", "OpenStack",
+                                    "VSphere", "oVirt", "KubeVirt", "EquinixMetal",
+                                    "PowerVS", "AlibabaCloud", "Nutanix" and "None".
+                                    Individual components may not support all platforms,
+                                    and must handle unrecognized platforms as None
+                                    if they do not support that platform.
+                                  enum:
+                                  - ""
+                                  - AWS
+                                  - Azure
+                                  - BareMetal
+                                  - GCP
+                                  - Libvirt
+                                  - OpenStack
+                                  - None
+                                  - VSphere
+                                  - oVirt
+                                  - IBMCloud
+                                  - KubeVirt
+                                  - EquinixMetal
+                                  - PowerVS
+                                  - AlibabaCloud
+                                  - Nutanix
+                                  type: string
+                              type: object
+                          type: object
                         requiredHSTSPolicies:
                           description: "requiredHSTSPolicies specifies HSTS policies
                             that are required to be set on newly created  or updated
@@ -26589,7 +26737,7 @@ objects:
                     description: "Condition contains details for one aspect of the
                       current state of this API Resource. --- This struct is intended
                       for direct use as an array at the field path .status.conditions.
-                      \ For example, type FooStatus struct{ // Represents the observations
+                      \ For example, \n type FooStatus struct{ // Represents the observations
                       of a foo's current state. // Known .status.conditions.type are:
                       \"Available\", \"Progressing\", and \"Degraded\" // +patchMergeKey=type
                       // +patchStrategy=merge // +listType=map // +listMapKey=type
