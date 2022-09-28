@@ -376,6 +376,10 @@ func NoticePreemptionOrFailedScheduling(t *testing.T, ctx context.Context, clien
 		}
 		for _, event := range eventList.Items {
 			if event.Reason == "FailedScheduling" || event.Reason == "Preempted" {
+				if event.InvolvedObject.Kind == "Pod" && strings.HasPrefix(event.InvolvedObject.Name, "importer-") {
+					// ignore events originated from CDI importer pods, as the importer pods might not be immediately ready.
+					continue
+				}
 				// "error: " is to trigger prow syntax highlight in prow
 				t.Logf("error: non-fatal, observed FailedScheduling or Preempted event: %s", event.Message)
 			}
