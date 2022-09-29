@@ -2679,7 +2679,7 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	// quite right because the intent here is to identify a terminal rollout
 	// state. For now it assumes when status.releaseImage matches, that rollout
 	// is definitely done.
-	hcpRolloutComplete := (hcp.Spec.ReleaseImage == hcp.Status.ReleaseImage) && (version.Desired.Image == hcp.Status.ReleaseImage)
+	hcpRolloutComplete := hcp.Spec.ReleaseImage == hcp.Status.ReleaseImage
 	if !hcpRolloutComplete {
 		return version
 	}
