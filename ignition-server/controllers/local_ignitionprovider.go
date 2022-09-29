@@ -232,6 +232,8 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			"bootstrap",
 			fmt.Sprintf("--machine-config-operator-image=%s", images["machine-config-operator"]),
 			fmt.Sprintf("--machine-config-oscontent-image=%s", images["machine-os-content"]),
+			fmt.Sprintf("--baseos-image=%s", images["rhel-coreos-8"]),
+			fmt.Sprintf("--baseos-extensions-image=%s", images["rhel-coreos-8-extensions"]),
 			fmt.Sprintf("--infra-image=%s", images["pod"]),
 			fmt.Sprintf("--keepalived-image=%s", images["keepalived-ipfailover"]),
 			fmt.Sprintf("--coredns-image=%s", images["codedns"]),
