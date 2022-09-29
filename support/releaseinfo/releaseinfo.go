@@ -1,9 +1,12 @@
 package releaseinfo
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -18,6 +21,7 @@ import (
 // to by its pullspec.
 type Provider interface {
 	Lookup(ctx context.Context, image string, pullSecret []byte) (*ReleaseImage, error)
+	SerializeImageStream(path string) error
 }
 
 type ProviderWithRegistryOverrides interface {
@@ -106,6 +110,16 @@ func (i *ReleaseImage) ComponentVersions() (map[string]string, error) {
 		versions[component] = version.String()
 	}
 	return versions, nil
+}
+
+func (i *ReleaseImage) SerializeImageStream(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	m := json.NewEncoder(bufio.NewWriter(f))
+	return m.Encode(&i.ImageStream)
 }
 
 const (

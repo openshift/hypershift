@@ -42,3 +42,7 @@ func (p *RegistryMirrorProviderDecorator) Lookup(ctx context.Context, image stri
 func (p *RegistryMirrorProviderDecorator) GetRegistryOverrides() map[string]string {
 	return p.RegistryOverrides
 }
+
+func (p *RegistryMirrorProviderDecorator) SerializeImageStream(path string) error {
+	return p.Delegate.SerializeImageStream(path)
+}

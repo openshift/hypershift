@@ -24,6 +24,9 @@ type PodProvider struct {
 	Secrets v1.SecretInterface
 }
 
+func (p *PodProvider) run(ctx context.Context, image string, pullSecret []byte) (releaseImage *ReleaseImage, err error) {
+
+
 func (p *PodProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (releaseImage *ReleaseImage, err error) {
 	log := ctrl.LoggerFrom(ctx, "image-lookup", image)
 
@@ -135,6 +138,10 @@ func (p *PodProvider) Lookup(ctx context.Context, image string, pullSecret []byt
 		StreamMetadata: coreOSMeta,
 	}
 	return
+}
+
+func (p *PodProvider) SerializeImageStream(path string) error {
+
 }
 
 func getContainerLogs(ctx context.Context, pods v1.PodInterface, podName, containerName string) ([]byte, error) {

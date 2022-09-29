@@ -47,3 +47,5 @@ func (p *CachedProvider) Lookup(ctx context.Context, image string, pullSecret []
 	p.Cache[image] = entry
 	return entry, nil
 }
+
+func (p *CachedProvider) SerializeImageStream(ctx context.Context, image string, pullSecret []byte) (releaseImage *ReleaseImage, err error) {

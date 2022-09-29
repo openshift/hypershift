@@ -64,7 +64,10 @@ type LocalIgnitionProvider struct {
 
 var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
 
+
 func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, customConfig string) ([]byte, error) {
+	// NOTE: If you change this function, you also very likely want to change code around
+	// https://github.com/openshift/installer/blob/ac9f1c19c96ebab17e67490cf8ccf6504166a566/data/data/bootstrap/files/usr/local/bin/bootkube.sh.template#L299
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -152,6 +155,12 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		}
 	}
 
+	// Get all images to pass to the MCO
+	allimagesPath := filepath.Join(workDir, "image-references")
+	if err := p.ReleaseProvider.SerializeImageStream(allimagesPath); err != nil {
+		return nil, fmt.Errorf("failed to serialize imagestream: %w", err)
+	}
+
 	// Write out the custom config to the MCC directory
 	if err := os.WriteFile(filepath.Join(mccBaseDir, "custom.yaml"), []byte(customConfig), 0644); err != nil {
 		return nil, fmt.Errorf("failed to write mcc config: %w", err)
@@ -230,13 +239,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 
 		args := []string{
 			"bootstrap",
-			fmt.Sprintf("--machine-config-operator-image=%s", images["machine-config-operator"]),
-			fmt.Sprintf("--machine-config-oscontent-image=%s", images["machine-os-content"]),
-			fmt.Sprintf("--infra-image=%s", images["pod"]),
-			fmt.Sprintf("--keepalived-image=%s", images["keepalived-ipfailover"]),
-			fmt.Sprintf("--coredns-image=%s", images["codedns"]),
-			fmt.Sprintf("--haproxy-image=%s", images["haproxy"]),
-			fmt.Sprintf("--baremetal-runtimecfg-image=%s", images["baremetal-runtimecfg"]),
+			fmt.Sprintf("--image-references=%s", allimagesPath),
 			fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
 			fmt.Sprintf("--kube-ca=%s/combined-ca.crt", configDir),
 			fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
