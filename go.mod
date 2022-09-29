@@ -24,6 +24,7 @@ require (
 	github.com/google/gofuzz v1.2.0
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/go-uuid v1.0.1
+	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.0.1
 	github.com/onsi/gomega v1.20.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.2
