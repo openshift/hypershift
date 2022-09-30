@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
 	"syscall"
@@ -82,6 +83,17 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 	if err != nil {
 		return nil
 	}
+	// Set up the cache directory
+	cacheDir, err := ioutil.TempDir("", "cache")
+	if err != nil {
+		return fmt.Errorf("failed to create cache directory: %w", err)
+	}
+	log.Info("Using cache directory", "directory", cacheDir)
+	imageFileCache, err := controllers.NewImageFileCache(cacheDir)
+	if err != nil {
+		return fmt.Errorf("unable to create image file cache: %w", err)
+	}
+
 	p := &controllers.LocalIgnitionProvider{
 		Client:          cl,
 		ReleaseProvider: &releaseinfo.RegistryClientProvider{},
@@ -89,6 +101,7 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 		Namespace:       o.Namespace,
 		WorkDir:         o.WorkDir,
 		PreserveOutput:  true,
+		ImageFileCache:  imageFileCache,
 	}
 
 	payload, err := p.GetPayload(ctx, o.Image, config.String())

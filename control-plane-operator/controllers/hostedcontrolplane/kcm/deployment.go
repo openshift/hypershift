@@ -337,7 +337,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),
 		fmt.Sprintf("--service-cluster-ip-range=%s", p.ServiceCIDR),
 		"--use-service-account-credentials=true",
-		"--experimental-cluster-signing-duration=17520h",
+		"--cluster-signing-duration=17520h",
 		fmt.Sprintf("--tls-cert-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSCertKey)),
 		fmt.Sprintf("--tls-private-key-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSPrivateKeyKey)),
 	}...)
