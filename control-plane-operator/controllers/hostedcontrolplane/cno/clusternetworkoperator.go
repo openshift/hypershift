@@ -2,6 +2,7 @@ package cno
 
 import (
 	"fmt"
+	"github.com/openshift/hypershift/support/proxy"
 
 	"github.com/blang/semver"
 	routev1 "github.com/openshift/api/route/v1"
@@ -250,6 +251,14 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 
 	if params.ExposedThroughHCPRouter {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{Name: "OVN_SBDB_ROUTE_LABELS", Value: ingress.HCPRouteLabel + "=" + dep.Namespace})
+	}
+
+	var proxyVars []corev1.EnvVar
+	proxy.SetEnvVars(&proxyVars)
+	// CNO requires the proxy values to deploy cloud network config controller in the management cluster,
+	// but it should not use the proxy itself, hence the prefix
+	for _, v := range proxyVars {
+		cnoEnv = append(cnoEnv, corev1.EnvVar{Name: fmt.Sprintf("MGMT_%s", v.Name), Value: v.Value})
 	}
 
 	dep.Spec.Template.Spec.InitContainers = []corev1.Container{
