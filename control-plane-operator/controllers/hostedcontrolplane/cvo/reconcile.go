@@ -70,6 +70,8 @@ var (
 		"0000_50_cluster-ingress-operator_02-deployment-ibm-cloud-managed.yaml",
 		"0000_70_cluster-network-operator_02_rbac.yaml",
 		"0000_70_cluster-network-operator_03_deployment-ibm-cloud-managed.yaml",
+		"0000_80_machine-config-operator_01_containerruntimeconfig.crd.yaml",
+		"0000_80_machine-config-operator_01_kubeletconfig.crd.yaml",
 		"0000_80_machine-config-operator_01_machineconfig.crd.yaml",
 		"0000_80_machine-config-operator_01_machineconfigpool.crd.yaml",
 		"0000_50_cluster-node-tuning-operator_20-performance-profile.crd.yaml",
