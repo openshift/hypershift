@@ -166,6 +166,16 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			return nil, fmt.Errorf("failed to write MCS config file %q: %w", name, err)
 		}
 	}
+	// Extract ImageRefereces from release image to config directory
+	err = func() error {
+		start := time.Now()
+		if err := registryclient.ExtractImageFilesToDir(ctx, releaseImage, pullSecret, "release-manifests/image-references", configDir); err != nil {
+			return fmt.Errorf("failed to extract image-references: %w", err)
+		}
+		log.Info("extracted image-references", "time", time.Since(start).Round(time.Second).String())
+		return nil
+	}()
+
 	// For Azure, extract the cloud provider config file as MCO input
 	if p.CloudProvider == hyperv1.AzurePlatform {
 		cloudConfigMap := &corev1.ConfigMap{}
@@ -230,13 +240,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 
 		args := []string{
 			"bootstrap",
-			fmt.Sprintf("--machine-config-operator-image=%s", images["machine-config-operator"]),
-			fmt.Sprintf("--machine-config-oscontent-image=%s", images["machine-os-content"]),
-			fmt.Sprintf("--infra-image=%s", images["pod"]),
-			fmt.Sprintf("--keepalived-image=%s", images["keepalived-ipfailover"]),
-			fmt.Sprintf("--coredns-image=%s", images["codedns"]),
-			fmt.Sprintf("--haproxy-image=%s", images["haproxy"]),
-			fmt.Sprintf("--baremetal-runtimecfg-image=%s", images["baremetal-runtimecfg"]),
+			fmt.Sprintf("--image-references=%s", path.Join(configDir, "release-manifests", "image-references")),
 			fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
 			fmt.Sprintf("--kube-ca=%s/combined-ca.crt", configDir),
 			fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
