@@ -48,6 +48,7 @@ nav:
     - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
     - how-to/aws/deploy-aws-private-clusters.md
     - how-to/aws/etc-backup-restore.md
+    - how-to/aws/migrate-hosted-cluster.md
   - 'Azure':
     - how-to/azure/create-azure-cluster.md
   - 'Agent':
