@@ -4,10 +4,13 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/config"
 )
 
 func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool, isPrivate bool) error {
@@ -90,5 +93,57 @@ func ReconcileDefaultIngressControllerCertSecret(certSecret *corev1.Secret, sour
 	certSecret.Data = map[string][]byte{}
 	certSecret.Data[corev1.TLSCertKey] = sourceSecret.Data[corev1.TLSCertKey]
 	certSecret.Data[corev1.TLSPrivateKeyKey] = sourceSecret.Data[corev1.TLSPrivateKeyKey]
+	return nil
+}
+
+func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultNodePort *corev1.Service, hcp *hyperv1.HostedControlPlane) error {
+
+	detectedHTTPSNodePort := int32(0)
+
+	ownerRef := config.OwnerRefFrom(hcp)
+	for _, port := range defaultNodePort.Spec.Ports {
+		if port.Port == 443 {
+			detectedHTTPSNodePort = port.NodePort
+			break
+		}
+	}
+
+	if detectedHTTPSNodePort == 0 {
+		return fmt.Errorf("unable to detect default ingress NodePort https port")
+	}
+
+	service.Spec.Ports = []corev1.ServicePort{
+		{
+			Name:       "https-443",
+			Protocol:   corev1.ProtocolTCP,
+			Port:       443,
+			TargetPort: intstr.FromInt(int(detectedHTTPSNodePort)),
+		},
+	}
+	service.Spec.Selector = map[string]string{
+		"kubevirt.io": "virt-launcher",
+	}
+	service.Spec.Type = corev1.ServiceTypeClusterIP
+
+	ownerRef.ApplyTo(service)
+
+	return nil
+}
+
+func ReconcileDefaultIngressPassthroughRoute(route *routev1.Route, cpService *corev1.Service, hcp *hyperv1.HostedControlPlane) error {
+	ownerRef := config.OwnerRefFrom(hcp)
+
+	route.Spec.WildcardPolicy = routev1.WildcardPolicySubdomain
+	route.Spec.Host = fmt.Sprintf("https.apps.%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain)
+	route.Spec.TLS = &routev1.TLSConfig{
+		Termination: routev1.TLSTerminationPassthrough,
+	}
+	route.Spec.To = routev1.RouteTargetReference{
+		Kind: "Service",
+		Name: cpService.Name,
+	}
+
+	ownerRef.ApplyTo(route)
+
 	return nil
 }

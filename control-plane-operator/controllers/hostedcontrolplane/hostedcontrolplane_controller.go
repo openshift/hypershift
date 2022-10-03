@@ -2924,7 +2924,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	role := manifests.ConfigOperatorRole(hcp.Namespace)
 	if _, err = createOrUpdate(ctx, r.Client, role, func() error {
-		return configoperator.ReconcileRole(role, p.OwnerRef)
+		return configoperator.ReconcileRole(role, p.OwnerRef, hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator role: %w", err)
 	}
