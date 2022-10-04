@@ -1122,6 +1122,17 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOp
 		}
 
 		dhcpServer, err = client.Get(dhcpServerID)
+		if *dhcpServer.Status != dhcpServiceActiveState {
+			var isActive bool
+			f := func() (bool, error) {
+				dhcpServer, isActive, err = isDHCPServerActive(client, infra.ID, dhcpServerID)
+				return isActive, err
+			}
+
+			if err = wait.PollImmediate(dhcpPollingInterval, dhcpServerCreationTimeout, f); err != nil {
+				return err
+			}
+		}
 	} else {
 		log(infra.ID).Info("Creating PowerVS DHCPServer...")
 		dhcpServer, err = infra.createPowerVSDhcp(options, client)
@@ -1133,7 +1144,7 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOp
 
 	if dhcpServer != nil {
 		infra.DHCPID = *dhcpServer.ID
-		if *dhcpServer.Status == dhcpServiceActiveState && dhcpServer.Network != nil {
+		if dhcpServer.Network != nil {
 			infra.DHCPSubnet = *dhcpServer.Network.Name
 			infra.DHCPSubnetID = *dhcpServer.Network.ID
 		}
@@ -1146,6 +1157,29 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOp
 
 	log(infra.ID).Info("PowerVS DHCP Server and Private Subnet Ready", "id", infra.DHCPID, "subnetId", infra.DHCPSubnetID)
 	return nil
+}
+
+// isDHCPServerActive monitors DHCP status to reach either ACTIVE or ERROR status which indicates it reaches a final state
+// returns an instance of DHCPServerDetail for further processing and true if it reaches ACTIVE status
+func isDHCPServerActive(client *instance.IBMPIDhcpClient, infraID string, dhcpID string) (*models.DHCPServerDetail, bool, error) {
+	var err error
+	dhcpServer, err := client.Get(dhcpID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if dhcpServer != nil {
+		log(infraID).Info("Waiting for DHCPServer to up", "id", *dhcpServer.ID, "status", *dhcpServer.Status)
+		if *dhcpServer.Status == dhcpServiceActiveState {
+			return dhcpServer, true, nil
+		}
+
+		if *dhcpServer.Status == dhcpServiceErrorState {
+			return nil, false, fmt.Errorf("dhcp server is in error state")
+		}
+	}
+
+	return nil, false, nil
 }
 
 // createPowerVSDhcp creates a new dhcp server in powervs
@@ -1164,25 +1198,10 @@ func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *insta
 		return nil, fmt.Errorf("created dhcp server is nil")
 	}
 
+	var isActive bool
 	f := func() (bool, error) {
-		var err error
-		dhcpServer, err = client.Get(*dhcp.ID)
-		if err != nil {
-			return false, err
-		}
-
-		if dhcpServer != nil {
-			log(infra.ID).Info("Waiting for DHCPServer to up", "id", *dhcpServer.ID, "status", *dhcpServer.Status)
-			if *dhcpServer.Status == dhcpServiceActiveState {
-				return true, nil
-			}
-
-			if *dhcpServer.Status == dhcpServiceErrorState {
-				return true, fmt.Errorf("dhcp service is in error state")
-			}
-		}
-
-		return false, nil
+		dhcpServer, isActive, err = isDHCPServerActive(client, infra.ID, *dhcp.ID)
+		return isActive, err
 	}
 
 	if err = wait.PollImmediate(dhcpPollingInterval, dhcpServerCreationTimeout, f); err != nil {
