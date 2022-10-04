@@ -312,6 +312,8 @@ func (o *options) Complete() error {
 	// selectively running them easier?
 	if len(o.PreviousReleaseImage) == 0 {
 		o.PreviousReleaseImage = o.LatestReleaseImage
+	} else {
+		o.PreviousReleaseImage = "registry.ci.openshift.org/ocp/release:4.11.0-0.ci-2022-09-30-174643"
 	}
 
 	o.IsRunningInCI = os.Getenv("OPENSHIFT_CI") == "true"
