@@ -267,7 +267,48 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		out, err := cmd.CombinedOutput()
 		log.Info("machine-config-operator process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
 		if err != nil {
-			return fmt.Errorf("machine-config-operator process failed: %w", err)
+			// when the CPO is at N and the NodePool.spec.release at N-1
+			// we fail to render ignition payload because https://github.com/openshift/machine-config-operator/pull/3286
+			// broke backward compatibility.
+			// We fall back to MCO previously supported flags.
+			args := []string{
+				"bootstrap",
+				fmt.Sprintf("--machine-config-operator-image=%s", images["machine-config-operator"]),
+				fmt.Sprintf("--machine-config-oscontent-image=%s", images["machine-os-content"]),
+				fmt.Sprintf("--infra-image=%s", images["pod"]),
+				fmt.Sprintf("--keepalived-image=%s", images["keepalived-ipfailover"]),
+				fmt.Sprintf("--coredns-image=%s", images["codedns"]),
+				fmt.Sprintf("--haproxy-image=%s", images["haproxy"]),
+				fmt.Sprintf("--baremetal-runtimecfg-image=%s", images["baremetal-runtimecfg"]),
+				fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
+				fmt.Sprintf("--kube-ca=%s/combined-ca.crt", configDir),
+				fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
+				fmt.Sprintf("--network-config-file=%s/cluster-network-02-config.yaml", configDir),
+				fmt.Sprintf("--proxy-config-file=%s/cluster-proxy-01-config.yaml", configDir),
+				fmt.Sprintf("--config-file=%s/install-config.yaml", configDir),
+				fmt.Sprintf("--dns-config-file=%s/cluster-dns-02-config.yaml", configDir),
+				fmt.Sprintf("--pull-secret=%s/pull-secret.yaml", configDir),
+				fmt.Sprintf("--dest-dir=%s", destDir),
+				fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir),
+			}
+
+			if image, exists := images["mdns-publisher"]; exists {
+				args = append(args, fmt.Sprintf("--mdns-publisher-image=%s", image))
+			}
+			if mcsConfig.Data["user-ca-bundle-config.yaml"] != "" {
+				args = append(args, fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir))
+			}
+			if p.CloudProvider == hyperv1.AzurePlatform {
+				args = append(args, fmt.Sprintf("--cloud-config-file=%s/cloud.conf.configmap.yaml", mcoBaseDir))
+			}
+
+			start = time.Now()
+			cmd = exec.CommandContext(ctx, filepath.Join(binDir, "machine-config-operator"), args...)
+			out, err = cmd.CombinedOutput()
+			log.Info("machine-config-operator process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
+			if err != nil {
+				return fmt.Errorf("machine-config-operator process failed: %w", err)
+			}
 		}
 
 		// Copy output to the MCC base directory
