@@ -30,8 +30,6 @@ import (
 	hypershiftLog "github.com/openshift/hypershift/cmd/log"
 )
 
-var cloudApiKey string
-
 const (
 	// Resource name suffix for creation
 	cloudInstanceNameSuffix = "nodepool"
@@ -79,11 +77,6 @@ const (
 	storageOperatorCreds            = "storage-creds"
 )
 
-var customEpEnvNameMapping = map[string]string{
-	powerVsService:  "IBMCLOUD_POWER_API_ENDPOINT",
-	vpcService:      "IBMCLOUD_VPC_API_ENDPOINT",
-	platformService: "IBMCLOUD_PLATFORM_API_ENDPOINT"}
-
 // CreateInfraOptions command line options for setting up infra in IBM PowerVS cloud
 type CreateInfraOptions struct {
 	Name            string
@@ -105,16 +98,25 @@ type TimeDuration struct {
 	time.Duration
 }
 
-var unsupportedPowerVSZones = []string{"wdc06"}
+var (
+	cloudApiKey             string
+	timeoutErrorKeywords    = []string{"status 522", "status 524"}
+	unsupportedPowerVSZones = []string{"wdc06"}
 
-var powerVsDefaultUrl = func(region string) string { return fmt.Sprintf("https://%s.power-iaas.cloud.ibm.com", region) }
-var vpcDefaultUrl = func(region string) string { return fmt.Sprintf("https://%s.iaas.cloud.ibm.com/v1", region) }
+	powerVsDefaultUrl = func(region string) string { return fmt.Sprintf("https://%s.power-iaas.cloud.ibm.com", region) }
+	vpcDefaultUrl     = func(region string) string { return fmt.Sprintf("https://%s.iaas.cloud.ibm.com/v1", region) }
 
-var log = func(name string) logr.Logger { return hypershiftLog.Log.WithName(name) }
+	log = func(name string) logr.Logger { return hypershiftLog.Log.WithName(name) }
 
-var dhcpServerLimitExceeds = func(dhcpServerCount int) error {
-	return fmt.Errorf("more than one DHCP server is not allowed in a service instance, found %d dhcp servers", dhcpServerCount)
-}
+	customEpEnvNameMapping = map[string]string{
+		powerVsService:  "IBMCLOUD_POWER_API_ENDPOINT",
+		vpcService:      "IBMCLOUD_VPC_API_ENDPOINT",
+		platformService: "IBMCLOUD_PLATFORM_API_ENDPOINT"}
+
+	dhcpServerLimitExceeds = func(dhcpServerCount int) error {
+		return fmt.Errorf("more than one DHCP server is not allowed in a service instance, found %d dhcp servers", dhcpServerCount)
+	}
+)
 
 // MarshalJSON custom marshaling func for time.Duration to parse Duration into user-friendly format
 func (d *TimeDuration) MarshalJSON() ([]byte, error) {
@@ -1159,13 +1161,26 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOp
 	return nil
 }
 
+// isNotRetryableError validates err contains possible retryable error keywords like timeoutErrorKeywords, if yes, return the same error else return nil
+func isNotRetryableError(err error, retryableErrorKeywords []string) error {
+	for _, e := range retryableErrorKeywords {
+		if strings.Contains(err.Error(), e) {
+			return nil
+		}
+	}
+	return err
+}
+
 // isDHCPServerActive monitors DHCP status to reach either ACTIVE or ERROR status which indicates it reaches a final state
 // returns an instance of DHCPServerDetail for further processing and true if it reaches ACTIVE status
 func isDHCPServerActive(client *instance.IBMPIDhcpClient, infraID string, dhcpID string) (*models.DHCPServerDetail, bool, error) {
 	var err error
 	dhcpServer, err := client.Get(dhcpID)
 	if err != nil {
-		return nil, false, err
+		if err = isNotRetryableError(err, timeoutErrorKeywords); err != nil {
+			return nil, false, err
+		}
+		return nil, false, nil
 	}
 
 	if dhcpServer != nil {
@@ -1295,7 +1310,10 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, options *CreateI
 	f := func() (bool, error) {
 		cloudConn, err = client.Get(infra.CloudConnectionID)
 		if err != nil {
-			return false, err
+			if err = isNotRetryableError(err, timeoutErrorKeywords); err != nil {
+				return false, err
+			}
+			return false, nil
 		}
 
 		if cloudConn != nil {
