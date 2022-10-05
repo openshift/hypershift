@@ -199,12 +199,12 @@ func convertProviderConfigToIDPData(
 			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
 		}
 
-		data.provider = &osinv1.GitLabIdentityProvider{
+		provider := &osinv1.GitLabIdentityProvider{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "GitLabIdentityProvider",
 				APIVersion: osinv1.GroupVersion.String(),
 			},
-			CA:       idpVolumeMounts.ConfigMapPath(i, gitlabConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey),
+
 			URL:      gitlabConfig.URL,
 			ClientID: gitlabConfig.ClientID,
 			ClientSecret: configv1.StringSource{
@@ -214,6 +214,11 @@ func convertProviderConfigToIDPData(
 			},
 			Legacy: new(bool), // we require OIDC for GitLab now
 		}
+		if gitlabConfig.CA.Name != "" {
+			provider.CA = idpVolumeMounts.ConfigMapPath(i, gitlabConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+		}
+
+		data.provider = provider
 		data.challenge = true
 
 	case configv1.IdentityProviderTypeGoogle:
