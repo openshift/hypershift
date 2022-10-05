@@ -18,7 +18,7 @@ import (
 const (
 	HypershiftRouteLabel = "hypershift.openshift.io/hosted-control-plane"
 
-	// comma separated list of deployment names which should always be scaled to 0
+	// DebugDeploymentsAnnotation contains a comma separated list of deployment names which should always be scaled to 0
 	// for development.
 	DebugDeploymentsAnnotation = "hypershift.openshift.io/debug-deployments"
 )
@@ -34,10 +34,6 @@ func ParseNamespacedName(name string) types.NamespacedName {
 	}
 	return types.NamespacedName{Name: parts[0]}
 }
-
-const (
-	UserDataKey = "data"
-)
 
 func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
@@ -59,7 +55,7 @@ func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exis
 	return true, nil
 }
 
-// Compresses and base-64 encodes a given byte array. Ideal for loading an
+// CompressAndEncode compresses and base-64 encodes a given byte array. Ideal for loading an
 // arbitrary byte array into a ConfigMap or Secret.
 func CompressAndEncode(payload []byte) (*bytes.Buffer, error) {
 	out := bytes.NewBuffer(nil)
@@ -86,7 +82,7 @@ func CompressAndEncode(payload []byte) (*bytes.Buffer, error) {
 	return out, err
 }
 
-// Compresses a given byte array.
+// Compress compresses a given byte array.
 func Compress(payload []byte) (*bytes.Buffer, error) {
 	in := bytes.NewBuffer(payload)
 	out := bytes.NewBuffer(nil)
@@ -99,7 +95,7 @@ func Compress(payload []byte) (*bytes.Buffer, error) {
 	return out, err
 }
 
-// Decompresses and base-64 decodes a given byte array. Ideal for consuming a
+// DecodeAndDecompress decompresses and base-64 decodes a given byte array. Ideal for consuming a
 // gzipped / base64-encoded byte array from a ConfigMap or Secret.
 func DecodeAndDecompress(payload []byte) (*bytes.Buffer, error) {
 	if len(payload) == 0 {
@@ -109,15 +105,6 @@ func DecodeAndDecompress(payload []byte) (*bytes.Buffer, error) {
 	base64Dec := base64.NewDecoder(base64.StdEncoding, bytes.NewReader(payload))
 
 	return decompress(base64Dec)
-}
-
-// Decompresses a given gzipped byte array.
-func Decompress(payload []byte) (*bytes.Buffer, error) {
-	if len(payload) == 0 {
-		return bytes.NewBuffer(nil), nil
-	}
-
-	return decompress(bytes.NewBuffer(payload))
 }
 
 // Compresses a given io.Reader to a given io.Writer

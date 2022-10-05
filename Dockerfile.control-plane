@@ -18,3 +18,4 @@ LABEL io.openshift.hypershift.ignition-server-healthz-handler=true
 LABEL io.openshift.hypershift.control-plane-operator-manages-ignition-server=true
 LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver=true
 LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler=true
+LABEL io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config=true
