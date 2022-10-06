@@ -239,7 +239,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	releaseImage := string(tokenSecret.Data[TokenSecretReleaseKey])
 	compressedConfig := tokenSecret.Data[TokenSecretConfigKey]
-	config, err := util.DecodeAndDecompress(compressedConfig)
+	config, err := util.Decompress(compressedConfig)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

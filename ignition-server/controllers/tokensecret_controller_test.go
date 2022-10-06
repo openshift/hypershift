@@ -31,7 +31,7 @@ func (p *fakeIgnitionProvider) GetPayload(ctx context.Context, releaseImage stri
 }
 
 func TestReconcile(t *testing.T) {
-	compressedConfig, err := util.CompressAndEncode([]byte("compressedConfig"))
+	compressedConfig, err := util.Compress([]byte("compressedConfig"))
 	if err != nil {
 		t.Fatal(err)
 	}

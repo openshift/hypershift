@@ -79,7 +79,7 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 		return err
 	}
 	compressedConfig := token.Data[controllers.TokenSecretConfigKey]
-	config, err := util.DecodeAndDecompress(compressedConfig)
+	config, err := util.Decompress(compressedConfig)
 	if err != nil {
 		return nil
 	}
