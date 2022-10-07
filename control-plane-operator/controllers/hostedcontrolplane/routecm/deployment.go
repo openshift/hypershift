@@ -84,16 +84,16 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image string, config *co
 
 func routeOCMContainerMain() *corev1.Container {
 	return &corev1.Container{
-		Name: "openshift-controller-manager",
+		Name: "route-controller-manager",
 	}
 }
 
 func buildRouteOCMContainerMain(image string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.Command = []string{"openshift-controller-manager"}
+		c.Command = []string{"route-controller-manager"}
 		c.Args = []string{
-			"route-controller-manager-start",
+			"start",
 			"--config",
 			path.Join(volumeMounts.Path(c.Name, routeOCMVolumeConfig().Name), configKey),
 		}

@@ -20,7 +20,7 @@ type OpenShiftRouteControllerManagerParams struct {
 
 func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, images map[string]string, setDefaultSecurityContext bool) *OpenShiftRouteControllerManagerParams {
 	params := &OpenShiftRouteControllerManagerParams{
-		OpenShiftControllerManagerImage: images["openshift-controller-manager"],
+		OpenShiftControllerManagerImage: images["route-controller-manager"],
 	}
 	if hcp.Spec.Configuration != nil {
 		params.APIServer = hcp.Spec.Configuration.APIServer
