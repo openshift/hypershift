@@ -8,14 +8,11 @@ import (
 )
 
 const (
+	NodePoolValidPlatformImageType               = "ValidPlatformImage"
 	NodePoolValidHostedClusterConditionType      = "ValidHostedCluster"
 	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
-	NodePoolValidAMIConditionType                = "ValidAMI"
-	NodePoolValidPowerVSImageConditionType       = "ValidPowerVSImage"
-	NodePoolValidKubeVirtImageConditionType      = "ValidKubeVirtImage"
 	NodePoolValidMachineConfigConditionType      = "ValidMachineConfig"
 	NodePoolValidTunedConfigConditionType        = "ValidTunedConfig"
-	NodePoolValidKubevirtConfigConditionType     = "ValidKubevirtConfig"
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
 	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"
 	NodePoolReadyConditionType                   = "Ready"
