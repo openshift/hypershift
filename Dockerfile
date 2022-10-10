@@ -6,7 +6,7 @@ COPY . .
 
 RUN make build
 
-FROM quay.io/openshift/origin-base:4.10
+FROM quay.io/openshift/origin-base:4.12
 COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hypershift-operator \
                     /hypershift/bin/control-plane-operator \
