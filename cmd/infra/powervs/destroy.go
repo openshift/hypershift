@@ -163,7 +163,7 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 		log(options.InfraID).Error(err, "error deleting dns record from cis domain")
 	}
 
-	if err = deleteSecrets(options, accountID, resourceGroupID); err != nil {
+	if err = deleteSecrets(options.Name, options.Namespace, accountID, resourceGroupID); err != nil {
 		errL = append(errL, fmt.Errorf("error deleting secrets: %w", err))
 		log(options.InfraID).Error(err, "error deleting secrets")
 	}
@@ -281,28 +281,28 @@ func deleteDNSRecords(options *DestroyInfraOptions) error {
 }
 
 // deleteSecrets delete secrets generated for control plane components
-func deleteSecrets(options *DestroyInfraOptions, accountID string, resourceGroupID string) error {
+func deleteSecrets(name, namespace, accountID string, resourceGroupID string) error {
 
-	err := deleteServiceID(options.Name, cloudApiKey, accountID, resourceGroupID,
-		kubeCloudControllerManagerCR, kubeCloudControllerManagerCreds, options.Namespace)
+	err := deleteServiceID(name, cloudApiKey, accountID, resourceGroupID,
+		kubeCloudControllerManagerCR, kubeCloudControllerManagerCreds, namespace)
 	if err != nil {
 		return fmt.Errorf("error deleting kube cloud controller manager secret: %w", err)
 	}
 
-	err = deleteServiceID(options.Name, cloudApiKey, accountID, resourceGroupID,
-		nodePoolManagementCR, nodePoolManagementCreds, options.Namespace)
+	err = deleteServiceID(name, cloudApiKey, accountID, resourceGroupID,
+		nodePoolManagementCR, nodePoolManagementCreds, namespace)
 	if err != nil {
 		return fmt.Errorf("error deleting nodepool management secret: %w", err)
 	}
 
-	err = deleteServiceID(options.Name, cloudApiKey, accountID, "",
-		ingressOperatorCR, ingressOperatorCreds, options.Namespace)
+	err = deleteServiceID(name, cloudApiKey, accountID, "",
+		ingressOperatorCR, ingressOperatorCreds, namespace)
 	if err != nil {
 		return fmt.Errorf("error deleting ingress operator secret: %w", err)
 	}
 
-	err = deleteServiceID(options.Name, cloudApiKey, accountID, resourceGroupID,
-		storageOperatorCR, storageOperatorCreds, options.Namespace)
+	err = deleteServiceID(name, cloudApiKey, accountID, resourceGroupID,
+		storageOperatorCR, storageOperatorCreds, namespace)
 	if err != nil {
 		return fmt.Errorf("error deleting ingress operator secret: %w", err)
 	}

@@ -49,6 +49,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.Processors, "processors", opts.PowerVSPlatform.Processors, "Number of processors allocated. Default is 0.5")
 	cmd.Flags().Int32Var(&opts.PowerVSPlatform.Memory, "memory", opts.PowerVSPlatform.Memory, "Amount of memory allocated (in GB). Default is 32")
 	cmd.Flags().BoolVar(&opts.PowerVSPlatform.Debug, "debug", opts.PowerVSPlatform.Debug, "Enabling this will print PowerVS API Request & Response logs")
+	cmd.Flags().BoolVar(&opts.PowerVSPlatform.RecreateSecrets, "recreate-secrets", opts.PowerVSPlatform.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
 
 	cmd.MarkFlagRequired("resource-group")
 
@@ -137,6 +138,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			VPCRegion:       opts.PowerVSPlatform.VPCRegion,
 			VPC:             opts.PowerVSPlatform.VPC,
 			Debug:           opts.PowerVSPlatform.Debug,
+			RecreateSecrets: opts.PowerVSPlatform.RecreateSecrets,
 		}
 		infra = &powervsinfra.Infra{ID: opts.InfraID}
 		err = infra.SetupInfra(ctx, opt)
