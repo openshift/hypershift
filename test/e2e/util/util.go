@@ -349,6 +349,14 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				continue
 			}
 
+			// TODO: 4.11 and later, FBC based catalogs can in excess of 150s to start
+			// https://github.com/openshift/hypershift/pull/1746
+			// https://github.com/operator-framework/operator-lifecycle-manager/pull/2791
+			// Investigate a fix.
+			if strings.Contains(pod.Name, "-catalog") {
+				continue
+			}
+
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				if containerStatus.RestartCount > 0 {
 					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
