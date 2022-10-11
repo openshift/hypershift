@@ -80,6 +80,10 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSRegion, "e2e.powervs-region", "us-south", "IBM Cloud region. Default is us-south")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSZone, "e2e.powervs-zone", "us-south", "IBM Cloud zone. Default is us-sout")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSVpcRegion, "e2e.powervs-vpc-region", "us-south", "IBM Cloud VPC Region for VPC resources. Default is us-south")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSSysType, "e2e.powervs-sys-type", "s922", "System type used to host the instance(e.g: s922, e980, e880). Default is s922")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSProcType, "e2e.powervs-proc-type", "shared", "Processor type (dedicated, shared, capped). Default is shared")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSProcessors, "e2e.powervs-processors", "0.5", "Number of processors allocated. Default is 0.5")
+	flag.IntVar(&globalOpts.configurableClusterOptions.PowerVSMemory, "e2e.powervs-memory", 32, "Amount of memory allocated (in GB). Default is 32")
 
 	flag.Parse()
 
@@ -229,6 +233,10 @@ type configurableClusterOptions struct {
 	PowerVSRegion              string
 	PowerVSZone                string
 	PowerVSVpcRegion           string
+	PowerVSSysType             string
+	PowerVSProcType            string
+	PowerVSProcessors          string
+	PowerVSMemory              int
 }
 
 func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
@@ -264,10 +272,10 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			Region:        o.configurableClusterOptions.PowerVSRegion,
 			Zone:          o.configurableClusterOptions.PowerVSZone,
 			VPCRegion:     o.configurableClusterOptions.PowerVSVpcRegion,
-			SysType:       "s922",
-			ProcType:      "shared",
-			Processors:    "0.5",
-			Memory:        32,
+			SysType:       o.configurableClusterOptions.PowerVSSysType,
+			ProcType:      o.configurableClusterOptions.PowerVSProcType,
+			Processors:    o.configurableClusterOptions.PowerVSProcessors,
+			Memory:        int32(o.configurableClusterOptions.PowerVSMemory),
 		},
 		ServiceCIDR: "172.31.0.0/16",
 		ClusterCIDR: "10.132.0.0/14",
