@@ -127,24 +127,22 @@ spec:
                       be enabled for machines in the NodePool. The default is false.
                     type: boolean
                   inPlace:
-                    default:
-                      maxUnavailable: 0
                     description: InPlace is the configuration for in-place upgrades.
                     properties:
                       maxUnavailable:
                         anyOf:
                         - type: integer
                         - type: string
-                        description: "MaxUnavailable is the maximum number of
-                          nodes that can be unavailable during the update. \n
-                          Value can be an absolute number (ex: 5) or a percentage
-                          of desired nodes (ex: 10%). \n Absolute number is calculated
-                          from percentage by rounding down. \n Defaults to 0. \n Example: 
-                          when this is set to 30%, a max of 30% of the nodes can be made
-                          unschedulable/unavailable immediately when the update starts. Once 
-                          a set of nodes is updated, more nodes can be made unschedulable 
-                          for update, ensuring that the total number of nodes schedulable at 
-                          all times during the update is at least 70% of desired nodes."
+                        description: "MaxUnavailable is the maximum number of nodes
+                          that can be unavailable during the update. \n Value can
+                          be an absolute number (ex: 5) or a percentage of desired
+                          nodes (ex: 10%). \n Absolute number is calculated from percentage
+                          by rounding down. \n Defaults to 1. \n Example: when this
+                          is set to 30%, a max of 30% of the nodes can be made unschedulable/unavailable
+                          immediately when the update starts. Once a set of nodes
+                          is updated, more nodes can be made unschedulable for update,
+                          ensuring that the total number of nodes schedulable at all
+                          times during the update is at least 70% of desired nodes."
                         x-kubernetes-int-or-string: true
                     type: object
                   replace:

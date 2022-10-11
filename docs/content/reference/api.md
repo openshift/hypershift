@@ -4599,6 +4599,40 @@ specifications.</p>
 <p>InPlaceUpgrade specifies an upgrade strategy which upgrades nodes in-place
 without any new nodes being created or any old nodes being deleted.</p>
 </p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>maxUnavailable</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#intorstring-intstr-util">
+k8s.io/apimachinery/pkg/util/intstr.IntOrString
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>MaxUnavailable is the maximum number of nodes that can be unavailable
+during the update.</p>
+<p>Value can be an absolute number (ex: 5) or a percentage of desired nodes
+(ex: 10%).</p>
+<p>Absolute number is calculated from percentage by rounding down.</p>
+<p>Defaults to 1.</p>
+<p>Example: when this is set to 30%, a max of 30% of the nodes can be made
+unschedulable/unavailable immediately when the update starts. Once a set
+of nodes is updated, more nodes can be made unschedulable for update,
+ensuring that the total number of nodes schedulable at all times during
+the update is at least 70% of desired nodes.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###KMSProvider { #hypershift.openshift.io/v1alpha1.KMSProvider }
 <p>
 (<em>Appears on:</em>

@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -43,6 +44,13 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 	if err != nil {
 		return err
 	}
+
+	// Set MaxUnavailable for the inplace upgrader to use
+	maxUnavailable, err := getInPlaceMaxUnavailable(nodePool)
+	if err != nil {
+		return err
+	}
+	machineSet.Annotations[nodePoolAnnotationMaxUnavailable] = strconv.Itoa(maxUnavailable)
 
 	// Set selector and template
 	machineSet.Spec.ClusterName = CAPIClusterName
@@ -225,4 +233,22 @@ func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.Machin
 		machineSet.Annotations[autoscalerMinAnnotation] = "0"
 		machineSet.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.Replicas, 0))
 	}
+}
+
+func getInPlaceMaxUnavailable(nodePool *hyperv1.NodePool) (int, error) {
+	intOrPercent := intstr.FromInt(1)
+	if nodePool.Spec.Management.InPlace != nil {
+		if nodePool.Spec.Management.InPlace.MaxUnavailable != nil {
+			intOrPercent = *nodePool.Spec.Management.InPlace.MaxUnavailable
+		}
+	}
+	replicas := int(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.Replicas, 0))
+	maxUnavailable, err := intstr.GetScaledValueFromIntOrPercent(&intOrPercent, replicas, false)
+	if err != nil {
+		return 0, err
+	}
+	if maxUnavailable == 0 {
+		maxUnavailable = 1
+	}
+	return maxUnavailable, nil
 }

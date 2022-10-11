@@ -3,9 +3,9 @@ package inplaceupgrader
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -14,7 +14,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	intstrutil "k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -49,6 +48,7 @@ const (
 	nodePoolAnnotationCurrentConfigVersion   = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
 	nodePoolAnnotationUpgradeInProgressTrue  = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
 	nodePoolAnnotationUpgradeInProgressFalse = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
+	nodePoolAnnotationMaxUnavailable         = "hypershift.openshift.io/nodePoolMaxUnavailable"
 
 	TokenSecretPayloadKey = "payload"
 	TokenSecretReleaseKey = "release"
@@ -227,34 +227,20 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 	}
 
 	// Find nodes that can be upgraded
-	// Fetch the nodePool instance
-	nodePool := &hyperv1.NodePool{}
-	maxunavail, err := maxUnavailable(nodePool, nodes)
-	if err != nil {
-		return fmt.Errorf("error getting max unavailable count for nodepool %q: %w", nodePool.Name, err)
+	maxUnavail := 1
+	if maxUnavailAnno, ok := machineSet.Annotations[nodePoolAnnotationMaxUnavailable]; ok {
+		maxUnavail, err = strconv.Atoi(maxUnavailAnno)
+		if err != nil {
+			return fmt.Errorf("error getting max unavailable count from MachineSet annotation: %w", err)
+		}
 	}
-	nodesToUpgrade := getNodesToUpgrade(nodes, targetConfigVersionHash, maxunavail)
+	nodesToUpgrade := getNodesToUpgrade(nodes, targetConfigVersionHash, maxUnavail)
 	err = r.performNodesUpgrade(ctx, r.guestClusterClient, nodePoolUpgradeAPI.spec.poolRef.GetName(), nodesToUpgrade, targetConfigVersionHash, mcoImage)
 	if err != nil {
 		return fmt.Errorf("failed to set hosted nodes for inplace upgrade: %w", err)
 	}
 
 	return nil
-}
-
-func maxUnavailable(nodePool *hyperv1.NodePool, nodes []*corev1.Node) (int, error) {
-	intOrPercent := intstrutil.FromInt(1)
-	if nodePool.Spec.Management.InPlace.MaxUnavailable != nil {
-		intOrPercent = *nodePool.Spec.Management.InPlace.MaxUnavailable
-	}
-	maxunavail, err := intstrutil.GetScaledValueFromIntOrPercent(&intOrPercent, len(nodes), false)
-	if err != nil {
-		return 0, err
-	}
-	if maxunavail == 0 {
-		maxunavail = 1
-	}
-	return maxunavail, nil
 }
 
 func (r *Reconciler) performNodesUpgrade(ctx context.Context, hostedClusterClient client.Client, poolName string, nodes []*corev1.Node, targetConfigVersionHash, mcoImage string) error {

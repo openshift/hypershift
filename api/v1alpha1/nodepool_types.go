@@ -280,7 +280,7 @@ type InPlaceUpgrade struct {
 	//
 	// Absolute number is calculated from percentage by rounding down.
 	//
-	// Defaults to 0.
+	// Defaults to 1.
 	//
 	// Example: when this is set to 30%, a max of 30% of the nodes can be made
 	// unschedulable/unavailable immediately when the update starts. Once a set
