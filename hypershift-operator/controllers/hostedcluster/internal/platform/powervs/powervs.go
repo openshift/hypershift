@@ -3,6 +3,7 @@ package powervs
 import (
 	"context"
 	"fmt"
+	"os"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -16,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 )
 
@@ -72,6 +74,15 @@ func (p PowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, crea
 
 func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	defaultMode := int32(416)
+
+	providerImage := imageCAPIBM
+	if envImage := os.Getenv(images.PowerVSCAPIProviderEnvVar); len(envImage) > 0 {
+		providerImage = envImage
+	}
+	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIPowerVSProviderImage]; ok {
+		providerImage = override
+	}
+
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
@@ -98,7 +109,7 @@ func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *
 				Containers: []corev1.Container{
 					{
 						Name:            "manager",
-						Image:           imageCAPIBM,
+						Image:           providerImage,
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
