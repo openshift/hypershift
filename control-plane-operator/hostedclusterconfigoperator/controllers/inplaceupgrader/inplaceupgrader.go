@@ -246,17 +246,23 @@ func (r *Reconciler) performNodesUpgrade(ctx context.Context, hostedClusterClien
 		// on degraded nodes, etc.
 		namespace := inPlaceUpgradeNamespace(poolName)
 		pod := inPlaceUpgradePod(namespace.Name, node.Name)
-		if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, pod, func() error {
-			return r.reconcileUpgradePod(
-				pod,
-				node.Name,
-				poolName,
-				mcoImage,
-			)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile upgrade pod for node %s: %w", node.Name, err)
-		} else {
-			log.Info("Reconciled upgrade pod", "result", result)
+		if err := hostedClusterClient.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}, pod); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get upgrade pod for node %s: %w", node.Name, err)
+			}
+			pod := inPlaceUpgradePod(namespace.Name, node.Name)
+			if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, pod, func() error {
+				return r.createUpgradePod(
+					pod,
+					node.Name,
+					poolName,
+					mcoImage,
+				)
+			}); err != nil {
+				return fmt.Errorf("failed to create upgrade pod for node %s: %w", node.Name, err)
+			} else {
+				log.Info("create upgrade pod", "result", result)
+			}
 		}
 
 		if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, nodes[idx], func() error {
@@ -296,7 +302,7 @@ func (r *Reconciler) getPayloadImage(ctx context.Context, imageName string) (str
 	return image, nil
 }
 
-func (r *Reconciler) reconcileUpgradePod(pod *corev1.Pod, nodeName, poolName, mcoImage string) error {
+func (r *Reconciler) createUpgradePod(pod *corev1.Pod, nodeName, poolName, mcoImage string) error {
 	configmap := inPlaceUpgradeConfigMap(poolName, pod.Namespace)
 	pod.Spec.Containers = []corev1.Container{
 		{
