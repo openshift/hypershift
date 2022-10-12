@@ -13,6 +13,7 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -21,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
@@ -1516,6 +1518,85 @@ func TestGetName(t *testing.T) {
 	// When maxLength > base+suffix
 	name = getName(base, suffix, length+1)
 	g.Expect(alphaNumeric.MatchString(string(name[0]))).To(BeTrue())
+}
+
+func TestGetNodePoolNamespacedName(t *testing.T) {
+	testControlPlaneNamespace := "control-plane-ns"
+	testNodePoolNamespace := "clusters"
+	testNodePoolName := "nodepool-1"
+	testCases := []struct {
+		name                  string
+		nodePoolName          string
+		controlPlaneNamespace string
+		hostedControlPlane    *hyperv1.HostedControlPlane
+		expect                string
+		error                 bool
+	}{
+		{
+			name:                  "gets correct NodePool namespaced name",
+			nodePoolName:          testNodePoolName,
+			controlPlaneNamespace: testControlPlaneNamespace,
+			hostedControlPlane: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testControlPlaneNamespace,
+					Annotations: map[string]string{
+						hostedcluster.HostedClusterAnnotation: types.NamespacedName{Name: "hosted-cluster-1", Namespace: testNodePoolNamespace}.String(),
+					},
+				},
+			},
+			expect: types.NamespacedName{Name: testNodePoolName, Namespace: testNodePoolNamespace}.String(),
+			error:  false,
+		},
+		{
+			name:                  "fails if HostedControlPlane missing HostedClusterAnnotation",
+			nodePoolName:          testNodePoolName,
+			controlPlaneNamespace: testControlPlaneNamespace,
+			hostedControlPlane: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testControlPlaneNamespace,
+				},
+			},
+			expect: "",
+			error:  true,
+		},
+		{
+			name:                  "fails if HostedControlPlane does not exist",
+			nodePoolName:          testNodePoolName,
+			controlPlaneNamespace: testControlPlaneNamespace,
+			hostedControlPlane:    nil,
+			expect:                "",
+			error:                 true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var r NodePoolReconciler
+			if tc.hostedControlPlane == nil {
+				r = NodePoolReconciler{
+					Client: fake.NewClientBuilder().WithObjects().Build(),
+				}
+			} else {
+				r = NodePoolReconciler{
+					Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hostedControlPlane).Build(),
+				}
+			}
+
+			got, err := r.getNodePoolNamespacedName(testNodePoolName, testControlPlaneNamespace)
+
+			if tc.error {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			if diff := cmp.Diff(got.String(), tc.expect); diff != "" {
+				t.Errorf("actual NodePool namespaced name differs from expected: %s", diff)
+				t.Logf("got: %s \n, expected: \n %s", got, tc.expect)
+			}
+		})
+	}
 }
 
 func TestSetExpirationTimestampOnToken(t *testing.T) {
