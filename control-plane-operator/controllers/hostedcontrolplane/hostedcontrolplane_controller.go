@@ -860,8 +860,8 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	}
 
 	if serviceStrategy.Type == hyperv1.Route {
+		externalRoute := manifests.KubeAPIServerExternalRoute(hcp.Namespace)
 		if util.IsPublicHCP(hcp) {
-			externalRoute := manifests.KubeAPIServerExternalRoute(hcp.Namespace)
 			if _, err := createOrUpdate(ctx, r.Client, externalRoute, func() error {
 				kas.ReconcileRoute(externalRoute, serviceStrategy.Route.Hostname)
 				if externalRoute.Annotations == nil {
@@ -871,6 +871,18 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 				return nil
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile apiserver external route: %w", err)
+			}
+		} else {
+			// Remove the external route if it exists
+			err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to check whether kube-apiserver external route exists: %w", err)
+				}
+			} else {
+				if err := r.Delete(ctx, externalRoute); err != nil {
+					return fmt.Errorf("failed to delete kube-apiserver external route: %w", err)
+				}
 			}
 		}
 
@@ -2569,6 +2581,7 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 	}
 
 	var canonicalHostname string
+	pubSvc := manifests.RouterPublicService(hcp.Namespace)
 	if util.IsPrivateHCP(hcp) {
 		svc := manifests.PrivateRouterService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, svc, func() error {
@@ -2579,10 +2592,22 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 		if (!util.IsPublicHCP(hcp) || !exposeAPIThroughRouter) && len(svc.Status.LoadBalancer.Ingress) > 0 {
 			canonicalHostname = svc.Status.LoadBalancer.Ingress[0].Hostname
 		}
+		if !util.IsPublicHCP(hcp) {
+			// Remove the public router Service if it exists
+			err := r.Get(ctx, client.ObjectKeyFromObject(pubSvc), pubSvc)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to check whether public router service exists: %w", err)
+				}
+			} else {
+				if err := r.Delete(ctx, pubSvc); err != nil {
+					return fmt.Errorf("failed to delete public router service: %w", err)
+				}
+			}
+		}
 	}
 
 	if util.IsPublicHCP(hcp) && exposeAPIThroughRouter {
-		pubSvc := manifests.RouterPublicService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
 			return ingress.ReconcileRouterService(pubSvc, config.OwnerRefFrom(hcp), util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), false)
 		}); err != nil {
