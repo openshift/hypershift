@@ -87,6 +87,7 @@ type PowerVSPlatformOptions struct {
 	VPC             string
 	VPCSubnet       string
 	Debug           bool
+	RecreateSecrets bool
 
 	// nodepool related options
 	SysType    string

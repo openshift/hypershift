@@ -92,3 +92,9 @@ E.g.:
         --pull-secret $PULL_SECRET \
         --infra-json $INFRA_JSON \
         --node-pool-replicas=2
+
+!!! important
+
+    Need to understand --recreate-secrets flag usage before using it. Enableing this flag will result in recreating the creds mentioned here https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec
+    This is required when rerunning `hypershift create infra powervs` command, since API Key once created cannot be retrieved again.
+    Please make sure cluster name used is unique across different management cluster before using this flag since this will result in removing the existing cred's service ID and recreate them.

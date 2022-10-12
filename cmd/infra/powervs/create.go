@@ -99,6 +99,7 @@ type CreateInfraOptions struct {
 	VPC             string
 	OutputFile      string
 	Debug           bool
+	RecreateSecrets bool
 }
 
 type TimeDuration struct {
@@ -198,6 +199,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.CloudConnection, "cloud-connection", opts.CloudConnection, "IBM Cloud PowerVS Cloud Connection")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
 	cmd.Flags().BoolVar(&opts.Debug, "debug", opts.Debug, "Enabling this will print PowerVS API Request & Response logs")
+	cmd.Flags().BoolVar(&opts.RecreateSecrets, "recreate-secrets", opts.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
@@ -363,6 +365,11 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 // setupSecrets generate secrets for control plane components
 func (infra *Infra) setupSecrets(options *CreateInfraOptions) error {
 	var err error
+
+	if options.RecreateSecrets {
+		deleteSecrets(options.Name, options.Namespace, infra.AccountID, infra.ResourceGroupID)
+	}
+
 	log(infra.ID).Info("Creating Secrets ...")
 
 	infra.Secrets = Secrets{}
