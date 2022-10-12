@@ -37,7 +37,7 @@ const LoopDetectorWarningMessage = "WARNING: Object got updated more than one ti
 // a bug in the defaulting, we will end up always updating.
 func updateLoopThreshold(o runtime.Object) int {
 	// Give some leeway, if we actually revert defaults we will do a lot more than this
-	return 5
+	return 10
 }
 
 type updateLoopDetector struct {
