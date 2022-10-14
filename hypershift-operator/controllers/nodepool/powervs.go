@@ -67,7 +67,7 @@ func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hy
 				ImageRef:          imageRef,
 				Network:           subnet,
 				SysType:           nodePool.Spec.Platform.PowerVS.SystemType,
-				ProcType:          nodePool.Spec.Platform.PowerVS.ProcessorType,
+				ProcType:          string(nodePool.Spec.Platform.PowerVS.ProcessorType),
 				Processors:        nodePool.Spec.Platform.PowerVS.Processors.String(),
 				Memory:            strconv.Itoa(int(nodePool.Spec.Platform.PowerVS.MemoryGiB)),
 			},
@@ -111,8 +111,8 @@ func reconcileIBMPowerVSImage(ibmPowerVSImage *capipowervs.IBMPowerVSImage, hclu
 		Bucket:            &img.Bucket,
 		Object:            &img.Object,
 		Region:            &region,
-		StorageType:       nodePool.Spec.Platform.PowerVS.StorageType,
-		DeletePolicy:      nodePool.Spec.Platform.PowerVS.ImageDeletePolicy,
+		StorageType:       string(nodePool.Spec.Platform.PowerVS.StorageType),
+		DeletePolicy:      string(nodePool.Spec.Platform.PowerVS.ImageDeletePolicy),
 	}
 	return nil
 }
