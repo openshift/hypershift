@@ -624,7 +624,7 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 		}
 		for _, route := range routes.Items {
 			original := route.DeepCopy()
-			ingress.AddRouteLabel(&route)
+			ingress.AddHCPRouteLabel(&route)
 			if diff := cmp.Diff(route.GetLabels(), original.GetLabels()); diff != "" {
 				t.Errorf("route %s is missing the label to use the per-HCP router: %s", route.Name, diff)
 			}

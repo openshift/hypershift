@@ -158,7 +158,7 @@ func ReconcileRoute(route *routev1.Route, hostname string) {
 	if route.Labels == nil {
 		route.Labels = map[string]string{}
 	}
-	route.Labels[ingress.HypershiftRouteLabel] = route.Namespace
+	route.Labels[ingress.HCPRouteLabel] = route.Namespace
 	if route.CreationTimestamp.IsZero() {
 		route.Spec.Host = hostname
 	}
