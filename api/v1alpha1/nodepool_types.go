@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	"fmt"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -347,6 +348,44 @@ type NodePoolPlatform struct {
 	PowerVS *PowerVSNodePoolPlatform `json:"powervs,omitempty"`
 }
 
+// PowerVSNodePoolProcType defines processor type to be used for PowerVSNodePoolPlatform
+type PowerVSNodePoolProcType string
+
+func (p *PowerVSNodePoolProcType) String() string {
+	return string(*p)
+}
+
+func (p *PowerVSNodePoolProcType) Set(s string) error {
+	switch s {
+	case string(PowerVSNodePoolSharedProcType), string(PowerVSNodePoolCappedProcType), string(PowerVSNodePoolDedicatedProcType):
+		*p = PowerVSNodePoolProcType(s)
+		return nil
+	default:
+		return fmt.Errorf("unknown processor type used %s", s)
+	}
+}
+
+func (p *PowerVSNodePoolProcType) Type() string {
+	return "PowerVSNodePoolProcType"
+}
+
+const (
+	// PowerVSNodePoolDedicatedProcType defines dedicated processor type
+	PowerVSNodePoolDedicatedProcType = PowerVSNodePoolProcType("dedicated")
+
+	// PowerVSNodePoolSharedProcType defines shared processor type
+	PowerVSNodePoolSharedProcType = PowerVSNodePoolProcType("shared")
+
+	// PowerVSNodePoolCappedProcType defines capped processor type
+	PowerVSNodePoolCappedProcType = PowerVSNodePoolProcType("capped")
+)
+
+// PowerVSNodePoolStorageType defines storage type to be used for PowerVSNodePoolPlatform
+type PowerVSNodePoolStorageType string
+
+// PowerVSNodePoolImageDeletePolicy defines image delete policy to be used for PowerVSNodePoolPlatform
+type PowerVSNodePoolImageDeletePolicy string
+
 // PowerVSNodePoolPlatform specifies the configuration of a NodePool when operating
 // on IBMCloud PowerVS platform.
 type PowerVSNodePoolPlatform struct {
@@ -376,7 +415,7 @@ type PowerVSNodePoolPlatform struct {
 	// +kubebuilder:default=shared
 	// +kubebuilder:validation:Enum=dedicated;shared;capped
 	// +optional
-	ProcessorType string `json:"processorType,omitempty"`
+	ProcessorType PowerVSNodePoolProcType `json:"processorType,omitempty"`
 
 	// Processors is the number of virtual processors in a virtual machine.
 	// when the processorType is selected as Dedicated the processors value cannot be fractional.
@@ -425,7 +464,7 @@ type PowerVSNodePoolPlatform struct {
 	// +kubebuilder:default=tier1
 	// +kubebuilder:validation:Enum=tier1;tier3
 	// +optional
-	StorageType string `json:"storageType,omitempty"`
+	StorageType PowerVSNodePoolStorageType `json:"storageType,omitempty"`
 
 	// ImageDeletePolicy is policy for the image deletion.
 	//
@@ -437,7 +476,7 @@ type PowerVSNodePoolPlatform struct {
 	// +kubebuilder:default=delete
 	// +kubebuilder:validation:Enum=delete;retain
 	// +optional
-	ImageDeletePolicy string `json:"imageDeletePolicy,omitempty"`
+	ImageDeletePolicy PowerVSNodePoolImageDeletePolicy `json:"imageDeletePolicy,omitempty"`
 }
 
 // KubevirtCompute contains values associated with the virtual compute hardware requested for the VM.
