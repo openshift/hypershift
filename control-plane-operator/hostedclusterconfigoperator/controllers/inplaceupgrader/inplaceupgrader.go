@@ -3,6 +3,7 @@ package inplaceupgrader
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -47,6 +48,7 @@ const (
 	nodePoolAnnotationCurrentConfigVersion   = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
 	nodePoolAnnotationUpgradeInProgressTrue  = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
 	nodePoolAnnotationUpgradeInProgressFalse = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
+	nodePoolAnnotationMaxUnavailable         = "hypershift.openshift.io/nodePoolMaxUnavailable"
 
 	TokenSecretPayloadKey = "payload"
 	TokenSecretReleaseKey = "release"
@@ -225,9 +227,14 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 	}
 
 	// Find nodes that can be upgraded
-	// The drain is handled separately, such that if the node is awaiting drain, nothing will happen here.
-	// TODO (jerzhang): add logic to honor maxUnavailable/maxSurge
-	nodesToUpgrade := getNodesToUpgrade(nodes, targetConfigVersionHash, 1)
+	maxUnavail := 1
+	if maxUnavailAnno, ok := machineSet.Annotations[nodePoolAnnotationMaxUnavailable]; ok {
+		maxUnavail, err = strconv.Atoi(maxUnavailAnno)
+		if err != nil {
+			return fmt.Errorf("error getting max unavailable count from MachineSet annotation: %w", err)
+		}
+	}
+	nodesToUpgrade := getNodesToUpgrade(nodes, targetConfigVersionHash, maxUnavail)
 	err = r.performNodesUpgrade(ctx, r.guestClusterClient, nodePoolUpgradeAPI.spec.poolRef.GetName(), nodesToUpgrade, targetConfigVersionHash, mcoImage)
 	if err != nil {
 		return fmt.Errorf("failed to set hosted nodes for inplace upgrade: %w", err)

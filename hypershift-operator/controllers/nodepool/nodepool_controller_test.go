@@ -1672,3 +1672,93 @@ func TestNodepoolDeletionDoesntRequireHCluster(t *testing.T) {
 		t.Errorf("expected to get NotFound after deleted nodePool was reconciled, got %v", err)
 	}
 }
+
+func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
+	intPointer1 := intstr.FromInt(1)
+	intPointer2 := intstr.FromInt(2)
+	strPointer10 := intstr.FromString("10%")
+	strPointer75 := intstr.FromString("75%")
+	testCases := []struct {
+		name     string
+		nodePool *hyperv1.NodePool
+		expect   int
+	}{
+		{
+			name: "defaults to 1 when no maxUnavailable specified",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						InPlace: &hyperv1.InPlaceUpgrade{},
+					},
+					Replicas: k8sutilspointer.Int32Ptr(4),
+				},
+			},
+			expect: 1,
+		},
+		{
+			name: "can handle default value of 1",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						InPlace: &hyperv1.InPlaceUpgrade{
+							MaxUnavailable: &intPointer1,
+						},
+					},
+					Replicas: k8sutilspointer.Int32Ptr(4),
+				},
+			},
+			expect: 1,
+		},
+		{
+			name: "can handle other values",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						InPlace: &hyperv1.InPlaceUpgrade{
+							MaxUnavailable: &intPointer2,
+						},
+					},
+					Replicas: k8sutilspointer.Int32Ptr(4),
+				},
+			},
+			expect: 2,
+		},
+		{
+			name: "can handle percent values",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						InPlace: &hyperv1.InPlaceUpgrade{
+							MaxUnavailable: &strPointer75,
+						},
+					},
+					Replicas: k8sutilspointer.Int32Ptr(4),
+				},
+			},
+			expect: 3,
+		},
+		{
+			name: "can handle roundable values",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						InPlace: &hyperv1.InPlaceUpgrade{
+							MaxUnavailable: &strPointer10,
+						},
+					},
+					Replicas: k8sutilspointer.Int32Ptr(4),
+				},
+			},
+			expect: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			maxUnavailable, err := getInPlaceMaxUnavailable(tc.nodePool)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(maxUnavailable).To(Equal(tc.expect))
+		})
+	}
+}
