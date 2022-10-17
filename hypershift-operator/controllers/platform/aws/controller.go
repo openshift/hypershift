@@ -46,6 +46,9 @@ const (
 	lbNotActiveRequeueDuration             = 20 * time.Second
 )
 
+// AWSEndpointServiceReconciler watches HC/NodePools/awsEndpointService and reconcile the awsEndpointService
+// CRs existing for the KubeAPIServerPrivateService and the PrivateRouterService.
+// It creates the endpoint service in AWS and keeps the SubnetIDs up to date so NodePools are able to attach to the service endpoint.
 type AWSEndpointServiceReconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider

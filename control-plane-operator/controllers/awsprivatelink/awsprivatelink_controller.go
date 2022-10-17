@@ -46,6 +46,8 @@ const (
 	defaultResync = 10 * time.Hour
 )
 
+// PrivateServiceObserver watches a given Service type LB and reconciles
+// an awsEndpointService CR representation for it.
 type PrivateServiceObserver struct {
 	client.Client
 
@@ -171,6 +173,8 @@ const (
 	routerDomain                           = "apps"
 )
 
+// AWSEndpointServiceReconciler watches AWSEndpointService resources and reconciles
+// the existence of AWS Endpoints for it in the guest cluster infrastructure.
 type AWSEndpointServiceReconciler struct {
 	client.Client
 	ec2Client     ec2iface.EC2API
