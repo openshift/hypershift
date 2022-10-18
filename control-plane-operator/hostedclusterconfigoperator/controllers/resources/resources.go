@@ -34,6 +34,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
@@ -468,6 +469,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
 
+	log.Info("reconciling node level csi configuration")
+	if err := r.reconcileCSIDriver(ctx, hcp, releaseImage); err != nil {
+		errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
+	}
+
 	// Delete the DNS operator deployment in the hosted cluster, if it is
 	// present there.  A separate DNS operator deployment runs as part of
 	// the hosted control-plane, but an upgraded cluster might still have
@@ -489,6 +495,20 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	return ctrl.Result{}, errors.NewAggregate(errs)
+}
+
+func (r *reconciler) reconcileCSIDriver(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		// Most csi drivers should be laid down by the Cluster Storage Operator (CSO) instead of
+		// the hcco operator. Only KubeVirt is unique at the moment.
+		err := kubevirtcsi.ReconcileTenant(r.client, hcp, ctx, r.CreateOrUpdate, releaseImage.ComponentImages())
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *reconciler) reconcileCRDs(ctx context.Context) error {

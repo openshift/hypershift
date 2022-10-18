@@ -1,0 +1,12 @@
+# sourced from https://github.com/kubevirt/csi-driver/tree/main/deploy/split-infra-tenant
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: kubevirt-csi-node-binding
+subjects:
+  - kind: ServiceAccount
+    name: kubevirt-csi-node-sa
+roleRef:
+  kind: ClusterRole
+  name: kubevirt-csi-node-cr
+  apiGroup: rbac.authorization.k8s.io
