@@ -23,3 +23,5 @@ The HostedControlPlane orchestrates the rollout of the new version of the Contro
 `.spec.release` dictates the version of any particular NodePool.
 
 A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`.
+
+See [NodePool Upgrades](./automated-machine-management/nodepool-upgrades.md) for details.
