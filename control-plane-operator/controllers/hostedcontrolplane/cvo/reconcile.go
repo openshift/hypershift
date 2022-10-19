@@ -70,10 +70,12 @@ var (
 		"0000_50_cluster-ingress-operator_02-deployment-ibm-cloud-managed.yaml",
 		"0000_70_cluster-network-operator_02_rbac.yaml",
 		"0000_70_cluster-network-operator_03_deployment-ibm-cloud-managed.yaml",
+		"0000_80_machine-config-operator_01_containerruntimeconfig.crd.yaml",
+		"0000_80_machine-config-operator_01_kubeletconfig.crd.yaml",
 		"0000_80_machine-config-operator_01_machineconfig.crd.yaml",
 		"0000_80_machine-config-operator_01_machineconfigpool.crd.yaml",
+		"0000_50_cluster-node-tuning-operator_20-performance-profile.crd.yaml",
 		"0000_50_cluster-node-tuning-operator_50-operator-ibm-cloud-managed.yaml",
-		"0000_50_cluster-node-tuning-operator_60-clusteroperator.yaml",
 		"0000_50_cluster-image-registry-operator_07-operator-ibm-cloud-managed.yaml",
 		"0000_50_cluster-image-registry-operator_07-operator-service.yaml",
 		"0000_90_cluster-image-registry-operator_02_operator-servicemonitor.yaml",
@@ -386,6 +388,7 @@ func buildCVOVolumeUpdatePayloads(v *corev1.Volume) {
 func buildCVOVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }
 
 func buildCVOVolumePayload(v *corev1.Volume) {
@@ -401,7 +404,7 @@ func buildCVOVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(416)
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 	v.Secret.SecretName = manifests.ClusterVersionOperatorServerCertSecret("").Name
 }
 

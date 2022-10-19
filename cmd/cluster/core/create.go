@@ -60,6 +60,7 @@ type CreateOptions struct {
 	ServiceCIDR                      string
 	ClusterCIDR                      string
 	ExternalDNSDomain                string
+	NodeSelector                     map[string]string
 	NonePlatform                     NonePlatformCreateOptions
 	KubevirtPlatform                 KubevirtPlatformCreateOptions
 	AWSPlatform                      AWSPlatformOptions
@@ -77,7 +78,6 @@ type CreateOptions struct {
 }
 
 type PowerVSPlatformOptions struct {
-	APIKey          string
 	ResourceGroup   string
 	Region          string
 	Zone            string
@@ -87,6 +87,7 @@ type PowerVSPlatformOptions struct {
 	VPC             string
 	VPCSubnet       string
 	Debug           bool
+	RecreateSecrets bool
 
 	// nodepool related options
 	SysType    string
@@ -231,6 +232,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		EtcdStorageClass:                 opts.EtcdStorageClass,
 		ServiceCIDR:                      opts.ServiceCIDR,
 		ClusterCIDR:                      opts.ClusterCIDR,
+		NodeSelector:                     opts.NodeSelector,
 	}, nil
 }
 

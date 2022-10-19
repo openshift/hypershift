@@ -2,7 +2,6 @@ package nodepool
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -13,18 +12,22 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blang/semver"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/operator/v1alpha1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
+	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -36,6 +39,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
+	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/record"
@@ -68,6 +72,7 @@ const (
 	nodePoolAnnotationTargetConfigVersion    = "hypershift.openshift.io/nodePoolTargetConfigVersion"
 	nodePoolAnnotationUpgradeInProgressTrue  = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
 	nodePoolAnnotationUpgradeInProgressFalse = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
+	nodePoolAnnotationMaxUnavailable         = "hypershift.openshift.io/nodePoolMaxUnavailable"
 
 	nodePoolAnnotationPlatformMachineTemplate = "hypershift.openshift.io/nodePoolPlatformMachineTemplate"
 	nodePoolCoreIgnitionConfigLabel           = "hypershift.openshift.io/core-ignition-config"
@@ -76,6 +81,12 @@ const (
 	TokenSecretTokenKey                       = "token"
 	TokenSecretConfigKey                      = "config"
 	TokenSecretAnnotation                     = "hypershift.openshift.io/ignition-config"
+
+	tunedConfigKey                 = "tuned"
+	tunedConfigMapLabel            = "hypershift.openshift.io/tuned-config"
+	nodeTuningGeneratedConfigLabel = "hypershift.openshift.io/nto-generated-machine-config"
+
+	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
 )
 
 type NodePoolReconciler struct {
@@ -324,7 +335,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
 	// Validate and get releaseImage.
-	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Spec.Release.Image)
+	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
 	if err != nil {
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
@@ -343,7 +354,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		ObservedGeneration: nodePool.Generation,
 	})
 
-	// Validate platform specific input.
+	// Validate AWS platform specific input
 	var ami string
 	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if hcluster.Spec.Platform.AWS == nil {
@@ -352,13 +363,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		if nodePool.Spec.Platform.AWS.AMI != "" {
 			ami = nodePool.Spec.Platform.AWS.AMI
 			// User-defined AMIs cannot be validated
-			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidAMIConditionType)
+			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
 		} else {
 			// TODO: Should the region be included in the NodePool platform information?
 			ami, err = defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, releaseImage)
 			if err != nil {
 				setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-					Type:               hyperv1.NodePoolValidAMIConditionType,
+					Type:               hyperv1.NodePoolValidPlatformImageType,
 					Status:             corev1.ConditionFalse,
 					Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 					Message:            fmt.Sprintf("Couldn't discover an AMI for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
@@ -367,7 +378,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				return ctrl.Result{}, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
 			}
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidAMIConditionType,
+				Type:               hyperv1.NodePoolValidPlatformImageType,
 				Status:             corev1.ConditionTrue,
 				Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 				Message:            fmt.Sprintf("Bootstrap AMI is %q", ami),
@@ -376,7 +387,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 	}
 
-	// Validate PowerVS platform specific input.
+	// Validate PowerVS platform specific input
 	var coreOSPowerVSImage *releaseinfo.CoreOSPowerVSImage
 	var powervsImageRegion string
 	var powervsBootImage string
@@ -384,17 +395,17 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		coreOSPowerVSImage, powervsImageRegion, err = getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage)
 		if err != nil {
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidPowerVSImageConditionType,
+				Type:               hyperv1.NodePoolValidPlatformImageType,
 				Status:             corev1.ConditionFalse,
 				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
-				Message:            fmt.Sprintf("Couldn't discover an PowerVS Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+				Message:            fmt.Sprintf("Couldn't discover a PowerVS Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
 				ObservedGeneration: nodePool.Generation,
 			})
-			return ctrl.Result{}, fmt.Errorf("couldn't discover PowerVS Image for release image: %w", err)
+			return ctrl.Result{}, fmt.Errorf("couldn't discover a PowerVS Image for release image: %w", err)
 		}
 		powervsBootImage = coreOSPowerVSImage.Release
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidPowerVSImageConditionType,
+			Type:               hyperv1.NodePoolValidPlatformImageType,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 			Message:            fmt.Sprintf("Bootstrap PowerVS Image is %q", powervsBootImage),
@@ -402,12 +413,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 	}
 
-	// Validate KubeVirt platform specific format
+	// Validate KubeVirt platform specific input
 	var kubevirtBootImage string
 	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 		if err := kubevirtPlatformValidation(nodePool); err != nil {
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidKubevirtConfigConditionType,
+				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 				Status:             corev1.ConditionFalse,
 				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 				Message:            fmt.Sprintf("validation of NodePool KubeVirt platform failed: %s", err.Error()),
@@ -415,21 +426,21 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			})
 			return ctrl.Result{}, fmt.Errorf("validation of NodePool KubeVirt platform failed: %w", err)
 		}
-		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidKubevirtConfigConditionType)
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
 
 		kubevirtBootImage, err = getKubeVirtImage(nodePool, releaseImage)
 		if err != nil {
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidKubeVirtImageConditionType,
+				Type:               hyperv1.NodePoolValidPlatformImageType,
 				Status:             corev1.ConditionFalse,
 				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
-				Message:            fmt.Sprintf("Couldn't discover an KubeVirt Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+				Message:            fmt.Sprintf("Couldn't discover a KubeVirt Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
 				ObservedGeneration: nodePool.Generation,
 			})
-			return ctrl.Result{}, fmt.Errorf("couldn't discover an KubeVirt disk image in release payload image: %w", err)
+			return ctrl.Result{}, fmt.Errorf("couldn't discover a KubeVirt Image in release payload image: %w", err)
 		}
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidKubeVirtImageConditionType,
+			Type:               hyperv1.NodePoolValidPlatformImageType,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %q", kubevirtBootImage),
@@ -510,6 +521,26 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
 	}
 
+	// Validate tunedconfig input.
+	tunedConfig, err := r.getTunedConfig(ctx, nodePool)
+	if err != nil {
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidTunedConfigConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return ctrl.Result{}, fmt.Errorf("failed to get tunedConfig: %w", err)
+	}
+
+	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidTunedConfigConditionType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+		ObservedGeneration: nodePool.Generation,
+	})
+
 	// Set ReconciliationActive condition
 	setStatusCondition(&nodePool.Status.Conditions, generateReconciliationActiveCondition(nodePool.Spec.PausedUntil, nodePool.Generation))
 
@@ -529,11 +560,45 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
 
+	tunedConfigMap := TunedConfigMap(controlPlaneNamespace, nodePool.Name)
+	if tunedConfig == "" {
+		err = r.Get(ctx, client.ObjectKeyFromObject(tunedConfigMap), tunedConfigMap)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to get tunedConfig ConfigMap: %w", err)
+		}
+		if err == nil {
+			if err := r.Delete(ctx, tunedConfigMap); err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to delete tunedConfig ConfigMap with no Tuneds defined: %w", err)
+			}
+		}
+	} else {
+		if result, err := r.CreateOrUpdate(ctx, r.Client, tunedConfigMap, func() error {
+			return reconcileTunedConfigMap(tunedConfigMap, nodePool, tunedConfig)
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile Tuned ConfigMap: %w", err)
+		} else {
+			log.Info("Reconciled Tuned ConfigMap", "result", result)
+		}
+	}
+
 	// 2. - Reconcile towards expected state of the world.
 	targetConfigVersionHash := hashStruct(config + targetVersion)
-	compressedConfig, err := compress([]byte(config))
+	compressedConfig, err := supportutil.CompressAndEncode([]byte(config))
 	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to compress config: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to compress and decode config: %w", err)
+	}
+
+	// TODO (alberto): Drop this after dropping < 4.12 support.
+	// So all CPOs ign server will know to decompress and decode.
+	cpoDecompressAndDecodeConfig, err := r.doesCPODecompressAndDecodeConfig(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to check if CPO decompress and encode config: %w", err)
+	}
+	if !cpoDecompressAndDecodeConfig {
+		compressedConfig, err = supportutil.Compress([]byte(config))
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to compress config: %w", err)
+		}
 	}
 
 	// Token Secrets exist for each NodePool config/version and follow "prefixName-configVersionHash" naming convention.
@@ -564,7 +629,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetConfigVersionHash)
 	if result, err := r.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
-		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig)
+		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes())
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile token Secret: %w", err)
 	} else {
@@ -826,6 +891,15 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 		}
 	}
 
+	// Delete any ConfigMap belonging to this NodePool i.e. TunedConfig ConfigMaps.
+	err = r.DeleteAllOf(ctx, &corev1.ConfigMap{},
+		client.InNamespace(controlPlaneNamespace),
+		client.MatchingLabels{nodePoolAnnotation: nodePool.GetName()},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete ConfigMaps with nodePool label: %w", err)
+	}
+
 	if err := deleteMachineDeployment(ctx, r.Client, md); err != nil {
 		return fmt.Errorf("failed to delete MachineDeployment: %w", err)
 	}
@@ -863,6 +937,30 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 		"disableTemplating": []byte(base64.StdEncoding.EncodeToString([]byte("true"))),
 		"value":             userDataValue,
 	}
+	return nil
+}
+
+// reconcileTunedConfigMap inserts the Tuned object manifest in tunedConfig into ConfigMap tunedConfigMap.
+// This is used to mirror the Tuned object manifest into the control plane namespace, for the Node
+// Tuning Operator to mirror and reconcile in the hosted cluster.
+func reconcileTunedConfigMap(tunedConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, tunedConfig string) error {
+	tunedConfigMap.Immutable = k8sutilspointer.BoolPtr(false)
+	if tunedConfigMap.Annotations == nil {
+		tunedConfigMap.Annotations = make(map[string]string)
+	}
+	if tunedConfigMap.Labels == nil {
+		tunedConfigMap.Labels = make(map[string]string)
+	}
+
+	tunedConfigMap.Labels[tunedConfigMapLabel] = "true"
+	tunedConfigMap.Annotations[nodePoolAnnotation] = nodePool.GetName()
+	tunedConfigMap.Labels[nodePoolAnnotation] = nodePool.GetName()
+
+	if tunedConfigMap.Data == nil {
+		tunedConfigMap.Data = map[string]string{}
+	}
+	tunedConfigMap.Data[tunedConfigKey] = tunedConfig
+
 	return nil
 }
 
@@ -1228,6 +1326,17 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 		configs = append(configs, *configConfigMap)
 	}
 
+	// Look for NTO generated MachineConfigs from the hosted control plane namespace
+	nodeTuningGeneratedConfigs := &corev1.ConfigMapList{}
+	if err := r.List(ctx, nodeTuningGeneratedConfigs, client.MatchingLabels{
+		nodeTuningGeneratedConfigLabel: "true",
+		hyperv1.NodePoolLabel:          nodePool.GetName(),
+	}, client.InNamespace(controlPlaneResource)); err != nil {
+		errors = append(errors, err)
+	}
+
+	configs = append(configs, nodeTuningGeneratedConfigs.Items...)
+
 	for _, config := range configs {
 		manifestRaw := config.Data[TokenSecretConfigKey]
 		manifest, err := defaultAndValidateConfigManifest([]byte(manifestRaw))
@@ -1244,6 +1353,72 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 	sort.Strings(allConfigPlainText)
 
 	return strings.Join(allConfigPlainText, "\n---\n"), missingConfigs, utilerrors.NewAggregate(errors)
+}
+
+func (r *NodePoolReconciler) getTunedConfig(ctx context.Context,
+	nodePool *hyperv1.NodePool,
+) (configsRaw string, err error) {
+	var configs []corev1.ConfigMap
+	var allConfigPlainText []string
+	var errors []error
+
+	for _, config := range nodePool.Spec.TunedConfig {
+		configConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      config.Name,
+				Namespace: nodePool.Namespace,
+			},
+		}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(configConfigMap), configConfigMap); err != nil {
+			errors = append(errors, err)
+			continue
+		}
+		configs = append(configs, *configConfigMap)
+	}
+
+	for _, config := range configs {
+		manifestRaw := config.Data[tunedConfigKey]
+		manifest, err := validateTunedConfigManifest([]byte(manifestRaw))
+		if err != nil {
+			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
+			continue
+		}
+
+		allConfigPlainText = append(allConfigPlainText, string(manifest))
+	}
+
+	// Keep output deterministic to avoid unnecesary no-op changes to Tuned ConfigMap
+	sort.Strings(allConfigPlainText)
+	return strings.Join(allConfigPlainText, "\n---\n"), utilerrors.NewAggregate(errors)
+}
+
+func validateTunedConfigManifest(manifest []byte) ([]byte, error) {
+	scheme := runtime.NewScheme()
+	tunedv1.AddToScheme(scheme)
+
+	yamlSerializer := serializer.NewSerializerWithOptions(
+		serializer.DefaultMetaFactory, scheme, scheme,
+		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
+	)
+
+	cr, _, err := yamlSerializer.Decode(manifest, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding config: %w", err)
+	}
+
+	switch obj := cr.(type) {
+	case *tunedv1.Tuned:
+		buff := bytes.Buffer{}
+		if err := yamlSerializer.Encode(obj, &buff); err != nil {
+			return nil, fmt.Errorf("failed to encode tuned config after defaulting it: %w", err)
+		}
+		manifest = buff.Bytes()
+
+	default:
+		return nil, fmt.Errorf("unsupported tunedConfig object type: %T", obj)
+	}
+
+	return manifest, err
 }
 
 // validateManagement does additional backend validation. API validation/default should
@@ -1313,7 +1488,7 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 	return manifest, err
 }
 
-func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, releaseImage string) (*releaseinfo.ReleaseImage, error) {
+func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, currentVersion string, releaseImage string) (*releaseinfo.ReleaseImage, error) {
 	pullSecret := &corev1.Secret{}
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
 		return nil, fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
@@ -1330,7 +1505,39 @@ func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster 
 		}
 		return img, nil
 	}(ctx)
-	return ReleaseImage, err
+	if err != nil {
+		return nil, err
+	}
+
+	wantedVersion, err := semver.Parse(ReleaseImage.Version())
+	if err != nil {
+		return nil, err
+	}
+
+	var currentVersionParsed semver.Version
+	if currentVersion != "" {
+		currentVersionParsed, err = semver.Parse(currentVersion)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	minSupportedVersion := supportedversion.MinSupportedVersion
+	if hostedCluster.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		//IBM Cloud is allowed to manage 4.9 clusters
+		minSupportedVersion = semver.MustParse("4.9.0")
+	}
+
+	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hostedCluster.Spec.Release.Image, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+	hostedClusterVersion, err := semver.Parse(releaseInfo.Version())
+	if err != nil {
+		return nil, err
+	}
+
+	return ReleaseImage, supportedversion.IsValidReleaseVersion(&wantedVersion, &currentVersionParsed, &hostedClusterVersion, &minSupportedVersion, hostedCluster.Spec.Networking.NetworkType, hostedCluster.Spec.Platform.Type)
 }
 
 func isUpdatingVersion(nodePool *hyperv1.NodePool, targetVersion string) bool {
@@ -1479,19 +1686,72 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(obj client.Object) []reco
 		return result
 	}
 
+	// If the ConfigMap is generated by the NodePool controller and contains Tuned manifests
+	// return the ConfigMaps parent NodePool.
+	if _, ok := obj.GetLabels()[tunedConfigMapLabel]; ok {
+		return enqueueParentNodePool(obj)
+	}
+
+	// Check if the ConfigMap is generated by an operator in the control plane namespace
+	// corresponding to this nodepool.
+	if _, ok := obj.GetLabels()[nodeTuningGeneratedConfigLabel]; ok {
+		nodePoolName := obj.GetLabels()[hyperv1.NodePoolLabel]
+		nodePoolNamespacedName, err := r.getNodePoolNamespacedName(nodePoolName, obj.GetNamespace())
+		if err != nil {
+			return result
+		}
+		obj.SetAnnotations(map[string]string{
+			nodePoolAnnotation: nodePoolNamespacedName.String(),
+		})
+		return enqueueParentNodePool(obj)
+	}
+
 	// Otherwise reconcile NodePools which are referencing the given ConfigMap.
 	for key := range nodePoolList.Items {
+		reconcileNodePool := false
 		for _, v := range nodePoolList.Items[key].Spec.Config {
 			if v.Name == cm.Name {
-				result = append(result,
-					reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
-				)
+				reconcileNodePool = true
 				break
 			}
 		}
+
+		// Check TunedConfig as well, unless ConfigMap was already found in .Spec.Config.
+		if !reconcileNodePool {
+			for _, v := range nodePoolList.Items[key].Spec.TunedConfig {
+				if v.Name == cm.Name {
+					reconcileNodePool = true
+					break
+				}
+			}
+		}
+		if reconcileNodePool {
+			result = append(result,
+				reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&nodePoolList.Items[key])},
+			)
+		}
+
 	}
 
 	return result
+}
+
+// getNodePoolNamespace returns the namespaced name of a NodePool, given the NodePools name
+// and the control plane namespace name for the hosted cluster that this NodePool is a part of.
+func (r *NodePoolReconciler) getNodePoolNamespacedName(nodePoolName string, controlPlaneNamespace string) (types.NamespacedName, error) {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := r.List(context.Background(), hcpList, &client.ListOptions{
+		Namespace: controlPlaneNamespace,
+	}); err != nil || len(hcpList.Items) < 1 {
+		return types.NamespacedName{Name: nodePoolName}, err
+	}
+	hostedCluster, ok := hcpList.Items[0].Annotations[hostedcluster.HostedClusterAnnotation]
+	if !ok {
+		return types.NamespacedName{Name: nodePoolName}, fmt.Errorf("failed to get Hosted Cluster name for HostedControlPlane %s", hcpList.Items[0].Name)
+	}
+	nodePoolNamespace := supportutil.ParseNamespacedName(hostedCluster).Namespace
+
+	return types.NamespacedName{Name: nodePoolName, Namespace: nodePoolNamespace}, nil
 }
 
 func enqueueParentNodePool(obj client.Object) []reconcile.Request {
@@ -1576,21 +1836,6 @@ func (r *NodePoolReconciler) listMachineTemplates(nodePool *hyperv1.NodePool) ([
 	}
 
 	return filtered, nil
-}
-
-func compress(content []byte) ([]byte, error) {
-	if len(content) == 0 {
-		return nil, nil
-	}
-	var b bytes.Buffer
-	gz := gzip.NewWriter(&b)
-	if _, err := gz.Write(content); err != nil {
-		return nil, fmt.Errorf("failed to compress content: %w", err)
-	}
-	if err := gz.Close(); err != nil {
-		return nil, fmt.Errorf("compress closure failure %w", err)
-	}
-	return b.Bytes(), nil
 }
 
 func hashStruct(o interface{}) string {
@@ -1768,4 +2013,27 @@ func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSe
 	}
 	tokenSecret.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation] = time.Now().Add(timeUntilExpiry).Format(time.RFC3339)
 	return c.Update(ctx, tokenSecret)
+}
+
+func (r *NodePoolReconciler) doesCPODecompressAndDecodeConfig(ctx context.Context, hcluster *hyperv1.HostedCluster) (bool, error) {
+	var pullSecret corev1.Secret
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return false, fmt.Errorf("failed to get pull secret: %w", err)
+	}
+	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return false, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+	controlPlaneOperatorImage, err := hostedcluster.GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	if err != nil {
+		return false, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
+	}
+
+	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
+	if err != nil {
+		return false, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
+	}
+
+	_, managesDecompressAndDecodeConfig := supportutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesDecompressAndDecodeConfig]
+	return managesDecompressAndDecodeConfig, nil
 }

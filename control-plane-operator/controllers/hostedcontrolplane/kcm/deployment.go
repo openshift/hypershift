@@ -192,7 +192,8 @@ func kcmVolumeServiceSigner() *corev1.Volume {
 
 func buildKCMVolumeServiceSigner(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.ServiceAccountSigningKeySecret("").Name,
+		SecretName:  manifests.ServiceAccountSigningKeySecret("").Name,
+		DefaultMode: pointer.Int32Ptr(0640),
 	}
 }
 
@@ -214,7 +215,8 @@ func kcmVolumeClusterSigner() *corev1.Volume {
 
 func buildKCMVolumeClusterSigner(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.ClusterSignerCASecret("").Name,
+		SecretName:  manifests.ClusterSignerCASecret("").Name,
+		DefaultMode: pointer.Int32Ptr(0640),
 	}
 }
 
@@ -226,7 +228,8 @@ func kcmVolumeKubeconfig() *corev1.Volume {
 
 func buildKCMVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KASServiceKubeconfigSecret("").Name,
+		SecretName:  manifests.KASServiceKubeconfigSecret("").Name,
+		DefaultMode: pointer.Int32Ptr(0640),
 	}
 }
 
@@ -261,8 +264,9 @@ func buildKCMVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(416)
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 	v.Secret.SecretName = manifests.KCMServerCertSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }
 
 type serviceCAVolumeBuilder string
@@ -337,7 +341,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),
 		fmt.Sprintf("--service-cluster-ip-range=%s", p.ServiceCIDR),
 		"--use-service-account-credentials=true",
-		"--experimental-cluster-signing-duration=17520h",
+		"--cluster-signing-duration=17520h",
 		fmt.Sprintf("--tls-cert-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSCertKey)),
 		fmt.Sprintf("--tls-private-key-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSPrivateKeyKey)),
 	}...)

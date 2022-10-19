@@ -2,10 +2,12 @@ package controllers
 
 import (
 	"context"
-	"github.com/go-logr/logr"
-	"github.com/openshift/hypershift/api/v1alpha1"
 	"testing"
 	"time"
+
+	"github.com/go-logr/logr"
+	"github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/util"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
@@ -29,10 +31,12 @@ func (p *fakeIgnitionProvider) GetPayload(ctx context.Context, releaseImage stri
 }
 
 func TestReconcile(t *testing.T) {
-	compressedConfig, err := compress([]byte("compressedConfig"))
+	compressedConfig, err := util.CompressAndEncode([]byte("compressedConfig"))
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	compressedConfigBytes := compressedConfig.Bytes()
 
 	testCases := []struct {
 		name       string
@@ -54,7 +58,7 @@ func TestReconcile(t *testing.T) {
 				Data: map[string][]byte{
 					TokenSecretTokenKey:   []byte(uuid.New().String()),
 					TokenSecretReleaseKey: []byte("release"),
-					TokenSecretConfigKey:  compressedConfig,
+					TokenSecretConfigKey:  compressedConfigBytes,
 				},
 			},
 			validation: func(t *testing.T, secret client.Object) {
@@ -139,7 +143,7 @@ func TestReconcile(t *testing.T) {
 				Data: map[string][]byte{
 					TokenSecretTokenKey:   []byte(uuid.New().String()),
 					TokenSecretReleaseKey: []byte("release"),
-					TokenSecretConfigKey:  compressedConfig,
+					TokenSecretConfigKey:  compressedConfigBytes,
 				},
 			},
 			validation: func(t *testing.T, secret client.Object) {

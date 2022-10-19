@@ -1,14 +1,10 @@
 approvers:
 - enxebre
 - csrwng
-- ironcladlou
 - sjenning
-- alvaroaleman
 options: {}
 reviewers:
 - enxebre
 - csrwng
-- ironcladlou
 - sjenning
-- alvaroaleman
 component: hypershift

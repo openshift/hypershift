@@ -6,7 +6,7 @@ COPY . .
 
 RUN make build
 
-FROM quay.io/openshift/origin-base:4.10
+FROM quay.io/openshift/origin-base:4.12
 COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hypershift-operator \
                     /hypershift/bin/control-plane-operator \
@@ -26,3 +26,4 @@ LABEL io.openshift.hypershift.ignition-server-healthz-handler=true
 LABEL io.openshift.hypershift.control-plane-operator-manages-ignition-server=true
 LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver=true
 LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler=true
+LABEL io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config=true

@@ -271,7 +271,8 @@ func ReconcileIgnitionServer(ctx context.Context,
 							Name: "serving-cert",
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
-									SecretName: servingCertSecret.Name,
+									SecretName:  servingCertSecret.Name,
+									DefaultMode: utilpointer.Int32Ptr(0640),
 								},
 							},
 						},

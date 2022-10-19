@@ -143,7 +143,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
 				SecretName:  "dns-operator-kubeconfig",
-				DefaultMode: utilpointer.Int32Ptr(416),
+				DefaultMode: utilpointer.Int32Ptr(0640),
 			},
 		},
 	}}

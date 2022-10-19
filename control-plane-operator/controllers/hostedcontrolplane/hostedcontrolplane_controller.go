@@ -17,11 +17,13 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/kubevirt"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/powervs"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cno"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
+	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/dnsoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
@@ -35,12 +37,14 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/mcs"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/nto"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/registryoperator"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/routecm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
@@ -80,6 +84,8 @@ const (
 	ImageStreamAutoscalerImage             = "cluster-autoscaler"
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 )
+
+var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
 type InfrastructureStatus struct {
 	APIHost                 string
@@ -748,6 +754,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile openshift controller manager: %w", err)
 	}
 
+	// Reconcile openshift route controller manager
+	r.Log.Info("Reconciling OpenShift Route Controller Manager")
+	if err = r.reconcileOpenShiftRouteControllerManager(ctx, hostedControlPlane, observedConfig, releaseImage, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile openshift route controller manager: %w", err)
+	}
+
 	// Reconcile cluster policy controller
 	r.Log.Info("Reconciling Cluster Policy Controller")
 	if err = r.reconcileClusterPolicyController(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
@@ -763,6 +775,11 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	r.Log.Info("Reconciling ClusterNetworkOperator")
 	if err := r.reconcileClusterNetworkOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile cluster network operator: %w", err)
+	}
+
+	r.Log.Info("Reconciling Cluster Node Tuning Operator")
+	if err := r.reconcileClusterNodeTuningOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile cluster node tuning operator: %w", err)
 	}
 
 	r.Log.Info("Reconciling DNSOperator")
@@ -818,6 +835,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to ensure control plane: %w", err)
 	}
 
+	// Reconcile cloud csi driver
+	r.Log.Info("Reconciling CSI Driver")
+	if err := r.reconcileCSIDriver(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile csi driver: %w", err)
+	}
+
 	return nil
 }
 
@@ -846,8 +869,8 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	}
 
 	if serviceStrategy.Type == hyperv1.Route {
+		externalRoute := manifests.KubeAPIServerExternalRoute(hcp.Namespace)
 		if util.IsPublicHCP(hcp) {
-			externalRoute := manifests.KubeAPIServerExternalRoute(hcp.Namespace)
 			if _, err := createOrUpdate(ctx, r.Client, externalRoute, func() error {
 				kas.ReconcileRoute(externalRoute, serviceStrategy.Route.Hostname)
 				if externalRoute.Annotations == nil {
@@ -857,6 +880,18 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 				return nil
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile apiserver external route: %w", err)
+			}
+		} else {
+			// Remove the external route if it exists
+			err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to check whether kube-apiserver external route exists: %w", err)
+				}
+			} else {
+				if err := r.Delete(ctx, externalRoute); err != nil {
+					return fmt.Errorf("failed to delete kube-apiserver external route: %w", err)
+				}
 			}
 		}
 
@@ -1300,6 +1335,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile openshift controller manager cert: %w", err)
 	}
 
+	// OpenShift Route ControllerManager Cert
+	openshiftRouteControllerManagerCertSecret := manifests.OpenShiftRouteControllerManagerCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, openshiftRouteControllerManagerCertSecret, func() error {
+		return pki.ReconcileOpenShiftControllerManagerCertSecret(openshiftRouteControllerManagerCertSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift route controller manager cert: %w", err)
+	}
+
 	// Cluster Policy Controller Cert
 	clusterPolicyControllerCertSecret := manifests.ClusterPolicyControllerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, clusterPolicyControllerCertSecret, func() error {
@@ -1416,6 +1459,20 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			return pki.ReconcileAWSPodIdentityWebhookServingCert(awsPodIdentityWebhookServingCert, rootCASecret, p.OwnerRef)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s secret: %w", awsPodIdentityWebhookServingCert.Name, err)
+		}
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileCSIDriver(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
+	switch hcp.Spec.Platform.Type {
+	// Most csi drivers should be laid down by the Cluster Storage Operator (CSO) instead of
+	// the hcp operator. Only KubeVirt is unique at the moment.
+	case hyperv1.KubevirtPlatform:
+		err := kubevirtcsi.ReconcileInfra(r.Client, hcp, ctx, createOrUpdate, releaseImage.ComponentImages())
+		if err != nil {
+			return err
 		}
 	}
 
@@ -2023,6 +2080,36 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 	return nil
 }
 
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftRouteControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
+	p := routecm.NewOpenShiftRouteControllerManagerParams(hcp, observedConfig, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+	config := manifests.OpenShiftControllerManagerConfig(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(config), config); err != nil {
+		return fmt.Errorf("failed to get openshift controller manager config: %w", err)
+	}
+
+	service := manifests.OpenShiftRouteControllerManagerService(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, service, func() error {
+		return routecm.ReconcileService(service, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift route controller manager service: %w", err)
+	}
+
+	serviceMonitor := manifests.OpenShiftRouteControllerManagerServiceMonitor(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
+		return routecm.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift route controller manager service monitor: %w", err)
+	}
+
+	deployment := manifests.OpenShiftRouteControllerManagerDeployment(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, deployment, func() error {
+		return routecm.ReconcileDeployment(deployment, p.OpenShiftControllerManagerImage, config, p.DeploymentConfig)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift route controller manager deployment: %w", err)
+	}
+	return nil
+}
+
 func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := clusterpolicy.NewClusterPolicyControllerParams(hcp, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
 
@@ -2094,6 +2181,32 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 	return nil
 }
 
+func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
+	p := nto.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+
+	metricsService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, metricsService, func() error {
+		return nto.ReconcileClusterNodeTuningOperatorMetricsService(metricsService)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile node tuning operator metrics service: %w", err)
+	}
+
+	serviceMonitor := manifests.ClusterNodeTuningOperatorServiceMonitor(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
+		return nto.ReconcileClusterNodeTuningOperatorServiceMonitor(serviceMonitor, hcp.Spec.ClusterID, r.MetricsSet)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile node tuning operator service monitor: %w", err)
+	}
+
+	deployment := manifests.ClusterNodeTuningOperatorDeployment(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, deployment, func() error {
+		return nto.ReconcileDeployment(deployment, p)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster node tuning operator deployment: %w", err)
+	}
+	return nil
+}
+
 // reconcileDNSOperator ensures that the management cluster has the expected DNS
 // operator deployment and kubeconfig secret for the hosted cluster.
 func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -2118,7 +2231,6 @@ func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context,
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile dnsoperator deployment: %w", err)
 	}
-
 	return nil
 }
 
@@ -2492,6 +2604,7 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 	}
 
 	var canonicalHostname string
+	pubSvc := manifests.RouterPublicService(hcp.Namespace)
 	if util.IsPrivateHCP(hcp) {
 		svc := manifests.PrivateRouterService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, svc, func() error {
@@ -2502,10 +2615,22 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 		if (!util.IsPublicHCP(hcp) || !exposeAPIThroughRouter) && len(svc.Status.LoadBalancer.Ingress) > 0 {
 			canonicalHostname = svc.Status.LoadBalancer.Ingress[0].Hostname
 		}
+		if !util.IsPublicHCP(hcp) {
+			// Remove the public router Service if it exists
+			err := r.Get(ctx, client.ObjectKeyFromObject(pubSvc), pubSvc)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to check whether public router service exists: %w", err)
+				}
+			} else {
+				if err := r.Delete(ctx, pubSvc); err != nil {
+					return fmt.Errorf("failed to delete public router service: %w", err)
+				}
+			}
+		}
 	}
 
 	if util.IsPublicHCP(hcp) && exposeAPIThroughRouter {
-		pubSvc := manifests.RouterPublicService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
 			return ingress.ReconcileRouterService(pubSvc, config.OwnerRefFrom(hcp), util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), false)
 		}); err != nil {
@@ -2806,6 +2931,44 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 			return powervs.ReconcileCCMDeployment(deployment, hcp, ccmConfig, releaseImage)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile cloud controller manager deployment: %w", err)
+		}
+	case hyperv1.KubevirtPlatform:
+		// Create the cloud-config file used by Kubevirt CCM
+		ccmConfig := kubevirt.CCMConfigMap(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, ccmConfig, func() error {
+			return kubevirt.ReconcileCloudConfig(ccmConfig, hcp)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Kubevirt cloud config: %w", err)
+		}
+
+		// Create the ServiceAccount used by Kubevirt CCM to access
+		// the InfraCluster (which is the ManagementCluster)
+		ownerRef := config.OwnerRefFrom(hcp)
+		sa := kubevirt.CCMServiceAccount(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, sa, func() error {
+			return kubevirt.ReconcileCCMServiceAccount(sa, ownerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Kubevirt cloud provider service account: %w", err)
+		}
+		role := kubevirt.CCMRole(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, role, func() error {
+			return kubevirt.ReconcileCCMRole(role, ownerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Kubevirt cloud provider role: %w", err)
+		}
+		roleBinding := kubevirt.CCMRoleBinding(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, roleBinding, func() error {
+			return kubevirt.ReconcileCCMRoleBinding(roleBinding, ownerRef, sa, role)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Kubevirt cloud provider rolebinding: %w", err)
+		}
+
+		// Deploy Kubevirt CCM
+		deployment := kubevirt.CCMDeployment(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, deployment, func() error {
+			return kubevirt.ReconcileDeployment(deployment, hcp, sa.Name, releaseImage)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ccm deployment: %w", err)
 		}
 	}
 	return nil

@@ -127,8 +127,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			}),
 			util.BuildVolume(pullSecretVolume(), func(v *corev1.Volume) {
 				v.Secret = &corev1.SecretVolumeSource{
-					SecretName: common.PullSecret(deployment.Namespace).Name,
-					Items:      []corev1.KeyToPath{{Key: ".dockerconfigjson", Path: "config.json"}},
+					DefaultMode: pointer.Int32Ptr(0640),
+					SecretName:  common.PullSecret(deployment.Namespace).Name,
+					Items:       []corev1.KeyToPath{{Key: ".dockerconfigjson", Path: "config.json"}},
 				}
 			}),
 		},
@@ -279,6 +280,7 @@ func oasVolumeKubeconfig() *corev1.Volume {
 func buildOASVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }
 
 func oasVolumeAggregatorClientCA() *corev1.Volume {
@@ -290,6 +292,7 @@ func oasVolumeAggregatorClientCA() *corev1.Volume {
 func buildOASVolumeAggregatorClientCA(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.RootCASecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }
 
 func oasVolumeEtcdClientCA() *corev1.Volume {
@@ -301,6 +304,7 @@ func oasVolumeEtcdClientCA() *corev1.Volume {
 func buildOASVolumeEtcdClientCA(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.RootCASecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }
 
 func oasVolumeServingCA() *corev1.Volume {
@@ -312,6 +316,7 @@ func oasVolumeServingCA() *corev1.Volume {
 func buildOASVolumeServingCA(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.RootCASecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }
 
 func oasVolumeServingCert() *corev1.Volume {
@@ -323,6 +328,7 @@ func oasVolumeServingCert() *corev1.Volume {
 func buildOASVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftAPIServerCertSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }
 
 func oasVolumeEtcdClientCert() *corev1.Volume {
@@ -334,6 +340,7 @@ func oasVolumeEtcdClientCert() *corev1.Volume {
 func buildOASVolumeEtcdClientCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }
 
 func oasVolumeKonnectivityProxyCert() *corev1.Volume {
@@ -363,4 +370,5 @@ func pullSecretVolume() *corev1.Volume {
 func buildOASVolumeKonnectivityProxyCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }

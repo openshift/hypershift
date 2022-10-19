@@ -8,13 +8,11 @@ import (
 )
 
 const (
+	NodePoolValidPlatformImageType               = "ValidPlatformImage"
 	NodePoolValidHostedClusterConditionType      = "ValidHostedCluster"
 	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
-	NodePoolValidAMIConditionType                = "ValidAMI"
-	NodePoolValidPowerVSImageConditionType       = "ValidPowerVSImage"
-	NodePoolValidKubeVirtImageConditionType      = "ValidKubeVirtImage"
 	NodePoolValidMachineConfigConditionType      = "ValidMachineConfig"
-	NodePoolValidKubevirtConfigConditionType     = "ValidKubevirtConfig"
+	NodePoolValidTunedConfigConditionType        = "ValidTunedConfig"
 	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
 	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"
 	NodePoolReadyConditionType                   = "Ready"
@@ -144,6 +142,17 @@ type NodePoolSpec struct {
 	// provided: reconciliation is paused on the resource until the field is removed.
 	// +optional
 	PausedUntil *string `json:"pausedUntil,omitempty"`
+
+	// TunedConfig is a list of references to ConfigMaps containing serialized
+	// Tuned resources to define the tuning configuration to be applied to
+	// nodes in the NodePool. The Tuned API is defined here:
+	//
+	// https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go
+	//
+	// Each ConfigMap must have a single key named "tuned" whose value is the
+	// JSON or YAML of a serialized Tuned.
+	// +kubebuilder:validation:Optional
+	TunedConfig []corev1.LocalObjectReference `json:"tunedConfig,omitempty"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.
@@ -262,7 +271,26 @@ type RollingUpdate struct {
 
 // InPlaceUpgrade specifies an upgrade strategy which upgrades nodes in-place
 // without any new nodes being created or any old nodes being deleted.
-type InPlaceUpgrade struct{}
+type InPlaceUpgrade struct {
+	// MaxUnavailable is the maximum number of nodes that can be unavailable
+	// during the update.
+	//
+	// Value can be an absolute number (ex: 5) or a percentage of desired nodes
+	// (ex: 10%).
+	//
+	// Absolute number is calculated from percentage by rounding down.
+	//
+	// Defaults to 1.
+	//
+	// Example: when this is set to 30%, a max of 30% of the nodes can be made
+	// unschedulable/unavailable immediately when the update starts. Once a set
+	// of nodes is updated, more nodes can be made unschedulable for update,
+	// ensuring that the total number of nodes schedulable at all times during
+	// the update is at least 70% of desired nodes.
+	//
+	// +optional
+	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
+}
 
 // NodePoolManagement specifies behavior for managing nodes in a NodePool, such
 // as upgrade strategies and auto-repair behaviors.

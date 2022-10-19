@@ -99,6 +99,7 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
 	return (&powervsinfra.DestroyInfraOptions{
 		Name:          o.Name,
+		Namespace:     o.Namespace,
 		InfraID:       o.InfraID,
 		BaseDomain:    o.PowerVSPlatform.BaseDomain,
 		CISCRN:        o.PowerVSPlatform.CISCRN,

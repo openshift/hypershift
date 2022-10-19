@@ -188,12 +188,15 @@ spec:
         name: client-token
       - name: serving-cert
         secret:
+          defaultMode: 0640
           secretName: cluster-image-registry-operator
       - name: kubeconfig
         secret:
+          defaultMode: 0640
           secretName: service-network-admin-kubeconfig
       - name: ca-bundle
         secret:
+          defaultMode: 0640
           secretName: root-ca
       - emptyDir: {}
         name: web-identity-token

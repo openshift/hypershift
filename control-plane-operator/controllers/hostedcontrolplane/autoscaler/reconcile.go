@@ -95,7 +95,8 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 						Name: "target-kubeconfig",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName: kubeConfigSecret.Name,
+								SecretName:  kubeConfigSecret.Name,
+								DefaultMode: k8sutilspointer.Int32Ptr(0640),
 								Items: []corev1.KeyToPath{
 									{
 										// TODO: should the key be published on status?

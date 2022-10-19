@@ -13,6 +13,7 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -21,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
@@ -806,6 +808,228 @@ kind: Config`)},
 	}
 }
 
+func TestGetTunedConfig(t *testing.T) {
+	tuned1 := `
+apiVersion: tuned.openshift.io/v1
+kind: Tuned
+metadata:
+  name: tuned-1
+  namespace: openshift-cluster-node-tuning-operator
+spec:
+  profile:
+  - data: |
+      [main]
+      summary=Custom OpenShift profile
+      include=openshift-node
+
+      [sysctl]
+      vm.dirty_ratio="55"
+    name: tuned-1-profile
+  recommend:
+  - match:
+    - label: tuned-1-node-label
+    priority: 20
+    profile: tuned-1-profile
+`
+	tuned1Defaulted := `apiVersion: tuned.openshift.io/v1
+kind: Tuned
+metadata:
+  creationTimestamp: null
+  name: tuned-1
+  namespace: openshift-cluster-node-tuning-operator
+spec:
+  profile:
+  - data: |
+      [main]
+      summary=Custom OpenShift profile
+      include=openshift-node
+
+      [sysctl]
+      vm.dirty_ratio="55"
+    name: tuned-1-profile
+  recommend:
+  - match:
+    - label: tuned-1-node-label
+    operand:
+      tunedConfig:
+        reapply_sysctl: null
+    priority: 20
+    profile: tuned-1-profile
+status: {}
+`
+	tuned2 := `
+apiVersion: tuned.openshift.io/v1
+kind: Tuned
+metadata:
+  name: tuned-2
+  namespace: openshift-cluster-node-tuning-operator
+spec:
+  profile:
+  - data: |
+      [main]
+      summary=Custom OpenShift profile
+      include=openshift-node
+
+      [sysctl]
+      vm.dirty_background_ratio="25"
+    name: tuned-2-profile
+  recommend:
+  - match:
+    - label: tuned-2-node-label
+    priority: 10
+    profile: tuned-2-profile
+`
+	tuned2Defaulted := `apiVersion: tuned.openshift.io/v1
+kind: Tuned
+metadata:
+  creationTimestamp: null
+  name: tuned-2
+  namespace: openshift-cluster-node-tuning-operator
+spec:
+  profile:
+  - data: |
+      [main]
+      summary=Custom OpenShift profile
+      include=openshift-node
+
+      [sysctl]
+      vm.dirty_background_ratio="25"
+    name: tuned-2-profile
+  recommend:
+  - match:
+    - label: tuned-2-node-label
+    operand:
+      tunedConfig:
+        reapply_sysctl: null
+    priority: 10
+    profile: tuned-2-profile
+status: {}
+`
+
+	namespace := "test"
+	testCases := []struct {
+		name                string
+		nodePool            *hyperv1.NodePool
+		tunedConfig         []client.Object
+		expect              string
+		missingTunedConfigs bool
+		error               bool
+	}{
+		{
+			name: "gets a single valid TunedConfig",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TunedConfig: []corev1.LocalObjectReference{
+						{
+							Name: "tuned-1",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tunedConfig: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tuned-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tunedConfigKey: tuned1,
+					},
+					BinaryData: nil,
+				},
+			},
+			expect: tuned1Defaulted,
+			error:  false,
+		},
+		{
+			name: "gets two valid TunedConfigs",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TunedConfig: []corev1.LocalObjectReference{
+						{
+							Name: "tuned-1",
+						},
+						{
+							Name: "tuned-2",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tunedConfig: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tuned-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tunedConfigKey: tuned1,
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tuned-2",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tunedConfigKey: tuned2,
+					},
+				},
+			},
+			expect: tuned1Defaulted + "\n---\n" + tuned2Defaulted,
+			error:  false,
+		},
+		{
+			name: "fails if a non existent TunedConfig is referenced",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TunedConfig: []corev1.LocalObjectReference{
+						{
+							Name: "does-not-exist",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tunedConfig: []client.Object{},
+			expect:      "",
+			error:       true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			r := NodePoolReconciler{
+				Client: fake.NewClientBuilder().WithObjects(tc.tunedConfig...).Build(),
+			}
+
+			got, err := r.getTunedConfig(context.Background(), tc.nodePool)
+
+			if tc.error {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			if diff := cmp.Diff(got, tc.expect); diff != "" {
+				t.Errorf("actual config differs from expected: %s", diff)
+				t.Logf("got: %s \n, expected: \n %s", got, tc.expect)
+			}
+		})
+	}
+}
+
 func TestSetMachineDeploymentReplicas(t *testing.T) {
 	testCases := []struct {
 		name                        string
@@ -1296,6 +1520,85 @@ func TestGetName(t *testing.T) {
 	g.Expect(alphaNumeric.MatchString(string(name[0]))).To(BeTrue())
 }
 
+func TestGetNodePoolNamespacedName(t *testing.T) {
+	testControlPlaneNamespace := "control-plane-ns"
+	testNodePoolNamespace := "clusters"
+	testNodePoolName := "nodepool-1"
+	testCases := []struct {
+		name                  string
+		nodePoolName          string
+		controlPlaneNamespace string
+		hostedControlPlane    *hyperv1.HostedControlPlane
+		expect                string
+		error                 bool
+	}{
+		{
+			name:                  "gets correct NodePool namespaced name",
+			nodePoolName:          testNodePoolName,
+			controlPlaneNamespace: testControlPlaneNamespace,
+			hostedControlPlane: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testControlPlaneNamespace,
+					Annotations: map[string]string{
+						hostedcluster.HostedClusterAnnotation: types.NamespacedName{Name: "hosted-cluster-1", Namespace: testNodePoolNamespace}.String(),
+					},
+				},
+			},
+			expect: types.NamespacedName{Name: testNodePoolName, Namespace: testNodePoolNamespace}.String(),
+			error:  false,
+		},
+		{
+			name:                  "fails if HostedControlPlane missing HostedClusterAnnotation",
+			nodePoolName:          testNodePoolName,
+			controlPlaneNamespace: testControlPlaneNamespace,
+			hostedControlPlane: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testControlPlaneNamespace,
+				},
+			},
+			expect: "",
+			error:  true,
+		},
+		{
+			name:                  "fails if HostedControlPlane does not exist",
+			nodePoolName:          testNodePoolName,
+			controlPlaneNamespace: testControlPlaneNamespace,
+			hostedControlPlane:    nil,
+			expect:                "",
+			error:                 true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var r NodePoolReconciler
+			if tc.hostedControlPlane == nil {
+				r = NodePoolReconciler{
+					Client: fake.NewClientBuilder().WithObjects().Build(),
+				}
+			} else {
+				r = NodePoolReconciler{
+					Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hostedControlPlane).Build(),
+				}
+			}
+
+			got, err := r.getNodePoolNamespacedName(testNodePoolName, testControlPlaneNamespace)
+
+			if tc.error {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			if diff := cmp.Diff(got.String(), tc.expect); diff != "" {
+				t.Errorf("actual NodePool namespaced name differs from expected: %s", diff)
+				t.Logf("got: %s \n, expected: \n %s", got, tc.expect)
+			}
+		})
+	}
+}
+
 func TestSetExpirationTimestampOnToken(t *testing.T) {
 	fakeName := "test-token"
 	fakeNamespace := "master-cluster1"
@@ -1367,5 +1670,95 @@ func TestNodepoolDeletionDoesntRequireHCluster(t *testing.T) {
 
 	if err := c.Get(ctx, client.ObjectKeyFromObject(nodePool), nodePool); !apierrors.IsNotFound(err) {
 		t.Errorf("expected to get NotFound after deleted nodePool was reconciled, got %v", err)
+	}
+}
+
+func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
+	intPointer1 := intstr.FromInt(1)
+	intPointer2 := intstr.FromInt(2)
+	strPointer10 := intstr.FromString("10%")
+	strPointer75 := intstr.FromString("75%")
+	testCases := []struct {
+		name     string
+		nodePool *hyperv1.NodePool
+		expect   int
+	}{
+		{
+			name: "defaults to 1 when no maxUnavailable specified",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						InPlace: &hyperv1.InPlaceUpgrade{},
+					},
+					Replicas: k8sutilspointer.Int32Ptr(4),
+				},
+			},
+			expect: 1,
+		},
+		{
+			name: "can handle default value of 1",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						InPlace: &hyperv1.InPlaceUpgrade{
+							MaxUnavailable: &intPointer1,
+						},
+					},
+					Replicas: k8sutilspointer.Int32Ptr(4),
+				},
+			},
+			expect: 1,
+		},
+		{
+			name: "can handle other values",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						InPlace: &hyperv1.InPlaceUpgrade{
+							MaxUnavailable: &intPointer2,
+						},
+					},
+					Replicas: k8sutilspointer.Int32Ptr(4),
+				},
+			},
+			expect: 2,
+		},
+		{
+			name: "can handle percent values",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						InPlace: &hyperv1.InPlaceUpgrade{
+							MaxUnavailable: &strPointer75,
+						},
+					},
+					Replicas: k8sutilspointer.Int32Ptr(4),
+				},
+			},
+			expect: 3,
+		},
+		{
+			name: "can handle roundable values",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{
+						InPlace: &hyperv1.InPlaceUpgrade{
+							MaxUnavailable: &strPointer10,
+						},
+					},
+					Replicas: k8sutilspointer.Int32Ptr(4),
+				},
+			},
+			expect: 1,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			maxUnavailable, err := getInPlaceMaxUnavailable(tc.nodePool)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(maxUnavailable).To(Equal(tc.expect))
+		})
 	}
 }

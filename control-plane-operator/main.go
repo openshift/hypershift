@@ -157,6 +157,7 @@ func NewStartCommand() *cobra.Command {
 		inCluster                        bool
 		enableCIDebugOutput              bool
 		registryOverrides                map[string]string
+		imageOverrides                   map[string]string
 	)
 
 	cmd.Flags().StringVar(&namespace, "namespace", os.Getenv("MY_NAMESPACE"), "The namespace this operator lives in (required)")
@@ -172,6 +173,11 @@ func NewStartCommand() *cobra.Command {
 		"to avoid assuming access to the service network)")
 	cmd.Flags().BoolVar(&enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	cmd.Flags().StringToStringVar(&imageOverrides, "image-overrides", map[string]string{},
+		"List of images that should be used for a hosted cluster control plane instead of images from OpenShift release specified in HostedCluster. "+
+			"Format is: name1=image1,name2=image2. \"nameX\" is name of an image in OpenShift release (e.g. \"cluster-network-operator\"). "+
+			"\"imageX\" is container image name (e.g. \"quay.io/foo/my-network-operator:latest\"). The container image name is still subject of registry name "+
+			"replacement when --registry-overrides is used.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		setupLog.Info("Starting hypershift-controlplane-manager", "version", version.String())
@@ -325,22 +331,27 @@ func NewStartCommand() *cobra.Command {
 			awsKMSProviderImage = envImage
 		}
 
+		componentImages := map[string]string{
+			util.AvailabilityProberImageName: availabilityProberImage,
+			"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
+			"konnectivity-server":            konnectivityServerImage,
+			"konnectivity-agent":             konnectivityAgentImage,
+			"socks5-proxy":                   socks5ProxyImage,
+			"token-minter":                   tokenMinterImage,
+			"aws-kms-provider":               awsKMSProviderImage,
+			util.CPOImageName:                cpoImage,
+		}
+		for name, image := range imageOverrides {
+			componentImages[name] = image
+		}
+
 		releaseProvider := &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate: &releaseinfo.StaticProviderDecorator{
 				Delegate: &releaseinfo.CachedProvider{
 					Inner: &releaseinfo.RegistryClientProvider{},
 					Cache: map[string]*releaseinfo.ReleaseImage{},
 				},
-				ComponentImages: map[string]string{
-					util.AvailabilityProberImageName: availabilityProberImage,
-					"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
-					"konnectivity-server":            konnectivityServerImage,
-					"konnectivity-agent":             konnectivityAgentImage,
-					"socks5-proxy":                   socks5ProxyImage,
-					"token-minter":                   tokenMinterImage,
-					"aws-kms-provider":               awsKMSProviderImage,
-					util.CPOImageName:                cpoImage,
-				},
+				ComponentImages: componentImages,
 			},
 			RegistryOverrides: registryOverrides,
 		}

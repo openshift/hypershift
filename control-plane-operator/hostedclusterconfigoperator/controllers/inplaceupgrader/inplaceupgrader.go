@@ -3,11 +3,13 @@ package inplaceupgrader
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,6 +48,7 @@ const (
 	nodePoolAnnotationCurrentConfigVersion   = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
 	nodePoolAnnotationUpgradeInProgressTrue  = "hypershift.openshift.io/nodePoolUpgradeInProgressTrue"
 	nodePoolAnnotationUpgradeInProgressFalse = "hypershift.openshift.io/nodePoolUpgradeInProgressFalse"
+	nodePoolAnnotationMaxUnavailable         = "hypershift.openshift.io/nodePoolMaxUnavailable"
 
 	TokenSecretPayloadKey = "payload"
 	TokenSecretReleaseKey = "release"
@@ -224,9 +227,14 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 	}
 
 	// Find nodes that can be upgraded
-	// The drain is handled separately, such that if the node is awaiting drain, nothing will happen here.
-	// TODO (jerzhang): add logic to honor maxUnavailable/maxSurge
-	nodesToUpgrade := getNodesToUpgrade(nodes, targetConfigVersionHash, 1)
+	maxUnavail := 1
+	if maxUnavailAnno, ok := machineSet.Annotations[nodePoolAnnotationMaxUnavailable]; ok {
+		maxUnavail, err = strconv.Atoi(maxUnavailAnno)
+		if err != nil {
+			return fmt.Errorf("error getting max unavailable count from MachineSet annotation: %w", err)
+		}
+	}
+	nodesToUpgrade := getNodesToUpgrade(nodes, targetConfigVersionHash, maxUnavail)
 	err = r.performNodesUpgrade(ctx, r.guestClusterClient, nodePoolUpgradeAPI.spec.poolRef.GetName(), nodesToUpgrade, targetConfigVersionHash, mcoImage)
 	if err != nil {
 		return fmt.Errorf("failed to set hosted nodes for inplace upgrade: %w", err)
@@ -245,17 +253,23 @@ func (r *Reconciler) performNodesUpgrade(ctx context.Context, hostedClusterClien
 		// on degraded nodes, etc.
 		namespace := inPlaceUpgradeNamespace(poolName)
 		pod := inPlaceUpgradePod(namespace.Name, node.Name)
-		if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, pod, func() error {
-			return r.reconcileUpgradePod(
-				pod,
-				node.Name,
-				poolName,
-				mcoImage,
-			)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile upgrade pod for node %s: %w", node.Name, err)
-		} else {
-			log.Info("Reconciled upgrade pod", "result", result)
+		if err := hostedClusterClient.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}, pod); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get upgrade pod for node %s: %w", node.Name, err)
+			}
+			pod := inPlaceUpgradePod(namespace.Name, node.Name)
+			if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, pod, func() error {
+				return r.createUpgradePod(
+					pod,
+					node.Name,
+					poolName,
+					mcoImage,
+				)
+			}); err != nil {
+				return fmt.Errorf("failed to create upgrade pod for node %s: %w", node.Name, err)
+			} else {
+				log.Info("create upgrade pod", "result", result)
+			}
 		}
 
 		if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, nodes[idx], func() error {
@@ -295,7 +309,7 @@ func (r *Reconciler) getPayloadImage(ctx context.Context, imageName string) (str
 	return image, nil
 }
 
-func (r *Reconciler) reconcileUpgradePod(pod *corev1.Pod, nodeName, poolName, mcoImage string) error {
+func (r *Reconciler) createUpgradePod(pod *corev1.Pod, nodeName, poolName, mcoImage string) error {
 	configmap := inPlaceUpgradeConfigMap(poolName, pod.Namespace)
 	pod.Spec.Containers = []corev1.Container{
 		{
@@ -455,9 +469,14 @@ func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hoste
 func (r *Reconciler) reconcileUpgradeConfigmap(ctx context.Context, configmap *corev1.ConfigMap, targetConfigVersionHash string, payload []byte) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// TODO (jerzhang): should probably parse the data here to reduce size/compress
+	// Base64-encode and gzip the payload to allow larger overall payload sizes.
+	compressedPayload, err := util.CompressAndEncode(payload)
+	if err != nil {
+		return fmt.Errorf("could not compress payload: %w", err)
+	}
+
 	configmap.Data = map[string]string{
-		"config": string(payload),
+		"config": compressedPayload.String(),
 		"hash":   targetConfigVersionHash,
 	}
 

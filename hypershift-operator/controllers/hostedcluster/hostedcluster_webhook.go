@@ -227,6 +227,22 @@ func validateStructDeepEqual(x reflect.Value, y reflect.Value, path *field.Path,
 	return errs
 }
 
+func validateEndpointAccess(new *hyperv1.PlatformSpec, old *hyperv1.PlatformSpec) error {
+	if old.Type != hyperv1.AWSPlatform || new.Type != hyperv1.AWSPlatform || old.AWS == nil || new.AWS == nil {
+		return nil
+	}
+	if old.AWS.EndpointAccess == new.AWS.EndpointAccess {
+		return nil
+	}
+	if old.AWS.EndpointAccess == hyperv1.Public || new.AWS.EndpointAccess == hyperv1.Public {
+		return fmt.Errorf("transitioning from EndpointAccess %s to %s is not allowed", old.AWS.EndpointAccess, new.AWS.EndpointAccess)
+	}
+	// Clear EndpointAccess for further validation
+	old.AWS.EndpointAccess = ""
+	new.AWS.EndpointAccess = ""
+	return nil
+}
+
 // validateStructEqual uses introspection to walk through the fields of a struct and check
 // for differences.  Any differences are flagged as an invalid change to an immutable field.
 func validateStructEqual(x any, y any, path *field.Path) field.ErrorList {
@@ -267,6 +283,10 @@ func validateHostedClusterUpdate(new *hyperv1.HostedCluster, old *hyperv1.Hosted
 			old.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
 		}
 		old.Spec.Networking.APIServer.Port = new.Spec.Networking.APIServer.Port
+	}
+
+	if err := validateEndpointAccess(&new.Spec.Platform, &old.Spec.Platform); err != nil {
+		return err
 	}
 
 	errs := validateStructEqual(new.Spec, old.Spec, field.NewPath("HostedCluster.spec"))

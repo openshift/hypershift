@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	utilpointer "k8s.io/utils/pointer"
 
@@ -58,6 +59,7 @@ const (
 	dhcpServiceErrorState = "ERROR"
 
 	// Time duration for monitoring the resource readiness
+	dhcpPollingInterval              = time.Minute * 1
 	pollingInterval                  = time.Second * 5
 	vpcCreationTimeout               = time.Minute * 5
 	cloudInstanceCreationTimeout     = time.Minute * 5
@@ -69,6 +71,12 @@ const (
 	powerVsService  = "powervs"
 	vpcService      = "vpc"
 	platformService = "platform"
+
+	// Secret suffix
+	kubeCloudControllerManagerCreds = "cloud-controller-creds"
+	nodePoolManagementCreds         = "node-management-creds"
+	ingressOperatorCreds            = "ingress-creds"
+	storageOperatorCreds            = "storage-creds"
 )
 
 var customEpEnvNameMapping = map[string]string{
@@ -79,6 +87,7 @@ var customEpEnvNameMapping = map[string]string{
 // CreateInfraOptions command line options for setting up infra in IBM PowerVS cloud
 type CreateInfraOptions struct {
 	Name            string
+	Namespace       string
 	BaseDomain      string
 	ResourceGroup   string
 	InfraID         string
@@ -90,6 +99,7 @@ type CreateInfraOptions struct {
 	VPC             string
 	OutputFile      string
 	Debug           bool
+	RecreateSecrets bool
 }
 
 type TimeDuration struct {
@@ -132,6 +142,13 @@ type InfraCreationStat struct {
 	CloudConnState CreateStat `json:"cloudConnState"`
 }
 
+type Secrets struct {
+	KubeCloudControllerManager *corev1.Secret
+	NodePoolManagement         *corev1.Secret
+	IngressOperator            *corev1.Secret
+	StorageOperator            *corev1.Secret
+}
+
 // Infra resource info in IBM Cloud for setting up hypershift nodepool
 type Infra struct {
 	ID                string            `json:"id"`
@@ -151,6 +168,7 @@ type Infra struct {
 	VPCSubnetName     string            `json:"vpcSubnetName"`
 	VPCSubnetID       string            `json:"vpcSubnetID"`
 	Stats             InfraCreationStat `json:"stats"`
+	Secrets           Secrets           `json:"secrets"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -161,6 +179,7 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := CreateInfraOptions{
+		Namespace: "clusters",
 		Name:      "example",
 		Region:    "us-south",
 		Zone:      "us-south",
@@ -169,6 +188,7 @@ func NewCreateCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "IBM Cloud CIS Domain")
 	cmd.Flags().StringVar(&opts.ResourceGroup, "resource-group", opts.ResourceGroup, "IBM Cloud Resource Group")
+	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A namespace to contain the generated resources")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag IBM Cloud resources")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "IBM Cloud PowerVS Region")
@@ -179,6 +199,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.CloudConnection, "cloud-connection", opts.CloudConnection, "IBM Cloud PowerVS Cloud Connection")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
 	cmd.Flags().BoolVar(&opts.Debug, "debug", opts.Debug, "Enabling this will print PowerVS API Request & Response logs")
+	cmd.Flags().BoolVar(&opts.RecreateSecrets, "recreate-secrets", opts.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
@@ -231,7 +252,7 @@ func (options *CreateInfraOptions) Run(ctx context.Context) error {
 		}
 	}()
 
-	if err := infra.SetupInfra(options); err != nil {
+	if err := infra.SetupInfra(ctx, options); err != nil {
 		return err
 	}
 
@@ -268,7 +289,7 @@ func GetAPIKey() (string, error) {
 }
 
 // SetupInfra infra creation orchestration
-func (infra *Infra) SetupInfra(options *CreateInfraOptions) error {
+func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions) error {
 	startTime := time.Now()
 	var err error
 
@@ -298,6 +319,10 @@ func (infra *Infra) SetupInfra(options *CreateInfraOptions) error {
 		return fmt.Errorf("error setup base domain: %w", err)
 	}
 
+	if err = infra.setupSecrets(options); err != nil {
+		return fmt.Errorf("error setup secrets: %w", err)
+	}
+
 	v1, err := createVpcService(options.VPCRegion, options.InfraID)
 	if err != nil {
 		return fmt.Errorf("error creating vpc service: %w", err)
@@ -321,19 +346,60 @@ func (infra *Infra) SetupInfra(options *CreateInfraOptions) error {
 		return fmt.Errorf("error setup powervs cloud instance: %w", err)
 	}
 
-	if err = infra.setupPowerVSCloudConnection(options, session); err != nil {
+	if err = infra.setupPowerVSCloudConnection(ctx, options, session); err != nil {
 		return fmt.Errorf("error setup powervs cloud connection: %w", err)
 	}
 
-	if err = infra.setupPowerVSDHCP(options, session); err != nil {
+	if err = infra.setupPowerVSDHCP(ctx, options, session); err != nil {
 		return fmt.Errorf("error setup powervs dhcp server: %w", err)
 	}
 
-	if err = infra.isCloudConnectionReady(options, session); err != nil {
+	if err = infra.isCloudConnectionReady(ctx, options, session); err != nil {
 		return fmt.Errorf("cloud connection is not up: %w", err)
 	}
 
 	log(options.InfraID).Info("Setup infra completed in", "duration", time.Since(startTime).String())
+	return nil
+}
+
+// setupSecrets generate secrets for control plane components
+func (infra *Infra) setupSecrets(options *CreateInfraOptions) error {
+	var err error
+
+	if options.RecreateSecrets {
+		deleteSecrets(options.Name, options.Namespace, infra.AccountID, infra.ResourceGroupID)
+	}
+
+	log(infra.ID).Info("Creating Secrets ...")
+
+	infra.Secrets = Secrets{}
+
+	infra.Secrets.KubeCloudControllerManager, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, infra.ResourceGroupID,
+		kubeCloudControllerManagerCR, kubeCloudControllerManagerCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error setup kube cloud controller manager secret: %w", err)
+	}
+
+	infra.Secrets.NodePoolManagement, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, infra.ResourceGroupID,
+		nodePoolManagementCR, nodePoolManagementCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error setup nodepool management secret: %w", err)
+	}
+
+	infra.Secrets.IngressOperator, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, "",
+		ingressOperatorCR, ingressOperatorCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error setup ingress operator secret: %w", err)
+	}
+
+	infra.Secrets.StorageOperator, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, infra.ResourceGroupID,
+		storageOperatorCR, storageOperatorCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error setup storage operator secret: %w", err)
+	}
+
+	log(infra.ID).Info("Secrets Ready")
+
 	return nil
 }
 
@@ -962,10 +1028,10 @@ func (infra *Infra) createVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1
 }
 
 // setupPowerVSCloudConnection takes care of setting up cloud connection in powervs
-func (infra *Infra) setupPowerVSCloudConnection(options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
+func (infra *Infra) setupPowerVSCloudConnection(ctx context.Context, options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
 	log(options.InfraID).Info("Setting up PowerVS Cloud Connection ...")
 	var err error
-	client := instance.NewIBMPICloudConnectionClient(context.Background(), session, infra.CloudInstanceID)
+	client := instance.NewIBMPICloudConnectionClient(ctx, session, infra.CloudInstanceID)
 	var cloudConnID string
 	if options.CloudConnection != "" {
 		log(options.InfraID).Info("Validating PowerVS Cloud Connection", "name", options.CloudConnection)
@@ -1041,9 +1107,9 @@ func useExistingDHCP(dhcpServers models.DHCPServers) (string, error) {
 }
 
 // setupPowerVSDHCP takes care of setting up dhcp in powervs
-func (infra *Infra) setupPowerVSDHCP(options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
+func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
 	log(infra.ID).Info("Setting up PowerVS DHCP ...")
-	client := instance.NewIBMPIDhcpClient(context.Background(), session, infra.CloudInstanceID)
+	client := instance.NewIBMPIDhcpClient(ctx, session, infra.CloudInstanceID)
 
 	var dhcpServer *models.DHCPServerDetail
 
@@ -1063,6 +1129,17 @@ func (infra *Infra) setupPowerVSDHCP(options *CreateInfraOptions, session *ibmpi
 		}
 
 		dhcpServer, err = client.Get(dhcpServerID)
+		if *dhcpServer.Status != dhcpServiceActiveState {
+			var isActive bool
+			f := func() (bool, error) {
+				dhcpServer, isActive, err = isDHCPServerActive(client, infra.ID, dhcpServerID)
+				return isActive, err
+			}
+
+			if err = wait.PollImmediate(dhcpPollingInterval, dhcpServerCreationTimeout, f); err != nil {
+				return err
+			}
+		}
 	} else {
 		log(infra.ID).Info("Creating PowerVS DHCPServer...")
 		dhcpServer, err = infra.createPowerVSDhcp(options, client)
@@ -1074,7 +1151,7 @@ func (infra *Infra) setupPowerVSDHCP(options *CreateInfraOptions, session *ibmpi
 
 	if dhcpServer != nil {
 		infra.DHCPID = *dhcpServer.ID
-		if *dhcpServer.Status == dhcpServiceActiveState && dhcpServer.Network != nil {
+		if dhcpServer.Network != nil {
 			infra.DHCPSubnet = *dhcpServer.Network.Name
 			infra.DHCPSubnetID = *dhcpServer.Network.ID
 		}
@@ -1087,6 +1164,29 @@ func (infra *Infra) setupPowerVSDHCP(options *CreateInfraOptions, session *ibmpi
 
 	log(infra.ID).Info("PowerVS DHCP Server and Private Subnet Ready", "id", infra.DHCPID, "subnetId", infra.DHCPSubnetID)
 	return nil
+}
+
+// isDHCPServerActive monitors DHCP status to reach either ACTIVE or ERROR status which indicates it reaches a final state
+// returns an instance of DHCPServerDetail for further processing and true if it reaches ACTIVE status
+func isDHCPServerActive(client *instance.IBMPIDhcpClient, infraID string, dhcpID string) (*models.DHCPServerDetail, bool, error) {
+	var err error
+	dhcpServer, err := client.Get(dhcpID)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if dhcpServer != nil {
+		log(infraID).Info("Waiting for DHCPServer to up", "id", *dhcpServer.ID, "status", *dhcpServer.Status)
+		if *dhcpServer.Status == dhcpServiceActiveState {
+			return dhcpServer, true, nil
+		}
+
+		if *dhcpServer.Status == dhcpServiceErrorState {
+			return nil, false, fmt.Errorf("dhcp server is in error state")
+		}
+	}
+
+	return nil, false, nil
 }
 
 // createPowerVSDhcp creates a new dhcp server in powervs
@@ -1105,28 +1205,13 @@ func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *insta
 		return nil, fmt.Errorf("created dhcp server is nil")
 	}
 
+	var isActive bool
 	f := func() (bool, error) {
-		var err error
-		dhcpServer, err = client.Get(*dhcp.ID)
-		if err != nil {
-			return false, err
-		}
-
-		if dhcpServer != nil {
-			log(infra.ID).Info("Waiting for DHCPServer to up", "id", *dhcpServer.ID, "status", *dhcpServer.Status)
-			if *dhcpServer.Status == dhcpServiceActiveState {
-				return true, nil
-			}
-
-			if *dhcpServer.Status == dhcpServiceErrorState {
-				return true, fmt.Errorf("dhcp service is in error state")
-			}
-		}
-
-		return false, nil
+		dhcpServer, isActive, err = isDHCPServerActive(client, infra.ID, *dhcp.ID)
+		return isActive, err
 	}
 
-	if err = wait.PollImmediate(pollingInterval, dhcpServerCreationTimeout, f); err != nil {
+	if err = wait.PollImmediate(dhcpPollingInterval, dhcpServerCreationTimeout, f); err != nil {
 		return nil, err
 	}
 
@@ -1137,12 +1222,12 @@ func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *insta
 }
 
 // isCloudConnectionReady make sure cloud connection is connected with dhcp server private network and vpc, and it is in established state
-func (infra *Infra) isCloudConnectionReady(options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
+func (infra *Infra) isCloudConnectionReady(ctx context.Context, options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
 	log(infra.ID).Info("Making sure PowerVS Cloud Connection is ready ...")
 	var err error
 
-	client := instance.NewIBMPICloudConnectionClient(context.Background(), session, infra.CloudInstanceID)
-	jobClient := instance.NewIBMPIJobClient(context.Background(), session, infra.CloudInstanceID)
+	client := instance.NewIBMPICloudConnectionClient(ctx, session, infra.CloudInstanceID)
+	jobClient := instance.NewIBMPIJobClient(ctx, session, infra.CloudInstanceID)
 	var cloudConn *models.CloudConnection
 
 	startTime := time.Now()

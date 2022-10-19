@@ -13,17 +13,17 @@ import (
 	"strings"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
+	osinv1 "github.com/openshift/api/osin/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/cache"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/net"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	configv1 "github.com/openshift/api/config/v1"
-	osinv1 "github.com/openshift/api/osin/v1"
 
 	"github.com/openshift/hypershift/support/util"
 )
@@ -71,6 +71,7 @@ func (i *IDPVolumeMountInfo) SecretPath(index int, secretName, field, key string
 	}
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = secretName
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 	i.Volumes = append(i.Volumes, v)
 	i.VolumeMounts[i.Container][v.Name] = fmt.Sprintf("%s/idp_secret_%d_%s", IDPVolumePathPrefix, index, field)
 	return path.Join(i.VolumeMounts[i.Container][v.Name], key)
@@ -199,12 +200,12 @@ func convertProviderConfigToIDPData(
 			return nil, fmt.Errorf(missingProviderFmt, providerConfig.Type)
 		}
 
-		data.provider = &osinv1.GitLabIdentityProvider{
+		provider := &osinv1.GitLabIdentityProvider{
 			TypeMeta: metav1.TypeMeta{
 				Kind:       "GitLabIdentityProvider",
 				APIVersion: osinv1.GroupVersion.String(),
 			},
-			CA:       idpVolumeMounts.ConfigMapPath(i, gitlabConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey),
+
 			URL:      gitlabConfig.URL,
 			ClientID: gitlabConfig.ClientID,
 			ClientSecret: configv1.StringSource{
@@ -214,6 +215,11 @@ func convertProviderConfigToIDPData(
 			},
 			Legacy: new(bool), // we require OIDC for GitLab now
 		}
+		if gitlabConfig.CA.Name != "" {
+			provider.CA = idpVolumeMounts.ConfigMapPath(i, gitlabConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+		}
+
+		data.provider = provider
 		data.challenge = true
 
 	case configv1.IdentityProviderTypeGoogle:

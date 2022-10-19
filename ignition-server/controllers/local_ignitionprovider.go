@@ -12,9 +12,12 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/docker/distribution/manifest/manifestlist"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
@@ -166,6 +169,16 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			return nil, fmt.Errorf("failed to write MCS config file %q: %w", name, err)
 		}
 	}
+	// Extract ImageRefereces from release image to config directory
+	err = func() error {
+		start := time.Now()
+		if err := registryclient.ExtractImageFilesToDir(ctx, releaseImage, pullSecret, "release-manifests/image-references", configDir); err != nil {
+			return fmt.Errorf("failed to extract image-references: %w", err)
+		}
+		log.Info("extracted image-references", "time", time.Since(start).Round(time.Second).String())
+		return nil
+	}()
+
 	// For Azure, extract the cloud provider config file as MCO input
 	if p.CloudProvider == hyperv1.AzurePlatform {
 		cloudConfigMap := &corev1.ConfigMap{}
@@ -178,6 +191,23 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		}
 		if err := os.WriteFile(filepath.Join(mcoBaseDir, "cloud.conf.configmap.yaml"), cloudConfYaml, 0644); err != nil {
 			return nil, fmt.Errorf("failed to write bootstrap kubeconfig: %w", err)
+		}
+	}
+
+	isMultiArchManifestList, err := registryclient.IsMultiArchManifestList(ctx, mcoImage, pullSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to determine if image is manifest listed: %w", err)
+	}
+
+	if isMultiArchManifestList {
+		os := runtime.GOOS
+		arch := runtime.GOARCH
+		log.Info("mco image is a manifest listed image; extracting manifest for os/arch: " + os + "/" + arch)
+
+		// Verify MF Image has the right os/arch image
+		mcoImage, err = findImageRefByArch(ctx, mcoImage, pullSecret, os, arch)
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract appropriate os/arch manifest from %s: %w", mcoImage, err)
 		}
 	}
 
@@ -230,13 +260,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 
 		args := []string{
 			"bootstrap",
-			fmt.Sprintf("--machine-config-operator-image=%s", images["machine-config-operator"]),
-			fmt.Sprintf("--machine-config-oscontent-image=%s", images["machine-os-content"]),
-			fmt.Sprintf("--infra-image=%s", images["pod"]),
-			fmt.Sprintf("--keepalived-image=%s", images["keepalived-ipfailover"]),
-			fmt.Sprintf("--coredns-image=%s", images["codedns"]),
-			fmt.Sprintf("--haproxy-image=%s", images["haproxy"]),
-			fmt.Sprintf("--baremetal-runtimecfg-image=%s", images["baremetal-runtimecfg"]),
+			fmt.Sprintf("--image-references=%s", path.Join(configDir, "release-manifests", "image-references")),
 			fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
 			fmt.Sprintf("--kube-ca=%s/combined-ca.crt", configDir),
 			fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
@@ -263,7 +287,48 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		out, err := cmd.CombinedOutput()
 		log.Info("machine-config-operator process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
 		if err != nil {
-			return fmt.Errorf("machine-config-operator process failed: %w", err)
+			// when the CPO is at N and the NodePool.spec.release at N-1
+			// we fail to render ignition payload because https://github.com/openshift/machine-config-operator/pull/3286
+			// broke backward compatibility.
+			// We fall back to MCO previously supported flags.
+			args := []string{
+				"bootstrap",
+				fmt.Sprintf("--machine-config-operator-image=%s", images["machine-config-operator"]),
+				fmt.Sprintf("--machine-config-oscontent-image=%s", images["machine-os-content"]),
+				fmt.Sprintf("--infra-image=%s", images["pod"]),
+				fmt.Sprintf("--keepalived-image=%s", images["keepalived-ipfailover"]),
+				fmt.Sprintf("--coredns-image=%s", images["codedns"]),
+				fmt.Sprintf("--haproxy-image=%s", images["haproxy"]),
+				fmt.Sprintf("--baremetal-runtimecfg-image=%s", images["baremetal-runtimecfg"]),
+				fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
+				fmt.Sprintf("--kube-ca=%s/combined-ca.crt", configDir),
+				fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
+				fmt.Sprintf("--network-config-file=%s/cluster-network-02-config.yaml", configDir),
+				fmt.Sprintf("--proxy-config-file=%s/cluster-proxy-01-config.yaml", configDir),
+				fmt.Sprintf("--config-file=%s/install-config.yaml", configDir),
+				fmt.Sprintf("--dns-config-file=%s/cluster-dns-02-config.yaml", configDir),
+				fmt.Sprintf("--pull-secret=%s/pull-secret.yaml", configDir),
+				fmt.Sprintf("--dest-dir=%s", destDir),
+				fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir),
+			}
+
+			if image, exists := images["mdns-publisher"]; exists {
+				args = append(args, fmt.Sprintf("--mdns-publisher-image=%s", image))
+			}
+			if mcsConfig.Data["user-ca-bundle-config.yaml"] != "" {
+				args = append(args, fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir))
+			}
+			if p.CloudProvider == hyperv1.AzurePlatform {
+				args = append(args, fmt.Sprintf("--cloud-config-file=%s/cloud.conf.configmap.yaml", mcoBaseDir))
+			}
+
+			start = time.Now()
+			cmd = exec.CommandContext(ctx, filepath.Join(binDir, "machine-config-operator"), args...)
+			out, err = cmd.CombinedOutput()
+			log.Info("machine-config-operator process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
+			if err != nil {
+				return fmt.Errorf("machine-config-operator process failed: %w", err)
+			}
 		}
 
 		// Copy output to the MCC base directory
@@ -446,4 +511,71 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return os.Chmod(dst, srcinfo.Mode())
+}
+
+// findImageRefByArch finds the appropriate image reference in a multi-arch manifest image based on the current platform's OS and processor architecture
+func findImageRefByArch(ctx context.Context, imageRef string, pullSecret []byte, osToFind string, archToFind string) (manifestImageRef string, err error) {
+	manifestList, err := registryclient.GetManifest(ctx, imageRef, pullSecret)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve manifest from image ref, %s: %w", imageRef, err)
+	}
+
+	_, payload, err := manifestList.Payload()
+	if err != nil {
+		return "", fmt.Errorf("failed to get manifest payload: %w", err)
+	}
+
+	deserializedManifestList := new(manifestlist.DeserializedManifestList)
+	if err = deserializedManifestList.UnmarshalJSON(payload); err != nil {
+		return "", fmt.Errorf("failed to get unmarshalled manifest list: %w", err)
+	}
+
+	matchingManifestForArch, err := findMatchingManifest(imageRef, deserializedManifestList, osToFind, archToFind)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve matching manifest for os/arch, %s/%s: %w", osToFind, archToFind, err)
+	}
+
+	return matchingManifestForArch, nil
+}
+
+// findMatchingManifest looks to find a manifest matching the current platform's OS and processor architecture from a deserialized manifest list from an image's payload
+func findMatchingManifest(imageRef string, deserializedManifestList *manifestlist.DeserializedManifestList, osToFind string, archToFind string) (string, error) {
+	var foundManifestDesc *manifestlist.ManifestDescriptor
+	for _, manifestDesc := range deserializedManifestList.ManifestList.Manifests {
+		if osToFind == manifestDesc.Platform.OS && archToFind == manifestDesc.Platform.Architecture {
+			foundManifestDesc = &manifestDesc
+			break
+		}
+	}
+
+	if foundManifestDesc == nil {
+		return "", fmt.Errorf("not found")
+	}
+
+	// Multi-arch image references look like either:
+	//	quay.io/openshift-release-dev/ocp-release@sha256:1a101ef5215da468cea8bd2eb47114e85b2b64a6b230d5882f845701f55d057f
+	//	quay.io/openshift-release-dev/ocp-release:4.11.0-0.nightly-multi-2022-07-12-131716
+	if strings.Contains(imageRef, "@sha") {
+		splitSHA := strings.Split(imageRef, "@")
+		if len(splitSHA) != 2 {
+			return "", fmt.Errorf("failed to parse imageRef %s", imageRef)
+		}
+
+		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Descriptor.Digest)
+		log.Info("Found matching manifest of os/arch: " + matchingManifestForArch)
+		return matchingManifestForArch, nil
+	}
+
+	if strings.Contains(imageRef, "ocp-release:") {
+		splitSHA := strings.Split(imageRef, ":")
+		if len(splitSHA) != 2 {
+			return "", fmt.Errorf("failed to parse imageRef %s", imageRef)
+		}
+
+		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Descriptor.Digest)
+		log.Info("Found matching manifest of os/arch: " + matchingManifestForArch)
+		return matchingManifestForArch, nil
+	}
+
+	return "", fmt.Errorf("imageRef is an unknown format to parse, imageRef: %s", imageRef)
 }

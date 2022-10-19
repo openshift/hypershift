@@ -176,6 +176,15 @@ func OpenShiftControllerManagerCertSecret(ns string) *corev1.Secret {
 	}
 }
 
+func OpenShiftRouteControllerManagerCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openshift-route-controller-manager-cert",
+			Namespace: ns,
+		},
+	}
+}
+
 func ClusterPolicyControllerCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

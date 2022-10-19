@@ -35,5 +35,5 @@ spec:
       volumes:
       - name: serving-cert
         secret:
-          defaultMode: 416
+          defaultMode: 0640
           secretName: admission-tracer-serving-cert

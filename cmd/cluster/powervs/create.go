@@ -49,6 +49,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.Processors, "processors", opts.PowerVSPlatform.Processors, "Number of processors allocated. Default is 0.5")
 	cmd.Flags().Int32Var(&opts.PowerVSPlatform.Memory, "memory", opts.PowerVSPlatform.Memory, "Amount of memory allocated (in GB). Default is 32")
 	cmd.Flags().BoolVar(&opts.PowerVSPlatform.Debug, "debug", opts.PowerVSPlatform.Debug, "Enabling this will print PowerVS API Request & Response logs")
+	cmd.Flags().BoolVar(&opts.PowerVSPlatform.RecreateSecrets, "recreate-secrets", opts.PowerVSPlatform.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
 
 	cmd.MarkFlagRequired("resource-group")
 
@@ -84,15 +85,10 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 
 func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 	var err error
-	opts.PowerVSPlatform.APIKey, err = powervsinfra.GetAPIKey()
-	if err != nil {
-		return fmt.Errorf("error retrieving IBM Cloud API Key %w", err)
-	}
-
-	if err := validate(opts); err != nil {
+	if err = validate(opts); err != nil {
 		return err
 	}
-	if err := core.Validate(ctx, opts); err != nil {
+	if err = core.Validate(ctx, opts); err != nil {
 		return err
 	}
 	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
@@ -102,11 +98,6 @@ func validate(opts *core.CreateOptions) error {
 	if opts.BaseDomain == "" {
 		return fmt.Errorf("--base-domain can't be empty")
 	}
-
-	if opts.PowerVSPlatform.APIKey == "" {
-		return fmt.Errorf("cloud API Key not set. Set it with IBMCLOUD_API_KEY env var or set file path containing API Key credential in IBMCLOUD_CREDENTIALS")
-	}
-
 	return nil
 }
 
@@ -134,6 +125,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			infraID = infraid.New(opts.Name)
 		}
 		opt := &powervsinfra.CreateInfraOptions{
+			Name:            opts.Name,
+			Namespace:       opts.Namespace,
 			BaseDomain:      opts.BaseDomain,
 			ResourceGroup:   opts.PowerVSPlatform.ResourceGroup,
 			InfraID:         infraID,
@@ -145,9 +138,10 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			VPCRegion:       opts.PowerVSPlatform.VPCRegion,
 			VPC:             opts.PowerVSPlatform.VPC,
 			Debug:           opts.PowerVSPlatform.Debug,
+			RecreateSecrets: opts.PowerVSPlatform.RecreateSecrets,
 		}
 		infra = &powervsinfra.Infra{ID: opts.InfraID}
-		err = infra.SetupInfra(opt)
+		err = infra.SetupInfra(ctx, opt)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
 		}
@@ -159,7 +153,6 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.PublicZoneID = infra.CISDomainID
 	exampleOptions.InfraID = infraID
 	exampleOptions.PowerVS = &apifixtures.ExamplePowerVSOptions{
-		ApiKey:          opts.PowerVSPlatform.APIKey,
 		AccountID:       infra.AccountID,
 		ResourceGroup:   opts.PowerVSPlatform.ResourceGroup,
 		Region:          opts.PowerVSPlatform.Region,
@@ -176,5 +169,15 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		Processors:      opts.PowerVSPlatform.Processors,
 		Memory:          opts.PowerVSPlatform.Memory,
 	}
+
+	powerVSResources := apifixtures.ExamplePowerVSResources{
+		KubeCloudControllerCreds:  infra.Secrets.KubeCloudControllerManager,
+		NodePoolManagementCreds:   infra.Secrets.NodePoolManagement,
+		IngressOperatorCloudCreds: infra.Secrets.IngressOperator,
+		StorageOperatorCloudCreds: infra.Secrets.StorageOperator,
+	}
+
+	exampleOptions.PowerVS.Resources = powerVSResources
+
 	return nil
 }

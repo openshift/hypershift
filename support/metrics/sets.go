@@ -211,6 +211,23 @@ func KCMRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	}
 }
 
+func NTORelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+	switch set {
+	case MetricsSetTelemetry:
+		return []*prometheusoperatorv1.RelabelConfig{
+			{
+				Action:       "keep",
+				Regex:        "nto_profile_calculated_total",
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
+			},
+		}
+
+	default:
+		// All metrics
+		return nil
+	}
+}
+
 func OpenShiftAPIServerRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:
@@ -254,6 +271,27 @@ func OpenShiftControllerManagerRelabelConfigs(set MetricsSet) []*prometheusopera
 			{
 				Action:       "keep",
 				Regex:        "openshift_build_status_phase_total",
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
+			},
+		}
+	default:
+		return []*prometheusoperatorv1.RelabelConfig{
+			{
+				Action:       "drop",
+				Regex:        "etcd_(debugging|disk|request|server).*",
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
+			},
+		}
+	}
+}
+
+func OpenShiftRouteControllerManagerRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+	switch set {
+	case MetricsSetTelemetry:
+		return []*prometheusoperatorv1.RelabelConfig{
+			{
+				Action:       "drop",
+				Regex:        "*",
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}

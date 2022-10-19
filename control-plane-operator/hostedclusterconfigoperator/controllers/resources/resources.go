@@ -34,6 +34,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
@@ -468,15 +469,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
 
-	// The node tuning cluster operator resource cannot be removed with an annotation in the CVO
-	// like other resources. The CVO treats cluster operator resources differently and attempts to
-	// pre-create them regardless of the annotations. By removing the manifest from the payload, the
-	// CVO should no longer try to sync the node tuning cluster operator. However, we still need to
-	// remove it if upgrading a cluster that had it before.
-	nodeTuningCO := manifests.NodeTuningClusterOperator()
-	if err = r.client.Get(ctx, client.ObjectKeyFromObject(nodeTuningCO), nodeTuningCO); err == nil {
-		log.Info("removing existing node tuning cluster operator")
-		errs = append(errs, r.client.Delete(ctx, nodeTuningCO))
+	log.Info("reconciling node level csi configuration")
+	if err := r.reconcileCSIDriver(ctx, hcp, releaseImage); err != nil {
+		errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
 	}
 
 	// Delete the DNS operator deployment in the hosted cluster, if it is
@@ -500,6 +495,20 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	return ctrl.Result{}, errors.NewAggregate(errs)
+}
+
+func (r *reconciler) reconcileCSIDriver(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		// Most csi drivers should be laid down by the Cluster Storage Operator (CSO) instead of
+		// the hcco operator. Only KubeVirt is unique at the moment.
+		err := kubevirtcsi.ReconcileTenant(r.client, hcp, ctx, r.CreateOrUpdate, releaseImage.ComponentImages())
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (r *reconciler) reconcileCRDs(ctx context.Context) error {
@@ -663,6 +672,8 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.MetricsClientClusterRoleBinding, reconcile: rbac.ReconcileGenericMetricsClusterRoleBinding("system:serviceaccount:hypershift:prometheus")},
 
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.IngressToRouteControllerRoleBinding, reconcile: rbac.ReconcileIngressToRouteControllerRoleBinding},
+
+		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.AuthenticatedReaderForAuthenticatedUserRolebinding, reconcile: rbac.ReconcileAuthenticatedReaderForAuthenticatedUserRolebinding},
 	}
 
 	var errs []error
@@ -976,6 +987,22 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			errs = append(errs, fmt.Errorf("failed to reconcile csi driver secret: %w", err))
 		}
 	case hyperv1.PowerVSPlatform:
+		createPowerVSSecret := func(srcSecret, destSecret *corev1.Secret) error {
+			_, err := r.CreateOrUpdate(ctx, r.client, destSecret, func() error {
+				credData, credHasData := srcSecret.Data["ibmcloud_api_key"]
+				if !credHasData {
+					return fmt.Errorf("secret %q is missing credentials key", destSecret.Name)
+				}
+				destSecret.Type = corev1.SecretTypeOpaque
+				if destSecret.Data == nil {
+					destSecret.Data = map[string][]byte{}
+				}
+				destSecret.Data["ibmcloud_api_key"] = credData
+				return nil
+			})
+			return err
+		}
+
 		var ingressCredentials corev1.Secret
 		err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.PowerVS.IngressOperatorCloudCreds.Name}, &ingressCredentials)
 		if err != nil {
@@ -989,22 +1016,27 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 				Name:      "cloud-credentials",
 			},
 		}
-
-		_, err = r.CreateOrUpdate(ctx, r.client, cloudCredentials, func() error {
-			credData, credHasData := ingressCredentials.Data["ibmcloud_api_key"]
-			if !credHasData {
-				return fmt.Errorf("ingress cloud credentials secret %q is missing credentials key", ingressCredentials.Name)
-			}
-			cloudCredentials.Type = corev1.SecretTypeOpaque
-			if cloudCredentials.Data == nil {
-				cloudCredentials.Data = map[string][]byte{}
-			}
-			cloudCredentials.Data["ibmcloud_api_key"] = credData
-			return nil
-		})
-
+		err = createPowerVSSecret(&ingressCredentials, cloudCredentials)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile powervs cloud credentials secret %w", err))
+			errs = append(errs, fmt.Errorf("failed to reconcile powervs ingress cloud credentials secret %w", err))
+		}
+
+		var storageCredentials corev1.Secret
+		err = r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.PowerVS.StorageOperatorCloudCreds.Name}, &storageCredentials)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to get storage operator cloud credentials secret %s from hcp namespace : %w", hcp.Spec.Platform.PowerVS.StorageOperatorCloudCreds.Name, err))
+			return errs
+		}
+
+		ibmPowerVSCloudCredentials := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "openshift-cluster-csi-drivers",
+				Name:      "ibm-powervs-cloud-credentials",
+			},
+		}
+		err = createPowerVSSecret(&storageCredentials, ibmPowerVSCloudCredentials)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile powervs storage cloud credentials secret %w", err))
 		}
 	}
 	return errs

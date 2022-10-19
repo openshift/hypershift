@@ -45,7 +45,18 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 				network.Spec.DefaultNetwork.OVNKubernetesConfig.GenevePort = &port
 			}
 		}
-
+	case hyperv1.PowerVSPlatform:
+		if networkType == hyperv1.OVNKubernetes {
+			if network.Spec.DefaultNetwork.OVNKubernetesConfig == nil {
+				network.Spec.DefaultNetwork.OVNKubernetesConfig = &operatorv1.OVNKubernetesConfig{}
+			}
+			// Default shared routing causes egress traffic to use OVN routes, to use the routes present in host, need to use host routing
+			// BZ: https://bugzilla.redhat.com/show_bug.cgi?id=1996108
+			if network.Spec.DefaultNetwork.OVNKubernetesConfig.GatewayConfig == nil {
+				network.Spec.DefaultNetwork.OVNKubernetesConfig.GatewayConfig = &operatorv1.GatewayConfig{}
+			}
+			network.Spec.DefaultNetwork.OVNKubernetesConfig.GatewayConfig.RoutingViaHost = true
+		}
 	default:
 		// do nothing
 	}

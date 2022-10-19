@@ -114,6 +114,7 @@ func cpcVolumeKubeconfig() *corev1.Volume {
 func buildCPCVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }
 
 func cpcVolumeServingCert() *corev1.Volume {
@@ -125,4 +126,5 @@ func cpcVolumeServingCert() *corev1.Volume {
 func buildCPCVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.ClusterPolicyControllerCertSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }

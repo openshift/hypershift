@@ -63,7 +63,7 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIKubeVirtProviderImage]; ok {
 		providerImage = override
 	}
-	defaultMode := int32(416)
+	defaultMode := int32(0640)
 	return &appsv1.DeploymentSpec{
 		Replicas: k8sutilspointer.Int32Ptr(1),
 		Template: corev1.PodTemplateSpec{
