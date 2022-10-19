@@ -1,4 +1,4 @@
-package nodepool
+package kubevirt
 
 import (
 	"testing"
@@ -54,10 +54,10 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			err := kubevirtPlatformValidation(tc.nodePool)
+			err := PlatformValidation(tc.nodePool)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			result := kubevirtMachineTemplateSpec("", tc.nodePool)
+			result := MachineTemplateSpec("", tc.nodePool)
 			if !equality.Semantic.DeepEqual(tc.expected, result) {
 				t.Errorf(cmp.Diff(tc.expected, result))
 			}

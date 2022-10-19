@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -416,7 +417,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// Validate KubeVirt platform specific input
 	var kubevirtBootImage string
 	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		if err := kubevirtPlatformValidation(nodePool); err != nil {
+		if err := kubevirt.PlatformValidation(nodePool); err != nil {
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 				Status:             corev1.ConditionFalse,
@@ -428,7 +429,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
 
-		kubevirtBootImage, err = getKubeVirtImage(nodePool, releaseImage)
+		kubevirtBootImage, err = kubevirt.GetImage(nodePool, releaseImage)
 		if err != nil {
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidPlatformImageType,
@@ -1590,27 +1591,6 @@ func defaultNodePoolAMI(region string, releaseImage *releaseinfo.ReleaseImage) (
 	return regionData.Image, nil
 }
 
-func defaultKubeVirtImage(releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
-	if !foundArch {
-		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
-	}
-	openStack, exists := arch.Artifacts["openstack"]
-	if !exists {
-		return "", fmt.Errorf("couldn't find OS metadata for openstack")
-	}
-	artifact, exists := openStack.Formats["qcow2.gz"]
-	if !exists {
-		return "", fmt.Errorf("couldn't find OS metadata for openstack qcow2.gz")
-	}
-	disk, exists := artifact["disk"]
-	if !exists {
-		return "", fmt.Errorf("couldn't find OS metadata for the openstack qcow2.gz disk")
-	}
-
-	return disk.Location, nil
-}
-
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
 // are updated and available, and no old machines are running.
 func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
@@ -1945,7 +1925,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		}
 	case hyperv1.KubevirtPlatform:
 		template = &capikubevirt.KubevirtMachineTemplate{}
-		machineTemplateSpec = kubevirtMachineTemplateSpec(kubevirtBootImage, nodePool)
+		machineTemplateSpec = kubevirt.MachineTemplateSpec(kubevirtBootImage, nodePool)
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capikubevirt.KubevirtMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capikubevirt.KubevirtMachineTemplateSpec)
