@@ -1,4 +1,4 @@
-package nodepool
+package kubevirt
 
 import (
 	"fmt"
@@ -14,7 +14,28 @@ import (
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 )
 
-func getKubeVirtImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+func defaultImage(releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+	if !foundArch {
+		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
+	}
+	openStack, exists := arch.Artifacts["openstack"]
+	if !exists {
+		return "", fmt.Errorf("couldn't find OS metadata for openstack")
+	}
+	artifact, exists := openStack.Formats["qcow2.gz"]
+	if !exists {
+		return "", fmt.Errorf("couldn't find OS metadata for openstack qcow2.gz")
+	}
+	disk, exists := artifact["disk"]
+	if !exists {
+		return "", fmt.Errorf("couldn't find OS metadata for the openstack qcow2.gz disk")
+	}
+
+	return disk.Location, nil
+}
+
+func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
 	if nodePool.Spec.Platform.Kubevirt != nil &&
 		nodePool.Spec.Platform.Kubevirt.RootVolume != nil &&
 		nodePool.Spec.Platform.Kubevirt.RootVolume.Image != nil &&
@@ -23,10 +44,10 @@ func getKubeVirtImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.Rele
 		return fmt.Sprintf("docker://%s", *nodePool.Spec.Platform.Kubevirt.RootVolume.Image.ContainerDiskImage), nil
 	}
 
-	return defaultKubeVirtImage(releaseImage)
+	return defaultImage(releaseImage)
 }
 
-func kubevirtPlatformValidation(nodePool *hyperv1.NodePool) error {
+func PlatformValidation(nodePool *hyperv1.NodePool) error {
 	kvPlatform := nodePool.Spec.Platform.Kubevirt
 	if kvPlatform == nil {
 		return fmt.Errorf("nodepool.spec.platform.kubevirt is required")
@@ -180,7 +201,7 @@ func virtualMachineTemplateBase(image string, kvPlatform *hyperv1.KubevirtNodePo
 	return template
 }
 
-func kubevirtMachineTemplateSpec(image string, nodePool *hyperv1.NodePool) *capikubevirt.KubevirtMachineTemplateSpec {
+func MachineTemplateSpec(image string, nodePool *hyperv1.NodePool) *capikubevirt.KubevirtMachineTemplateSpec {
 	nodePoolNameLabelKey := "hypershift.kubevirt.io/node-pool-name"
 
 	vmTemplate := virtualMachineTemplateBase(image, nodePool.Spec.Platform.Kubevirt)
