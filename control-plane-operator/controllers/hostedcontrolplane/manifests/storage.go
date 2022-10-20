@@ -15,14 +15,14 @@ func ClusterStorageOperatorDeployment(ns string) *appsv1.Deployment {
 
 func ClusterStorageOperatorRole(ns string) *rbacv1.Role {
 	role := &rbacv1.Role{}
-	role.Name = "cluster-storage-operator-role"
+	role.Name = "cluster-storage-operator"
 	role.Namespace = ns
 	return role
 }
 
 func ClusterStorageOperatorRoleBinding(ns string) *rbacv1.RoleBinding {
 	roleBinding := &rbacv1.RoleBinding{}
-	roleBinding.Name = "cluster-storage-operator-role"
+	roleBinding.Name = "cluster-storage-operator"
 	roleBinding.Namespace = ns
 	return roleBinding
 }
