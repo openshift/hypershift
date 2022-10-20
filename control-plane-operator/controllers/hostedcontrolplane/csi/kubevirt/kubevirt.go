@@ -15,6 +15,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	utilpointer "k8s.io/utils/pointer"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -34,6 +35,11 @@ var (
 	tenantNodeClusterRoleBinding = mustClusterRoleBinding("tenant_node_clusterrolebinding.yaml")
 
 	daemonset = mustDaemonSet("daemonset.yaml")
+
+	defaultResourceRequirements = corev1.ResourceRequirements{Requests: corev1.ResourceList{
+		corev1.ResourceCPU:    resource.MustParse("10m"),
+		corev1.ResourceMemory: resource.MustParse("50Mi"),
+	}}
 )
 
 func mustDeployment(file string) *appsv1.Deployment {
@@ -146,6 +152,10 @@ func reconcileController(controller *appsv1.Deployment, componentImages map[stri
 	}
 
 	for i, container := range controller.Spec.Template.Spec.Containers {
+		if len(container.Resources.Requests) == 0 && len(container.Resources.Limits) == 0 {
+			controller.Spec.Template.Spec.Containers[i].Resources = defaultResourceRequirements
+		}
+		controller.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
 		switch container.Name {
 		case "csi-driver":
 			controller.Spec.Template.Spec.Containers[i].Image = csiDriverImage
@@ -245,6 +255,10 @@ func reconcileTenantDaemonset(ds *appsv1.DaemonSet, componentImages map[string]s
 	}
 
 	for i, container := range ds.Spec.Template.Spec.Containers {
+		if len(container.Resources.Requests) == 0 && len(container.Resources.Limits) == 0 {
+			ds.Spec.Template.Spec.Containers[i].Resources = defaultResourceRequirements
+		}
+		ds.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
 		switch container.Name {
 		case "csi-driver":
 			ds.Spec.Template.Spec.Containers[i].Image = csiDriverImage
