@@ -27,22 +27,7 @@ func ReconcileOperatorDeployment(
 		switch container.Name {
 		case "cluster-storage-operator":
 			deployment.Spec.Template.Spec.Containers[i].Image = params.StorageOperatorImage
-			// Substitute env. vars
-			for j, env := range deployment.Spec.Template.Spec.Containers[i].Env {
-				// Substitute image names in env. vars
-				for envName, imageName := range params.EnvImages {
-					if env.Name == envName {
-						deployment.Spec.Template.Spec.Containers[i].Env[j].Value = imageName
-					}
-				}
-				// Substitute other env vars.
-				switch env.Name {
-				case "OPERATOR_IMAGE_VERSION":
-					deployment.Spec.Template.Spec.Containers[i].Env[j].Value = params.Version
-				case "OPERAND_IMAGE_VERSION":
-					deployment.Spec.Template.Spec.Containers[i].Env[j].Value = params.Version
-				}
-			}
+			params.ImageReplacer.replaceEnvVars(deployment.Spec.Template.Spec.Containers[i].Env)
 		}
 	}
 
