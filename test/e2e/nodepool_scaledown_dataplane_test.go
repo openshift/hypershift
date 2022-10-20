@@ -32,13 +32,14 @@ func TestScaleDownDataPlane(t *testing.T) {
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	numZones := int32(len(clusterOpts.AWSPlatform.Zones))
 	if numZones <= 1 {
-		clusterOpts.NodePoolReplicas = 3
-	} else if numZones == 2 {
 		clusterOpts.NodePoolReplicas = 2
+	} else if numZones == 2 {
+		clusterOpts.NodePoolReplicas = 1
 	} else {
 		clusterOpts.NodePoolReplicas = 1
 	}
 	clusterOpts.AutoRepair = true
+	clusterOpts.AWSPlatform.InstanceType = "m6i.xlarge"
 	clusterOpts.BeforeApply = func(o crclient.Object) {
 		switch v := o.(type) {
 		case *hyperv1.NodePool:
