@@ -1,5 +1,6 @@
 # Prerequisites
 
+## Generic
 * The HyperShift CLI (`hypershift`).
 
     Install it using Go 1.18:
@@ -13,12 +14,12 @@
 * Admin access to an OpenShift cluster (version 4.8+) specified by the `KUBECONFIG` environment variable.
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
 * A valid [pull secret](https://console.redhat.com/openshift/install/ibm-cloud) file for the `quay.io/openshift-release-dev` repository.
-* Follow below sections for other prerequisites.
 
 ## Authentication
 There are two ways to set up authentication
-- Authenticate IBM Cloud Clients by setting the `IBMCLOUD_API_KEY` environment var to your API Key.
-- Authenticate IBM Cloud Clients by setting the `IBMCLOUD_CREDENTIALS` environment var pointing to a file containing your API Key.
+
+* Authenticate IBM Cloud Clients by setting the `IBMCLOUD_API_KEY` environment var to your API Key.
+* Authenticate IBM Cloud Clients by setting the `IBMCLOUD_CREDENTIALS` environment var pointing to a file containing your API Key.
 
 ## Base Domain
 Need to have existing CIS Domain in [IBM Cloud Internet Services](https://cloud.ibm.com/docs/cis) which can be used as a `BASEDOMAIN` while creating the cluster.
@@ -32,7 +33,7 @@ Use [this](https://multi.ocp.releases.ci.openshift.org) to get latest multi arch
 ## Custom Endpoints
 Use following environment variables to set custom endpoint.
 ```
-IBMCLOUD_POWER_API_ENDPOINT - to setup PowerVS custom endpoint
-IBMCLOUD_VPC_API_ENDPOINT - to setup VPC custom endpoint
+IBMCLOUD_POWER_API_ENDPOINT    - to setup PowerVS custom endpoint
+IBMCLOUD_VPC_API_ENDPOINT      - to setup VPC custom endpoint
 IBMCLOUD_PLATFORM_API_ENDPOINT - to setup platform services custom endpoint
 ```

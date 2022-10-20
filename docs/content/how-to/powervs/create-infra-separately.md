@@ -5,11 +5,9 @@ title: Create PowerVS Infra resources separately
 # Create IBMCloud PowerVS Infra resources separately
 
 The default behavior of the `hypershift create cluster powervs` command is to create cloud infrastructure
-along with the HostedCluster and apply it. 
+along with the manifests for hosted cluster and apply it. 
 
-It is possible to create the cloud infrastructure portion separately so that the `hypershift create cluster powervs` command can just be used to create the HostedCluster spec and apply it.
-
-Created HostedCluster can be destroyed and can be reinstalled with the same infra created earlier. 
+It is possible to create the cloud infrastructure separately so that the `hypershift create cluster powervs` command can just be used to create the manifests and apply it.
 
 In order to do this, you need to:
 1. [Create PowerVS infrastructure](#creating-the-powervs-infra) 
@@ -17,7 +15,7 @@ In order to do this, you need to:
 
 ## Creating the PowerVS infra
 
-Please see [prerequisites](../prerequisites-and-env-guide.md/#prerequisites) before setting up the infra
+Please see [prerequisites](prerequisites-and-env-guide.md) before setting up the infra
 
 Use the `hypershift create infra powervs` command:
 
@@ -41,19 +39,20 @@ Use the `hypershift create infra powervs` command:
         --output-file $OUTPUT_INFRA_FILE
 
 where
+
 * CLUSTER_NAME is a name for the cluster.
 * INFRA_ID is a unique name that will be used to name the infrastructure resources.
-* REGION is the region where you want to create the powervs resources.
-* ZONE is the zone under POWERVS_REGION where you want to create the powervs resources.
-* VPC_REGION is the region where you want to create the vpc resources.
+* REGION is the region where you want to create the PowerVS resources.
+* ZONE is the zone under POWERVS_REGION where you want to create the PowerVS resources.
+* VPC_REGION is the region where you want to create the VPC resources.
 * BASEDOMAIN is the CIS base domain that will be used for your hosted cluster's ingress. It should be an existing CIS domain name.
-* RESOURCE_GROUP is the resource group in IBMCloud where your infrastructure resources will be created.
+* RESOURCE_GROUP is the resource group in IBM Cloud where your infrastructure resources will be created.
 * OUTPUT_INFRA_FILE is the file where IDs of the infrastructure that has been created will be stored in JSON format.
   This file can then be used as input to the `hypershift create cluster powervs` command to populate
   the appropriate fields in the HostedCluster and NodePool resources.
 
 
-Running this command should result in the following resources getting created:
+Running this command should result in the following resources getting created in IBM Cloud:
 
 ### PowerVS Cluster Infra Resources 
 
@@ -93,8 +92,11 @@ E.g.:
         --infra-json $INFRA_JSON \
         --node-pool-replicas=2
 
+
 !!! important
 
-    Need to understand --recreate-secrets flag usage before using it. Enableing this flag will result in recreating the creds mentioned here https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec
-    This is required when rerunning `hypershift create infra powervs` command, since API Key once created cannot be retrieved again.
-    Please make sure cluster name used is unique across different management cluster before using this flag since this will result in removing the existing cred's service ID and recreate them.
+        Need to understand --recreate-secrets flag usage before using it. Enableing this flag will result in recreating the creds mentioned here [PowerVSPlatformSpec](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec)
+
+        This is required when rerunning `hypershift create cluster powervs` command, since API Key once created cannot be retrieved again.
+
+        Please make sure cluster name used is unique across different management cluster before using this flag since this will result in removing the existing cred's service ID and recreate them.
