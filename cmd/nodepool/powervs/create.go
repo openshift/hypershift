@@ -18,7 +18,7 @@ import (
 
 type PowerVSPlatformCreateOptions struct {
 	SysType    string
-	ProcType   string
+	ProcType   hyperv1.PowerVSNodePoolProcType
 	Processors string
 	Memory     int32
 }
@@ -37,7 +37,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&opts.SysType, "sys-type", opts.SysType, "System type used to host the instance(e.g: s922, e980, e880). Default is s922")
-	cmd.Flags().StringVar(&opts.ProcType, "proc-type", opts.ProcType, "Processor type (dedicated, shared, capped). Default is shared")
+	cmd.Flags().Var(&opts.ProcType, "proc-type", "Processor type (dedicated, shared, capped). Default is shared")
 	cmd.Flags().StringVar(&opts.Processors, "processors", opts.Processors, "Number of processors allocated. Default is 0.5")
 	cmd.Flags().Int32Var(&opts.Memory, "memory", opts.Memory, "Amount of memory allocated (in GB). Default is 32")
 

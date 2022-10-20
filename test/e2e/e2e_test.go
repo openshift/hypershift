@@ -81,7 +81,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSZone, "e2e.powervs-zone", "us-south", "IBM Cloud zone. Default is us-sout")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSVpcRegion, "e2e.powervs-vpc-region", "us-south", "IBM Cloud VPC Region for VPC resources. Default is us-south")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSSysType, "e2e.powervs-sys-type", "s922", "System type used to host the instance(e.g: s922, e980, e880). Default is s922")
-	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSProcType, "e2e.powervs-proc-type", "shared", "Processor type (dedicated, shared, capped). Default is shared")
+	flag.Var(&globalOpts.configurableClusterOptions.PowerVSProcType, "e2e.powervs-proc-type", "Processor type (dedicated, shared, capped). Default is shared")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSProcessors, "e2e.powervs-processors", "0.5", "Number of processors allocated. Default is 0.5")
 	flag.IntVar(&globalOpts.configurableClusterOptions.PowerVSMemory, "e2e.powervs-memory", 32, "Amount of memory allocated (in GB). Default is 32")
 
@@ -234,7 +234,7 @@ type configurableClusterOptions struct {
 	PowerVSZone                string
 	PowerVSVpcRegion           string
 	PowerVSSysType             string
-	PowerVSProcType            string
+	PowerVSProcType            hyperv1.PowerVSNodePoolProcType
 	PowerVSProcessors          string
 	PowerVSMemory              int
 }

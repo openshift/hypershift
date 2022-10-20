@@ -6094,6 +6094,14 @@ This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </td>
 </tr></tbody>
 </table>
+###PowerVSNodePoolImageDeletePolicy { #hypershift.openshift.io/v1alpha1.PowerVSNodePoolImageDeletePolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSNodePoolPlatform">PowerVSNodePoolPlatform</a>)
+</p>
+<p>
+<p>PowerVSNodePoolImageDeletePolicy defines image delete policy to be used for PowerVSNodePoolPlatform</p>
+</p>
 ###PowerVSNodePoolPlatform { #hypershift.openshift.io/v1alpha1.PowerVSNodePoolPlatform }
 <p>
 (<em>Appears on:</em>
@@ -6133,7 +6141,9 @@ reasonable default. The current default is s922 which is generally available.</p
 <td>
 <code>processorType</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSNodePoolProcType">
+PowerVSNodePoolProcType
+</a>
 </em>
 </td>
 <td>
@@ -6146,6 +6156,12 @@ Capped: Shared, but resources do not expand beyond those that are requested, the
 <p>if the processorType is selected as Dedicated, then Processors value cannot be fractional.
 When omitted, this means that the user has no opinion and the platform is left to choose a
 reasonable default. The current default is Shared.</p>
+<p>
+Value must be one of:
+&#34;capped&#34;, 
+&#34;dedicated&#34;, 
+&#34;shared&#34;
+</p>
 </td>
 </tr>
 <tr>
@@ -6211,7 +6227,9 @@ is chosen based on the NodePool release payload image.</p>
 <td>
 <code>storageType</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSNodePoolStorageType">
+PowerVSNodePoolStorageType
+</a>
 </em>
 </td>
 <td>
@@ -6227,7 +6245,9 @@ Although, the exact numbers might change over time, the Tier 3 storage is curren
 <td>
 <code>imageDeletePolicy</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSNodePoolImageDeletePolicy">
+PowerVSNodePoolImageDeletePolicy
+</a>
 </em>
 </td>
 <td>
@@ -6240,6 +6260,40 @@ retain: delete the image from the openshift but retain in the infrastructure.</p
 </tr>
 </tbody>
 </table>
+###PowerVSNodePoolProcType { #hypershift.openshift.io/v1alpha1.PowerVSNodePoolProcType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSNodePoolPlatform">PowerVSNodePoolPlatform</a>)
+</p>
+<p>
+<p>PowerVSNodePoolProcType defines processor type to be used for PowerVSNodePoolPlatform</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;capped&#34;</p></td>
+<td><p>PowerVSNodePoolCappedProcType defines capped processor type</p>
+</td>
+</tr><tr><td><p>&#34;dedicated&#34;</p></td>
+<td><p>PowerVSNodePoolDedicatedProcType defines dedicated processor type</p>
+</td>
+</tr><tr><td><p>&#34;shared&#34;</p></td>
+<td><p>PowerVSNodePoolSharedProcType defines shared processor type</p>
+</td>
+</tr></tbody>
+</table>
+###PowerVSNodePoolStorageType { #hypershift.openshift.io/v1alpha1.PowerVSNodePoolStorageType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.PowerVSNodePoolPlatform">PowerVSNodePoolPlatform</a>)
+</p>
+<p>
+<p>PowerVSNodePoolStorageType defines storage type to be used for PowerVSNodePoolPlatform</p>
+</p>
 ###PowerVSPlatformSpec { #hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec }
 <p>
 (<em>Appears on:</em>

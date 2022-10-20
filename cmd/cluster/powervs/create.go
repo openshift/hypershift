@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
 	"github.com/openshift/hypershift/support/infraid"
@@ -32,7 +33,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		Zone:       "us-south",
 		VPCRegion:  "us-south",
 		SysType:    "s922",
-		ProcType:   "shared",
+		ProcType:   hyperv1.PowerVSNodePoolSharedProcType,
 		Processors: "0.5",
 		Memory:     32,
 	}
@@ -45,7 +46,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.VPCRegion, "vpc-region", opts.PowerVSPlatform.VPCRegion, "IBM Cloud VPC Region for VPC resources. Default is us-south")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.VPC, "vpc", "", "IBM Cloud VPC Name")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.SysType, "sys-type", opts.PowerVSPlatform.SysType, "System type used to host the instance(e.g: s922, e980, e880). Default is s922")
-	cmd.Flags().StringVar(&opts.PowerVSPlatform.ProcType, "proc-type", opts.PowerVSPlatform.ProcType, "Processor type (dedicated, shared, capped). Default is shared")
+	cmd.Flags().Var(&opts.PowerVSPlatform.ProcType, "proc-type", "Processor type (dedicated, shared, capped). Default is shared")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.Processors, "processors", opts.PowerVSPlatform.Processors, "Number of processors allocated. Default is 0.5")
 	cmd.Flags().Int32Var(&opts.PowerVSPlatform.Memory, "memory", opts.PowerVSPlatform.Memory, "Amount of memory allocated (in GB). Default is 32")
 	cmd.Flags().BoolVar(&opts.PowerVSPlatform.Debug, "debug", opts.PowerVSPlatform.Debug, "Enabling this will print PowerVS API Request & Response logs")
