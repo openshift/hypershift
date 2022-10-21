@@ -593,7 +593,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 }
 
 func getIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType, usesExternalDNS bool) []hyperv1.ServicePublishingStrategyMapping {
-
+	// TODO (Alberto): Default KAS to Route if endpointAccess is Private.
 	apiServiceStrategy := hyperv1.LoadBalancer
 	if usesExternalDNS {
 		apiServiceStrategy = hyperv1.Route

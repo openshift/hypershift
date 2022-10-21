@@ -218,11 +218,12 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool
 	// and ignore updates.
 	if route.CreationTimestamp.IsZero() {
 		switch {
+		// If public && external DNS.
 		case !private && strategy.Route != nil && strategy.Route.Hostname != "":
 			route.Spec.Host = strategy.Route.Hostname
-			ingress.AddRouteLabel(route)
+			ingress.AddHCPRouteLabel(route)
 		case private:
-			ingress.AddRouteLabel(route)
+			ingress.AddHCPRouteLabel(route)
 			route.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", route.Name, ownerRef.Reference.Name)
 		default:
 			route.Spec.Host = util.ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
@@ -239,7 +240,7 @@ func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool
 		if route.Labels == nil {
 			route.Labels = map[string]string{}
 		}
-		route.Labels[ingress.HypershiftRouteLabel] = route.GetNamespace()
+		route.Labels[ingress.HCPRouteLabel] = route.GetNamespace()
 	}
 
 	route.Spec.To = routev1.RouteTargetReference{

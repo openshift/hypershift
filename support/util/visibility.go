@@ -23,3 +23,7 @@ func IsPrivateHC(hc *hyperv1.HostedCluster) bool {
 		(hc.Spec.Platform.AWS.EndpointAccess == hyperv1.PublicAndPrivate ||
 			hc.Spec.Platform.AWS.EndpointAccess == hyperv1.Private)
 }
+
+func IsPublicKASWithDNS(hostedControlPlane *hyperv1.HostedControlPlane) bool {
+	return IsPublicHCP(hostedControlPlane) && UseDedicatedDNSforKAS(hostedControlPlane)
+}

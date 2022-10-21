@@ -587,11 +587,9 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		}
 	}
 
-	// Reconcile router
-	kasServiceStrategy := util.ServicePublishingStrategyByTypeForHCP(hostedControlPlane, hyperv1.APIServer)
-	if util.IsPrivateHCP(hostedControlPlane) || util.HasPublicLoadBalancerForPrivateRouter(hostedControlPlane) {
+	if useHCPRouter(hostedControlPlane) {
 		r.Log.Info("Reconciling router")
-		if err := r.reconcileRouter(ctx, hostedControlPlane, releaseImage, createOrUpdate, kasServiceStrategy.Type == hyperv1.Route); err != nil {
+		if err := r.reconcileRouter(ctx, hostedControlPlane, releaseImage, createOrUpdate, util.IsRouteKAS(hostedControlPlane)); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to reconcile router: %w", err)
 		}
 	}
@@ -623,6 +621,16 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	return reconcile.Result{}, r.reconcile(ctx, hostedControlPlane, createOrUpdate, releaseImage, infraStatus)
+}
+
+// useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.
+// This is true when the API input specifies intent for the following:
+// 1 - AWS endpointAccess is private somehow (i.e. publicAndPrivate or private) or is public and configured with external DNS.
+// 2 - When 1 is true, we recommend (and automate via CLI) ServicePublishingStrategy to be "Route" for all endpoints but the KAS
+// which needs a dedicated Service type LB external to be exposed if no external DNS is supported.
+// Otherwise, the Routes use the management cluster Domain and resolve through the default ingress controller.
+func useHCPRouter(hostedControlPlane *hyperv1.HostedControlPlane) bool {
+	return util.IsPrivateHCP(hostedControlPlane) || util.IsPublicKASWithDNS(hostedControlPlane)
 }
 
 func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImage *releaseinfo.ReleaseImage, infraStatus InfrastructureStatus) error {
@@ -2583,7 +2591,7 @@ func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx con
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseInfo *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN, exposeAPIThroughRouter bool) error {
+func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseInfo *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN, exposeKASThroughRouter bool) error {
 	sa := manifests.RouterServiceAccount(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
 		return ingress.ReconcileRouterServiceAccount(sa, config.OwnerRefFrom(hcp))
@@ -2603,16 +2611,18 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 		return fmt.Errorf("failed to reconcile router rolebinding: %w", err)
 	}
 
+	// Create the Service type LB internal for private endpoints.
 	var canonicalHostname string
 	pubSvc := manifests.RouterPublicService(hcp.Namespace)
 	if util.IsPrivateHCP(hcp) {
 		svc := manifests.PrivateRouterService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, svc, func() error {
-			return ingress.ReconcileRouterService(svc, config.OwnerRefFrom(hcp), util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), true)
+			return ingress.ReconcileRouterService(svc, util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), true)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router service: %w", err)
 		}
-		if (!util.IsPublicHCP(hcp) || !exposeAPIThroughRouter) && len(svc.Status.LoadBalancer.Ingress) > 0 {
+
+		if (!util.IsPublicHCP(hcp) || !exposeKASThroughRouter) && len(svc.Status.LoadBalancer.Ingress) > 0 {
 			canonicalHostname = svc.Status.LoadBalancer.Ingress[0].Hostname
 		}
 		if !util.IsPublicHCP(hcp) {
@@ -2630,9 +2640,10 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 		}
 	}
 
-	if util.IsPublicHCP(hcp) && exposeAPIThroughRouter {
+	// When Public access endpoint we need to create a Service type LB external for the KAS.
+	if util.IsPublicHCP(hcp) && exposeKASThroughRouter {
 		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
-			return ingress.ReconcileRouterService(pubSvc, config.OwnerRefFrom(hcp), util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), false)
+			return ingress.ReconcileRouterService(pubSvc, util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), false)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router service: %w", err)
 		}
@@ -2641,7 +2652,8 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 		}
 	}
 
-	if exposeAPIThroughRouter {
+	// If the KAS is a route we need to tweak the default template.
+	if exposeKASThroughRouter {
 		routerTemplate := manifests.RouterTemplateConfigMap(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, routerTemplate, func() error {
 			ingress.ReconcileRouterTemplateConfigmap(routerTemplate)
@@ -2659,15 +2671,15 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 		}
 	}
 
-	if util.IsPrivateHCP(hcp) || exposeAPIThroughRouter {
+	if util.IsPrivateHCP(hcp) || exposeKASThroughRouter {
 		deployment := manifests.RouterDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
 			return ingress.ReconcileRouterDeployment(deployment,
 				config.OwnerRefFrom(hcp),
-				ingress.PrivateRouterConfig(hcp, r.SetDefaultSecurityContext),
+				ingress.HCPRouterConfig(hcp, r.SetDefaultSecurityContext),
 				ingress.PrivateRouterImage(releaseInfo.ComponentImages()),
 				canonicalHostname,
-				exposeAPIThroughRouter,
+				exposeKASThroughRouter,
 			)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router deployment: %w", err)

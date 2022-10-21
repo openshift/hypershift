@@ -65,10 +65,10 @@ func ReconcileIgnitionServer(ctx context.Context,
 				switch {
 				case !util.ConnectsThroughInternetToControlplane(hcp.Spec.Platform):
 					ignitionServerRoute.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", ignitionServerRoute.Name, hcp.Name)
-					ingress.AddRouteLabel(ignitionServerRoute)
+					ingress.AddHCPRouteLabel(ignitionServerRoute)
 				case serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "":
 					ignitionServerRoute.Spec.Host = serviceStrategy.Route.Hostname
-					ingress.AddRouteLabel(ignitionServerRoute)
+					ingress.AddHCPRouteLabel(ignitionServerRoute)
 				default:
 					ignitionServerRoute.Spec.Host = util.ShortenRouteHostnameIfNeeded(ignitionServerRoute.Name, ignitionServerRoute.Namespace, defaultIngressDomain)
 				}
