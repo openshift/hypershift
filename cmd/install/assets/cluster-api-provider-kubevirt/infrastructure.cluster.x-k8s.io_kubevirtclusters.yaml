@@ -51,6 +51,97 @@ spec:
                 - host
                 - port
                 type: object
+              controlPlaneServiceTemplate:
+                description: ControlPlaneServiceTemplate can be used to modify service
+                  that fronts the control plane nodes to handle the api-server traffic
+                  (port 6443). This field is optional, by default control plane nodes
+                  will use a service of type ClusterIP, which will make workload cluster
+                  only accessible within the same cluster. Note, this does not aim
+                  to expose the entire Service spec to users, but only provides capability
+                  to modify the service metadata and the service type.
+                properties:
+                  metadata:
+                    description: Service metadata allows to set labels and annotations
+                      for the service. This field is optional.
+                    nullable: true
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  spec:
+                    description: Service specification allows to override some fields
+                      in the service spec. Note, it does not aim cover all fields
+                      of the service spec.
+                    properties:
+                      type:
+                        description: 'Type determines how the Service is exposed.
+                          Defaults to ClusterIP. Valid options are ExternalName, ClusterIP,
+                          NodePort, and LoadBalancer. More info: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types'
+                        type: string
+                    type: object
+                type: object
+              infraClusterNodeNetwork:
+                description: InfraClusterSecretRef
+                properties:
+                  setup:
+                    description: NodeNetworkConfigurationPolicySpec defines the desired
+                      state of NodeNetworkConfigurationPolicy
+                    properties:
+                      capture:
+                        additionalProperties:
+                          type: string
+                        description: Capture contains expressions with an associated
+                          name than can be referenced at the DesiredState.
+                        type: object
+                      desiredState:
+                        description: The desired configuration of the policy
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      maxUnavailable:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: MaxUnavailable specifies percentage or number
+                          of machines that can be updating at a time. Default is "50%".
+                        x-kubernetes-int-or-string: true
+                      nodeSelector:
+                        additionalProperties:
+                          type: string
+                        description: 'NodeSelector is a selector which must be true
+                          for the policy to be applied to the node. Selector which
+                          must match a node''s labels for the policy to be scheduled
+                          on that node. More info: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/'
+                        type: object
+                    type: object
+                  teardown:
+                    description: NodeNetworkConfigurationPolicySpec defines the desired
+                      state of NodeNetworkConfigurationPolicy
+                    properties:
+                      capture:
+                        additionalProperties:
+                          type: string
+                        description: Capture contains expressions with an associated
+                          name than can be referenced at the DesiredState.
+                        type: object
+                      desiredState:
+                        description: The desired configuration of the policy
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                      maxUnavailable:
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: MaxUnavailable specifies percentage or number
+                          of machines that can be updating at a time. Default is "50%".
+                        x-kubernetes-int-or-string: true
+                      nodeSelector:
+                        additionalProperties:
+                          type: string
+                        description: 'NodeSelector is a selector which must be true
+                          for the policy to be applied to the node. Selector which
+                          must match a node''s labels for the policy to be scheduled
+                          on that node. More info: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/'
+                        type: object
+                    type: object
+                type: object
               infraClusterSecretRef:
                 description: InfraClusterSecretRef is a reference to a secret with
                   a kubeconfig for external cluster used for infra.
@@ -89,6 +180,9 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              network:
+                description: ClusterNetwork
+                type: string
               sshKeys:
                 description: SSHKeys is a reference to a local struct for SSH keys
                   persistence.

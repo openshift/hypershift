@@ -865,6 +865,21 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"endpointslices"},
 				Verbs:     []string{"list", "watch"},
 			},
+			{
+				APIGroups: []string{"k8s.cni.cncf.io"},
+				Resources: []string{"network-attachment-definitions"},
+				Verbs:     []string{"create", "update", "get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"nodes"},
+				Verbs:     []string{"list"},
+			},
+			{
+				APIGroups: []string{"nmstate.io"},
+				Resources: []string{"nodenetworkconfigurationpolicies"},
+				Verbs:     []string{"*"},
+			},
 		},
 	}
 	return role

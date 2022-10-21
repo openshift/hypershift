@@ -37,6 +37,46 @@ spec:
           spec:
             description: KubevirtMachineSpec defines the desired state of KubevirtMachine.
             properties:
+              infraClusterSecretRef:
+                description: InfraClusterSecretRef is a reference to a secret with
+                  a kubeconfig for external cluster used for infra. When nil, this
+                  defaults to the value present in the KubevirtCluster object's spec
+                  associated with this machine.
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: 'If referring to a piece of an object instead of
+                      an entire object, this string should contain a valid JSON/Go
+                      field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within
+                      a pod, this would take on a value like: "spec.containers{name}"
+                      (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]"
+                      (container with index 2 in this pod). This syntax is chosen
+                      only to have some well-defined way of referencing a part of
+                      an object. TODO: this design is not final and this field is
+                      subject to change in the future.'
+                    type: string
+                  kind:
+                    description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                    type: string
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                    type: string
+                  namespace:
+                    description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                    type: string
+                  resourceVersion:
+                    description: 'Specific resourceVersion to which this reference
+                      is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                    type: string
+                  uid:
+                    description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               providerID:
                 description: ProviderID TBD what to use for Kubevirt
                 type: string
@@ -672,10 +712,6 @@ spec:
                           name:
                             description: Name is the name of the VirtualMachineFlavor
                               or VirtualMachineClusterFlavor
-                            type: string
-                          profile:
-                            description: Profile is the name of a custom profile in
-                              the flavor. If left empty, the default profile is used.
                             type: string
                         required:
                         - name
@@ -2169,9 +2205,8 @@ spec:
                                           to hotplug disks.
                                         type: boolean
                                       disks:
-                                        description: Disks describes disks, cdroms,
-                                          floppy and luns which are connected to the
-                                          vmi.
+                                        description: Disks describes disks, cdroms
+                                          and luns which are connected to the vmi.
                                         items:
                                           properties:
                                             blockSize:
@@ -2268,21 +2303,6 @@ spec:
                                                     to false.
                                                   type: boolean
                                               type: object
-                                            floppy:
-                                              description: Attach a volume as a floppy
-                                                to the vmi.
-                                              properties:
-                                                readonly:
-                                                  description: ReadOnly. Defaults
-                                                    to false.
-                                                  type: boolean
-                                                tray:
-                                                  description: Tray indicates if the
-                                                    tray of the device is open or
-                                                    closed. Allowed values are "open"
-                                                    and "closed". Defaults to closed.
-                                                  type: string
-                                              type: object
                                             io:
                                               description: 'IO specifies which QEMU
                                                 disk IO mode should be used. Supported
@@ -2311,6 +2331,11 @@ spec:
                                                 to specify a serial number for the
                                                 disk device.
                                               type: string
+                                            shareable:
+                                              description: If specified the disk is
+                                                made sharable and multiple write from
+                                                different VMs are permitted
+                                              type: boolean
                                             tag:
                                               description: If specified, disk address
                                                 and its tag will be provided to the
@@ -2347,6 +2372,12 @@ spec:
                                             name:
                                               description: Name of the GPU device
                                                 as exposed by a device plugin
+                                              type: string
+                                            tag:
+                                              description: If specified, the virtual
+                                                network interface address and its
+                                                tag will be provided to the guest
+                                                via config drive
                                               type: string
                                             virtualGPUOptions:
                                               properties:
@@ -2393,6 +2424,12 @@ spec:
                                               type: string
                                             name:
                                               type: string
+                                            tag:
+                                              description: If specified, the virtual
+                                                network interface address and its
+                                                tag will be provided to the guest
+                                                via config drive
+                                              type: string
                                           required:
                                           - deviceName
                                           - name
@@ -2436,6 +2473,8 @@ spec:
                                                 boot order are not tried.
                                               type: integer
                                             bridge:
+                                              description: InterfaceBridge connects
+                                                to a given network via a linux bridge.
                                               type: object
                                             dhcpOptions:
                                               description: If specified the network
@@ -2490,8 +2529,15 @@ spec:
                                                 DE-AD-00-00-BE-AF.'
                                               type: string
                                             macvtap:
+                                              description: InterfaceMacvtap connects
+                                                to a given network by extending the
+                                                Kubernetes node's L2 networks via
+                                                a macvtap interface.
                                               type: object
                                             masquerade:
+                                              description: InterfaceMasquerade connects
+                                                to a given network using netfilter
+                                                rules to nat the traffic.
                                               type: object
                                             model:
                                               description: 'Interface model. One of:
@@ -2516,7 +2562,7 @@ spec:
                                               description: List of ports to be forwarded
                                                 to the virtual machine.
                                               items:
-                                                description: Port repesents a port
+                                                description: Port represents a port
                                                   to expose from the virtual machine.
                                                   Default protocol TCP. The port field
                                                   is mandatory
@@ -2547,8 +2593,14 @@ spec:
                                                 type: object
                                               type: array
                                             slirp:
+                                              description: InterfaceSlirp connects
+                                                to a given network using QEMU user
+                                                networking mode.
                                               type: object
                                             sriov:
+                                              description: InterfaceSRIOV connects
+                                                to a given network by passing-through
+                                                an SR-IOV PCI device via vfio.
                                               type: object
                                             tag:
                                               description: If specified, the virtual
@@ -2572,6 +2624,25 @@ spec:
                                       rng:
                                         description: Whether to have random number
                                           generator from host
+                                        type: object
+                                      sound:
+                                        description: Whether to emulate a sound device.
+                                        properties:
+                                          model:
+                                            description: 'We only support ich9 or
+                                              ac97. If SoundDevice is not set: No
+                                              sound card is emulated. If SoundDevice
+                                              is set but Model is not: ich9'
+                                            type: string
+                                          name:
+                                            description: User's defined name for this
+                                              sound device
+                                            type: string
+                                        required:
+                                        - name
+                                        type: object
+                                      tpm:
+                                        description: Whether to emulate a TPM device.
                                         type: object
                                       useVirtioTransitional:
                                         description: Fall back to legacy virtio 0.9
@@ -2898,8 +2969,8 @@ spec:
                                               that containes kernel artifacts
                                             properties:
                                               image:
-                                                description: Image that container
-                                                  initrd / kernel files.
+                                                description: Image that contains initrd
+                                                  / kernel files.
                                                 type: string
                                               imagePullPolicy:
                                                 description: 'Image pull policy. One
@@ -2945,6 +3016,14 @@ spec:
                                       share IOThreads. Omitting IOThreadsPolicy disables
                                       use of IOThreads. One of: shared, auto'
                                     type: string
+                                  launchSecurity:
+                                    description: Launch Security setting of the vmi.
+                                    properties:
+                                      sev:
+                                        description: AMD Secure Encrypted Virtualization
+                                          (SEV).
+                                        type: object
+                                    type: object
                                   machine:
                                     description: Machine type.
                                     properties:
@@ -3959,6 +4038,36 @@ spec:
                   - type
                   type: object
                 type: array
+              failureMessage:
+                description: "FailureMessage will be set in the event that there is
+                  a terminal problem reconciling the Machine and will contain a more
+                  verbose string suitable for logging and human consumption. \n This
+                  field should not be set for transitive errors that a controller
+                  faces that are expected to be fixed automatically over time (like
+                  service outages), but instead indicate that something is fundamentally
+                  wrong with the Machine's spec or the configuration of the controller,
+                  and that manual intervention is required. Examples of terminal errors
+                  would be invalid combinations of settings in the spec, values that
+                  are unsupported by the controller, or the responsible controller
+                  itself being critically misconfigured. \n Any transient errors that
+                  occur during the reconciliation of Machines can be added as events
+                  to the Machine object and/or logged in the controller's output."
+                type: string
+              failureReason:
+                description: "FailureReason will be set in the event that there is
+                  a terminal problem reconciling the Machine and will contain a succinct
+                  value suitable for machine interpretation. \n This field should
+                  not be set for transitive errors that a controller faces that are
+                  expected to be fixed automatically over time (like service outages),
+                  but instead indicate that something is fundamentally wrong with
+                  the Machine's spec or the configuration of the controller, and that
+                  manual intervention is required. Examples of terminal errors would
+                  be invalid combinations of settings in the spec, values that are
+                  unsupported by the controller, or the responsible controller itself
+                  being critically misconfigured. \n Any transient errors that occur
+                  during the reconciliation of Machines can be added as events to
+                  the Machine object and/or logged in the controller's output."
+                type: string
               loadBalancerConfigured:
                 description: LoadBalancerConfigured denotes that the machine has been
                   added to the load balancer

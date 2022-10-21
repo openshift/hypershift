@@ -2,8 +2,13 @@ package kubevirt
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 
+	nadv1 "github.com/k8snetworkplumbingwg/network-attachment-definition-client/pkg/apis/k8s.cni.cncf.io/v1"
+	nmstate "github.com/nmstate/kubernetes-nmstate/api/shared"
+	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
@@ -42,6 +47,18 @@ func (p Kubevirt) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, cre
 		return nil, err
 	}
 
+	nad := &nadv1.NetworkAttachmentDefinition{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "bridge-network",
+		},
+	}
+	if _, err := createOrUpdate(ctx, c, nad, func() error {
+		reconcileNAD(nad, kubevirtCluster)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
 	return kubevirtCluster, nil
 }
 
@@ -51,8 +68,82 @@ func reconcileKubevirtCluster(kubevirtCluster *capikubevirt.KubevirtCluster, hcl
 		hostedClusterAnnotation:    client.ObjectKeyFromObject(hcluster).String(),
 		capiv1.ManagedByAnnotation: "external",
 	}
+	bridgeName := bridgeName(kubevirtCluster)
+	kubevirtCluster.Spec = capikubevirt.KubevirtClusterSpec{
+		Network: "192.168.4.0/24", //TODO: Read this from hosted network fields
+		InfraClusterNodeNetwork: &capikubevirt.InfraClusterNodeNetwork{
+			Setup: nmstate.NodeNetworkConfigurationPolicySpec{
+				Capture: map[string]string{
+					"default-gw": "routes.running.destination=='0.0.0.0/0'",
+					"base-iface": "interfaces.name==capture.default-gw.routes.running.0.next-hop-interface",
+				},
+				DesiredState: nmstate.NewState(fmt.Sprintf(`
+interfaces:
+- name: base.100
+  type: vlan
+  state: up 
+  vlan:
+    base-iface: "{{ capture.base-iface.interfaces.0.name }}"
+    id: 100
+- name: %s
+  description:  "capk.cluster.x-k8s.io/interface"
+  type: linux-bridge
+  state: up
+  ipv4:
+    enabled: true
+    dhcp: false
+  ipv6:
+    enabled: false
+  bridge:
+    options:
+      stp:
+        enabled: false
+    port:
+    - name: base.100
+`, bridgeName)),
+			},
+			TearDown: nmstate.NodeNetworkConfigurationPolicySpec{
+				DesiredState: nmstate.NewState(fmt.Sprintf(`
+interfaces:
+  - name: base.100
+    state: absent
+  - name: %s
+    state: absent
+`, bridgeName))}}}
 	// Set the values for upper level controller
 	kubevirtCluster.Status.Ready = true
+}
+
+func init() {
+	nadv1.AddToScheme(hyperapi.Scheme)
+}
+
+func reconcileNAD(nad *nadv1.NetworkAttachmentDefinition, kubevirtCluster *capikubevirt.KubevirtCluster) {
+	bridgeName := bridgeName(kubevirtCluster)
+	if nad.Labels == nil {
+		nad.Labels = map[string]string{}
+	}
+	nad.Labels["capk.cluster.x-k8s.io/template-kind"] = "external"
+	nad.Labels["cluster.x-k8s.io/cluster-name"] = kubevirtCluster.Name
+	if nad.Annotations == nil {
+		nad.Annotations = map[string]string{}
+	}
+	nad.Annotations["k8s.v1.cni.cncf.io/resourceName"] = "bridge.network.kubevirt.io/" + bridgeName
+	nad.Spec.Config = fmt.Sprintf(`
+{
+  "cniVersion": "0.3.1",
+  "name": "%s",
+  "plugins": [{
+      "type": "bridge",
+      "bridge": "%s",
+      "ipam": {}
+  }]
+}
+`, bridgeName, bridgeName)
+}
+
+func bridgeName(kubevirtCluster *capikubevirt.KubevirtCluster) string {
+	return "br-" + strings.TrimPrefix(kubevirtCluster.Namespace, "clusters-")
 }
 
 func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
@@ -173,6 +264,16 @@ func (Kubevirt) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 		{
 			APIGroups: []string{"kubevirt.io"},
 			Resources: []string{"virtualmachineinstances", "virtualmachines"},
+			Verbs:     []string{"*"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"nodes"},
+			Verbs:     []string{"list"},
+		},
+		{
+			APIGroups: []string{"nmstate.io"},
+			Resources: []string{"nodenetworkconfigurationpolicies"},
 			Verbs:     []string{"*"},
 		},
 	}

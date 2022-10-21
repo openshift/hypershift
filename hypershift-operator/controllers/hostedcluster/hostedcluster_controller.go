@@ -1648,6 +1648,15 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		return fmt.Errorf("failed to reconcile capi provider role: %w", err)
 	}
 
+	// Reconcile CAPI provider cluster role
+	capiProviderClusterRole := clusterapi.CAPIProviderClusterRole(controlPlaneNamespace.Name)
+	_, err = createOrUpdate(ctx, r.Client, capiProviderClusterRole, func() error {
+		return reconcileCAPIProviderClusterRole(capiProviderClusterRole)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi provider cluster role: %w", err)
+	}
+
 	// Reconcile CAPI provider service account
 	capiProviderServiceAccount := clusterapi.CAPIProviderServiceAccount(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, capiProviderServiceAccount, func() error {
@@ -1665,6 +1674,15 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi provider role binding: %w", err)
+	}
+
+	// Reconcile CAPI provider cluster role binding
+	capiProviderClusterRoleBinding := clusterapi.CAPIProviderClusterRoleBinding(controlPlaneNamespace.Name)
+	_, err = createOrUpdate(ctx, r.Client, capiProviderClusterRoleBinding, func() error {
+		return reconcileCAPIProviderClusterRoleBinding(capiProviderClusterRoleBinding, capiProviderClusterRole, capiProviderServiceAccount)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile capi provider cluster role binding: %w", err)
 	}
 
 	// Reconcile CAPI provider deployment
@@ -2511,7 +2529,6 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
 	return nil
 }
-
 func reconcileCAPIManagerClusterRole(role *rbacv1.ClusterRole) error {
 	role.Rules = []rbacv1.PolicyRule{
 		{
@@ -2653,10 +2670,43 @@ func reconcileCAPIProviderRole(role *rbacv1.Role, p platform.Platform) error {
 	return nil
 }
 
+func reconcileCAPIProviderClusterRole(role *rbacv1.ClusterRole) error {
+	role.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"nodes"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+		{
+			APIGroups: []string{"nmstate.io"},
+			Resources: []string{"nodenetworkconfigurationpolicies"},
+			Verbs:     []string{"*"},
+		},
+	}
+	return nil
+}
+
 func reconcileCAPIProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
 	binding.RoleRef = rbacv1.RoleRef{
 		APIGroup: "rbac.authorization.k8s.io",
 		Kind:     "Role",
+		Name:     role.Name,
+	}
+
+	binding.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      sa.Name,
+			Namespace: sa.Namespace,
+		},
+	}
+	return nil
+}
+
+func reconcileCAPIProviderClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, role *rbacv1.ClusterRole, sa *corev1.ServiceAccount) error {
+	binding.RoleRef = rbacv1.RoleRef{
+		APIGroup: "rbac.authorization.k8s.io",
+		Kind:     "ClusterRole",
 		Name:     role.Name,
 	}
 
