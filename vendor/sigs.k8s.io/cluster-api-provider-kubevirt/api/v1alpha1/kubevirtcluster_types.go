@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	nmstate "github.com/nmstate/kubernetes-nmstate/api/shared"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -28,6 +29,23 @@ const (
 	ClusterFinalizer = "kubevirtcluster.infrastructure.cluster.x-k8s.io"
 )
 
+const ( //labels
+	KubevirtMachineNameLabel      = "capk.cluster.x-k8s.io/kubevirt-machine-name"
+	KubevirtMachineNamespaceLabel = "capk.cluster.x-k8s.io/kubevirt-machine-namespace"
+
+	KubevirtMachineVMTerminalLabel = "capk.cluster.x-k8s.io/vm-is-terminal"
+)
+
+const ( // annotations
+	VmiDeletionGraceTime = "capk.cluster.x-k8s.io/vmi-deletion-grace-time"
+)
+
+// InfraClusterNodeNetwork
+type InfraClusterNodeNetwork struct {
+	Setup    nmstate.NodeNetworkConfigurationPolicySpec `json:"setup,omitempty" valid:"required"`
+	TearDown nmstate.NodeNetworkConfigurationPolicySpec `json:"teardown,omitempty" valid:"required"`
+}
+
 // KubevirtClusterSpec defines the desired state of KubevirtCluster.
 type KubevirtClusterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -37,11 +55,29 @@ type KubevirtClusterSpec struct {
 	// +optional
 	ControlPlaneEndpoint APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 
+	// ControlPlaneServiceTemplate can be used to modify service that fronts the control plane nodes to handle the
+	// api-server traffic (port 6443). This field is optional, by default control plane nodes will use a service
+	// of type ClusterIP, which will make workload cluster only accessible within the same cluster. Note, this does
+	// not aim to expose the entire Service spec to users, but only provides capability to modify the service metadata
+	// and the service type.
+	// +optional
+	ControlPlaneServiceTemplate ControlPlaneServiceTemplate `json:"controlPlaneServiceTemplate,omitempty"`
+
 	// SSHKeys is a reference to a local struct for SSH keys persistence.
+	// +optional
 	SshKeys SSHKeys `json:"sshKeys,omitempty"`
 
 	// InfraClusterSecretRef is a reference to a secret with a kubeconfig for external cluster used for infra.
+	// +optional
 	InfraClusterSecretRef *corev1.ObjectReference `json:"infraClusterSecretRef,omitempty"`
+
+	// ClusterNetwork
+	// + optional
+	Network string `json:"network,omitempty"`
+
+	// InfraClusterSecretRef
+	// +optional
+	InfraClusterNodeNetwork *InfraClusterNodeNetwork `json:"infraClusterNodeNetwork",omitempty`
 }
 
 // KubevirtClusterStatus defines the observed state of KubevirtCluster.
@@ -78,6 +114,28 @@ type SSHKeys struct {
 	// DataSecretName is the name of the secret that stores ssh keys.
 	// +optional
 	DataSecretName *string `json:"dataSecretName,omitempty"`
+}
+
+// ControlPlaneServiceTemplate describes the template for the control plane service.
+type ControlPlaneServiceTemplate struct {
+	// Service metadata allows to set labels and annotations for the service.
+	// This field is optional.
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +nullable
+	ObjectMeta metav1.ObjectMeta `json:"metadata,omitempty"`
+	// Service specification allows to override some fields in the service spec.
+	// Note, it does not aim cover all fields of the service spec.
+	// +optional
+	Spec ServiceSpecTemplate `json:"spec,omitempty"`
+}
+
+// ServiceSpecTemplate describes the service spec template.
+type ServiceSpecTemplate struct {
+	// Type determines how the Service is exposed. Defaults to ClusterIP. Valid
+	// options are ExternalName, ClusterIP, NodePort, and LoadBalancer.
+	// More info: https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
+	// +optional
+	Type corev1.ServiceType `json:"type,omitempty"`
 }
 
 // +kubebuilder:resource:path=kubevirtclusters,scope=Namespaced,categories=cluster-api

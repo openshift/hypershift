@@ -95,6 +95,22 @@ func CAPIProviderRoleBinding(controlPlaneNamespace string) *rbacv1.RoleBinding {
 	}
 }
 
+func CAPIProviderClusterRole(controlPlaneNamespace string) *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "capi-provider",
+		},
+	}
+}
+
+func CAPIProviderClusterRoleBinding(controlPlaneNamespace string) *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "capi-provider",
+		},
+	}
+}
+
 func CAPIWebhooksTLSSecret(controlPlaneNamespace string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

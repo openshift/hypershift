@@ -115,6 +115,7 @@ type KubevirtPlatformCreateOptions struct {
 	RootVolumeSize            uint32
 	RootVolumeStorageClass    string
 	RootVolumeAccessModes     string
+	Vlan                      uint32
 }
 
 type AWSPlatformOptions struct {

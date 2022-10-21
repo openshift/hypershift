@@ -52,6 +52,11 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 			if network.Spec.DefaultNetwork.OVNKubernetesConfig.GenevePort == nil {
 				network.Spec.DefaultNetwork.OVNKubernetesConfig.GenevePort = &port
 			}
+			if network.Spec.DefaultNetwork.OVNKubernetesConfig.GatewayConfig == nil {
+				network.Spec.DefaultNetwork.OVNKubernetesConfig.GatewayConfig = &operatorv1.GatewayConfig{
+					RoutingViaHost: true,
+				}
+			}
 		}
 	case hyperv1.PowerVSPlatform:
 		if networkType == hyperv1.OVNKubernetes {

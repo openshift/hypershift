@@ -94,6 +94,7 @@ func (DomainSpec) SwaggerDoc() map[string]string {
 		"devices":         "Devices allows adding disks, network interfaces, and others",
 		"ioThreadsPolicy": "Controls whether or not disks will share IOThreads.\nOmitting IOThreadsPolicy disables use of IOThreads.\nOne of: shared, auto\n+optional",
 		"chassis":         "Chassis specifies the chassis info passed to the domain.\n+optional",
+		"launchSecurity":  "Launch Security setting of the vmi.\n+optional",
 	}
 }
 
@@ -128,7 +129,7 @@ func (EFI) SwaggerDoc() map[string]string {
 func (KernelBootContainer) SwaggerDoc() map[string]string {
 	return map[string]string{
 		"":                "If set, the VM will be booted from the defined kernel / initrd.",
-		"image":           "Image that container initrd / kernel files.",
+		"image":           "Image that contains initrd / kernel files.",
 		"imagePullSecret": "ImagePullSecret is the name of the Docker registry secret required to pull the image. The secret must already exist.\n+optional",
 		"imagePullPolicy": "Image pull policy.\nOne of Always, Never, IfNotPresent.\nDefaults to Always if :latest tag is specified, or IfNotPresent otherwise.\nCannot be updated.\nMore info: https://kubernetes.io/docs/concepts/containers/images#updating-images\n+optional",
 		"kernelPath":      "The fully-qualified path to the kernel image in the host OS\n+optional",
@@ -228,7 +229,7 @@ func (Devices) SwaggerDoc() map[string]string {
 	return map[string]string{
 		"useVirtioTransitional":      "Fall back to legacy virtio 0.9 support if virtio bus is selected on devices.\nThis is helpful for old machines like CentOS6 or RHEL6 which\ndo not understand virtio_non_transitional (virtio 1.0).",
 		"disableHotplug":             "DisableHotplug disabled the ability to hotplug disks.",
-		"disks":                      "Disks describes disks, cdroms, floppy and luns which are connected to the vmi.",
+		"disks":                      "Disks describes disks, cdroms and luns which are connected to the vmi.",
 		"watchdog":                   "Watchdog describes a watchdog device which can be added to the vmi.",
 		"interfaces":                 "Interfaces describe network interfaces which are added to the vmi.",
 		"inputs":                     "Inputs describe input devices",
@@ -243,13 +244,27 @@ func (Devices) SwaggerDoc() map[string]string {
 		"filesystems":                "Filesystems describes filesystem which is connected to the vmi.\n+optional\n+listType=atomic",
 		"hostDevices":                "Whether to attach a host device to the vmi.\n+optional\n+listType=atomic",
 		"clientPassthrough":          "To configure and access client devices such as redirecting USB\n+optional",
+		"sound":                      "Whether to emulate a sound device.\n+optional",
+		"tpm":                        "Whether to emulate a TPM device.\n+optional",
 	}
 }
 
 func (ClientPassthroughDevices) SwaggerDoc() map[string]string {
 	return map[string]string{
-		"": "Represent a subset of client devices that can be accessed by VMI. At the\nmoment only, USB devices using Usbredir's library and tooling. Another fit\nwould be a smartcard with libcacard.\n\nThe struct is currently empty as there is no imediate request for\nuser-facing APIs. This structure simply turns on USB redirection of\nUsbClientPassthroughMaxNumberOf devices.",
+		"": "Represent a subset of client devices that can be accessed by VMI. At the\nmoment only, USB devices using Usbredir's library and tooling. Another fit\nwould be a smartcard with libcacard.\n\nThe struct is currently empty as there is no immediate request for\nuser-facing APIs. This structure simply turns on USB redirection of\nUsbClientPassthroughMaxNumberOf devices.",
 	}
+}
+
+func (SoundDevice) SwaggerDoc() map[string]string {
+	return map[string]string{
+		"":      "Represents the user's configuration to emulate sound cards in the VMI.",
+		"name":  "User's defined name for this sound device",
+		"model": "We only support ich9 or ac97.\nIf SoundDevice is not set: No sound card is emulated.\nIf SoundDevice is set but Model is not: ich9\n+optional",
+	}
+}
+
+func (TPMDevice) SwaggerDoc() map[string]string {
+	return map[string]string{}
 }
 
 func (Input) SwaggerDoc() map[string]string {
@@ -274,6 +289,7 @@ func (FilesystemVirtiofs) SwaggerDoc() map[string]string {
 func (GPU) SwaggerDoc() map[string]string {
 	return map[string]string{
 		"name": "Name of the GPU device as exposed by a device plugin",
+		"tag":  "If specified, the virtual network interface address and its tag will be provided to the guest via config drive\n+optional",
 	}
 }
 
@@ -291,6 +307,7 @@ func (VGPUDisplayOptions) SwaggerDoc() map[string]string {
 func (HostDevice) SwaggerDoc() map[string]string {
 	return map[string]string{
 		"deviceName": "DeviceName is the resource name of the host device exposed by a device plugin",
+		"tag":        "If specified, the virtual network interface address and its tag will be provided to the guest via config drive\n+optional",
 	}
 }
 
@@ -304,6 +321,7 @@ func (Disk) SwaggerDoc() map[string]string {
 		"io":                "IO specifies which QEMU disk IO mode should be used.\nSupported values are: native, default, threads.\n+optional",
 		"tag":               "If specified, disk address and its tag will be provided to the guest via config drive metadata\n+optional",
 		"blockSize":         "If specified, the virtual disk will be presented with the given block sizes.\n+optional",
+		"shareable":         "If specified the disk is made sharable and multiple write from different VMs are permitted\n+optional",
 	}
 }
 
@@ -321,11 +339,10 @@ func (BlockSize) SwaggerDoc() map[string]string {
 
 func (DiskDevice) SwaggerDoc() map[string]string {
 	return map[string]string{
-		"":       "Represents the target of a volume to mount.\nOnly one of its members may be specified.",
-		"disk":   "Attach a volume as a disk to the vmi.",
-		"lun":    "Attach a volume as a LUN to the vmi.",
-		"floppy": "Attach a volume as a floppy to the vmi.",
-		"cdrom":  "Attach a volume as a cdrom to the vmi.",
+		"":      "Represents the target of a volume to mount.\nOnly one of its members may be specified.",
+		"disk":  "Attach a volume as a disk to the vmi.",
+		"lun":   "Attach a volume as a LUN to the vmi.",
+		"cdrom": "Attach a volume as a cdrom to the vmi.",
 	}
 }
 
@@ -337,17 +354,20 @@ func (DiskTarget) SwaggerDoc() map[string]string {
 	}
 }
 
+func (LaunchSecurity) SwaggerDoc() map[string]string {
+	return map[string]string{
+		"sev": "AMD Secure Encrypted Virtualization (SEV).",
+	}
+}
+
+func (SEV) SwaggerDoc() map[string]string {
+	return map[string]string{}
+}
+
 func (LunTarget) SwaggerDoc() map[string]string {
 	return map[string]string{
 		"bus":      "Bus indicates the type of disk device to emulate.\nsupported values: virtio, sata, scsi.",
 		"readonly": "ReadOnly.\nDefaults to false.",
-	}
-}
-
-func (FloppyTarget) SwaggerDoc() map[string]string {
-	return map[string]string{
-		"readonly": "ReadOnly.\nDefaults to false.",
-		"tray":     "Tray indicates if the tray of the device is open or closed.\nAllowed values are \"open\" and \"closed\".\nDefaults to closed.\n+optional",
 	}
 }
 
@@ -626,28 +646,38 @@ func (InterfaceBindingMethod) SwaggerDoc() map[string]string {
 }
 
 func (InterfaceBridge) SwaggerDoc() map[string]string {
-	return map[string]string{}
+	return map[string]string{
+		"": "InterfaceBridge connects to a given network via a linux bridge.",
+	}
 }
 
 func (InterfaceSlirp) SwaggerDoc() map[string]string {
-	return map[string]string{}
+	return map[string]string{
+		"": "InterfaceSlirp connects to a given network using QEMU user networking mode.",
+	}
 }
 
 func (InterfaceMasquerade) SwaggerDoc() map[string]string {
-	return map[string]string{}
+	return map[string]string{
+		"": "InterfaceMasquerade connects to a given network using netfilter rules to nat the traffic.",
+	}
 }
 
 func (InterfaceSRIOV) SwaggerDoc() map[string]string {
-	return map[string]string{}
+	return map[string]string{
+		"": "InterfaceSRIOV connects to a given network by passing-through an SR-IOV PCI device via vfio.",
+	}
 }
 
 func (InterfaceMacvtap) SwaggerDoc() map[string]string {
-	return map[string]string{}
+	return map[string]string{
+		"": "InterfaceMacvtap connects to a given network by extending the Kubernetes node's L2 networks via a macvtap interface.",
+	}
 }
 
 func (Port) SwaggerDoc() map[string]string {
 	return map[string]string{
-		"":         "Port repesents a port to expose from the virtual machine.\nDefault protocol TCP.\nThe port field is mandatory",
+		"":         "Port represents a port to expose from the virtual machine.\nDefault protocol TCP.\nThe port field is mandatory",
 		"name":     "If specified, this must be an IANA_SVC_NAME and unique within the pod. Each\nnamed port in a pod must have a unique name. Name for the port that can be\nreferred to by services.\n+optional",
 		"protocol": "Protocol for port. Must be UDP or TCP.\nDefaults to \"TCP\".\n+optional",
 		"port":     "Number of port to expose for the virtual machine.\nThis must be a valid port number, 0 < x < 65536.",

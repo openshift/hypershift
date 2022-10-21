@@ -56,11 +56,15 @@ func (c *DeploymentConfig) SetContainerResourcesIfPresent(container *corev1.Cont
 
 func (c *DeploymentConfig) SetRestartAnnotation(objectMetadata metav1.ObjectMeta) {
 	if _, ok := objectMetadata.Annotations[hyperv1.RestartDateAnnotation]; ok {
-		if c.AdditionalAnnotations == nil {
-			c.AdditionalAnnotations = make(AdditionalAnnotations)
-		}
-		c.AdditionalAnnotations[hyperv1.RestartDateAnnotation] = objectMetadata.Annotations[hyperv1.RestartDateAnnotation]
+		c.AddAnnotation(hyperv1.RestartDateAnnotation, objectMetadata.Annotations[hyperv1.RestartDateAnnotation])
 	}
+}
+
+func (c *DeploymentConfig) AddAnnotation(key, value string) {
+	if c.AdditionalAnnotations == nil {
+		c.AdditionalAnnotations = make(AdditionalAnnotations)
+	}
+	c.AdditionalAnnotations[key] = value
 }
 
 func (c *DeploymentConfig) SetReleaseImageAnnotation(releaseImage string) {
@@ -289,6 +293,7 @@ func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, multiZon
 	c.setLocation(hcp, multiZoneSpreadLabels)
 	// TODO (alberto): make this private, atm is needed for the konnectivity agent daemonset.
 	c.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
+
 }
 
 // debugDeployments returns a set of deployments to debug based on the
