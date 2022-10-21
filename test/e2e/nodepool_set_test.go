@@ -49,6 +49,6 @@ func TestNodePoolMain(t *testing.T) {
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
 	e2eutil.WaitForImageRollout(t, ctx, mgmtClient, guestClient, guestCluster, globalOpts.LatestReleaseImage)
 
-	t.Run("TestSetAutoRepair", testSetAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
-	//t.Run("KillAllMembers", testKillAllMembers(ctx, client, cluster))
+	t.Run("TestSetNodePoolAutoRepair", testSetNodePoolAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+	t.Run("TestSetNodePoolMachineConfigGetsRolledout", testSetNodePoolMachineConfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
 }

@@ -14,12 +14,13 @@ import (
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func testSetAutoRepair(parentCtx context.Context, mgmtClient crclient.Client, guestCluster *hyperv1.HostedCluster, guestClient crclient.Client, clusterOpts core.CreateOptions) func(t *testing.T) {
+func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Client, guestCluster *hyperv1.HostedCluster, guestClient crclient.Client, clusterOpts core.CreateOptions) func(t *testing.T) {
 	return func(t *testing.T) {
 		g := NewWithT(t)
 		ctx, cancel := context.WithCancel(parentCtx)
@@ -69,4 +70,10 @@ func testSetAutoRepair(parentCtx context.Context, mgmtClient crclient.Client, gu
 		}, ctx.Done())
 		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for new node to become available")
 	}
+}
+
+func ec2Client(awsCredsFile, region string) *ec2.EC2 {
+	awsSession := awsutil.NewSession("e2e-autorepair", awsCredsFile, "", "", region)
+	awsConfig := awsutil.NewConfig()
+	return ec2.New(awsSession, awsConfig)
 }
