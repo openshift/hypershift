@@ -33,16 +33,30 @@ func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Cl
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePools")
 
 		// Check nodes and Nodepool replicas
-		numZones := int32(1)
-		numNodes := int32(numZones * 2)
+		numZones := int32(len(clusterOpts.AWSPlatform.Zones))
+		if numZones <= 1 {
+			clusterOpts.NodePoolReplicas = 2
+		} else if numZones == 2 {
+			clusterOpts.NodePoolReplicas = 1
+		} else {
+			clusterOpts.NodePoolReplicas = 1
+		}
+		numNodes := clusterOpts.NodePoolReplicas * numZones
+
 		t.Logf("Waiting for Nodes %d\n", numNodes)
 		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type)
 
 		for _, nodePool := range nodePools.Items {
 			t.Logf("Checking availble Nodes at Region %s in Nodepool: %s", guestCluster.Spec.Platform.AWS.CloudProviderConfig.Zone, nodePool.Name)
 			g.Expect(&nodePool.Status.Replicas).To(Equal(nodePool.Spec.Replicas))
-			t.Logf("Checking AutoRepair function set to %v", nodePool.Spec.Management.AutoRepair)
-			g.Expect(nodePool.Spec.Management.AutoRepair).To(BeTrue())
+			t.Logf("Checking AutoRepair function it's propertly set: %v", nodePool.Spec.Management.AutoRepair)
+			if !nodePool.Spec.Management.AutoRepair {
+				np := nodePool.DeepCopy()
+				nodePool.Spec.Management.AutoRepair = true
+				if err := mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
+					t.Fatalf("failed to update nodePool %s with Autorepair function: %v", nodePool.Name, err)
+				}
+			}
 		}
 
 		// Terminate one of the machines belonging to the cluster
@@ -69,6 +83,15 @@ func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Cl
 			return true, nil
 		}, ctx.Done())
 		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for new node to become available")
+
+		// Disabling Autorepair function
+		for _, nodePool := range nodePools.Items {
+			np := nodePool.DeepCopy()
+			nodePool.Spec.Management.AutoRepair = false
+			if err := mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
+				t.Fatalf("failed to update nodePool %s with Autorepair function: %v", nodePool.Name, err)
+			}
+		}
 	}
 }
 

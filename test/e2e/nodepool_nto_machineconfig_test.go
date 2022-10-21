@@ -13,37 +13,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
-)
-
-const (
-	hugepagesTuned = `apiVersion: tuned.openshift.io/v1
-kind: Tuned
-metadata:
-  name: hugepages
-  namespace: openshift-cluster-node-tuning-operator
-spec:
-  profile:
-  - data: |
-      [main]
-      summary=Boot time configuration for hugepages
-      include=openshift-node
-      [bootloader]
-      cmdline_openshift_node_hugepages=hugepagesz=2M hugepages=4
-    name: openshift-hugepages
-  recommend:
-  - priority: 20
-    profile: openshift-hugepages
-`
-
-	hypershiftNodePoolNameLabel = "hypershift.openshift.io/nodePoolName" // HyperShift-enabled NTO adds this label to Tuned CRs bound to NodePools
-	tuningConfigKey             = "tuning"
 )
 
 func TestNTOMachineConfigGetsRolledOut(t *testing.T) {
@@ -267,14 +241,3 @@ func TestNTOMachineConfigAppliedInPlace(t *testing.T) {
 	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNoPodsWithTooHighPriority(t, ctx, client, hostedCluster)
 }
-
-//go:embed nodepool_nto_machineconfig_verification_ds.yaml
-var ntoMachineConfigUpdatedVerificationDSRaw []byte
-
-var ntoMachineConfigUpdatedVerificationDS = func() *appsv1.DaemonSet {
-	ds := &appsv1.DaemonSet{}
-	if err := yaml.Unmarshal(ntoMachineConfigUpdatedVerificationDSRaw, &ds); err != nil {
-		panic(err)
-	}
-	return ds
-}()
