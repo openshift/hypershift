@@ -9,6 +9,8 @@ import (
 	"github.com/golang/groupcache/lru"
 	"k8s.io/client-go/rest"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/registryclient"
@@ -91,4 +93,19 @@ func ImageLabels(metadata *dockerv1client.DockerImageConfig) map[string]string {
 	} else {
 		return metadata.ContainerConfig.Labels
 	}
+}
+
+// GetPayloadImage get an image from the payload for a particular component
+func GetPayloadImage(ctx context.Context, hc *hyperv1.HostedCluster, component string, pullSecret []byte) (string, error) {
+	releaseImageProvider := &releaseinfo.RegistryClientProvider{}
+	releaseImage, err := releaseinfo.Provider.Lookup(releaseImageProvider, ctx, hc.Spec.Release.Image, pullSecret)
+	if err != nil {
+		return "", fmt.Errorf("failed to lookup release image: %w", err)
+	}
+
+	image, exists := releaseImage.ComponentImages()[component]
+	if !exists {
+		return "", fmt.Errorf("image does not exist for release: %q", image)
+	}
+	return image, nil
 }

@@ -108,10 +108,7 @@ const (
 	HostedClusterAnnotation        = "hypershift.openshift.io/cluster"
 	clusterDeletionRequeueDuration = 5 * time.Second
 
-	// Image built from https://github.com/openshift/cluster-api/tree/release-1.0
-	// Upstream canonical image comes from https://console.cloud.google.com/gcr/images/k8s-staging-cluster-api/global/
-	// us.gcr.io/k8s-artifacts-prod/cluster-api/cluster-api-controller:v1.0.0
-	imageCAPI                              = "registry.ci.openshift.org/hypershift/cluster-api:v1.0.0"
+	ImageStreamCAPI                        = "cluster-capi-controllers"
 	ImageStreamAutoscalerImage             = "cluster-autoscaler"
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 
@@ -912,7 +909,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	_, ignitionServerHasHealthzHandler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[ignitionServerHealthzHandlerLabel]
 	_, controlplaneOperatorManagesIgnitionServer := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
 
-	p, err := platform.GetPlatform(hcluster, utilitiesImage)
+	p, err := platform.GetPlatform(hcluster, utilitiesImage, pullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1342,7 +1339,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the CAPI manager components
-	err = r.reconcileCAPIManager(ctx, createOrUpdate, hcluster, hcp)
+	err = r.reconcileCAPIManager(ctx, createOrUpdate, hcluster, hcp, pullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
 	}
@@ -1357,14 +1354,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// TODO (alberto): drop this after dropping < 4.11 support.
 	if _, hasLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]; !hasLabel {
 		// Reconcile the autoscaler.
-		err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage)
+		err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
 		}
 	}
 	if _, hasLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]; !hasLabel {
 		// Reconcile the machine approver.
-		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage); err != nil {
+		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
 		}
 	}
@@ -1599,7 +1596,7 @@ func ensureHCPAWSRolesBackwardCompatibility(hc *hyperv1.HostedCluster, hcp *hype
 }
 
 // reconcileCAPIManager orchestrates orchestrates of  all CAPI manager components.
-func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, pullSecretBytes []byte) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -1687,7 +1684,10 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	}
 
 	// Reconcile CAPI manager deployment
-	capiImage := imageCAPI
+	capiImage, err := hyperutil.GetPayloadImage(ctx, hcluster, ImageStreamCAPI, pullSecretBytes)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve capi image: %w", err)
+	}
 	if envImage := os.Getenv(images.CAPIEnvVar); len(envImage) > 0 {
 		capiImage = envImage
 	}
@@ -1932,8 +1932,8 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1
 // reconcileAutoscaler orchestrates reconciliation of autoscaler components using
 // both the HostedCluster and the HostedControlPlane which the autoscaler takes
 // inputs from.
-func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string) error {
-	clusterAutoscalerImage, err := r.getPayloadImage(ctx, hcluster, ImageStreamAutoscalerImage)
+func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte) error {
+	clusterAutoscalerImage, err := hyperutil.GetPayloadImage(ctx, hcluster, ImageStreamAutoscalerImage, pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to get image for machine approver: %w", err)
 	}
@@ -2520,7 +2520,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 								},
 							},
 						},
-						Command: []string{"/manager"},
+						Command: []string{"/bin/cluster-api-controller-manager"},
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
 							"--alsologtostderr",
 							"--v=4",
@@ -3000,7 +3000,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	}
 
 	// Cleanup Platform specifics.
-	p, err := platform.GetPlatform(hc, "")
+	p, err := platform.GetPlatform(hc, "", nil)
 	if err != nil {
 		return false, err
 	}
@@ -3159,8 +3159,8 @@ func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Con
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string) error {
-	machineApproverImage, err := r.getPayloadImage(ctx, hcluster, ImageStreamClusterMachineApproverImage)
+func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte) error {
+	machineApproverImage, err := hyperutil.GetPayloadImage(ctx, hcluster, ImageStreamClusterMachineApproverImage, pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to get image for machine approver: %w", err)
 	}
@@ -4068,33 +4068,6 @@ func validateClusterID(hc *hyperv1.HostedCluster) error {
 		}
 	}
 	return nil
-}
-
-// getReleaseImage get the releaseInfo releaseImage for a given HC release image reference.
-func (r *HostedClusterReconciler) getReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster) (*releaseinfo.ReleaseImage, error) {
-	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return nil, fmt.Errorf("failed to get pull secret: %w", err)
-	}
-	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
-	if !ok {
-		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
-	}
-	return r.ReleaseProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecretBytes)
-}
-
-// getPayloadImage get an image from the payload for a particular component.
-func (r *HostedClusterReconciler) getPayloadImage(ctx context.Context, hc *hyperv1.HostedCluster, component string) (string, error) {
-	releaseImage, err := r.getReleaseImage(ctx, hc)
-	if err != nil {
-		return "", fmt.Errorf("failed to lookup release image: %w", err)
-	}
-
-	image, exists := releaseImage.ComponentImages()[component]
-	if !exists {
-		return "", fmt.Errorf("image does not exist for release: %q", image)
-	}
-	return image, nil
 }
 
 func (r *HostedClusterReconciler) reconcileServiceAccountSigningKey(ctx context.Context, hc *hyperv1.HostedCluster, targetNamespace string, createOrUpdate upsert.CreateOrUpdateFN) error {

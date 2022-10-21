@@ -154,6 +154,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		if err := r.delete(ctx, nodePool, controlPlaneNamespace); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to delete nodepool: %w", err)
 		}
+
 		// Now we can remove the finalizer.
 		if controllerutil.ContainsFinalizer(nodePool, finalizer) {
 			controllerutil.RemoveFinalizer(nodePool, finalizer)
@@ -942,18 +943,19 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 		}
 	}
 
-	// Delete any secret belonging to this NodePool i.e token Secret and userdata Secret.
-	secrets, err := r.listSecrets(ctx, nodePool)
-	if err != nil {
-		return fmt.Errorf("failed to list secrets: %w", err)
-	}
-	for k := range secrets {
-		if err := r.Delete(ctx, &secrets[k]); err != nil && !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to delete secret: %w", err)
-		}
+	if err := deleteMachineDeployment(ctx, r.Client, md); err != nil {
+		return fmt.Errorf("failed to delete MachineDeployment: %w", err)
 	}
 
-	// Delete any ConfigMap belonging to this NodePool i.e. TuningConfig ConfigMaps.
+	if err := deleteMachineHealthCheck(ctx, r.Client, mhc); err != nil {
+		return fmt.Errorf("failed to delete MachineHealthCheck: %w", err)
+	}
+
+	if err := deleteMachineSet(ctx, r.Client, ms); err != nil {
+		return fmt.Errorf("failed to delete MachineSet: %w", err)
+	}
+
+	// Delete any ConfigMap belonging to this NodePool i.e. TunedConfig ConfigMaps.
 	err = r.DeleteAllOf(ctx, &corev1.ConfigMap{},
 		client.InNamespace(controlPlaneNamespace),
 		client.MatchingLabels{nodePoolAnnotation: nodePool.GetName()},
@@ -962,16 +964,29 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 		return fmt.Errorf("failed to delete ConfigMaps with nodePool label: %w", err)
 	}
 
-	if err := deleteMachineDeployment(ctx, r.Client, md); err != nil {
-		return fmt.Errorf("failed to delete MachineDeployment: %w", err)
+	// Ensure all machines in NodePool are deleted
+	if err = r.ensureMachineDeletion(nodePool, controlPlaneNamespace); err != nil {
+		return err
 	}
 
-	if err := deleteMachineSet(ctx, r.Client, ms); err != nil {
-		return fmt.Errorf("failed to delete MachineSet: %w", err)
+	// Delete all secrets related to the NodePool
+	if err := r.deleteNodePoolSecrets(ctx, nodePool); err != nil {
+		return fmt.Errorf("failed to delete NodePool secrets: %w", err)
 	}
 
-	if err := deleteMachineHealthCheck(ctx, r.Client, mhc); err != nil {
-		return fmt.Errorf("failed to delete MachineHealthCheck: %w", err)
+	return nil
+}
+
+// deleteNodePoolSecrets deletes any secret belonging to this NodePool (ex. token Secret and userdata Secret)
+func (r *NodePoolReconciler) deleteNodePoolSecrets(ctx context.Context, nodePool *hyperv1.NodePool) error {
+	secrets, err := r.listSecrets(ctx, nodePool)
+	if err != nil {
+		return fmt.Errorf("failed to list secrets: %w", err)
+	}
+	for k := range secrets {
+		if err := r.Delete(ctx, &secrets[k]); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete secret: %w", err)
+		}
 	}
 	return nil
 }
@@ -1109,7 +1124,6 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 				nodePoolAnnotation:                        client.ObjectKeyFromObject(nodePool).String(),
 			},
 		},
-
 		Spec: capiv1.MachineSpec{
 			ClusterName: CAPIClusterName,
 			Bootstrap: capiv1.Bootstrap{
@@ -2082,4 +2096,28 @@ func (r *NodePoolReconciler) doesCPODecompressAndDecodeConfig(ctx context.Contex
 
 	_, managesDecompressAndDecodeConfig := supportutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesDecompressAndDecodeConfig]
 	return managesDecompressAndDecodeConfig, nil
+}
+
+// ensureMachineDeletion ensures all the machines belonging to the NodePool's MachineSet are fully deleted
+// This function can be deleted once the upstream PR (https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805) is merged and pulled into https://github.com/openshift/cluster-api
+// This function is necessary to ensure AWSMachines are fully deleted prior to deleting the NodePull secrets being deleted due to a bug introduced by https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2271
+// See https://github.com/openshift/hypershift/pull/1826#discussion_r1007349564 for more details
+func (r *NodePoolReconciler) ensureMachineDeletion(nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
+	// Get list of CAPI Machines to filter through
+	machines := capiv1.MachineList{}
+	if err := r.List(context.Background(), &machines, &client.ListOptions{Namespace: controlPlaneNamespace}); err != nil {
+		return fmt.Errorf("failed to get list of Machines: %w", err)
+	}
+
+	// Filter out only machines belonging to deleted NodePool
+	var machineSetOwnedMachines []capiv1.Machine
+	for i, machine := range machines.Items {
+		if machine.Annotations[nodePoolAnnotation] == client.ObjectKeyFromObject(nodePool).String() {
+			machineSetOwnedMachines = append(machineSetOwnedMachines, machines.Items[i])
+		}
+	}
+	if len(machineSetOwnedMachines) > 0 {
+		return fmt.Errorf("there are still Machines in the cluster")
+	}
+	return nil
 }
