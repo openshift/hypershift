@@ -87,15 +87,15 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.MarkFlagRequired("resource-group")
 	cmd.MarkFlagRequired("base-domain")
 	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("powervs-region")
-	cmd.MarkFlagRequired("powervs-zone")
+	cmd.MarkFlagRequired("region")
+	cmd.MarkFlagRequired("zone")
 	cmd.MarkFlagRequired("vpc-region")
 
 	// these options are only for development and testing purpose, user can pass these flags
 	// to destroy the resource created inside these resources for hypershift infra purpose
 	cmd.Flags().MarkHidden("vpc")
-	cmd.Flags().MarkHidden("powervs-cloud-connection")
-	cmd.Flags().MarkHidden("powervs-cloud-instance-id")
+	cmd.Flags().MarkHidden("cloud-connection")
+	cmd.Flags().MarkHidden("cloud-instance-id")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Run(cmd.Context()); err != nil {

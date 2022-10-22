@@ -203,9 +203,9 @@ func NewCreateCommand() *cobra.Command {
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
-	cmd.Flags().MarkHidden("powervs-cloud-instance-id")
+	cmd.Flags().MarkHidden("cloud-instance-id")
 	cmd.Flags().MarkHidden("vpc")
-	cmd.Flags().MarkHidden("powervs-cloud-connection")
+	cmd.Flags().MarkHidden("cloud-connection")
 
 	cmd.MarkFlagRequired("base-domain")
 	cmd.MarkFlagRequired("resource-group")

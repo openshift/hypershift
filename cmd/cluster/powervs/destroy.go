@@ -77,6 +77,9 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	if o.InfraID == "" {
 		inputErrors = append(inputErrors, fmt.Errorf("infrastructure ID is required"))
 	}
+	if o.PowerVSPlatform.BaseDomain == "" {
+		inputErrors = append(inputErrors, fmt.Errorf("base domain is required"))
+	}
 	if o.PowerVSPlatform.Region == "" {
 		inputErrors = append(inputErrors, fmt.Errorf("PowerVS region is required"))
 	}
