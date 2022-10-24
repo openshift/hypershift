@@ -47,6 +47,8 @@ spec:
 	tuningConfigKey             = "tuning"
 )
 
+var zero int32 = 0
+
 func testSetNodePoolNTOMachineConfigGetsRolledout(parentCtx context.Context, mgmtClient crclient.Client, guestCluster *hyperv1.HostedCluster, guestClient crclient.Client, clusterOpts core.CreateOptions) func(t *testing.T) {
 	return func(t *testing.T) {
 		g := NewWithT(t)
@@ -59,19 +61,22 @@ func testSetNodePoolNTOMachineConfigGetsRolledout(parentCtx context.Context, mgm
 		})
 
 		for _, nodePool := range nodePools.Items {
-			err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-			t.Logf("Replacing the Upgrade Strategy to RollingUpdate")
-			original := nodePool.DeepCopy()
-			nodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
-				Strategy: hyperv1.UpgradeStrategyRollingUpdate,
-				RollingUpdate: &hyperv1.RollingUpdate{
-					MaxUnavailable: func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(0)),
-					MaxSurge:       func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(int(*nodePool.Spec.Replicas))),
-				},
+			if int32(*nodePool.Spec.Replicas) > zero {
+				err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
+				t.Logf("Replacing the Upgrade Strategy to RollingUpdate")
+				original := nodePool.DeepCopy()
+				t.Logf("=================================>>>>> Nodepool: \n%v", nodePool)
+				nodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
+					Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+					RollingUpdate: &hyperv1.RollingUpdate{
+						MaxUnavailable: func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(0)),
+						MaxSurge:       func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(int(*nodePool.Spec.Replicas))),
+					},
+				}
+				err = mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(original))
+				g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool replicas")
 			}
-			err = mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(original))
-			g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool replicas")
 		}
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePools")
 
@@ -97,14 +102,17 @@ func testSetNodePoolNTOMachineConfigGetsRolledout(parentCtx context.Context, mgm
 				continue
 			}
 
-			np := nodePool.DeepCopy()
-			nodePool.Spec.TunedConfig = append(nodePool.Spec.TunedConfig, corev1.LocalObjectReference{Name: tunedConfigConfigMap.Name})
-			if err := mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
-				t.Fatalf("failed to update nodepool %s after adding Tuned config: %v", nodePool.Name, err)
+			if int32(*nodePool.Spec.Replicas) > zero {
+				np := nodePool.DeepCopy()
+				nodePool.Spec.TunedConfig = append(nodePool.Spec.TunedConfig, corev1.LocalObjectReference{Name: tunedConfigConfigMap.Name})
+				if err := mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
+					t.Fatalf("failed to update nodepool %s after adding Tuned config: %v", nodePool.Name, err)
+				}
 			}
 		}
 
 		ds := ntoMachineConfigUpdatedVerificationDS.DeepCopy()
+		t.Logf("=============================>>>>> DaemonSet: \n%v", ds)
 		err = guestClient.Create(ctx, ds)
 		if !errors.IsAlreadyExists(err) {
 			t.Fatalf("failed to create %s DaemonSet in guestcluster: %v", ds.Name, err)
@@ -161,15 +169,19 @@ func testSetNodePoolNTOMachineConfigAppliedInPlace(parentCtx context.Context, mg
 		})
 
 		for _, nodePool := range nodePools.Items {
-			err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-			t.Logf("Replacing the Upgrade Strategy to InPlace")
-			original := nodePool.DeepCopy()
-			nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace
-			err = mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(original))
-			g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool replicas")
+			if int32(*nodePool.Spec.Replicas) > zero {
+				err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
+				t.Logf("Replacing the Upgrade Strategy to InPlace")
+				original := nodePool.DeepCopy()
+				nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace
+				err = mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(original))
+				g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool replicas")
+			}
 		}
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePools")
+
+		t.Logf("======= Finished Create new NodePool")
 
 		// Wait for Nodes to be Ready
 		numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
@@ -187,18 +199,23 @@ func testSetNodePoolNTOMachineConfigAppliedInPlace(parentCtx context.Context, mg
 		if !errors.IsAlreadyExists(err) {
 			t.Fatalf("failed to create configmap for custom Tuned object: %v", err)
 		}
-
+		t.Logf("======= Finished Create Tuned ConfigMap")
 		for _, nodePool := range nodePools.Items {
 			if nodePool.Spec.ClusterName != guestCluster.Name {
 				continue
 			}
 
-			np := nodePool.DeepCopy()
-			nodePool.Spec.TunedConfig = append(nodePool.Spec.TunedConfig, corev1.LocalObjectReference{Name: tunedConfigConfigMap.Name})
-			if err := mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
-				t.Fatalf("failed to update nodepool %s after adding Tuned config: %v", nodePool.Name, err)
+			if int32(*nodePool.Spec.Replicas) > zero {
+				np := nodePool.DeepCopy()
+				nodePool.Spec.TunedConfig = append(nodePool.Spec.TunedConfig, corev1.LocalObjectReference{Name: tunedConfigConfigMap.Name})
+				if err := mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
+					t.Fatalf("failed to update nodepool %s after adding Tuned config: %v", nodePool.Name, err)
+				}
 			}
 		}
+
+		t.Logf("======= Finished Added TunedConfig to NodePool Spec")
+		time.Sleep(60 * time.Second)
 
 		ds := ntoMachineConfigUpdatedVerificationDS.DeepCopy()
 		err = guestClient.Create(ctx, ds)
@@ -236,6 +253,8 @@ func testSetNodePoolNTOMachineConfigAppliedInPlace(parentCtx context.Context, mg
 		if err != nil {
 			t.Fatalf("failed waiting for all pods in the NTO MachineConfig update verification DS to be ready: %v", err)
 		}
+
+		t.Logf("======= Finished waiting all pods in NTO MachineConfig")
 
 		e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, mgmtClient, guestClient, guestCluster.Namespace)
 		e2eutil.EnsureNoCrashingPods(t, ctx, mgmtClient, guestCluster)
