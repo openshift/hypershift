@@ -41,7 +41,7 @@ you should adjust to your own environment.
 
     !!! important
 
-        In order to access applications in your guest clusters, the public zone must be routable.
+	To access applications in your guest clusters, the public zone must be routable. If the public zone exists, skip this step. Otherwise, the public zone will affect the existing functions.
 
 * An S3 bucket with public access to host OIDC discovery documents for your clusters.
 
