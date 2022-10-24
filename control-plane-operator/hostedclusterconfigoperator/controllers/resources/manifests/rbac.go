@@ -94,3 +94,11 @@ func MetricsClientClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 		},
 	}
 }
+
+func AuthenticatedReaderForAuthenticatedUserRolebinding() *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "authentication-reader-for-authenticated-users",
+			Namespace: "kube-system",
+		}}
+}
