@@ -396,6 +396,8 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 			"1m",
 			"--sync-interval-cap",
 			"5m",
+			"--v",
+			"3",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
