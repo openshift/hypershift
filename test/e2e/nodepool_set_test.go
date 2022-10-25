@@ -53,7 +53,7 @@ func TestNodePoolMain(t *testing.T) {
 	// Each test should have their own NodePool
 	// Need to rework some things
 	t.Run("TestSetNodePoolAutoRepair", testSetNodePoolAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
-	t.Run("TestSetNodePoolMachineConfigGetsRolledout", testSetNodePoolMachineConfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
-	t.Run("TestSetNodePoolNTOMachineConfigGetsRolledout", testSetNodePoolNTOMachineConfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+	//t.Run("TestSetNodePoolMachineConfigGetsRolledout", testSetNodePoolMachineConfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+	//t.Run("TestSetNodePoolNTOMachineConfigGetsRolledout", testSetNodePoolNTOMachineConfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
 	//t.Run("TestSetNodePoolNTOMachineConfigAppliedInPlace", testSetNodePoolNTOMachineConfigAppliedInPlace(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
 }

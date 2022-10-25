@@ -16,8 +16,15 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+var (
+	zeroReplicas int32 = 0
+	twoReplicas  int32 = 2
 )
 
 func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Client, guestCluster *hyperv1.HostedCluster, guestClient crclient.Client, clusterOpts core.CreateOptions) func(t *testing.T) {
@@ -26,13 +33,61 @@ func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Cl
 		ctx, cancel := context.WithCancel(parentCtx)
 		defer cancel()
 
+		// List NodePools (should exists only one and without replicas)
 		nodePools := &hyperv1.NodePoolList{}
 		err := mgmtClient.List(ctx, nodePools, &crclient.ListOptions{
 			Namespace: guestCluster.Namespace,
 		})
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePools")
+		g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepools")
+		originalNP := nodePools.Items[0]
+		awsNPInfo := originalNP.Spec.Platform.AWS
 
-		// Check nodes and Nodepool replicas
+		// Define a new Nodepool
+		nodePool := &hyperv1.NodePool{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "NodePool",
+				APIVersion: hyperv1.GroupVersion.String(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      guestCluster.Name + "-" + "test-autorepair",
+				Namespace: guestCluster.Namespace,
+			},
+			Spec: hyperv1.NodePoolSpec{
+				Management: hyperv1.NodePoolManagement{
+					UpgradeType: hyperv1.UpgradeTypeReplace,
+					AutoRepair:  true,
+				},
+				ClusterName: guestCluster.Name,
+				Replicas:    &twoReplicas,
+				Release: hyperv1.Release{
+					Image: guestCluster.Spec.Release.Image,
+				},
+				Platform: hyperv1.NodePoolPlatform{
+					Type: guestCluster.Spec.Platform.Type,
+					AWS:  awsNPInfo,
+				},
+			},
+		}
+
+		// Create NodePool for current test
+		err = mgmtClient.Create(ctx, nodePool)
+		if err != nil {
+			if !errors.IsAlreadyExists(err) {
+				t.Fatalf("failed to create nodePool %s with Autorepair function: %v", nodePool.Name, err)
+			}
+
+			// Update NodePool
+			err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
+			g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepool")
+			np := nodePool.DeepCopy()
+			nodePool.Spec.Replicas = &twoReplicas
+			nodePool.Spec.Management.AutoRepair = true
+			if err := mgmtClient.Patch(ctx, nodePool, crclient.MergeFrom(np)); err != nil {
+				t.Fatalf("failed to update NodePool %s with Autorepair function: %v", nodePool.Name, err)
+			}
+			g.Expect(err).NotTo(HaveOccurred(), "failed to Update existant NodePool")
+		}
+
 		numZones := int32(len(clusterOpts.AWSPlatform.Zones))
 		if numZones <= 1 {
 			clusterOpts.NodePoolReplicas = 2
@@ -43,23 +98,29 @@ func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Cl
 		}
 		numNodes := clusterOpts.NodePoolReplicas * numZones
 
-		t.Logf("Waiting for Nodes %d\n", numNodes)
-		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type)
+		// Ensure we don't have the initial NodePool with replicas over 0
+		if int32(*originalNP.Spec.Replicas) > zero {
+			// Wait until nodes gets created
+			t.Logf("Waiting for Nodes %d\n", numNodes)
+			_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type)
+			err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&originalNP), &originalNP)
+			g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepool")
+			original := originalNP.DeepCopy()
+			originalNP.Spec.Replicas = &zero
 
-		for _, nodePool := range nodePools.Items {
-			t.Logf("Checking availble Nodes at Region %s in Nodepool: %s", guestCluster.Spec.Platform.AWS.CloudProviderConfig.Zone, nodePool.Name)
-			g.Expect(&nodePool.Status.Replicas).To(Equal(nodePool.Spec.Replicas))
-			t.Logf("Checking AutoRepair function it's propertly set: %v", nodePool.Spec.Management.AutoRepair)
-			if !nodePool.Spec.Management.AutoRepair {
-				np := nodePool.DeepCopy()
-				nodePool.Spec.Management.AutoRepair = true
-				if err := mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
-					t.Fatalf("failed to update nodePool %s with Autorepair function: %v", nodePool.Name, err)
-				}
+			// Update NodePool
+			if err := mgmtClient.Patch(ctx, &originalNP, crclient.MergeFrom(original)); err != nil {
+				t.Fatalf("failed to update originalNP %s with Autorepair function: %v", originalNP.Name, err)
 			}
+			g.Expect(err).NotTo(HaveOccurred(), "failed to Update existant NodePool")
 		}
 
+		t.Logf("Waiting for Nodes %d\n", numNodes)
+		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type)
+		t.Logf("Desired replicas available for nodePool: %v", nodePool.Name)
+
 		// Terminate one of the machines belonging to the cluster
+		t.Log("Terminating AWS Instance with a autorepare NodePool")
 		nodeToReplace := nodes[0].Name
 		awsSpec := nodes[0].Spec.ProviderID
 		g.Expect(len(awsSpec)).NotTo(BeZero())
@@ -84,13 +145,12 @@ func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Cl
 		}, ctx.Done())
 		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for new node to become available")
 
-		// Disabling Autorepair function
-		for _, nodePool := range nodePools.Items {
-			np := nodePool.DeepCopy()
-			nodePool.Spec.Management.AutoRepair = false
-			if err := mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
-				t.Fatalf("failed to update nodePool %s with Autorepair function: %v", nodePool.Name, err)
-			}
+		// Test Finished. Scalling down the NodePool to void waste resources
+		err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
+		np := nodePool.DeepCopy()
+		nodePool.Spec.Replicas = &zero
+		if err := mgmtClient.Patch(ctx, nodePool, crclient.MergeFrom(np)); err != nil {
+			t.Fatalf("failed to downscale nodePool %s: %v", nodePool.Name, err)
 		}
 	}
 }
