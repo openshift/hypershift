@@ -163,6 +163,9 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.PublicZoneID = infra.PublicZoneID
 	exampleOptions.InfraID = infraID
 	exampleOptions.ExternalDNSDomain = opts.ExternalDNSDomain
+	if exampleOptions.EtcdStorageClass == "" {
+		exampleOptions.EtcdStorageClass = "gp3-csi"
+	}
 	var zones []apifixtures.ExampleAWSOptionsZones
 	for _, outputZone := range infra.Zones {
 		zones = append(zones, apifixtures.ExampleAWSOptionsZones{
