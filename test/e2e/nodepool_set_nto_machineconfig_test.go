@@ -6,6 +6,7 @@ package e2e
 import (
 	"context"
 	_ "embed"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,7 +48,7 @@ spec:
 	tuningConfigKey             = "tuning"
 )
 
-var zero int32 = 0
+var ntoMcCounter = 0
 
 func testSetNodePoolNTOMachineConfigGetsRolledout(parentCtx context.Context, mgmtClient crclient.Client, guestCluster *hyperv1.HostedCluster, guestClient crclient.Client, clusterOpts core.CreateOptions) func(t *testing.T) {
 	return func(t *testing.T) {
@@ -59,26 +60,70 @@ func testSetNodePoolNTOMachineConfigGetsRolledout(parentCtx context.Context, mgm
 		err := mgmtClient.List(ctx, nodePools, &crclient.ListOptions{
 			Namespace: guestCluster.Namespace,
 		})
-
+		g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepools")
 		for _, nodePool := range nodePools.Items {
-			if int32(*nodePool.Spec.Replicas) > zero {
-				err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-				g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-				t.Logf("Replacing the Upgrade Strategy to RollingUpdate")
-				original := nodePool.DeepCopy()
-				t.Logf("=================================>>>>> Nodepool: \n%v", nodePool)
-				nodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
-					Strategy: hyperv1.UpgradeStrategyRollingUpdate,
-					RollingUpdate: &hyperv1.RollingUpdate{
-						MaxUnavailable: func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(0)),
-						MaxSurge:       func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(int(*nodePool.Spec.Replicas))),
-					},
-				}
-				err = mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(original))
-				g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool replicas")
+			if !strings.Contains(nodePool.Name, "-test-") {
+				originalNP = nodePool
 			}
 		}
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePools")
+		g.Expect(originalNP.Name).NotTo(ContainSubstring("test"))
+		awsNPInfo := originalNP.Spec.Platform.AWS
+
+		// Define a new Nodepool
+		nodePool := &hyperv1.NodePool{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "NodePool",
+				APIVersion: hyperv1.GroupVersion.String(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      guestCluster.Name + "-" + "test-nto-machineconfig",
+				Namespace: guestCluster.Namespace,
+			},
+			Spec: hyperv1.NodePoolSpec{
+				Management: hyperv1.NodePoolManagement{
+					UpgradeType: hyperv1.UpgradeTypeReplace,
+					AutoRepair:  true,
+					Replace: &hyperv1.ReplaceUpgrade{
+						Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+						RollingUpdate: &hyperv1.RollingUpdate{
+							MaxUnavailable: func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(0)),
+							MaxSurge:       func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(int(*nodePool.Spec.Replicas))),
+						},
+					},
+				},
+				ClusterName: guestCluster.Name,
+				Replicas:    &twoReplicas,
+				Release: hyperv1.Release{
+					Image: guestCluster.Spec.Release.Image,
+				},
+				Platform: hyperv1.NodePoolPlatform{
+					Type: guestCluster.Spec.Platform.Type,
+					AWS:  awsNPInfo,
+				},
+			},
+		}
+
+		// Create NodePool for current test
+		err = mgmtClient.Create(ctx, nodePool)
+		if err != nil {
+			if !errors.IsAlreadyExists(err) {
+				t.Fatalf("failed to create nodePool %s with Rolling Upgrade Strategy: %v", nodePool.Name, err)
+			}
+
+			// Update NodePool
+			err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
+			g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepool")
+			np := nodePool.DeepCopy()
+			nodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
+				Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+				RollingUpdate: &hyperv1.RollingUpdate{
+					MaxUnavailable: func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(0)),
+					MaxSurge:       func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(int(*nodePool.Spec.Replicas))),
+				},
+			}
+			err = mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(original))
+			g.Expect(err).NotTo(HaveOccurred(), "failed to Update existant NodePool")
+		}
 
 		// Wait for Nodes to be Ready
 		numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
@@ -97,22 +142,16 @@ func testSetNodePoolNTOMachineConfigGetsRolledout(parentCtx context.Context, mgm
 			t.Fatalf("failed to create configmap for custom Tuned object: %v", err)
 		}
 
-		for _, nodePool := range nodePools.Items {
-			if nodePool.Spec.ClusterName != guestCluster.Name {
-				continue
-			}
-
-			if int32(*nodePool.Spec.Replicas) > zero {
-				np := nodePool.DeepCopy()
-				nodePool.Spec.TunedConfig = append(nodePool.Spec.TunedConfig, corev1.LocalObjectReference{Name: tunedConfigConfigMap.Name})
-				if err := mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
-					t.Fatalf("failed to update nodepool %s after adding Tuned config: %v", nodePool.Name, err)
-				}
-			}
+		// Adding TunedConfig into NodePool
+		err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
+		g.Expect(err).NotTo(HaveOccurred(), "failed getting nodepool to append TunedConfig")
+		np := nodePool.DeepCopy()
+		nodePool.Spec.TunedConfig = append(nodePool.Spec.TunedConfig, corev1.LocalObjectReference{Name: tunedConfigConfigMap.Name})
+		if err := mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
+			t.Fatalf("failed to update nodepool %s after adding Tuned config: %v", nodePool.Name, err)
 		}
 
 		ds := ntoMachineConfigUpdatedVerificationDS.DeepCopy()
-		t.Logf("=============================>>>>> DaemonSet: \n%v", ds)
 		err = guestClient.Create(ctx, ds)
 		if !errors.IsAlreadyExists(err) {
 			t.Fatalf("failed to create %s DaemonSet in guestcluster: %v", ds.Name, err)
@@ -154,6 +193,13 @@ func testSetNodePoolNTOMachineConfigGetsRolledout(parentCtx context.Context, mgm
 		e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, mgmtClient, guestCluster)
 		e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, mgmtClient, guestCluster)
 		e2eutil.EnsureNoPodsWithTooHighPriority(t, ctx, mgmtClient, guestCluster)
+
+		ntoMcCounter += 1
+		if ntoMcCounter == 2 {
+			err = scaleDownTestNodePool(ctx, mgmtClient, nodePool)
+			g.Expect(err).NotTo(HaveOccurred(), "failed Scalling down NodePool after test finised")
+
+		}
 	}
 }
 
@@ -169,7 +215,7 @@ func testSetNodePoolNTOMachineConfigAppliedInPlace(parentCtx context.Context, mg
 		})
 
 		for _, nodePool := range nodePools.Items {
-			if int32(*nodePool.Spec.Replicas) > zero {
+			if int32(*nodePool.Spec.Replicas) > zeroReplicas {
 				err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
 				g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
 				t.Logf("Replacing the Upgrade Strategy to InPlace")
@@ -205,7 +251,7 @@ func testSetNodePoolNTOMachineConfigAppliedInPlace(parentCtx context.Context, mg
 				continue
 			}
 
-			if int32(*nodePool.Spec.Replicas) > zero {
+			if int32(*nodePool.Spec.Replicas) > zeroReplicas {
 				np := nodePool.DeepCopy()
 				nodePool.Spec.TunedConfig = append(nodePool.Spec.TunedConfig, corev1.LocalObjectReference{Name: tunedConfigConfigMap.Name})
 				if err := mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
@@ -262,6 +308,13 @@ func testSetNodePoolNTOMachineConfigAppliedInPlace(parentCtx context.Context, mg
 		e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, mgmtClient, guestCluster)
 		e2eutil.EnsureNoPodsWithTooHighPriority(t, ctx, mgmtClient, guestCluster)
 
+		ntoMcCounter += 1
+		if ntoMcCounter == 2 {
+			err = scaleDownTestNodePool(ctx, mgmtClient, nodePool)
+			g.Expect(err).NotTo(HaveOccurred(), "failed Scalling down NodePool after test finised")
+
+		}
+
 	}
 }
 
@@ -275,3 +328,19 @@ var ntoMachineConfigUpdatedVerificationDS = func() *appsv1.DaemonSet {
 	}
 	return ds
 }()
+
+func scaleDownTestNodePool(ctx context.Context, mgmtClient crclient.Client, nodePool *hyperv1.NodePool) error {
+	// Test Finished. Scalling down the NodePool to avoid waste resources
+	err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
+	if err != nil {
+		return err
+	}
+	np := nodePool.DeepCopy()
+	nodePool.Spec.Replicas = &zeroReplicas
+	if err := mgmtClient.Patch(ctx, nodePool, crclient.MergeFrom(np)); err != nil {
+		t.Fatalf("failed to downscale nodePool %s: %v", nodePool.Name, err)
+		return err
+	}
+
+	return nil
+}

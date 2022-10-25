@@ -31,6 +31,7 @@ func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Cl
 	return func(t *testing.T) {
 		g := NewWithT(t)
 		ctx, cancel := context.WithCancel(parentCtx)
+		originalNP := hyperv1.NodePool{}
 		defer cancel()
 
 		// List NodePools (should exists only one and without replicas)
@@ -39,7 +40,12 @@ func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Cl
 			Namespace: guestCluster.Namespace,
 		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepools")
-		originalNP := nodePools.Items[0]
+		for _, nodePool := range nodePools.Items {
+			if !strings.Contains(nodePool.Name, "-test-") {
+				originalNP = nodePool
+			}
+		}
+		g.Expect(originalNP.Name).NotTo(ContainSubstring("test"))
 		awsNPInfo := originalNP.Spec.Platform.AWS
 
 		// Define a new Nodepool
@@ -99,14 +105,14 @@ func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Cl
 		numNodes := clusterOpts.NodePoolReplicas * numZones
 
 		// Ensure we don't have the initial NodePool with replicas over 0
-		if int32(*originalNP.Spec.Replicas) > zero {
+		if int32(*originalNP.Spec.Replicas) > zeroReplicas {
 			// Wait until nodes gets created
 			t.Logf("Waiting for Nodes %d\n", numNodes)
 			_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type)
 			err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&originalNP), &originalNP)
 			g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepool")
 			original := originalNP.DeepCopy()
-			originalNP.Spec.Replicas = &zero
+			originalNP.Spec.Replicas = &zeroReplicas
 
 			// Update NodePool
 			if err := mgmtClient.Patch(ctx, &originalNP, crclient.MergeFrom(original)); err != nil {
@@ -148,7 +154,7 @@ func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Cl
 		// Test Finished. Scalling down the NodePool to void waste resources
 		err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
 		np := nodePool.DeepCopy()
-		nodePool.Spec.Replicas = &zero
+		nodePool.Spec.Replicas = &zeroReplicas
 		if err := mgmtClient.Patch(ctx, nodePool, crclient.MergeFrom(np)); err != nil {
 			t.Fatalf("failed to downscale nodePool %s: %v", nodePool.Name, err)
 		}
