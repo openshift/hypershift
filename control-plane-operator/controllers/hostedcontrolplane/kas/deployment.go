@@ -536,6 +536,7 @@ func kasVolumeAggregatorCert() *corev1.Volume {
 		Name: "aggregator-crt",
 	}
 }
+
 func buildKASVolumeAggregatorCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -554,7 +555,7 @@ func buildKASVolumeAggregatorCA(v *corev1.Volume) {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
 	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
-	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
+	v.ConfigMap.Name = manifests.AggregateClientCAConfigMap("").Name
 }
 
 func kasVolumeEgressSelectorConfig() *corev1.Volume {

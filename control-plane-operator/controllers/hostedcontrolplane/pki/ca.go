@@ -30,6 +30,14 @@ func reconcileAggregateCA(configMap *corev1.ConfigMap, ownerRef config.OwnerRef,
 	return nil
 }
 
+func ReconcileAggregateClientSigner(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "kas-aggregator-signer", "openshift")
+}
+
+func ReconcileAggregateClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, signer *corev1.Secret) error {
+	return reconcileAggregateCA(cm, ownerRef, signer)
+}
+
 func ReconcileRootCA(secret *corev1.Secret, ownerRef config.OwnerRef) error {
 	return reconcileSelfSignedCA(secret, ownerRef, "root-ca", "openshift")
 }
