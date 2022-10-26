@@ -83,8 +83,8 @@ const (
 	TokenSecretConfigKey                      = "config"
 	TokenSecretAnnotation                     = "hypershift.openshift.io/ignition-config"
 
-	tunedConfigKey                 = "tuned"
-	tunedConfigMapLabel            = "hypershift.openshift.io/tuned-config"
+	tuningConfigKey                = "tuning"
+	tuningConfigMapLabel           = "hypershift.openshift.io/tuned-config"
 	nodeTuningGeneratedConfigLabel = "hypershift.openshift.io/nto-generated-machine-config"
 
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
@@ -522,21 +522,21 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
 	}
 
-	// Validate tunedconfig input.
-	tunedConfig, err := r.getTunedConfig(ctx, nodePool)
+	// Validate tuningConfig input.
+	tuningConfig, err := r.getTuningConfig(ctx, nodePool)
 	if err != nil {
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidTunedConfigConditionType,
+			Type:               hyperv1.NodePoolValidTuningConfigConditionType,
 			Status:             corev1.ConditionFalse,
 			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 			Message:            err.Error(),
 			ObservedGeneration: nodePool.Generation,
 		})
-		return ctrl.Result{}, fmt.Errorf("failed to get tunedConfig: %w", err)
+		return ctrl.Result{}, fmt.Errorf("failed to get tuningConfig: %w", err)
 	}
 
 	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolValidTunedConfigConditionType,
+		Type:               hyperv1.NodePoolValidTuningConfigConditionType,
 		Status:             corev1.ConditionTrue,
 		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 		ObservedGeneration: nodePool.Generation,
@@ -561,20 +561,20 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
 
-	tunedConfigMap := TunedConfigMap(controlPlaneNamespace, nodePool.Name)
-	if tunedConfig == "" {
-		err = r.Get(ctx, client.ObjectKeyFromObject(tunedConfigMap), tunedConfigMap)
+	tuningConfigMap := TuningConfigMap(controlPlaneNamespace, nodePool.Name)
+	if tuningConfig == "" {
+		err = r.Get(ctx, client.ObjectKeyFromObject(tuningConfigMap), tuningConfigMap)
 		if err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to get tunedConfig ConfigMap: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to get tuningConfig ConfigMap: %w", err)
 		}
 		if err == nil {
-			if err := r.Delete(ctx, tunedConfigMap); err != nil && !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to delete tunedConfig ConfigMap with no Tuneds defined: %w", err)
+			if err := r.Delete(ctx, tuningConfigMap); err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to delete tuningConfig ConfigMap with no Tuneds defined: %w", err)
 			}
 		}
 	} else {
-		if result, err := r.CreateOrUpdate(ctx, r.Client, tunedConfigMap, func() error {
-			return reconcileTunedConfigMap(tunedConfigMap, nodePool, tunedConfig)
+		if result, err := r.CreateOrUpdate(ctx, r.Client, tuningConfigMap, func() error {
+			return reconcileTuningConfigMap(tuningConfigMap, nodePool, tuningConfig)
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile Tuned ConfigMap: %w", err)
 		} else {
@@ -892,7 +892,7 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 		}
 	}
 
-	// Delete any ConfigMap belonging to this NodePool i.e. TunedConfig ConfigMaps.
+	// Delete any ConfigMap belonging to this NodePool i.e. TuningConfig ConfigMaps.
 	err = r.DeleteAllOf(ctx, &corev1.ConfigMap{},
 		client.InNamespace(controlPlaneNamespace),
 		client.MatchingLabels{nodePoolAnnotation: nodePool.GetName()},
@@ -941,26 +941,26 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 	return nil
 }
 
-// reconcileTunedConfigMap inserts the Tuned object manifest in tunedConfig into ConfigMap tunedConfigMap.
+// reconcileTuningConfigMap inserts the Tuned object manifest in tuningConfig into ConfigMap tuningConfigMap.
 // This is used to mirror the Tuned object manifest into the control plane namespace, for the Node
 // Tuning Operator to mirror and reconcile in the hosted cluster.
-func reconcileTunedConfigMap(tunedConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, tunedConfig string) error {
-	tunedConfigMap.Immutable = k8sutilspointer.BoolPtr(false)
-	if tunedConfigMap.Annotations == nil {
-		tunedConfigMap.Annotations = make(map[string]string)
+func reconcileTuningConfigMap(tuningConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, tuningConfig string) error {
+	tuningConfigMap.Immutable = k8sutilspointer.BoolPtr(false)
+	if tuningConfigMap.Annotations == nil {
+		tuningConfigMap.Annotations = make(map[string]string)
 	}
-	if tunedConfigMap.Labels == nil {
-		tunedConfigMap.Labels = make(map[string]string)
+	if tuningConfigMap.Labels == nil {
+		tuningConfigMap.Labels = make(map[string]string)
 	}
 
-	tunedConfigMap.Labels[tunedConfigMapLabel] = "true"
-	tunedConfigMap.Annotations[nodePoolAnnotation] = nodePool.GetName()
-	tunedConfigMap.Labels[nodePoolAnnotation] = nodePool.GetName()
+	tuningConfigMap.Labels[tuningConfigMapLabel] = "true"
+	tuningConfigMap.Annotations[nodePoolAnnotation] = nodePool.GetName()
+	tuningConfigMap.Labels[nodePoolAnnotation] = nodePool.GetName()
 
-	if tunedConfigMap.Data == nil {
-		tunedConfigMap.Data = map[string]string{}
+	if tuningConfigMap.Data == nil {
+		tuningConfigMap.Data = map[string]string{}
 	}
-	tunedConfigMap.Data[tunedConfigKey] = tunedConfig
+	tuningConfigMap.Data[tuningConfigKey] = tuningConfig
 
 	return nil
 }
@@ -1356,14 +1356,14 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 	return strings.Join(allConfigPlainText, "\n---\n"), missingConfigs, utilerrors.NewAggregate(errors)
 }
 
-func (r *NodePoolReconciler) getTunedConfig(ctx context.Context,
+func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
 	nodePool *hyperv1.NodePool,
 ) (configsRaw string, err error) {
 	var configs []corev1.ConfigMap
 	var allConfigPlainText []string
 	var errors []error
 
-	for _, config := range nodePool.Spec.TunedConfig {
+	for _, config := range nodePool.Spec.TuningConfig {
 		configConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      config.Name,
@@ -1378,8 +1378,8 @@ func (r *NodePoolReconciler) getTunedConfig(ctx context.Context,
 	}
 
 	for _, config := range configs {
-		manifestRaw := config.Data[tunedConfigKey]
-		manifest, err := validateTunedConfigManifest([]byte(manifestRaw))
+		manifestRaw := config.Data[tuningConfigKey]
+		manifest, err := validateTuningConfigManifest([]byte(manifestRaw))
 		if err != nil {
 			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
 			continue
@@ -1393,7 +1393,7 @@ func (r *NodePoolReconciler) getTunedConfig(ctx context.Context,
 	return strings.Join(allConfigPlainText, "\n---\n"), utilerrors.NewAggregate(errors)
 }
 
-func validateTunedConfigManifest(manifest []byte) ([]byte, error) {
+func validateTuningConfigManifest(manifest []byte) ([]byte, error) {
 	scheme := runtime.NewScheme()
 	tunedv1.AddToScheme(scheme)
 
@@ -1411,12 +1411,12 @@ func validateTunedConfigManifest(manifest []byte) ([]byte, error) {
 	case *tunedv1.Tuned:
 		buff := bytes.Buffer{}
 		if err := yamlSerializer.Encode(obj, &buff); err != nil {
-			return nil, fmt.Errorf("failed to encode tuned config after defaulting it: %w", err)
+			return nil, fmt.Errorf("failed to encode Tuned object: %w", err)
 		}
 		manifest = buff.Bytes()
 
 	default:
-		return nil, fmt.Errorf("unsupported tunedConfig object type: %T", obj)
+		return nil, fmt.Errorf("unsupported tuningConfig object type: %T", obj)
 	}
 
 	return manifest, err
@@ -1668,7 +1668,7 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(obj client.Object) []reco
 
 	// If the ConfigMap is generated by the NodePool controller and contains Tuned manifests
 	// return the ConfigMaps parent NodePool.
-	if _, ok := obj.GetLabels()[tunedConfigMapLabel]; ok {
+	if _, ok := obj.GetLabels()[tuningConfigMapLabel]; ok {
 		return enqueueParentNodePool(obj)
 	}
 
@@ -1696,9 +1696,9 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(obj client.Object) []reco
 			}
 		}
 
-		// Check TunedConfig as well, unless ConfigMap was already found in .Spec.Config.
+		// Check TuningConfig as well, unless ConfigMap was already found in .Spec.Config.
 		if !reconcileNodePool {
-			for _, v := range nodePoolList.Items[key].Spec.TunedConfig {
+			for _, v := range nodePoolList.Items[key].Spec.TuningConfig {
 				if v.Name == cm.Name {
 					reconcileNodePool = true
 					break

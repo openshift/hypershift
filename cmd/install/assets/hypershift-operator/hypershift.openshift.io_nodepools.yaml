@@ -709,8 +709,8 @@ spec:
                   maintain. If unset, the default value is 0.
                 format: int32
                 type: integer
-              tunedConfig:
-                description: "TunedConfig is a list of references to ConfigMaps containing
+              tuningConfig:
+                description: "TuningConfig is a list of references to ConfigMaps containing
                   serialized Tuned resources to define the tuning configuration to
                   be applied to nodes in the NodePool. The Tuned API is defined here:
                   \n https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go

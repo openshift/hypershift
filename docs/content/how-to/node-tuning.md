@@ -40,7 +40,7 @@ If you would like to set some node-level tuning on the nodes in your hosted clus
     oc --kubeconfig="$MGMT_KUBECONFIG" create -f tuned-1.yaml
     ```
 
-    Reference the ConfigMap in the NodePools `spec.tunedConfig` field, either by editing an existing NodePool or creating a new NodePool. In this example we assume we only have one NodePool called `nodepool-1`, containing 2 Nodes.
+    Reference the ConfigMap in the NodePools `spec.tuningConfig` field, either by editing an existing NodePool or creating a new NodePool. In this example we assume we only have one NodePool called `nodepool-1`, containing 2 Nodes.
     ```
     apiVersion: hypershift.openshift.io/v1alpha1
     kind: NodePool
@@ -51,7 +51,7 @@ If you would like to set some node-level tuning on the nodes in your hosted clus
     ...
     spec:
       ...
-      tunedConfig:
+      tuningConfig:
       - name: tuned-1
     status:
     ...
@@ -138,7 +138,7 @@ As an example, the following steps can be followed to create a NodePool with hug
     oc --kubeconfig="$MGMT_KUBECONFIG" create -f tuned-hugepages.yaml
     ```
 
-2. Create a new NodePool manifest YAML file, customize the NodePools upgrade type, and reference the previously created ConfigMap in the `spec.tunedConfig` section before creating it in the management cluster.
+2. Create a new NodePool manifest YAML file, customize the NodePools upgrade type, and reference the previously created ConfigMap in the `spec.tuningConfig` section before creating it in the management cluster.
 
     Create the NodePool manifest and save it in a file called `hugepages-nodepool.yaml`:
     ```
@@ -154,7 +154,7 @@ As an example, the following steps can be followed to create a NodePool with hug
       --render > hugepages-nodepool.yaml
     ```
 
-    Edit `hugepages-nodepool.yaml`. Set `.spec.management.upgradeType` to `InPlace`, and set `.spec.tunedConfig` to reference the `tuned-hugepages` ConfigMap you created.
+    Edit `hugepages-nodepool.yaml`. Set `.spec.management.upgradeType` to `InPlace`, and set `.spec.tuningConfig` to reference the `tuned-hugepages` ConfigMap you created.
     ```
     apiVersion: hypershift.openshift.io/v1alpha1
     kind: NodePool
@@ -167,7 +167,7 @@ As an example, the following steps can be followed to create a NodePool with hug
         ...
         upgradeType: InPlace
       ...
-      tunedConfig:
+      tuningConfig:
       - name: tuned-hugepages
     ```
     > **_NOTE:_**  Setting `.spec.management.upgradeType` to `InPlace` is recommended to avoid unnecessary Node recreations when applying the new MachineConfigs. With the `Replace` upgrade type, Nodes will be fully deleted and new nodes will replace them when applying the new kernel boot parameters that are calculated by the TuneD operand.
