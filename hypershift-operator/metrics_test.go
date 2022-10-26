@@ -23,10 +23,11 @@ func TestMetrics(t *testing.T) {
 	testCases := []struct {
 		name          string
 		updateHistory []configv1.UpdateHistory
+		conditions    []metav1.Condition
 		expected      []*dto.MetricFamily
 	}{
 		{
-			name: "Cluster is reported",
+			name: "Cluster rollout duration is reported",
 			updateHistory: []configv1.UpdateHistory{{
 				CompletionTime: &metav1.Time{Time: time.Time{}.Add(time.Hour)},
 			}},
@@ -64,6 +65,35 @@ func TestMetrics(t *testing.T) {
 				}},
 			}},
 		},
+		{
+			name: "HostedClusterAvailable is false, Cluster available duration is not reported",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.HostedClusterAvailable),
+					Status: metav1.ConditionFalse,
+				},
+			},
+			expected: []*dto.MetricFamily{},
+		},
+		{
+			name: "HostedClusterAvailable is true, Cluster available duration is reported",
+			conditions: []metav1.Condition{
+				{
+					Type:               string(hyperv1.HostedClusterAvailable),
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Time{Time: time.Time{}.Add(time.Hour)},
+				},
+			},
+			expected: []*dto.MetricFamily{{
+				Name: utilpointer.StringPtr("hypershift_cluster_available_duration_seconds"),
+				Help: utilpointer.StringPtr("Time in seconds it took from initial cluster creation to HostedClusterAvailable condition becoming true"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{{Name: utilpointer.StringPtr("name"), Value: utilpointer.StringPtr("/hc")}},
+					Gauge: &dto.Gauge{Value: utilpointer.Float64Ptr(3600)},
+				}},
+			}},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -76,6 +106,7 @@ func TestMetrics(t *testing.T) {
 					Version: &hyperv1.ClusterVersionStatus{
 						History: tc.updateHistory,
 					},
+					Conditions: tc.conditions,
 				},
 			}
 			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cluster).Build()
@@ -90,7 +121,10 @@ func TestMetrics(t *testing.T) {
 			// failing.
 			reg := prometheus.NewPedanticRegistry()
 			if err := reg.Register(metrics.clusterCreationTime); err != nil {
-				t.Fatalf("registering collector failed: %v", err)
+				t.Fatalf("registering creationTime collector failed: %v", err)
+			}
+			if err := reg.Register(metrics.clusterAvailableTime); err != nil {
+				t.Fatalf("registering availableTIme collector failed: %v", err)
 			}
 			result, err := reg.Gather()
 			if err != nil {
