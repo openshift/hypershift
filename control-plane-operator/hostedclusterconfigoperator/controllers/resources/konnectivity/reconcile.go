@@ -112,6 +112,8 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 			"1m",
 			"--sync-interval-cap",
 			"5m",
+			"--v",
+			"3",
 		}
 		c.Env = []corev1.EnvVar{
 			{
