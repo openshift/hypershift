@@ -1279,10 +1279,26 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile kas kubelet client secret: %w", err)
 	}
 
-	// KAS aggregator cert secret
+	// KAS aggregator client signer
+	kasAggregateClientSigner := manifests.AggregateClientSigner(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kasAggregateClientSigner, func() error {
+		return pki.ReconcileAggregateClientSigner(kasAggregateClientSigner, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile root CA: %w", err)
+	}
+
+	// KAS aggregator client CA
+	kasAggregateClientCA := manifests.AggregateClientCAConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kasAggregateClientCA, func() error {
+		return pki.ReconcileAggregateClientCA(kasAggregateClientCA, p.OwnerRef, kasAggregateClientSigner)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile combined CA: %w", err)
+	}
+
+	// KAS aggregator client cert
 	kasAggregatorCertSecret := manifests.KASAggregatorCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kasAggregatorCertSecret, func() error {
-		return pki.ReconcileKASAggregatorCertSecret(kasAggregatorCertSecret, rootCASecret, p.OwnerRef)
+		return pki.ReconcileKASAggregatorCertSecret(kasAggregatorCertSecret, kasAggregateClientSigner, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kas aggregator secret: %w", err)
 	}

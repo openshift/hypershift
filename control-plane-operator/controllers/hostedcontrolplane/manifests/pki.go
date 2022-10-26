@@ -32,6 +32,15 @@ func CombinedCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
+func AggregateClientCAConfigMap(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "aggregator-client-ca",
+			Namespace: ns,
+		},
+	}
+}
+
 func MetricsClientCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -90,6 +99,15 @@ func KASKubeletClientCertSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kas-kubelet-client-crt",
+			Namespace: ns,
+		},
+	}
+}
+
+func AggregateClientSigner(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kas-aggregator-client-signer",
 			Namespace: ns,
 		},
 	}
