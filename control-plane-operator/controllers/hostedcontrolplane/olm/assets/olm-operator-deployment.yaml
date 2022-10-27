@@ -19,15 +19,19 @@ spec:
       volumes:
         - name: srv-cert
           secret:
+            defaultMode: 0640
             secretName: olm-operator-serving-cert
         - name: client-ca
           secret:
+            defaultMode: 0640
             secretName: metrics-client
         - name: kubeconfig
           secret:
+            defaultMode: 0640
             secretName: service-network-admin-kubeconfig
         - name: oas-konnectivity-proxy-cert
           secret:
+            defaultMode: 0640
             secretName: konnectivity-client
       containers:
         - name: olm-operator

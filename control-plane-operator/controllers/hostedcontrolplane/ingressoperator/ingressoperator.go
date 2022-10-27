@@ -153,9 +153,9 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	}}
 	dep.Spec.Template.Spec.Containers = append(dep.Spec.Template.Spec.Containers, ingressOperatorSocks5ProxyContainer(params.Socks5ProxyImage))
 	dep.Spec.Template.Spec.Volumes = []corev1.Volume{
-		{Name: "ingress-operator-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.IngressOperatorKubeconfig("").Name, DefaultMode: utilpointer.Int32Ptr(416)}}},
-		{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32Ptr(416)}}},
-		{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32Ptr(416)}}},
+		{Name: "ingress-operator-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.IngressOperatorKubeconfig("").Name, DefaultMode: utilpointer.Int32Ptr(0640)}}},
+		{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32Ptr(0640)}}},
+		{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32Ptr(0640)}}},
 	}
 
 	if params.Platform == hyperv1.AWSPlatform {

@@ -2438,7 +2438,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 }
 
 func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool) error {
-	defaultMode := int32(416)
+	defaultMode := int32(0640)
 	capiManagerLabels := map[string]string{
 		"name":                        "cluster-api",
 		"app":                         "cluster-api",

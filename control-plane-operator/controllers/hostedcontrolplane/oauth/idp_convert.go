@@ -13,17 +13,17 @@ import (
 	"strings"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
+	osinv1 "github.com/openshift/api/osin/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/cache"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/net"
+	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	configv1 "github.com/openshift/api/config/v1"
-	osinv1 "github.com/openshift/api/osin/v1"
 
 	"github.com/openshift/hypershift/support/util"
 )
@@ -71,6 +71,7 @@ func (i *IDPVolumeMountInfo) SecretPath(index int, secretName, field, key string
 	}
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = secretName
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 	i.Volumes = append(i.Volumes, v)
 	i.VolumeMounts[i.Container][v.Name] = fmt.Sprintf("%s/idp_secret_%d_%s", IDPVolumePathPrefix, index, field)
 	return path.Join(i.VolumeMounts[i.Container][v.Name], key)

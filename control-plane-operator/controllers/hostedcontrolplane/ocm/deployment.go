@@ -130,6 +130,7 @@ func ocmVolumeKubeconfig() *corev1.Volume {
 func buildOCMVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }
 
 func ocmVolumeServingCert() *corev1.Volume {
@@ -141,4 +142,5 @@ func ocmVolumeServingCert() *corev1.Volume {
 func buildOCMVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftControllerManagerCertSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }
