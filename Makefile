@@ -41,7 +41,7 @@ endif
 
 all: build e2e
 
-build: hypershift-operator control-plane-operator hypershift
+build: hypershift-operator control-plane-operator hypershift hypershift-multi-arch
 
 .PHONY: update
 update: deps api api-docs app-sre-saas-template
@@ -74,6 +74,15 @@ control-plane-operator:
 .PHONY: hypershift
 hypershift:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift .
+
+.PHONY: hypershift-multi-arch
+hypershift-multi-arch:
+	GOOS=linux GOARCH=amd64 $(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift-linux-amd64 .
+	GOOS=linux GOARCH=arm64 $(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift-linux-arm64 .
+	GOOS=linux GOARCH=ppc64le $(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift-linux-ppc64le .
+	GOOS=darwin GOARCH=amd64 $(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift-darwin-amd64 .
+	GOOS=darwin GOARCH=arm64 $(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift-darwin-arm64 .
+	GOOS=windows GOARCH=amd64 $(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift-windows-amd64 .
 
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.

@@ -8,6 +8,12 @@ RUN make build
 
 FROM quay.io/openshift/origin-base:4.12
 COPY --from=builder /hypershift/bin/hypershift \
+                    /hypershift/bin/hypershift-linux-amd64 \
+                    /hypershift/bin/hypershift-linux-arm64 \
+                    /hypershift/bin/hypershift-linux-ppc64le \
+                    /hypershift/bin/hypershift-darwin-amd64 \
+                    /hypershift/bin/hypershift-darwin-arm64 \
+                    /hypershift/bin/hypershift-windows-amd64 \
                     /hypershift/bin/hypershift-operator \
                     /hypershift/bin/control-plane-operator \
      /usr/bin/
