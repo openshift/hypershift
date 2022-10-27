@@ -22,11 +22,6 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var (
-	zeroReplicas int32 = 0
-	twoReplicas  int32 = 2
-)
-
 func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Client, guestCluster *hyperv1.HostedCluster, guestClient crclient.Client, clusterOpts core.CreateOptions) func(t *testing.T) {
 	return func(t *testing.T) {
 		g := NewWithT(t)

@@ -135,8 +135,19 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	return guestClient
 }
 
-func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
+func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType, nodePools ...string) []corev1.Node {
 	g := NewWithT(t)
+	var filterSet bool
+	var nodePoolName string
+	// nodePools is a slice of strings which contains a number of NodePools to filter by.
+	if len(nodePools) > 0 {
+		filterSet = true
+		if len(nodePools) > 1 {
+			t.Log("WARNING: We only support 1 object in the nodePools varaidic parameter")
+		}
+		nodePoolName = nodePools[0]
+	}
+
 	start := time.Now()
 
 	// waitTimeout for nodes to become Ready
@@ -150,7 +161,6 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 	nodes := &corev1.NodeList{}
 	readyNodeCount := 0
 	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
-		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
 		if err != nil {
 			return false, nil
@@ -159,10 +169,22 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 			return false, nil
 		}
 		var readyNodes []string
-		for _, node := range nodes.Items {
-			for _, cond := range node.Status.Conditions {
-				if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
-					readyNodes = append(readyNodes, node.Name)
+		if filterSet {
+			for _, node := range nodes.Items {
+				if node.Labels["hypershift.openshift.io/nodePool"] == nodePoolName {
+					for _, cond := range node.Status.Conditions {
+						if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+							readyNodes = append(readyNodes, node.Name)
+						}
+					}
+				}
+			}
+		} else {
+			for _, node := range nodes.Items {
+				for _, cond := range node.Status.Conditions {
+					if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+						readyNodes = append(readyNodes, node.Name)
+					}
 				}
 			}
 		}
@@ -170,23 +192,38 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 			readyNodeCount = len(readyNodes)
 			return false, nil
 		}
-		t.Logf("All nodes are ready. Count: %v", len(nodes.Items))
+		t.Logf("All nodes are ready. Count: %v, Filter option is set to: %v", len(nodes.Items), filterSet)
 
 		return true, nil
 	})
 	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
 
-	t.Logf("All nodes for nodepool appear to be ready in %s. Count: %v", time.Since(start).Round(time.Second), n)
+	if filterSet {
+		t.Logf("All nodes for NodePool %s appear to be ready in %s. Count: %v", nodePoolName, time.Since(start).Round(time.Second), n)
+	} else {
+		t.Logf("All nodes appear to be ready in %s. Count: %v", time.Since(start).Round(time.Second), n)
+	}
 
 	return nodes.Items
 }
 
-func WaitForNUnReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32) []corev1.Node {
+func WaitForNUnReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, nodePools ...string) []corev1.Node {
 	g := NewWithT(t)
 
 	t.Logf("Waiting for Nodes to become unready. Want: %v", n)
 	nodes := &corev1.NodeList{}
 	readyNodeCount := 0
+	var filterSet bool
+	var nodePoolName string
+	// nodePools is a slice of strings which contains a number of NodePools to filter by.
+	if len(nodePools) > 0 {
+		filterSet = true
+		if len(nodePools) > 1 {
+			t.Log("WARNING: We only support 1 object in the nodePools varaidic parameter")
+		}
+		nodePoolName = nodePools[0]
+	}
+
 	err := wait.PollImmediateWithContext(ctx, 5*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
 		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
@@ -197,13 +234,26 @@ func WaitForNUnReadyNodes(t *testing.T, ctx context.Context, client crclient.Cli
 			return false, nil
 		}
 		var readyNodes []string
-		for _, node := range nodes.Items {
-			for _, cond := range node.Status.Conditions {
-				if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
-					readyNodes = append(readyNodes, node.Name)
+		if filterSet {
+			for _, node := range nodes.Items {
+				if node.Labels["hypershift.openshift.io/nodePool"] == nodePoolName {
+					for _, cond := range node.Status.Conditions {
+						if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
+							readyNodes = append(readyNodes, node.Name)
+						}
+					}
+				}
+			}
+		} else {
+			for _, node := range nodes.Items {
+				for _, cond := range node.Status.Conditions {
+					if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
+						readyNodes = append(readyNodes, node.Name)
+					}
 				}
 			}
 		}
+
 		if len(readyNodes) != int(n) {
 			readyNodeCount = len(readyNodes)
 			return false, nil
@@ -212,7 +262,11 @@ func WaitForNUnReadyNodes(t *testing.T, ctx context.Context, client crclient.Cli
 	})
 	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
 
-	t.Logf("Wanted Nodes are unready. Count: %v", n)
+	if filterSet {
+		t.Logf("Wanted Nodes are unready for NodePool %s. Count: %v", nodePoolName, n)
+	} else {
+		t.Logf("Wanted Nodes are unready. Count: %v", n)
+	}
 	return nodes.Items
 }
 

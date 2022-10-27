@@ -23,6 +23,12 @@ const (
 	annotationDrain = "machine.cluster.x-k8s.io/exclude-node-draining"
 )
 
+var (
+	zeroReplicas int32 = 0
+	oneReplicas  int32 = 1
+	twoReplicas  int32 = 2
+)
+
 func TestNodePoolMain(t *testing.T) {
 	g := NewWithT(t)
 
@@ -51,9 +57,8 @@ func TestNodePoolMain(t *testing.T) {
 
 	// Set of tests
 	// Each test should have their own NodePool
-	// Need to rework some things
 	t.Run("TestSetNodePoolAutoRepair", testSetNodePoolAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
-	//t.Run("TestSetNodePoolMachineConfigGetsRolledout", testSetNodePoolMachineConfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
-	//t.Run("TestSetNodePoolNTOMachineConfigGetsRolledout", testSetNodePoolNTOMachineConfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
-	//t.Run("TestSetNodePoolNTOMachineConfigAppliedInPlace", testSetNodePoolNTOMachineConfigAppliedInPlace(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+	t.Run("TestSetNodePoolMachineConfigGetsRolledout", testSetNodePoolMachineConfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+	t.Run("TestSetNodePoolNTOMachineConfigGetsRolledout", testSetNodePoolNTOMachineConfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+	t.Run("TestSetNodePoolNTOMachineConfigAppliedInPlace", testSetNodePoolNTOMachineConfigAppliedInPlace(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,18 +36,71 @@ func testSetNodePoolMachineConfigGetsRolledout(parentCtx context.Context, mgmtCl
 	return func(t *testing.T) {
 		g := NewWithT(t)
 		ctx, cancel := context.WithCancel(parentCtx)
+		originalNP := hyperv1.NodePool{}
+		var count int32 = 0
+
 		defer cancel()
 
+		// List NodePools (should exists only one and without replicas)
 		nodePools := &hyperv1.NodePoolList{}
 		err := mgmtClient.List(ctx, nodePools, &crclient.ListOptions{
 			Namespace: guestCluster.Namespace,
 		})
-
+		g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepools")
 		for _, nodePool := range nodePools.Items {
-			err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-			t.Logf("Replacing the Upgrade Strategy to RollingUpdate")
-			original := nodePool.DeepCopy()
+			if !strings.Contains(nodePool.Name, "-test-") {
+				originalNP = nodePool
+			}
+		}
+		g.Expect(originalNP.Name).NotTo(ContainSubstring("test"))
+		awsNPInfo := originalNP.Spec.Platform.AWS
+
+		// Define a new Nodepool
+		nodePool := &hyperv1.NodePool{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "NodePool",
+				APIVersion: hyperv1.GroupVersion.String(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      guestCluster.Name + "-" + "test-mc-rolling-update",
+				Namespace: guestCluster.Namespace,
+			},
+			Spec: hyperv1.NodePoolSpec{
+				Management: hyperv1.NodePoolManagement{
+					Replace: &hyperv1.ReplaceUpgrade{
+						Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+						RollingUpdate: &hyperv1.RollingUpdate{
+							MaxUnavailable: func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(0)),
+							MaxSurge:       func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(int(twoReplicas))),
+						},
+					},
+					AutoRepair:  true,
+					UpgradeType: hyperv1.UpgradeTypeReplace,
+				},
+				ClusterName: guestCluster.Name,
+				Replicas:    &twoReplicas,
+				Release: hyperv1.Release{
+					Image: guestCluster.Spec.Release.Image,
+				},
+				Platform: hyperv1.NodePoolPlatform{
+					Type: guestCluster.Spec.Platform.Type,
+					AWS:  awsNPInfo,
+				},
+			},
+		}
+
+		// Create NodePool for current test
+		err = mgmtClient.Create(ctx, nodePool)
+		if err != nil {
+			if !errors.IsAlreadyExists(err) {
+				t.Fatalf("failed to create nodePool %s: %v", nodePool.Name, err)
+			}
+
+			// Update NodePool
+			err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
+			g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepool")
+			np := nodePool.DeepCopy()
+			nodePool.Spec.Replicas = &twoReplicas
 			nodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
 				Strategy: hyperv1.UpgradeStrategyRollingUpdate,
 				RollingUpdate: &hyperv1.RollingUpdate{
@@ -54,10 +108,11 @@ func testSetNodePoolMachineConfigGetsRolledout(parentCtx context.Context, mgmtCl
 					MaxSurge:       func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(int(*nodePool.Spec.Replicas))),
 				},
 			}
-			err = mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(original))
-			g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool replicas")
+			if err := mgmtClient.Patch(ctx, nodePool, crclient.MergeFrom(np)); err != nil {
+				t.Fatalf("failed to update nodepool %s: %v", nodePool.Name, err)
+			}
+			g.Expect(err).NotTo(HaveOccurred(), "failed to Update existant NodePool")
 		}
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePools")
 
 		ignitionConfig := ignitionapi.Config{
 			Ignition: ignitionapi.Ignition{
@@ -103,28 +158,30 @@ func testSetNodePoolMachineConfigGetsRolledout(parentCtx context.Context, mgmtCl
 		}
 
 		err = mgmtClient.Create(ctx, machineConfigConfigMap)
-		if !errors.IsAlreadyExists(err) {
-			t.Fatalf("failed to create configmap for custom machineconfig: %v", err)
+		if err != nil {
+			if !errors.IsAlreadyExists(err) {
+				t.Fatalf("failed to create configmap for custom machineconfig: %v", err)
+			}
 		}
 
-		for _, nodePool := range nodePools.Items {
-			if nodePool.Spec.ClusterName != guestCluster.Name {
-				continue
-			}
-			np := nodePool.DeepCopy()
-			nodePool.Spec.Config = append(nodePool.Spec.Config, corev1.LocalObjectReference{Name: machineConfigConfigMap.Name})
-			if err := mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(np)); err != nil {
-				t.Fatalf("failed to update nodePool %s after adding machineconfig: %v", nodePool.Name, err)
-			}
+		numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
+		np := nodePool.DeepCopy()
+		nodePool.Spec.Config = append(nodePool.Spec.Config, corev1.LocalObjectReference{Name: machineConfigConfigMap.Name})
+		if err := mgmtClient.Patch(ctx, nodePool, crclient.MergeFrom(np)); err != nil {
+			t.Fatalf("failed to update nodePool %s after adding machineconfig: %v", nodePool.Name, err)
 		}
 
 		ds := machineConfigUpdatedVerificationDS.DeepCopy()
-		if err := guestClient.Create(ctx, ds); err != nil {
-			t.Fatalf("failed to create %s DaemonSet in guestcluster: %v", ds.Name, err)
+		err = guestClient.Create(ctx, ds)
+		if err != nil {
+			if !errors.IsAlreadyExists(err) {
+				t.Fatalf("failed to create %s DaemonSet in guestcluster: %v", ds.Name, err)
+			}
 		}
 
-		t.Logf("waiting for rollout of updated nodePools")
-		err = wait.PollImmediateWithContext(ctx, 5*time.Second, 15*time.Minute, func(ctx context.Context) (bool, error) {
+		t.Logf("waiting for NodePools in-place update with generated MachineConfig")
+		err = wait.PollImmediateWithContext(ctx, 20*time.Second, 15*time.Minute, func(ctx context.Context) (bool, error) {
+			count = 0
 			if ctx.Err() != nil {
 				return false, err
 			}
@@ -133,21 +190,25 @@ func testSetNodePoolMachineConfigGetsRolledout(parentCtx context.Context, mgmtCl
 				t.Logf("WARNING: failed to list pods, will retry: %v", err)
 				return false, nil
 			}
-			nodes := &corev1.NodeList{}
-			if err := guestClient.List(ctx, nodes); err != nil {
-				t.Logf("WARNING: failed to list nodes, will retry: %v", err)
-				return false, nil
-			}
-			if len(pods.Items) != len(nodes.Items) {
+
+			if int32(len(pods.Items)) <= numNodes {
+				t.Logf("Replicas still not the same as pods: %v vs %v", len(pods.Items), numNodes)
 				return false, nil
 			}
 
+			// We could have more than 1 Nodepool and the DS it's propagated to every node BUT, not in each one
+			// the MC will be applied, only in 1 NodePool
 			for _, pod := range pods.Items {
-				if !isPodReady(&pod) {
-					return false, nil
+				if isPodReady(&pod) {
+					t.Logf("Pod Ready: %v", pod.Name)
+					count += 1
 				}
 			}
 
+			if count < *nodePool.Spec.Replicas {
+				t.Logf("Not enough pods ready: %d/%d", count, *nodePool.Spec.Replicas)
+				return false, nil
+			}
 			return true, nil
 		})
 		if err != nil {
@@ -159,6 +220,10 @@ func testSetNodePoolMachineConfigGetsRolledout(parentCtx context.Context, mgmtCl
 		e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, mgmtClient, guestCluster)
 		e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, mgmtClient, guestCluster)
 		e2eutil.EnsureNoPodsWithTooHighPriority(t, ctx, mgmtClient, guestCluster)
+
+		// Scale Down current test nodepool
+		err = scaleDownTestNodePool(ctx, mgmtClient, nodePool)
+		g.Expect(err).NotTo(HaveOccurred(), "failed Scalling down NodePool after test finished")
 	}
 }
 
