@@ -1,14 +1,14 @@
 ---
-title: Create PowerVS Hypershift Cluster
+title: Create PowerVS Hosted Cluster
 ---
 
-# Create PowerVS Hypershift Cluster
+# Create PowerVS Hosted Cluster
 
-Creating Hypershift cluster in IBM Cloud PowerVS service.
+Create Hosted cluster in IBM Cloud PowerVS service.
 
 ## Prerequisites
 
-Please see [prerequisites](../prerequisites-and-env-guide.md/#prerequisites) before setting up the cluster
+Please see [prerequisites](prerequisites-and-env-guide.md) before setting up the cluster
 
 ## Creating the Cluster
 
@@ -37,19 +37,22 @@ Use the `hypershift create cluster powervs` command:
 where
 
 * CLUSTER_NAME is a name for the cluster.
-* REGION is the region where you want to create the powervs resources.
-* ZONE is the zone under REGION where you want to create the powervs resources.
-* VPC_REGION is the region where you want to create the vpc resources.
+* REGION is the region where you want to create the PowerVS resources.
+* ZONE is the zone under REGION where you want to create the PowerVS resources.
+* VPC_REGION is the region where you want to create the VPC resources.
 * BASEDOMAIN is the CIS base domain that will be used for your hosted cluster's ingress. It should be an existing CIS domain name.
-* RESOURCE_GROUP is the resource group in IBMCloud where your infrastructure resources will be created.
+* RESOURCE_GROUP is the resource group in IBM Cloud where your infrastructure resources will be created.
 * RELEASE_IMAGE is the latest multi arch release image.
 * PULL_SECRET is a file that contains a valid OpenShift pull secret.
 * node-pool-replicas is worker node count 
 
-Running this command will create [infra](../create-infra-powervs-separately.md/#powevs-cluster-infra-resources ) for the Hypershift cluster and will create HostedCluster and NodePool spec and deploys it.
+Running this command will create [infra](create-infra-separately.md) and manifests for the hosted cluster and deploys it.
+
 
 !!! important
 
-    Need to understand --recreate-secrets flag usage before using it. Enableing this flag will result in recreating the creds mentioned here https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec
-    This is required when rerunning `hypershift create cluster powervs` command, since API Key once created cannot be retrieved again.
-    Please make sure cluster name used is unique across different management cluster before using this flag since this will result in removing the existing cred's service ID and recreate them.
+        Need to understand --recreate-secrets flag usage before using it. Enableing this flag will result in recreating the creds mentioned here [PowerVSPlatformSpec](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec)
+
+        This is required when rerunning `hypershift create cluster powervs` command, since API Key once created cannot be retrieved again.
+
+        Please make sure cluster name used is unique across different management cluster before using this flag since this will result in removing the existing cred's service ID and recreate them.
