@@ -269,8 +269,9 @@ func TestInPlaceUpgradeComplete(t *testing.T) {
 }
 
 func TestGetNodesToUpgrade(t *testing.T) {
-	// TODO (jerzhang): should be updated once we have better logic, maxSurge, single node pools
-	desiredConfigHash := "aaa"
+	currentConfigHash := "aaa"
+	intermediateConfigHash := "bbb"
+	desiredConfigHash := "ccc"
 	awaitingNode1 := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "node1",
@@ -297,6 +298,15 @@ func TestGetNodesToUpgrade(t *testing.T) {
 			Annotations: map[string]string{
 				CurrentMachineConfigAnnotationKey: desiredConfigHash,
 				DesiredMachineConfigAnnotationKey: desiredConfigHash,
+			},
+		},
+	}
+	intermediateNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node5",
+			Annotations: map[string]string{
+				CurrentMachineConfigAnnotationKey: currentConfigHash,
+				DesiredMachineConfigAnnotationKey: intermediateConfigHash,
 			},
 		},
 	}
@@ -376,6 +386,34 @@ func TestGetNodesToUpgrade(t *testing.T) {
 			selectedNodes: []*corev1.Node{
 				awaitingNode1,
 				awaitingNode2,
+			},
+		},
+		// This test case covers a scenario where a new update comes in while an update is in progress
+		{
+			name: "points in progress nodes to latest version",
+			inputNodes: []*corev1.Node{
+				awaitingNode1,
+				completedNode,
+				intermediateNode,
+			},
+			targetConfig:   desiredConfigHash,
+			maxUnavailable: 1,
+			selectedNodes: []*corev1.Node{
+				intermediateNode,
+			},
+		},
+		{
+			name: "points in progress nodes to latest version, while also picking based on maxUnavailable",
+			inputNodes: []*corev1.Node{
+				awaitingNode1,
+				completedNode,
+				intermediateNode,
+			},
+			targetConfig:   desiredConfigHash,
+			maxUnavailable: 2,
+			selectedNodes: []*corev1.Node{
+				awaitingNode1,
+				intermediateNode,
 			},
 		},
 	}

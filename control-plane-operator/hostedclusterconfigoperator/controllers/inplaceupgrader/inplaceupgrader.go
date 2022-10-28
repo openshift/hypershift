@@ -403,7 +403,18 @@ func deleteUpgradeManifests(ctx context.Context, hostedClusterClient client.Clie
 }
 
 func getNodesToUpgrade(nodes []*corev1.Node, targetConfig string, maxUnavailable int) []*corev1.Node {
-	// get unavailable machines
+	// First, get nodes depending on how much capacity we have for additional updates
+	capacity := getCapacity(nodes, targetConfig, maxUnavailable)
+	availableCandidates := getAvailableCandidates(nodes, targetConfig, capacity)
+
+	// Next, we get the currently updating candidates, that aren't targetting the latest config
+	alreadyUnavailableNodes := getAlreadyUnavailableCandidates(nodes, targetConfig)
+
+	return append(availableCandidates, alreadyUnavailableNodes...)
+}
+
+func getCapacity(nodes []*corev1.Node, targetConfig string, maxUnavailable int) int {
+	// get how many machines we can update based on maxUnavailable
 	// In the MCO logic, unavailable is defined as any of:
 	// - config does not match
 	// - MCD is failing
@@ -419,16 +430,34 @@ func getNodesToUpgrade(nodes []*corev1.Node, targetConfig string, maxUnavailable
 			numUnavailable++
 		}
 	}
+	return maxUnavailable - numUnavailable
+}
 
-	capacity := maxUnavailable - numUnavailable
-	// If we're at capacity, there's nothing to do.
-	if capacity < 1 {
-		return nil
-	}
-	// We only look at nodes which aren't already targeting our desired config
+// getAlreadyUnavailableCandidates returns nodes that are updating, but don't have the latest config.
+// Compared to self-driving OCP, there is an additional scenario to consider here.
+// Since the ConfigMap contents are synced separately, those will change on the fly in the pod.
+// Meaning that we could have a scenario where there are multiple queue'ed updates, in which case
+// the MCD will just jump straight to the latest version.
+// This will cause the MCD to softlock, so let's make sure for those unavailable nodes, we are also
+// update their desired configuration. The MCD should be able to reconcile these changes on the fly.
+func getAlreadyUnavailableCandidates(nodes []*corev1.Node, targetConfig string) []*corev1.Node {
 	var candidateNodes []*corev1.Node
 	for _, node := range nodes {
-		if node.Annotations[DesiredMachineConfigAnnotationKey] != targetConfig {
+		if node.Annotations[CurrentMachineConfigAnnotationKey] != node.Annotations[DesiredMachineConfigAnnotationKey] &&
+			node.Annotations[DesiredMachineConfigAnnotationKey] != targetConfig {
+			candidateNodes = append(candidateNodes, node)
+		}
+	}
+	return candidateNodes
+}
+
+func getAvailableCandidates(nodes []*corev1.Node, targetConfig string, capacity int) []*corev1.Node {
+	// We only look at nodes which aren't already targeting our desired config,
+	// and do not have an ongoing update
+	var candidateNodes []*corev1.Node
+	for _, node := range nodes {
+		if node.Annotations[DesiredMachineConfigAnnotationKey] != targetConfig &&
+			node.Annotations[CurrentMachineConfigAnnotationKey] == node.Annotations[DesiredMachineConfigAnnotationKey] {
 			candidateNodes = append(candidateNodes, node)
 		}
 	}
@@ -437,7 +466,7 @@ func getNodesToUpgrade(nodes []*corev1.Node, targetConfig string, maxUnavailable
 		return nil
 	}
 
-	// Not sure if we need to order this
+	// TODO(jerzhang): do some ordering here
 	return candidateNodes[:capacity]
 }
 
