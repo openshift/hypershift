@@ -99,23 +99,6 @@ func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Cl
 		}
 		numNodes := clusterOpts.NodePoolReplicas * numZones
 
-		// Ensure we don't have the initial NodePool with replicas over 0
-		if int32(*originalNP.Spec.Replicas) > zeroReplicas {
-			// Wait until nodes gets created
-			t.Logf("Waiting for Nodes %d\n", numNodes)
-			_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type)
-			err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&originalNP), &originalNP)
-			g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepool")
-			original := originalNP.DeepCopy()
-			originalNP.Spec.Replicas = &zeroReplicas
-
-			// Update NodePool
-			if err := mgmtClient.Patch(ctx, &originalNP, crclient.MergeFrom(original)); err != nil {
-				t.Fatalf("failed to update originalNP %s with Autorepair function: %v", originalNP.Name, err)
-			}
-			g.Expect(err).NotTo(HaveOccurred(), "failed to Update existant NodePool")
-		}
-
 		t.Logf("Waiting for Nodes %d\n", numNodes)
 		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type)
 		t.Logf("Desired replicas available for nodePool: %v", nodePool.Name)

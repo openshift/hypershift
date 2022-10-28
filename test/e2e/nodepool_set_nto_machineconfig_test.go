@@ -137,7 +137,7 @@ func testSetNodePoolNTOMachineConfigGetsRolledout(parentCtx context.Context, mgm
 		numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
 		e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes, guestCluster.Spec.Platform.Type, nodePool.Name)
 
-		tunedConfigConfigMap := &corev1.ConfigMap{
+		tuningConfigConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "hugepages-tuned-test",
 				Namespace: guestCluster.Namespace,
@@ -145,18 +145,20 @@ func testSetNodePoolNTOMachineConfigGetsRolledout(parentCtx context.Context, mgm
 			Data: map[string]string{tuningConfigKey: hugepagesTuned},
 		}
 
-		err = mgmtClient.Create(ctx, tunedConfigConfigMap)
-		if !errors.IsAlreadyExists(err) {
-			t.Fatalf("failed to create configmap for custom Tuned object: %v", err)
+		err = mgmtClient.Create(ctx, tuningConfigConfigMap)
+		if err != nil {
+			if !errors.IsAlreadyExists(err) {
+				t.Fatalf("failed to create configmap for custom Tuned object: %v", err)
+			}
 		}
 
-		// Adding TunedConfig into NodePool
+		// Adding TuningConfig into NodePool
 		err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
-		g.Expect(err).NotTo(HaveOccurred(), "failed getting nodepool to append TunedConfig")
+		g.Expect(err).NotTo(HaveOccurred(), "failed getting nodepool to append TuningConfig")
 		np := nodePool.DeepCopy()
-		nodePool.Spec.TunedConfig = append(nodePool.Spec.TunedConfig, corev1.LocalObjectReference{Name: tunedConfigConfigMap.Name})
+		nodePool.Spec.TuningConfig = append(nodePool.Spec.TuningConfig, corev1.LocalObjectReference{Name: tuningConfigConfigMap.Name})
 		if err := mgmtClient.Patch(ctx, nodePool, crclient.MergeFrom(np)); err != nil {
-			t.Fatalf("failed to update nodepool %s after adding Tuned config: %v", nodePool.Name, err)
+			t.Fatalf("failed to update nodepool %s after adding TuningConfig: %v", nodePool.Name, err)
 		}
 
 		ds := ntoMachineConfigUpdatedVerificationDS.DeepCopy()
@@ -295,30 +297,30 @@ func testSetNodePoolNTOMachineConfigAppliedInPlace(parentCtx context.Context, mg
 		numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
 		e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type, nodePool.Name)
 
-		tunedConfigConfigMap := &corev1.ConfigMap{
+		tuningConfigConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "hugepages-tuned-test",
 				Namespace: guestCluster.Namespace,
 			},
-			Data: map[string]string{tunedConfigKey: hugepagesTuned},
+			Data: map[string]string{tuningConfigKey: hugepagesTuned},
 		}
 
-		err = mgmtClient.Create(ctx, tunedConfigConfigMap)
+		err = mgmtClient.Create(ctx, tuningConfigConfigMap)
 		if !errors.IsAlreadyExists(err) {
 			t.Fatalf("failed to create configmap for custom Tuned object: %v", err)
 		}
-		t.Logf("======= Finished Create Tuned ConfigMap")
+		t.Logf("======= Finished Create TuningConfigMap")
 
 		err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
 		var count int32 = 0
 		g.Expect(err).NotTo(HaveOccurred(), "failed to Get test NodePool")
 		np := nodePool.DeepCopy()
-		nodePool.Spec.TunedConfig = append(nodePool.Spec.TunedConfig, corev1.LocalObjectReference{Name: tunedConfigConfigMap.Name})
+		nodePool.Spec.TuningConfig = append(nodePool.Spec.TuningConfig, corev1.LocalObjectReference{Name: tuningConfigConfigMap.Name})
 		if err := mgmtClient.Patch(ctx, nodePool, crclient.MergeFrom(np)); err != nil {
-			t.Fatalf("failed to update nodepool %s after adding Tuned config: %v", nodePool.Name, err)
+			t.Fatalf("failed to update nodepool %s after adding TuningConfig: %v", nodePool.Name, err)
 		}
 
-		t.Logf("======= Finished Added TunedConfig to NodePool Spec")
+		t.Logf("======= Finished Added TuningConfig to NodePool Spec")
 
 		ds := ntoMachineConfigUpdatedVerificationDS.DeepCopy()
 		err = guestClient.Create(ctx, ds)
