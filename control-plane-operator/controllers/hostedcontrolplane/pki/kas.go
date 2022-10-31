@@ -75,8 +75,8 @@ func ReconcileKubeControllerManagerClientCertSecret(secret, ca *corev1.Secret, o
 	return reconcileSignedCert(secret, ca, ownerRef, "system:kube-controller-manager", []string{"kubernetes"}, X509UsageClientAuth)
 }
 
-func ReconcileKASAdminClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, "system:admin", []string{"system:masters"}, X509UsageClientServerAuth)
+func ReconcileSystemAdminClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCert(secret, ca, ownerRef, "system:admin", []string{"system:masters"}, X509UsageClientAuth)
 }
 
 func ReconcileServiceAccountKubeconfig(secret, ca *corev1.Secret, hcp *hyperv1.HostedControlPlane, serviceAccountNamespace, serviceAccountName string) error {

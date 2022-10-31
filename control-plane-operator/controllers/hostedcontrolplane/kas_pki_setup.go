@@ -134,5 +134,30 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return err
 	}
 
+	// ----------
+	//	admin kubeconfig signer
+	// ----------
+
+	// signer
+	adminKubeconfigSigner, err := reconcileSigner(
+		manifests.SystemAdminSigner(hcp.Namespace),
+		p.OwnerRef,
+		pki.ReconcileAdminKubeconfigSigner,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	// system:admin client cert
+	if _, err := reconcileSub(
+		manifests.SystemAdminClientCertSecret(hcp.Namespace),
+		adminKubeconfigSigner,
+		p.OwnerRef,
+		pki.ReconcileSystemAdminClientCertSecret,
+	); err != nil {
+		return err
+	}
+
 	return nil
 }

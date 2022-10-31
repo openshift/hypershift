@@ -81,7 +81,13 @@ func KubeAPIServerToKubeletSigner(ns string) *corev1.Secret {
 	return secretFor(ns, "kube-apiserver-to-kubelet-signer")
 }
 
-func KASAdminClientCertSecret(ns string) *corev1.Secret { return secretFor(ns, "kas-admin-client") }
+func SystemAdminSigner(ns string) *corev1.Secret {
+	return secretFor(ns, "system-admin-signer")
+}
+
+func SystemAdminClientCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "system-admin-client")
+}
 
 func KASMachineBootstrapClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "kas-bootstrap-client")
