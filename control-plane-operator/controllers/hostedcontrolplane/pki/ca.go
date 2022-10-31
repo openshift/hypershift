@@ -38,6 +38,10 @@ func ReconcileKubeControlPlaneSigner(secret *corev1.Secret, ownerRef config.Owne
 	return reconcileSelfSignedCA(secret, ownerRef, "kube-control-plane-signer", "openshift")
 }
 
+func ReconcileKASToKubeletSigner(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "kube-apiserver-to-kubelet-signer", "openshift")
+}
+
 func ReconcileAggregatorClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, signer *corev1.Secret) error {
 	return reconcileAggregateCA(cm, ownerRef, signer)
 }

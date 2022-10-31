@@ -1373,14 +1373,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile kas server secret: %w", err)
 	}
 
-	// KAS kubelet client secret
-	kasKubeletClientSecret := manifests.KASKubeletClientCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kasKubeletClientSecret, func() error {
-		return pki.ReconcileKASKubeletClientCertSecret(kasKubeletClientSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile kas kubelet client secret: %w", err)
-	}
-
 	if err := r.setupKASClientSigners(ctx, hcp, p, createOrUpdate); err != nil {
 		return err
 	}

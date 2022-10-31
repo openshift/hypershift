@@ -109,5 +109,30 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return err
 	}
 
+	// ----------
+	//	KAS to kubelet signer
+	// ----------
+
+	// signer
+	kasToKubeletSigner, err := reconcileSigner(
+		manifests.KubeAPIServerToKubeletSigner(hcp.Namespace),
+		p.OwnerRef,
+		pki.ReconcileKASToKubeletSigner,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	// KAS to kubelet client cert
+	if _, err := reconcileSub(
+		manifests.KASKubeletClientCertSecret(hcp.Namespace),
+		kasToKubeletSigner,
+		p.OwnerRef,
+		pki.ReconcileKASKubeletClientCertSecret,
+	); err != nil {
+		return err
+	}
+
 	return nil
 }
