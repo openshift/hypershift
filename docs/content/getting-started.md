@@ -71,9 +71,9 @@ BUCKET_NAME=your-bucket-name
 AWS_CREDS="$HOME/.aws/credentials"
 
 hypershift install \
---oidc-storage-provider-s3-bucket-name $BUCKET_NAME \
---oidc-storage-provider-s3-credentials $AWS_CREDS \
---oidc-storage-provider-s3-region $REGION
+  --oidc-storage-provider-s3-bucket-name $BUCKET_NAME \
+  --oidc-storage-provider-s3-credentials $AWS_CREDS \
+  --oidc-storage-provider-s3-region $REGION
 ```
 
 ## Create a HostedCluster
@@ -89,13 +89,13 @@ AWS_CREDS="$HOME/.aws/credentials"
 PULL_SECRET="$HOME/pull-secret"
 
 hypershift create cluster aws \
---name $CLUSTER_NAME \
---node-pool-replicas=3 \
---base-domain $BASE_DOMAIN \
---pull-secret $PULL_SECRET \
---aws-creds $AWS_CREDS \
---region $REGION \
---generate-ssh
+  --name $CLUSTER_NAME \
+  --node-pool-replicas=3 \
+  --base-domain $BASE_DOMAIN \
+  --pull-secret $PULL_SECRET \
+  --aws-creds $AWS_CREDS \
+  --region $REGION \
+  --generate-ssh
 ```
 
 !!! important
@@ -169,7 +169,9 @@ Manually scale a NodePool using the `oc scale` command:
 NODEPOOL_NAME=${CLUSTER_NAME}-work
 NODEPOOL_REPLICAS=5
 
-oc scale nodepool/$NODEPOOL_NAME --namespace clusters --replicas=$NODEPOOL_REPLICAS
+oc scale nodepool/$NODEPOOL_NAME \
+  --namespace clusters \
+  --replicas=$NODEPOOL_REPLICAS
 ```
 
 ## Delete a HostedCluster
@@ -177,12 +179,17 @@ oc scale nodepool/$NODEPOOL_NAME --namespace clusters --replicas=$NODEPOOL_REPLI
 To delete a HostedCluster:
 
 ```shell
-hypershift destroy cluster aws --name $CLUSTER_NAME --aws-creds $AWS_CREDS
+hypershift destroy cluster aws \
+  --name $CLUSTER_NAME \
+  --aws-creds $AWS_CREDS
 ```
 
 To clean up cloud resources that may have been created by the HostedCluster during its lifetime, add
 the `--destroy-cloud-resources` flag:
 
 ```shell
-hypershift destroy cluster aws --name $CLUSTER_NAME --aws-creds $AWS_CREDS --destroy-cloud-resources
+hypershift destroy cluster aws \
+  --name $CLUSTER_NAME \
+  --aws-creds $AWS_CREDS \
+  --destroy-cloud-resources
 ```
