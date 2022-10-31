@@ -79,6 +79,8 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	//	control-plane signer
 	// ----------
 
+	totalClientCABundle := []*corev1.Secret{}
+
 	// signer
 	kubeControlPlaneSigner, err := reconcileSigner(
 		manifests.KubeControlPlaneSigner(hcp.Namespace),
@@ -88,6 +90,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	if err != nil {
 		return err
 	}
+	totalClientCABundle = append(totalClientCABundle, kubeControlPlaneSigner)
 
 	// kube-scheduler client cert
 	if _, err := reconcileSub(
@@ -123,6 +126,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	if err != nil {
 		return err
 	}
+	totalClientCABundle = append(totalClientCABundle, kasToKubeletSigner)
 
 	// KAS to kubelet client cert
 	if _, err := reconcileSub(
@@ -148,6 +152,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	if err != nil {
 		return err
 	}
+	totalClientCABundle = append(totalClientCABundle, adminKubeconfigSigner)
 
 	// system:admin client cert
 	if _, err := reconcileSub(
@@ -157,6 +162,33 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		pki.ReconcileSystemAdminClientCertSecret,
 	); err != nil {
 		return err
+	}
+
+	// ----------
+	//	CSR signer
+	// ----------
+
+	// signer
+	csrSigner, err := reconcileSigner(
+		manifests.CSRSignerCASecret(hcp.Namespace),
+		p.OwnerRef,
+		pki.ReconcileKubeCSRSigner,
+	)
+
+	if err != nil {
+		return err
+	}
+	totalClientCABundle = append(totalClientCABundle, csrSigner)
+
+	totalClientCA := manifests.TotalClientCABundle(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, totalClientCA, func() error {
+		return pki.ReconcileTotalClientCA(
+			totalClientCA,
+			p.OwnerRef,
+			totalClientCABundle...,
+		)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile combined CA: %w", err)
 	}
 
 	return nil

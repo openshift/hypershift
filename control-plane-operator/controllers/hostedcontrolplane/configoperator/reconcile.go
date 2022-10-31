@@ -297,6 +297,6 @@ func buildHCCVolumeCombinedCA(v *corev1.Volume) {
 
 func buildHCCClusterSignerCA(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.ClusterSignerCASecret("").Name,
+		SecretName: manifests.CSRSignerCASecret("").Name,
 	}
 }

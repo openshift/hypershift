@@ -1319,7 +1319,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile root CA: %w", err)
 	}
 	// Signer CA
-	signerCASecret := manifests.ClusterSignerCASecret(hcp.Namespace)
+	signerCASecret := manifests.CSRSignerCASecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, signerCASecret, func() error {
 		return pki.ReconcileClusterSignerCA(signerCASecret, p.OwnerRef)
 	}); err != nil {

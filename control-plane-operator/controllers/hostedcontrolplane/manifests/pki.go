@@ -16,7 +16,7 @@ func secretFor(ns, name string) *corev1.Secret {
 
 func RootCASecret(ns string) *corev1.Secret { return secretFor(ns, "root-ca") }
 
-func ClusterSignerCASecret(ns string) *corev1.Secret { return secretFor(ns, "cluster-signer-ca") }
+func CSRSignerCASecret(ns string) *corev1.Secret { return secretFor(ns, "kube-csr-signer") }
 
 func CombinedCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
@@ -31,6 +31,15 @@ func AggregatorClientCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "aggregator-client-ca",
+			Namespace: ns,
+		},
+	}
+}
+
+func TotalClientCABundle(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "client-ca",
 			Namespace: ns,
 		},
 	}

@@ -46,8 +46,16 @@ func ReconcileAdminKubeconfigSigner(secret *corev1.Secret, ownerRef config.Owner
 	return reconcileSelfSignedCA(secret, ownerRef, "admin-kubeconfig-signer", "openshift")
 }
 
+func ReconcileKubeCSRSigner(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "kube-csr-signer", "openshift")
+}
+
 func ReconcileAggregatorClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, signer *corev1.Secret) error {
 	return reconcileAggregateCA(cm, ownerRef, signer)
+}
+
+func ReconcileTotalClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, signers ...*corev1.Secret) error {
+	return reconcileAggregateCA(cm, ownerRef, signers...)
 }
 
 func ReconcileRootCA(secret *corev1.Secret, ownerRef config.OwnerRef) error {
