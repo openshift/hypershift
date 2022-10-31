@@ -527,9 +527,6 @@ kind: OperatorGroup
 metadata:
   name: metallb-operator-operatorgroup
   namespace: metallb
-spec:
-  targetNamespaces:
-  - metallb
 ---
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
@@ -557,7 +554,7 @@ EOF
 
 #### Step 2 - Get the MetalLB Operator Configured
 
-We will create an `AddressPool` with a single IP address. This IP address must be on the same subnet as the network used by the cluster nodes.
+We will create an `IPAddressPool` with a single IP address. This IP address must be on the same subnet as the network used by the cluster nodes.
 
 
 > **WARN:** Change `INGRESS_IP` env var to match your environments addressing.
@@ -566,8 +563,8 @@ We will create an `AddressPool` with a single IP address. This IP address must b
 export INGRESS_IP=192.168.122.23
 
 envsubst <<"EOF" | oc --kubeconfig ${HOSTED_CLUSTER_NAME}.kubeconfig apply -f -
-apiVersion: metallb.io/v1alpha1
-kind: AddressPool
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
 metadata:
   name: ingress-public-ip
   namespace: metallb
