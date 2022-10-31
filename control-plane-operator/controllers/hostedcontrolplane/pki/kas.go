@@ -67,6 +67,14 @@ func ReconcileKASAggregatorCertSecret(secret, ca *corev1.Secret, ownerRef config
 	return reconcileSignedCert(secret, ca, ownerRef, "system:openshift-aggregator", []string{"kubernetes"}, X509UsageClientAuth)
 }
 
+func ReconcileKubeSchedulerClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCert(secret, ca, ownerRef, "system:kube-scheduler", []string{"kubernetes"}, X509UsageClientAuth)
+}
+
+func ReconcileKubeControllerManagerClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCert(secret, ca, ownerRef, "system:kube-controller-manager", []string{"kubernetes"}, X509UsageClientAuth)
+}
+
 func ReconcileKASAdminClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	return reconcileSignedCert(secret, ca, ownerRef, "system:admin", []string{"system:masters"}, X509UsageClientServerAuth)
 }

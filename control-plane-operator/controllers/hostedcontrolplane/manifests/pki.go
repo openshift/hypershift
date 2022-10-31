@@ -27,7 +27,7 @@ func CombinedCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
-func AggregateClientCAConfigMap(ns string) *corev1.ConfigMap {
+func AggregatorClientCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "aggregator-client-ca",
@@ -59,11 +59,23 @@ func KASKubeletClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "kas-kubelet-client-crt")
 }
 
-func AggregateClientSigner(ns string) *corev1.Secret {
+func AggregatorClientSigner(ns string) *corev1.Secret {
 	return secretFor(ns, "kas-aggregator-client-signer")
 }
 
 func KASAggregatorCertSecret(ns string) *corev1.Secret { return secretFor(ns, "kas-aggregator-crt") }
+
+func KubeControlPlaneSigner(ns string) *corev1.Secret {
+	return secretFor(ns, "kube-control-plane-signer")
+}
+
+func KubeSchedulerClientCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "kube-scheduler-client")
+}
+
+func KubeControllerManagerClientCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "kube-controller-manager")
+}
 
 func KASAdminClientCertSecret(ns string) *corev1.Secret { return secretFor(ns, "kas-admin-client") }
 

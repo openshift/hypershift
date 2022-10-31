@@ -1381,28 +1381,8 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile kas kubelet client secret: %w", err)
 	}
 
-	// KAS aggregator client signer
-	kasAggregateClientSigner := manifests.AggregateClientSigner(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kasAggregateClientSigner, func() error {
-		return pki.ReconcileAggregateClientSigner(kasAggregateClientSigner, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile root CA: %w", err)
-	}
-
-	// KAS aggregator client CA
-	kasAggregateClientCA := manifests.AggregateClientCAConfigMap(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kasAggregateClientCA, func() error {
-		return pki.ReconcileAggregateClientCA(kasAggregateClientCA, p.OwnerRef, kasAggregateClientSigner)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile combined CA: %w", err)
-	}
-
-	// KAS aggregator client cert
-	kasAggregatorCertSecret := manifests.KASAggregatorCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kasAggregatorCertSecret, func() error {
-		return pki.ReconcileKASAggregatorCertSecret(kasAggregatorCertSecret, kasAggregateClientSigner, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile kas aggregator secret: %w", err)
+	if err := r.setupKASClientSigners(ctx, hcp, p, createOrUpdate); err != nil {
+		return err
 	}
 
 	// KAS admin client cert secret
@@ -1979,6 +1959,11 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := kcm.NewKubeControllerManagerParams(ctx, hcp, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
 
+	rootCA := manifests.RootCASecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		return fmt.Errorf("failed to get root ca cert secret: %w", err)
+	}
+
 	service := manifests.KCMService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, service, func() error {
 		return kcm.ReconcileService(service, config.OwnerRefFrom(hcp))
@@ -1995,6 +1980,24 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 		return kcm.ReconcileKCMServiceServingCA(serviceServingCA, combinedCA, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kcm serving ca: %w", err)
+	}
+
+	clientCertSecret := manifests.KubeControllerManagerClientCertSecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(clientCertSecret), clientCertSecret); err != nil {
+		return fmt.Errorf("failed to get KCM client cert secret: %w", err)
+	}
+
+	kcmKubeconfigSecret := manifests.KCMKubeconfigSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kcmKubeconfigSecret, func() error {
+		return kas.ReconcileServiceKubeconfigSecret(
+			kcmKubeconfigSecret,
+			clientCertSecret,
+			rootCA,
+			p.OwnerRef,
+			util.APIPortWithDefault(hcp, config.DefaultAPIServerPort),
+		)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile secret '%s/%s': %v", kcmKubeconfigSecret.Namespace, kcmKubeconfigSecret.Name, err)
 	}
 
 	serviceMonitor := manifests.KCMServiceMonitor(hcp.Namespace)
@@ -2025,6 +2028,29 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 
 func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := scheduler.NewKubeSchedulerParams(ctx, hcp, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+
+	rootCA := manifests.RootCASecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		return fmt.Errorf("failed to get root ca cert secret: %w", err)
+	}
+
+	clientCertSecret := manifests.KubeSchedulerClientCertSecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(clientCertSecret), clientCertSecret); err != nil {
+		return fmt.Errorf("failed to get KCM client cert secret: %w", err)
+	}
+
+	schedulerKubeconfigSecret := manifests.SchedulerKubeconfigSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, schedulerKubeconfigSecret, func() error {
+		return kas.ReconcileServiceKubeconfigSecret(
+			schedulerKubeconfigSecret,
+			clientCertSecret,
+			rootCA,
+			p.OwnerRef,
+			util.APIPortWithDefault(hcp, config.DefaultAPIServerPort),
+		)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile secret '%s/%s': %v", schedulerKubeconfigSecret.Namespace, schedulerKubeconfigSecret.Name, err)
+	}
 
 	schedulerConfig := manifests.SchedulerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, schedulerConfig, func() error {

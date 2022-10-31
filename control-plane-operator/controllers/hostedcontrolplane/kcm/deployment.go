@@ -226,7 +226,7 @@ func kcmVolumeKubeconfig() *corev1.Volume {
 
 func buildKCMVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KASServiceKubeconfigSecret("").Name,
+		SecretName: manifests.KCMKubeconfigSecret("").Name,
 	}
 }
 

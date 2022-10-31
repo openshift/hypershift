@@ -555,7 +555,7 @@ func buildKASVolumeAggregatorCA(v *corev1.Volume) {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
 	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
-	v.ConfigMap.Name = manifests.AggregateClientCAConfigMap("").Name
+	v.ConfigMap.Name = manifests.AggregatorClientCAConfigMap("").Name
 }
 
 func kasVolumeEgressSelectorConfig() *corev1.Volume {
