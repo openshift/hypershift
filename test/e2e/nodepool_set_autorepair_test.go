@@ -100,7 +100,7 @@ func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Cl
 		numNodes := clusterOpts.NodePoolReplicas * numZones
 
 		t.Logf("Waiting for Nodes %d\n", numNodes)
-		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type)
+		nodes := e2eutil.WaitForNReadyNodesByNodePool(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type, nodePool.Name)
 		t.Logf("Desired replicas available for nodePool: %v", nodePool.Name)
 
 		// Terminate one of the machines belonging to the cluster
@@ -119,7 +119,7 @@ func testSetNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Cl
 		// Wait for nodes to be ready again, without the node that was terminated
 		t.Logf("Waiting for %d available nodes without %s", numNodes, nodeToReplace)
 		err = wait.PollUntil(30*time.Second, func() (done bool, err error) {
-			nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type)
+			nodes := e2eutil.WaitForNReadyNodesByNodePool(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type, nodePool.Name)
 			for _, node := range nodes {
 				if node.Name == nodeToReplace {
 					return false, nil

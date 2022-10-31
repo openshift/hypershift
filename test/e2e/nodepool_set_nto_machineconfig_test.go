@@ -135,7 +135,7 @@ func testSetNodePoolNTOMachineConfigGetsRolledout(parentCtx context.Context, mgm
 
 		// Wait for Nodes to be Ready
 		numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-		e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes, guestCluster.Spec.Platform.Type, nodePool.Name)
+		e2eutil.WaitForNReadyNodesByNodePool(t, testContext, guestClient, numNodes, guestCluster.Spec.Platform.Type, nodePool.Name)
 
 		tuningConfigConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -295,7 +295,7 @@ func testSetNodePoolNTOMachineConfigAppliedInPlace(parentCtx context.Context, mg
 
 		// Wait for Nodes to be Ready
 		numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-		e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type, nodePool.Name)
+		e2eutil.WaitForNReadyNodesByNodePool(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type, nodePool.Name)
 
 		tuningConfigConfigMap := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
@@ -330,7 +330,7 @@ func testSetNodePoolNTOMachineConfigAppliedInPlace(parentCtx context.Context, mg
 			}
 		}
 
-		e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type, nodePool.Name)
+		e2eutil.WaitForNReadyNodesByNodePool(t, ctx, guestClient, numNodes, guestCluster.Spec.Platform.Type, nodePool.Name)
 
 		t.Logf("waiting for NodePools in-place update with NTO-generated MachineConfig")
 		err = wait.PollImmediateWithContext(ctx, 20*time.Second, 15*time.Minute, func(ctx context.Context) (bool, error) {

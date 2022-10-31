@@ -24,9 +24,11 @@ const (
 )
 
 var (
-	zeroReplicas int32 = 0
-	oneReplicas  int32 = 1
-	twoReplicas  int32 = 2
+	zeroReplicas         int32 = 0
+	oneReplicas          int32 = 1
+	twoReplicas          int32 = 2
+	PreviousReleaseImage       = "quay.io/openshift-release-dev/ocp-release:4.12.0-ec.2-x86_64"
+	LatestReleaseImage         = "quay.io/openshift-release-dev/ocp-release:4.12.0-ec.3-x86_64"
 )
 
 func TestNodePoolMain(t *testing.T) {
@@ -59,6 +61,8 @@ func TestNodePoolMain(t *testing.T) {
 	// Each test should have their own NodePool
 	//t.Run("TestSetNodePoolAutoRepair", testSetNodePoolAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
 	//t.Run("TestSetNodePoolMachineConfigGetsRolledout", testSetNodePoolMachineConfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
-	t.Run("TestSetNodePoolNTOMachineConfigGetsRolledout", testSetNodePoolNTOMachineConfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+	//t.Run("TestSetNodePoolNTOMachineConfigGetsRolledout", testSetNodePoolNTOMachineConfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+	//t.Run("TestSetNodePoolNTOMachineConfigAppliedInPlace", testSetNodePoolNTOMachineConfigAppliedInPlace(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+	t.Run("TestSetReplaceUpgradeNodePool", testSetReplaceUpgradeNodePool(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
 	//t.Run("TestSetNodePoolNTOMachineConfigAppliedInPlace", testSetNodePoolNTOMachineConfigAppliedInPlace(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
 }
