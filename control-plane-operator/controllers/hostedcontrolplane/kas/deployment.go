@@ -515,7 +515,7 @@ func buildKASVolumeKubeletClientCA(v *corev1.Volume) {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
 	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
-	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
+	v.ConfigMap.Name = manifests.TotalClientCABundle("").Name
 }
 
 func kasVolumeKonnectivityClientCert() *corev1.Volume {

@@ -1318,19 +1318,12 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile root CA: %w", err)
 	}
-	// Signer CA
-	signerCASecret := manifests.CSRSignerCASecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, signerCASecret, func() error {
-		return pki.ReconcileClusterSignerCA(signerCASecret, p.OwnerRef)
+
+	rootCAConfigMap := manifests.RootCAConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, rootCAConfigMap, func() error {
+		return pki.ReconcileRootCAConfigMap(rootCAConfigMap, p.OwnerRef, rootCASecret)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile signer CA: %w", err)
-	}
-	// Combined CA
-	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, combinedCA, func() error {
-		return pki.ReconcileCombinedCA(combinedCA, p.OwnerRef, rootCASecret, signerCASecret)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile combined CA: %w", err)
+		return fmt.Errorf("failed to reconcile root CA configmap: %w", err)
 	}
 
 	// Metrics client cert
@@ -1375,14 +1368,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 
 	if err := r.setupKASClientSigners(ctx, hcp, p, createOrUpdate); err != nil {
 		return err
-	}
-
-	// KAS bootstrap client cert secret
-	kasBootstrapClientCertSecret := manifests.KASMachineBootstrapClientCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kasBootstrapClientCertSecret, func() error {
-		return pki.ReconcileKASMachineBootstrapClientCertSecret(kasBootstrapClientCertSecret, signerCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile kas bootstrap client secret: %w", err)
 	}
 
 	// Service account signing key secret
@@ -1955,13 +1940,16 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 		return fmt.Errorf("failed to reconcile kcm service: %w", err)
 	}
 
-	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(combinedCA), combinedCA); err != nil {
+	rootCAConfigMap := manifests.RootCAConfigMap(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCAConfigMap), rootCAConfigMap); err != nil {
 		return fmt.Errorf("failed to fetch combined ca configmap: %w", err)
 	}
+
+	// TODO: the following is weird, it adds the rootCA to the service-ca configmap
+	//       why would anyone want that?
 	serviceServingCA := manifests.ServiceServingCA(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, serviceServingCA, func() error {
-		return kcm.ReconcileKCMServiceServingCA(serviceServingCA, combinedCA, p.OwnerRef)
+		return kcm.ReconcileKCMServiceServingCA(serviceServingCA, rootCAConfigMap, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kcm serving ca: %w", err)
 	}
@@ -2618,10 +2606,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return fmt.Errorf("failed to get root ca: %w", err)
 	}
-	combinedCA := manifests.CombinedCAConfigMap(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(combinedCA), combinedCA); err != nil {
-		return fmt.Errorf("failed to get combined ca: %w", err)
-	}
+
 	pullSecret := common.PullSecret(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return fmt.Errorf("failed to get pull secret: %w", err)
@@ -2635,7 +2620,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 		}
 	}
 
-	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, combinedCA, userCA)
+	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, userCA)
 
 	cm := manifests.MachineConfigServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, cm, func() error {

@@ -66,6 +66,6 @@ func ReconcileClusterSignerCA(secret *corev1.Secret, ownerRef config.OwnerRef) e
 	return reconcileSelfSignedCA(secret, ownerRef, "cluster-signer", "openshift")
 }
 
-func ReconcileCombinedCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, rootCA, signerCA *corev1.Secret) error {
-	return reconcileAggregateCA(cm, ownerRef, rootCA, signerCA)
+func ReconcileRootCAConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, rootCA *corev1.Secret) error {
+	return reconcileAggregateCA(cm, ownerRef, rootCA)
 }

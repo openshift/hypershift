@@ -180,6 +180,16 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	}
 	totalClientCABundle = append(totalClientCABundle, csrSigner)
 
+	// KAS bootstrap client cert secret
+	if _, err := reconcileSub(
+		manifests.KASMachineBootstrapClientCertSecret(hcp.Namespace),
+		csrSigner,
+		p.OwnerRef,
+		pki.ReconcileKASMachineBootstrapClientCertSecret,
+	); err != nil {
+		return err
+	}
+
 	totalClientCA := manifests.TotalClientCABundle(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, totalClientCA, func() error {
 		return pki.ReconcileTotalClientCA(

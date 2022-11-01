@@ -160,7 +160,7 @@ var (
 	volumeMounts = util.PodVolumeMounts{
 		hccContainerMain().Name: util.ContainerVolumeMounts{
 			hccVolumeKubeconfig().Name:      "/etc/kubernetes/kubeconfig",
-			hccVolumeCombinedCA().Name:      "/etc/kubernetes/combined-ca",
+			hccVolumeRootCA().Name:          "/etc/kubernetes/root-ca",
 			hccVolumeClusterSignerCA().Name: "/etc/kubernetes/cluster-signer-ca",
 		},
 	}
@@ -189,7 +189,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(hccVolumeKubeconfig(), buildHCCVolumeKubeconfig),
-					util.BuildVolume(hccVolumeCombinedCA(), buildHCCVolumeCombinedCA),
+					util.BuildVolume(hccVolumeRootCA(), buildHCCVolumeRootCA),
 					util.BuildVolume(hccVolumeClusterSignerCA(), buildHCCClusterSignerCA),
 				},
 				ServiceAccountName: manifests.ConfigOperatorServiceAccount("").Name,
@@ -224,9 +224,9 @@ func hccVolumeKubeconfig() *corev1.Volume {
 	}
 }
 
-func hccVolumeCombinedCA() *corev1.Volume {
+func hccVolumeRootCA() *corev1.Volume {
 	return &corev1.Volume{
-		Name: "combined-ca",
+		Name: "root-ca",
 	}
 }
 
@@ -243,7 +243,7 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 		c.Command = []string{
 			"/usr/bin/control-plane-operator",
 			"hosted-cluster-config-operator",
-			fmt.Sprintf("--initial-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeCombinedCA().Name), certs.CASignerCertMapKey)),
+			fmt.Sprintf("--initial-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeRootCA().Name), certs.CASignerCertMapKey)),
 			fmt.Sprintf("--cluster-signer-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeClusterSignerCA().Name), certs.CASignerCertMapKey)),
 			fmt.Sprintf("--target-kubeconfig=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeKubeconfig().Name), kas.KubeconfigKey)),
 			"--namespace", "$(POD_NAMESPACE)",
@@ -289,10 +289,10 @@ func buildHCCVolumeKubeconfig(v *corev1.Volume) {
 	}
 }
 
-func buildHCCVolumeCombinedCA(v *corev1.Volume) {
+func buildHCCVolumeRootCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
-	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
+	v.ConfigMap.Name = manifests.RootCAConfigMap("").Name
 }
 
 func buildHCCClusterSignerCA(v *corev1.Volume) {

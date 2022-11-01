@@ -193,7 +193,7 @@ $(sed 's/^/    /g' /etc/cloudconfig/cloud.conf)
 EOF
 machine-config-operator bootstrap \
 --root-ca=/assets/manifests/root-ca.crt \
---kube-ca=/assets/manifests/combined-ca.crt \
+--kube-ca=/assets/manifests/root-ca.crt \
 --machine-config-operator-image={{ .mcoImage }} \
 --machine-config-oscontent-image={{ .osContentImage }} \
 --infra-image={{ .podImage }} \
