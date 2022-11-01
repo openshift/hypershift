@@ -44,7 +44,7 @@ func egressSelectorConfiguration() *kasv1beta1.EgressSelectorConfiguration {
 						TCP: &kasv1beta1.TCPTransport{
 							URL: fmt.Sprintf("https://konnectivity-server-local:%d", konnectivity.KonnectivityServerLocalPort),
 							TLSConfig: &kasv1beta1.TLSConfig{
-								CABundle:   cpath(kasVolumeClientCA().Name, certs.CASignerCertMapKey),
+								CABundle:   cpath(kasVolumeRootCA().Name, certs.CASignerCertMapKey),
 								ClientCert: cpath(kasVolumeKonnectivityClientCert().Name, corev1.TLSCertKey),
 								ClientKey:  cpath(kasVolumeKonnectivityClientCert().Name, corev1.TLSPrivateKeyKey),
 							},

@@ -17,6 +17,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/certs"
 	hcpconfig "github.com/openshift/hypershift/support/config"
@@ -143,7 +144,7 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("authentication-token-webhook-config-file", cpath(kasVolumeAuthTokenWebhookConfig().Name, KubeconfigKey))
 	args.Set("authentication-token-webhook-version", "v1")
 	args.Set("authorization-mode", "Scope", "SystemMasters", "RBAC", "Node")
-	args.Set("client-ca-file", cpath(kasVolumeClientCA().Name, certs.CASignerCertMapKey))
+	args.Set("client-ca-file", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey))
 	if p.CloudProviderConfigRef != nil {
 		args.Set("cloud-config", cloudProviderConfig(p.CloudProviderConfigRef.Name, p.CloudProvider))
 	}
@@ -189,7 +190,7 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("proxy-client-cert-file", cpath(kasVolumeAggregatorCert().Name, corev1.TLSCertKey))
 	args.Set("proxy-client-key-file", cpath(kasVolumeAggregatorCert().Name, corev1.TLSPrivateKeyKey))
 	args.Set("requestheader-allowed-names", requestHeaderAllowedNames()...)
-	args.Set("requestheader-client-ca-file", cpath(kasVolumeAggregatorCA().Name, certs.CASignerCertMapKey))
+	args.Set("requestheader-client-ca-file", cpath(common.VolumeAggregatorCA().Name, certs.CASignerCertMapKey))
 	args.Set("requestheader-extra-headers-prefix", "X-Remote-Extra-")
 	args.Set("requestheader-group-headers", "X-Remote-Group")
 	args.Set("requestheader-username-headers", "X-Remote-User")

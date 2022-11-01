@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
@@ -19,9 +20,10 @@ import (
 var (
 	volumeMounts = util.PodVolumeMounts{
 		cpcContainerMain().Name: {
-			cpcVolumeConfig().Name:      "/etc/kubernetes/config",
-			cpcVolumeServingCert().Name: "/etc/kubernetes/certs",
-			cpcVolumeKubeconfig().Name:  "/etc/kubernetes/secrets/svc-kubeconfig",
+			cpcVolumeConfig().Name:            "/etc/kubernetes/config",
+			cpcVolumeServingCert().Name:       "/etc/kubernetes/certs",
+			cpcVolumeKubeconfig().Name:        "/etc/kubernetes/secrets/svc-kubeconfig",
+			common.VolumeTotalClientCA().Name: "/etc/kubernetes/client-ca",
 		},
 	}
 	clusterPolicyControllerLabels = map[string]string{
@@ -57,6 +59,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		util.BuildVolume(cpcVolumeConfig(), buildCPCVolumeConfig),
 		util.BuildVolume(cpcVolumeServingCert(), buildCPCVolumeServingCert),
 		util.BuildVolume(cpcVolumeKubeconfig(), buildCPCVolumeKubeconfig),
+		util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
 	}
 	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(false)
 	deploymentConfig.ApplyTo(deployment)

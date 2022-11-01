@@ -37,17 +37,17 @@ var (
 			serviceCASignerVolume().Name: "/run/service-ca-signer",
 		},
 		oasContainerMain().Name: {
-			oasVolumeWorkLogs().Name:           "/var/log/openshift-apiserver",
-			oasVolumeConfig().Name:             "/etc/kubernetes/config",
-			oasVolumeAuditConfig().Name:        "/etc/kubernetes/audit-config",
-			oasVolumeAggregatorClientCA().Name: "/etc/kubernetes/certs/aggregator-client-ca",
-			oasVolumeEtcdClientCA().Name:       "/etc/kubernetes/certs/etcd-client-ca",
-			oasVolumeServingCA().Name:          "/etc/kubernetes/certs/serving-ca",
-			oasVolumeKubeconfig().Name:         "/etc/kubernetes/secrets/svc-kubeconfig",
-			oasVolumeServingCert().Name:        "/etc/kubernetes/certs/serving",
-			oasVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
-			oasTrustAnchorVolume().Name:        "/etc/pki/ca-trust/extracted/pem",
-			pullSecretVolume().Name:            "/var/lib/kubelet",
+			oasVolumeWorkLogs().Name:          "/var/log/openshift-apiserver",
+			oasVolumeConfig().Name:            "/etc/kubernetes/config",
+			oasVolumeAuditConfig().Name:       "/etc/kubernetes/audit-config",
+			common.VolumeAggregatorCA().Name:  "/etc/kubernetes/certs/aggregator-client-ca",
+			oasVolumeEtcdClientCA().Name:      "/etc/kubernetes/certs/etcd-client-ca",
+			oasVolumeKubeconfig().Name:        "/etc/kubernetes/secrets/svc-kubeconfig",
+			common.VolumeTotalClientCA().Name: "/etc/kubernetes/certs/client-ca",
+			oasVolumeServingCert().Name:       "/etc/kubernetes/certs/serving",
+			oasVolumeEtcdClientCert().Name:    "/etc/kubernetes/certs/etcd-client",
+			oasTrustAnchorVolume().Name:       "/etc/pki/ca-trust/extracted/pem",
+			pullSecretVolume().Name:           "/var/lib/kubelet",
 		},
 		oasSocks5ProxyContainer().Name: {
 			oasVolumeKubeconfig().Name:            "/etc/kubernetes/secrets/kubeconfig",
@@ -114,9 +114,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
 			util.BuildVolume(oasVolumeConfig(), buildOASVolumeConfig),
 			util.BuildVolume(oasVolumeAuditConfig(), buildOASVolumeAuditConfig),
-			util.BuildVolume(oasVolumeAggregatorClientCA(), buildOASVolumeAggregatorClientCA),
+			util.BuildVolume(common.VolumeAggregatorCA(), common.BuildVolumeAggregatorCA),
 			util.BuildVolume(oasVolumeEtcdClientCA(), buildOASVolumeEtcdClientCA),
-			util.BuildVolume(oasVolumeServingCA(), buildOASVolumeServingCA),
+			util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
 			util.BuildVolume(oasVolumeKubeconfig(), buildOASVolumeKubeconfig),
 			util.BuildVolume(oasVolumeServingCert(), buildOASVolumeServingCert),
 			util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
@@ -204,13 +204,12 @@ func buildOASContainerMain(image string, etcdHostname string, port int32) func(c
 			fmt.Sprintf("--config=%s", cpath(oasVolumeConfig().Name, openshiftAPIServerConfigKey)),
 			fmt.Sprintf("--authorization-kubeconfig=%s", cpath(oasVolumeKubeconfig().Name, kas.KubeconfigKey)),
 			fmt.Sprintf("--authentication-kubeconfig=%s", cpath(oasVolumeKubeconfig().Name, kas.KubeconfigKey)),
-			fmt.Sprintf("--requestheader-client-ca-file=%s", cpath(oasVolumeAggregatorClientCA().Name, certs.CASignerCertMapKey)),
+			fmt.Sprintf("--requestheader-client-ca-file=%s", cpath(common.VolumeAggregatorCA().Name, certs.CASignerCertMapKey)),
 			"--requestheader-allowed-names=kube-apiserver-proxy,system:kube-apiserver-proxy,system:openshift-aggregator",
 			"--requestheader-username-headers=X-Remote-User",
 			"--requestheader-group-headers=X-Remote-Group",
 			"--requestheader-extra-headers-prefix=X-Remote-Extra-",
-			"--client-ca-file=/etc/kubernetes/config/serving-ca.crt",
-			fmt.Sprintf("--client-ca-file=%s", cpath(oasVolumeServingCA().Name, certs.CASignerCertMapKey)),
+			fmt.Sprintf("--client-ca-file=%s", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey)),
 		}
 		c.Env = []corev1.EnvVar{
 			{
@@ -281,17 +280,6 @@ func buildOASVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
 }
 
-func oasVolumeAggregatorClientCA() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "aggregator-client-ca",
-	}
-}
-
-func buildOASVolumeAggregatorClientCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
-	v.Secret.SecretName = manifests.RootCASecret("").Name
-}
-
 func oasVolumeEtcdClientCA() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "etcd-client-ca",
@@ -299,17 +287,6 @@ func oasVolumeEtcdClientCA() *corev1.Volume {
 }
 
 func buildOASVolumeEtcdClientCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
-	v.Secret.SecretName = manifests.RootCASecret("").Name
-}
-
-func oasVolumeServingCA() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "serving-ca",
-	}
-}
-
-func buildOASVolumeServingCA(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.RootCASecret("").Name
 }
