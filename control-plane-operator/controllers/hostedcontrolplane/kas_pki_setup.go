@@ -21,9 +21,9 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	p *pki.PKIParams,
 	createOrUpdate upsert.CreateOrUpdateFN,
 ) error {
-	reconcileSigner := func(s *corev1.Secret, owner config.OwnerRef, reconciler signerReconciler) (*corev1.Secret, error) {
+	reconcileSigner := func(s *corev1.Secret, reconciler signerReconciler) (*corev1.Secret, error) {
 		applyFunc := func() error {
-			return reconciler(s, owner)
+			return reconciler(s, p.OwnerRef)
 		}
 
 		if _, err := createOrUpdate(ctx, r, s, applyFunc); err != nil {
@@ -32,9 +32,9 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return s, nil
 	}
 
-	reconcileSub := func(target, ca *corev1.Secret, owner config.OwnerRef, reconciler subReconciler) (*corev1.Secret, error) {
+	reconcileSub := func(target, ca *corev1.Secret, reconciler subReconciler) (*corev1.Secret, error) {
 		applyFunc := func() error {
-			return reconciler(target, ca, owner)
+			return reconciler(target, ca, p.OwnerRef)
 		}
 
 		if _, err := createOrUpdate(ctx, r, target, applyFunc); err != nil {
@@ -50,7 +50,6 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	// KAS aggregator client signer
 	kasAggregateClientSigner, err := reconcileSigner(
 		manifests.AggregatorClientSigner(hcp.Namespace),
-		p.OwnerRef,
 		pki.ReconcileAggregatorClientSigner,
 	)
 	if err != nil {
@@ -61,7 +60,6 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	if _, err := reconcileSub(
 		manifests.KASAggregatorCertSecret(hcp.Namespace),
 		kasAggregateClientSigner,
-		p.OwnerRef,
 		pki.ReconcileKASAggregatorCertSecret,
 	); err != nil {
 		return err
@@ -84,7 +82,6 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	// signer
 	kubeControlPlaneSigner, err := reconcileSigner(
 		manifests.KubeControlPlaneSigner(hcp.Namespace),
-		p.OwnerRef,
 		pki.ReconcileKubeControlPlaneSigner,
 	)
 	if err != nil {
@@ -96,7 +93,6 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	if _, err := reconcileSub(
 		manifests.KubeSchedulerClientCertSecret(hcp.Namespace),
 		kubeControlPlaneSigner,
-		p.OwnerRef,
 		pki.ReconcileKubeSchedulerClientCertSecret,
 	); err != nil {
 		return err
@@ -106,7 +102,6 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	if _, err := reconcileSub(
 		manifests.KubeControllerManagerClientCertSecret(hcp.Namespace),
 		kubeControlPlaneSigner,
-		p.OwnerRef,
 		pki.ReconcileKubeControllerManagerClientCertSecret,
 	); err != nil {
 		return err
@@ -119,7 +114,6 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	// signer
 	kasToKubeletSigner, err := reconcileSigner(
 		manifests.KubeAPIServerToKubeletSigner(hcp.Namespace),
-		p.OwnerRef,
 		pki.ReconcileKASToKubeletSigner,
 	)
 
@@ -132,7 +126,6 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	if _, err := reconcileSub(
 		manifests.KASKubeletClientCertSecret(hcp.Namespace),
 		kasToKubeletSigner,
-		p.OwnerRef,
 		pki.ReconcileKASKubeletClientCertSecret,
 	); err != nil {
 		return err
@@ -145,7 +138,6 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	// signer
 	adminKubeconfigSigner, err := reconcileSigner(
 		manifests.SystemAdminSigner(hcp.Namespace),
-		p.OwnerRef,
 		pki.ReconcileAdminKubeconfigSigner,
 	)
 
@@ -158,7 +150,6 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	if _, err := reconcileSub(
 		manifests.SystemAdminClientCertSecret(hcp.Namespace),
 		adminKubeconfigSigner,
-		p.OwnerRef,
 		pki.ReconcileSystemAdminClientCertSecret,
 	); err != nil {
 		return err
@@ -171,7 +162,6 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	// signer
 	csrSigner, err := reconcileSigner(
 		manifests.CSRSignerCASecret(hcp.Namespace),
-		p.OwnerRef,
 		pki.ReconcileKubeCSRSigner,
 	)
 
@@ -184,7 +174,6 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	if _, err := reconcileSub(
 		manifests.KASMachineBootstrapClientCertSecret(hcp.Namespace),
 		csrSigner,
-		p.OwnerRef,
 		pki.ReconcileKASMachineBootstrapClientCertSecret,
 	); err != nil {
 		return err
