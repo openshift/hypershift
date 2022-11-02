@@ -1551,6 +1551,64 @@ func TestPauseHostedControlPlane(t *testing.T) {
 	}
 }
 
+func TestHostedControlPlaneNoSecret(t *testing.T) {
+	fakeNonExistantSecret := "non-existant-secret"
+	fakeExistantSecret := "cluster-fake-pull-secret"
+	fakeHCPName := "cluster-fake"
+	fakeHCPNamespace := "master-cluster-fake"
+	testsCases := []struct {
+		name                    string
+		goodInputObjects        []crclient.Object
+		wrongInputObjects       []crclient.Object
+		inputHostedControlPlane *hyperv1.HostedControlPlane
+	}{
+		{
+			name:                    "if a hostedControlPlane exists then reference a non existant pull secret and wait to reconcile but will not progress.",
+			inputHostedControlPlane: manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName),
+			wrongInputObjects: []crclient.Object{
+				&hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: fakeHCPNamespace,
+						Name:      fakeHCPName,
+					},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						PullSecret: corev1.LocalObjectReference{Name: fakeNonExistantSecret},
+					},
+				},
+			},
+			goodInputObjects: []crclient.Object{
+				&hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: fakeHCPNamespace,
+						Name:      fakeHCPName,
+					},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						PullSecret: corev1.LocalObjectReference{Name: fakeExistantSecret},
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			f := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.wrongInputObjects...).Build()
+			s := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.goodInputObjects...).Build()
+			fHCP := manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName)
+			sHCP := manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName)
+			err := f.Get(context.Background(), crclient.ObjectKeyFromObject(fHCP), fHCP)
+			g.Expect(err).ToNot(HaveOccurred())
+			err = s.Get(context.Background(), crclient.ObjectKeyFromObject(sHCP), sHCP)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(fHCP.Spec.PullSecret.Name).To(ContainSubstring(fakeNonExistantSecret))
+			g.Expect(fHCP.Spec.PullSecret.Name).ToNot(Equal(fakeExistantSecret))
+			g.Expect(sHCP.Spec.PullSecret.Name).ToNot(ContainSubstring(fakeNonExistantSecret))
+			g.Expect(sHCP.Spec.PullSecret.Name).To(Equal(fakeExistantSecret))
+			g.Expect(sHCP.Spec.PullSecret.Name).ToNot(Equal(fHCP.Spec.PullSecret.Name))
+		})
+	}
+}
+
 func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 	testHC := func(infraID, clusterID string) *hyperv1.HostedCluster {
 		return &hyperv1.HostedCluster{
