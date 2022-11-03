@@ -179,6 +179,14 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return err
 	}
 
+	// Metrics client cert
+	metricsClientCert := manifests.MetricsClientCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, metricsClientCert, func() error {
+		return pki.ReconcileMetricsSAClientCertSecret(metricsClientCert, csrSigner, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile metrics client cert secret: %w", err)
+	}
+
 	totalClientCA := manifests.TotalClientCABundle(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, totalClientCA, func() error {
 		return pki.ReconcileTotalClientCA(

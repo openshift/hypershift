@@ -1326,14 +1326,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile root CA configmap: %w", err)
 	}
 
-	// Metrics client cert
-	metricsClientCert := manifests.MetricsClientCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, metricsClientCert, func() error {
-		return pki.ReconcileMetricsSAClientCertSecret(metricsClientCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile metrics client cert secret: %w", err)
-	}
-
 	// Etcd client secret
 	etcdClientSecret := manifests.EtcdClientSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, etcdClientSecret, func() error {
