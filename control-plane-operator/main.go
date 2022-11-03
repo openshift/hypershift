@@ -205,11 +205,6 @@ func NewStartCommand() *cobra.Command {
 				DefaultSelector: cache.ObjectSelector{Field: fields.OneTermEqualSelector("metadata.namespace", namespace)},
 				SelectorsByObject: cache.SelectorsByObject{
 					&operatorv1.IngressController{}: {Field: fields.OneTermEqualSelector("metadata.namespace", manifests.IngressPrivateIngressController("").Namespace)},
-					// We watch warning events to be able to surface cloud provider errors as conditions
-					// Surfacing cloud-provider specific status is discussed in:
-					// https://github.com/kubernetes/kubernetes/issues/70159
-					// https://github.com/kubernetes/kubernetes/issues/52670
-					&corev1.Event{}: {Field: fields.AndSelectors(fields.OneTermEqualSelector("metadata.namespace", namespace), fields.OneTermEqualSelector("type", "warning"))},
 				},
 			}),
 		})
