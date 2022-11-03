@@ -492,8 +492,19 @@ func destroyPowerVsCloudConnection(ctx context.Context, options *DestroyInfraOpt
 			}
 		}
 	} else {
+
+		deleteCloudConnection := func(id string) error {
+			for retry := 0; retry < 5; retry++ {
+				if err = deletePowerVsCloudConnection(options, id, client, jobClient); err == nil {
+					return nil
+				}
+				log(options.InfraID).Info("retrying cloud connection deletion")
+			}
+			return err
+		}
+
 		if infra != nil && infra.CloudConnectionID != "" {
-			return deletePowerVsCloudConnection(options, infra.CloudConnectionID, client, jobClient)
+			return deleteCloudConnection(infra.CloudConnectionID)
 		}
 		var cloudConnL *models.CloudConnections
 		cloudConnL, err = client.GetAll()
@@ -510,7 +521,7 @@ func destroyPowerVsCloudConnection(ctx context.Context, options *DestroyInfraOpt
 
 		for _, cloudConn := range cloudConnL.CloudConnections {
 			if *cloudConn.Name == cloudConnName {
-				return deletePowerVsCloudConnection(options, *cloudConn.CloudConnectionID, client, jobClient)
+				return deleteCloudConnection(*cloudConn.CloudConnectionID)
 			}
 		}
 	}
@@ -627,7 +638,15 @@ func destroyVpcSubnet(options *DestroyInfraOptions, infra *Infra, resourceGroupI
 // deleteVpcSubnet deletes the subnet id passed and LB attached to it
 func deleteVpcSubnet(id string, v1 *vpcv1.VpcV1, options *DestroyInfraOptions) error {
 	// deleting the load balancer before proceeding to subnet deletion, since LB is an attached resource to the subnet
-	if err := destroyVpcLB(options, id, v1); err != nil {
+	var err error
+	for retry := 0; retry < 5; retry++ {
+		if err = destroyVpcLB(options, id, v1); err == nil {
+			break
+		}
+		log(options.InfraID).Info("retrying VPC Load Balancer deletion")
+	}
+
+	if err != nil {
 		log(options.InfraID).Error(err, "error destroying VPC Load Balancer")
 		return fmt.Errorf("error destroying VPC Load Balancer %w", err)
 	}
