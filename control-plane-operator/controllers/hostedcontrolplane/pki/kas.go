@@ -7,12 +7,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"k8s.io/apiserver/pkg/authentication/serviceaccount"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 const (
@@ -79,9 +81,9 @@ func ReconcileSystemAdminClientCertSecret(secret, ca *corev1.Secret, ownerRef co
 	return reconcileSignedCert(secret, ca, ownerRef, "system:admin", []string{"system:masters"}, X509UsageClientAuth)
 }
 
-func ReconcileServiceAccountKubeconfig(secret, ca *corev1.Secret, hcp *hyperv1.HostedControlPlane, serviceAccountNamespace, serviceAccountName string) error {
-	cn := "system:serviceaccount:" + serviceAccountNamespace + ":" + serviceAccountName
-	if err := reconcileSignedCert(secret, ca, config.OwnerRef{}, cn, []string{"system:serviceaccounts"}, X509UsageClientServerAuth); err != nil {
+func ReconcileServiceAccountKubeconfig(secret, csrSigner *corev1.Secret, ca *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, serviceAccountNamespace, serviceAccountName string) error {
+	cn := serviceaccount.MakeUsername(serviceAccountNamespace, serviceAccountName)
+	if err := reconcileSignedCert(secret, csrSigner, config.OwnerRef{}, cn, serviceaccount.MakeGroupNames(serviceAccountNamespace), X509UsageClientAuth); err != nil {
 		return fmt.Errorf("failed to reconcile serviceaccount client cert: %w", err)
 	}
 	svcURL := inClusterKASURL(hcp.Namespace, util.APIPortWithDefault(hcp, config.DefaultAPIServerPort))
@@ -109,11 +111,11 @@ func isNumericIP(s string) bool {
 	return net.ParseIP(s) != nil
 }
 
-func ReconcileKubeConfig(secret, cert, ca *corev1.Secret, url string, key string, scope manifests.KubeconfigScope, ownerRef config.OwnerRef) error {
+func ReconcileKubeConfig(secret, cert *corev1.Secret, ca *corev1.ConfigMap, url string, key string, scope manifests.KubeconfigScope, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(secret)
-	caBytes := ca.Data[certs.CASignerCertMapKey]
+	caPEM := ca.Data[certs.CASignerCertMapKey]
 	crtBytes, keyBytes := cert.Data[corev1.TLSCertKey], cert.Data[corev1.TLSPrivateKeyKey]
-	kubeCfgBytes, err := generateKubeConfig(url, crtBytes, keyBytes, caBytes)
+	kubeCfgBytes, err := generateKubeConfig(url, crtBytes, keyBytes, []byte(caPEM))
 	if err != nil {
 		return fmt.Errorf("failed to generate kubeconfig: %w", err)
 	}
