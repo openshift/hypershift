@@ -544,7 +544,7 @@ type ServiceNetworkEntry struct {
 	CIDR ipnet.IPNet `json:"cidr"`
 }
 
-//+kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
+// +kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
 type CIDRBlock string
 
 // APIServerNetworking specifies how the APIServer is exposed inside a cluster
@@ -1734,7 +1734,8 @@ const (
 	OIDCConfigurationInvalidReason    = "OIDCConfigurationInvalid"
 	PlatformCredentialsNotFoundReason = "PlatformCredentialsNotFound"
 
-	InvalidImageReason = "InvalidImage"
+	SecretNotFoundReason = "SecretNotFound"
+	InvalidImageReason   = "InvalidImage"
 )
 
 // HostedClusterStatus is the latest observed status of a HostedCluster.

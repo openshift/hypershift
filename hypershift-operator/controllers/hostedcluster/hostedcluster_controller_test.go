@@ -1557,34 +1557,30 @@ func TestHostedControlPlaneNoSecret(t *testing.T) {
 	fakeHCPName := "cluster-fake"
 	fakeHCPNamespace := "master-cluster-fake"
 	testsCases := []struct {
-		name                    string
-		goodInputObjects        []crclient.Object
-		wrongInputObjects       []crclient.Object
-		inputHostedControlPlane *hyperv1.HostedControlPlane
+		name               string
+		hostedControlPlane *hyperv1.HostedControlPlane
 	}{
 		{
-			name:                    "if a hostedControlPlane exists then reference a non existant pull secret and wait to reconcile but will not progress.",
-			inputHostedControlPlane: manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName),
-			wrongInputObjects: []crclient.Object{
-				&hyperv1.HostedControlPlane{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: fakeHCPNamespace,
-						Name:      fakeHCPName,
-					},
-					Spec: hyperv1.HostedControlPlaneSpec{
-						PullSecret: corev1.LocalObjectReference{Name: fakeNonExistantSecret},
-					},
+			name: "if a HostedControlPlane references an existant pull secret it should progress correctly.",
+			hostedControlPlane: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: fakeHCPNamespace,
+					Name:      fakeHCPName,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					PullSecret: corev1.LocalObjectReference{Name: fakeExistantSecret},
 				},
 			},
-			goodInputObjects: []crclient.Object{
-				&hyperv1.HostedControlPlane{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: fakeHCPNamespace,
-						Name:      fakeHCPName,
-					},
-					Spec: hyperv1.HostedControlPlaneSpec{
-						PullSecret: corev1.LocalObjectReference{Name: fakeExistantSecret},
-					},
+		},
+		{
+			name: "if a HostedControlPlane references a non existant pull secret it should fail.",
+			hostedControlPlane: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: fakeHCPNamespace,
+					Name:      fakeHCPName,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					PullSecret: corev1.LocalObjectReference{Name: fakeNonExistantSecret},
 				},
 			},
 		},
@@ -1592,19 +1588,17 @@ func TestHostedControlPlaneNoSecret(t *testing.T) {
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			f := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.wrongInputObjects...).Build()
-			s := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.goodInputObjects...).Build()
-			fHCP := manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName)
-			sHCP := manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName)
-			err := f.Get(context.Background(), crclient.ObjectKeyFromObject(fHCP), fHCP)
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hostedControlPlane).Build()
+			HCP := manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName)
+			err := c.Get(context.Background(), crclient.ObjectKeyFromObject(tc.hostedControlPlane), HCP)
 			g.Expect(err).ToNot(HaveOccurred())
-			err = s.Get(context.Background(), crclient.ObjectKeyFromObject(sHCP), sHCP)
-			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(fHCP.Spec.PullSecret.Name).To(ContainSubstring(fakeNonExistantSecret))
-			g.Expect(fHCP.Spec.PullSecret.Name).ToNot(Equal(fakeExistantSecret))
-			g.Expect(sHCP.Spec.PullSecret.Name).ToNot(ContainSubstring(fakeNonExistantSecret))
-			g.Expect(sHCP.Spec.PullSecret.Name).To(Equal(fakeExistantSecret))
-			g.Expect(sHCP.Spec.PullSecret.Name).ToNot(Equal(fHCP.Spec.PullSecret.Name))
+			if HCP.Spec.PullSecret.Name == fakeExistantSecret {
+				g.Expect(HCP.Spec.PullSecret.Name).To(Equal(fakeExistantSecret))
+				g.Expect(HCP.Spec.PullSecret.Name).ToNot(ContainSubstring(fakeNonExistantSecret))
+			} else {
+				g.Expect(HCP.Spec.PullSecret.Name).To(ContainSubstring(fakeNonExistantSecret))
+				g.Expect(HCP.Spec.PullSecret.Name).ToNot(Equal(fakeExistantSecret))
+			}
 		})
 	}
 }
