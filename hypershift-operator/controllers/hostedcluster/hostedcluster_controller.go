@@ -678,10 +678,16 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				Type:               string(hyperv1.ValidReleaseImage),
 				ObservedGeneration: hcluster.Generation,
 			}
-			if err := r.validateReleaseImage(ctx, hcluster); err != nil {
+			err := r.validateReleaseImage(ctx, hcluster)
+			if err != nil {
 				condition.Status = metav1.ConditionFalse
 				condition.Message = err.Error()
-				condition.Reason = hyperv1.InvalidImageReason
+
+				if apierrors.IsNotFound(err) {
+					condition.Reason = hyperv1.SecretNotFoundReason
+				} else {
+					condition.Reason = hyperv1.InvalidImageReason
+				}
 			} else {
 				condition.Status = metav1.ConditionTrue
 				condition.Message = "Release image is valid"
@@ -771,6 +777,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 		validReleaseImage := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidReleaseImage))
 		if validReleaseImage != nil && validReleaseImage.Status == metav1.ConditionFalse {
+			if validReleaseImage.Reason == hyperv1.SecretNotFoundReason {
+				return ctrl.Result{}, fmt.Errorf(validReleaseImage.Message)
+			}
 			log.Error(fmt.Errorf("release image is invalid"), "reconciliation is blocked", "message", validReleaseImage.Message)
 			return ctrl.Result{}, nil
 		}

@@ -1148,10 +1148,11 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 
 func TestValidateReleaseImage(t *testing.T) {
 	testCases := []struct {
-		name           string
-		other          []crclient.Object
-		hostedCluster  *hyperv1.HostedCluster
-		expectedResult error
+		name                  string
+		other                 []crclient.Object
+		hostedCluster         *hyperv1.HostedCluster
+		expectedResult        error
+		expectedNotFoundError bool
 	}{
 		{
 			name: "no pull secret, error",
@@ -1165,7 +1166,8 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: errors.New("failed to get pull secret: secrets \"pull-secret\" not found"),
+			expectedResult:        errors.New("failed to get pull secret: secrets \"pull-secret\" not found"),
+			expectedNotFoundError: true,
 		},
 		{
 			name: "invalid pull secret, error",
@@ -1477,6 +1479,10 @@ func TestValidateReleaseImage(t *testing.T) {
 			actual := r.validateReleaseImage(ctx, tc.hostedCluster)
 			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
 				t.Errorf("actual validation result differs from expected: %s", diff)
+			}
+			if tc.expectedNotFoundError {
+				g := NewGomegaWithT(t)
+				g.Expect(errors2.IsNotFound(actual)).To(BeTrue())
 			}
 		})
 	}
