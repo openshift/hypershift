@@ -294,3 +294,37 @@ func ReconcileAuthenticatedReaderForAuthenticatedUserRolebinding(r *rbacv1.RoleB
 	}
 	return nil
 }
+
+func ReconcileKCMLeaderElectionRole(r *rbacv1.Role) error {
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"configmaps", "leases"},
+			Verbs:     []string{"create"},
+		},
+	}
+
+	return nil
+}
+
+func ReconcileKCMLeaderElectionRoleBinding(r *rbacv1.RoleBinding) error {
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "Role",
+		Name:     "system:openshift:leader-election-lock-kube-controller-manager",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			APIGroup: rbacv1.SchemeGroupVersion.Group,
+			Kind:     "User",
+			Name:     "system:kube-controller-manager",
+		},
+		{
+			Kind:      "ServiceAccount",
+			Name:      "namespace-security-allocation-controller",
+			Namespace: "openshift-infra",
+		},
+	}
+
+	return nil
+}

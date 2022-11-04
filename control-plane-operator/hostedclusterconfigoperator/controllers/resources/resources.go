@@ -674,6 +674,9 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.IngressToRouteControllerRoleBinding, reconcile: rbac.ReconcileIngressToRouteControllerRoleBinding},
 
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.AuthenticatedReaderForAuthenticatedUserRolebinding, reconcile: rbac.ReconcileAuthenticatedReaderForAuthenticatedUserRolebinding},
+
+		manifestAndReconcile[*rbacv1.Role]{manifest: manifests.KCMLeaderElectionRole, reconcile: rbac.ReconcileKCMLeaderElectionRole},
+		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.KCMLeaderElectionRoleBinding, reconcile: rbac.ReconcileKCMLeaderElectionRoleBinding},
 	}
 
 	var errs []error
