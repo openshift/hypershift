@@ -27,6 +27,10 @@ func ReconcileEtcdClientSecret(secret, ca *corev1.Secret, ownerRef config.OwnerR
 	return reconcileSignedCertWithKeys(secret, ca, ownerRef, "etcd-client", []string{"kubernetes"}, X509UsageClientAuth, EtcdClientCrtKey, EtcdClientKeyKey, EtcdClientCAKey)
 }
 
+func ReconcileEtcdMetricsClientSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCertWithKeys(secret, ca, ownerRef, "etcd-metrics-client", []string{"kubernetes"}, X509UsageClientAuth, EtcdClientCrtKey, EtcdClientKeyKey, EtcdClientCAKey)
+}
+
 func ReconcileEtcdServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
 		fmt.Sprintf("etcd-client.%s.svc", secret.Namespace),

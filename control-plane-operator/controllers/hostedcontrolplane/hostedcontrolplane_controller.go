@@ -1367,6 +1367,30 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile etcd peer secret: %w", err)
 	}
 
+	// Etcd metrics signer
+	// Etcd signer for all the etcd-related certs
+	etcdMetricsSignerSecret := manifests.EtcdMetricsSignerSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdMetricsSignerSecret, func() error {
+		return pki.ReconcileEtcdMetricsSignerSecret(etcdMetricsSignerSecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd signer CA secret: %w", err)
+	}
+
+	etcdMetricsSignerCM := manifests.EtcdMetricsSignerCAConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdMetricsSignerCM, func() error {
+		return pki.ReconcileEtcdMetricsSignerConfigMap(etcdMetricsSignerCM, p.OwnerRef, etcdMetricsSignerSecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd signer CA configmap: %w", err)
+	}
+
+	// Etcd client secret
+	etcdMetricsClientSecret := manifests.EtcdMetricsClientSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdMetricsClientSecret, func() error {
+		return pki.ReconcileEtcdMetricsClientSecret(etcdMetricsClientSecret, etcdMetricsSignerSecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd client secret: %w", err)
+	}
+
 	// KAS server secret
 	kasServerSecret := manifests.KASServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kasServerSecret, func() error {
