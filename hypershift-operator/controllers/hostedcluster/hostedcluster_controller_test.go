@@ -1149,10 +1149,11 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 
 func TestValidateReleaseImage(t *testing.T) {
 	testCases := []struct {
-		name           string
-		other          []crclient.Object
-		hostedCluster  *hyperv1.HostedCluster
-		expectedResult error
+		name                  string
+		other                 []crclient.Object
+		hostedCluster         *hyperv1.HostedCluster
+		expectedResult        error
+		expectedNotFoundError bool
 	}{
 		{
 			name: "no pull secret, error",
@@ -1166,7 +1167,8 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: errors.New("failed to get pull secret: secrets \"pull-secret\" not found"),
+			expectedResult:        errors.New("failed to get pull secret: secrets \"pull-secret\" not found"),
+			expectedNotFoundError: true,
 		},
 		{
 			name: "invalid pull secret, error",
@@ -1469,6 +1471,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						"image-4.10.1": "4.10.1",
 						"image-4.11.0": "4.11.0",
 						"image-4.12.0": "4.12.0",
+						"image-4.13.0": "4.13.0",
 					},
 				},
 			}
@@ -1477,6 +1480,10 @@ func TestValidateReleaseImage(t *testing.T) {
 			actual := r.validateReleaseImage(ctx, tc.hostedCluster)
 			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
 				t.Errorf("actual validation result differs from expected: %s", diff)
+			}
+			if tc.expectedNotFoundError {
+				g := NewGomegaWithT(t)
+				g.Expect(errors2.IsNotFound(actual)).To(BeTrue())
 			}
 		})
 	}
@@ -1546,58 +1553,6 @@ func TestPauseHostedControlPlane(t *testing.T) {
 				g.Expect(finalHCP.Annotations).To(BeEquivalentTo(tc.expectedHostedControlPlaneObject.Annotations))
 			} else {
 				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
-			}
-		})
-	}
-}
-
-func TestHostedControlPlaneNoSecret(t *testing.T) {
-	fakeNonExistantSecret := "non-existant-secret"
-	fakeExistantSecret := "cluster-fake-pull-secret"
-	fakeHCPName := "cluster-fake"
-	fakeHCPNamespace := "master-cluster-fake"
-	testsCases := []struct {
-		name               string
-		hostedControlPlane *hyperv1.HostedControlPlane
-	}{
-		{
-			name: "if a HostedControlPlane references an existant pull secret it should progress correctly.",
-			hostedControlPlane: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: fakeHCPNamespace,
-					Name:      fakeHCPName,
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					PullSecret: corev1.LocalObjectReference{Name: fakeExistantSecret},
-				},
-			},
-		},
-		{
-			name: "if a HostedControlPlane references a non existant pull secret it should fail.",
-			hostedControlPlane: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: fakeHCPNamespace,
-					Name:      fakeHCPName,
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					PullSecret: corev1.LocalObjectReference{Name: fakeNonExistantSecret},
-				},
-			},
-		},
-	}
-	for _, tc := range testsCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hostedControlPlane).Build()
-			HCP := manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName)
-			err := c.Get(context.Background(), crclient.ObjectKeyFromObject(tc.hostedControlPlane), HCP)
-			g.Expect(err).ToNot(HaveOccurred())
-			if HCP.Spec.PullSecret.Name == fakeExistantSecret {
-				g.Expect(HCP.Spec.PullSecret.Name).To(Equal(fakeExistantSecret))
-				g.Expect(HCP.Spec.PullSecret.Name).ToNot(ContainSubstring(fakeNonExistantSecret))
-			} else {
-				g.Expect(HCP.Spec.PullSecret.Name).To(ContainSubstring(fakeNonExistantSecret))
-				g.Expect(HCP.Spec.PullSecret.Name).ToNot(Equal(fakeExistantSecret))
 			}
 		})
 	}

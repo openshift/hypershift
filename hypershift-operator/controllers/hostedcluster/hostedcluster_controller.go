@@ -682,7 +682,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if err != nil {
 				condition.Status = metav1.ConditionFalse
 				condition.Message = err.Error()
-				if strings.Contains(err.Error(), "failed to get pull secret") {
+
+				if apierrors.IsNotFound(err) {
 					condition.Reason = hyperv1.SecretNotFoundReason
 				} else {
 					condition.Reason = hyperv1.InvalidImageReason
