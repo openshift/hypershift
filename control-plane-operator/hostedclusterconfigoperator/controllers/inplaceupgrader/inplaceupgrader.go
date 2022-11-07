@@ -542,6 +542,9 @@ func (r *Reconciler) nodeToMachineSet(o client.Object) []reconcile.Request {
 	}
 
 	machineOwner := metav1.GetControllerOf(machine)
+	if machineOwner == nil {
+		return nil
+	}
 	if machineOwner.Kind != "MachineSet" {
 		return nil
 	}
