@@ -1166,7 +1166,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
-			expectedResult:        errors.New("failed to get pull secret: secrets \"pull-secret\" not found"),
+			expectedResult:        errors.New("secrets \"pull-secret\" not found"),
 			expectedNotFoundError: true,
 		},
 		{

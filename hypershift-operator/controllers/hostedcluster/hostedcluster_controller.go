@@ -3223,7 +3223,7 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster) error {
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return fmt.Errorf("failed to get pull secret: %w", err)
+		return err
 	}
 	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
 	if !ok {
@@ -3290,22 +3290,27 @@ func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error)
 // Depending on the awsEndpointAccessType, the routes will be exposed through a HCP router exposed via load balancer external or internal,
 // or through the management cluster ingress.
 // 1 - When Public
-//		If the HO has external DNS support:
-// 			All serviceTypes including KAS should be Routes (with RoutePublishingStrategy.hostname != "").
-// 			They will be exposed through a common HCP router exposed via Service type LB external.
-//		If the HO has no external DNS support:
-//			The KAS serviceType should be LoadBalancer. It will be exposed through a dedicated Service type LB external.
-// 			All other serviceTypes should be Routes. They will be exposed by the management cluster default ingress.
+//
+//	If the HO has external DNS support:
+//		All serviceTypes including KAS should be Routes (with RoutePublishingStrategy.hostname != "").
+//		They will be exposed through a common HCP router exposed via Service type LB external.
+//	If the HO has no external DNS support:
+//		The KAS serviceType should be LoadBalancer. It will be exposed through a dedicated Service type LB external.
+//		All other serviceTypes should be Routes. They will be exposed by the management cluster default ingress.
+//
 // 2 - When PublicAndPrivate
-//		If the HO has external DNS support:
-// 			All serviceTypes including KAS should be Routes (with RoutePublishingStrategy.hostname != "").
-// 			They will be exposed through a common HCP router exposed via both Service type LB internal and external.
-//		If the HO has no external DNS support:
-//			The KAS serviceType should be LoadBalancer. It will be exposed through a dedicated Service type LB external.
-// 			All other serviceTypes should be Routes. They will be exposed by a common HCP router is exposed via Service type LB internal.
+//
+//	If the HO has external DNS support:
+//		All serviceTypes including KAS should be Routes (with RoutePublishingStrategy.hostname != "").
+//		They will be exposed through a common HCP router exposed via both Service type LB internal and external.
+//	If the HO has no external DNS support:
+//		The KAS serviceType should be LoadBalancer. It will be exposed through a dedicated Service type LB external.
+//		All other serviceTypes should be Routes. They will be exposed by a common HCP router is exposed via Service type LB internal.
+//
 // 3 - When Private
-//		The KAS serviceType should be Route or Load balancer. TODO (alberto): remove Load balancer choice for private.
-// 		All other serviceTypes should be Routes. They will be exposed by a common HCP router exposed via Service type LB internal.
+//
+//	The KAS serviceType should be Route or Load balancer. TODO (alberto): remove Load balancer choice for private.
+//	All other serviceTypes should be Routes. They will be exposed by a common HCP router exposed via Service type LB internal.
 func (r *HostedClusterReconciler) validateAWSConfig(hc *hyperv1.HostedCluster) error {
 	if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
 		return nil
