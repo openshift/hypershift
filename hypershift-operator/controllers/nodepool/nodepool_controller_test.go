@@ -15,6 +15,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
@@ -1758,6 +1759,100 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 			maxUnavailable, err := getInPlaceMaxUnavailable(tc.nodePool)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(maxUnavailable).To(Equal(tc.expect))
+		})
+	}
+}
+
+func TestCreateValidGeneratedPayloadCondition(t *testing.T) {
+	testCases := []struct {
+		name                    string
+		tokenSecret             *corev1.Secret
+		tokenSecretDoesNotExist bool
+		expectedCondition       *hyperv1.NodePoolCondition
+	}{
+		{
+			name: "when token secret is not found it should report it in the condition",
+			tokenSecret: &corev1.Secret{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "test",
+				},
+			},
+			tokenSecretDoesNotExist: true,
+			expectedCondition: &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,
+				Status:             corev1.ConditionFalse,
+				Severity:           "",
+				LastTransitionTime: metav1.Time{},
+				Reason:             hyperv1.NodePoolNotFoundReason,
+				Message:            "secrets \"test\" not found",
+				ObservedGeneration: 1,
+			},
+		},
+		{
+			name: "when token secret has data it should report it in the condition",
+			tokenSecret: &corev1.Secret{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "test",
+				},
+				Data: map[string][]byte{
+					ignserver.TokenSecretReasonKey:  []byte(hyperv1.NodePoolAsExpectedConditionReason),
+					ignserver.TokenSecretMessageKey: []byte("Payload generated successfully"),
+				},
+			},
+			expectedCondition: &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,
+				Status:             corev1.ConditionTrue,
+				Severity:           "",
+				LastTransitionTime: metav1.Time{},
+				Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+				Message:            "Payload generated successfully",
+				ObservedGeneration: 1,
+			},
+		},
+		{
+			name: "when token secret has no data it should report unknown in the condition",
+			tokenSecret: &corev1.Secret{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "test",
+				},
+				Data: map[string][]byte{},
+			},
+			expectedCondition: &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,
+				Status:             corev1.ConditionUnknown,
+				Severity:           "",
+				Reason:             "",
+				Message:            "Unable to get status data from token secret",
+				LastTransitionTime: metav1.Time{},
+				ObservedGeneration: 1,
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var client client.Client
+			if tc.tokenSecretDoesNotExist {
+				client = fake.NewClientBuilder().WithObjects().Build()
+			} else {
+				client = fake.NewClientBuilder().WithObjects(tc.tokenSecret).Build()
+			}
+
+			r := NodePoolReconciler{
+				Client: client,
+			}
+
+			got, err := r.createValidGeneratedPayloadCondition(context.Background(), tc.tokenSecret, 1)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(got).To(BeEquivalentTo(tc.expectedCondition))
 		})
 	}
 }

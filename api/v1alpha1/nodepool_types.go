@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -9,6 +10,7 @@ import (
 )
 
 const (
+	NodePoolValidGeneratedPayloadConditionType   = "ValidGeneratedPayload"
 	NodePoolValidPlatformImageType               = "ValidPlatformImage"
 	NodePoolValidHostedClusterConditionType      = "ValidHostedCluster"
 	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
@@ -24,6 +26,8 @@ const (
 	NodePoolAsExpectedConditionReason            = "AsExpected"
 	NodePoolValidationFailedConditionReason      = "ValidationFailed"
 	NodePoolInplaceUpgradeFailedConditionReason  = "InplaceUpgradeFailed"
+	NodePoolNotFoundReason                       = "NotFound"
+	NodePoolFailedToGetReason                    = "FailedToGet"
 	// NodePoolLabel is used to label Nodes.
 	NodePoolLabel = "hypershift.openshift.io/nodePool"
 )
