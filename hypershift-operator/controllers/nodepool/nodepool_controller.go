@@ -1378,7 +1378,11 @@ func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
 	}
 
 	for _, config := range configs {
-		manifestRaw := config.Data[tuningConfigKey]
+		manifestRaw, ok := config.Data[tuningConfigKey]
+		if !ok {
+			errors = append(errors, fmt.Errorf("no manifest found in configmap %q with key %q", config.Name, tuningConfigKey))
+			continue
+		}
 		manifest, err := validateTuningConfigManifest([]byte(manifestRaw))
 		if err != nil {
 			errors = append(errors, fmt.Errorf("configmap %q failed validation: %w", config.Name, err))
