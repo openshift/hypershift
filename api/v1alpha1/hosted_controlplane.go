@@ -221,11 +221,18 @@ const (
 	KubeAPIServerAvailable               ConditionType = "KubeAPIServerAvailable"
 	InfrastructureReady                  ConditionType = "InfrastructureReady"
 	ValidHostedControlPlaneConfiguration ConditionType = "ValidHostedControlPlaneConfiguration"
-	ClusterVersionFailing                ConditionType = "ClusterVersionFailing"
-	CVOScaledDown                        ConditionType = "CVOScaledDown"
-	CloudResourcesDestroyed              ConditionType = "CloudResourcesDestroyed"
-	InfraStatusFailureReason                           = "InfraStatusFailure"
-	WaitingOnInfrastructureReadyReason                 = "WaitingOnInfrastructureReady"
+	// ClusterVersionFailing bubbles up Failing from the CVO.
+	ClusterVersionFailing ConditionType = "ClusterVersionFailing"
+	// ClusterVersionProgressing bubbles up configv1.OperatorProgressing from the CVO.
+	ClusterVersionProgressing ConditionType = "ClusterVersionProgressing"
+	// ClusterVersionAvailable bubbles up Failing configv1.OperatorAvailable from the CVO.
+	ClusterVersionAvailable ConditionType = "ClusterVersionAvailable"
+	// ClusterVersionReleaseAccepted bubbles up Failing ReleaseAccepted from the CVO.
+	ClusterVersionReleaseAccepted      ConditionType = "ClusterVersionReleaseAccepted"
+	CVOScaledDown                      ConditionType = "CVOScaledDown"
+	CloudResourcesDestroyed            ConditionType = "CloudResourcesDestroyed"
+	InfraStatusFailureReason                         = "InfraStatusFailure"
+	WaitingOnInfrastructureReadyReason               = "WaitingOnInfrastructureReady"
 )
 
 // HostedControlPlaneStatus defines the observed state of HostedControlPlane

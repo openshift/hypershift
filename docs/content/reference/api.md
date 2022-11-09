@@ -2796,8 +2796,18 @@ has been created for the specified NLB in the management VPC</p>
 <td></td>
 </tr><tr><td><p>&#34;CloudResourcesDestroyed&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;ClusterVersionAvailable&#34;</p></td>
+<td><p>ClusterVersionAvailable bubbles up Failing configv1.OperatorAvailable from the CVO.</p>
+</td>
 </tr><tr><td><p>&#34;ClusterVersionFailing&#34;</p></td>
-<td></td>
+<td><p>ClusterVersionFailing bubbles up Failing from the CVO.</p>
+</td>
+</tr><tr><td><p>&#34;ClusterVersionProgressing&#34;</p></td>
+<td><p>ClusterVersionProgressing bubbles up configv1.OperatorProgressing from the CVO.</p>
+</td>
+</tr><tr><td><p>&#34;ClusterVersionReleaseAccepted&#34;</p></td>
+<td><p>ClusterVersionReleaseAccepted bubbles up Failing ReleaseAccepted from the CVO.</p>
+</td>
 </tr><tr><td><p>&#34;ClusterVersionSucceeding&#34;</p></td>
 <td><p>ClusterVersionSucceeding indicates the current status of the desired release
 version of the HostedCluster as indicated by the Failing condition in the
