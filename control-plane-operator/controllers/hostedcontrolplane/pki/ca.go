@@ -50,8 +50,8 @@ func ReconcileKubeCSRSigner(secret *corev1.Secret, ownerRef config.OwnerRef) err
 	return reconcileSelfSignedCA(secret, ownerRef, "kube-csr-signer", "openshift")
 }
 
-func ReconcileAggregatorClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, signer *corev1.Secret) error {
-	return reconcileAggregateCA(cm, ownerRef, signer)
+func ReconcileAggregatorClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, signer, rootCA *corev1.Secret) error {
+	return reconcileAggregateCA(cm, ownerRef, signer, rootCA)
 }
 
 func ReconcileTotalClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, signers ...*corev1.Secret) error {

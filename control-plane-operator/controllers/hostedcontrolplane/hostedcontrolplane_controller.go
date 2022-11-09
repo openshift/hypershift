@@ -1358,7 +1358,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile kas server secret: %w", err)
 	}
 
-	if err := r.setupKASClientSigners(ctx, hcp, p, createOrUpdate); err != nil {
+	if err := r.setupKASClientSigners(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
 		return err
 	}
 
