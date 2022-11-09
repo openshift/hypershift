@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	awssdk "github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/arn"
+	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
 	. "github.com/onsi/gomega"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -17,6 +20,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -249,6 +253,7 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 			AWSCredentialsFile: createOpts.AWSPlatform.AWSCredentialsFile,
 			PreserveIAM:        false,
 			Region:             createOpts.AWSPlatform.Region,
+			PostDeleteAction:   validateAWSGuestResourcesDeletedFunc(ctx, t, hc.Spec.InfraID, createOpts.AWSPlatform.AWSCredentialsFile, createOpts.AWSPlatform.Region),
 		}
 		return aws.DestroyCluster(ctx, opts)
 	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
@@ -272,6 +277,72 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 	default:
 		return fmt.Errorf("unsupported cluster platform %s", hc.Spec.Platform.Type)
 	}
+}
+
+func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, infraID, awsCreds, awsRegion string) func() {
+	return func() {
+		awsSession := awsutil.NewSession("cleanup-validation", awsCreds, "", "", awsRegion)
+		awsConfig := awsutil.NewConfig()
+		taggingClient := resourcegroupstaggingapi.New(awsSession, awsConfig)
+
+		// Find load balancers, persistent volumes, or s3 buckets belonging to the guest cluster
+		output, err := taggingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
+			ResourceTypeFilters: []*string{
+				awssdk.String("elasticloadbalancing:loadbalancer"),
+				awssdk.String("ec2:volume"),
+				awssdk.String("s3"),
+			},
+			TagFilters: []*resourcegroupstaggingapi.TagFilter{
+				{
+					Key:    awssdk.String(clusterTag(infraID)),
+					Values: []*string{awssdk.String("owned")},
+				},
+			},
+		})
+		if err != nil {
+			t.Logf("WARNING: failed to list resources by tag: %v. Not verifying cluster is cleaned up.", err)
+		} else if hasGuestResources(t, output.ResourceTagMappingList) {
+			t.Errorf("FAIL: found %d remaining resources for guest cluster", len(output.ResourceTagMappingList))
+			for i := 0; i < len(output.ResourceTagMappingList); i++ {
+				t.Logf("Resource: %s, tags: %s", awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN), resourceTags(output.ResourceTagMappingList[i].Tags))
+			}
+		} else {
+			t.Log("SUCCESS: found no remaining guest resources")
+		}
+	}
+}
+
+func resourceTags(tags []*resourcegroupstaggingapi.Tag) string {
+	tagStrings := make([]string, len(tags))
+	for i, tag := range tags {
+		tagStrings[i] = fmt.Sprintf("%s=%s", awssdk.StringValue(tag.Key), awssdk.StringValue(tag.Value))
+	}
+	return strings.Join(tagStrings, ",")
+}
+
+func hasGuestResources(t *testing.T, resourceTagMappings []*resourcegroupstaggingapi.ResourceTagMapping) bool {
+	for _, mapping := range resourceTagMappings {
+		resourceARN, err := arn.Parse(awssdk.StringValue(mapping.ResourceARN))
+		if err != nil {
+			t.Logf("WARNING: failed to parse ARN %s", awssdk.StringValue(mapping.ResourceARN))
+			continue
+		}
+		if resourceARN.Service == "ec2" { // Resource is a volume, check whether it's a PV volume by looking at tags
+			for _, tag := range mapping.Tags {
+				if awssdk.StringValue(tag.Key) == "kubernetes.io/created-for/pv/name" {
+					return true
+				}
+			}
+			continue
+		} else {
+			return true
+		}
+	}
+	return false
+}
+
+func clusterTag(infraID string) string {
+	return fmt.Sprintf("kubernetes.io/cluster/%s", infraID)
 }
 
 // newClusterDumper returns a function that dumps important diagnostic data for

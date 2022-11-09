@@ -43,6 +43,7 @@ type AWSPlatformDestroyOptions struct {
 	BaseDomain         string
 	PreserveIAM        bool
 	Region             string
+	PostDeleteAction   func()
 }
 
 type AzurePlatformDestroyOptions struct {
