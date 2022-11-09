@@ -423,7 +423,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			newCondition = metav1.Condition{
 				Type:    string(hyperv1.InfrastructureReady),
 				Status:  metav1.ConditionUnknown,
-				Reason:  "InfraStatusFailure",
+				Reason:  hyperv1.InfraStatusFailureReason,
 				Message: err.Error(),
 			}
 			r.Log.Error(err, "failed to determine infrastructure status")
@@ -447,7 +447,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				newCondition = metav1.Condition{
 					Type:    string(hyperv1.InfrastructureReady),
 					Status:  metav1.ConditionFalse,
-					Reason:  "WaitingOnInfrastructureReady",
+					Reason:  hyperv1.WaitingOnInfrastructureReadyReason,
 					Message: message,
 				}
 				r.Log.Info("Infrastructure is not yet ready")
