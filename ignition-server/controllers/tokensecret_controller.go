@@ -28,6 +28,9 @@ const (
 	TokenSecretTokenKey            = "token"
 	TokenSecretOldTokenKey         = "old_token"
 	TokenSecretPayloadKey          = "payload"
+	TokenSecretMessageKey          = "message"
+	InvalidConfigReason            = "InvalidConfig"
+	TokenSecretReasonKey           = "reason"
 	TokenSecretAnnotation          = "hypershift.openshift.io/ignition-config"
 	TokenSecretTokenGenerationTime = "hypershift.openshift.io/last-token-generation-time"
 	// Set the ttl 1h above the reconcile resync period so every existing
@@ -241,6 +244,12 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	compressedConfig := tokenSecret.Data[TokenSecretConfigKey]
 	config, err := util.DecodeAndDecompress(compressedConfig)
 	if err != nil {
+		patch := tokenSecret.DeepCopy()
+		patch.Data[TokenSecretReasonKey] = []byte(InvalidConfigReason)
+		patch.Data[TokenSecretMessageKey] = []byte(fmt.Sprintf("Failed to decode and decompress config: %s", err))
+		if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -257,6 +266,12 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return payload, err
 	}()
 	if err != nil {
+		patch := tokenSecret.DeepCopy()
+		patch.Data[TokenSecretReasonKey] = []byte(InvalidConfigReason)
+		patch.Data[TokenSecretMessageKey] = []byte(fmt.Sprintf("Failed to generate payload: %s", err))
+		if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -272,8 +287,10 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Store the cached payload in the secret to be consumed by in place upgrades.
 	patch := tokenSecret.DeepCopy()
 	patch.Data[TokenSecretPayloadKey] = payload
+	patch.Data[TokenSecretReasonKey] = []byte(hyperv1.NodePoolAsExpectedConditionReason)
+	patch.Data[TokenSecretMessageKey] = []byte("Payload generated successfully")
 	if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content")
+		return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
 	}
 
 	return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil

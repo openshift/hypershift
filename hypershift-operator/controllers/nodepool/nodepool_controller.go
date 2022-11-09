@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
+	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -522,6 +523,15 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
 	}
 
+	// Signal ignition payload generation
+	targetConfigVersionHash := hashStruct(config + targetVersion)
+	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetConfigVersionHash)
+	condition, err := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("error setting ValidGeneratedPayload condition: %w", err)
+	}
+	setStatusCondition(&nodePool.Status.Conditions, *condition)
+
 	// Validate tuningConfig input.
 	tuningConfig, err := r.getTuningConfig(ctx, nodePool)
 	if err != nil {
@@ -583,7 +593,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// 2. - Reconcile towards expected state of the world.
-	targetConfigVersionHash := hashStruct(config + targetVersion)
 	compressedConfig, err := supportutil.CompressAndEncode([]byte(config))
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to compress and decode config: %w", err)
@@ -628,7 +637,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 	}
 
-	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetConfigVersionHash)
+	tokenSecret = TokenSecret(controlPlaneNamespace, nodePool.Name, targetConfigVersionHash)
 	if result, err := r.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
 		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes())
 	}); err != nil {
@@ -766,6 +775,57 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 	}
 	return ctrl.Result{}, nil
+}
+
+// createValidGeneratedPayloadCondition creates a condition for the NodePool based on the tokenSecret data.
+func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) (*hyperv1.NodePoolCondition, error) {
+	var condition *hyperv1.NodePoolCondition
+	if err := r.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			condition = &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolFailedToGetReason,
+				Message:            err.Error(),
+				ObservedGeneration: generation,
+			}
+			return nil, fmt.Errorf("failed to get token secret: %w", err)
+		} else {
+			condition = &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolNotFoundReason,
+				Message:            err.Error(),
+				ObservedGeneration: generation,
+			}
+		}
+		return condition, nil
+	}
+
+	if _, ok := tokenSecret.Data[ignserver.TokenSecretReasonKey]; !ok {
+		condition = &hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,
+			Status:             corev1.ConditionUnknown,
+			Reason:             string(tokenSecret.Data[ignserver.TokenSecretReasonKey]),
+			Message:            "Unable to get status data from token secret",
+			ObservedGeneration: generation,
+		}
+		return condition, nil
+	}
+
+	var status corev1.ConditionStatus
+	if string(tokenSecret.Data[ignserver.TokenSecretReasonKey]) == hyperv1.NodePoolAsExpectedConditionReason {
+		status = corev1.ConditionTrue
+	}
+	condition = &hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,
+		Status:             status,
+		Reason:             string(tokenSecret.Data[ignserver.TokenSecretReasonKey]),
+		Message:            string(tokenSecret.Data[ignserver.TokenSecretMessageKey]),
+		ObservedGeneration: generation,
+	}
+
+	return condition, nil
 }
 
 func deleteMachineDeployment(ctx context.Context, c client.Client, md *capiv1.MachineDeployment) error {
