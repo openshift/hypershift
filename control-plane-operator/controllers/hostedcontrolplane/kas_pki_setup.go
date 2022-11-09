@@ -179,6 +179,14 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return err
 	}
 
+	// OpenShift Authenticator
+	openshiftAuthenticatorCertSecret := manifests.OpenshiftAuthenticatorCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, openshiftAuthenticatorCertSecret, func() error {
+		return pki.ReconcileOpenShiftAuthenticatorCertSecret(openshiftAuthenticatorCertSecret, csrSigner, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift authenticator cert: %w", err)
+	}
+
 	// Metrics client cert
 	metricsClientCert := manifests.MetricsClientCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, metricsClientCert, func() error {

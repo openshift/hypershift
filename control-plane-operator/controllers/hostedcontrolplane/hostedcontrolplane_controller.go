@@ -1386,14 +1386,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver cert: %w", err)
 	}
 
-	// OpenShift Authenticator
-	openshiftAuthenticatorCertSecret := manifests.OpenshiftAuthenticatorCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, openshiftAuthenticatorCertSecret, func() error {
-		return pki.ReconcileOpenShiftAuthenticatorCertSecret(openshiftAuthenticatorCertSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift authenticator cert: %w", err)
-	}
-
 	// OpenShift ControllerManager Cert
 	openshiftControllerManagerCertSecret := manifests.OpenShiftControllerManagerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, openshiftControllerManagerCertSecret, func() error {
@@ -1851,7 +1843,12 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	}
 	authenticationTokenWebhookConfigSecret := manifests.KASAuthenticationTokenWebhookConfigSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, authenticationTokenWebhookConfigSecret, func() error {
-		return kas.ReconcileAuthenticationTokenWebhookConfigSecret(authenticationTokenWebhookConfigSecret, p.OwnerRef, openshiftAuthenticatorCertSecret)
+		return kas.ReconcileAuthenticationTokenWebhookConfigSecret(
+			authenticationTokenWebhookConfigSecret,
+			p.OwnerRef,
+			openshiftAuthenticatorCertSecret,
+			rootCA,
+		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile authentication token webhook config: %w", err)
 	}
