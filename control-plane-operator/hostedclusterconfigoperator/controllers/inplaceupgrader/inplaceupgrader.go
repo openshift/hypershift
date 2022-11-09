@@ -44,6 +44,8 @@ const (
 	LastAppliedDrainerAnnotationKey = "machineconfiguration.openshift.io/lastAppliedDrain"
 	// MachineConfigOperatorImage is the MCO image reference in the release payload
 	MachineConfigOperatorImage = "machine-config-operator"
+	// MachineConfigDaemonSchedulingKey is used to indicate that a node should schedule MCD pods during the upgrade
+	MachineConfigDaemonSchedulingKey = "machineconfiguration.openshift.io/scheduleDaemon"
 
 	// TODO (alberto): MachineSet CR annotations are used to communicate between the NodePool controller and the in-place upgrade controller.
 	// This might eventually become a CRD equivalent to the struct nodePoolUpgradeAPI defined below.
@@ -181,6 +183,20 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 			log.Info("Reconciled MachineSet", "result", result)
 		}
 
+		// Remove the daemon schedule labelling for any remaining nodes that have it
+		for _, node := range nodes {
+			if _, hasLabel := node.Labels[MachineConfigDaemonSchedulingKey]; hasLabel {
+				if result, err := r.CreateOrUpdate(ctx, r.guestClusterClient, node, func() error {
+					delete(node.Labels, MachineConfigDaemonSchedulingKey)
+					return nil
+				}); err != nil {
+					return fmt.Errorf("failed to remove MCD scheduling annotations: %w", err)
+				} else {
+					log.Info("Removed MCD scheduling annotations", "result", result)
+				}
+			}
+		}
+
 		return nil
 	}
 
@@ -238,7 +254,7 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 		}
 	}
 	nodesToUpgrade := getNodesToUpgrade(nodes, targetConfigVersionHash, maxUnavail)
-	err = r.setNodesDesiredConfig(ctx, r.guestClusterClient, nodePoolUpgradeAPI.spec.poolRef.GetName(), nodesToUpgrade, targetConfigVersionHash)
+	err = r.setNodesDesiredConfig(ctx, r.guestClusterClient, nodesToUpgrade, targetConfigVersionHash, mcoImage)
 	if err != nil {
 		return fmt.Errorf("failed to set hosted nodes for inplace upgrade: %w", err)
 	}
@@ -248,9 +264,10 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 	if err != nil {
 		return fmt.Errorf("failed to schedule daemon pods for inplace upgrade: %w", err)
 	}
+	return nil
 }
 
-func (r *Reconciler) setNodesDesiredConfig(ctx context.Context, hostedClusterClient client.Client, poolName string, nodes []*corev1.Node, targetConfigVersionHash string) error {
+func (r *Reconciler) setNodesDesiredConfig(ctx context.Context, hostedClusterClient client.Client, nodes []*corev1.Node, targetConfigVersionHash, mcoImage string) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	for idx := range nodes {
@@ -262,6 +279,44 @@ func (r *Reconciler) setNodesDesiredConfig(ctx context.Context, hostedClusterCli
 			return fmt.Errorf("failed to reconcile node desired config annotations: %w", err)
 		} else {
 			log.Info("Reconciled Node desired config annotations", "result", result)
+		}
+	}
+	return nil
+}
+
+// scheduleMachineConfigDaemonPods dynamically adds and removes the MachineConfigDaemonSchedulingKey from the node's labels,
+// which the daemonset uses as a nodeSelector. This makes it so nodes that are not currently marked for updating do not have
+// an idle pod running on them.
+func (r *Reconciler) scheduleMachineConfigDaemonPods(ctx context.Context, hostedClusterClient client.Client, nodes []*corev1.Node) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	for _, node := range nodes {
+		if _, hasLabel := node.Labels[MachineConfigDaemonSchedulingKey]; hasLabel {
+			if node.Annotations[CurrentMachineConfigAnnotationKey] == node.Annotations[DesiredMachineConfigAnnotationKey] &&
+				node.Annotations[DesiredDrainerAnnotationKey] == node.Annotations[LastAppliedDrainerAnnotationKey] {
+				// if it's current set to scheduling, we can unschedule if the node has the desired config, and has the desired drain/uncordon
+				if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, node, func() error {
+					delete(node.Labels, MachineConfigDaemonSchedulingKey)
+					return nil
+				}); err != nil {
+					return fmt.Errorf("failed to remove MCD scheduling annotations: %w", err)
+				} else {
+					log.Info("Removed MCD scheduling annotations", "result", result)
+				}
+			}
+		} else {
+			if node.Annotations[CurrentMachineConfigAnnotationKey] != node.Annotations[DesiredMachineConfigAnnotationKey] ||
+				node.Annotations[DesiredDrainerAnnotationKey] != node.Annotations[LastAppliedDrainerAnnotationKey] {
+				// Schedule the pod
+				if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, node, func() error {
+					node.Labels[MachineConfigDaemonSchedulingKey] = ""
+					return nil
+				}); err != nil {
+					return fmt.Errorf("failed to add MCD scheduling annotations: %w", err)
+				} else {
+					log.Info("Added MCD scheduling annotations", "result", result)
+				}
+			}
 		}
 	}
 	return nil
@@ -508,7 +563,8 @@ func (r *Reconciler) reconcileDaemonset(daemonset *appsv1.DaemonSet, poolName, m
 	}
 	daemonset.Spec.Template.Spec.ServiceAccountName = "machine-config-daemon"
 	daemonset.Spec.Template.Spec.NodeSelector = map[string]string{
-		hyperv1.NodePoolLabel: poolName,
+		hyperv1.NodePoolLabel:            poolName,
+		MachineConfigDaemonSchedulingKey: "",
 	}
 	daemonset.Spec.Template.Spec.Volumes = []corev1.Volume{
 		{
