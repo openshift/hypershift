@@ -35,6 +35,12 @@ func etcdInitContainer() *corev1.Container {
 	}
 }
 
+func etcdMetricsContainer() *corev1.Container {
+	return &corev1.Container{
+		Name: "etcd-metrics",
+	}
+}
+
 //go:embed etcd-init.sh
 var etcdInitScript string
 
@@ -67,6 +73,7 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 
 	ss.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(etcdContainer(), buildEtcdContainer(p, ss.Namespace)),
+		util.BuildContainer(etcdMetricsContainer(), buildEtcdMetricsContainer(p, ss.Namespace)),
 	}
 
 	if len(p.StorageSpec.RestoreSnapshotURL) > 0 && !p.SnapshotRestored {
@@ -110,6 +117,16 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 				},
 			},
 		},
+		{
+			Name: "etcd-metrics-ca",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: manifests.EtcdMetricsSignerCAConfigMap(ss.Namespace).Name,
+					},
+				},
+			},
+		},
 	}
 
 	p.DeploymentConfig.ApplyToStatefulSet(ss)
@@ -149,7 +166,7 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 --listen-peer-urls=https://${POD_IP}:2380 \
 --listen-client-urls=https://${POD_IP}:2379,https://localhost:2379 \
 --advertise-client-urls=https://${HOSTNAME}.etcd-client.${NAMESPACE}.svc:2379 \
---listen-metrics-urls=https://${POD_IP}:2381,https://localhost:2381 \
+--listen-metrics-urls=https://0.0.0.0:2382 \
 --initial-cluster-token=etcd-cluster \
 --initial-cluster=${INITIAL_CLUSTER} \
 --initial-cluster-state=new \
@@ -236,7 +253,7 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 			},
 			{
 				Name:          "metrics",
-				ContainerPort: 2381,
+				ContainerPort: 2382,
 				Protocol:      corev1.ProtocolTCP,
 			},
 		}
@@ -251,6 +268,54 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 			PeriodSeconds:       5,
 			FailureThreshold:    6,
 		}
+	}
+}
+
+func buildEtcdMetricsContainer(p *EtcdParams, namespace string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		script := `
+		etcd grpc-proxy start \
+          --endpoints https://${HOSTNAME}:2382 \
+          --metrics-addr https://0.0.0.0:2381 \
+          --listen-addr 127.0.0.1:2383 \
+          --advertise-client-url ""  \
+          --key /etc/etcd/tls/peer/peer.key \
+          --key-file /etc/etcd/tls/server/server.key \
+          --cert /etc/etcd/tls/peer/peer.crt \
+          --cert-file /etc/etcd/tls/server/server.crt \
+          --cacert /etc/etcd/tls/etcd-ca/ca.crt \
+          --trusted-ca-file /etc/etcd/tls/etcd-metrics-ca/ca.crt
+		`
+
+		c.Image = p.EtcdImage
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.Command = []string{"/bin/sh", "-c", script}
+		c.VolumeMounts = []corev1.VolumeMount{
+			{
+				Name:      "peer-tls",
+				MountPath: "/etc/etcd/tls/peer",
+			},
+			{
+				Name:      "server-tls",
+				MountPath: "/etc/etcd/tls/server",
+			},
+			{
+				Name:      "etcd-ca",
+				MountPath: "/etc/etcd/tls/etcd-ca", // our own peer client cert
+			},
+			{
+				Name:      "etcd-metrics-ca",
+				MountPath: "/etc/etcd/tls/etcd-metrics-ca", // incoming client certs
+			},
+		}
+		c.Ports = []corev1.ContainerPort{
+			{
+				Name:          "metrics",
+				ContainerPort: 2381,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		}
+		// TODO: we would like to have a READINESS PROBE here
 	}
 }
 
@@ -306,8 +371,6 @@ func ReconcileClientService(service *corev1.Service, ownerRef config.OwnerRef) e
 }
 
 // ReconcileServiceMonitor
-// TODO: Exposing the client cert to monitoring isn't great, but metrics
-// TLS can't yet be independently configured. See: https://github.com/etcd-io/etcd/pull/10504
 func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string, metricsSet metrics.MetricsSet) error {
 	ownerRef.ApplyTo(sm)
 
@@ -326,21 +389,21 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 					Cert: prometheusoperatorv1.SecretOrConfigMap{
 						Secret: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.EtcdClientSecret(sm.Namespace).Name,
+								Name: manifests.EtcdMetricsClientSecret(sm.Namespace).Name,
 							},
 							Key: pki.EtcdClientCrtKey,
 						},
 					},
 					KeySecret: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: manifests.EtcdClientSecret(sm.Namespace).Name,
+							Name: manifests.EtcdMetricsClientSecret(sm.Namespace).Name,
 						},
 						Key: pki.EtcdClientKeyKey,
 					},
 					CA: prometheusoperatorv1.SecretOrConfigMap{
 						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.EtcdSignerCAConfigMap(sm.Namespace).Name,
+								Name: manifests.EtcdMetricsSignerCAConfigMap(sm.Namespace).Name,
 							},
 							Key: certs.CASignerCertMapKey,
 						},

@@ -12,23 +12,20 @@ import (
 const (
 	EtcdClientCrtKey = "etcd-client.crt"
 	EtcdClientKeyKey = "etcd-client.key"
-	EtcdClientCAKey  = "etcd-client-ca.crt"
 
 	EtcdServerCrtKey = "server.crt"
 	EtcdServerKeyKey = "server.key"
-	EtcdServerCAKey  = "server-ca.crt"
 
 	EtcdPeerCrtKey = "peer.crt"
 	EtcdPeerKeyKey = "peer.key"
-	EtcdPeerCAKey  = "peer-ca.crt"
 )
 
 func ReconcileEtcdClientSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCertWithKeys(secret, ca, ownerRef, "etcd-client", []string{"kubernetes"}, X509UsageClientAuth, EtcdClientCrtKey, EtcdClientKeyKey, EtcdClientCAKey)
+	return reconcileSignedCertWithKeys(secret, ca, ownerRef, "etcd-client", []string{"kubernetes"}, X509UsageClientAuth, EtcdClientCrtKey, EtcdClientKeyKey, "")
 }
 
 func ReconcileEtcdMetricsClientSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCertWithKeys(secret, ca, ownerRef, "etcd-metrics-client", []string{"kubernetes"}, X509UsageClientAuth, EtcdClientCrtKey, EtcdClientKeyKey, EtcdClientCAKey)
+	return reconcileSignedCertWithKeys(secret, ca, ownerRef, "etcd-metrics-client", []string{"kubernetes"}, X509UsageClientAuth, EtcdClientCrtKey, EtcdClientKeyKey, "")
 }
 
 func ReconcileEtcdServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
@@ -40,7 +37,8 @@ func ReconcileEtcdServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerR
 		"etcd-client",
 		"localhost",
 	}
-	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-server", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdServerCrtKey, EtcdServerKeyKey, EtcdServerCAKey, dnsNames, nil)
+
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-server", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdServerCrtKey, EtcdServerKeyKey, "", dnsNames, nil)
 }
 
 func ReconcileEtcdPeerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
@@ -49,5 +47,5 @@ func ReconcileEtcdPeerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef
 		fmt.Sprintf("*.etcd-discovery.%s.svc.cluster.local", secret.Namespace),
 	}
 
-	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-discovery", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, EtcdPeerCAKey, dnsNames, nil)
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-discovery", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, "", dnsNames, nil)
 }
