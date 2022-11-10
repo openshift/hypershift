@@ -16,7 +16,7 @@ func secretFor(ns, name string) *corev1.Secret {
 
 func RootCASecret(ns string) *corev1.Secret { return secretFor(ns, "root-ca") }
 
-func CSRSignerCASecret(ns string) *corev1.Secret { return secretFor(ns, "kube-csr-signer") }
+func CSRSignerCASecret(ns string) *corev1.Secret { return secretFor(ns, "cluster-signer-ca") }
 
 func RootCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
