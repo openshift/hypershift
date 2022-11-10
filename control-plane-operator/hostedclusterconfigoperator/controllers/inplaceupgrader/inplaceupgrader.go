@@ -452,6 +452,10 @@ func getAlreadyUnavailableCandidates(nodes []*corev1.Node, targetConfig string) 
 }
 
 func getAvailableCandidates(nodes []*corev1.Node, targetConfig string, capacity int) []*corev1.Node {
+	if capacity < 1 {
+		return nil
+	}
+
 	// We only look at nodes which aren't already targeting our desired config,
 	// and do not have an ongoing update
 	var candidateNodes []*corev1.Node
