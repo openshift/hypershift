@@ -224,6 +224,8 @@ const (
 	ClusterVersionFailing                ConditionType = "ClusterVersionFailing"
 	CVOScaledDown                        ConditionType = "CVOScaledDown"
 	CloudResourcesDestroyed              ConditionType = "CloudResourcesDestroyed"
+	InfraStatusFailureReason                           = "InfraStatusFailure"
+	WaitingOnInfrastructureReadyReason                 = "WaitingOnInfrastructureReady"
 )
 
 // HostedControlPlaneStatus defines the observed state of HostedControlPlane
