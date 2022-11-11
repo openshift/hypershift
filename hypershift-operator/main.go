@@ -334,14 +334,14 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 				ic.Spec.RouteSelector.MatchExpressions = []metav1.LabelSelectorRequirement{}
 			}
 			for _, requirement := range ic.Spec.RouteSelector.MatchExpressions {
-				if requirement.Key != hyperutil.HypershiftRouteLabel {
+				if requirement.Key != hyperutil.HCPRouteLabel {
 					continue
 				}
 				requirement.Operator = metav1.LabelSelectorOpDoesNotExist
 				return nil
 			}
 			ic.Spec.RouteSelector.MatchExpressions = append(ic.Spec.RouteSelector.MatchExpressions, metav1.LabelSelectorRequirement{
-				Key:      hyperutil.HypershiftRouteLabel,
+				Key:      hyperutil.HCPRouteLabel,
 				Operator: metav1.LabelSelectorOpDoesNotExist,
 			})
 			return nil

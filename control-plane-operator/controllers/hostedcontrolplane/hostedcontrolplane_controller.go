@@ -893,40 +893,35 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 		externalRoute := manifests.KubeAPIServerExternalRoute(hcp.Namespace)
 		if util.IsPublicHCP(hcp) {
 			if _, err := createOrUpdate(ctx, r.Client, externalRoute, func() error {
-				kas.ReconcileRoute(externalRoute, serviceStrategy.Route.Hostname)
-				if externalRoute.Annotations == nil {
-					externalRoute.Annotations = map[string]string{}
+				hostname := ""
+				if serviceStrategy.Route != nil {
+					hostname = serviceStrategy.Route.Hostname
 				}
-				externalRoute.Annotations["external-dns.alpha.kubernetes.io/hostname"] = serviceStrategy.Route.Hostname
-				return nil
+				return kas.ReconcileExternalRoute(externalRoute, p.OwnerReference, hostname)
 			}); err != nil {
-				return fmt.Errorf("failed to reconcile apiserver external route: %w", err)
+				return fmt.Errorf("failed to reconcile apiserver external route %s: %w", externalRoute.Name, err)
 			}
 		} else {
 			// Remove the external route if it exists
 			err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute)
 			if err != nil {
 				if !apierrors.IsNotFound(err) {
-					return fmt.Errorf("failed to check whether kube-apiserver external route exists: %w", err)
+					return fmt.Errorf("failed to check whether apiserver external route exists: %w", err)
 				}
 			} else {
 				if err := r.Delete(ctx, externalRoute); err != nil {
-					return fmt.Errorf("failed to delete kube-apiserver external route: %w", err)
+					return fmt.Errorf("failed to delete apiserver external route: %w", err)
 				}
 			}
 		}
-
-		// We do not need to enumerate all possible addresses, because we use the KAS as default backend through a custom
-		// router template. That in turn was needed to work around SNI not supporting IP addresses, only hostnames:
-		// https://www.rfc-editor.org/rfc/rfc6066#section-3
-		route := manifests.KubeAPIServerInternalRoute(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r.Client, route, func() error {
-			kas.ReconcileRoute(route, "kubernetes.default")
-			return nil
+		// The private KAS route is always present as it is the default
+		// destination for the HCP router
+		internalRoute := manifests.KubeAPIServerInternalRoute(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, internalRoute, func() error {
+			return kas.ReconcileInternalRoute(internalRoute, p.OwnerReference)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile apiserver route %s: %w", route.Name, err)
+			return fmt.Errorf("failed to reconcile apiserver internal route %s: %w", internalRoute.Name, err)
 		}
-
 	} else if serviceStrategy.Type == hyperv1.LoadBalancer && util.IsPrivateHCP(hcp) {
 		apiServerPrivateService := manifests.KubeAPIServerPrivateService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, apiServerPrivateService, func() error {
@@ -956,10 +951,22 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 		return nil
 	}
 	konnectivityRoute := manifests.KonnectivityServerRoute(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, konnectivityRoute, func() error {
-		return konnectivity.ReconcileRoute(konnectivityRoute, p.OwnerRef, util.IsPrivateHCP(hcp), serviceStrategy, r.DefaultIngressDomain)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile Konnectivity server route: %w", err)
+	if util.IsPrivateHCP(hcp) {
+		if _, err := createOrUpdate(ctx, r.Client, konnectivityRoute, func() error {
+			return konnectivity.ReconcileInternalRoute(konnectivityRoute, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Konnectivity server internal route: %w", err)
+		}
+	} else {
+		if _, err := createOrUpdate(ctx, r.Client, konnectivityRoute, func() error {
+			hostname := ""
+			if serviceStrategy.Route != nil {
+				hostname = serviceStrategy.Route.Hostname
+			}
+			return konnectivity.ReconcileExternalRoute(konnectivityRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Konnectivity server external route: %w", err)
+		}
 	}
 	return nil
 }
@@ -979,11 +986,37 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	if serviceStrategy.Type != hyperv1.Route {
 		return nil
 	}
-	oauthRoute := manifests.OauthServerRoute(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, oauthRoute, func() error {
-		return oauth.ReconcileRoute(oauthRoute, p.OwnerRef, serviceStrategy, r.DefaultIngressDomain, hcp)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile OAuth route: %w", err)
+	oauthExternalRoute := manifests.OauthServerExternalRoute(hcp.Namespace)
+	if util.IsPublicHCP(hcp) {
+		if _, err := createOrUpdate(ctx, r.Client, oauthExternalRoute, func() error {
+			hostname := ""
+			if serviceStrategy.Route != nil {
+				hostname = serviceStrategy.Route.Hostname
+			}
+			return oauth.ReconcileExternalRoute(oauthExternalRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile OAuth external route: %w", err)
+		}
+	} else {
+		// Remove the external route if it exists
+		err := r.Get(ctx, client.ObjectKeyFromObject(oauthExternalRoute), oauthExternalRoute)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to check whether OAuth external route exists: %w", err)
+			}
+		} else {
+			if err := r.Delete(ctx, oauthExternalRoute); err != nil {
+				return fmt.Errorf("failed to delete OAuth external route: %w", err)
+			}
+		}
+	}
+	if util.IsPrivateHCP(hcp) {
+		oauthInternalRoute := manifests.OauthServerInternalRoute(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, oauthInternalRoute, func() error {
+			return oauth.ReconcileInternalRoute(oauthInternalRoute, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile OAuth internal route: %w", err)
+		}
 	}
 	return nil
 }
@@ -1257,14 +1290,26 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServiceStatus(ctx context.C
 		return
 	}
 	if serviceStrategy.Type == hyperv1.Route {
-		route = manifests.OauthServerRoute(hcp.Namespace)
-		if err = r.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
-			if apierrors.IsNotFound(err) {
-				err = nil
+		if util.IsPublicHCP(hcp) {
+			route = manifests.OauthServerExternalRoute(hcp.Namespace)
+			if err = r.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
+				if apierrors.IsNotFound(err) {
+					err = nil
+					return
+				}
+				err = fmt.Errorf("failed to get oauth external route: %w", err)
 				return
 			}
-			err = fmt.Errorf("failed to get oauth route: %w", err)
-			return
+		} else {
+			route = manifests.OauthServerInternalRoute(hcp.Namespace)
+			if err = r.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
+				if apierrors.IsNotFound(err) {
+					err = nil
+					return
+				}
+				err = fmt.Errorf("failed to get oauth internal route: %w", err)
+				return
+			}
 		}
 	}
 	return oauth.ReconcileServiceStatus(svc, route, serviceStrategy)
@@ -2704,7 +2749,7 @@ func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx con
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseInfo *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN, exposeKASThroughRouter bool, privateRouterHost, publicRouterHost string) error {
+func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseInfo *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN, exposeKASThroughRouter bool, privateRouterHost, externalRouterHost string) error {
 	sa := manifests.RouterServiceAccount(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
 		return ingress.ReconcileRouterServiceAccount(sa, config.OwnerRefFrom(hcp))
@@ -2727,7 +2772,7 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 	// Calculate router canonical hostname
 	var canonicalHostname string
 	if util.IsPublicHCP(hcp) && exposeKASThroughRouter {
-		canonicalHostname = publicRouterHost
+		canonicalHostname = externalRouterHost
 	} else if util.IsPrivateHCP(hcp) {
 		canonicalHostname = privateRouterHost
 	}
@@ -2752,6 +2797,7 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 				ingress.PrivateRouterImage(releaseInfo.ComponentImages()),
 				canonicalHostname,
 				exposeKASThroughRouter,
+				!util.IsPublicHCP(hcp),
 			)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router deployment: %w", err)
