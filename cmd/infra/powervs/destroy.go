@@ -231,6 +231,14 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 			log(options.InfraID).Error(err, "error destroying powervs dhcp server")
 		}
 
+		// This sleep is required for DHCP delete operation to clean up DHCP private network
+		time.Sleep(time.Minute * 1)
+
+		if err = destroyDHCPSubnets(ctx, powerVsCloudInstanceID, session, options); err != nil {
+			errL = append(errL, fmt.Errorf("error destroying dhcp subnets: %w", err))
+			log(options.InfraID).Error(err, "error destroying dhcp subnets")
+		}
+
 		if err = destroyPowerVsCloudInstance(ctx, options, infra, powerVsCloudInstanceID, session); err != nil {
 			errL = append(errL, fmt.Errorf("error destroying powervs cloud instance: %w", err))
 			log(options.InfraID).Error(err, "error destroying powervs cloud instance")
@@ -754,4 +762,52 @@ func destroyVpcLB(options *DestroyInfraOptions, subnetID string, v1 *vpcv1.VpcV1
 	}
 
 	return pagingHelper(f)
+}
+
+// destroyDHCPSubnets cleanup subnets created by DHCP server for seamless deletion of PowerVS instance
+func destroyDHCPSubnets(ctx context.Context, cloudInstanceID string, session *ibmpisession.IBMPISession, options *DestroyInfraOptions) error {
+
+	client := instance.NewIBMPINetworkClient(ctx, session, cloudInstanceID)
+
+	networks, err := client.GetAll()
+	if err != nil {
+		return err
+	}
+
+	for _, network := range networks.Networks {
+		// only delete subnets created by DHCP server where subnet name matches the below condition
+		// example subnet names created by DHCP server, public-192_168_186_72-29-VLAN_2005 & DHCPSERVERexample_Private where example is infraID
+		// trying to delete DHCP private subnet again if DHCP server deletion fails to clean up in previous step
+		if (strings.Contains(*network.Name, "public") && strings.Contains(*network.Name, "VLAN")) || strings.Contains(*network.Name, options.InfraID) {
+			log(options.InfraID).Info("Deleting subnet created by DHCP", "name", *network.Name)
+			err = client.Delete(*network.NetworkID)
+			if err != nil {
+				if strings.Contains(err.Error(), "not found") {
+					return nil
+				}
+				return fmt.Errorf("error deleting %s subnet %w", *network.Name, err)
+			}
+
+			f := func() (bool, error) {
+				_, err = client.Get(*network.NetworkID)
+
+				if err != nil {
+					if strings.Contains(err.Error(), "not found") {
+						return true, nil
+					}
+					return false, err
+				}
+
+				log(options.InfraID).Info("Waiting for network to get deleted", "name", *network.Name)
+
+				return false, nil
+			}
+
+			if err = wait.PollImmediate(pollingInterval, powerVSResourceDeletionTimeout, f); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
