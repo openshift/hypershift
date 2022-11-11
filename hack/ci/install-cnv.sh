@@ -21,9 +21,10 @@ oc patch scheduler cluster --type=json -p '[{ "op": "replace", "path": "/spec/ma
 
 if [ -n "${CNV_PRERELEASE_VERSION}" ]
   then
-  # Add pullsecret for cnv nightly channel from quay.io/openshift-cnv
-  QUAY_USERNAME=openshift-cnv+openshift_ci
-  QUAY_PASSWORD=$(jq -r .openshift_cnv_pullsecret /etc/cnv-nightly-pull-credentials)
+  QUAY_USERNAME=${QUAY_USERNAME:-openshift-cnv+openshift_ci}
+  QUAY_PULLSECRET_PATH=${QUAY_PULLSECRET_PATH:-/etc/cnv-nightly-pull-credentials/openshift_cnv_pullsecret}
+  QUAY_PASSWORD=${QUAY_PASSWORD:-$(<${QUAY_PULLSECRET_PATH})}
+
   oc get secret pull-secret -n openshift-config -o json | jq -r '.data.".dockerconfigjson"' | base64 -d > global-pull-secret.json
   QUAY_AUTH=$(echo -n "${QUAY_USERNAME}:${QUAY_PASSWORD}" | base64 -w 0)
   jq --arg QUAY_AUTH "$QUAY_AUTH" '.auths += {"quay.io/openshift-cnv": {"auth":$QUAY_AUTH,"email":""}}' global-pull-secret.json > global-pull-secret.json.tmp
