@@ -8,27 +8,428 @@ In this section we will talk about the AWS Resources and Openshift objects gener
 
 ## Prerequisites and Assumptions
 
-Here we will set the legend about the terms used in this document:
+In order to understand the Concepts and Personas of this document, please check the already existant documentation [here](../../reference/concepts-and-personas.md).
 
-- **The Management Cluster**: It's the cluster which will host the Hosted Control Planes and the operator itself.
-- **Guest Clusters**: Those are the Hosted Control Plane deployed inside of the Management cluster.
-- **Node Pools**: Set of nodes (0..N) which belongs to one Hosted Cluster. Once we have at least 1 worker inside of this NodePool we will have at least 1 EC2 Instance mapped in AWS. but the relationship goes in reverse, the NodePool does not knows about the Nodes or Workers. On the other hand we have the *Machines* which has a Label where the *NodePool* and *MachineSet* is configured.
-
-In the Prerequisites side we will have 2 states:
+In the Prerequisites side we will have 2 statements:
 
 - Prerequisites to deploy and work with Hypershift Operator
 - Prerequisites to deploy a HostedCluster
 
 ### Prerequisites to deploy and work with Hypershift Operator
 
-- **OCP Cluster Admin account**: Regarding roles, this is required in order to allow the CLI to generate the proper SA and ClusterRoles.
-- **AWS Route 53 Domain**: This is needed in order to create reachable API via DNS name instead of using the ELB name.
-- **S3 Bucket**: Publicly accesible, this is mandatory in order to upload the OIDC data for the given HostedCluster.
-- **OCP Pull Secret**: This is not an AWS Object but will be mandatory to deploy the OCP CLuster
-- **AWS Credentials**: To create resources into AWS Provider
-- **AWS Quota**: You will need enough quota to create all the AWS Objects managed by Hypershift and others managed by Openshift itself. We will provide a detailed list of resources.
+- **For Hypershift Deployment and Configuration**: This is required in order to allow the CLI to generate the proper SA and ClusterRoles to deploy Hypershift into the management cluster
+- **For a Hosted Cluster deployment**: In order to create a HostedCluster, you will need to create some Roles and RolePolicies (all points to the same IAM resource id) in AWS platform. You can check the sample roles created in AWS:
 
-With theses elements you should be able to deploy Hypershift into the Openshift cluster.
+<details>
+<summary>Role: controlPlaneOperatorARN</summary>
+
+```json
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:CreateVpcEndpoint",
+                "ec2:DescribeVpcEndpoints",
+                "ec2:ModifyVpcEndpoint",
+                "ec2:DeleteVpcEndpoints",
+                "ec2:CreateTags",
+                "route53:ListHostedZones"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "route53:ChangeResourceRecordSets",
+                "route53:ListResourceRecordSets"
+            ],
+            "Resource": "arn:aws:route53:::hostedzone/Z093004827I7TY8DW3Z9K"
+        }
+    ]
+}
+
+```
+
+</details>
+
+<details>
+<summary>Role: storageARN</summary>
+
+```json
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:AttachVolume",
+                "ec2:CreateSnapshot",
+                "ec2:CreateTags",
+                "ec2:CreateVolume",
+                "ec2:DeleteSnapshot",
+                "ec2:DeleteTags",
+                "ec2:DeleteVolume",
+                "ec2:DescribeInstances",
+                "ec2:DescribeSnapshots",
+                "ec2:DescribeTags",
+                "ec2:DescribeVolumes",
+                "ec2:DescribeVolumesModifications",
+                "ec2:DetachVolume",
+                "ec2:ModifyVolume"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+
+```
+
+</details>
+
+<details>
+<summary>Role: kubeCloudControllerARN</summary>
+
+```json
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "ec2:DescribeInstances",
+                "ec2:DescribeImages",
+                "ec2:DescribeRegions",
+                "ec2:DescribeRouteTables",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeVolumes",
+                "ec2:CreateSecurityGroup",
+                "ec2:CreateTags",
+                "ec2:CreateVolume",
+                "ec2:ModifyInstanceAttribute",
+                "ec2:ModifyVolume",
+                "ec2:AttachVolume",
+                "ec2:AuthorizeSecurityGroupIngress",
+                "ec2:CreateRoute",
+                "ec2:DeleteRoute",
+                "ec2:DeleteSecurityGroup",
+                "ec2:DeleteVolume",
+                "ec2:DetachVolume",
+                "ec2:RevokeSecurityGroupIngress",
+                "ec2:DescribeVpcs",
+                "elasticloadbalancing:AddTags",
+                "elasticloadbalancing:AttachLoadBalancerToSubnets",
+                "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+                "elasticloadbalancing:CreateLoadBalancer",
+                "elasticloadbalancing:CreateLoadBalancerPolicy",
+                "elasticloadbalancing:CreateLoadBalancerListeners",
+                "elasticloadbalancing:ConfigureHealthCheck",
+                "elasticloadbalancing:DeleteLoadBalancer",
+                "elasticloadbalancing:DeleteLoadBalancerListeners",
+                "elasticloadbalancing:DescribeLoadBalancers",
+                "elasticloadbalancing:DescribeLoadBalancerAttributes",
+                "elasticloadbalancing:DetachLoadBalancerFromSubnets",
+                "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+                "elasticloadbalancing:ModifyLoadBalancerAttributes",
+                "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+                "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
+                "elasticloadbalancing:AddTags",
+                "elasticloadbalancing:CreateListener",
+                "elasticloadbalancing:CreateTargetGroup",
+                "elasticloadbalancing:DeleteListener",
+                "elasticloadbalancing:DeleteTargetGroup",
+                "elasticloadbalancing:DescribeListeners",
+                "elasticloadbalancing:DescribeLoadBalancerPolicies",
+                "elasticloadbalancing:DescribeTargetGroups",
+                "elasticloadbalancing:DescribeTargetHealth",
+                "elasticloadbalancing:ModifyListener",
+                "elasticloadbalancing:ModifyTargetGroup",
+                "elasticloadbalancing:RegisterTargets",
+                "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+                "iam:CreateServiceLinkedRole",
+                "kms:DescribeKey"
+            ],
+            "Resource": [
+                "*"
+            ],
+            "Effect": "Allow"
+        }
+    ]
+}
+
+```
+
+</details>
+
+<details>
+<summary>Role: controlPlaneOperatorARN</summary>
+
+```json
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:CreateVpcEndpoint",
+                "ec2:DescribeVpcEndpoints",
+                "ec2:ModifyVpcEndpoint",
+                "ec2:DeleteVpcEndpoints",
+                "ec2:CreateTags",
+                "route53:ListHostedZones"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "route53:ChangeResourceRecordSets",
+                "route53:ListResourceRecordSets"
+            ],
+            "Resource": "arn:aws:route53:::hostedzone/Z093004827I7TY8DW3Z9K"
+        }
+    ]
+}
+
+```
+
+</details>
+
+<details>
+<summary>Role: networkARN</summary>
+
+```json
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeInstances",
+                "ec2:DescribeInstanceStatus",
+                "ec2:DescribeInstanceTypes",
+                "ec2:UnassignPrivateIpAddresses",
+                "ec2:AssignPrivateIpAddresses",
+                "ec2:UnassignIpv6Addresses",
+                "ec2:AssignIpv6Addresses",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeNetworkInterfaces"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+
+```
+
+</details>
+
+<details>
+<summary>Role: nodePoolManagementARN</summary>
+
+```json
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Action": [
+                "ec2:AllocateAddress",
+                "ec2:AssociateRouteTable",
+                "ec2:AttachInternetGateway",
+                "ec2:AuthorizeSecurityGroupIngress",
+                "ec2:CreateInternetGateway",
+                "ec2:CreateNatGateway",
+                "ec2:CreateRoute",
+                "ec2:CreateRouteTable",
+                "ec2:CreateSecurityGroup",
+                "ec2:CreateSubnet",
+                "ec2:CreateTags",
+                "ec2:DeleteInternetGateway",
+                "ec2:DeleteNatGateway",
+                "ec2:DeleteRouteTable",
+                "ec2:DeleteSecurityGroup",
+                "ec2:DeleteSubnet",
+                "ec2:DeleteTags",
+                "ec2:DescribeAccountAttributes",
+                "ec2:DescribeAddresses",
+                "ec2:DescribeAvailabilityZones",
+                "ec2:DescribeImages",
+                "ec2:DescribeInstances",
+                "ec2:DescribeInternetGateways",
+                "ec2:DescribeNatGateways",
+                "ec2:DescribeNetworkInterfaces",
+                "ec2:DescribeNetworkInterfaceAttribute",
+                "ec2:DescribeRouteTables",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeVpcs",
+                "ec2:DescribeVpcAttribute",
+                "ec2:DescribeVolumes",
+                "ec2:DetachInternetGateway",
+                "ec2:DisassociateRouteTable",
+                "ec2:DisassociateAddress",
+                "ec2:ModifyInstanceAttribute",
+                "ec2:ModifyNetworkInterfaceAttribute",
+                "ec2:ModifySubnetAttribute",
+                "ec2:ReleaseAddress",
+                "ec2:RevokeSecurityGroupIngress",
+                "ec2:RunInstances",
+                "ec2:TerminateInstances",
+                "tag:GetResources",
+                "ec2:CreateLaunchTemplate",
+                "ec2:CreateLaunchTemplateVersion",
+                "ec2:DescribeLaunchTemplates",
+                "ec2:DescribeLaunchTemplateVersions",
+                "ec2:DeleteLaunchTemplate",
+                "ec2:DeleteLaunchTemplateVersions"
+            ],
+            "Resource": [
+                "*"
+            ],
+            "Effect": "Allow"
+        },
+        {
+            "Condition": {
+                "StringLike": {
+                    "iam:AWSServiceName": "elasticloadbalancing.amazonaws.com"
+                }
+            },
+            "Action": [
+                "iam:CreateServiceLinkedRole"
+            ],
+            "Resource": [
+                "arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing"
+            ],
+            "Effect": "Allow"
+        },
+        {
+            "Action": [
+                "iam:PassRole"
+            ],
+            "Resource": [
+                "arn:*:iam::*:role/*-worker-role"
+            ],
+            "Effect": "Allow"
+        }
+    ]
+}
+
+```
+
+</details>
+
+<details>
+<summary>Role: imageRegistryARN</summary>
+
+```json
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:CreateBucket",
+                "s3:DeleteBucket",
+                "s3:PutBucketTagging",
+                "s3:GetBucketTagging",
+                "s3:PutBucketPublicAccessBlock",
+                "s3:GetBucketPublicAccessBlock",
+                "s3:PutEncryptionConfiguration",
+                "s3:GetEncryptionConfiguration",
+                "s3:PutLifecycleConfiguration",
+                "s3:GetLifecycleConfiguration",
+                "s3:GetBucketLocation",
+                "s3:ListBucket",
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject",
+                "s3:ListBucketMultipartUploads",
+                "s3:AbortMultipartUpload",
+                "s3:ListMultipartUploadParts"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+
+```
+
+</details>
+
+<details>
+<summary>Role: ingressARN</summary>
+
+```json
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "elasticloadbalancing:DescribeLoadBalancers",
+                "tag:GetResources",
+                "route53:ListHostedZones"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "route53:ChangeResourceRecordSets"
+            ],
+            "Resource": [
+                "arn:aws:route53:::hostedzone/Z04148342DPTGWECPH7M5",
+                "arn:aws:route53:::hostedzone/Z0498824N2ZYL62T258T"
+            ]
+        }
+    ]
+}
+
+```
+
+</details>
+
+<details>
+<summary>Role: workerRoleARN</summary>
+
+```json
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+
+            "Effect": "Allow",
+            "Action": [
+                "ec2:DescribeInstances",
+                "ec2:DescribeRegions"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+
+```
+
+</details>
+
+
+- **AWS Route 53 Domain**: This is needed in order to create reachable API via DNS name instead of using the ELB name. This is only relevant when a Cluster type is `Public` or `PublicAndPrivate`, not relevant for Private only.
+- **S3 Bucket**: An S3 Bucket publicly accesible, this is mandatory in order to upload the OIDC data for the given HostedCluster.
+- **OCP Pull Secret**: Openshift Pull Secret (Authorization/Authentication file) to pull the images from the remote registry. This it is not an AWS Object but will be mandatory to deploy the OCP Cluster
+- **AWS Credentials**: Your path to AWS credentials, something like `$HOME/.aws/credentials` To create resources into AWS Provider
+- **AWS Quota**: You will need enough quota (described [here](#prerequisites-to-deploy-a-hostedcluster) to create all the AWS Objects managed by Hypershift and others managed by Openshift itself. We will provide a detailed list of resources.
+
+With these elements you should be able to deploy Hypershift into the Openshift cluster.
 
 ### Prerequisites to deploy a HostedCluster
 
@@ -68,7 +469,7 @@ An easy way to see how the relationships are made among the AWS Objects you can 
     --release-image quay.io/openshift-release-dev/ocp-release:4.12.0-ec.3-x86_64
 ```
 
-- Output
+- Example Output
 ```bash
 <Timestamp>  INFO  Creating infrastructure	{"id": "jparrill-dest-zjhcn"}
 <Timestamp>  INFO  Using zone	{"zone": "us-west-1b"}
@@ -128,12 +529,13 @@ An easy way to see how the relationships are made among the AWS Objects you can 
 </details>
 
 
-After this, the Openshift Hosted Control Plane will continue their way in deployment terms and eventually the cluster will create some resources which will end on AWS object creation (These are not managed by Hypershift but Openshift):
+After this, the Openshift Hosted Control Plane will continue being deployed and eventually the cluster will create some resources which will end on AWS object creation (These are not managed by Hypershift but Openshift):
 
-- **Cluster Ingress**: It's the main router for the accesses from outside in Openshift. **It creates 1 ELB (External Load Balancer) in AWS** provider which route the request to the cluster from outside.
+- **Cluster Route**: It's the main router for the accesses from outside in Openshift. **It creates 1 ELB (External Load Balancer) in AWS** provider which route the request to the cluster from outside.
+
 ## Architecture and Workflow
 
-In order to deploy a HostedCluster you have two options, using the **CLI** and using **Openshift/Kubernetes objects (CRs)**, like *HostedCluster* and *NodePool* which are the top level objects that we will focus on. From both ones the proper Controller for that resource will take care of the object generation under that CR.
+In order to deploy a HostedCluster you have two options, using the **CLI** or using **Openshift/Kubernetes objects (CRs)**, like *HostedCluster* and *NodePool* which are the top-level API objects that we will focus on. From each, the proper controller will take care of the object generation under that CR.
 
 This is how looks like when you have the Hypershift Operator deployed into the Openshift Management Cluster
 
@@ -159,19 +561,19 @@ flowchart LR
 
 The CLI will create 2 deployments:
 
-- **ExternalDNS**: It will take care of the DNS management with the Cloud Provider. It will try to create entries into the domain/subdomain set in the install command.
+- **ExternalDNS**: the external-dns pod creates the DNSs entries within the Cloud Provider (Route 53). It will try to create entries into the domain/subdomain set in the install command.
 - **Operator**: Stands for Hypershift Operator and it has some controllers inside which manages the HostedClusters and NodePools created in the cluster's namespace.
 
-> **NOTE:** Even using External DNS feature or not, as we said before, we will need to have an already registered DNS domain (or at least delegated) in *Route 53*. There, the Public entries will be created to allow access from outside.
+> **NOTE:** Regardless of whether you use the External DNS feature or not, as mentioned earlier, you need an already registered (or at least delegated) DNS domain in *Route 53*. This is where the public records are created to allow external access
 
 
 ### HostedCluster
 
-This is the Hosted Cluster namespace where you as a user will create the definition of your cluster and your nodes. An easy way to create a hosted cluster it's just using the CLI as we've seen in the last sample.
+This is the Hosted Cluster namespace where you as a user will create the definition of your cluster and your nodes. An easy way to create a hosted cluster is by using the CLI as we've seen in the last sample.
 
-HostedCluster and NodePool controllers (part of Hypershift Operator) are monitoring the HostedCluster and NodePool objects present o created in the whole cluster. So once you create one of these components, the controllers will begin the reconciliation.
+HostedCluster and NodePool controllers (part of Hypershift Operator) are monitoring the HostedCluster and NodePool objects being created in the whole cluster. So once you create one of these components, the controllers will begin the reconciliation.
 
-You will need to have in mind that some more objects like Secrets and ConfigMaps (described in the diagram) are needed to achieve a succesfully HostedCluster deployment.
+You will need to have in mind that some more objects like Secrets and ConfigMaps (described in the diagram) are needed for a successful `HostedCluster` deployment.
 
 From these mentioned objects, the Hypershift operator will create some more in 2 places, Openshift infrastructure and also in AWS Cloud Provider. Let's take a look to the following diagram to discover which objects are created in Openshift.
 
@@ -183,11 +585,11 @@ flowchart TB
     style NPO fill:#D3FFCE,stroke:#333,stroke-width:3px
     style HCO fill:#D3FFCE,stroke:#333,stroke-width:3px
 
-    AD[fa:fa-user Administrator]
-    AD ==> HCO
-    AD ==> NPO
-    AD ==> SC2
-    AD ==> CMC2
+    CSP[fa:fa-user Cluster Service Provider]
+    CSP ==> HCO
+    CSP ==> NPO
+    CSP ==> SC2
+    CSP ==> CMC2
     HO <-.-> NPO
     HO <-.-> HCO
 
@@ -319,7 +721,7 @@ flowchart LR
 > - Orange: OCP objects directly related with AWS.
 > - Cyan: Provider agnostic OCP objects.
 
-At the same time, the Hypershift operator will create the Infra components in the defined provider and as a first step it will assign an InfraID to all the objects created in the AWS side.
+At the same time, the Hypershift operator will expect to exists the mentioned Infra components in the defined provider (You could use the Hypershift CLI in order to create them automatically). As a first step it will assign an InfraID to all the objects created in the AWS side.
 
 ```mermaid
 flowchart TB
@@ -501,7 +903,7 @@ flowchart LR
 > - Orange: OCP objects directly related with AWS.
 > - Cyan: Provider agnostic OCP objects.
 
-Also the NodePool Controller will create some objects in AWS which are these ones:
+Also the NodePool Controller calling tha AWS Cluster API provider, will create some objects in AWS which are these ones:
 
 ```mermaid
 flowchart LR
