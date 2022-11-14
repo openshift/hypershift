@@ -31,6 +31,7 @@ const (
 	TokenSecretOldTokenKey         = "old_token"
 	TokenSecretPayloadKey          = "payload"
 	TokenSecretAnnotation          = "hypershift.openshift.io/ignition-config"
+	TokenSecretNodePoolUpgradeType = "hypershift.openshift.io/node-pool-upgrade-type"
 	TokenSecretTokenGenerationTime = "hypershift.openshift.io/last-token-generation-time"
 	// Set the ttl 1h above the reconcile resync period so every existing
 	// token Secret has the chance to rotate their token ID during a reconciliation cycle
@@ -271,9 +272,15 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		r.PayloadStore.Set(string(oldToken), CacheValue{Payload: payload, SecretName: tokenSecret.Name})
 	}
 
-	// Store the cached payload in the secret to be consumed by in place upgrades.
 	patch := tokenSecret.DeepCopy()
-	patch.Data[TokenSecretPayloadKey] = payload
+	nodePoolUpgradeType, ok := tokenSecret.Annotations[TokenSecretNodePoolUpgradeType]
+	if ok && nodePoolUpgradeType == string(hyperv1.UpgradeTypeReplace) {
+		delete(patch.Data, TokenSecretPayloadKey)
+	} else {
+		// Store the cached payload in the secret to be consumed by in place upgrades (can skip if upgrade type is replace).
+		patch.Data[TokenSecretPayloadKey] = payload
+	}
+
 	if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content")
 	}
