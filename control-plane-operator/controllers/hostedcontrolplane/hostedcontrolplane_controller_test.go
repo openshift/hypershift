@@ -3,6 +3,7 @@ package hostedcontrolplane
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,7 +32,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/pointer"
@@ -817,6 +820,168 @@ spec:
 	}
 
 	return hcp
+}
+
+func TestKonnectivity(t *testing.T) {
+	t.Parallel()
+
+	mksvc := func(labels map[string]string, ip string) *corev1.Service {
+		return &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "does-not-matter-" + rand.String(5),
+				// The namespace of the sampleHCP
+				Namespace: "bar",
+				Labels:    labels,
+			},
+			Spec: corev1.ServiceSpec{
+				ClusterIP: ip,
+			},
+		}
+	}
+
+	// TODO: Test baseline IPs from InfrastructureStatus
+	testCases := []struct {
+		name            string
+		existingObjects []client.Object
+		expectedIPs     sets.String
+	}{
+		{
+			name:            "No Services",
+			existingObjects: []client.Object{},
+			expectedIPs:     sets.NewString(),
+		},
+		{
+			name: "A labeled Service",
+			existingObjects: []client.Object{
+				mksvc(map[string]string{
+					// The name of the sampleHCP
+					hyperv1.EnableKonnectivityLabel: "foo",
+				}, "1.2.3.4"),
+			},
+			expectedIPs: sets.NewString("1.2.3.4"),
+		},
+		{
+			name: "An unlabeled Service",
+			existingObjects: []client.Object{
+				mksvc(nil, "1.2.3.4"),
+			},
+			expectedIPs: sets.NewString(),
+		},
+		{
+			name: "A labeled Service pointing to a different hcp",
+			existingObjects: []client.Object{
+				mksvc(map[string]string{
+					// Not the name of the sampleHCP
+					hyperv1.EnableKonnectivityLabel: "not-foo",
+				}, "1.2.3.4"),
+			},
+			expectedIPs: sets.NewString(),
+		},
+		{
+			name: "A labeled Service with no ClusterIP",
+			existingObjects: []client.Object{
+				mksvc(map[string]string{
+					// The name of the sampleHCP
+					hyperv1.EnableKonnectivityLabel: "foo",
+				}, ""),
+			},
+			expectedIPs: sets.NewString(),
+		},
+		{
+			name: "A mix of Services",
+			existingObjects: []client.Object{
+				mksvc(nil, "1.2.3.4"),
+				mksvc(map[string]string{
+					// The name of the sampleHCP
+					hyperv1.EnableKonnectivityLabel: "foo",
+				}, "2.3.4.5"),
+				mksvc(map[string]string{
+					// Not the name of the sampleHCP
+					hyperv1.EnableKonnectivityLabel: "not-foo",
+				}, "3.4.5.6"),
+				mksvc(map[string]string{
+					// The name of the sampleHCP again
+					hyperv1.EnableKonnectivityLabel: "foo",
+				}, "4.5.6.7"),
+			},
+			expectedIPs: sets.NewString("2.3.4.5", "4.5.6.7"),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcp := sampleHCP(t)
+			pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
+			etcdEncryptionKey := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "etcd-encryption-key"},
+				Data:       map[string][]byte{"key": []byte("very-secret")},
+			}
+
+			hcpGVK, err := apiutil.GVKForObject(hcp, api.Scheme)
+			if err != nil {
+				t.Fatalf("failed to determine gvk for %T: %v", hcp, err)
+			}
+			restMapper := meta.NewDefaultRESTMapper(nil)
+			restMapper.Add(hcpGVK, meta.RESTScopeNamespace)
+			c := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(hcp, pullSecret, etcdEncryptionKey).
+				WithObjects(tc.existingObjects...).
+				WithRESTMapper(restMapper).
+				Build()
+
+			readyInfraStatus := InfrastructureStatus{
+				APIHost:          "foo",
+				APIPort:          1,
+				OAuthHost:        "foo",
+				OAuthPort:        1,
+				KonnectivityHost: "foo",
+				KonnectivityPort: 1,
+			}
+			// Selftest, so this doesn't rot over time
+			if !readyInfraStatus.IsReady() {
+				t.Fatal("readyInfraStatus fixture is not actually ready")
+			}
+
+			r := &HostedControlPlaneReconciler{
+				Client:                        c,
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+				ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+				reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
+					return readyInfraStatus, nil
+				},
+			}
+			r.setup(controllerutil.CreateOrUpdate)
+			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+			if _, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(hcp)}); err != nil {
+				t.Fatalf("reconciliation failed: %v", err)
+			}
+
+			// Grab the konnectivity-agent deployment
+			kd := &appsv1.Deployment{}
+			if err := r.Get(context.TODO(), types.NamespacedName{Namespace: hcp.Namespace, Name: "konnectivity-agent"}, kd); err != nil {
+				t.Fatalf("failed to retrieve konnectivity-agent deployment")
+			}
+			// Find the agent identifiers
+			ips := sets.NewString()
+			for i, arg := range kd.Spec.Template.Spec.Containers[0].Args {
+				if arg != "--agent-identifiers" {
+					continue
+				}
+				// The next arg lists the IPs. I'm okay letting this panic if we ran off the end of the array.
+				ipstr := kd.Spec.Template.Spec.Containers[0].Args[i+1]
+				if ipstr == "" {
+					break
+				}
+				for _, kv := range strings.Split(ipstr, "&") {
+					ips.Insert(strings.Split(kv, "=")[1])
+				}
+			}
+			if !ips.Equal(tc.expectedIPs) {
+				t.Fatalf("expected IPs: %v\nactual IPs: %v", tc.expectedIPs, ips)
+			}
+		})
+	}
 }
 
 func TestEventHandling(t *testing.T) {

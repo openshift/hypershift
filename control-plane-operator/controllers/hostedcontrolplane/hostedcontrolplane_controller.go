@@ -176,7 +176,7 @@ type eventHandler struct {
 func (r *HostedControlPlaneReconciler) eventHandlers() []eventHandler {
 	handlers := []eventHandler{
 		{obj: &corev1.Event{}, handler: handler.EnqueueRequestsFromMapFunc(r.hostedControlPlaneInNamespace)},
-		{obj: &corev1.Service{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
+		{obj: &corev1.Service{}, handler: &EnqueueForOwnerOrLabel{EnqueueRequestForOwner: handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}}},
 		{obj: &appsv1.Deployment{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
 		{obj: &appsv1.StatefulSet{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
 		{obj: &corev1.Secret{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
@@ -1705,6 +1705,26 @@ func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Contex
 	return err
 }
 
+func (r *HostedControlPlaneReconciler) discoverExtraKonnectivityIPs(ctx context.Context, hcp *hyperv1.HostedControlPlane) (extraIPs []string, err error) {
+	services := &corev1.ServiceList{}
+	if err = r.List(
+		ctx, services,
+		client.InNamespace(hcp.Namespace),
+		client.MatchingLabels{hyperv1.EnableKonnectivityLabel: hcp.Name}); err != nil {
+		err = fmt.Errorf("failed to list Services matching label %s=%s: %w", hyperv1.EnableKonnectivityLabel, hcp.Name, err)
+		return
+	}
+	if len(services.Items) == 0 {
+		return
+	}
+
+	extraIPs = make([]string, len(services.Items))
+	for i, svc := range services.Items {
+		extraIPs[i] = svc.Spec.ClusterIP
+	}
+	return
+}
+
 func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, infraStatus InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN) error {
 	r.Log.Info("Reconciling Konnectivity")
 	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, r.SetDefaultSecurityContext)
@@ -1721,11 +1741,15 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 		return fmt.Errorf("failed to reconcile konnectivity server local service: %w", err)
 	}
 	agentDeployment := manifests.KonnectivityAgentDeployment(hcp.Namespace)
-	ips := []string{
+	ips, err := r.discoverExtraKonnectivityIPs(ctx, hcp)
+	if err != nil {
+		return err
+	}
+	ips = append(ips,
 		infraStatus.OpenShiftAPIHost,
 		infraStatus.OauthAPIServerHost,
 		infraStatus.PackageServerAPIAddress,
-	}
+	)
 	if _, err := createOrUpdate(ctx, r, agentDeployment, func() error {
 		return konnectivity.ReconcileAgentDeployment(agentDeployment, p.OwnerRef, p.AgentDeploymentConfig, p.KonnectivityAgentImage, ips)
 	}); err != nil {

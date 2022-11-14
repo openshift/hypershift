@@ -361,6 +361,9 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 	var agentIDs bytes.Buffer
 	seperator := ""
 	for i, ip := range ips {
+		if ip == "" {
+			continue
+		}
 		agentIDs.WriteString(fmt.Sprintf("%sipv4=%s", seperator, ip))
 		if i == 0 {
 			seperator = "&"

@@ -118,6 +118,11 @@ const (
 	// removed when deleting the corresponding HostedCluster. If set to "true", resources created on the cloud provider during the life
 	// of the cluster will be removed, including image registry storage, ingress dns records, load balancers, and persistent storage.
 	CleanupCloudResourcesAnnotation = "hypershift.openshift.io/cleanup-cloud-resources"
+
+	// EnableKonnectivityLabel is a label on a Service in a HostedControlPlane's namespace indicating that
+	// the Service should be plugged into the konnectivity agent for that HCP by adding its ClusterIP. The value must
+	// be the name of the HostedControlPlane.
+	EnableKonnectivityLabel = "hypershift.openshift.io/konnectivity-service-for-hcp"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
