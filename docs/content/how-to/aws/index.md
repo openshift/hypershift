@@ -42,7 +42,9 @@ This is a detailed list of objects **needed** by Hypershift/OCP into AWS in orde
 - 1 NAT Gateway
 - 1 Security Group (Worker Nodes)
 - 2 Route Tables (1 Private, 1 Public)
-- 2 Private Hosted Zones (1 for Cluster Ingress, 1 for PrivateLink (for private clusters))
+- 2 Private Hosted Zones
+    - 1 for Cluster Ingress (for Public clusters)
+    - 1 for PrivateLink (for private clusters)
 
 After the creation of these AWS Objects and to perform the relationship among them, you can create the Hosted Cluster CR in order to begin the Control Plane deployment.
 
