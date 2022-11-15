@@ -18,6 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
@@ -251,11 +252,6 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 				ContainerPort: 2380,
 				Protocol:      corev1.ProtocolTCP,
 			},
-			{
-				Name:          "metrics",
-				ContainerPort: 2382,
-				Protocol:      corev1.ProtocolTCP,
-			},
 		}
 		c.ReadinessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
@@ -275,7 +271,7 @@ func buildEtcdMetricsContainer(p *EtcdParams, namespace string) func(c *corev1.C
 	return func(c *corev1.Container) {
 		script := `
 		etcd grpc-proxy start \
-          --endpoints https://${HOSTNAME}:2382 \
+          --endpoints https://localhost:2382 \
           --metrics-addr https://0.0.0.0:2381 \
           --listen-addr 127.0.0.1:2383 \
           --advertise-client-url ""  \
@@ -315,7 +311,12 @@ func buildEtcdMetricsContainer(p *EtcdParams, namespace string) func(c *corev1.C
 				Protocol:      corev1.ProtocolTCP,
 			},
 		}
-		// TODO: we would like to have a READINESS PROBE here
+		c.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("40m"),
+				corev1.ResourceMemory: resource.MustParse("200Mi"),
+			},
+		}
 	}
 }
 
