@@ -640,6 +640,8 @@ type AWSNodePoolPlatform struct {
 	// for the user.
 	//
 	// +kubebuilder:validation:MaxItems=25
+	// +listType=map
+	// +listMapKey=key
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 }
