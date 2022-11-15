@@ -412,7 +412,7 @@ This is a detailed list of objects **needed** by Hypershift/OCP into AWS in orde
         - 1 NAT Gateway
         - 1 Security Group (Worker Nodes)
         - 1 Route Tables (Public)
-        - 1 Private Hosted Zones for Cluster Ingress
+        - 1 Public Hosted Zone for Cluster Ingress
 
     === "Private"
 
@@ -423,7 +423,7 @@ This is a detailed list of objects **needed** by Hypershift/OCP into AWS in orde
         - 1 NAT Gateway
         - 1 Security Group (Worker Nodes)
         - 1 Route Tables (Private)
-        - 1 Private Hosted Zones for PrivateLink
+        - 1 Private Hosted Zone for PrivateLink
 
     === "PublicAndPrivate"
         - 1 VPC
@@ -435,7 +435,7 @@ This is a detailed list of objects **needed** by Hypershift/OCP into AWS in orde
         - 1 NAT Gateway
         - 1 Security Group (Worker Nodes)
         - 2 Route Tables (1 Private, 1 Public)
-        - 2 Private Hosted Zones
+        - 2 Hosted Zones
             - 1 for Cluster Ingress (for Public clusters)
             - 1 for PrivateLink (for private clusters)
 
@@ -832,7 +832,7 @@ flowchart TB
     - The **thick** lines are objects created by the CLI into AWS platform and needed by the Hypershift Operator to work properly
 
 !!! info
-    Just to remark something already mentioned, the Hypershift operator expects that the components in AWS exists. The only htings that are automatically created are the **Private Links** and the **Elastic Load Balancer**
+    Just to remark something already mentioned, the Hypershift operator expects that the components in AWS exists. The only things that are automatically created are the Components under **NodePools**, **Load balancer for Kube API Server** and the **Elastic Load Balancer**
 
 ### NodePools
 
@@ -971,6 +971,7 @@ As you've seen, we've been showing all the components created, managed, not mana
     - 1 NAT Gateway
     - 1 Security Group (Worker Nodes)
     - 1 Route Tables (Public)
+    - 1 Ingress Service Load Balancer
 
 === "Private"
     - 1 VPC
@@ -980,6 +981,7 @@ As you've seen, we've been showing all the components created, managed, not mana
     - 1 NAT Gateway
     - 1 Security Group (Worker Nodes)
     - 1 Route Tables (Private)
+    - 1 Private Link
 
 === "PublicAndPrivate"
     - 1 VPC
@@ -991,6 +993,9 @@ As you've seen, we've been showing all the components created, managed, not mana
     - 1 NAT Gateway
     - 1 Security Group (Worker Nodes)
     - 2 Route Tables (1 Private, 1 Public)
+    - 2 Hosted Zones
+        - 1 Ingress Service Load Balancer (for Public Hosted Clusters)
+        - 1 Private Link (for Private Hosted Clusters)
 
 #### AWS Infra Managed by Hypershift
 
@@ -999,12 +1004,14 @@ As you've seen, we've been showing all the components created, managed, not mana
 
 === "Hosted Cluster"
     - Kube API Server Load Balancer
-    - Ingress Service Load Balancer (for Public Hosted Clusters)
-    - Private Link (for Private Hosted Clusters)
+    - For NodePools:
+        - EC2 Instances
+        - IAM Role Policy link (with EC2 Instances)
+        - IAM Profile link (with EC2 Instances)
 
 #### AWS Infra Managed by Kubernetes
 
-=== "Management and Hosted Cluster"
+=== "Hosted Cluster"
     - Elastic Load Balancer
 
 
@@ -1012,7 +1019,7 @@ As you've seen, we've been showing all the components created, managed, not mana
 
 Let's explain how the networking among Management Cluster and Hosted Clusters works using this animated diagram:
 
-![gif](../../images/hypershift-networking-workflow.gif)
+![net-workflow gif](../../images/hypershift-networking-workflow.gif)
 
 1. Users access the Kube API Server through the Kube API Server load balancer service.
 2. A Konnectivity agent on workers connects to the Konnectivity Server on the management side to establish a tunnel
