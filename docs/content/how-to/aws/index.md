@@ -20,407 +20,373 @@ In the Prerequisites side we will have 2 statements:
 - **For Hypershift Deployment and Configuration**: This is required in order to allow the CLI to generate the proper SA and ClusterRoles to deploy Hypershift into the management cluster
 - **For a Hosted Cluster deployment**: In order to create a HostedCluster, you will need to create some Roles and RolePolicies (all points to the same IAM resource id) in AWS platform. You can check the sample roles created in AWS:
 
-<details>
-<summary>Role: controlPlaneOperatorARN</summary>
+    - **Roles Needed in AWS AIM**
 
-```json
+    === "controlPlaneOperatorARN"
+        ```json
 
-{
-    "Version": "2012-10-17",
-    "Statement": [
         {
-            "Effect": "Allow",
-            "Action": [
-                "ec2:CreateVpcEndpoint",
-                "ec2:DescribeVpcEndpoints",
-                "ec2:ModifyVpcEndpoint",
-                "ec2:DeleteVpcEndpoints",
-                "ec2:CreateTags",
-                "route53:ListHostedZones"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Effect": "Allow",
-            "Action": [
-                "route53:ChangeResourceRecordSets",
-                "route53:ListResourceRecordSets"
-            ],
-            "Resource": "arn:aws:route53:::hostedzone/Z093004827I7TY8DW3Z9K"
-        }
-    ]
-}
-
-```
-
-</details>
-
-<details>
-<summary>Role: storageARN</summary>
-
-```json
-
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ec2:AttachVolume",
-                "ec2:CreateSnapshot",
-                "ec2:CreateTags",
-                "ec2:CreateVolume",
-                "ec2:DeleteSnapshot",
-                "ec2:DeleteTags",
-                "ec2:DeleteVolume",
-                "ec2:DescribeInstances",
-                "ec2:DescribeSnapshots",
-                "ec2:DescribeTags",
-                "ec2:DescribeVolumes",
-                "ec2:DescribeVolumesModifications",
-                "ec2:DetachVolume",
-                "ec2:ModifyVolume"
-            ],
-            "Resource": "*"
-        }
-    ]
-}
-
-```
-
-</details>
-
-<details>
-<summary>Role: kubeCloudControllerARN</summary>
-
-```json
-
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Action": [
-                "ec2:DescribeInstances",
-                "ec2:DescribeImages",
-                "ec2:DescribeRegions",
-                "ec2:DescribeRouteTables",
-                "ec2:DescribeSecurityGroups",
-                "ec2:DescribeSubnets",
-                "ec2:DescribeVolumes",
-                "ec2:CreateSecurityGroup",
-                "ec2:CreateTags",
-                "ec2:CreateVolume",
-                "ec2:ModifyInstanceAttribute",
-                "ec2:ModifyVolume",
-                "ec2:AttachVolume",
-                "ec2:AuthorizeSecurityGroupIngress",
-                "ec2:CreateRoute",
-                "ec2:DeleteRoute",
-                "ec2:DeleteSecurityGroup",
-                "ec2:DeleteVolume",
-                "ec2:DetachVolume",
-                "ec2:RevokeSecurityGroupIngress",
-                "ec2:DescribeVpcs",
-                "elasticloadbalancing:AddTags",
-                "elasticloadbalancing:AttachLoadBalancerToSubnets",
-                "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
-                "elasticloadbalancing:CreateLoadBalancer",
-                "elasticloadbalancing:CreateLoadBalancerPolicy",
-                "elasticloadbalancing:CreateLoadBalancerListeners",
-                "elasticloadbalancing:ConfigureHealthCheck",
-                "elasticloadbalancing:DeleteLoadBalancer",
-                "elasticloadbalancing:DeleteLoadBalancerListeners",
-                "elasticloadbalancing:DescribeLoadBalancers",
-                "elasticloadbalancing:DescribeLoadBalancerAttributes",
-                "elasticloadbalancing:DetachLoadBalancerFromSubnets",
-                "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
-                "elasticloadbalancing:ModifyLoadBalancerAttributes",
-                "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
-                "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
-                "elasticloadbalancing:AddTags",
-                "elasticloadbalancing:CreateListener",
-                "elasticloadbalancing:CreateTargetGroup",
-                "elasticloadbalancing:DeleteListener",
-                "elasticloadbalancing:DeleteTargetGroup",
-                "elasticloadbalancing:DescribeListeners",
-                "elasticloadbalancing:DescribeLoadBalancerPolicies",
-                "elasticloadbalancing:DescribeTargetGroups",
-                "elasticloadbalancing:DescribeTargetHealth",
-                "elasticloadbalancing:ModifyListener",
-                "elasticloadbalancing:ModifyTargetGroup",
-                "elasticloadbalancing:RegisterTargets",
-                "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
-                "iam:CreateServiceLinkedRole",
-                "kms:DescribeKey"
-            ],
-            "Resource": [
-                "*"
-            ],
-            "Effect": "Allow"
-        }
-    ]
-}
-
-```
-
-</details>
-
-<details>
-<summary>Role: controlPlaneOperatorARN</summary>
-
-```json
-
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ec2:CreateVpcEndpoint",
-                "ec2:DescribeVpcEndpoints",
-                "ec2:ModifyVpcEndpoint",
-                "ec2:DeleteVpcEndpoints",
-                "ec2:CreateTags",
-                "route53:ListHostedZones"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Effect": "Allow",
-            "Action": [
-                "route53:ChangeResourceRecordSets",
-                "route53:ListResourceRecordSets"
-            ],
-            "Resource": "arn:aws:route53:::hostedzone/Z093004827I7TY8DW3Z9K"
-        }
-    ]
-}
-
-```
-
-</details>
-
-<details>
-<summary>Role: networkARN</summary>
-
-```json
-
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "ec2:DescribeInstances",
-                "ec2:DescribeInstanceStatus",
-                "ec2:DescribeInstanceTypes",
-                "ec2:UnassignPrivateIpAddresses",
-                "ec2:AssignPrivateIpAddresses",
-                "ec2:UnassignIpv6Addresses",
-                "ec2:AssignIpv6Addresses",
-                "ec2:DescribeSubnets",
-                "ec2:DescribeNetworkInterfaces"
-            ],
-            "Resource": "*"
-        }
-    ]
-}
-
-```
-
-</details>
-
-<details>
-<summary>Role: nodePoolManagementARN</summary>
-
-```json
-
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Action": [
-                "ec2:AllocateAddress",
-                "ec2:AssociateRouteTable",
-                "ec2:AttachInternetGateway",
-                "ec2:AuthorizeSecurityGroupIngress",
-                "ec2:CreateInternetGateway",
-                "ec2:CreateNatGateway",
-                "ec2:CreateRoute",
-                "ec2:CreateRouteTable",
-                "ec2:CreateSecurityGroup",
-                "ec2:CreateSubnet",
-                "ec2:CreateTags",
-                "ec2:DeleteInternetGateway",
-                "ec2:DeleteNatGateway",
-                "ec2:DeleteRouteTable",
-                "ec2:DeleteSecurityGroup",
-                "ec2:DeleteSubnet",
-                "ec2:DeleteTags",
-                "ec2:DescribeAccountAttributes",
-                "ec2:DescribeAddresses",
-                "ec2:DescribeAvailabilityZones",
-                "ec2:DescribeImages",
-                "ec2:DescribeInstances",
-                "ec2:DescribeInternetGateways",
-                "ec2:DescribeNatGateways",
-                "ec2:DescribeNetworkInterfaces",
-                "ec2:DescribeNetworkInterfaceAttribute",
-                "ec2:DescribeRouteTables",
-                "ec2:DescribeSecurityGroups",
-                "ec2:DescribeSubnets",
-                "ec2:DescribeVpcs",
-                "ec2:DescribeVpcAttribute",
-                "ec2:DescribeVolumes",
-                "ec2:DetachInternetGateway",
-                "ec2:DisassociateRouteTable",
-                "ec2:DisassociateAddress",
-                "ec2:ModifyInstanceAttribute",
-                "ec2:ModifyNetworkInterfaceAttribute",
-                "ec2:ModifySubnetAttribute",
-                "ec2:ReleaseAddress",
-                "ec2:RevokeSecurityGroupIngress",
-                "ec2:RunInstances",
-                "ec2:TerminateInstances",
-                "tag:GetResources",
-                "ec2:CreateLaunchTemplate",
-                "ec2:CreateLaunchTemplateVersion",
-                "ec2:DescribeLaunchTemplates",
-                "ec2:DescribeLaunchTemplateVersions",
-                "ec2:DeleteLaunchTemplate",
-                "ec2:DeleteLaunchTemplateVersions"
-            ],
-            "Resource": [
-                "*"
-            ],
-            "Effect": "Allow"
-        },
-        {
-            "Condition": {
-                "StringLike": {
-                    "iam:AWSServiceName": "elasticloadbalancing.amazonaws.com"
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:CreateVpcEndpoint",
+                        "ec2:DescribeVpcEndpoints",
+                        "ec2:ModifyVpcEndpoint",
+                        "ec2:DeleteVpcEndpoints",
+                        "ec2:CreateTags",
+                        "route53:ListHostedZones"
+                    ],
+                    "Resource": "*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "route53:ChangeResourceRecordSets",
+                        "route53:ListResourceRecordSets"
+                    ],
+                    "Resource": "arn:aws:route53:::hostedzone/Z093004827I7TY8DW3Z9K"
                 }
-            },
-            "Action": [
-                "iam:CreateServiceLinkedRole"
-            ],
-            "Resource": [
-                "arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing"
-            ],
-            "Effect": "Allow"
-        },
-        {
-            "Action": [
-                "iam:PassRole"
-            ],
-            "Resource": [
-                "arn:*:iam::*:role/*-worker-role"
-            ],
-            "Effect": "Allow"
-        }
-    ]
-}
-
-```
-
-</details>
-
-<details>
-<summary>Role: imageRegistryARN</summary>
-
-```json
-
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "s3:CreateBucket",
-                "s3:DeleteBucket",
-                "s3:PutBucketTagging",
-                "s3:GetBucketTagging",
-                "s3:PutBucketPublicAccessBlock",
-                "s3:GetBucketPublicAccessBlock",
-                "s3:PutEncryptionConfiguration",
-                "s3:GetEncryptionConfiguration",
-                "s3:PutLifecycleConfiguration",
-                "s3:GetLifecycleConfiguration",
-                "s3:GetBucketLocation",
-                "s3:ListBucket",
-                "s3:GetObject",
-                "s3:PutObject",
-                "s3:DeleteObject",
-                "s3:ListBucketMultipartUploads",
-                "s3:AbortMultipartUpload",
-                "s3:ListMultipartUploadParts"
-            ],
-            "Resource": "*"
-        }
-    ]
-}
-
-```
-
-</details>
-
-<details>
-<summary>Role: ingressARN</summary>
-
-```json
-
-{
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": [
-                "elasticloadbalancing:DescribeLoadBalancers",
-                "tag:GetResources",
-                "route53:ListHostedZones"
-            ],
-            "Resource": "*"
-        },
-        {
-            "Effect": "Allow",
-            "Action": [
-                "route53:ChangeResourceRecordSets"
-            ],
-            "Resource": [
-                "arn:aws:route53:::hostedzone/Z04148342DPTGWECPH7M5",
-                "arn:aws:route53:::hostedzone/Z0498824N2ZYL62T258T"
             ]
         }
-    ]
-}
 
-```
+        ```
 
-</details>
+    === "storageARN"
+        ```json
 
-<details>
-<summary>Role: workerRoleARN</summary>
-
-```json
-
-{
-    "Version": "2012-10-17",
-    "Statement": [
         {
-
-            "Effect": "Allow",
-            "Action": [
-                "ec2:DescribeInstances",
-                "ec2:DescribeRegions"
-            ],
-            "Resource": "*"
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:AttachVolume",
+                        "ec2:CreateSnapshot",
+                        "ec2:CreateTags",
+                        "ec2:CreateVolume",
+                        "ec2:DeleteSnapshot",
+                        "ec2:DeleteTags",
+                        "ec2:DeleteVolume",
+                        "ec2:DescribeInstances",
+                        "ec2:DescribeSnapshots",
+                        "ec2:DescribeTags",
+                        "ec2:DescribeVolumes",
+                        "ec2:DescribeVolumesModifications",
+                        "ec2:DetachVolume",
+                        "ec2:ModifyVolume"
+                    ],
+                    "Resource": "*"
+                }
+            ]
         }
-    ]
-}
 
-```
+        ```
 
-</details>
+    === "kubeCloudControllerARN"
+        ```json
+
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Action": [
+                        "ec2:DescribeInstances",
+                        "ec2:DescribeImages",
+                        "ec2:DescribeRegions",
+                        "ec2:DescribeRouteTables",
+                        "ec2:DescribeSecurityGroups",
+                        "ec2:DescribeSubnets",
+                        "ec2:DescribeVolumes",
+                        "ec2:CreateSecurityGroup",
+                        "ec2:CreateTags",
+                        "ec2:CreateVolume",
+                        "ec2:ModifyInstanceAttribute",
+                        "ec2:ModifyVolume",
+                        "ec2:AttachVolume",
+                        "ec2:AuthorizeSecurityGroupIngress",
+                        "ec2:CreateRoute",
+                        "ec2:DeleteRoute",
+                        "ec2:DeleteSecurityGroup",
+                        "ec2:DeleteVolume",
+                        "ec2:DetachVolume",
+                        "ec2:RevokeSecurityGroupIngress",
+                        "ec2:DescribeVpcs",
+                        "elasticloadbalancing:AddTags",
+                        "elasticloadbalancing:AttachLoadBalancerToSubnets",
+                        "elasticloadbalancing:ApplySecurityGroupsToLoadBalancer",
+                        "elasticloadbalancing:CreateLoadBalancer",
+                        "elasticloadbalancing:CreateLoadBalancerPolicy",
+                        "elasticloadbalancing:CreateLoadBalancerListeners",
+                        "elasticloadbalancing:ConfigureHealthCheck",
+                        "elasticloadbalancing:DeleteLoadBalancer",
+                        "elasticloadbalancing:DeleteLoadBalancerListeners",
+                        "elasticloadbalancing:DescribeLoadBalancers",
+                        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+                        "elasticloadbalancing:DetachLoadBalancerFromSubnets",
+                        "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
+                        "elasticloadbalancing:ModifyLoadBalancerAttributes",
+                        "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
+                        "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
+                        "elasticloadbalancing:AddTags",
+                        "elasticloadbalancing:CreateListener",
+                        "elasticloadbalancing:CreateTargetGroup",
+                        "elasticloadbalancing:DeleteListener",
+                        "elasticloadbalancing:DeleteTargetGroup",
+                        "elasticloadbalancing:DescribeListeners",
+                        "elasticloadbalancing:DescribeLoadBalancerPolicies",
+                        "elasticloadbalancing:DescribeTargetGroups",
+                        "elasticloadbalancing:DescribeTargetHealth",
+                        "elasticloadbalancing:ModifyListener",
+                        "elasticloadbalancing:ModifyTargetGroup",
+                        "elasticloadbalancing:RegisterTargets",
+                        "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
+                        "iam:CreateServiceLinkedRole",
+                        "kms:DescribeKey"
+                    ],
+                    "Resource": [
+                        "*"
+                    ],
+                    "Effect": "Allow"
+                }
+            ]
+        }
+
+        ```
+
+    === "controlPlaneOperatorARN"
+        ```json
+
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:CreateVpcEndpoint",
+                        "ec2:DescribeVpcEndpoints",
+                        "ec2:ModifyVpcEndpoint",
+                        "ec2:DeleteVpcEndpoints",
+                        "ec2:CreateTags",
+                        "route53:ListHostedZones"
+                    ],
+                    "Resource": "*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "route53:ChangeResourceRecordSets",
+                        "route53:ListResourceRecordSets"
+                    ],
+                    "Resource": "arn:aws:route53:::hostedzone/Z093004827I7TY8DW3Z9K"
+                }
+            ]
+        }
+
+        ```
+
+    === "networkARN"
+        ```json
+
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:DescribeInstances",
+                        "ec2:DescribeInstanceStatus",
+                        "ec2:DescribeInstanceTypes",
+                        "ec2:UnassignPrivateIpAddresses",
+                        "ec2:AssignPrivateIpAddresses",
+                        "ec2:UnassignIpv6Addresses",
+                        "ec2:AssignIpv6Addresses",
+                        "ec2:DescribeSubnets",
+                        "ec2:DescribeNetworkInterfaces"
+                    ],
+                    "Resource": "*"
+                }
+            ]
+        }
+
+        ```
+
+    === "nodePoolManagementARN"
+        ```json
+
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Action": [
+                        "ec2:AllocateAddress",
+                        "ec2:AssociateRouteTable",
+                        "ec2:AttachInternetGateway",
+                        "ec2:AuthorizeSecurityGroupIngress",
+                        "ec2:CreateInternetGateway",
+                        "ec2:CreateNatGateway",
+                        "ec2:CreateRoute",
+                        "ec2:CreateRouteTable",
+                        "ec2:CreateSecurityGroup",
+                        "ec2:CreateSubnet",
+                        "ec2:CreateTags",
+                        "ec2:DeleteInternetGateway",
+                        "ec2:DeleteNatGateway",
+                        "ec2:DeleteRouteTable",
+                        "ec2:DeleteSecurityGroup",
+                        "ec2:DeleteSubnet",
+                        "ec2:DeleteTags",
+                        "ec2:DescribeAccountAttributes",
+                        "ec2:DescribeAddresses",
+                        "ec2:DescribeAvailabilityZones",
+                        "ec2:DescribeImages",
+                        "ec2:DescribeInstances",
+                        "ec2:DescribeInternetGateways",
+                        "ec2:DescribeNatGateways",
+                        "ec2:DescribeNetworkInterfaces",
+                        "ec2:DescribeNetworkInterfaceAttribute",
+                        "ec2:DescribeRouteTables",
+                        "ec2:DescribeSecurityGroups",
+                        "ec2:DescribeSubnets",
+                        "ec2:DescribeVpcs",
+                        "ec2:DescribeVpcAttribute",
+                        "ec2:DescribeVolumes",
+                        "ec2:DetachInternetGateway",
+                        "ec2:DisassociateRouteTable",
+                        "ec2:DisassociateAddress",
+                        "ec2:ModifyInstanceAttribute",
+                        "ec2:ModifyNetworkInterfaceAttribute",
+                        "ec2:ModifySubnetAttribute",
+                        "ec2:ReleaseAddress",
+                        "ec2:RevokeSecurityGroupIngress",
+                        "ec2:RunInstances",
+                        "ec2:TerminateInstances",
+                        "tag:GetResources",
+                        "ec2:CreateLaunchTemplate",
+                        "ec2:CreateLaunchTemplateVersion",
+                        "ec2:DescribeLaunchTemplates",
+                        "ec2:DescribeLaunchTemplateVersions",
+                        "ec2:DeleteLaunchTemplate",
+                        "ec2:DeleteLaunchTemplateVersions"
+                    ],
+                    "Resource": [
+                        "*"
+                    ],
+                    "Effect": "Allow"
+                },
+                {
+                    "Condition": {
+                        "StringLike": {
+                            "iam:AWSServiceName": "elasticloadbalancing.amazonaws.com"
+                        }
+                    },
+                    "Action": [
+                        "iam:CreateServiceLinkedRole"
+                    ],
+                    "Resource": [
+                        "arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing"
+                    ],
+                    "Effect": "Allow"
+                },
+                {
+                    "Action": [
+                        "iam:PassRole"
+                    ],
+                    "Resource": [
+                        "arn:*:iam::*:role/*-worker-role"
+                    ],
+                    "Effect": "Allow"
+                }
+            ]
+        }
+
+        ```
+
+    === "imageRegistryARN"
+        ```json
+
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "s3:CreateBucket",
+                        "s3:DeleteBucket",
+                        "s3:PutBucketTagging",
+                        "s3:GetBucketTagging",
+                        "s3:PutBucketPublicAccessBlock",
+                        "s3:GetBucketPublicAccessBlock",
+                        "s3:PutEncryptionConfiguration",
+                        "s3:GetEncryptionConfiguration",
+                        "s3:PutLifecycleConfiguration",
+                        "s3:GetLifecycleConfiguration",
+                        "s3:GetBucketLocation",
+                        "s3:ListBucket",
+                        "s3:GetObject",
+                        "s3:PutObject",
+                        "s3:DeleteObject",
+                        "s3:ListBucketMultipartUploads",
+                        "s3:AbortMultipartUpload",
+                        "s3:ListMultipartUploadParts"
+                    ],
+                    "Resource": "*"
+                }
+            ]
+        }
+
+        ```
+
+    === "ingressARN"
+        ```json
+
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "elasticloadbalancing:DescribeLoadBalancers",
+                        "tag:GetResources",
+                        "route53:ListHostedZones"
+                    ],
+                    "Resource": "*"
+                },
+                {
+                    "Effect": "Allow",
+                    "Action": [
+                        "route53:ChangeResourceRecordSets"
+                    ],
+                    "Resource": [
+                        "arn:aws:route53:::hostedzone/Z04148342DPTGWECPH7M5",
+                        "arn:aws:route53:::hostedzone/Z0498824N2ZYL62T258T"
+                    ]
+                }
+            ]
+        }
+
+        ```
+
+    === "workerRoleARN"
+        ```json
+
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+
+                    "Effect": "Allow",
+                    "Action": [
+                        "ec2:DescribeInstances",
+                        "ec2:DescribeRegions"
+                    ],
+                    "Resource": "*"
+                }
+            ]
+        }
+
+        ```
 
 
 - **AWS Route 53 Domain**: This is needed in order to create reachable API via DNS name instead of using the ELB name. This is only relevant when a Cluster type is `Public` or `PublicAndPrivate`, not relevant for Private only.
@@ -435,17 +401,43 @@ With these elements you should be able to deploy Hypershift into the Openshift c
 
 This is a detailed list of objects **needed** by Hypershift/OCP into AWS in order to manage Hosted Clusters, so **they should preexists** in order to have a successfull Hosted Cluster deployment.
 
-- 1 VPC
-- 1 DHCP Options
-- 1 Private Subnet
-- 1 Public Subnet
-- 1 Internet Gateway
-- 1 NAT Gateway
-- 1 Security Group (Worker Nodes)
-- 2 Route Tables (1 Private, 1 Public)
-- 2 Private Hosted Zones
-    - 1 for Cluster Ingress (for Public clusters)
-    - 1 for PrivateLink (for private clusters)
+- Components needed in AWS for HostedCluster deployments
+
+    === "Public"
+
+        - 1 VPC
+        - 1 DHCP Options
+        - 1 Public Subnet (for Public HostedCluster)
+        - 1 Internet Gateway
+        - 1 NAT Gateway
+        - 1 Security Group (Worker Nodes)
+        - 1 Route Tables (Public)
+        - 1 Private Hosted Zones for Cluster Ingress
+
+    === "Private"
+
+        - 1 VPC
+        - 1 DHCP Options
+        - 1 Private Subnet (for Private HostedCluster)
+        - 1 Internet Gateway
+        - 1 NAT Gateway
+        - 1 Security Group (Worker Nodes)
+        - 1 Route Tables (Private)
+        - 1 Private Hosted Zones for PrivateLink
+
+    === "PublicAndPrivate"
+        - 1 VPC
+        - 1 DHCP Options
+        - 2 Subnets
+            - 1 Private Subnet (for Private HostedCluster)
+            - 1 Public Subnet (for Public HostedCluster)
+        - 1 Internet Gateway
+        - 1 NAT Gateway
+        - 1 Security Group (Worker Nodes)
+        - 2 Route Tables (1 Private, 1 Public)
+        - 2 Private Hosted Zones
+            - 1 for Cluster Ingress (for Public clusters)
+            - 1 for PrivateLink (for private clusters)
 
 After the creation of these AWS Objects and to perform the relationship among them, you can create the Hosted Cluster CR in order to begin the Control Plane deployment.
 
@@ -539,6 +531,8 @@ In order to deploy a HostedCluster you have two options, using the **CLI** or us
 
 This is how looks like when you have the Hypershift Operator deployed into the Openshift Management Cluster
 
+- Objects Created and Managed after the Hypershift Operator deployment, in the Hypershift namespace:
+
 ```mermaid
 flowchart LR
     style HO fill:#BAE0E9,stroke:#333,stroke-width:3px
@@ -555,16 +549,17 @@ flowchart LR
         end
     end
 ```
-> Legend:
->
-> - Cyan: Provider agnostic OCP objects.
+
+!!! note "Legend"
+    - **Cyan:** Provider agnostic OCP objects.
 
 The CLI will create 2 deployments:
 
 - **ExternalDNS**: the external-dns pod creates the DNSs entries within the Cloud Provider (Route 53). It will try to create entries into the domain/subdomain set in the install command.
 - **Operator**: Stands for Hypershift Operator and it has some controllers inside which manages the HostedClusters and NodePools created in the cluster's namespace.
 
-> **NOTE:** Regardless of whether you use the External DNS feature or not, as mentioned earlier, you need an already registered (or at least delegated) DNS domain in *Route 53*. This is where the public records are created to allow external access
+!!! info
+    Regardless of whether you use the External DNS feature or not, as mentioned earlier, you need an already registered (or at least delegated) DNS domain in *Route 53*. This is where the public records are created to allow external access
 
 
 ### HostedCluster
@@ -576,6 +571,8 @@ HostedCluster and NodePool controllers (part of Hypershift Operator) are monitor
 You will need to have in mind that some more objects like Secrets and ConfigMaps (described in the diagram) are needed for a successful `HostedCluster` deployment.
 
 From these mentioned objects, the Hypershift operator will create some more in 2 places, Openshift infrastructure and also in AWS Cloud Provider. Let's take a look to the following diagram to discover which objects are created in Openshift.
+
+- **Diagram:** Objects manually created in the Cluster namespace needed for HostedCluster deployment
 
 ```mermaid
 flowchart TB
@@ -615,15 +612,20 @@ flowchart TB
         end
     end
 ```
-> Legend:
->
-> - Green: Hypershift CRDs monitored by Hypershift Operator (also Provider Agnostic)
-> - Cyan: Provider agnostic OCP objects.
+
+!!! note "Legend"
+    - **Green:** Hypershift CRDs monitored by Hypershift Operator (also Provider Agnostic)
+    - **Cyan:** Provider agnostic OCP objects.
+    - The *dotted* lines are associations among AWS Components created by the CLI or the Operator
+    - The **thick** lines are objects created by the CLI into AWS platform and needed by the Hypershift Operator to work properly
 
 As we can see, the Hypershift operator has some watchers on top of HostedCluster and NodePool objects. Once created, the operator will start the HostedCluter deployment.
 
-> **NOTE: All the components showed in the previous diagram should be manually created.**
+!!! info
+    All the components showed in the previous diagram should be manually created.**
 
+
+- **Diagram:** Objects automatically created in the Cluster and Hosted Control Plane namespaces, during the HostedCluster deployment
 
 ```mermaid
 
@@ -716,12 +718,15 @@ flowchart LR
         end
     end
 ```
-> Legend:
->
-> - Orange: OCP objects directly related with AWS.
-> - Cyan: Provider agnostic OCP objects.
+!!! note "Legend"
+    - **Orange:** OCP objects directly related with AWS.
+    - **Cyan:** Provider agnostic OCP objects.
+    - The *dotted* lines are associations among AWS Components created by the CLI or the Operator
+    - The **thick** lines are objects created by the CLI into AWS platform and needed by the Hypershift Operator to work properly
 
 At the same time, the Hypershift operator will expect to exists the mentioned Infra components in the defined provider (You could use the Hypershift CLI in order to create them automatically). As a first step it will assign an InfraID to all the objects created in the AWS side.
+
+- **Diagram:** The Diagrams shows 2 things, the objects Needed and Created in the AWS infrastructure. After this one we will dissect the objects in a more detailed way.
 
 ```mermaid
 flowchart TB
@@ -819,19 +824,23 @@ flowchart TB
     end
 ```
 
-> Legend:
->
-> - Orange: AWS Components
-> - Cyan: Hypershift Operator
-> - Red: Openshift Hosted Cluster
+!!! note "Legend"
+    - **Orange:** AWS Components
+    - **Cyan:** Hypershift Operator
+    - **Red:** Openshift Hosted Cluster
+    - The *dotted* lines are associations among AWS Components created by the CLI or the Operator
+    - The **thick** lines are objects created by the CLI into AWS platform and needed by the Hypershift Operator to work properly
 
-> **NOTE:** Just to remark somthing already mentioned, the Hypershift operator expects that the components in AWS exists. The only htings that are automatically created are the **Private Links** and the **Elastic Load Balancer**
+!!! info
+    Just to remark something already mentioned, the Hypershift operator expects that the components in AWS exists. The only htings that are automatically created are the **Private Links** and the **Elastic Load Balancer**
 
 ### NodePools
 
 The NodePool object creation implies a creation of a set of Openshift objects which triggers the NodePool controller actions.
 
 Let's reuse the last diagram to dissect the object creation inside of Openshift:
+
+- **Diagram:** The diagram shows the components needed by Hypershift to build a Control Plane and located in the Hosted Control Plane Namespace
 
 ```mermaid
 flowchart LR
@@ -898,12 +907,15 @@ flowchart LR
         end
     end
 ```
-> Legend:
->
-> - Orange: OCP objects directly related with AWS.
-> - Cyan: Provider agnostic OCP objects.
+!!! note "Legend"
+    - **Orange:** OCP objects directly related with AWS.
+    - **Cyan:** Provider agnostic OCP objects.
+    - The *dotted* lines are associations among AWS Components created by the CLI or the Operator
+    - The **thick** lines are objects created by the CLI into AWS platform and needed by the Hypershift Operator to work properly
 
 Also the NodePool Controller calling tha AWS Cluster API provider, will create some objects in AWS which are these ones:
+
+- **Diagram:** The diagram shows the NodePool resultant objects created into the AWS Infrastructure.
 
 ```mermaid
 flowchart LR
@@ -934,8 +946,67 @@ flowchart LR
 
 ```
 
-- The *dotted* lines are associations among AWS Components created by the CLI or the Operator
-- The **thick** lines are objects created by the CLI into AWS platform and needed by the Hypershift Operator to work properly
+!!! note "Legend"
+    - **Orange:** OCP objects directly related with AWS.
+    - **Cyan:** Provider agnostic OCP objects.
+    - The *dotted* lines are associations among AWS Components created by the CLI or the Operator
+    - The **thick** lines are objects created by the CLI into AWS platform and needed by the Hypershift Operator to work properly
+
+## AWS Components and Hypershift
+
+As you've seen, we've been showing all the components created, managed, not managed, etc... in the Hypershift life cycle. In this section we want to dissect who creates what and what not in this 4 stages:
+
+- Pre-required and Unmanaged Hosted Cluster AWS account
+- Infra managed by hypershift in Management AWS account
+- Infra managed by hypershift in Hosted Cluster AWS account
+- Infra managed by kubernetes in Hosted Cluster AWS account
+
+#### Pre-required and Unmanaged Infra in Hosted Cluster AWS account
+
+=== "Public"
+    - 1 VPC
+    - 1 DHCP Options
+    - 1 Public Subnet (for Public HostedCluster)
+    - 1 Internet Gateway
+    - 1 NAT Gateway
+    - 1 Security Group (Worker Nodes)
+    - 1 Route Tables (Public)
+
+=== "Private"
+    - 1 VPC
+    - 1 DHCP Options
+    - 1 Private Subnet (for Private HostedCluster)
+    - 1 Internet Gateway
+    - 1 NAT Gateway
+    - 1 Security Group (Worker Nodes)
+    - 1 Route Tables (Private)
+
+=== "PublicAndPrivate"
+    - 1 VPC
+    - 1 DHCP Options
+    - 2 Subnets
+        - 1 Private Subnet (for Private HostedCluster)
+        - 1 Public Subnet (for Public HostedCluster)
+    - 1 Internet Gateway
+    - 1 NAT Gateway
+    - 1 Security Group (Worker Nodes)
+    - 2 Route Tables (1 Private, 1 Public)
+
+#### AWS Infra Managed by Hypershift
+
+=== "Management Cluster"
+    - Kube API Server Load Balancer
+
+=== "Hosted Cluster"
+    - Kube API Server Load Balancer
+    - Ingress Service Load Balancer (for Public Hosted Clusters)
+    - Private Link (for Private Hosted Clusters)
+
+#### AWS Infra Managed by Kubernetes
+
+=== "Management and Hosted Cluster"
+    - Elastic Load Balancer
+
 
 ## Networking flow
 
