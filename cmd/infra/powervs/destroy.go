@@ -226,6 +226,11 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 	}
 
 	if !skipPowerVs {
+		if err = destroyPowerVSDHCPServer(ctx, infra, powerVsCloudInstanceID, session, options.InfraID); err != nil {
+			errL = append(errL, fmt.Errorf("error destroying powervs dhcp server: %w", err))
+			log(options.InfraID).Error(err, "error destroying powervs dhcp server")
+		}
+
 		if err = destroyPowerVsCloudInstance(ctx, options, infra, powerVsCloudInstanceID, session); err != nil {
 			errL = append(errL, fmt.Errorf("error destroying powervs cloud instance: %w", err))
 			log(options.InfraID).Error(err, "error destroying powervs cloud instance")
@@ -310,8 +315,8 @@ func deleteSecrets(name, namespace, accountID string, resourceGroupID string) er
 	return nil
 }
 
-// destroyPowerVsDhcpServer destroying powervs dhcp server
-func destroyPowerVsDhcpServer(ctx context.Context, infra *Infra, cloudInstanceID string, session *ibmpisession.IBMPISession, infraID string) error {
+// destroyPowerVSDHCPServer destroying PowerVS DHCP server
+func destroyPowerVSDHCPServer(ctx context.Context, infra *Infra, cloudInstanceID string, session *ibmpisession.IBMPISession, infraID string) error {
 	client := instance.NewIBMPIDhcpClient(ctx, session, cloudInstanceID)
 	if infra != nil && infra.DHCPID != "" {
 		log(infraID).Info("Deleting DHCP server", "id", infra.DHCPID)
@@ -328,7 +333,17 @@ func destroyPowerVsDhcpServer(ctx context.Context, infra *Infra, cloudInstanceID
 		return nil
 	}
 
-	dhcpID := *dhcpServers[0].ID
+	var dhcpID string
+	for _, server := range dhcpServers {
+		if strings.Contains(*server.Network.Name, infraID) {
+			dhcpID = *server.ID
+		}
+	}
+	if dhcpID == "" {
+		log(infraID).Info("No matching DHCP servers available to delete in PowerVS")
+		return nil
+	}
+
 	log(infraID).Info("Deleting DHCP server", "id", dhcpID)
 	err = client.Delete(dhcpID)
 	if err != nil {
@@ -358,7 +373,7 @@ func destroyPowerVsDhcpServer(ctx context.Context, infra *Infra, cloudInstanceID
 			return false, fmt.Errorf("dhcpInstance is nil")
 		}
 
-		log(infraID).Info("Waiting for DhcpServer to destroy", "id", *dhcpInstance.PvmInstanceID, "status", *dhcpInstance.Status)
+		log(infraID).Info("Waiting for DHCP Server destroy", "id", *dhcpInstance.PvmInstanceID, "status", *dhcpInstance.Status)
 		if *dhcpInstance.Status == dhcpInstanceShutOffState || *dhcpInstance.Status == dhcpServiceErrorState {
 			return true, nil
 		}
@@ -377,42 +392,42 @@ func destroyPowerVsCloudInstance(ctx context.Context, options *DestroyInfraOptio
 	}
 
 	if options.CloudInstanceID != "" {
-		// In case of user provided cloud instance delete only DHCP server
-		err = destroyPowerVsDhcpServer(ctx, infra, cloudInstanceID, session, options.InfraID)
-	} else {
-		for retry := 0; retry < 5; retry++ {
-			log(options.InfraID).Info("Deleting PowerVS cloud instance", "id", cloudInstanceID)
-			if _, err = rcv2.DeleteResourceInstance(&resourcecontrollerv2.DeleteResourceInstanceOptions{ID: &cloudInstanceID}); err != nil {
-				log(options.InfraID).Error(err, "error in deleting powervs cloud instance")
-				continue
-			}
+		log(options.InfraID).Info("Skipping cloud instance deletion because user supplied")
+		return nil
+	}
 
-			f := func() (bool, error) {
-				resourceInst, resp, err := rcv2.GetResourceInstance(&resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
-				if err != nil {
-					log(options.InfraID).Error(err, "error in querying deleted cloud instance", "resp", resp.String())
-					return false, err
-				}
-
-				if resp.StatusCode >= 400 {
-					return false, fmt.Errorf("retrying due to resp code is %d and message is %s", resp.StatusCode, resp.String())
-				}
-				if resourceInst != nil {
-					if *resourceInst.State == powerVSCloudInstanceRemovedState {
-						return true, nil
-					}
-
-					log(options.InfraID).Info("Waiting for PowerVS cloud instance deletion", "status", *resourceInst.State, "lastOp", resourceInst.LastOperation)
-				}
-
-				return false, nil
-			}
-
-			if err = wait.PollImmediate(pollingInterval, cloudInstanceDeletionTimeout, f); err == nil {
-				break
-			}
-			log(options.InfraID).Info("Retrying cloud instance deletion ...")
+	for retry := 0; retry < 5; retry++ {
+		log(options.InfraID).Info("Deleting PowerVS cloud instance", "id", cloudInstanceID)
+		if _, err = rcv2.DeleteResourceInstance(&resourcecontrollerv2.DeleteResourceInstanceOptions{ID: &cloudInstanceID}); err != nil {
+			log(options.InfraID).Error(err, "error in deleting powervs cloud instance")
+			continue
 		}
+
+		f := func() (bool, error) {
+			resourceInst, resp, err := rcv2.GetResourceInstance(&resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
+			if err != nil {
+				log(options.InfraID).Error(err, "error in querying deleted cloud instance", "resp", resp.String())
+				return false, err
+			}
+
+			if resp.StatusCode >= 400 {
+				return false, fmt.Errorf("retrying due to resp code is %d and message is %s", resp.StatusCode, resp.String())
+			}
+			if resourceInst != nil {
+				if *resourceInst.State == powerVSCloudInstanceRemovedState {
+					return true, nil
+				}
+
+				log(options.InfraID).Info("Waiting for PowerVS cloud instance deletion", "status", *resourceInst.State, "lastOp", resourceInst.LastOperation)
+			}
+
+			return false, nil
+		}
+
+		if err = wait.PollImmediate(pollingInterval, cloudInstanceDeletionTimeout, f); err == nil {
+			break
+		}
+		log(options.InfraID).Info("Retrying cloud instance deletion ...")
 	}
 	return err
 }

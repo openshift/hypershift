@@ -113,10 +113,6 @@ var (
 		powerVsService:  "IBMCLOUD_POWER_API_ENDPOINT",
 		vpcService:      "IBMCLOUD_VPC_API_ENDPOINT",
 		platformService: "IBMCLOUD_PLATFORM_API_ENDPOINT"}
-
-	dhcpServerLimitExceeds = func(dhcpServerCount int) error {
-		return fmt.Errorf("more than one DHCP server is not allowed in a service instance, found %d dhcp servers", dhcpServerCount)
-	}
 )
 
 // MarshalJSON custom marshaling func for time.Duration to parse Duration into user-friendly format
@@ -1098,17 +1094,18 @@ func (infra *Infra) createCloudConnection(options *CreateInfraOptions, client *i
 	return cloudConnID, nil
 }
 
-// useExistingDHCP returns details of existing DHCP server
-func useExistingDHCP(dhcpServers models.DHCPServers) (string, error) {
-	if len(dhcpServers) == 1 {
-		dhcp := dhcpServers[0]
-		return *dhcp.ID, nil
+// useExistingDHCP returns details of existing DHCP server matches the infraID
+func useExistingDHCP(dhcpServers models.DHCPServers, infraID string) string {
+	for _, dhcpServer := range dhcpServers {
+		if strings.Contains(*dhcpServer.Network.Name, infraID) {
+			return *dhcpServer.ID
+		}
 	}
 
-	return "", dhcpServerLimitExceeds(len(dhcpServers))
+	return ""
 }
 
-// setupPowerVSDHCP takes care of setting up dhcp in powervs
+// setupPowerVSDHCP takes care of setting up DHCP in PowerVS
 func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
 	log(infra.ID).Info("Setting up PowerVS DHCP ...")
 	client := instance.NewIBMPIDhcpClient(ctx, session, infra.CloudInstanceID)
@@ -1120,27 +1117,28 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOp
 		return err
 	}
 
-	// only one dhcp server is allowed per cloud instance
-	// if already a dhcp server existing in cloud instance use that instead of creating a new one
+	// if already a dhcp server existing with the name of infraID use that instead of creating a new one
 	if len(dhcpServers) > 0 {
-		log(infra.ID).Info("Using existing DHCP server present in cloud instance")
-		var dhcpServerID string
-		dhcpServerID, err = useExistingDHCP(dhcpServers)
-		if err != nil {
-			return err
-		}
+		log(infra.ID).Info("Checking for existing DHCP server matches the infraID")
+		dhcpServerID := useExistingDHCP(dhcpServers, options.InfraID)
+		if dhcpServerID != "" {
+			log(infra.ID).Info("Using existing DHCP server")
+			dhcpServer, err = client.Get(dhcpServerID)
+			if *dhcpServer.Status != dhcpServiceActiveState {
+				var isActive bool
+				f := func() (bool, error) {
+					dhcpServer, isActive, err = isDHCPServerActive(client, infra.ID, dhcpServerID)
+					return isActive, err
+				}
 
-		dhcpServer, err = client.Get(dhcpServerID)
-		if *dhcpServer.Status != dhcpServiceActiveState {
-			var isActive bool
-			f := func() (bool, error) {
-				dhcpServer, isActive, err = isDHCPServerActive(client, infra.ID, dhcpServerID)
-				return isActive, err
+				if err = wait.PollImmediate(dhcpPollingInterval, dhcpServerCreationTimeout, f); err != nil {
+					return err
+				}
 			}
-
-			if err = wait.PollImmediate(dhcpPollingInterval, dhcpServerCreationTimeout, f); err != nil {
-				return err
-			}
+		} else {
+			// since existing DHCP server does not match with the infraID used, creating a new one
+			log(infra.ID).Info("Creating PowerVS DHCPServer since existing DHCP server not matches the infraID ...")
+			dhcpServer, err = infra.createPowerVSDhcp(options, client)
 		}
 	} else {
 		log(infra.ID).Info("Creating PowerVS DHCPServer...")
@@ -1210,7 +1208,7 @@ func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *insta
 	var dhcpServer *models.DHCPServerDetail
 
 	// With the recent update default DNS server is pointing to loop back address in DHCP. Hence, passed 1.1.1.1 public DNS resolver.
-	dhcp, err := client.Create(&models.DHCPServerCreate{CloudConnectionID: &infra.CloudConnectionID, DNSServer: utilpointer.String("1.1.1.1")})
+	dhcp, err := client.Create(&models.DHCPServerCreate{Name: utilpointer.String(options.InfraID), CloudConnectionID: &infra.CloudConnectionID, DNSServer: utilpointer.String("1.1.1.1")})
 
 	if err != nil {
 		return nil, err
