@@ -342,6 +342,9 @@ func destroyPowerVsDhcpServer(ctx context.Context, infra *Infra, cloudInstanceID
 	f := func() (bool, error) {
 		dhcpInstance, err := instanceClient.Get(dhcpID)
 		if err != nil {
+			if err = isNotRetryableError(err, timeoutErrorKeywords); err == nil {
+				return false, nil
+			}
 			errMsg := err.Error()
 			// when instance becomes does not exist, infra destroy can proceed
 			if strings.Contains(errMsg, "pvm-instance does not exist") {
@@ -416,11 +419,13 @@ func destroyPowerVsCloudInstance(ctx context.Context, options *DestroyInfraOptio
 
 // monitorPowerVsJob monitoring the submitted deletion job
 func monitorPowerVsJob(id string, client *instance.IBMPIJobClient, infraID string, timeout time.Duration) error {
-
 	f := func() (bool, error) {
 		job, err := client.Get(id)
 		if err != nil {
-			return false, err
+			if err = isNotRetryableError(err, timeoutErrorKeywords); err != nil {
+				return false, err
+			}
+			return false, nil
 		}
 		if job == nil {
 			return false, fmt.Errorf("job returned for %s is nil", id)
