@@ -2,6 +2,9 @@ groups:
 - name: hypershift.rules
   interval: "30s"
   rules:
+  - record: hypershift:apiserver_request_aborts_total
+    expr: sort_desc(sum(rate(apiserver_request_aborts_total[1m])) by (resource, verb))
+
   - record: hypershift:controlplane:component_api_requests_total
     expr: sum by (app, namespace, code, method, pod) (
             sum(rest_client_requests_total) by (pod, namespace, code, method)

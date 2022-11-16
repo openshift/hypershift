@@ -597,6 +597,9 @@ objects:
     - interval: 30s
       name: hypershift.rules
       rules:
+      - expr: sort_desc(sum(rate(apiserver_request_aborts_total[1m])) by (resource,
+          verb))
+        record: hypershift:apiserver_request_aborts_total
       - expr: sum by (app, namespace, code, method, pod) ( sum(rest_client_requests_total)
           by (pod, namespace, code, method) * on (pod, namespace) group_left(app)
           label_replace(kube_pod_labels{label_hypershift_openshift_io_control_plane_component!=""},
