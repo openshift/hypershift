@@ -571,6 +571,27 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		}); err != nil {
 			return false, err
 		}
+
+		// check if Endpoint exists in AWS
+		output, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{
+			VpcEndpointIds: []*string{aws.String(endpointID)},
+		})
+		if err != nil {
+			awsErr, ok := err.(awserr.Error)
+			if ok {
+				if awsErr.Code() != "InvalidVpcEndpointId.NotFound" {
+					return false, err
+				}
+			} else {
+				return false, err
+			}
+
+		}
+
+		if output != nil && len(output.VpcEndpoints) != 0 {
+			return false, fmt.Errorf("resource requested for deletion but still present")
+		}
+
 		log.Info("endpoint deleted", "endpointID", endpointID)
 	}
 
