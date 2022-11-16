@@ -2375,6 +2375,9 @@ spec:
                           type: object
                         maxItems: 25
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - key
+                        x-kubernetes-list-type: map
                       roles:
                         description: Deprecated This field will be removed in the
                           next API release. Use RolesRef instead.
