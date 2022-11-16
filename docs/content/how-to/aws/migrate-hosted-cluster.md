@@ -92,6 +92,10 @@ HC_KUBECONFIG="${HC_CLUSTER_DIR}/kubeconfig"
 BACKUP_DIR=${HC_CLUSTER_DIR}/backup
 
 BUCKET_NAME="${USER}-hosted-${MGMT_REGION}"
+
+# DNS
+AWS_ZONE_ID="Z07342811SH9AA102K1AC"
+EXTERNAL_DNS_DOMAIN="hc.jpdv.aws.kerbeross.com"
 ```
 
 </details>
@@ -244,7 +248,7 @@ oc get cluster ${CL_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BAC
 
 # AWS Cluster
 echo "--> AWS Cluster:"
-oc get awscluster ${HC_CLUSTER_NAME}- -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awscl-${HC_CLUSTER_NAME}.yaml
+oc get awscluster ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awscl-${HC_CLUSTER_NAME}.yaml
 
 # AWS MachineTemplate
 echo "--> AWS Machine Template:"
@@ -317,7 +321,7 @@ function clean_routes() {
     # This allows us to remove the ownership in the AWS for the API route
     oc delete route -n ${1} --all
 
-    while [ ${ROUTES} -gt 1 ]
+    while [ ${ROUTES} -gt 2 ]
     do
         echo "Waiting for ExternalDNS Operator to clean the DNS Records in AWS Route53 where the zone id is: ${ZONE_ID}..."
         echo "Try: (${count}/${timeout})"
@@ -327,7 +331,7 @@ function clean_routes() {
             exit 1
         fi
         count=$((count+1))
-        ROUTES=$(aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --max-items 10000 --output json | grep -c ${HC_CLUSTER_NAME})
+        ROUTES=$(aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --max-items 10000 --output json | grep -c ${EXTERNAL_DNS_DOMAIN})
     done
 }
 
@@ -705,6 +709,10 @@ HC_KUBECONFIG="${HC_CLUSTER_DIR}/kubeconfig"
 BACKUP_DIR=${HC_CLUSTER_DIR}/backup
 
 BUCKET_NAME="${USER}-hosted-${MGMT_REGION}"
+
+# DNS
+AWS_ZONE_ID="Z07342811SH9AA102K1AC"
+EXTERNAL_DNS_DOMAIN="hc.jpdv.aws.kerbeross.com"
 ```
 
 - Migration Script
@@ -818,7 +826,7 @@ function render_hc_objects {
 
     # AWS Cluster
     echo "--> AWS Cluster:"
-    oc get awscluster ${HC_CLUSTER_NAME}- -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awscl-${HC_CLUSTER_NAME}.yaml
+    oc get awscluster ${HC_CLUSTER_NAME} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}/awscl-${HC_CLUSTER_NAME}.yaml
 
     # AWS MachineTemplate
     echo "--> AWS Machine Template:"
@@ -955,7 +963,7 @@ function clean_routes() {
     # This allows us to remove the ownership in the AWS for the API route
     oc delete route -n ${1} --all
 
-    while [ ${ROUTES} -gt 1 ]
+    while [ ${ROUTES} -gt 2 ]
     do
         echo "Waiting for ExternalDNS Operator to clean the DNS Records in AWS Route53 where the zone id is: ${ZONE_ID}..."
         echo "Try: (${count}/${timeout})"
@@ -965,7 +973,7 @@ function clean_routes() {
             exit 1
         fi
         count=$((count+1))
-        ROUTES=$(aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --max-items 10000 --output json | grep -c ${HC_CLUSTER_NAME})
+        ROUTES=$(aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --max-items 10000 --output json | grep -c ${EXTERNAL_DNS_DOMAIN})
     done
 }
 
@@ -983,7 +991,7 @@ function backup_hc {
     change_reconciliation "stop"
     backup_etcd
     render_hc_objects
-    clean_routes "${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}" "Z02718293M33QHDEQBROL"
+    clean_routes "${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}" "${AWS_ZONE_ID}"
 }
 
 function restore_hc {
