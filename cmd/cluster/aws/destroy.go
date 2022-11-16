@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
 )
 
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
@@ -29,10 +30,21 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.AWSPlatform.PreserveIAM, "preserve-iam", opts.AWSPlatform.PreserveIAM, "If true, skip deleting IAM. Otherwise destroy any default generated IAM along with other infra.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Cluster's region; inferred from the hosted cluster by default")
 	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomain, "base-domain", opts.AWSPlatform.BaseDomain, "Cluster's base domain; inferred from the hosted cluster by default")
-
-	cmd.MarkFlagRequired("aws-creds")
+	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A kubernete's secret with a platform credential, pull-secret and base-domain. The secret must exist in the supplied \"--namespace\"")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if len(opts.CredentialSecretName) == 0 {
+			if err := isRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
+				return err
+			}
+		} else {
+			//Check the secret exists now, otherwise stop
+			opts.Log.Info("Retreiving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
+			if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
+				return err
+			}
+		}
+
 		if err := DestroyCluster(cmd.Context(), opts); err != nil {
 			log.Log.Error(err, "Failed to destroy cluster")
 			return err
@@ -52,11 +64,22 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	baseDomain := o.AWSPlatform.BaseDomain
 	region := o.AWSPlatform.Region
 
+	//Override the credentialSecret with credentialFile
+	var awsKeyID, awsSecretKey string
+	var err error
+	if len(o.AWSPlatform.AWSCredentialsFile) == 0 && len(o.CredentialSecretName) > 0 {
+		_, awsKeyID, awsSecretKey, err = util.ExtractOptionsFromSecret(nil, o.CredentialSecretName, o.Namespace, "")
+		if err != nil {
+			return err
+		}
+	}
 	o.Log.Info("Destroying infrastructure", "infraID", infraID)
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
 		Region:             region,
 		InfraID:            infraID,
 		AWSCredentialsFile: o.AWSPlatform.AWSCredentialsFile,
+		AWSKey:             awsKeyID,
+		AWSSecretKey:       awsSecretKey,
 		Name:               o.Name,
 		BaseDomain:         baseDomain,
 		Log:                o.Log,
@@ -70,6 +93,8 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		destroyOpts := awsinfra.DestroyIAMOptions{
 			Region:             region,
 			AWSCredentialsFile: o.AWSPlatform.AWSCredentialsFile,
+			AWSKey:             awsKeyID,
+			AWSSecretKey:       awsSecretKey,
 			InfraID:            infraID,
 			Log:                o.Log,
 		}

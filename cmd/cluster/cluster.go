@@ -69,8 +69,6 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
 	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
 
-	cmd.MarkPersistentFlagRequired("pull-secret")
-
 	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(none.NewCreateCommand(opts))
 	cmd.AddCommand(agent.NewCreateCommand(opts))
