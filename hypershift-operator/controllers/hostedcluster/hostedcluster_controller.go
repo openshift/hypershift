@@ -3160,6 +3160,13 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
+	} else if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
+		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+			return reconcileVirtLauncherNetworkPolicy(policy, hcluster)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
+		}
 	}
 
 	for _, svc := range hcluster.Spec.Services {
@@ -3636,6 +3643,27 @@ func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolic
 	}
 	policy.Spec.PodSelector = metav1.LabelSelector{}
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	protocolTCP := corev1.ProtocolTCP
+	protocolUDP := corev1.ProtocolUDP
+	protocolSCTP := corev1.ProtocolSCTP
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: &protocolTCP},
+				{Protocol: &protocolUDP},
+				{Protocol: &protocolSCTP},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"kubevirt.io": "virt-launcher",
+		},
+	}
 	return nil
 }
 

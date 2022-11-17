@@ -76,3 +76,12 @@ func NodePortKonnectivityNetworkPolicy(namespace string) *networkingv1.NetworkPo
 		},
 	}
 }
+
+func VirtLauncherNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "virt-launcher",
+		},
+	}
+}
