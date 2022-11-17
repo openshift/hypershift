@@ -83,6 +83,8 @@ nav:
   - reference/index.md
   - reference/goals-and-design-invariants.md
   - reference/api.md
+  - "Infrastructure":
+    - "AWS": reference/provider-infra/aws.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
   - reference/multi-platform-support.md

@@ -441,7 +441,7 @@ This is a detailed list of objects **needed** by Hypershift/OCP into AWS in orde
 
 After the creation of these AWS Objects and to perform the relationship among them, you can create the Hosted Cluster CR in order to begin the Control Plane deployment.
 
-An easy way to see how the relationships are made among the AWS Objects you can check this CLI HostedCluster deployment
+You can check also an alternative and automatic way for a HostedCluster provisioning in AWS provider using the CLI (maybe it's also an useful way to have an initial view of the objects needed by the HostedCluster to be properly provisioned in the AWS side).
 
 <details>
 <summary>Hosted Cluster deployment</summary>
@@ -521,13 +521,15 @@ An easy way to see how the relationships are made among the AWS Objects you can 
 </details>
 
 
-After this, the Openshift Hosted Control Plane will continue being deployed and eventually the cluster will create some resources which will end on AWS object creation (These are not managed by Hypershift but Openshift):
+After this, the Openshift Hosted Control Plane will continue being deployed and eventually it will create some other resources which will end on AWS object creation (ELB) (These are not managed by Hypershift but Openshift):
 
-- **Cluster Route**: It's the main router for the accesses from outside in Openshift. **It creates 1 ELB (External Load Balancer) in AWS** provider which route the request to the cluster from outside.
+"- **Cluster Route**: It's the main router for the accesses from outside in Openshift. **It creates 1 ELB (External Load Balancer) in AWS** provider which route the request to the cluster from outside. This component is created by HostedControlPlane via the Openshift Ingress Controller"
 
 ## Architecture and Workflow
 
 In order to deploy a HostedCluster you have two options, using the **CLI** or using **Openshift/Kubernetes objects (CRs)**, like *HostedCluster* and *NodePool* which are the top-level API objects that we will focus on. From each, the proper controller will take care of the object generation under that CR.
+
+So, if you are new in Hypershift/Openshift and you need an Openshift HostedCluster, we recommend to use the CLI.
 
 This is how looks like when you have the Hypershift Operator deployed into the Openshift Management Cluster
 
@@ -564,13 +566,18 @@ The CLI will create 2 deployments:
 
 ### HostedCluster
 
-This is the Hosted Cluster namespace where you as a user will create the definition of your cluster and your nodes. An easy way to create a hosted cluster is by using the CLI as we've seen in the last sample.
+The Hosted Cluster namespace is where, you as a user, will create the definition of your cluster and your nodes. You can use the namespace you want to store the CRs. An easy way to do it, it's by using the CLI as we've seen in the last sample. If you do so, you don't need to create the namespace itself, the CLI will do it for you.
 
 HostedCluster and NodePool controllers (part of Hypershift Operator) are monitoring the HostedCluster and NodePool objects being created in the whole cluster. So once you create one of these components, the controllers will begin the reconciliation.
 
 You will need to have in mind that some more objects like Secrets and ConfigMaps (described in the diagram) are needed for a successful `HostedCluster` deployment.
 
-From these mentioned objects, the Hypershift operator will create some more in 2 places, Openshift infrastructure and also in AWS Cloud Provider. Let's take a look to the following diagram to discover which objects are created in Openshift.
+From these mentioned objects, the Hypershift operator will:
+
+- Create some more objects in the Openshift infrastructure.
+- Expect the infrastructure created in the AWS Cloud Provider.
+
+Let's take a look to the following diagram to discover which objects need to be created in Openshift.
 
 - **Diagram:** Objects manually created in the Cluster namespace needed for HostedCluster deployment
 
@@ -616,7 +623,7 @@ flowchart TB
 !!! note "Legend"
     - **Green:** Hypershift CRDs monitored by Hypershift Operator (also Provider Agnostic)
     - **Cyan:** Provider agnostic OCP objects.
-    - The *dotted* lines are associations among AWS Components created by the CLI or the Operator
+    - The *dotted* lines are associations among AWS Components created by the CLI or the Operator:
     - The **thick** lines are objects created by the CLI into AWS platform and needed by the Hypershift Operator to work properly
 
 As we can see, the Hypershift operator has some watchers on top of HostedCluster and NodePool objects. Once created, the operator will start the HostedCluter deployment.
@@ -718,6 +725,7 @@ flowchart LR
         end
     end
 ```
+
 !!! note "Legend"
     - **Orange:** OCP objects directly related with AWS.
     - **Cyan:** Provider agnostic OCP objects.
@@ -726,12 +734,19 @@ flowchart LR
 
 At the same time, the Hypershift operator will expect to exists the mentioned Infra components in the defined provider (You could use the Hypershift CLI in order to create them automatically). As a first step it will assign an InfraID to all the objects created in the AWS side.
 
-- **Diagram:** The Diagrams shows 2 things, the objects Needed and Created in the AWS infrastructure. After this one we will dissect the objects in a more detailed way.
+!!! note "Important"
+    All the components inside of AWS Cloud Provider box in the next diagram, are expected to exists previous the HostedCluster deployment, except in 2 cases:
+
+    - The IngressELB it's automatically created
+    - If you uses the CLI, all the things will be created automatically.
+
+- **Diagram:** The diagram shows 2 things, the objects Needed and Created in the AWS infrastructure. After this one we will dissect the objects in a more detailed way.
 
 ```mermaid
 flowchart TB
     style HC fill:#BAE0E9,stroke:#333,stroke-width:3px
-    style IC fill:#FF0000,stroke:#333,stroke-width:3px
+    style HCL fill:#F85A3E,stroke:#333,stroke-width:3px
+    style IC fill:#F85A3E,stroke:#333,stroke-width:3px
     style vpc fill:#FEA175,stroke:#333,stroke-width:3px
     style AZ fill:#FEA175,stroke:#333,stroke-width:3px
     style IG fill:#FEA175,stroke:#333,stroke-width:3px
@@ -746,7 +761,9 @@ flowchart TB
     subgraph OMC[Openshift Management Cluster]
         direction LR
         HC[fa:fa-server Hypershift Operator]
-        IC[Ingress Controller]
+        subgraph HCL[Hosted Cluster]
+            IC[Ingress Controller]
+        end
     end
     HC ==> vpc
     HC ==> IG
@@ -756,9 +773,9 @@ flowchart TB
     HC ==> PBRT
     HC ==> PVZNPD
     HC ==> PVZNL
-    HC ==> IAM
+    HC ===> IAM
     HC -.-> PBZN
-    IC ==> IELB
+    IC == Created Automatically ==> IELB
     vpcN <-.-> EIFNG
     PRTN -.-> vpcN
     PBRT <-.-> pbs
@@ -951,69 +968,6 @@ flowchart LR
     - **Cyan:** Provider agnostic OCP objects.
     - The *dotted* lines are associations among AWS Components created by the CLI or the Operator
     - The **thick** lines are objects created by the CLI into AWS platform and needed by the Hypershift Operator to work properly
-
-## AWS Components and Hypershift
-
-As you've seen, we've been showing all the components created, managed, not managed, etc... in the Hypershift life cycle. In this section we want to dissect who creates what and what not in this 4 stages:
-
-- Pre-required and Unmanaged Hosted Cluster AWS account
-- Infra managed by hypershift in Management AWS account
-- Infra managed by hypershift in Hosted Cluster AWS account
-- Infra managed by kubernetes in Hosted Cluster AWS account
-
-#### Pre-required and Unmanaged Infra in Hosted Cluster AWS account
-
-=== "Public"
-    - 1 VPC
-    - 1 DHCP Options
-    - 1 Public Subnet (for Public HostedCluster)
-    - 1 Internet Gateway
-    - 1 NAT Gateway
-    - 1 Security Group (Worker Nodes)
-    - 1 Route Tables (Public)
-    - 1 Ingress Service Load Balancer
-
-=== "Private"
-    - 1 VPC
-    - 1 DHCP Options
-    - 1 Private Subnet (for Private HostedCluster)
-    - 1 Internet Gateway
-    - 1 NAT Gateway
-    - 1 Security Group (Worker Nodes)
-    - 1 Route Tables (Private)
-    - 1 Private Link
-
-=== "PublicAndPrivate"
-    - 1 VPC
-    - 1 DHCP Options
-    - 2 Subnets
-        - 1 Private Subnet (for Private HostedCluster)
-        - 1 Public Subnet (for Public HostedCluster)
-    - 1 Internet Gateway
-    - 1 NAT Gateway
-    - 1 Security Group (Worker Nodes)
-    - 2 Route Tables (1 Private, 1 Public)
-    - 2 Hosted Zones
-        - 1 Ingress Service Load Balancer (for Public Hosted Clusters)
-        - 1 Private Link (for Private Hosted Clusters)
-
-#### AWS Infra Managed by Hypershift
-
-=== "Management Cluster"
-    - Kube API Server Load Balancer
-
-=== "Hosted Cluster"
-    - Kube API Server Load Balancer
-    - For NodePools:
-        - EC2 Instances
-        - IAM Role Policy link (with EC2 Instances)
-        - IAM Profile link (with EC2 Instances)
-
-#### AWS Infra Managed by Kubernetes
-
-=== "Hosted Cluster"
-    - Elastic Load Balancer
-
 
 ## Networking flow
 
