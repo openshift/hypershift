@@ -127,3 +127,7 @@ metadata:
 EOF
 
 oc wait hyperconverged -n openshift-cnv kubevirt-hyperconverged --for=condition=Available --timeout=15m
+
+
+readonly SCRIPT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+"${SCRIPT_DIR}"/hpp/deploy_hpp.sh
