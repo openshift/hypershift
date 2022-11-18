@@ -74,76 +74,72 @@ func (h *hcpStatusReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 	return reconcile.Result{}, nil
 }
 
+// findClusterOperatorStatusCondition is identical to meta.FindStatusCondition except that it works on config1.ClusterOperatorStatusCondition instead of
+// metav1.StatusCondition
+func findClusterOperatorStatusCondition(conditions []configv1.ClusterOperatorStatusCondition, conditionType configv1.ClusterStatusConditionType) *configv1.ClusterOperatorStatusCondition {
+	for i := range conditions {
+		if conditions[i].Type == conditionType {
+			return &conditions[i]
+		}
+	}
+
+	return nil
+}
+
 func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-
 	log := ctrl.LoggerFrom(ctx)
-
 	log.Info("Reconciling hosted cluster version conditions")
+
 	var clusterVersion configv1.ClusterVersion
 	err := h.hostedClusterClient.Get(ctx, crclient.ObjectKey{Name: "version"}, &clusterVersion)
-	failingCondition := func() metav1.Condition {
+	// We check err in loop below to build conditions with ConditionUnknown status for all types.
+
+	cvoConditions := map[hyperv1.ConditionType]*configv1.ClusterOperatorStatusCondition{
+		hyperv1.ClusterVersionFailing:         findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, "Failing"),
+		hyperv1.ClusterVersionReleaseAccepted: findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, "ReleaseAccepted"),
+		hyperv1.ClusterVersionProgressing:     findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, configv1.OperatorProgressing),
+		hyperv1.ClusterVersionUpgradeable:     findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, configv1.OperatorUpgradeable),
+		hyperv1.ClusterVersionAvailable:       findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, configv1.OperatorAvailable),
+	}
+
+	for conditionType := range cvoConditions {
+		var hcpCVOCondition metav1.Condition
+		// Set unknown status.
+		var unknownStatusMessage string
+		if cvoConditions[conditionType] == nil {
+			unknownStatusMessage = "Condition not found in the CVO."
+		}
 		if err != nil {
-			return metav1.Condition{
-				Type:    string(hyperv1.ClusterVersionFailing),
-				Status:  metav1.ConditionUnknown,
-				Reason:  hyperv1.ClusterVersionStatusUnknownReason,
-				Message: fmt.Sprintf("failed to get clusterversion: %v", err),
+			unknownStatusMessage = fmt.Sprintf("failed to get clusterVersion: %v", err)
+		}
+
+		hcpCVOCondition = metav1.Condition{
+			Type:               string(conditionType),
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
+			Message:            unknownStatusMessage,
+			ObservedGeneration: hcp.Generation,
+		}
+
+		if err == nil && cvoConditions[conditionType] != nil {
+			// Bubble up info from CVO.
+			reason := cvoConditions[conditionType].Reason
+			// reason is not required in ClusterOperatorStatusCondition, but it's in metav1.conditions.
+			// So we need to make sure the input does not break the KAS expectation.
+			if reason == "" {
+				reason = hyperv1.FromClusterVersionReason
+			}
+			hcpCVOCondition = metav1.Condition{
+				Type:               string(conditionType),
+				Status:             metav1.ConditionStatus(cvoConditions[conditionType].Status),
+				Reason:             reason,
+				Message:            cvoConditions[conditionType].Message,
+				ObservedGeneration: hcp.Generation,
 			}
 		}
-		message := ""
-		for _, cond := range clusterVersion.Status.Conditions {
-			if cond.Type == "Failing" {
-				if cond.Status == configv1.ConditionTrue {
-					return metav1.Condition{
-						Type:    string(hyperv1.ClusterVersionFailing),
-						Status:  metav1.ConditionTrue,
-						Reason:  cond.Reason,
-						Message: cond.Message,
-					}
-				}
-			}
-			if cond.Type == "Progressing" {
-				message = cond.Message
-			}
-		}
-		return metav1.Condition{
-			Type:    string(hyperv1.ClusterVersionFailing),
-			Status:  metav1.ConditionFalse,
-			Reason:  hyperv1.AsExpectedReason,
-			Message: message,
-		}
-	}()
-	upgradeableCondition := func() metav1.Condition {
-		if err != nil {
-			return metav1.Condition{
-				Type:    string(hyperv1.ClusterVersionUpgradeable),
-				Status:  metav1.ConditionUnknown,
-				Reason:  hyperv1.ClusterVersionStatusUnknownReason,
-				Message: fmt.Sprintf("failed to get clusterversion: %v", err),
-			}
-		}
-		for _, cond := range clusterVersion.Status.Conditions {
-			if cond.Type == configv1.OperatorUpgradeable {
-				if cond.Status == configv1.ConditionFalse {
-					return metav1.Condition{
-						Type:    string(hyperv1.ClusterVersionUpgradeable),
-						Status:  metav1.ConditionFalse,
-						Reason:  cond.Reason,
-						Message: cond.Message,
-					}
-				}
-			}
-		}
-		return metav1.Condition{
-			Type:   string(hyperv1.ClusterVersionUpgradeable),
-			Status: metav1.ConditionTrue,
-			Reason: hyperv1.AsExpectedReason,
-		}
-	}()
-	failingCondition.ObservedGeneration = hcp.Generation
-	meta.SetStatusCondition(&hcp.Status.Conditions, failingCondition)
-	upgradeableCondition.ObservedGeneration = hcp.Generation
-	meta.SetStatusCondition(&hcp.Status.Conditions, upgradeableCondition)
+
+		meta.SetStatusCondition(&hcp.Status.Conditions, hcpCVOCondition)
+	}
 	log.Info("Finished reconciling hosted cluster version conditions")
 
 	// If a rollout is in progress, compute and record the rollout status. The

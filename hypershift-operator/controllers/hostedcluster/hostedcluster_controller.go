@@ -413,48 +413,64 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
 	}
 
-	// Set the ClusterVersionSucceeding based on the hostedcontrolplane
-	{
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ClusterVersionSucceeding),
-			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
-			ObservedGeneration: hcluster.Generation,
+	// Copy the CVO conditions from the HCP.
+	hcpCVOConditions := map[hyperv1.ConditionType]*metav1.Condition{
+		hyperv1.ClusterVersionSucceeding:      nil,
+		hyperv1.ClusterVersionProgressing:     nil,
+		hyperv1.ClusterVersionReleaseAccepted: nil,
+		hyperv1.ClusterVersionUpgradeable:     nil,
+		hyperv1.ClusterVersionAvailable:       nil,
+	}
+	if hcp != nil {
+		hcpCVOConditions = map[hyperv1.ConditionType]*metav1.Condition{
+			hyperv1.ClusterVersionSucceeding:      meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionFailing)),
+			hyperv1.ClusterVersionProgressing:     meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionProgressing)),
+			hyperv1.ClusterVersionReleaseAccepted: meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionReleaseAccepted)),
+			hyperv1.ClusterVersionUpgradeable:     meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable)),
+			hyperv1.ClusterVersionAvailable:       meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionAvailable)),
 		}
-		if hcp != nil {
-			failingCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionFailing))
-			if failingCond != nil {
-				condition.Reason = failingCond.Reason
-				condition.Message = failingCond.Message
-				if failingCond.Status == metav1.ConditionTrue {
-					condition.Status = metav1.ConditionFalse
-				} else {
-					condition.Status = metav1.ConditionTrue
-				}
-			}
-		}
-		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
 
-	// Copy the ClusterVersionUpgradeable condition on the hostedcontrolplane
-	{
-		condition := &metav1.Condition{
-			Type:               string(hyperv1.ClusterVersionUpgradeable),
+	for conditionType := range hcpCVOConditions {
+		var hcCVOCondition *metav1.Condition
+		// Set unknown status.
+		var unknownStatusMessage string
+		if hcpCVOConditions[conditionType] == nil {
+			unknownStatusMessage = "Condition not found in the CVO."
+		}
+		if err != nil {
+			unknownStatusMessage = fmt.Sprintf("failed to get clusterVersion: %v", err)
+		}
+
+		hcCVOCondition = &metav1.Condition{
+			Type:               string(conditionType),
 			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
-			Message:            "The hosted control plane is not found",
+			Reason:             hyperv1.StatusUnknownReason,
+			Message:            unknownStatusMessage,
 			ObservedGeneration: hcluster.Generation,
 		}
-		if hcp != nil {
-			upgradeableCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable))
-			if upgradeableCondition != nil {
-				condition = upgradeableCondition
-				if condition.Status == metav1.ConditionTrue {
-					condition.Message = "The hosted cluster is upgradable"
+
+		if hcp != nil && hcpCVOConditions[conditionType] != nil {
+			// Bubble up info from HCP.
+			hcCVOCondition = hcpCVOConditions[conditionType]
+			hcCVOCondition.ObservedGeneration = hcluster.Generation
+
+			// Inverse ClusterVersionFailing condition into ClusterVersionSucceeding
+			// So consumers e.g. UI can categorize as good (True) / bad (False).
+			if conditionType == hyperv1.ClusterVersionSucceeding {
+				hcCVOCondition.Type = string(hyperv1.ClusterVersionSucceeding)
+				var status metav1.ConditionStatus
+				switch hcpCVOConditions[conditionType].Status {
+				case metav1.ConditionTrue:
+					status = metav1.ConditionFalse
+				case metav1.ConditionFalse:
+					status = metav1.ConditionTrue
 				}
+				hcCVOCondition.Status = status
 			}
 		}
-		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
+
+		meta.SetStatusCondition(&hcluster.Status.Conditions, *hcCVOCondition)
 	}
 
 	// Copy the Degraded condition on the hostedcontrolplane

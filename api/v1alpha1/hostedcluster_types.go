@@ -1720,6 +1720,7 @@ const (
 	HostedControlPlaneComponentsUnavailableReason = "ComponentsUnavailable"
 	KubeconfigWaitingForCreateReason              = "KubeconfigWaitingForCreate"
 	ClusterVersionStatusUnknownReason             = "ClusterVersionStatusUnknown"
+	FromClusterVersionReason                      = "FromClusterVersion"
 
 	StatusUnknownReason = "StatusUnknown"
 	AsExpectedReason    = "AsExpected"
