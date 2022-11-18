@@ -271,8 +271,8 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	patch := tokenSecret.DeepCopy()
-	nodePoolUpgradeType, ok := tokenSecret.Annotations[TokenSecretNodePoolUpgradeType]
-	if ok && nodePoolUpgradeType == string(hyperv1.UpgradeTypeReplace) {
+	nodePoolUpgradeType := tokenSecret.Annotations[TokenSecretNodePoolUpgradeType]
+	if nodePoolUpgradeType == string(hyperv1.UpgradeTypeReplace) {
 		delete(patch.Data, TokenSecretPayloadKey)
 	} else {
 		// Store the cached payload in the secret to be consumed by in place upgrades (can skip if upgrade type is replace).
