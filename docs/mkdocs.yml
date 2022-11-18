@@ -8,10 +8,24 @@ theme:
 plugins:
 - search
 - mermaid2
+- glightbox:
+    touchNavigation: true
+    loop: false
+    effect: zoom
+    width: 100%
+    height: auto
+    zoomable: true
+    draggable: true
+    skip_classes:
+      - custom-skip-class-name
+    auto_caption: false
+    caption_position: bottom
 docs_dir: content
 repo_url: https://github.com/openshift/hypershift
 edit_uri: edit/main/docs/content
 repo_name: openshift/hypershift
+extra_javascript:
+  - https://unpkg.com/mermaid@9.2.2/dist/mermaid.min.js
 markdown_extensions:
 - toc:
     toc_depth: "2-2"
@@ -69,6 +83,8 @@ nav:
   - reference/index.md
   - reference/goals-and-design-invariants.md
   - reference/api.md
+  - "Infrastructure":
+    - "AWS": reference/infrastructure/aws.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
   - reference/multi-platform-support.md
