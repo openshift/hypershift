@@ -8,8 +8,11 @@ import (
 	"testing"
 	"time"
 
+	awsrequest "github.com/aws/aws-sdk-go/aws/request"
+
 	awssdk "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/arn"
+	"github.com/aws/aws-sdk-go/service/elbv2"
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
 	. "github.com/onsi/gomega"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -301,13 +304,33 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 		})
 		if err != nil {
 			t.Logf("WARNING: failed to list resources by tag: %v. Not verifying cluster is cleaned up.", err)
-		} else if hasGuestResources(t, output.ResourceTagMappingList) {
-			t.Errorf("FAIL: found %d remaining resources for guest cluster", len(output.ResourceTagMappingList))
-			for i := 0; i < len(output.ResourceTagMappingList); i++ {
-				t.Logf("Resource: %s, tags: %s", awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN), resourceTags(output.ResourceTagMappingList[i].Tags))
+			return
+		}
+
+		for _, mapping := range output.ResourceTagMappingList {
+			resourceARN, err := arn.Parse(awssdk.StringValue(mapping.ResourceARN))
+			if err != nil {
+				t.Logf("WARNING: failed to parse ARN %s", awssdk.StringValue(mapping.ResourceARN))
+				continue
 			}
-		} else {
-			t.Log("SUCCESS: found no remaining guest resources")
+
+			t.Logf("Found resource: %s, tags: %s, service: %s", resourceARN, resourceTags(mapping.Tags), resourceARN.Service)
+			if resourceARN.Service == "elb" {
+				t.Logf("Waiting for resource: %s, tags: %s to be deleted", resourceARN, resourceTags(mapping.Tags))
+				elbClient := elbv2.New(awsSession, awsConfig)
+				input := &elbv2.DescribeLoadBalancersInput{
+					LoadBalancerArns: []*string{&resourceARN.Resource},
+				}
+
+				err := elbClient.WaitUntilLoadBalancersDeletedWithContext(ctx, input,
+					awsrequest.WithWaiterMaxAttempts(5),
+					awsrequest.WithWaiterDelay(awsrequest.ConstantWaiterDelay(5*time.Second)))
+				if err != nil {
+					t.Errorf("Falied to waiting for resource: %s, tags: %s to be deleted", resourceARN, resourceTags(mapping.Tags))
+				}
+			}
+			// TODO(alberto): wait for s3 bucket registries.
+			// TODO(alberto): wait for PVs.
 		}
 	}
 }
@@ -318,27 +341,6 @@ func resourceTags(tags []*resourcegroupstaggingapi.Tag) string {
 		tagStrings[i] = fmt.Sprintf("%s=%s", awssdk.StringValue(tag.Key), awssdk.StringValue(tag.Value))
 	}
 	return strings.Join(tagStrings, ",")
-}
-
-func hasGuestResources(t *testing.T, resourceTagMappings []*resourcegroupstaggingapi.ResourceTagMapping) bool {
-	for _, mapping := range resourceTagMappings {
-		resourceARN, err := arn.Parse(awssdk.StringValue(mapping.ResourceARN))
-		if err != nil {
-			t.Logf("WARNING: failed to parse ARN %s", awssdk.StringValue(mapping.ResourceARN))
-			continue
-		}
-		if resourceARN.Service == "ec2" { // Resource is a volume, check whether it's a PV volume by looking at tags
-			for _, tag := range mapping.Tags {
-				if awssdk.StringValue(tag.Key) == "kubernetes.io/created-for/pv/name" {
-					return true
-				}
-			}
-			continue
-		} else {
-			return true
-		}
-	}
-	return false
 }
 
 func clusterTag(infraID string) string {
