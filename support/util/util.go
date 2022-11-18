@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -137,7 +136,7 @@ func decompress(r io.Reader) (*bytes.Buffer, error) {
 
 	defer gz.Close()
 
-	data, err := ioutil.ReadAll(gz)
+	data, err := io.ReadAll(gz)
 	if err != nil {
 		return bytes.NewBuffer(nil), fmt.Errorf("could not decompress payload: %w", err)
 	}

@@ -16,7 +16,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -164,13 +163,13 @@ func (o *HostedClusterConfigOperator) Validate() error {
 func (o *HostedClusterConfigOperator) Complete() error {
 	var err error
 	if len(o.InitialCAFile) > 0 {
-		o.initialCA, err = ioutil.ReadFile(o.InitialCAFile)
+		o.initialCA, err = os.ReadFile(o.InitialCAFile)
 		if err != nil {
 			return err
 		}
 	}
 	if o.ClusterSignerCAFile != "" {
-		o.clusterSignerCA, err = ioutil.ReadFile(o.ClusterSignerCAFile)
+		o.clusterSignerCA, err = os.ReadFile(o.ClusterSignerCAFile)
 		if err != nil {
 			return err
 		}

@@ -3,7 +3,6 @@ package azure
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"syscall"
@@ -68,7 +67,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	var infra *azureinfra.CreateInfraOutput
 	var err error
 	if opts.InfrastructureJSON != "" {
-		rawInfra, err := ioutil.ReadFile(opts.InfrastructureJSON)
+		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
 		if err != nil {
 			return fmt.Errorf("failed to read infra json file: %w", err)
 		}
@@ -107,7 +106,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		AvailabilityZones: opts.AzurePlatform.AvailabilityZones,
 	}
 
-	azureCredsRaw, err := ioutil.ReadFile(opts.AzurePlatform.CredentialsFile)
+	azureCredsRaw, err := os.ReadFile(opts.AzurePlatform.CredentialsFile)
 	if err != nil {
 		return fmt.Errorf("failed to read --azure-creds file %s: %w", opts.AzurePlatform.CredentialsFile, err)
 	}

@@ -2,7 +2,6 @@ package testutil
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,11 +50,11 @@ func CompareWithFixture(t *testing.T, output interface{}, opts ...option) {
 		if err := os.MkdirAll(filepath.Dir(golden), 0755); err != nil {
 			t.Fatalf("failed to create fixture directory: %v", err)
 		}
-		if err := ioutil.WriteFile(golden, serializedOutput, 0644); err != nil {
+		if err := os.WriteFile(golden, serializedOutput, 0644); err != nil {
 			t.Fatalf("failed to write updated fixture: %v", err)
 		}
 	}
-	expected, err := ioutil.ReadFile(golden)
+	expected, err := os.ReadFile(golden)
 	if err != nil {
 		t.Fatalf("failed to read testdata file: %v", err)
 	}

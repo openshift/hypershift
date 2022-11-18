@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"syscall"
@@ -111,7 +110,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	// Load or create infrastructure for the cluster
 	var infra *powervsinfra.Infra
 	if len(opts.InfrastructureJSON) > 0 {
-		rawInfra, err := ioutil.ReadFile(opts.InfrastructureJSON)
+		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
 		if err != nil {
 			return fmt.Errorf("failed to read infra json file: %w", err)
 		}

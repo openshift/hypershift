@@ -7,7 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -180,7 +180,7 @@ func dumpTestMetrics(log logr.Logger, artifactDir string) {
 		return
 	}
 
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		log.Error(err, "failed to read response body from metrics endpoint")
 		return

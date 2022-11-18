@@ -6,7 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net/http"
 	"text/template"
@@ -161,7 +161,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		}
 
 		defer res.Body.Close()
-		payload, err = ioutil.ReadAll(res.Body)
+		payload, err = io.ReadAll(res.Body)
 		if err != nil {
 			return false, fmt.Errorf("error reading http request body for machine config server pod: %w", err)
 		}

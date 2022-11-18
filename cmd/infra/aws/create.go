@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"time"
@@ -244,7 +243,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	if o.EnableProxy {
 		var sshKeyFile []byte
 		if o.SSHKeyFile != "" {
-			sshKeyFile, err = ioutil.ReadFile(o.SSHKeyFile)
+			sshKeyFile, err = os.ReadFile(o.SSHKeyFile)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read ssh-key-file from %s: %w", o.SSHKeyFile, err)
 			}

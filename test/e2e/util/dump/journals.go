@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,24 +44,24 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	if !exists {
 		return fmt.Errorf("cannot find SSH private key in SSH key secret %s/%s", sshKeySecret.Namespace, sshKeySecret.Name)
 	}
-	privateSSHKeyDir, err := ioutil.TempDir("", "")
+	privateSSHKeyDir, err := os.MkdirTemp("", "")
 	if err != nil {
 		return fmt.Errorf("cannot create temp dir for ssh key: %w", err)
 	}
 	privateKeyFile := filepath.Join(privateSSHKeyDir, "id_rsa")
-	if err := ioutil.WriteFile(privateKeyFile, privateKey, 0600); err != nil {
+	if err := os.WriteFile(privateKeyFile, privateKey, 0600); err != nil {
 		return fmt.Errorf("error writing private ssh key file: %w", err)
 	}
 
 	// Write out dump script where we can find it and invoke it
-	copyJournalFile, err := ioutil.TempFile("", "copy-journal-")
+	copyJournalFile, err := os.CreateTemp("", "copy-journal-")
 	if err != nil {
 		return err
 	}
 	if err := copyJournalFile.Close(); err != nil {
 		return err
 	}
-	if err := ioutil.WriteFile(copyJournalFile.Name(), copyJournalsScript, 0644); err != nil {
+	if err := os.WriteFile(copyJournalFile.Name(), copyJournalsScript, 0644); err != nil {
 		return err
 	}
 	if err := os.Chmod(copyJournalFile.Name(), 0755); err != nil {

@@ -3,7 +3,7 @@ package version
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"github.com/openshift/hypershift/pkg/version"
@@ -32,7 +32,7 @@ func LookupDefaultOCPVersion() (OCPVersion, error) {
 		return version, err
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return version, err
 	}

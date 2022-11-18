@@ -3,7 +3,7 @@ package releaseinfo
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -144,7 +144,7 @@ func getContainerLogs(ctx context.Context, pods v1.PodInterface, podName, contai
 		return nil, fmt.Errorf("failed to read logs from %s/%s: %w", podName, containerName, err)
 	}
 	defer logs.Close()
-	data, err := ioutil.ReadAll(logs)
+	data, err := io.ReadAll(logs)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't decode logs from %s/%s: %w", podName, containerName, err)
 	}
