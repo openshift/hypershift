@@ -61,7 +61,6 @@ nav:
     - how-to/automated-machine-management/index.md
     - how-to/automated-machine-management/scale-to-zero-dataplane.md
   - "AWS":
-    - how-to/aws/index.md
     - how-to/aws/create-infra-iam-separately.md
     - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
     - how-to/aws/deploy-aws-private-clusters.md
@@ -84,7 +83,7 @@ nav:
   - reference/goals-and-design-invariants.md
   - reference/api.md
   - "Infrastructure":
-    - "AWS": reference/provider-infra/aws.md
+    - "AWS": reference/infrastructure/aws.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
   - reference/multi-platform-support.md
