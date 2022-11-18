@@ -143,6 +143,7 @@ NODEPOOL_REPLICAS=2
 
 hypershift create nodepool aws \
   --cluster-name $CLUSTER_NAME \
+  --namespace clusters \
   --name $NODEPOOL_NAME \
   --node-count $NODEPOOL_REPLICAS \
   --instance-type $INSTANCE_TYPE
