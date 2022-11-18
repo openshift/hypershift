@@ -20,67 +20,73 @@ In this section we want to dissect who creates what and what not. It contains 4 
 === "Management Cluster AWS Account"
     - 1 S3 Bucket
         - OIDC
-        - OLM Registry for Private Hosted Cluster
     - Route 53 Hosted zones
         - Domain to host Private and Public entries for HostedClusters
 
 #### Infra pre-required and unmanaged in Hosted Cluster AWS account
 
-=== "Public"
+=== "All access Modes"
     - 1 VPC
     - 1 DHCP Options
     - 2 Subnets
-        - 1 Public Subnet (for Public HostedCluster)
-        - 1 Private Subnet (Access from the Instances, Dataplane)
-    - 1 Internet Gateway
-    - 1 Elastic IP
-    - 1 NAT Gateway
-    - 1 Security Group (Worker Nodes)
-    - 1 Route Tables (Public)
-    - 1 Ingress Service Load Balancer
-
-=== "Private"
-    - 1 VPC
-    - 1 DHCP Options
-    - 1 Private Subnet (Access from the Instances, Dataplane)
-    - 1 Internet Gateway
-    - 1 Elastic IP
-    - 1 NAT Gateway
-    - 1 Security Group (Worker Nodes)
-    - 1 Route Tables (Private)
-    - 1 Private Link
-
-=== "PublicAndPrivate"
-    - 1 VPC
-    - 1 DHCP Options
-    - 2 Subnets
-        - 1 Public Subnet (for Public HostedCluster)
-        - 1 Private Subnet (Access from the Instances, Dataplane)
+        - Private subnet - internal data plane subnet
+        - Public subnet - enable access to the internet from the data plane
     - 1 Internet Gateway
     - 1 Elastic IP
     - 1 NAT Gateway
     - 1 Security Group (Worker Nodes)
     - 2 Route Tables (1 Private, 1 Public)
     - 2 Hosted Zones
-        - 1 Ingress Service Load Balancer (for Public Hosted Clusters)
-        - 1 Private Link (for Private Hosted Clusters)
+        - Enough quota for:
+            - 1 Ingress Service Load Balancer (for Public Hosted Clusters)
+            - 1 Private Link (for Private Hosted Clusters)
 
 #### AWS Infra Managed by Hypershift
 
+- **Public**
+
 === "Management Cluster AWS Account"
-    - ELB - Kube API Server Load Balancer
-    - Private Link Services
+    - NLB - Load Balancer Kube API Server
+        - Kubernetes creates a Security Group
+    - Volumes
+        - For ETCD (1 or 3 depending on HA)
+        - For ovn-Kube
 
 === "Hosted Cluster AWS account"
-    - Kube API Server Load Balancer
-    - Private Link Endpoints
     - For NodePools:
         - EC2 Instances
-        - IAM Role Policy link (with EC2 Instances)
-        - IAM Profile link (with EC2 Instances)
+            - Need the Role and RolePolicy
+
+- **Private**
+
+=== "Management Cluster AWS Account"
+    - NLB - Load Balancer Private Router
+    - Enpoint Service (Private Link)
+
+=== "Hosted Cluster AWS account"
+    - Private Link Endpoints
+        - 1 Endpoint per Availability Zone
+    - For NodePools:
+        - EC2 Instances
+
+- **PublicAndPrivate**
+
+=== "Management Cluster AWS Account"
+    - 1 NLB - Load Balancer Public Router
+    - 1 NLB - Load Balancer Private Router
+    - Enpoint Service (Private Link)
+    - Volumes
+        - For ETCD (1 or 3 depending on HA)
+        - For ovn-Kube
+
+=== "Hosted Cluster AWS account"
+    - Private Link Endpoints
+        - 1 Endpoint per Availability Zone
+    - For NodePools:
+        - EC2 Instances
 
 #### AWS Infra Managed by Kubernetes
 
 === "Hosted Cluster AWS account"
-    - Elastic Load Balancer for default ingress
-    - S3 bucker for registry
+    - Network Load Balancer for default ingress
+    - S3 bucket for registry
