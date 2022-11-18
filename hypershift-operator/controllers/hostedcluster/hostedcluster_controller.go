@@ -1415,7 +1415,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 
 	// All annotations on the HostedCluster with this special prefix are copied
 	for key, val := range hcluster.Annotations {
-		if strings.HasPrefix(key, hyperv1.IdentityProviderOverridesAnnotationPrefix) {
+		if strings.HasPrefix(key, hyperv1.IdentityProviderOverridesAnnotationPrefix) ||
+			strings.HasPrefix(key, hyperv1.ResourceRequestOverrideAnnotationPrefix) {
 			hcp.Annotations[key] = val
 		}
 	}

@@ -118,6 +118,13 @@ const (
 	// removed when deleting the corresponding HostedCluster. If set to "true", resources created on the cloud provider during the life
 	// of the cluster will be removed, including image registry storage, ingress dns records, load balancers, and persistent storage.
 	CleanupCloudResourcesAnnotation = "hypershift.openshift.io/cleanup-cloud-resources"
+
+	// ResourceRequestOverrideAnnotationPrefix is a prefix for an annotation to override resource requests for a particular deployment/container
+	// in a hosted control plane. The format of the annotation is:
+	// resource-request-override.hypershift.openshift.io/[deployment-name].[container-name]: [resource-type-1]=[value1],[resource-type-2]=[value2],...
+	// For example, to override the memory and cpu request for the Kubernetes APIServer:
+	// resource-request-override.hypershift.openshift.io/kube-apiserver.kube-apiserver: memory=3Gi,cpu=2000m
+	ResourceRequestOverrideAnnotationPrefix = "resource-request-override.hypershift.openshift.io"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
