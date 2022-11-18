@@ -13,7 +13,7 @@ If you would like to set some node-level tuning on the nodes in your hosted clus
       name: tuned-1
       namespace: clusters
     data:
-      tuned: |
+      tuning: |
         apiVersion: tuned.openshift.io/v1
         kind: Tuned
         metadata:
@@ -112,7 +112,7 @@ As an example, the following steps can be followed to create a NodePool with hug
       name: tuned-hugepages
       namespace: clusters
     data:
-      tuned: |
+      tuning: |
         apiVersion: tuned.openshift.io/v1
         kind: Tuned
         metadata:
