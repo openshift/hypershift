@@ -53,7 +53,6 @@ func ReconcileMachineConfigServerConfig(cm *corev1.ConfigMap, p *MCSParams) erro
 	}
 
 	cm.Data["root-ca.crt"] = string(p.RootCA.Data[certs.CASignerCertMapKey])
-	cm.Data["combined-ca.crt"] = p.CombinedCA.Data[certs.CASignerCertMapKey]
 	cm.Data["cluster-dns-02-config.yaml"] = serializedDNS
 	cm.Data["cluster-infrastructure-02-config.yaml"] = serializedInfra
 	cm.Data["cluster-network-02-config.yaml"] = serializedNetwork

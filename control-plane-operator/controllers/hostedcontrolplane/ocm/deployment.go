@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -25,9 +26,10 @@ const (
 var (
 	volumeMounts = util.PodVolumeMounts{
 		ocmContainerMain().Name: {
-			ocmVolumeConfig().Name:      "/etc/kubernetes/config",
-			ocmVolumeServingCert().Name: "/etc/kubernetes/certs",
-			ocmVolumeKubeconfig().Name:  "/etc/kubernetes/secrets/svc-kubeconfig",
+			ocmVolumeConfig().Name:            "/etc/kubernetes/config",
+			ocmVolumeServingCert().Name:       "/etc/kubernetes/certs",
+			ocmVolumeKubeconfig().Name:        "/etc/kubernetes/secrets/svc-kubeconfig",
+			common.VolumeTotalClientCA().Name: "/etc/kubernetes/client-ca",
 		},
 	}
 )
@@ -76,6 +78,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		util.BuildVolume(ocmVolumeConfig(), buildOCMVolumeConfig),
 		util.BuildVolume(ocmVolumeServingCert(), buildOCMVolumeServingCert),
 		util.BuildVolume(ocmVolumeKubeconfig(), buildOCMVolumeKubeconfig),
+		util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
 	}
 	deploymentConfig.ApplyTo(deployment)
 	return nil

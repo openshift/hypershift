@@ -10,6 +10,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/api"
@@ -57,8 +58,8 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL,
 		"shutdown-delay-duration": {"3s"},
 		"audit-log-format":        {"json"},
 		"audit-log-maxsize":       {"100"},
-		"audit-log-path":          {cpath(oasVolumeWorkLogs().Name, "audit.log")},
 		"audit-policy-file":       {cpath(oasVolumeAuditConfig().Name, auditPolicyConfigMapKey)},
+		"audit-log-path":          {cpath(oasVolumeWorkLogs().Name, "audit.log")},
 	}
 	cfg.KubeClientConfig.KubeConfig = cpath(oasVolumeKubeconfig().Name, kas.KubeconfigKey)
 	cfg.ServingInfo = configv1.HTTPServingInfo{
@@ -67,7 +68,7 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, etcdURL,
 				CertFile: cpath(oasVolumeServingCert().Name, corev1.TLSCertKey),
 				KeyFile:  cpath(oasVolumeServingCert().Name, corev1.TLSPrivateKeyKey),
 			},
-			ClientCA:      cpath(oasVolumeServingCA().Name, certs.CASignerCertMapKey),
+			ClientCA:      cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey),
 			CipherSuites:  cipherSuites,
 			MinTLSVersion: minTLSVersion,
 		},

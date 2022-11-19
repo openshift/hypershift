@@ -51,3 +51,7 @@ func KCMService(controlPlaneNamespace string) *corev1.Service {
 		},
 	}
 }
+
+func KCMKubeconfigSecret(controlPlaneNamespace string) *corev1.Secret {
+	return secretFor(controlPlaneNamespace, "kube-controller-manager-kubeconfig")
+}

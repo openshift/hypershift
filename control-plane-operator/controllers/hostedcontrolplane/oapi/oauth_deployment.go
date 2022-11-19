@@ -14,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
@@ -25,14 +26,14 @@ import (
 var (
 	oauthVolumeMounts = util.PodVolumeMounts{
 		oauthContainerMain().Name: {
-			oauthVolumeWorkLogs().Name:           "/var/log/openshift-apiserver",
-			oauthVolumeAuditConfig().Name:        "/etc/kubernetes/audit-config",
-			oauthVolumeAggregatorClientCA().Name: "/etc/kubernetes/certs/aggregator-client-ca",
-			oauthVolumeEtcdClientCA().Name:       "/etc/kubernetes/certs/etcd-client-ca",
-			oauthVolumeServingCA().Name:          "/etc/kubernetes/certs/serving-ca",
-			oauthVolumeKubeconfig().Name:         "/etc/kubernetes/secrets/svc-kubeconfig",
-			oauthVolumeServingCert().Name:        "/etc/kubernetes/certs/serving",
-			oauthVolumeEtcdClientCert().Name:     "/etc/kubernetes/certs/etcd-client",
+			oauthVolumeWorkLogs().Name:        "/var/log/openshift-apiserver",
+			oauthVolumeAuditConfig().Name:     "/etc/kubernetes/audit-config",
+			common.VolumeAggregatorCA().Name:  "/etc/kubernetes/certs/aggregator-client-ca",
+			oauthVolumeEtcdClientCA().Name:    "/etc/kubernetes/certs/etcd-client-ca",
+			oauthVolumeKubeconfig().Name:      "/etc/kubernetes/secrets/svc-kubeconfig",
+			oauthVolumeServingCert().Name:     "/etc/kubernetes/certs/serving",
+			oauthVolumeEtcdClientCert().Name:  "/etc/kubernetes/certs/etcd-client",
+			common.VolumeTotalClientCA().Name: "/etc/kubernetes/certs/client-ca",
 		},
 	}
 )
@@ -77,12 +78,12 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 		Volumes: []corev1.Volume{
 			util.BuildVolume(oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs),
 			util.BuildVolume(oauthVolumeAuditConfig(), buildOAuthVolumeAuditConfig),
-			util.BuildVolume(oauthVolumeAggregatorClientCA(), buildOAuthVolumeAggregatorClientCA),
+			util.BuildVolume(common.VolumeAggregatorCA(), common.BuildVolumeAggregatorCA),
 			util.BuildVolume(oauthVolumeEtcdClientCA(), buildOAuthVolumeEtcdClientCA),
-			util.BuildVolume(oauthVolumeServingCA(), buildOAuthVolumeServingCA),
 			util.BuildVolume(oauthVolumeKubeconfig(), buildOAuthVolumeKubeconfig),
 			util.BuildVolume(oauthVolumeServingCert(), buildOAuthVolumeServingCert),
 			util.BuildVolume(oauthVolumeEtcdClientCert(), buildOAuthVolumeEtcdClientCert),
+			util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
 		},
 	}
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
@@ -126,6 +127,12 @@ func buildOAuthContainerMain(p *OAuthDeploymentParams) func(c *corev1.Container)
 			fmt.Sprintf("--etcd-servers=%s", p.EtcdURL),
 			"--v=2",
 			fmt.Sprintf("--tls-min-version=%s", p.MinTLSVersion),
+			fmt.Sprintf("--requestheader-client-ca-file=%s", cpath(common.VolumeAggregatorCA().Name, certs.CASignerCertMapKey)),
+			"--requestheader-allowed-names=kube-apiserver-proxy,system:kube-apiserver-proxy,system:openshift-aggregator",
+			"--requestheader-username-headers=X-Remote-User",
+			"--requestheader-group-headers=X-Remote-Group",
+			"--requestheader-extra-headers-prefix=X-Remote-Extra-",
+			fmt.Sprintf("--client-ca-file=%s", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey)),
 		}
 		c.VolumeMounts = oauthVolumeMounts.ContainerMounts(c.Name)
 		c.WorkingDir = oauthVolumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name)
@@ -170,17 +177,6 @@ func buildOAuthVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
 }
 
-func oauthVolumeAggregatorClientCA() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "aggregator-client-ca",
-	}
-}
-
-func buildOAuthVolumeAggregatorClientCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
-	v.Secret.SecretName = manifests.RootCASecret("").Name
-}
-
 func oauthVolumeEtcdClientCA() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "etcd-client-ca",
@@ -188,17 +184,6 @@ func oauthVolumeEtcdClientCA() *corev1.Volume {
 }
 
 func buildOAuthVolumeEtcdClientCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
-	v.Secret.SecretName = manifests.RootCASecret("").Name
-}
-
-func oauthVolumeServingCA() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "serving-ca",
-	}
-}
-
-func buildOAuthVolumeServingCA(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.RootCASecret("").Name
 }
