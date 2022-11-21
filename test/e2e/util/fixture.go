@@ -158,7 +158,9 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 	// All clusters created during tests should ultimately conform to our API
 	// budget. This should be checked after deletion to ensure that API operations
 	// for the full lifecycle are accounted for.
-	EnsureAPIBudget(t, ctx, client, hc)
+	if !opts.SkipAPIBudgetVerification {
+		EnsureAPIBudget(t, ctx, client, hc)
+	}
 
 	// Finally, delete the test namespace containing the HostedCluster/NodePool
 	// resources.
