@@ -478,7 +478,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		condition := &metav1.Condition{
 			Type:               string(hyperv1.HostedClusterDegraded),
 			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
+			Reason:             hyperv1.StatusUnknownReason,
 			Message:            "The hosted control plane is not found",
 			ObservedGeneration: hcluster.Generation,
 		}
@@ -597,7 +597,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			condition.Status = metav1.ConditionTrue
 			condition.Message = "Configuration passes validation"
-			condition.Reason = hyperv1.HostedClusterAsExpectedReason
+			condition.Reason = hyperv1.AsExpectedReason
 		}
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
@@ -615,7 +615,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			condition.Status = metav1.ConditionTrue
 			condition.Message = "HostedCluster is supported by operator configuration"
-			condition.Reason = hyperv1.HostedClusterAsExpectedReason
+			condition.Reason = hyperv1.AsExpectedReason
 		}
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
@@ -699,7 +699,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		newCondition := metav1.Condition{
 			Type:   string(hyperv1.IgnitionEndpointAvailable),
 			Status: metav1.ConditionUnknown,
-			Reason: hyperv1.IgnitionServerDeploymentStatusUnknownReason,
+			Reason: hyperv1.StatusUnknownReason,
 		}
 		// Check to ensure the deployment exists and is available.
 		deployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
@@ -708,7 +708,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				newCondition = metav1.Condition{
 					Type:    string(hyperv1.IgnitionEndpointAvailable),
 					Status:  metav1.ConditionFalse,
-					Reason:  hyperv1.IgnitionServerDeploymentNotFoundReason,
+					Reason:  hyperv1.NotFoundReason,
 					Message: "Ignition server deployment not found",
 				}
 			} else {
@@ -719,7 +719,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			newCondition = metav1.Condition{
 				Type:    string(hyperv1.IgnitionEndpointAvailable),
 				Status:  metav1.ConditionFalse,
-				Reason:  hyperv1.IgnitionServerDeploymentUnavailableReason,
+				Reason:  hyperv1.WaitingForAvailableReason,
 				Message: "Ignition server deployment is not yet available",
 			}
 			for _, cond := range deployment.Status.Conditions {
@@ -727,8 +727,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 					newCondition = metav1.Condition{
 						Type:    string(hyperv1.IgnitionEndpointAvailable),
 						Status:  metav1.ConditionTrue,
-						Reason:  hyperv1.IgnitionServerDeploymentAsExpectedReason,
-						Message: "Ignition server deployent is available",
+						Reason:  hyperv1.AsExpectedReason,
+						Message: "Ignition server deployment is available",
 					}
 					break
 				}
@@ -2821,7 +2821,7 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 	// Determine whether the hosted control plane is available.
 	hcpAvailableStatus := metav1.ConditionFalse
 	hcpAvailableMessage := "Waiting for hosted control plane to be healthy"
-	hcpAvailableReason := hyperv1.HostedClusterWaitingForAvailableReason
+	hcpAvailableReason := hyperv1.WaitingForAvailableReason
 	var hcpAvailableCondition *metav1.Condition
 	if hcp != nil {
 		hcpAvailableCondition = meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
@@ -2830,7 +2830,7 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 		hcpAvailableStatus = hcpAvailableCondition.Status
 		hcpAvailableMessage = hcpAvailableCondition.Message
 		if hcpAvailableStatus == metav1.ConditionTrue {
-			hcpAvailableReason = hyperv1.HostedClusterAsExpectedReason
+			hcpAvailableReason = hyperv1.AsExpectedReason
 			hcpAvailableMessage = "The hosted control plane is available"
 		}
 	}

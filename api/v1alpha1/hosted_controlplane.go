@@ -214,25 +214,11 @@ type KubeconfigSecretRef struct {
 type ConditionType string
 
 const (
-	HostedControlPlaneAvailable          ConditionType = "Available"
-	HostedControlPlaneDegraded           ConditionType = "Degraded"
-	EtcdAvailable                        ConditionType = "EtcdAvailable"
-	EtcdSnapshotRestored                 ConditionType = "EtcdSnapshotRestored"
-	KubeAPIServerAvailable               ConditionType = "KubeAPIServerAvailable"
-	InfrastructureReady                  ConditionType = "InfrastructureReady"
-	ValidHostedControlPlaneConfiguration ConditionType = "ValidHostedControlPlaneConfiguration"
-	// ClusterVersionFailing bubbles up Failing from the CVO.
-	ClusterVersionFailing ConditionType = "ClusterVersionFailing"
-	// ClusterVersionProgressing bubbles up configv1.OperatorProgressing from the CVO.
-	ClusterVersionProgressing ConditionType = "ClusterVersionProgressing"
-	// ClusterVersionAvailable bubbles up Failing configv1.OperatorAvailable from the CVO.
-	ClusterVersionAvailable ConditionType = "ClusterVersionAvailable"
-	// ClusterVersionReleaseAccepted bubbles up Failing ReleaseAccepted from the CVO.
-	ClusterVersionReleaseAccepted      ConditionType = "ClusterVersionReleaseAccepted"
-	CVOScaledDown                      ConditionType = "CVOScaledDown"
-	CloudResourcesDestroyed            ConditionType = "CloudResourcesDestroyed"
-	InfraStatusFailureReason                         = "InfraStatusFailure"
-	WaitingOnInfrastructureReadyReason               = "WaitingOnInfrastructureReady"
+	HostedControlPlaneAvailable ConditionType = "Available"
+	HostedControlPlaneDegraded  ConditionType = "Degraded"
+	EtcdSnapshotRestored        ConditionType = "EtcdSnapshotRestored"
+	CVOScaledDown               ConditionType = "CVOScaledDown"
+	CloudResourcesDestroyed     ConditionType = "CloudResourcesDestroyed"
 )
 
 // HostedControlPlaneStatus defines the observed state of HostedControlPlane

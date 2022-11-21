@@ -116,7 +116,7 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 		hcpCVOCondition = metav1.Condition{
 			Type:               string(conditionType),
 			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.ClusterVersionStatusUnknownReason,
+			Reason:             hyperv1.StatusUnknownReason,
 			Message:            unknownStatusMessage,
 			ObservedGeneration: hcp.Generation,
 		}
