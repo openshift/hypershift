@@ -279,6 +279,7 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 	}
 }
 
+// validateAWSGuestResourcesDeletedFunc waits for 15min or until the guest cluster resources are gone.
 func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, infraID, awsCreds, awsRegion string) func() {
 	return func() {
 		awsSession := awsutil.NewSession("cleanup-validation", awsCreds, "", "", awsRegion)
@@ -286,28 +287,47 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 		taggingClient := resourcegroupstaggingapi.New(awsSession, awsConfig)
 
 		// Find load balancers, persistent volumes, or s3 buckets belonging to the guest cluster
-		output, err := taggingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
-			ResourceTypeFilters: []*string{
-				awssdk.String("elasticloadbalancing:loadbalancer"),
-				awssdk.String("ec2:volume"),
-				awssdk.String("s3"),
-			},
-			TagFilters: []*resourcegroupstaggingapi.TagFilter{
-				{
-					Key:    awssdk.String(clusterTag(infraID)),
-					Values: []*string{awssdk.String("owned")},
+		err := wait.PollImmediate(5*time.Second, 15*time.Minute, func() (bool, error) {
+			// Filter get cluster resources.
+			output, err := taggingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
+				ResourceTypeFilters: []*string{
+					awssdk.String("elasticloadbalancing:loadbalancer"),
+					awssdk.String("ec2:volume"),
+					awssdk.String("s3"),
 				},
-			},
-		})
-		if err != nil {
-			t.Logf("WARNING: failed to list resources by tag: %v. Not verifying cluster is cleaned up.", err)
-		} else if hasGuestResources(t, output.ResourceTagMappingList) {
-			t.Errorf("FAIL: found %d remaining resources for guest cluster", len(output.ResourceTagMappingList))
-			for i := 0; i < len(output.ResourceTagMappingList); i++ {
-				t.Logf("Resource: %s, tags: %s", awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN), resourceTags(output.ResourceTagMappingList[i].Tags))
+				TagFilters: []*resourcegroupstaggingapi.TagFilter{
+					{
+						Key:    awssdk.String(clusterTag(infraID)),
+						Values: []*string{awssdk.String("owned")},
+					},
+				},
+			})
+			if err != nil {
+				t.Logf("WARNING: failed to list resources by tag: %v. Not verifying cluster is cleaned up.", err)
+				return true, nil
 			}
-		} else {
+
+			// Log resources that still exists
+			if hasGuestResources(t, output.ResourceTagMappingList) {
+				t.Logf("WARNING: found %d remaining resources for guest cluster", len(output.ResourceTagMappingList))
+				for i := 0; i < len(output.ResourceTagMappingList); i++ {
+					resourceARN, err := arn.Parse(awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN))
+					if err != nil {
+						t.Logf("WARNING: failed to parse resource: %v. Not verifying cluster is cleaned up.", err)
+						return false, nil
+					}
+					t.Logf("Resource: %s, tags: %s, service: %s",
+						awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN), resourceTags(output.ResourceTagMappingList[i].Tags), resourceARN.Service)
+				}
+				return false, nil
+			}
+
 			t.Log("SUCCESS: found no remaining guest resources")
+			return true, nil
+		})
+
+		if err != nil {
+			t.Errorf("Failed to wait for infra resources in guest cluster to be deleted: %v", err)
 		}
 	}
 }
