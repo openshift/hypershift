@@ -659,8 +659,6 @@ oc get nodes
 ## Migration Helper script
 
 In order to ensure the that whole migration works fine, you could use this helper script that should work out of the box.
-!!! note
-    The current implementation it's a temporary, until it gets included in the CLI.
 
 <details>
 <summary>HC Migration Script</summary>
