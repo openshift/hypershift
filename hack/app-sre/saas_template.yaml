@@ -101,6 +101,7 @@ objects:
     - exp.cluster.x-k8s.io
     - cluster.x-k8s.io
     - monitoring.coreos.com
+    - monitoring.rhobs
     resources:
     - '*'
     verbs:
@@ -178,6 +179,7 @@ objects:
     - '*'
   - apiGroups:
     - monitoring.coreos.com
+    - monitoring.rhobs
     resources:
     - podmonitors
     verbs:
@@ -27912,6 +27914,7 @@ objects:
     - watch
   - apiGroups:
     - monitoring.coreos.com
+    - monitoring.rhobs
     resources:
     - podmonitors
     verbs:
