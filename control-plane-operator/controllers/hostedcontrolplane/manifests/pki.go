@@ -83,6 +83,15 @@ func UserCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
+func KonnectivityCAConfigMap(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "konnectivity-ca-bundle",
+			Namespace: ns,
+		},
+	}
+}
+
 func EtcdSignerSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "etcd-signer")
 }
@@ -173,6 +182,10 @@ func OpenShiftRouteControllerManagerCertSecret(ns string) *corev1.Secret {
 
 func ClusterPolicyControllerCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "cluster-policy-controller-cert")
+}
+
+func KonnectivitySignerSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "konnectivity-signer")
 }
 
 func KonnectivityServerSecret(ns string) *corev1.Secret { return secretFor(ns, "konnectivity-server") }

@@ -31,9 +31,11 @@ var (
 		konnectivityServerContainer().Name: util.ContainerVolumeMounts{
 			konnectivityVolumeServerCerts().Name:  "/etc/konnectivity/server",
 			konnectivityVolumeClusterCerts().Name: "/etc/konnectivity/cluster",
+			konnectivitySignerCA().Name:           "/etc/konnectivity/ca",
 		},
 		konnectivityAgentContainer().Name: util.ContainerVolumeMounts{
 			konnectivityVolumeAgentCerts().Name: "/etc/konnectivity/agent",
+			konnectivitySignerCA().Name:         "/etc/konnectivity/ca",
 		},
 	}
 )
@@ -74,6 +76,7 @@ func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.Ow
 				Volumes: []corev1.Volume{
 					util.BuildVolume(konnectivityVolumeServerCerts(), buildKonnectivityVolumeServerCerts),
 					util.BuildVolume(konnectivityVolumeClusterCerts(), buildKonnectivityVolumeClusterCerts),
+					util.BuildVolume(konnectivitySignerCA(), buildKonnectivitySignerCAkonnectivitySignerCAVolume),
 				},
 			},
 		},
@@ -110,7 +113,7 @@ func buildKonnectivityServerContainer(image string) func(c *corev1.Container) {
 			"--server-key",
 			cpath(konnectivityVolumeServerCerts().Name, corev1.TLSPrivateKeyKey),
 			"--server-ca-cert",
-			cpath(konnectivityVolumeServerCerts().Name, certs.CASignerCertMapKey),
+			cpath(konnectivitySignerCA().Name, certs.CASignerCertMapKey),
 			"--server-port",
 			strconv.Itoa(KonnectivityServerLocalPort),
 			"--agent-port",
@@ -153,6 +156,17 @@ func buildKonnectivityVolumeClusterCerts(v *corev1.Volume) {
 		SecretName:  manifests.KonnectivityClusterSecret("").Name,
 		DefaultMode: pointer.Int32Ptr(0640),
 	}
+}
+
+func konnectivitySignerCA() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "konnectivity-ca",
+	}
+}
+
+func buildKonnectivitySignerCAkonnectivitySignerCAVolume(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
 }
 
 const (
@@ -312,6 +326,7 @@ func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.Own
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeAgentCerts),
+					util.BuildVolume(konnectivitySignerCA(), buildKonnectivitySignerCAkonnectivitySignerCAVolume),
 				},
 			},
 		},
@@ -341,7 +356,7 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 		c.Args = []string{
 			"--logtostderr=true",
 			"--ca-cert",
-			cpath(konnectivityVolumeAgentCerts().Name, certs.CASignerCertMapKey),
+			cpath(konnectivitySignerCA().Name, certs.CASignerCertMapKey),
 			"--agent-cert",
 			cpath(konnectivityVolumeAgentCerts().Name, corev1.TLSCertKey),
 			"--agent-key",

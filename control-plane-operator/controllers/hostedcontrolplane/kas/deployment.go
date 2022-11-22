@@ -42,7 +42,7 @@ var (
 			kasVolumeWorkLogs().Name:               "/var/log/kube-apiserver",
 			kasVolumeConfig().Name:                 "/etc/kubernetes/config",
 			kasVolumeAuditConfig().Name:            "/etc/kubernetes/audit",
-			kasVolumeRootCA().Name:                 "/etc/kubernetes/certs/root-ca",
+			kasVolumeKonnectivityCA().Name:         "/etc/kubernetes/certs/konnectivity-ca",
 			kasVolumeServerCert().Name:             "/etc/kubernetes/certs/server",
 			kasVolumeAggregatorCert().Name:         "/etc/kubernetes/certs/aggregator",
 			common.VolumeAggregatorCA().Name:       "/etc/kubernetes/certs/aggregator-ca",
@@ -175,7 +175,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeWorkLogs(), buildKASVolumeWorkLogs),
 				util.BuildVolume(kasVolumeConfig(), buildKASVolumeConfig),
 				util.BuildVolume(kasVolumeAuditConfig(), buildKASVolumeAuditConfig),
-				util.BuildVolume(kasVolumeRootCA(), buildKASVolumeRootCA),
+				util.BuildVolume(kasVolumeKonnectivityCA(), buildKASVolumeKonnectivityCA),
 				util.BuildVolume(kasVolumeServerCert(), buildKASVolumeServerCert),
 				util.BuildVolume(kasVolumeAggregatorCert(), buildKASVolumeAggregatorCert),
 				util.BuildVolume(common.VolumeAggregatorCA(), common.BuildVolumeAggregatorCA),
@@ -468,17 +468,16 @@ func buildKASVolumeAuditConfig(v *corev1.Volume) {
 	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 	v.ConfigMap.Name = manifests.KASAuditConfig("").Name
 }
-func kasVolumeRootCA() *corev1.Volume {
+func kasVolumeKonnectivityCA() *corev1.Volume {
 	return &corev1.Volume{
-		Name: "root-ca",
+		Name: "konnectivity-ca",
 	}
 }
-func buildKASVolumeRootCA(v *corev1.Volume) {
-	if v.Secret == nil {
-		v.Secret = &corev1.SecretVolumeSource{}
+func buildKASVolumeKonnectivityCA(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{
+		DefaultMode: pointer.Int32Ptr(0640),
 	}
-	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
-	v.Secret.SecretName = manifests.RootCASecret("").Name
+	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
 }
 
 func kasVolumeServerCert() *corev1.Volume {
