@@ -287,8 +287,8 @@ func oasVolumeEtcdClientCA() *corev1.Volume {
 }
 
 func buildOASVolumeEtcdClientCA(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{}
-	v.Secret.SecretName = manifests.RootCASecret("").Name
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.EtcdSignerCAConfigMap("").Name
 }
 
 func oasVolumeServingCert() *corev1.Volume {

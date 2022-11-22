@@ -62,6 +62,14 @@ func ReconcileRootCA(secret *corev1.Secret, ownerRef config.OwnerRef) error {
 	return reconcileSelfSignedCA(secret, ownerRef, "root-ca", "openshift")
 }
 
+func ReconcileEtcdSignerSecret(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "etcd-signer", "openshift")
+}
+
+func ReconcileEtcdSignerConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdSigner, rootCA *corev1.Secret) error {
+	return reconcileAggregateCA(cm, ownerRef, etcdSigner, rootCA)
+}
+
 func ReconcileClusterSignerCA(secret *corev1.Secret, ownerRef config.OwnerRef) error {
 	return reconcileSelfSignedCA(secret, ownerRef, "cluster-signer", "openshift")
 }

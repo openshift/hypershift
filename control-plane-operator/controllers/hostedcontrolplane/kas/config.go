@@ -169,7 +169,7 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")
 	args.Set("endpoint-reconciler-type", "lease")
-	args.Set("etcd-cafile", cpath(kasVolumeEtcdClientCert().Name, pki.EtcdClientCAKey))
+	args.Set("etcd-cafile", cpath(kasVolumeEtcdCA().Name, certs.CASignerCertMapKey))
 	args.Set("etcd-certfile", cpath(kasVolumeEtcdClientCert().Name, pki.EtcdClientCrtKey))
 	args.Set("etcd-keyfile", cpath(kasVolumeEtcdClientCert().Name, pki.EtcdClientKeyKey))
 	args.Set("etcd-prefix", "kubernetes.io")

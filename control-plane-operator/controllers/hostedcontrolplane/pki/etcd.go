@@ -44,5 +44,6 @@ func ReconcileEtcdPeerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef
 		fmt.Sprintf("*.etcd-discovery.%s.svc", secret.Namespace),
 		fmt.Sprintf("*.etcd-discovery.%s.svc.cluster.local", secret.Namespace),
 	}
+
 	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-discovery", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, EtcdPeerCAKey, dnsNames, nil)
 }

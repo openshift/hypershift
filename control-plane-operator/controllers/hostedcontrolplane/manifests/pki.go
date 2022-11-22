@@ -27,6 +27,15 @@ func RootCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
+func EtcdSignerCAConfigMap(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd-ca",
+			Namespace: ns,
+		},
+	}
+}
+
 func AggregatorClientCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -54,6 +63,10 @@ func UserCAConfigMap(ns string) *corev1.ConfigMap {
 			Namespace: ns,
 		},
 	}
+}
+
+func EtcdSignerSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "etcd-signer")
 }
 
 func EtcdClientSecret(ns string) *corev1.Secret { return secretFor(ns, "etcd-client-tls") }
