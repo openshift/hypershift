@@ -64,6 +64,7 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -2099,6 +2100,15 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 		},
 	}
 
+	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  rhobsmonitoring.EnvironmentVariable,
+				Value: "1",
+			},
+		)
+	}
+
 	if envImage := os.Getenv(images.KonnectivityEnvVar); len(envImage) > 0 {
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{
@@ -2240,6 +2250,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 				"exp.cluster.x-k8s.io",
 				"cluster.x-k8s.io",
 				"monitoring.coreos.com",
+				"monitoring.rhobs",
 			},
 			Resources: []string{"*"},
 			Verbs:     []string{"*"},

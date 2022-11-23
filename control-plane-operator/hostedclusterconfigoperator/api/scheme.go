@@ -59,6 +59,8 @@ func init() {
 	openshiftcpv1.AddToScheme(Scheme)
 	v1alpha1.AddToScheme(Scheme)
 	apiserverconfigv1.AddToScheme(Scheme)
+	// RHOBS monitoring does not impact this scheme because this scheme
+	// is used for resources inside the guest cluster.
 	prometheusoperatorv1.AddToScheme(Scheme)
 	imageregistryv1.AddToScheme(Scheme)
 	operatorsv1alpha1.AddToScheme(Scheme)

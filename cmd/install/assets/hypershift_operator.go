@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -277,6 +278,7 @@ type HyperShiftOperatorDeployment struct {
 	MetricsSet                     metrics.MetricsSet
 	IncludeVersion                 bool
 	UWMTelemetry                   bool
+	RHOBSMonitoring                bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -422,6 +424,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				},
 			})
 		}
+	}
+
+	if o.RHOBSMonitoring {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  rhobsmonitoring.EnvironmentVariable,
+			Value: "1",
+		})
 	}
 
 	deployment := &appsv1.Deployment{
@@ -746,6 +755,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 					"exp.cluster.x-k8s.io",
 					"cluster.x-k8s.io",
 					"monitoring.coreos.com",
+					"monitoring.rhobs",
 				},
 				Resources: []string{"*"},
 				Verbs:     []string{"*"},
@@ -816,7 +826,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"*"},
 			},
 			{
-				APIGroups: []string{"monitoring.coreos.com"},
+				APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
 				Resources: []string{"podmonitors"},
 				Verbs:     []string{"get", "list", "watch", "create", "update"},
 			},
@@ -1301,7 +1311,7 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
-				APIGroups: []string{"monitoring.coreos.com"},
+				APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
 				Resources: []string{"podmonitors"},
 				Verbs:     []string{"get", "list", "watch"},
 			},

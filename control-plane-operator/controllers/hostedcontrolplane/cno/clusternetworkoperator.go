@@ -2,7 +2,10 @@ package cno
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	"github.com/blang/semver"
 	routev1 "github.com/openshift/api/route/v1"
@@ -148,7 +151,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 			Verbs:     []string{"*"},
 		},
 		{
-			APIGroups: []string{"monitoring.coreos.com"},
+			APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
 			Resources: []string{
 				"servicemonitors",
 				"prometheusrules",
@@ -246,6 +249,13 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	if !params.IsPrivate {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
 			Name: "PROXY_INTERNAL_APISERVER_ADDRESS", Value: "true",
+		})
+	}
+
+	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
+		cnoEnv = append(cnoEnv, corev1.EnvVar{
+			Name:  rhobsmonitoring.EnvironmentVariable,
+			Value: "1",
 		})
 	}
 

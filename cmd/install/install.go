@@ -43,6 +43,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 )
 
 type Options struct {
@@ -77,6 +78,7 @@ type Options struct {
 	EnableUWMTelemetryRemoteWrite             bool
 	MetricsSet                                metrics.MetricsSet
 	WaitUntilAvailable                        bool
+	RHOBSMonitoring                           bool
 }
 
 func (o *Options) Validate() error {
@@ -117,6 +119,10 @@ func (o *Options) Validate() error {
 	if o.HyperShiftImage != version.HyperShiftImage && len(o.ImageRefsFile) > 0 {
 		errs = append(errs, fmt.Errorf("only one of --hypershift-image or --image-refs-file should be specified"))
 	}
+	if o.RHOBSMonitoring && os.Getenv(rhobsmonitoring.EnvironmentVariable) != "1" {
+		errs = append(errs, fmt.Errorf("when invoking this command with the --rhobs-monitoring flag, the RHOBS_MONITORING environment variable must be set to \"1\""))
+	}
+
 	return errors.NewAggregate(errs)
 }
 
@@ -174,6 +180,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().Var(&opts.MetricsSet, "metrics-set", "The set of metrics to produce for each HyperShift control plane. Valid values are: Telemetry, SRE, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, HyperShift operator ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.Flags().BoolVar(&opts.WaitUntilAvailable, "wait-until-available", opts.WaitUntilAvailable, "If true, pauses installation until hypershift operator has been rolled out and its webhook service is available (if installing the webhook)")
+	cmd.PersistentFlags().BoolVar(&opts.RHOBSMonitoring, "rhobs-monitoring", opts.RHOBSMonitoring, "If true, HyperShift will generate and use the RHOBS version of monitoring resources (ServiceMonitors, PodMonitors, etc)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -535,6 +542,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		MetricsSet:                     opts.MetricsSet,
 		IncludeVersion:                 !opts.Template,
 		UWMTelemetry:                   opts.EnableUWMTelemetryRemoteWrite,
+		RHOBSMonitoring:                opts.RHOBSMonitoring,
 	}.Build()
 	objects = append(objects, operatorDeployment)
 
