@@ -422,20 +422,19 @@ func ReconcilePodMonitor(pm *prometheusoperatorv1.PodMonitor, clusterID string, 
 	pm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{
 		MatchNames: []string{pm.Namespace},
 	}
-	targetPort := intstr.FromString("metrics")
 	pm.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{
 		{
-			Interval:   "60s",
-			TargetPort: &targetPort,
-			Path:       "/metrics",
-			Scheme:     "https",
+			Interval: "60s",
+			Port:     "metrics",
+			Path:     "/metrics",
+			Scheme:   "https",
 			TLSConfig: &prometheusoperatorv1.PodMetricsEndpointTLSConfig{
 				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
 					ServerName: metricsHostname,
 					CA: prometheusoperatorv1.SecretOrConfigMap{
-						Secret: &corev1.SecretKeySelector{
+						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.MetricsClientCertSecret(pm.Namespace).Name,
+								Name: manifests.TotalClientCABundle(pm.Namespace).Name,
 							},
 							Key: "ca.crt",
 						},
