@@ -2818,7 +2818,8 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 underlying cluster&rsquo;s ClusterVersion.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
-<td></td>
+<td><p>EtcdAvailable bubbles up the same condition from HCP.</p>
+</td>
 </tr><tr><td><p>&#34;EtcdSnapshotRestored&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
@@ -2842,19 +2843,21 @@ an initial deployment or upgrade.</p>
 HostedCluster is available to handle ignition requests.</p>
 </td>
 </tr><tr><td><p>&#34;InfrastructureReady&#34;</p></td>
-<td></td>
+<td><p>InfrastructureReady bubbles up the same condition from HCP.</p>
+</td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
-<td></td>
+<td><p>KubeAPIServerAvailable bubbles up the same condition from HCP.</p>
+</td>
 </tr><tr><td><p>&#34;PlatformCredentialsFound&#34;</p></td>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
 desired platform are valid.</p>
 </td>
 </tr><tr><td><p>&#34;ReconciliationActive&#34;</p></td>
-<td><p>ReconciliationActive indicates if reconciliation of the hostedcluster is
+<td><p>ReconciliationActive indicates if reconciliation of the HostedCluster is
 active or paused.</p>
 </td>
 </tr><tr><td><p>&#34;ReconciliationSucceeded&#34;</p></td>
-<td><p>ReconciliationSucceeded indicates if the hostedcluster reconciliation
+<td><p>ReconciliationSucceeded indicates if the HostedCluster reconciliation
 succeeded.</p>
 </td>
 </tr><tr><td><p>&#34;SupportedHostedCluster&#34;</p></td>
@@ -2873,7 +2876,8 @@ healthy.</p>
 ClusterConfiguration specified for the HostedCluster is valid.</p>
 </td>
 </tr><tr><td><p>&#34;ValidHostedControlPlaneConfiguration&#34;</p></td>
-<td></td>
+<td><p>ValidHostedControlPlaneConfiguration bubbles up the same condition from HCP.</p>
+</td>
 </tr><tr><td><p>&#34;ValidOIDCConfiguration&#34;</p></td>
 <td><p>ValidOIDCConfiguration indicates if an AWS cluster&rsquo;s OIDC condition is
 detected as invalid.</p>
