@@ -627,16 +627,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			}
 		}
 
-		userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
-		err = r.Get(ctx, client.ObjectKeyFromObject(userDataSecret), userDataSecret)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to get user data Secret: %w", err)
-		}
-		if err == nil {
-			if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to delete user data Secret: %w", err)
-			}
-		}
+		// We keep the old userdata Secret so old Machines during rolled out can be deleted.
+		// Otherwise, deletion fails because of https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805.
+		// TODO (Alberto): enable back deletion when the PR above gets merged.
 	}
 
 	tokenSecret = TokenSecret(controlPlaneNamespace, nodePool.Name, targetConfigVersionHash)
@@ -2098,10 +2091,10 @@ func (r *NodePoolReconciler) doesCPODecompressAndDecodeConfig(ctx context.Contex
 	return managesDecompressAndDecodeConfig, nil
 }
 
-// ensureMachineDeletion ensures all the machines belonging to the NodePool's MachineSet are fully deleted
-// This function can be deleted once the upstream PR (https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805) is merged and pulled into https://github.com/openshift/cluster-api
+// ensureMachineDeletion ensures all the machines belonging to the NodePool's MachineSet are fully deleted.
+// This function can be deleted once the upstream PR (https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805) is merged and pulled into https://github.com/openshift/cluster-api-provider-aws.
 // This function is necessary to ensure AWSMachines are fully deleted prior to deleting the NodePull secrets being deleted due to a bug introduced by https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2271
-// See https://github.com/openshift/hypershift/pull/1826#discussion_r1007349564 for more details
+// See https://github.com/openshift/hypershift/pull/1826#discussion_r1007349564 for more details.
 func (r *NodePoolReconciler) ensureMachineDeletion(nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
 	// Get list of CAPI Machines to filter through
 	machines := capiv1.MachineList{}

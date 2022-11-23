@@ -287,7 +287,7 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 		taggingClient := resourcegroupstaggingapi.New(awsSession, awsConfig)
 
 		// Find load balancers, persistent volumes, or s3 buckets belonging to the guest cluster
-		err := wait.PollImmediate(5*time.Second, 40*time.Minute, func() (bool, error) {
+		err := wait.PollImmediate(5*time.Second, 15*time.Minute, func() (bool, error) {
 			// Filter get cluster resources.
 			output, err := taggingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
 				ResourceTypeFilters: []*string{
