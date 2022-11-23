@@ -656,6 +656,16 @@ oc get clusterversion
 oc get nodes
 ```
 
+After the Teardown of the HostedCluster in the source Management Cluster **you will need to delete the OVN pods in the HostedCluster** in order to perform the connection with the new OVN Master running in the new Management Cluster.
+
+To do that you just need to load the proper KUBECONFIG env var with the Hosted Cluster Kubeconfig path and execute this command:
+
+```bash
+oc delete pod -n openshift-ovn-kubernetes --all
+```
+
+with that, all the ClusterOperators that were failling and all the new pods generated, will get executed without issues.
+
 ## Migration Helper script
 
 In order to ensure the that whole migration works fine, you could use this helper script that should work out of the box.
