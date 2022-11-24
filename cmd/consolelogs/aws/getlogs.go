@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
@@ -145,7 +144,7 @@ func getInstanceConsoleOutput(ctx context.Context, ec2Client *ec2.EC2, instances
 			errs = append(errs, err)
 			continue
 		}
-		if err := ioutil.WriteFile(filepath.Join(outputDir, name+".log"), logOutput, 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(outputDir, name+".log"), logOutput, 0644); err != nil {
 			errs = append(errs, err)
 		}
 	}

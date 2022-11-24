@@ -5,7 +5,8 @@ package e2e
 
 import (
 	"context"
-	"io/ioutil"
+
+	"io"
 	"os"
 	"testing"
 	"time"
@@ -57,7 +58,7 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 	pullSecretFile, err := os.Open(clusterOpts.PullSecretFile)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to open pull secret file")
 	defer pullSecretFile.Close()
-	pullSecret, err := ioutil.ReadAll(pullSecretFile)
+	pullSecret, err := io.ReadAll(pullSecretFile)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to read pull secret file")
 	previousReleaseInfo, err := releaseInfoProvider.Lookup(ctx, globalOpts.PreviousReleaseImage, pullSecret)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for previous image")
@@ -165,7 +166,7 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 	pullSecretFile, err := os.Open(clusterOpts.PullSecretFile)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to open pull secret file")
 	defer pullSecretFile.Close()
-	pullSecret, err := ioutil.ReadAll(pullSecretFile)
+	pullSecret, err := io.ReadAll(pullSecretFile)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to read pull secret file")
 	previousReleaseInfo, err := releaseInfoProvider.Lookup(ctx, globalOpts.PreviousReleaseImage, pullSecret)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for previous image")

@@ -6,7 +6,6 @@ import (
 	"crypto/x509/pkix"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -130,7 +129,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	log.Info("discovered mco image", "image", mcoImage)
 
 	// Set up the base working directory
-	workDir, err := ioutil.TempDir(p.WorkDir, "get-payload")
+	workDir, err := os.MkdirTemp(p.WorkDir, "get-payload")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create working directory: %w", err)
 	}
@@ -333,7 +332,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 
 		// Copy output to the MCC base directory
 		bootstrapManifestsDir := filepath.Join(destDir, "bootstrap", "manifests")
-		manifests, err := ioutil.ReadDir(bootstrapManifestsDir)
+		manifests, err := os.ReadDir(bootstrapManifestsDir)
 		if err != nil {
 			return fmt.Errorf("failed to read dir: %w", err)
 		}
@@ -471,7 +470,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 					log.Error(err, "failed to close mcs response body")
 				}
 			}()
-			p, err := ioutil.ReadAll(res.Body)
+			p, err := io.ReadAll(res.Body)
 			if err != nil {
 				log.Error(err, "failed to read mcs response body")
 				return false, nil

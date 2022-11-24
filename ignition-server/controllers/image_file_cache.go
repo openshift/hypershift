@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -137,7 +136,7 @@ func returnCacheFile(fullCacheFileName string, out io.Writer) error {
 }
 
 func downloadImageFile(ctx context.Context, regClient regClient, imageRef string, pullSecret []byte, imageFile string, cacheDir string) (_ string, err error) {
-	newFile, err := ioutil.TempFile(cacheDir, filepath.Base(imageFile)+"-*")
+	newFile, err := os.CreateTemp(cacheDir, filepath.Base(imageFile)+"-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create cache file: %w", err)
 	}

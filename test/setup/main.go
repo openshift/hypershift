@@ -5,7 +5,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"text/template"
 
@@ -104,7 +103,7 @@ func (o *MonitoringOptions) Configure(ctx context.Context, k client.Client) erro
 		log.Info("remote write will be enabled")
 		username = o.RemoteWriteUsername
 		if len(o.RemoteWriteUsernameFile) > 0 {
-			u, err := ioutil.ReadFile(o.RemoteWriteUsernameFile)
+			u, err := os.ReadFile(o.RemoteWriteUsernameFile)
 			if err != nil {
 				return err
 			}
@@ -112,7 +111,7 @@ func (o *MonitoringOptions) Configure(ctx context.Context, k client.Client) erro
 		}
 		password = o.RemoteWritePassword
 		if len(o.RemoteWritePasswordFile) > 0 {
-			p, err := ioutil.ReadFile(o.RemoteWritePasswordFile)
+			p, err := os.ReadFile(o.RemoteWritePasswordFile)
 			if err != nil {
 				return err
 			}

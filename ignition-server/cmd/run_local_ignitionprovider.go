@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"syscall"
@@ -84,7 +83,7 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 		return nil
 	}
 	// Set up the cache directory
-	cacheDir, err := ioutil.TempDir("", "cache")
+	cacheDir, err := os.MkdirTemp("", "cache")
 	if err != nil {
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}

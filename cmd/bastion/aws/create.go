@@ -3,7 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"regexp"
 	"time"
 
@@ -137,7 +137,7 @@ func (o *CreateBastionOpts) Run(ctx context.Context) (string, string, error) {
 	// Read SSH public key
 	if len(o.SSHKeyFile) > 0 {
 		var err error
-		sshPublicKey, err = ioutil.ReadFile(o.SSHKeyFile)
+		sshPublicKey, err = os.ReadFile(o.SSHKeyFile)
 		if err != nil {
 			return "", "", fmt.Errorf("cannot read SSH public key from %s: %v", o.SSHKeyFile, err)
 		}

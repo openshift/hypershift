@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"time"
@@ -337,7 +336,7 @@ func operatorEndpoints(opts Options) *corev1.Endpoints {
 }
 
 func fetchImageRefs(file string) (map[string]string, error) {
-	content, err := ioutil.ReadFile(file)
+	content, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read image references file: %w", err)
 	}
@@ -409,7 +408,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 
 	var oidcSecret *corev1.Secret
 	if opts.OIDCStorageProviderS3Credentials != "" {
-		oidcCreds, err := ioutil.ReadFile(opts.OIDCStorageProviderS3Credentials)
+		oidcCreds, err := os.ReadFile(opts.OIDCStorageProviderS3Credentials)
 		if err != nil {
 			return nil, err
 		}
@@ -433,7 +432,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	switch hyperv1.PlatformType(opts.PrivatePlatform) {
 	case hyperv1.AWSPlatform:
 		if opts.AWSPrivateCreds != "" {
-			credBytes, err := ioutil.ReadFile(opts.AWSPrivateCreds)
+			credBytes, err := os.ReadFile(opts.AWSPrivateCreds)
 			if err != nil {
 				return objects, err
 			}
@@ -456,7 +455,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 
 	var userCABundleCM *corev1.ConfigMap
 	if opts.AdditionalTrustBundle != "" {
-		userCABundle, err := ioutil.ReadFile(opts.AdditionalTrustBundle)
+		userCABundle, err := os.ReadFile(opts.AdditionalTrustBundle)
 		if err != nil {
 			return nil, err
 		}
@@ -489,7 +488,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 
 		var externalDNSSecret *corev1.Secret
 		if opts.ExternalDNSCredentials != "" {
-			externalDNSCreds, err := ioutil.ReadFile(opts.ExternalDNSCredentials)
+			externalDNSCreds, err := os.ReadFile(opts.ExternalDNSCredentials)
 			if err != nil {
 				return nil, err
 			}

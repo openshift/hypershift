@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"time"
@@ -152,7 +151,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		}
 		opts.ReleaseImage = defaultVersion.PullSpec
 	}
-	if err := defaultNetworkType(ctx, opts, &releaseinfo.RegistryClientProvider{}, ioutil.ReadFile); err != nil {
+	if err := defaultNetworkType(ctx, opts, &releaseinfo.RegistryClientProvider{}, os.ReadFile); err != nil {
 		return nil, fmt.Errorf("failed to default network: %w", err)
 	}
 
@@ -170,7 +169,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = opts.ControlPlaneOperatorImage
 	}
 
-	pullSecret, err := ioutil.ReadFile(opts.PullSecretFile)
+	pullSecret, err := os.ReadFile(opts.PullSecretFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read pull secret file: %w", err)
 	}
@@ -179,7 +178,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		if opts.GenerateSSH {
 			return nil, fmt.Errorf("--generate-ssh and --ssh-key cannot be specified together")
 		}
-		key, err := ioutil.ReadFile(opts.SSHKeyFile)
+		key, err := os.ReadFile(opts.SSHKeyFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read ssh key file: %w", err)
 		}
@@ -193,7 +192,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 
 	var userCABundle []byte
 	if len(opts.AdditionalTrustBundle) > 0 {
-		userCABundle, err = ioutil.ReadFile(opts.AdditionalTrustBundle)
+		userCABundle, err = os.ReadFile(opts.AdditionalTrustBundle)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read additional trust bundle file: %w", err)
 		}
@@ -201,7 +200,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 
 	var imageContentSources []hyperv1.ImageContentSource
 	if len(opts.ImageContentSources) > 0 {
-		icspFileBytes, err := ioutil.ReadFile(opts.ImageContentSources)
+		icspFileBytes, err := os.ReadFile(opts.ImageContentSources)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read image content sources file: %w", err)
 		}
