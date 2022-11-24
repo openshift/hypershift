@@ -1,4 +1,10 @@
-# Manage node-level tuning with the Node Tuning Operator
+---
+title: Node tuning
+---
+
+# Node tuning
+
+Manage node-level tuning with the Node Tuning Operator.
 
 ## Creating a simple TuneD profile for setting sysctl settings
 If you would like to set some node-level tuning on the nodes in your hosted cluster, you can use the [Node Tuning Operator](https://docs.openshift.com/container-platform/latest/scalability_and_performance/using-node-tuning-operator.html). In HyperShift, node tuning can be configured by creating ConfigMaps which contain Tuned objects, and referencing these ConfigMaps in your NodePools.
