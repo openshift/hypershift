@@ -54,17 +54,17 @@ nav:
   - how-to/restart-control-plane-components.md
   - how-to/pause-reconciliation.md
   - how-to/debug-nodes.md
-  - how-to/external-dns.md
   - how-to/metrics-sets.md
-  - how-to/node-tuning.md
   - 'Automated Machine Management':
     - how-to/automated-machine-management/index.md
     - how-to/automated-machine-management/scale-to-zero-dataplane.md
     - how-to/automated-machine-management/nodepool-upgrades.md
+    - how-to/automated-machine-management/node-tuning.md
   - "AWS":
     - how-to/aws/create-infra-iam-separately.md
     - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
     - how-to/aws/deploy-aws-private-clusters.md
+    - how-to/aws/external-dns.md
     - how-to/aws/etc-backup-restore.md
     - how-to/aws/migrate-hosted-cluster.md
   - 'Azure':
