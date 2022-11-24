@@ -166,9 +166,9 @@ func ReconcileOLMOperatorServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor,
 						Key: "tls.key",
 					},
 					CA: prometheusoperatorv1.SecretOrConfigMap{
-						Secret: &corev1.SecretKeySelector{
+						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
+								Name: manifests.TotalClientCABundle(sm.Namespace).Name,
 							},
 							Key: "ca.crt",
 						},

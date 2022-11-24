@@ -453,24 +453,10 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 			TLSConfig: &prometheusoperatorv1.TLSConfig{
 				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
 					ServerName: "cluster-version-operator",
-					Cert: prometheusoperatorv1.SecretOrConfigMap{
-						Secret: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
-							},
-							Key: "tls.crt",
-						},
-					},
-					KeySecret: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
-						},
-						Key: "tls.key",
-					},
 					CA: prometheusoperatorv1.SecretOrConfigMap{
-						Secret: &corev1.SecretKeySelector{
+						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
+								Name: manifests.TotalClientCABundle(sm.Namespace).Name,
 							},
 							Key: "ca.crt",
 						},
