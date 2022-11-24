@@ -927,6 +927,7 @@ func (in *HostedClusterStatus) DeepCopyInto(out *HostedClusterStatus) {
 		*out = new(corev1.LocalObjectReference)
 		**out = **in
 	}
+	out.ControlPlaneEndpoint = in.ControlPlaneEndpoint
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]v1.Condition, len(*in))

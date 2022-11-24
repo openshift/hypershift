@@ -3591,6 +3591,21 @@ It exposes the config for instances to become kubernetes nodes.</p>
 </tr>
 <tr>
 <td>
+<code>controlPlaneEndpoint</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.APIEndpoint">
+APIEndpoint
+</a>
+</em>
+</td>
+<td>
+<p>ControlPlaneEndpoint contains the endpoint information by which
+external clients can access the control plane. This is populated
+after the infrastructure is ready.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>oauthCallbackURLTemplate</code></br>
 <em>
 string

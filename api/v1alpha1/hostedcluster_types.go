@@ -1668,6 +1668,12 @@ type HostedClusterStatus struct {
 	// +optional
 	IgnitionEndpoint string `json:"ignitionEndpoint,omitempty"`
 
+	// ControlPlaneEndpoint contains the endpoint information by which
+	// external clients can access the control plane. This is populated
+	// after the infrastructure is ready.
+	// +kubebuilder:validation:Optional
+	ControlPlaneEndpoint APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
+
 	// OAuthCallbackURLTemplate contains a template for the URL to use as a callback
 	// for identity providers. The [identity-provider-name] placeholder must be replaced
 	// with the name of an identity provider defined on the HostedCluster.
