@@ -23,7 +23,7 @@ if [ -n "${CNV_PRERELEASE_VERSION}" ]
   then
   # Add pullsecret for cnv nightly channel from quay.io/openshift-cnv
   QUAY_USERNAME=openshift-cnv+openshift_ci
-  QUAY_PASSWORD=$(jq -r .openshift_cnv_pullsecret /etc/cnv-nightly-pull-credentials)
+  QUAY_PASSWORD=$(</etc/cnv-nightly-pull-credentials/openshift_cnv_pullsecret)
   oc get secret pull-secret -n openshift-config -o json | jq -r '.data.".dockerconfigjson"' | base64 -d > global-pull-secret.json
   QUAY_AUTH=$(echo -n "${QUAY_USERNAME}:${QUAY_PASSWORD}" | base64 -w 0)
   jq --arg QUAY_AUTH "$QUAY_AUTH" '.auths += {"quay.io/openshift-cnv": {"auth":$QUAY_AUTH,"email":""}}' global-pull-secret.json > global-pull-secret.json.tmp
