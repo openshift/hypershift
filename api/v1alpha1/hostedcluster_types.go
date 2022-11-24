@@ -128,6 +128,16 @@ const (
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.clusterID) || has(self.clusterID)", message="clusterID is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.infraID) || has(self.infraID)", message="infraID is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.controllerAvailabilityPolicy) || has(self.controllerAvailabilityPolicy)", message="controllerAvailabilityPolicy is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.infrastructureAvailabilityPolicy) || has(self.infrastructureAvailabilityPolicy)", message="infrastructureAvailabilityPolicy is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.issuerURL) || has(self.issuerURL)", message="issuerURL is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.serviceAccountSigningKey) || has(self.serviceAccountSigningKey)", message="serviceAccountSigningKey is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.auditWebhook) || has(self.auditWebhook)", message="auditWebhook is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.imageContentSources) || has(self.imageContentSources)", message="imageContentSources is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.fips) || has(self.fips)", message="fips is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.olmCatalogPlacement) || has(self.olmCatalogPlacement)", message="olmCatalogPlacement is required once set"
 type HostedClusterSpec struct {
 	// Release specifies the desired OCP release payload for the hosted cluster.
 	//
@@ -145,8 +155,12 @@ type HostedClusterSpec struct {
 	// metrics produced by the control plane operators. If a value is not
 	// specified, an ID is generated. After initial creation, the value is
 	// immutable.
-	// +kubebuilder:validation:Pattern:="[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
 	// +optional
+	// +immutable
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Pattern:="[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="clusterID is immutable"
+	// +kubebuilder:validation:MaxLength=40
 	ClusterID string `json:"clusterID,omitempty"`
 
 	// InfraID is a globally unique identifier for the cluster. This identifier
@@ -155,12 +169,14 @@ type HostedClusterSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="infraID is immutable"
 	InfraID string `json:"infraID,omitempty"`
 
 	// Platform specifies the underlying infrastructure provider for the cluster
 	// and is used to configure platform specific behavior.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="platform is immutable"
 	Platform PlatformSpec `json:"platform"`
 
 	// ControllerAvailabilityPolicy specifies the availability policy applied to
@@ -169,6 +185,7 @@ type HostedClusterSpec struct {
 	// +optional
 	// +kubebuilder:default:="SingleReplica"
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="controllerAvailabilityPolicy is immutable"
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
 	// InfrastructureAvailabilityPolicy specifies the availability policy applied
@@ -178,16 +195,19 @@ type HostedClusterSpec struct {
 	// +optional
 	// +kubebuilder:default:="SingleReplica"
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="infrastructureAvailabilityPolicy is immutable"
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 
 	// DNS specifies DNS configuration for the cluster.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="dns is immutable"
 	DNS DNSSpec `json:"dns,omitempty"`
 
 	// Networking specifies network configuration for the cluster.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="networking is immutable"
 	Networking ClusterNetworking `json:"networking"`
 
 	// Autoscaling specifies auto-scaling behavior that applies to all NodePools
@@ -203,6 +223,7 @@ type HostedClusterSpec struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={managementType: "Managed", managed: {storage: {type: "PersistentVolume", persistentVolume: {size: "4Gi"}}}}
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="etcd is immutable"
 	Etcd EtcdSpec `json:"etcd"`
 
 	// Services specifies how individual control plane services are published from
@@ -215,8 +236,6 @@ type HostedClusterSpec struct {
 	// PullSecret references a pull secret to be injected into the container
 	// runtime of all cluster nodes. The secret must have a key named
 	// ".dockerconfigjson" whose value is the pull secret JSON.
-	//
-	// +immutable
 	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
 
 	// SSHKey references an SSH key to be injected into all cluster node sshd
@@ -224,6 +243,7 @@ type HostedClusterSpec struct {
 	// public part of an SSH key.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="sshKey is immutable"
 	SSHKey corev1.LocalObjectReference `json:"sshKey"`
 
 	// IssuerURL is an OIDC issuer URL which is used as the issuer in all
@@ -233,6 +253,7 @@ type HostedClusterSpec struct {
 	//
 	// +kubebuilder:default:="https://kubernetes.default.svc"
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="issuerURL is immutable"
 	// +optional
 	// +kubebuilder:validation:Format=uri
 	IssuerURL string `json:"issuerURL,omitempty"`
@@ -245,6 +266,7 @@ type HostedClusterSpec struct {
 	//
 	// +immutable
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="serviceAccountSigningKey is immutable"
 	// +optional
 	ServiceAccountSigningKey *corev1.LocalObjectReference `json:"serviceAccountSigningKey,omitempty"`
 
@@ -267,6 +289,7 @@ type HostedClusterSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="auditWebhook is immutable"
 	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`
 
 	// ImageContentSources specifies image mirrors that can be used by cluster
@@ -274,6 +297,7 @@ type HostedClusterSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="imageContentSources is immutable"
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
 	// AdditionalTrustBundle is a reference to a ConfigMap containing a
@@ -294,6 +318,7 @@ type HostedClusterSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="fips is immutable"
 	FIPS bool `json:"fips"`
 
 	// PausedUntil is a field that can be used to pause reconciliation on a resource.
@@ -311,6 +336,7 @@ type HostedClusterSpec struct {
 	// +kubebuilder:default=management
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="olmCatalogPlacement is immutable"
 	OLMCatalogPlacement OLMCatalogPlacement `json:"olmCatalogPlacement,omitempty"`
 
 	// NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.
@@ -337,17 +363,21 @@ const (
 // to pull content. For cluster workloads, if a container image registry host of
 // the pullspec matches Source then one of the Mirrors are substituted as hosts
 // in the pullspec and tried in order to fetch the image.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.mirrors) || has(self.mirrors)", message="mirrors is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.mirrors) || has(self.mirrors)", message="mirrors is required once set"
 type ImageContentSource struct {
 	// Source is the repository that users refer to, e.g. in image pull
 	// specifications.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="source is immutable"
 	Source string `json:"source"`
 
 	// Mirrors are one or more repositories that may also contain the same images.
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="mirrors is immutable"
 	Mirrors []string `json:"mirrors,omitempty"`
 }
 
@@ -358,6 +388,7 @@ type ServicePublishingStrategyMapping struct {
 	//
 	// +kubebuilder:validation:Enum=APIServer;OAuthServer;OIDC;Konnectivity;Ignition;OVNSbDb
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="service is immutable"
 	Service ServiceType `json:"service"`
 
 	// ServicePublishingStrategy specifies how to publish Service.
@@ -370,6 +401,7 @@ type ServicePublishingStrategy struct {
 	//
 	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route;None;S3
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="type is immutable"
 	Type PublishingStrategyType `json:"type"`
 
 	// NodePort configures exposing a service using a NodePort.
@@ -447,10 +479,13 @@ type RoutePublishingStrategy struct {
 }
 
 // DNSSpec specifies the DNS configuration in the cluster.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.publicZoneID) || has(self.publicZoneID)", message="publicZoneID is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.privateZoneID) || has(self.privateZoneID)", message="privateZoneID is required once set"
 type DNSSpec struct {
 	// BaseDomain is the base domain of the cluster.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="baseDomain is immutable"
 	BaseDomain string `json:"baseDomain"`
 
 	// PublicZoneID is the Hosted Zone ID where all the DNS records that are
@@ -458,6 +493,7 @@ type DNSSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="publicZoneID is immutable"
 	PublicZoneID string `json:"publicZoneID,omitempty"`
 
 	// PrivateZoneID is the Hosted Zone ID where all the DNS records that are only
@@ -465,10 +501,18 @@ type DNSSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="privateZoneID is immutable"
 	PrivateZoneID string `json:"privateZoneID,omitempty"`
 }
 
 // ClusterNetworking specifies network configuration for a cluster.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.serviceCIDR) || has(self.serviceCIDR)", message="serviceCIDR is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.podCIDR) || has(self.podCIDR)", message="podCIDR is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.machineCIDR) || has(self.machineCIDR)", message="machineCIDR is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.machineNetwork) || has(self.machineNetwork)", message="machineNetwork is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.clusterNetwork) || has(self.clusterNetwork)", message="clusterNetwork is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.serviceNetwork) || has(self.serviceNetwork)", message="serviceNetwork is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.networkType) || has(self.networkType)", message="networkType is required once set"
 type ClusterNetworking struct {
 	// Deprecated
 	// This field will be removed in the next API release.
@@ -476,6 +520,7 @@ type ClusterNetworking struct {
 	// +immutable
 	// +optional
 	// +kubebuilder:validation:Format=cidr
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="serviceCIDR is immutable"
 	ServiceCIDR string `json:"serviceCIDR,omitempty"`
 
 	// Deprecated
@@ -485,6 +530,7 @@ type ClusterNetworking struct {
 	// +immutable
 	// +optional
 	// +kubebuilder:validation:Format=cidr
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="podCIDR is immutable"
 	PodCIDR string `json:"podCIDR,omitempty"`
 
 	// Deprecated
@@ -493,6 +539,7 @@ type ClusterNetworking struct {
 	// +immutable
 	// +optional
 	// +kubebuilder:validation:Format=cidr
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="machineCIDR is immutable"
 	MachineCIDR string `json:"machineCIDR,omitempty"`
 
 	// MachineNetwork is the list of IP address pools for machines.
@@ -500,6 +547,7 @@ type ClusterNetworking struct {
 	//
 	// +immutable
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="machineNetwork is immutable"
 	MachineNetwork []MachineNetworkEntry `json:"machineNetwork,omitempty"`
 
 	// ClusterNetwork is the list of IP address pools for pods.
@@ -507,6 +555,7 @@ type ClusterNetworking struct {
 	//
 	// +immutable
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="clusterNetwork is immutable"
 	ClusterNetwork []ClusterNetworkEntry `json:"clusterNetwork,omitempty"`
 
 	// ServiceNetwork is the list of IP address pools for services.
@@ -515,18 +564,21 @@ type ClusterNetworking struct {
 	//
 	// +immutable
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="serviceNetwork is immutable"
 	ServiceNetwork []ServiceNetworkEntry `json:"serviceNetwork,omitempty"`
 
 	// NetworkType specifies the SDN provider used for cluster networking.
 	//
 	// +kubebuilder:default:="OVNKubernetes"
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="networkType is immutable"
 	NetworkType NetworkType `json:"networkType"`
 
 	// APIServer contains advanced network settings for the API server that affect
 	// how the APIServer is exposed inside a cluster node.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="apiServer is immutable"
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
 }
 
@@ -626,23 +678,29 @@ const (
 
 // PlatformSpec specifies the underlying infrastructure provider for the cluster
 // and is used to configure platform specific behavior.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.aws) || has(self.aws)", message="aws is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.agent) || has(self.agent)", message="agent is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.powervs) || has(self.powervs)", message="powervs is required once set"
 type PlatformSpec struct {
 	// Type is the type of infrastructure provider for the cluster.
 	//
 	// +unionDiscriminator
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="type is immutable"
 	Type PlatformType `json:"type"`
 
 	// AWS specifies configuration for clusters running on Amazon Web Services.
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="aws is immutable"
 	AWS *AWSPlatformSpec `json:"aws,omitempty"`
 
 	// Agent specifies configuration for agent-based installations.
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="agent is immutable"
 	Agent *AgentPlatformSpec `json:"agent,omitempty"`
 
 	// IBMCloud defines IBMCloud specific settings for components
@@ -677,6 +735,7 @@ type PowerVSPlatformSpec struct {
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="accountID is immutable"
 	AccountID string `json:"accountID"`
 
 	// CISInstanceCRN is the IBMCloud CIS Service Instance's Cloud Resource Name
@@ -684,12 +743,14 @@ type PowerVSPlatformSpec struct {
 	//
 	// +kubebuilder:validation:Pattern=`^crn:`
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="cisInstanceCRN is immutable"
 	CISInstanceCRN string `json:"cisInstanceCRN"`
 
 	// ResourceGroup is the IBMCloud Resource Group in which the cluster resides.
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="resourceGroup is immutable"
 	ResourceGroup string `json:"resourceGroup"`
 
 	// Region is the IBMCloud region in which the cluster resides. This configures the
@@ -698,6 +759,7 @@ type PowerVSPlatformSpec struct {
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="region is immutable"
 	Region string `json:"region"`
 
 	// Zone is the availability zone where control plane cloud resources are
@@ -705,12 +767,14 @@ type PowerVSPlatformSpec struct {
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="zone is immutable"
 	Zone string `json:"zone"`
 
 	// Subnet is the subnet to use for control plane cloud resources.
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="subnet is immutable"
 	Subnet *PowerVSResourceReference `json:"subnet"`
 
 	// ServiceInstance is the reference to the Power VS service on which the server instance(VM) will be created.
@@ -724,6 +788,7 @@ type PowerVSPlatformSpec struct {
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="serviceInstanceID is immutable"
 	ServiceInstanceID string `json:"serviceInstanceID"`
 
 	// VPC specifies IBM Cloud PowerVS Load Balancing configuration for the control
@@ -731,6 +796,7 @@ type PowerVSPlatformSpec struct {
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="vpc is immutable"
 	VPC *PowerVSVPC `json:"vpc"`
 
 	// KubeCloudControllerCreds is a reference to a secret containing cloud
@@ -740,6 +806,7 @@ type PowerVSPlatformSpec struct {
 	// TODO(dan): document the "cloud controller policy"
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="kubeCloudControllerCreds is immutable"
 	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
 
 	// NodePoolManagementCreds is a reference to a secret containing cloud
@@ -749,28 +816,34 @@ type PowerVSPlatformSpec struct {
 	// TODO(dan): document the "node pool management policy"
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="nodePoolManagementCreds is immutable"
 	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
 
 	// IngressOperatorCloudCreds is a reference to a secret containing ibm cloud
 	// credentials for ingress operator to get authenticated with ibm cloud.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="ingressOperatorCloudCreds is immutable"
 	IngressOperatorCloudCreds corev1.LocalObjectReference `json:"ingressOperatorCloudCreds"`
 
 	// StorageOperatorCloudCreds is a reference to a secret containing ibm cloud
 	// credentials for storage operator to get authenticated with ibm cloud.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageOperatorCloudCreds is immutable"
 	StorageOperatorCloudCreds corev1.LocalObjectReference `json:"storageOperatorCloudCreds"`
 }
 
 // PowerVSVPC specifies IBM Cloud PowerVS LoadBalancer configuration for the control
 // plane.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.zone) || has(self.zone)", message="zone is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.subnet) || has(self.subnet)", message="subnet is required once set"
 type PowerVSVPC struct {
 	// Name for VPC to used for all the service load balancer.
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="name is immutable"
 	Name string `json:"name"`
 
 	// Region is the IBMCloud region in which VPC gets created, this VPC used for all the ingress traffic
@@ -778,6 +851,7 @@ type PowerVSVPC struct {
 	// This field is immutable. Once set, It can't be changed.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="region is immutable"
 	Region string `json:"region"`
 
 	// Zone is the availability zone where load balancer cloud resources are
@@ -786,6 +860,7 @@ type PowerVSVPC struct {
 	//
 	// +immutable
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="zone is immutable"
 	Zone string `json:"zone,omitempty"`
 
 	// Subnet is the subnet to use for load balancer.
@@ -793,6 +868,7 @@ type PowerVSVPC struct {
 	//
 	// +immutable
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="subnet is immutable"
 	Subnet string `json:"subnet,omitempty"`
 }
 
@@ -844,12 +920,15 @@ const (
 )
 
 // AWSPlatformSpec specifies configuration for clusters running on Amazon Web Services.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.cloudProviderConfig) || has(self.cloudProviderConfig)", message="cloudProviderConfig is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.serviceEndpoints) || has(self.serviceEndpoints)", message="serviceEndpoints is required once set"
 type AWSPlatformSpec struct {
 	// Region is the AWS region in which the cluster resides. This configures the
 	// OCP control plane cloud integrations, and is used by NodePool to resolve
 	// the correct boot AMI for a given release.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="region is immutable"
 	Region string `json:"region"`
 
 	// CloudProviderConfig specifies AWS networking configuration for the control
@@ -860,6 +939,7 @@ type AWSPlatformSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="cloudProviderConfig is immutable"
 	CloudProviderConfig *AWSCloudProviderConfig `json:"cloudProviderConfig,omitempty"`
 
 	// ServiceEndpoints specifies optional custom endpoints which will override
@@ -869,18 +949,21 @@ type AWSPlatformSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="serviceEndpoints is immutable"
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
 	// RolesRef contains references to various AWS IAM roles required to enable
 	// integrations such as OIDC.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="rolesRef is immutable"
 	RolesRef AWSRolesRef `json:"rolesRef"`
 
 	// Deprecated
 	// This field will be removed in the next API release.
 	// Use RolesRef instead.
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="roles is immutable"
 	Roles []AWSRoleCredentials `json:"roles,omitempty"`
 
 	// Deprecated
@@ -888,6 +971,7 @@ type AWSPlatformSpec struct {
 	// Use RolesRef instead.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="kubeCloudControllerCreds is immutable"
 	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
 
 	// Deprecated
@@ -895,6 +979,7 @@ type AWSPlatformSpec struct {
 	// Use RolesRef instead.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="nodePoolManagementCreds is immutable"
 	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
 
 	// Deprecated
@@ -902,6 +987,7 @@ type AWSPlatformSpec struct {
 	// Use RolesRef instead.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="controlPlaneOperatorCreds is immutable"
 	ControlPlaneOperatorCreds corev1.LocalObjectReference `json:"controlPlaneOperatorCreds"`
 
 	// ResourceTags is a list of additional tags to apply to AWS resources created
@@ -1167,6 +1253,7 @@ type AWSRolesRef struct {
 	//  ]
 	// }
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="kubeCloudControllerARN is immutable"
 	KubeCloudControllerARN string `json:"kubeCloudControllerARN"`
 
 	// NodePoolManagementARN is an ARN value referencing a role appropriate for the CAPI Controller.
@@ -1260,6 +1347,7 @@ type AWSRolesRef struct {
 	// }
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="nodePoolManagementARN is immutable"
 	NodePoolManagementARN string `json:"nodePoolManagementARN"`
 
 	// ControlPlaneOperatorARN  is an ARN value referencing a role appropriate for the Control Plane Operator.
@@ -1292,6 +1380,7 @@ type AWSRolesRef struct {
 	//	]
 	// }
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="controlPlaneOperatorARN is immutable"
 	ControlPlaneOperatorARN string `json:"controlPlaneOperatorARN"`
 }
 
@@ -1379,6 +1468,8 @@ const (
 )
 
 // EtcdSpec specifies configuration for a control plane etcd cluster.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.managed) || has(self.managed)", message="managed is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.unmanaged) || has(self.unmanaged)", message="unmanaged is required once set"
 type EtcdSpec struct {
 	// ManagementType defines how the etcd cluster is managed.
 	//
@@ -1422,11 +1513,13 @@ var (
 )
 
 // ManagedEtcdStorageSpec describes the storage configuration for etcd data.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.restoreSnapshotURL) || has(self.restoreSnapshotURL)", message="restoreSnapshotURL is required once set"
 type ManagedEtcdStorageSpec struct {
 	// Type is the kind of persistent storage implementation to use for etcd.
 	//
 	// +immutable
 	// +unionDiscriminator
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="type is immutable"
 	Type ManagedEtcdStorageType `json:"type"`
 
 	// PersistentVolume is the configuration for PersistentVolume etcd storage.
@@ -1445,11 +1538,13 @@ type ManagedEtcdStorageSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="restoreSnapshotURL is immutable"
 	RestoreSnapshotURL []string `json:"restoreSnapshotURL,omitempty"`
 }
 
 // PersistentVolumeEtcdStorageSpec is the configuration for PersistentVolume
 // etcd storage.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.storageClassName) || has(self.storageClassName)", message="storageClassName is required once set"
 type PersistentVolumeEtcdStorageSpec struct {
 	// StorageClassName is the StorageClass of the data volume for each etcd member.
 	//
@@ -1457,6 +1552,7 @@ type PersistentVolumeEtcdStorageSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageClassName is immutable"
 	StorageClassName *string `json:"storageClassName,omitempty"`
 
 	// Size is the minimum size of the data volume for each etcd member.
