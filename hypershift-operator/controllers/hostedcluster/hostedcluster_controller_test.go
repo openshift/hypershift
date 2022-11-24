@@ -15,6 +15,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	version "github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
@@ -840,7 +841,7 @@ func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
 }
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
-
+	releaseImage, _ := version.LookupDefaultOCPVersion()
 	hostedClusters := []*hyperv1.HostedCluster{
 		{
 			ObjectMeta: metav1.ObjectMeta{Name: "agent"},
@@ -848,6 +849,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				Platform: hyperv1.PlatformSpec{
 					Type:  hyperv1.AgentPlatform,
 					Agent: &hyperv1.AgentPlatformSpec{AgentNamespace: "agent-namespace"},
+				},
+				Release: hyperv1.Release{
+					Image: releaseImage.PullSpec,
 				},
 			},
 			Status: hyperv1.HostedClusterStatus{
@@ -872,6 +876,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						},
 					},
 				},
+				Release: hyperv1.Release{
+					Image: releaseImage.PullSpec,
+				},
 			},
 		},
 		{
@@ -879,6 +886,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.NonePlatform,
+				},
+				Release: hyperv1.Release{
+					Image: releaseImage.PullSpec,
 				},
 			},
 		},
@@ -889,6 +899,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					Type:     hyperv1.IBMCloudPlatform,
 					IBMCloud: &hyperv1.IBMCloudPlatformSpec{},
 				},
+				Release: hyperv1.Release{
+					Image: releaseImage.PullSpec,
+				},
 			},
 		},
 		{
@@ -896,6 +909,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.KubevirtPlatform,
+				},
+				Release: hyperv1.Release{
+					Image: releaseImage.PullSpec,
 				},
 			},
 		},

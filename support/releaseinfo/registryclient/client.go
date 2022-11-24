@@ -234,7 +234,7 @@ func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []b
 func getMetadata(ctx context.Context, imageRef string, pullSecret []byte) ([]distribution.Descriptor, distribution.BlobStore, error) {
 	repo, ref, err := GetRepoSetup(ctx, imageRef, pullSecret)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to repo setup: %w", err)
+		return nil, nil, fmt.Errorf("failed to get repo setup: %w", err)
 	}
 	firstManifest, location, err := manifest.FirstManifest(ctx, *ref, repo)
 	if err != nil {

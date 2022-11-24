@@ -10,6 +10,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	version "github.com/openshift/hypershift/cmd/version"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -30,6 +31,7 @@ import (
 )
 
 func TestWebhookAllowsHostedClusterReconcilerUpdates(t *testing.T) {
+	releaseImage, _ := version.LookupDefaultOCPVersion()
 	t.Parallel()
 	testCases := []struct {
 		name              string
@@ -55,6 +57,9 @@ func TestWebhookAllowsHostedClusterReconcilerUpdates(t *testing.T) {
 							},
 						},
 					},
+					Release: hyperv1.Release{
+						Image: releaseImage.PullSpec,
+					},
 				},
 			},
 			additionalObjects: []crclient.Object{
@@ -64,7 +69,7 @@ func TestWebhookAllowsHostedClusterReconcilerUpdates(t *testing.T) {
 				},
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{Namespace: "some-ns"},
-					Data:       map[string][]byte{".dockerconfigjson": []byte("something")},
+					Data:       map[string][]byte{".dockerconfigjson": []byte("{\"something\": \"something\"}")},
 				},
 				&configv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}},
 				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "none-cluster"}},
