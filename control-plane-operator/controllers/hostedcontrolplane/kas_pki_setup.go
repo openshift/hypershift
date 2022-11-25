@@ -69,7 +69,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	// KAS aggregator client CA
 	kasAggregatorClientCA := manifests.AggregatorClientCAConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kasAggregatorClientCA, func() error {
-		return pki.ReconcileAggregatorClientCA(kasAggregatorClientCA, p.OwnerRef, kasAggregateClientSigner, rootCASecret)
+		return pki.ReconcileAggregatorClientCA(kasAggregatorClientCA, p.OwnerRef, kasAggregateClientSigner)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile combined CA: %w", err)
 	}
