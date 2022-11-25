@@ -1540,7 +1540,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 
 	konnectivityCACM := manifests.KonnectivityCAConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityCACM, func() error {
-		return pki.ReconcileConnectivityConfigMap(konnectivityCACM, p.OwnerRef, konnectivitySigner)
+		return pki.ReconcileConnectivityConfigMap(konnectivityCACM, p.OwnerRef, konnectivitySigner, rootCASecret)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity CA config map: %v", err)
 	}
