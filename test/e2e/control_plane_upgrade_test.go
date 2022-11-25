@@ -81,6 +81,10 @@ func TestUpgradeControlPlane(t *testing.T) {
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
+	// Sanity check the cluster by waiting for the nodes to report ready
+	t.Logf("Waiting for guest client to become available after upgrade")
+	guestClient = e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
+
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	e2eutil.EnsureMachineDeploymentGeneration(t, ctx, client, hostedCluster, 1)
