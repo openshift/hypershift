@@ -3204,6 +3204,22 @@ spec:
                   - type
                   type: object
                 type: array
+              controlPlaneEndpoint:
+                description: ControlPlaneEndpoint contains the endpoint information
+                  by which external clients can access the control plane. This is
+                  populated after the infrastructure is ready.
+                properties:
+                  host:
+                    description: Host is the hostname on which the API server is serving.
+                    type: string
+                  port:
+                    description: Port is the port on which the API server is serving.
+                    format: int32
+                    type: integer
+                required:
+                - host
+                - port
+                type: object
               ignitionEndpoint:
                 description: IgnitionEndpoint is the endpoint injected in the ign
                   config userdata. It exposes the config for instances to become kubernetes

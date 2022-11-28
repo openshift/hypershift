@@ -684,9 +684,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Set the OAuth URL
+	// Set the Control Plane and OAuth endpoints URL
 	{
 		if hcp != nil {
+			hcluster.Status.ControlPlaneEndpoint = hcp.Status.ControlPlaneEndpoint
 			hcluster.Status.OAuthCallbackURLTemplate = hcp.Status.OAuthCallbackURLTemplate
 		}
 	}
