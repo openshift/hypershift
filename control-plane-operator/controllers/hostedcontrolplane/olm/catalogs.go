@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
@@ -184,9 +185,9 @@ func ReconcileCatalogServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, own
 					CA: prometheusoperatorv1.SecretOrConfigMap{
 						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.TotalClientCABundle(sm.Namespace).Name,
+								Name: manifests.RootCAConfigMap(sm.Namespace).Name,
 							},
-							Key: "ca.crt",
+							Key: certs.CASignerCertMapKey,
 						},
 					},
 				},
