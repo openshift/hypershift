@@ -5,6 +5,7 @@ import (
 	_ "embed"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
@@ -47,9 +48,9 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, apiServerP
 					CA: prometheusoperatorv1.SecretOrConfigMap{
 						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.TotalClientCABundle(sm.Namespace).Name,
+								Name: manifests.RootCAConfigMap(sm.Namespace).Name,
 							},
-							Key: "ca.crt",
+							Key: certs.CASignerCertMapKey,
 						},
 					},
 				},

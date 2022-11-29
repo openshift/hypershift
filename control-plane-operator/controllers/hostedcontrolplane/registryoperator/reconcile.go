@@ -434,9 +434,9 @@ func ReconcilePodMonitor(pm *prometheusoperatorv1.PodMonitor, clusterID string, 
 					CA: prometheusoperatorv1.SecretOrConfigMap{
 						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.TotalClientCABundle(pm.Namespace).Name,
+								Name: manifests.RootCAConfigMap(pm.Namespace).Name,
 							},
-							Key: "ca.crt",
+							Key: certs.CASignerCertMapKey,
 						},
 					},
 				},
