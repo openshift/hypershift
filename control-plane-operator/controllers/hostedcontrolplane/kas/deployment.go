@@ -664,6 +664,7 @@ cp /tmp/output/manifests/* %[1]s
 
 func applyBootstrapManifestsScript(workDir string) string {
 	var script = `#!/bin/sh
+set -euo pipefail
 while true; do
   if oc apply -f %[1]s; then
     echo "Bootstrap manifests applied successfully."
@@ -671,6 +672,7 @@ while true; do
   fi
   sleep 1
 done
+oc policy add-role-to-group --role-namespace kube-system --rolebinding-name authentication-reader-for-authenticated-users -n kube-system extension-apiserver-authentication-reader system:authenticated
 while true; do
   sleep 1000
 done
