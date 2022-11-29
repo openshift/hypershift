@@ -44,6 +44,7 @@ func testNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Clien
 				originalNP = nodePool
 			}
 		}
+		g.Expect(originalNP.Name).NotTo(BeEmpty())
 		g.Expect(originalNP.Name).NotTo(ContainSubstring("test"))
 		awsNPInfo := originalNP.Spec.Platform.AWS
 
@@ -80,27 +81,7 @@ func testNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Clien
 			if !errors.IsAlreadyExists(err) {
 				t.Fatalf("failed to create nodePool %s with Autorepair function: %v", nodePool.Name, err)
 			}
-
-			// If the NodePool already exists...
-			// This should not happen in CI but it's useful in local tests
-			existantNodePool := &hyperv1.NodePool{}
-			err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), existantNodePool)
-			g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepool")
-			err = mgmtClient.Delete(ctx, existantNodePool)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to Delete the existant NodePool")
-			t.Logf("waiting for NodePools to be recreated")
-			err = wait.PollImmediateWithContext(ctx, 10*time.Second, 15*time.Minute, func(ctx context.Context) (bool, error) {
-				if ctx.Err() != nil {
-					return false, err
-				}
-				err = mgmtClient.Create(ctx, nodePool)
-				if errors.IsAlreadyExists(err) {
-					t.Logf("WARNING: NodePool still there, will retry")
-					return false, nil
-				}
-				return true, nil
-			})
-			t.Logf("Nodepool Recreated")
+			err = nodePoolRecreate(t, ctx, nodePool, mgmtClient)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to Create the NodePool")
 		}
 		defer nodePoolScaleDownToZero(ctx, mgmtClient, *nodePool, t)

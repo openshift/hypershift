@@ -226,10 +226,9 @@ func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crcl
 	}
 
 	t.Logf("Waiting for nodes to become ready by NodePool. NodePool: %s Want: %v", nodePoolName, n)
-	nodes := &corev1.NodeList{}
 	nodesFromNodePool := []corev1.Node{}
-	readyNodeCount := 0
 	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
+		nodes := &corev1.NodeList{}
 		err = client.List(ctx, nodes)
 		if err != nil {
 			return false, nil
@@ -237,26 +236,24 @@ func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crcl
 		if len(nodes.Items) == 0 {
 			return false, nil
 		}
-		var readyNodes []string
 		for _, node := range nodes.Items {
 			if node.Labels["hypershift.openshift.io/nodePool"] == nodePoolName {
 				for _, cond := range node.Status.Conditions {
 					if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
-						readyNodes = append(readyNodes, node.Name)
 						nodesFromNodePool = append(nodesFromNodePool, node)
 					}
 				}
 			}
 		}
-		if len(readyNodes) != int(n) {
-			readyNodeCount = len(readyNodes)
+		if len(nodesFromNodePool) != int(n) {
+			nodesFromNodePool = nil
 			return false, nil
 		}
-		t.Logf("All nodes are ready. Count: %v", len(nodes.Items))
+		t.Logf("All nodes are ready. Count: %v", len(nodesFromNodePool))
 
 		return true, nil
 	})
-	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", len(nodesFromNodePool), n))
 	t.Logf("All nodes for NodePool %s appear to be ready in %s. Count: %v", nodePoolName, time.Since(start).Round(time.Second), n)
 
 	return nodesFromNodePool
