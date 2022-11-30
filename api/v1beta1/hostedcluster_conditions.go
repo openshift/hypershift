@@ -1,12 +1,18 @@
 package v1beta1
 
-// HostedCluster conditions.
+// "Condition values may change back and forth, but some condition transitions may be monotonic, depending on the resource and condition type.
+// However, conditions are observations and not, themselves, state machines."
+// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
+
+// Conditions.
 const (
 	// HostedClusterAvailable indicates whether the HostedCluster has a healthy
 	// control plane.
+	// When this is false for too long and there's no clear indication in the "Reason", please check the remaining more granular conditions.
 	HostedClusterAvailable ConditionType = "Available"
 	// HostedClusterProgressing indicates whether the HostedCluster is attempting
 	// an initial deployment or upgrade.
+	// When this is false for too long and there's no clear indication in the "Reason", please check the remaining more granular conditions.
 	HostedClusterProgressing ConditionType = "Progressing"
 	// HostedClusterDegraded indicates whether the HostedCluster is encountering
 	// an error that may require user intervention to resolve.
@@ -14,13 +20,19 @@ const (
 
 	// Bubble up from HCP.
 
-	// InfrastructureReady bubbles up the same condition from HCP.
+	// InfrastructureReady bubbles up the same condition from HCP. It signals if the infrastructure for a control plane to be operational,
+	// e.g. load balancers were created successfully.
+	// A failure here may require external user intervention to resolve. E.g. hitting quotas on the cloud provider.
 	InfrastructureReady ConditionType = "InfrastructureReady"
-	// KubeAPIServerAvailable bubbles up the same condition from HCP.
+	// KubeAPIServerAvailable bubbles up the same condition from HCP. It signals if the kube API server is available.
+	// A failure here often means a software bug or a non-stable cluster.
 	KubeAPIServerAvailable ConditionType = "KubeAPIServerAvailable"
-	// EtcdAvailable bubbles up the same condition from HCP.
+	// EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
+	// A failure here often means a software bug or a non-stable cluster.
 	EtcdAvailable ConditionType = "EtcdAvailable"
-	// ValidHostedControlPlaneConfiguration bubbles up the same condition from HCP.
+	// ValidHostedControlPlaneConfiguration bubbles up the same condition from HCP. It signals if the hostedControlPlane input is valid and
+	// supported by the underlying management cluster.
+	// A failure here is unlikely to resolve without the changing user input.
 	ValidHostedControlPlaneConfiguration ConditionType = "ValidHostedControlPlaneConfiguration"
 
 	// Bubble up from HCP which bubbles up from CVO.
@@ -47,10 +59,12 @@ const (
 
 	// IgnitionEndpointAvailable indicates whether the ignition server for the
 	// HostedCluster is available to handle ignition requests.
+	// A failure here often means a software bug or a non-stable cluster.
 	IgnitionEndpointAvailable ConditionType = "IgnitionEndpointAvailable"
 
-	// ValidHostedClusterConfiguration indicates (if status is true) that the
-	// ClusterConfiguration specified for the HostedCluster is valid.
+	// ValidHostedClusterConfiguration signals if the hostedCluster input is valid and
+	// supported by the underlying management cluster.
+	// A failure here is unlikely to resolve without the changing user input.
 	ValidHostedClusterConfiguration ConditionType = "ValidConfiguration"
 
 	// SupportedHostedCluster indicates whether a HostedCluster is supported by
@@ -58,27 +72,32 @@ const (
 	// e.g. If HostedCluster requests endpointAcess Private but the hypershift-operator
 	// is running on a management cluster outside AWS or is not configured with AWS
 	// credentials, the HostedCluster is not supported.
+	// A failure here is unlikely to resolve without the changing user input.
 	SupportedHostedCluster ConditionType = "SupportedHostedCluster"
 
 	// ValidOIDCConfiguration indicates if an AWS cluster's OIDC condition is
 	// detected as invalid.
+	// A failure here may require external user intervention to resolve. E.g. oidc was deleted out of band.
 	ValidOIDCConfiguration ConditionType = "ValidOIDCConfiguration"
 
 	// ValidReleaseImage indicates if the release image set in the spec is valid
 	// for the HostedCluster. For example, this can be set false if the
 	// HostedCluster itself attempts an unsupported version before 4.9 or an
 	// unsupported upgrade e.g y-stream upgrade before 4.11.
+	// A failure here is unlikely to resolve without the changing user input.
 	ValidReleaseImage ConditionType = "ValidReleaseImage"
 
 	// PlatformCredentialsFound indicates that credentials required for the
 	// desired platform are valid.
+	// A failure here is unlikely to resolve without the changing user input.
 	PlatformCredentialsFound ConditionType = "PlatformCredentialsFound"
 
 	// ReconciliationActive indicates if reconciliation of the HostedCluster is
-	// active or paused.
+	// active or paused hostedCluster.spec.pausedUntil.
 	ReconciliationActive ConditionType = "ReconciliationActive"
 	// ReconciliationSucceeded indicates if the HostedCluster reconciliation
 	// succeeded.
+	// A failure here often means a software bug or a non-stable cluster.
 	ReconciliationSucceeded ConditionType = "ReconciliationSucceeded"
 )
 

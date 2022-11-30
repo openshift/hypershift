@@ -1799,7 +1799,7 @@ func TestCreateValidGeneratedPayloadCondition(t *testing.T) {
 					Namespace: "test",
 				},
 				Data: map[string][]byte{
-					ignserver.TokenSecretReasonKey:  []byte(hyperv1.NodePoolAsExpectedConditionReason),
+					ignserver.TokenSecretReasonKey:  []byte(hyperv1.AsExpectedReason),
 					ignserver.TokenSecretMessageKey: []byte("Payload generated successfully"),
 				},
 			},
@@ -1808,7 +1808,7 @@ func TestCreateValidGeneratedPayloadCondition(t *testing.T) {
 				Status:             corev1.ConditionTrue,
 				Severity:           "",
 				LastTransitionTime: metav1.Time{},
-				Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+				Reason:             hyperv1.AsExpectedReason,
 				Message:            "Payload generated successfully",
 				ObservedGeneration: 1,
 			},

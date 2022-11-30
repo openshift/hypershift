@@ -291,7 +291,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		delete(patch.Data, TokenSecretPayloadKey)
 	}
 
-	patch.Data[TokenSecretReasonKey] = []byte(hyperv1.NodePoolAsExpectedConditionReason)
+	patch.Data[TokenSecretReasonKey] = []byte(hyperv1.AsExpectedReason)
 	patch.Data[TokenSecretMessageKey] = []byte("Payload generated successfully")
 
 	if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
