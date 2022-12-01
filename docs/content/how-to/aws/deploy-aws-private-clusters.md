@@ -173,7 +173,7 @@ hypershift create bastion aws --aws-creds=$AWS_CREDS --infra-id=$INFRA_ID --regi
 Find the private IPs of nodes in the cluster's NodePool.
 
 ```shell
-aws ec2 describe-instances --filter="Name=tag:kubernetes.io/cluster/$CLUSTER_NAME,Values=owned" | jq '.Reservations[] | .Instances[] | select(.PublicDnsName=="") | .PrivateIpAddress'
+aws ec2 describe-instances --filter="Name=tag:kubernetes.io/cluster/$INFRA_ID,Values=owned" | jq '.Reservations[] | .Instances[] | select(.PublicDnsName=="") | .PrivateIpAddress'
 ```
 
 Create a kubeconfig for the cluster which can be copied to a node.
