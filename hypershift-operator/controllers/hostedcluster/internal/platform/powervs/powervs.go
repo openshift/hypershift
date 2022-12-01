@@ -21,12 +21,14 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 )
 
-const (
-	// TODO(mkumatag): Move to OpenShift built image
-	imageCAPIBM = "k8s.gcr.io/capi-ibmcloud/cluster-api-ibmcloud-controller:v0.2.4"
-)
+func New(capiProviderImage string) *PowerVS {
+	return &PowerVS{
+		capiProviderImage: capiProviderImage,
+	}
+}
 
 type PowerVS struct {
+	capiProviderImage string
 }
 
 func (p PowerVS) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
@@ -75,7 +77,7 @@ func (p PowerVS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, crea
 func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	defaultMode := int32(416)
 
-	providerImage := imageCAPIBM
+	providerImage := p.capiProviderImage
 	if envImage := os.Getenv(images.PowerVSCAPIProviderEnvVar); len(envImage) > 0 {
 		providerImage = envImage
 	}
@@ -142,7 +144,7 @@ func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *
 								Value: "/home/.ibmcloud/ibm-credentials.env",
 							},
 						},
-						Command: []string{"/manager"},
+						Command: []string{"/bin/cluster-api-provider-ibmcloud-controller-manager"},
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
 							"--alsologtostderr",
 							"--v=4",
