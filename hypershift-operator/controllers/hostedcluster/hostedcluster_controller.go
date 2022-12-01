@@ -1601,15 +1601,17 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	}
 
 	// Reconcile CAPI manager deployment
-	capiImage, err := hyperutil.GetPayloadImage(ctx, hcluster, ImageStreamCAPI, pullSecretBytes)
-	if err != nil {
-		return fmt.Errorf("failed to retrieve capi image: %w", err)
-	}
+	var capiImage string
 	if envImage := os.Getenv(images.CAPIEnvVar); len(envImage) > 0 {
 		capiImage = envImage
 	}
 	if _, ok := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]; ok {
 		capiImage = hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
+	}
+	if capiImage == "" {
+		if capiImage, err = hyperutil.GetPayloadImage(ctx, hcluster, ImageStreamCAPI, pullSecretBytes); err != nil {
+			return fmt.Errorf("failed to retrieve capi image: %w", err)
+		}
 	}
 	capiManagerDeployment := clusterapi.ClusterAPIManagerDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, capiManagerDeployment, func() error {
