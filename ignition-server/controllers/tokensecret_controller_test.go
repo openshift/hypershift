@@ -144,7 +144,7 @@ func TestReconcile(t *testing.T) {
 
 				// Validate data for conditions
 				g.Expect(freshSecret.Data[TokenSecretPayloadKey]).To(BeEquivalentTo(fakePayload))
-				g.Expect(freshSecret.Data[TokenSecretReasonKey]).To(BeEquivalentTo(hyperv1.NodePoolAsExpectedConditionReason))
+				g.Expect(freshSecret.Data[TokenSecretReasonKey]).To(BeEquivalentTo(hyperv1.AsExpectedReason))
 				g.Expect(freshSecret.Data[TokenSecretMessageKey]).To(BeEquivalentTo("Payload generated successfully"))
 
 				// Delete the secret.

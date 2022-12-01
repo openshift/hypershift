@@ -221,7 +221,6 @@ func clusterAvailableTime(hc *hyperv1.HostedCluster) *float64 {
 }
 
 var expectedNPConditionStates = map[string]bool{
-	hyperv1.NodePoolValidHostedClusterConditionType: true,
 	hyperv1.NodePoolValidReleaseImageConditionType:  true,
 	hyperv1.NodePoolValidPlatformImageType:          true,
 	hyperv1.NodePoolValidMachineConfigConditionType: true,

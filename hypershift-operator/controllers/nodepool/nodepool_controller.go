@@ -238,7 +238,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
 			Status:             corev1.ConditionFalse,
 			Message:            err.Error(),
-			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
 			ObservedGeneration: nodePool.Generation,
 		})
 		// We don't return the error here as reconciling won't solve the input problem.
@@ -250,7 +250,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
 			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Reason:             hyperv1.AsExpectedReason,
 			Message:            fmt.Sprintf("Maximum nodes: %v, Minimum nodes: %v", nodePool.Spec.AutoScaling.Max, nodePool.Spec.AutoScaling.Min),
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -258,7 +258,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
 			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Reason:             hyperv1.AsExpectedReason,
 			ObservedGeneration: nodePool.Generation,
 		})
 	}
@@ -269,7 +269,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Type:               hyperv1.NodePoolUpdateManagementEnabledConditionType,
 			Status:             corev1.ConditionFalse,
 			Message:            err.Error(),
-			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
 			ObservedGeneration: nodePool.Generation,
 		})
 		// We don't return the error here as reconciling won't solve the input problem.
@@ -280,7 +280,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolUpdateManagementEnabledConditionType,
 		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+		Reason:             hyperv1.AsExpectedReason,
 		ObservedGeneration: nodePool.Generation,
 	})
 
@@ -337,7 +337,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
 			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
 			Message:            fmt.Sprintf("Failed to get release image: %v", err.Error()),
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -346,7 +346,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolValidReleaseImageConditionType,
 		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+		Reason:             hyperv1.AsExpectedReason,
 		Message:            fmt.Sprintf("Using release image: %s", nodePool.Spec.Release.Image),
 		ObservedGeneration: nodePool.Generation,
 	})
@@ -368,7 +368,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 					Type:               hyperv1.NodePoolValidPlatformImageType,
 					Status:             corev1.ConditionFalse,
-					Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+					Reason:             hyperv1.NodePoolValidationFailedReason,
 					Message:            fmt.Sprintf("Couldn't discover an AMI for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
 					ObservedGeneration: nodePool.Generation,
 				})
@@ -377,7 +377,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidPlatformImageType,
 				Status:             corev1.ConditionTrue,
-				Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+				Reason:             hyperv1.AsExpectedReason,
 				Message:            fmt.Sprintf("Bootstrap AMI is %q", ami),
 				ObservedGeneration: nodePool.Generation,
 			})
@@ -394,7 +394,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidPlatformImageType,
 				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+				Reason:             hyperv1.NodePoolValidationFailedReason,
 				Message:            fmt.Sprintf("Couldn't discover a PowerVS Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
 				ObservedGeneration: nodePool.Generation,
 			})
@@ -404,7 +404,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidPlatformImageType,
 			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Reason:             hyperv1.AsExpectedReason,
 			Message:            fmt.Sprintf("Bootstrap PowerVS Image is %q", powervsBootImage),
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -417,7 +417,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+				Reason:             hyperv1.NodePoolValidationFailedReason,
 				Message:            fmt.Sprintf("validation of NodePool KubeVirt platform failed: %s", err.Error()),
 				ObservedGeneration: nodePool.Generation,
 			})
@@ -430,7 +430,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidPlatformImageType,
 				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+				Reason:             hyperv1.NodePoolValidationFailedReason,
 				Message:            fmt.Sprintf("Couldn't discover a KubeVirt Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
 				ObservedGeneration: nodePool.Generation,
 			})
@@ -439,7 +439,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidPlatformImageType,
 			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Reason:             hyperv1.AsExpectedReason,
 			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %q", kubevirtBootImage),
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -459,7 +459,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
 			Message:            err.Error(),
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -469,7 +469,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
 			Message:            "Core ignition config has not been created yet",
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -479,7 +479,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+		Reason:             hyperv1.AsExpectedReason,
 		ObservedGeneration: nodePool.Generation,
 	})
 
@@ -490,7 +490,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
 			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Reason:             hyperv1.AsExpectedReason,
 			Message:            fmt.Sprintf("Updating config in progress. Target config: %s", targetConfigHash),
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -508,7 +508,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
 			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Reason:             hyperv1.AsExpectedReason,
 			Message:            fmt.Sprintf("Updating version in progress. Target version: %s", targetVersion),
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -533,7 +533,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidTuningConfigConditionType,
 			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedConditionReason,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
 			Message:            err.Error(),
 			ObservedGeneration: nodePool.Generation,
 		})
@@ -543,7 +543,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolValidTuningConfigConditionType,
 		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+		Reason:             hyperv1.AsExpectedReason,
 		ObservedGeneration: nodePool.Generation,
 	})
 
@@ -742,7 +742,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
 			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Reason:             hyperv1.AsExpectedReason,
 			ObservedGeneration: nodePool.Generation,
 		})
 	} else {
@@ -758,7 +758,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutorepairEnabledConditionType,
 			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
+			Reason:             hyperv1.AsExpectedReason,
 			ObservedGeneration: nodePool.Generation,
 		})
 	}
@@ -802,7 +802,7 @@ func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Con
 	}
 
 	var status corev1.ConditionStatus
-	if string(tokenSecret.Data[ignserver.TokenSecretReasonKey]) == hyperv1.NodePoolAsExpectedConditionReason {
+	if string(tokenSecret.Data[ignserver.TokenSecretReasonKey]) == hyperv1.AsExpectedReason {
 		status = corev1.ConditionTrue
 	}
 	condition = &hyperv1.NodePoolCondition{
@@ -1197,7 +1197,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		if c.Type == capiv1.ReadyCondition {
 			// this is so api server does not complain
 			// invalid value: \"\": status.conditions.reason in body should be at least 1 chars long"
-			reason := hyperv1.NodePoolAsExpectedConditionReason
+			reason := hyperv1.AsExpectedReason
 			if c.Reason != "" {
 				reason = c.Reason
 			}

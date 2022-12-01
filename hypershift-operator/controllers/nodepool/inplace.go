@@ -160,13 +160,13 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 
 	if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]; ok {
 		status = corev1.ConditionTrue
-		reason = hyperv1.NodePoolAsExpectedConditionReason
+		reason = hyperv1.AsExpectedReason
 		message = machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]
 	}
 
 	if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]; ok {
 		status = corev1.ConditionFalse
-		reason = hyperv1.NodePoolInplaceUpgradeFailedConditionReason
+		reason = hyperv1.NodePoolInplaceUpgradeFailedReason
 		message = machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]
 	}
 	if message != "" {
@@ -187,7 +187,7 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 		if c.Type == capiv1.ReadyCondition {
 			// this is so api server does not complain
 			// invalid value: \"\": status.conditions.reason in body should be at least 1 chars long"
-			reason := hyperv1.NodePoolAsExpectedConditionReason
+			reason := hyperv1.AsExpectedReason
 			if c.Reason != "" {
 				reason = c.Reason
 			}

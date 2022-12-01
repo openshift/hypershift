@@ -10,35 +10,9 @@ import (
 )
 
 const (
-	NodePoolValidGeneratedPayloadConditionType   = "ValidGeneratedPayload"
-	NodePoolValidPlatformImageType               = "ValidPlatformImage"
-	NodePoolValidHostedClusterConditionType      = "ValidHostedCluster"
-	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
-	NodePoolValidMachineConfigConditionType      = "ValidMachineConfig"
-	NodePoolValidTuningConfigConditionType       = "ValidTuningConfig"
-	NodePoolUpdateManagementEnabledConditionType = "UpdateManagementEnabled"
-	NodePoolAutoscalingEnabledConditionType      = "AutoscalingEnabled"
-	NodePoolReadyConditionType                   = "Ready"
-	NodePoolReconciliationActiveConditionType    = "ReconciliationActive"
-	NodePoolAutorepairEnabledConditionType       = "AutorepairEnabled"
-	NodePoolUpdatingVersionConditionType         = "UpdatingVersion"
-	NodePoolUpdatingConfigConditionType          = "UpdatingConfig"
-	NodePoolAsExpectedConditionReason            = "AsExpected"
-	NodePoolValidationFailedConditionReason      = "ValidationFailed"
-	NodePoolInplaceUpgradeFailedConditionReason  = "InplaceUpgradeFailed"
-	NodePoolNotFoundReason                       = "NotFound"
-	NodePoolFailedToGetReason                    = "FailedToGet"
 	// NodePoolLabel is used to label Nodes.
 	NodePoolLabel = "hypershift.openshift.io/nodePool"
-)
 
-// The following are reasons for the IgnitionEndpointAvailable condition.
-const (
-	IgnitionEndpointMissingReason string = "IgnitionEndpointMissing"
-	IgnitionCACertMissingReason   string = "IgnitionCACertMissing"
-)
-
-const (
 	// IgnitionServerTokenExpirationTimestampAnnotation holds the time that a ignition token expires and should be
 	// removed from the cluster.
 	IgnitionServerTokenExpirationTimestampAnnotation = "hypershift.openshift.io/ignition-token-expiration-timestamp"
