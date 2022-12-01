@@ -182,3 +182,12 @@ func ClusterVersionOperatorServerCertSecret(ns string) *corev1.Secret {
 func AWSPodIdentityWebhookServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "aws-pod-identity-webhook-serving-cert")
 }
+
+func CSISnapshotControllerWebhookCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "csi-snapshot-webhook-secret",
+			Namespace: ns,
+		},
+	}
+}

@@ -46,6 +46,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/registryoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/routecm"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
@@ -862,6 +863,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile csi driver: %w", err)
 	}
 
+	// Reconcile CSI snapshot controller operator
+	r.Log.Info("Reconciling CSI snapshot controller operator")
+	if err := r.reconcileCSISnapshotControllerOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to ensure control plane: %w", err)
+	}
+
 	return nil
 }
 
@@ -1527,6 +1534,13 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return pki.ReconcileCVOServerSecret(cvoServerCert, rootCASecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cvo serving cert: %w", err)
+	}
+
+	csiSnapshotWebhookSecret := manifests.CSISnapshotControllerWebhookCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, csiSnapshotWebhookSecret, func() error {
+		return pki.ReconcileCSISnapshotWebhookTLS(csiSnapshotWebhookSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile CSI snapshot webhook cert: %w", err)
 	}
 
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -3153,4 +3167,40 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 		}
 	}
 	return false, nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
+	params := snapshotcontroller.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+
+	deployment := manifests.CSISnapshotControllerOperatorDeployment(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, deployment, func() error {
+		return snapshotcontroller.ReconcileOperatorDeployment(deployment, params)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile CSI snapshot controller operator deployment: %w", err)
+	}
+
+	sa := manifests.CSISnapshotControllerOperatorServiceAccount(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, sa, func() error {
+		return snapshotcontroller.ReconcileOperatorServiceAccount(sa, params)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile CSI snapshot controller operator service account: %w", err)
+	}
+
+	role := manifests.CSISnapshotControllerOperatorRole(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, role, func() error {
+		return snapshotcontroller.ReconcileOperatorRole(role, params)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile CSI snapshot controller operator role: %w", err)
+	}
+
+	roleBinding := manifests.CSISnapshotControllerOperatorRoleBinding(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, roleBinding, func() error {
+		return snapshotcontroller.ReconcileOperatorRoleBinding(roleBinding, params)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile CSI snapshot controller operator roleBinding: %w", err)
+	}
+
+	// TODO: create custom kubeconfig to the guest cluster + RBAC
+
+	return nil
 }

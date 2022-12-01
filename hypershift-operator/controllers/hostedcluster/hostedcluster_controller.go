@@ -2207,7 +2207,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 		},
 		{
 			APIGroups: []string{"apps"},
-			Resources: []string{"deployments", "statefulsets"},
+			Resources: []string{"deployments", "replicasets", "statefulsets"},
 			Verbs:     []string{"*"},
 		},
 		{

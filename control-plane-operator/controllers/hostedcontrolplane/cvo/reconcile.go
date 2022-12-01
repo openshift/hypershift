@@ -85,6 +85,10 @@ var (
 		"0000_50_cloud-credential-operator_01-operator-config.yaml",
 		"0000_50_cluster-authentication-operator_02_config.cr.yaml",
 		"0000_90_etcd-operator_03_prometheusrule.yaml",
+
+		// TODO: Remove when cluster-csi-snapshot-controller-operator stops shipping
+		// its ibm-cloud-managed deployment.
+		"0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml",
 	}
 )
 
@@ -246,7 +250,12 @@ func resourcesToRemove() []resourceDesc {
 			name:       "cluster-image-registry-operator",
 			namespace:  "openshift-image-registry",
 		},
-	}
+		{
+			apiVersion: "apps/v1",
+			kind:       "Deployment",
+			name:       "csi-snapshot-controller-operator",
+			namespace:  "openshift-cluster-storage-operator",
+		}}
 }
 
 func preparePayloadScript() string {
