@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -34,10 +35,14 @@ type IBMPowerVSMachineTemplateResource struct {
 
 // IBMPowerVSMachineTemplateStatus defines the observed state of IBMPowerVSMachineTemplate.
 type IBMPowerVSMachineTemplateStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Capacity defines the resource capacity for this machine.
+	// This value is used for autoscaling from zero operations as defined in:
+	// https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20210310-opt-in-autoscaling-from-zero.md
+	// +optional
+	Capacity corev1.ResourceList `json:"capacity,omitempty"`
 }
 
+//+kubebuilder:subresource:status
 //+kubebuilder:object:root=true
 //+kubebuilder:storageversion
 

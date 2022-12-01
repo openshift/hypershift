@@ -15,7 +15,30 @@ spec:
     singular: ibmpowervscluster
   scope: Namespaced
   versions:
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - description: Cluster to which this IBMPowerVSCluster belongs
+      jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - description: Time duration since creation of IBMPowerVSCluster
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.serviceInstanceID
+      name: PowerVS Cloud Instance ID
+      priority: 1
+      type: string
+    - description: Control Plane Endpoint
+      jsonPath: .spec.controlPlaneEndpoint.host
+      name: Endpoint
+      priority: 1
+      type: string
+    - description: Control Plane Port
+      jsonPath: .spec.controlPlaneEndpoint.port
+      name: Port
+      priority: 1
+      type: string
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: IBMPowerVSCluster is the Schema for the ibmpowervsclusters API.
@@ -60,6 +83,12 @@ spec:
                     type: string
                   name:
                     description: Name of resource
+                    minLength: 1
+                    type: string
+                  regex:
+                    description: Regular expression to match resource, In case of
+                      multiple resources matches the provided regular expression the
+                      first matched resource will be selected
                     minLength: 1
                     type: string
                 type: object

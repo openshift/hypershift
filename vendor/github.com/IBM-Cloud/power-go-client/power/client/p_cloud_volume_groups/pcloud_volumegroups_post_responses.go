@@ -29,6 +29,12 @@ func (o *PcloudVolumegroupsPostReader) ReadResponse(response runtime.ClientRespo
 			return nil, err
 		}
 		return result, nil
+	case 206:
+		result := NewPcloudVolumegroupsPostPartialContent()
+		if err := result.readResponse(response, consumer, o.formats); err != nil {
+			return nil, err
+		}
+		return result, nil
 	case 400:
 		result := NewPcloudVolumegroupsPostBadRequest()
 		if err := result.readResponse(response, consumer, o.formats); err != nil {
@@ -91,6 +97,38 @@ func (o *PcloudVolumegroupsPostAccepted) GetPayload() *models.VolumeGroupCreateR
 }
 
 func (o *PcloudVolumegroupsPostAccepted) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
+
+	o.Payload = new(models.VolumeGroupCreateResponse)
+
+	// response payload
+	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
+		return err
+	}
+
+	return nil
+}
+
+// NewPcloudVolumegroupsPostPartialContent creates a PcloudVolumegroupsPostPartialContent with default headers values
+func NewPcloudVolumegroupsPostPartialContent() *PcloudVolumegroupsPostPartialContent {
+	return &PcloudVolumegroupsPostPartialContent{}
+}
+
+/* PcloudVolumegroupsPostPartialContent describes a response with status code 206, with default header values.
+
+Partial Content
+*/
+type PcloudVolumegroupsPostPartialContent struct {
+	Payload *models.VolumeGroupCreateResponse
+}
+
+func (o *PcloudVolumegroupsPostPartialContent) Error() string {
+	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups][%d] pcloudVolumegroupsPostPartialContent  %+v", 206, o.Payload)
+}
+func (o *PcloudVolumegroupsPostPartialContent) GetPayload() *models.VolumeGroupCreateResponse {
+	return o.Payload
+}
+
+func (o *PcloudVolumegroupsPostPartialContent) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
 	o.Payload = new(models.VolumeGroupCreateResponse)
 

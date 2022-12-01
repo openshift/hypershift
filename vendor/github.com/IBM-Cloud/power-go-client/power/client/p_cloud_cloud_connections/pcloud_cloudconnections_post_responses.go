@@ -53,6 +53,12 @@ func (o *PcloudCloudconnectionsPostReader) ReadResponse(response runtime.ClientR
 			return nil, err
 		}
 		return nil, result
+	case 404:
+		result := NewPcloudCloudconnectionsPostNotFound()
+		if err := result.readResponse(response, consumer, o.formats); err != nil {
+			return nil, err
+		}
+		return nil, result
 	case 408:
 		result := NewPcloudCloudconnectionsPostRequestTimeout()
 		if err := result.readResponse(response, consumer, o.formats); err != nil {
@@ -237,6 +243,38 @@ func (o *PcloudCloudconnectionsPostUnauthorized) GetPayload() *models.Error {
 }
 
 func (o *PcloudCloudconnectionsPostUnauthorized) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
+
+	o.Payload = new(models.Error)
+
+	// response payload
+	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
+		return err
+	}
+
+	return nil
+}
+
+// NewPcloudCloudconnectionsPostNotFound creates a PcloudCloudconnectionsPostNotFound with default headers values
+func NewPcloudCloudconnectionsPostNotFound() *PcloudCloudconnectionsPostNotFound {
+	return &PcloudCloudconnectionsPostNotFound{}
+}
+
+/* PcloudCloudconnectionsPostNotFound describes a response with status code 404, with default header values.
+
+Not Found
+*/
+type PcloudCloudconnectionsPostNotFound struct {
+	Payload *models.Error
+}
+
+func (o *PcloudCloudconnectionsPostNotFound) Error() string {
+	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections][%d] pcloudCloudconnectionsPostNotFound  %+v", 404, o.Payload)
+}
+func (o *PcloudCloudconnectionsPostNotFound) GetPayload() *models.Error {
+	return o.Payload
+}
+
+func (o *PcloudCloudconnectionsPostNotFound) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
 	o.Payload = new(models.Error)
 

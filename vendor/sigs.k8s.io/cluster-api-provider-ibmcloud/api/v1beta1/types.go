@@ -53,6 +53,20 @@ var (
 	PowerVSImageStateImporting = PowerVSImageState("importing")
 )
 
+// VPCLoadBalancerState describes the state of the load balancer.
+type VPCLoadBalancerState string
+
+var (
+	// VPCLoadBalancerStateActive is the string representing the load balancer in a active state.
+	VPCLoadBalancerStateActive = VPCLoadBalancerState("active")
+
+	// VPCLoadBalancerStateCreatePending is the string representing the load balancer in a queued state.
+	VPCLoadBalancerStateCreatePending = VPCLoadBalancerState("create_pending")
+
+	// VPCLoadBalancerStateDeletePending is the string representing the load balancer in a failed state.
+	VPCLoadBalancerStateDeletePending = VPCLoadBalancerState("delete_pending")
+)
+
 // DeletePolicy defines the policy used to identify images to be preserved.
 type DeletePolicy string
 
@@ -78,5 +92,8 @@ type Subnet struct {
 // VPCEndpoint describes a VPCEndpoint.
 type VPCEndpoint struct {
 	Address *string `json:"address"`
-	FIPID   *string `json:"floatingIPID"`
+	// +optional
+	FIPID *string `json:"floatingIPID,omitempty"`
+	// +optional
+	LBID *string `json:"loadBalancerIPID,omitempty"`
 }

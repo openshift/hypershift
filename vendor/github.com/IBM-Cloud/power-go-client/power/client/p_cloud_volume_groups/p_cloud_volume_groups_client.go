@@ -42,7 +42,7 @@ type ClientService interface {
 
 	PcloudVolumegroupsGetallDetails(params *PcloudVolumegroupsGetallDetailsParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PcloudVolumegroupsGetallDetailsOK, error)
 
-	PcloudVolumegroupsPost(params *PcloudVolumegroupsPostParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PcloudVolumegroupsPostAccepted, error)
+	PcloudVolumegroupsPost(params *PcloudVolumegroupsPostParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PcloudVolumegroupsPostAccepted, *PcloudVolumegroupsPostPartialContent, error)
 
 	PcloudVolumegroupsPut(params *PcloudVolumegroupsPutParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PcloudVolumegroupsPutAccepted, error)
 
@@ -290,7 +290,7 @@ func (a *Client) PcloudVolumegroupsGetallDetails(params *PcloudVolumegroupsGetal
 /*
   PcloudVolumegroupsPost creates a new volume group
 */
-func (a *Client) PcloudVolumegroupsPost(params *PcloudVolumegroupsPostParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PcloudVolumegroupsPostAccepted, error) {
+func (a *Client) PcloudVolumegroupsPost(params *PcloudVolumegroupsPostParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*PcloudVolumegroupsPostAccepted, *PcloudVolumegroupsPostPartialContent, error) {
 	// TODO: Validate the params before sending
 	if params == nil {
 		params = NewPcloudVolumegroupsPostParams()
@@ -314,15 +314,16 @@ func (a *Client) PcloudVolumegroupsPost(params *PcloudVolumegroupsPostParams, au
 
 	result, err := a.transport.Submit(op)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	success, ok := result.(*PcloudVolumegroupsPostAccepted)
-	if ok {
-		return success, nil
+	switch value := result.(type) {
+	case *PcloudVolumegroupsPostAccepted:
+		return value, nil, nil
+	case *PcloudVolumegroupsPostPartialContent:
+		return nil, value, nil
 	}
-	// unexpected success response
 	// safeguard: normally, absent a default response, unknown success responses return an error above: so this is a codegen issue
-	msg := fmt.Sprintf("unexpected success response for pcloud.volumegroups.post: API contract not enforced by server. Client expected to get an error, but got: %T", result)
+	msg := fmt.Sprintf("unexpected success response for p_cloud_volume_groups: API contract not enforced by server. Client expected to get an error, but got: %T", result)
 	panic(msg)
 }
 
