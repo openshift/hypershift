@@ -193,7 +193,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 			s.Spec.LoadBalancerSourceRanges = nil
 		})...)
 	}
-	kasPublicRoute := routev1.Route{
+	kasExternalRoute := routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: targetNamespace,
 			Name:      "kube-apiserver",
@@ -203,6 +203,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 			Annotations: map[string]string{
 				"external-dns.alpha.kubernetes.io/hostname": hostname,
 			},
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: routev1.RouteSpec{
 			Host: hostname,
@@ -222,10 +223,12 @@ func TestReconcileAPIServerService(t *testing.T) {
 			Name:      "kube-apiserver-internal",
 			Labels: map[string]string{
 				"hypershift.openshift.io/hosted-control-plane": targetNamespace,
+				"hypershift.openshift.io/internal-route":       "true",
 			},
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
 		Spec: routev1.RouteSpec{
-			Host: "kubernetes.default",
+			Host: "api.test.hypershift.local",
 			To: routev1.RouteTargetReference{
 				Kind: "Service",
 				Name: manifests.KubeAPIServerService("").Name,
@@ -308,7 +311,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 				}),
 			},
 			expectedRoutes: []routev1.Route{
-				kasPublicRoute,
+				kasExternalRoute,
 				kasInternalRoute,
 			},
 		},
@@ -329,7 +332,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 				}),
 			},
 			expectedRoutes: []routev1.Route{
-				kasPublicRoute,
+				kasExternalRoute,
 				kasInternalRoute,
 			},
 		},
@@ -955,6 +958,7 @@ func TestReconcileRouter(t *testing.T) {
 						"",
 						"publicRouterHost",
 						true,
+						false,
 					)
 
 					return *dep
@@ -981,6 +985,7 @@ func TestReconcileRouter(t *testing.T) {
 						"",
 						"publicRouterHost",
 						true,
+						false,
 					)
 
 					return *dep
@@ -1007,6 +1012,7 @@ func TestReconcileRouter(t *testing.T) {
 						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
 						"privateRouterHost",
+						true,
 						true,
 					)
 
@@ -1038,6 +1044,7 @@ func TestReconcileRouter(t *testing.T) {
 						"",
 						"privateRouterHost",
 						false,
+						false,
 					)
 
 					return *dep
@@ -1063,6 +1070,7 @@ func TestReconcileRouter(t *testing.T) {
 						"",
 						"privateRouterHost",
 						false,
+						true,
 					)
 
 					return *dep
@@ -1094,6 +1102,7 @@ func TestReconcileRouter(t *testing.T) {
 						"",
 						"publicRouterHost",
 						true,
+						false,
 					)
 
 					return *dep
@@ -1124,6 +1133,7 @@ func TestReconcileRouter(t *testing.T) {
 						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
 						"privateRouterHost",
+						false,
 						false,
 					)
 

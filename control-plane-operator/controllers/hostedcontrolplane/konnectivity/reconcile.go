@@ -19,7 +19,6 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -211,54 +210,18 @@ func ReconcileServerService(svc *corev1.Service, ownerRef config.OwnerRef, strat
 	return nil
 }
 
-func ReconcileRoute(route *routev1.Route, ownerRef config.OwnerRef, private bool, strategy *hyperv1.ServicePublishingStrategy, defaultIngressDomain string) error {
+func ReconcileExternalRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string) error {
 	ownerRef.ApplyTo(route)
+	return util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.KonnectivityServerService(route.Namespace).Name)
+}
 
-	// The route host is considered immutable, so set it only once upon creation
-	// and ignore updates.
-	if route.CreationTimestamp.IsZero() {
-		switch {
-		// If public && external DNS.
-		case !private && strategy.Route != nil && strategy.Route.Hostname != "":
-			route.Spec.Host = strategy.Route.Hostname
-			ingress.AddHCPRouteLabel(route)
-		case private:
-			ingress.AddHCPRouteLabel(route)
-			route.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", route.Name, ownerRef.Reference.Name)
-		default:
-			route.Spec.Host = util.ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
-		}
-	}
-
-	switch {
-	case !private && strategy.Route != nil && strategy.Route.Hostname != "":
-		if route.Annotations == nil {
-			route.Annotations = map[string]string{}
-		}
-		route.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.Route.Hostname
-	case private:
-		if route.Labels == nil {
-			route.Labels = map[string]string{}
-		}
-		route.Labels[ingress.HCPRouteLabel] = route.GetNamespace()
-	}
-
-	route.Spec.To = routev1.RouteTargetReference{
-		Kind: "Service",
-		Name: manifests.KonnectivityServerRoute(route.Namespace).Name,
-	}
-	route.Spec.TLS = &routev1.TLSConfig{
-		Termination:                   routev1.TLSTerminationPassthrough,
-		InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
-	}
-	route.Spec.Port = &routev1.RoutePort{
-		TargetPort: intstr.FromInt(KonnectivityServerPort),
-	}
-	return nil
+func ReconcileInternalRoute(route *routev1.Route, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(route)
+	// Assumes ownerRef is the HCP
+	return util.ReconcileInternalRoute(route, ownerRef.Reference.Name, manifests.KonnectivityServerService(route.Namespace).Name)
 }
 
 func ReconcileServerServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy, messageCollector events.MessageCollector) (host string, port int32, message string, err error) {
-
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {

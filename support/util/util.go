@@ -15,8 +15,6 @@ import (
 )
 
 const (
-	HypershiftRouteLabel = "hypershift.openshift.io/hosted-control-plane"
-
 	// DebugDeploymentsAnnotation contains a comma separated list of deployment names which should always be scaled to 0
 	// for development.
 	DebugDeploymentsAnnotation = "hypershift.openshift.io/debug-deployments"

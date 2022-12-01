@@ -9,7 +9,6 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
@@ -133,14 +132,17 @@ func ReconcilePrivateServiceStatus(hcp *hyperv1.HostedControlPlane) (host string
 	return fmt.Sprintf("api.%s.hypershift.local", hcp.Name), util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), nil
 }
 
-func ReconcileRoute(route *routev1.Route, hostname string) {
-	if route.Labels == nil {
-		route.Labels = map[string]string{}
+func ReconcileExternalRoute(route *routev1.Route, owner *metav1.OwnerReference, hostname string) error {
+	if hostname == "" {
+		return fmt.Errorf("route hostname is required for service APIServer")
 	}
-	route.Labels[ingress.HCPRouteLabel] = route.Namespace
-	if route.CreationTimestamp.IsZero() {
-		route.Spec.Host = hostname
+	util.EnsureOwnerRef(route, owner)
+	util.AddHCPRouteLabel(route)
+	if route.Annotations == nil {
+		route.Annotations = map[string]string{}
 	}
+	route.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = hostname
+	route.Spec.Host = hostname
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
 		Name: manifests.KubeAPIServerService("").Name,
@@ -149,4 +151,12 @@ func ReconcileRoute(route *routev1.Route, hostname string) {
 		Termination:                   routev1.TLSTerminationPassthrough,
 		InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
 	}
+	return nil
+}
+
+func ReconcileInternalRoute(route *routev1.Route, owner *metav1.OwnerReference) error {
+	util.EnsureOwnerRef(route, owner)
+	route.Spec.Host = fmt.Sprintf("api.%s.hypershift.local", owner.Name)
+	// Assumes owner is the HCP
+	return util.ReconcileInternalRoute(route, "", manifests.KubeAPIServerService("").Name)
 }
