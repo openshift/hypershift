@@ -70,6 +70,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/duration"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/pointer"
@@ -90,6 +91,8 @@ const (
 	hypershiftLocalZone                    = "hypershift.local"
 	ImageStreamAutoscalerImage             = "cluster-autoscaler"
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
+
+	resourceDeletionTimeout = 2 * time.Minute
 )
 
 var NoopReconcile controllerutil.MutateFn = func() error { return nil }
@@ -3217,13 +3220,29 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 	log.Info("Removing cloud resources")
 
 	// check if resources have been destroyed
-	if meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed)) {
+	resourcesDestroyedCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+	if resourcesDestroyedCond != nil && resourcesDestroyedCond.Status == metav1.ConditionTrue {
 		log.Info("Guest resources have been destroyed")
 		return true, nil
 	}
-	// if CVO has been scaled down, we're just waiting for resources to be destroyed
-	if meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.CVOScaledDown)) {
+
+	// if CVO has been scaled down, we're waiting for resources to be destroyed
+	cvoScaledDownCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CVOScaledDown))
+	if cvoScaledDownCond != nil && cvoScaledDownCond.Status == metav1.ConditionTrue {
 		log.Info("Waiting for guest resources to be destroyed")
+
+		// Determine if too much time has passed since the last time we got an update
+		var timeElapsed time.Duration
+		if resourcesDestroyedCond != nil {
+			timeElapsed = time.Since(resourcesDestroyedCond.LastTransitionTime.Time)
+		} else {
+			timeElapsed = time.Since(cvoScaledDownCond.LastTransitionTime.Time)
+		}
+
+		if timeElapsed > resourceDeletionTimeout {
+			log.Info("Giving up on resource deletion since there has not been an update in %s", duration.ShortHumanDuration(timeElapsed))
+			return true, nil
+		}
 		return false, nil
 	}
 
@@ -3244,12 +3263,12 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 		log.Info("Waiting for CVO to scale down to 0")
 		return false, nil
 	}
-	cvoScaledDownCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CVOScaledDown))
 	if cvoScaledDownCond == nil || cvoScaledDownCond.Status != metav1.ConditionTrue {
 		cvoScaledDownCond = &metav1.Condition{
-			Type:   string(hyperv1.CVOScaledDown),
-			Status: metav1.ConditionTrue,
-			Reason: "CVOScaledDown",
+			Type:               string(hyperv1.CVOScaledDown),
+			Status:             metav1.ConditionTrue,
+			Reason:             "CVOScaledDown",
+			LastTransitionTime: metav1.Now(),
 		}
 		meta.SetStatusCondition(&hcp.Status.Conditions, *cvoScaledDownCond)
 		if err := r.Status().Update(ctx, hcp); err != nil {
