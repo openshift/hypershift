@@ -866,7 +866,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	// Reconcile CSI snapshot controller operator
 	r.Log.Info("Reconciling CSI snapshot controller operator")
 	if err := r.reconcileCSISnapshotControllerOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to ensure control plane: %w", err)
+		return fmt.Errorf("failed to reconcile CSI snapshot controller operator: %w", err)
 	}
 
 	return nil
