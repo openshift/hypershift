@@ -587,6 +587,99 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 	}
 
+	// Set AllMachinesReadyCondition.
+	// Get all Machines for NodePool.
+	machines, err := r.getMachinesForNodePool(nodePool)
+	if err != nil {
+		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolAllMachinesReadyConditionType,
+			Status:             corev1.ConditionUnknown,
+			Reason:             hyperv1.NodePoolFailedToGetReason,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return ctrl.Result{}, fmt.Errorf("failed to get Machines: %w", err)
+	}
+
+	status := corev1.ConditionTrue
+	reason := hyperv1.AsExpectedReason
+	var message string
+
+	if len(machines) < 1 {
+		status = corev1.ConditionFalse
+		reason = hyperv1.NodePoolNotFoundReason
+		message = "No Machines are created"
+	}
+
+	// Aggregate conditions.
+	// TODO (alberto): consider bubbling failureReason / failureMessage.
+	// This a rudimentary approach which aggregates every Machine, until
+	// https://github.com/kubernetes-sigs/cluster-api/pull/6218 and
+	// https://github.com/kubernetes-sigs/cluster-api/pull/6025
+	// are solved.
+	// Eventually we should solve this in CAPI to make it available in MachineDeployments / MachineSets
+	// with a consumable "Reason" and an aggregated "Message".
+	for _, machine := range machines {
+		condition := findCAPIStatusCondition(machine.Status.Conditions, capiv1.ReadyCondition)
+		if condition.Status != corev1.ConditionTrue {
+			status = corev1.ConditionFalse
+			reason = condition.Reason
+			// We append the reason as part of the higher Message, since the message is meaningless.
+			// This is how a CAPI condition looks like in AWS for an instance deleted out of band failure.
+			//	- lastTransitionTime: "2022-11-28T15:14:28Z"
+			//		message: 1 of 2 completed
+			//		reason: InstanceTerminated
+			//		severity: Error
+			//		status: "False"
+			//		type: Ready
+			message = message + fmt.Sprintf("Machine %s: %s\n", machine.Name, condition.Reason)
+		}
+	}
+
+	if status == corev1.ConditionTrue {
+		message = hyperv1.AllIsWellMessage
+	}
+
+	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolAllMachinesReadyConditionType,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: nodePool.Generation,
+	})
+
+	// Set AllNodesHealthyCondition.
+	status = corev1.ConditionTrue
+	reason = hyperv1.AsExpectedReason
+	message = ""
+
+	if len(machines) < 1 {
+		status = corev1.ConditionFalse
+		reason = hyperv1.NodePoolNotFoundReason
+		message = "No Machines are created"
+	}
+
+	for _, machine := range machines {
+		condition := findCAPIStatusCondition(machine.Status.Conditions, capiv1.MachineNodeHealthyCondition)
+		if condition.Status != corev1.ConditionTrue {
+			status = corev1.ConditionFalse
+			reason = condition.Reason
+			message = message + fmt.Sprintf("Machine %s: %s\n", machine.Name, condition.Reason)
+		}
+	}
+
+	if status == corev1.ConditionTrue {
+		message = hyperv1.AllIsWellMessage
+	}
+
+	setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolAllNodesHealthyConditionType,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: nodePool.Generation,
+	})
+
 	// 2. - Reconcile towards expected state of the world.
 	compressedConfig, err := supportutil.CompressAndEncode([]byte(config))
 	if err != nil {
@@ -951,7 +1044,7 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 	}
 
 	// Ensure all machines in NodePool are deleted
-	if err = r.ensureMachineDeletion(nodePool, controlPlaneNamespace); err != nil {
+	if err = r.ensureMachineDeletion(nodePool); err != nil {
 		return err
 	}
 
@@ -2088,22 +2181,36 @@ func (r *NodePoolReconciler) doesCPODecompressAndDecodeConfig(ctx context.Contex
 // This function can be deleted once the upstream PR (https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805) is merged and pulled into https://github.com/openshift/cluster-api-provider-aws.
 // This function is necessary to ensure AWSMachines are fully deleted prior to deleting the NodePull secrets being deleted due to a bug introduced by https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2271
 // See https://github.com/openshift/hypershift/pull/1826#discussion_r1007349564 for more details.
-func (r *NodePoolReconciler) ensureMachineDeletion(nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
-	// Get list of CAPI Machines to filter through
+func (r *NodePoolReconciler) ensureMachineDeletion(nodePool *hyperv1.NodePool) error {
+	machines, err := r.getMachinesForNodePool(nodePool)
+	if err != nil {
+		return fmt.Errorf("error getting Machines: %w", err)
+	}
+
+	if len(machines) > 0 {
+		return fmt.Errorf("there are still Machines in for NodePool %q", nodePool.Name)
+	}
+
+	return nil
+}
+
+// getMachinesForNodePool get all Machines listed with the nodePoolAnnotation
+// within the control plane Namespace for that NodePool.
+func (r *NodePoolReconciler) getMachinesForNodePool(nodePool *hyperv1.NodePool) ([]capiv1.Machine, error) {
 	machines := capiv1.MachineList{}
+	controlPlaneNamespace := fmt.Sprintf("%s-%s", nodePool.Namespace, strings.ReplaceAll(nodePool.Spec.ClusterName, ".", "-"))
+
 	if err := r.List(context.Background(), &machines, &client.ListOptions{Namespace: controlPlaneNamespace}); err != nil {
-		return fmt.Errorf("failed to get list of Machines: %w", err)
+		return nil, fmt.Errorf("failed to list Machines: %w", err)
 	}
 
 	// Filter out only machines belonging to deleted NodePool
-	var machineSetOwnedMachines []capiv1.Machine
+	var machinesForNodePool []capiv1.Machine
 	for i, machine := range machines.Items {
 		if machine.Annotations[nodePoolAnnotation] == client.ObjectKeyFromObject(nodePool).String() {
-			machineSetOwnedMachines = append(machineSetOwnedMachines, machines.Items[i])
+			machinesForNodePool = append(machinesForNodePool, machines.Items[i])
 		}
 	}
-	if len(machineSetOwnedMachines) > 0 {
-		return fmt.Errorf("there are still Machines in the cluster")
-	}
-	return nil
+
+	return machinesForNodePool, nil
 }

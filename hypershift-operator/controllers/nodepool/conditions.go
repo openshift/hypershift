@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 const (
@@ -18,6 +19,9 @@ const (
 )
 
 // These are copies pf metav1.Condition to accept hyperv1.NodePoolCondition
+// We use differnt conditions struct to relax metav1 input validation.
+// We want to relax validation to ease bubbling up from CAPI which uses their own type not honouring metav1 validations, particularly "Reason" accepts pretty much free string.
+// TODO (alberto): work upstream towards consolidation and programmatic Reasons.
 
 // setStatusCondition sets the corresponding condition in conditions to newCondition.
 // conditions must be non-nil.
@@ -70,6 +74,17 @@ func removeStatusCondition(conditions *[]hyperv1.NodePoolCondition, conditionTyp
 
 // findStatusCondition finds the conditionType in conditions.
 func findStatusCondition(conditions []hyperv1.NodePoolCondition, conditionType string) *hyperv1.NodePoolCondition {
+	for i := range conditions {
+		if conditions[i].Type == conditionType {
+			return &conditions[i]
+		}
+	}
+
+	return nil
+}
+
+// findStatusCondition finds the conditionType in conditions.
+func findCAPIStatusCondition(conditions []capiv1.Condition, conditionType capiv1.ConditionType) *capiv1.Condition {
 	for i := range conditions {
 		if conditions[i].Type == conditionType {
 			return &conditions[i]
