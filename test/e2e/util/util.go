@@ -150,7 +150,6 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 	nodes := &corev1.NodeList{}
 	readyNodeCount := 0
 	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
-		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
 		if err != nil {
 			return false, nil
@@ -188,7 +187,6 @@ func WaitForNUnReadyNodes(t *testing.T, ctx context.Context, client crclient.Cli
 	nodes := &corev1.NodeList{}
 	readyNodeCount := 0
 	err := wait.PollImmediateWithContext(ctx, 5*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
-		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
 		if err != nil {
 			return false, nil
@@ -213,6 +211,89 @@ func WaitForNUnReadyNodes(t *testing.T, ctx context.Context, client crclient.Cli
 	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
 
 	t.Logf("Wanted Nodes are unready. Count: %v", n)
+	return nodes.Items
+}
+
+func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType, nodePoolName string) []corev1.Node {
+	g := NewWithT(t)
+	start := time.Now()
+
+	// waitTimeout for nodes to become Ready
+	waitTimeout := 30 * time.Minute
+	switch platform {
+	case hyperv1.PowerVSPlatform:
+		waitTimeout = 60 * time.Minute
+	}
+
+	t.Logf("Waiting for nodes to become ready by NodePool. NodePool: %s Want: %v", nodePoolName, n)
+	nodesFromNodePool := []corev1.Node{}
+	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
+		nodes := &corev1.NodeList{}
+		err = client.List(ctx, nodes)
+		if err != nil {
+			return false, nil
+		}
+		if len(nodes.Items) == 0 {
+			return false, nil
+		}
+		for _, node := range nodes.Items {
+			if node.Labels["hypershift.openshift.io/nodePool"] == nodePoolName {
+				for _, cond := range node.Status.Conditions {
+					if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+						nodesFromNodePool = append(nodesFromNodePool, node)
+					}
+				}
+			}
+		}
+		if len(nodesFromNodePool) != int(n) {
+			nodesFromNodePool = nil
+			return false, nil
+		}
+		t.Logf("All nodes are ready. Count: %v", len(nodesFromNodePool))
+
+		return true, nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", len(nodesFromNodePool), n))
+	t.Logf("All nodes for NodePool %s appear to be ready in %s. Count: %v", nodePoolName, time.Since(start).Round(time.Second), n)
+
+	return nodesFromNodePool
+}
+
+func WaitForNUnReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, n int32, nodePoolName string) []corev1.Node {
+	g := NewWithT(t)
+
+	t.Logf("Waiting for Nodes to become unready by NodePool. NodePool: %s Want: %v", nodePoolName, n)
+	nodes := &corev1.NodeList{}
+	readyNodeCount := 0
+
+	err := wait.PollImmediateWithContext(ctx, 5*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+		err = client.List(ctx, nodes)
+		if err != nil {
+			return false, nil
+		}
+		if len(nodes.Items) == 0 {
+			return false, nil
+		}
+		var readyNodes []string
+		for _, node := range nodes.Items {
+			if node.Labels["hypershift.openshift.io/nodePool"] == nodePoolName {
+				for _, cond := range node.Status.Conditions {
+					if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
+						readyNodes = append(readyNodes, node.Name)
+					}
+				}
+			}
+		}
+
+		if len(readyNodes) != int(n) {
+			readyNodeCount = len(readyNodes)
+			return false, nil
+		}
+		return true, nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
+
+	t.Logf("Wanted Nodes are unready for NodePool %s. Count: %v", nodePoolName, n)
 	return nodes.Items
 }
 
