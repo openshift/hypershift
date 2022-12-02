@@ -62,6 +62,7 @@ nav:
     - how-to/automated-machine-management/scale-to-zero-dataplane.md
     - how-to/automated-machine-management/nodepool-upgrades.md
   - "AWS":
+    - how-to/aws/index.md
     - how-to/aws/create-infra-iam-separately.md
     - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
     - how-to/aws/deploy-aws-private-clusters.md
