@@ -1425,6 +1425,26 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context) (bool,
 	if len(errs) > 0 {
 		return false, fmt.Errorf("failed to delete ingress controllers: %w", errors.NewAggregate(errs))
 	}
+
+	// Force deleting pods under openshift-ingress to unblock ingress-controller deletion.
+	// Ingress-operator is dependent on these pods deletion on removing the finalizers of ingress-controller.
+	routerPods := &corev1.PodList{}
+	if err := r.uncachedClient.List(ctx, routerPods, &client.ListOptions{Namespace: "openshift-ingress"}); err != nil {
+		return false, fmt.Errorf("failed to list pods under openshift-ingress namespace: %w", err)
+	}
+
+	for i := range routerPods.Items {
+		rp := &routerPods.Items[i]
+		log.Info("Force deleting", "pod", client.ObjectKeyFromObject(rp).String())
+		if err := r.client.Delete(ctx, rp, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64Ptr(0)}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to force delete %s", client.ObjectKeyFromObject(rp).String()))
+		}
+	}
+
+	if len(errs) > 0 {
+		return false, fmt.Errorf("failed to force delete pods under openshift-ingress namespace: %w", errors.NewAggregate(errs))
+	}
+
 	return false, nil
 }
 
