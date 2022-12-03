@@ -261,7 +261,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			"bootstrap",
 			fmt.Sprintf("--image-references=%s", path.Join(configDir, "release-manifests", "image-references")),
 			fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
-			fmt.Sprintf("--kube-ca=%s/root-ca.crt", configDir),
+			fmt.Sprintf("--kube-ca=%s/signer-ca.crt", configDir),
 			fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
 			fmt.Sprintf("--network-config-file=%s/cluster-network-02-config.yaml", configDir),
 			fmt.Sprintf("--proxy-config-file=%s/cluster-proxy-01-config.yaml", configDir),
