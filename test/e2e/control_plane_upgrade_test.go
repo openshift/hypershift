@@ -84,4 +84,6 @@ func TestUpgradeControlPlane(t *testing.T) {
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	e2eutil.EnsureMachineDeploymentGeneration(t, ctx, client, hostedCluster, 1)
+	// TODO (cewong): enable this test once the fix for KAS->Kubelet communication has merged
+	// e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
 }
