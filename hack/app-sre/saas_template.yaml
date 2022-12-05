@@ -42859,6 +42859,20 @@ objects:
                           description: RootVolume represents values associated with
                             the VM volume that will host rhcos
                           properties:
+                            CacheStrategy:
+                              description: CacheStrategy defines the boot image caching
+                                strategy. Default - no caching
+                              properties:
+                                type:
+                                  default: None
+                                  description: Type is the type of the caching strategy
+                                  enum:
+                                  - None
+                                  - PVC
+                                  type: string
+                              required:
+                              - type
+                              type: object
                             diskImage:
                               description: Image represents what rhcos image to use
                                 for the node pool
@@ -43700,6 +43714,20 @@ objects:
                           description: RootVolume represents values associated with
                             the VM volume that will host rhcos
                           properties:
+                            CacheStrategy:
+                              description: CacheStrategy defines the boot image caching
+                                strategy. Default - no caching
+                              properties:
+                                type:
+                                  default: None
+                                  description: Type is the type of the caching strategy
+                                  enum:
+                                  - None
+                                  - PVC
+                                  type: string
+                              required:
+                              - type
+                              type: object
                             diskImage:
                               description: Image represents what rhcos image to use
                                 for the node pool

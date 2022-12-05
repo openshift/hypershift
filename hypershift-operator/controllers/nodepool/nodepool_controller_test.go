@@ -1486,7 +1486,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	expectedMachineTemplateSpecJSON, err := json.Marshal(expectedMachineTemplate.Spec)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, "", "", true)
+	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, "", nil, true)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(machineTemplateSpecJSON).To(BeIdenticalTo(string(expectedMachineTemplateSpecJSON)))
 
@@ -1497,8 +1497,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	gotMachineTemplate := &capiaws.AWSMachineTemplate{}
-	r.Client.Get(context.Background(), client.ObjectKeyFromObject(expectedMachineTemplate), gotMachineTemplate)
-	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(r.Client.Get(context.Background(), client.ObjectKeyFromObject(expectedMachineTemplate), gotMachineTemplate)).To(Succeed())
 	g.Expect(expectedMachineTemplate.Spec).To(BeEquivalentTo(gotMachineTemplate.Spec))
 	g.Expect(expectedMachineTemplate.ObjectMeta.Annotations).To(BeEquivalentTo(gotMachineTemplate.ObjectMeta.Annotations))
 }

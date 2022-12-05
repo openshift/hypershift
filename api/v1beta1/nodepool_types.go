@@ -546,6 +546,26 @@ type KubevirtPersistentVolume struct {
 	AccessModes []PersistentVolumeAccessMode `json:"accessModes,omitempty"`
 }
 
+// KubevirtCachingStrategyType is the type of the boot image caching mechanism for the KubeVirt provider
+type KubevirtCachingStrategyType string
+
+const (
+	// KubevirtCachingStrategyNone means that hypershift will not cache the boot image
+	KubevirtCachingStrategyNone KubevirtCachingStrategyType = "None"
+
+	// KubevirtCachingStrategyPVC means that hypershift will cache the boot image into a PVC; only relevant when using
+	// a QCOW boot image, and is ignored when using a container image
+	KubevirtCachingStrategyPVC KubevirtCachingStrategyType = "PVC"
+)
+
+// KubevirtCachingStrategy defines the boot image caching strategy
+type KubevirtCachingStrategy struct {
+	// Type is the type of the caching strategy
+	// +kubebuilder:default=None
+	// +kubebuilder:validation:Enum=None;PVC
+	Type KubevirtCachingStrategyType `json:"type"`
+}
+
 // KubevirtRootVolume represents the volume that the rhcos disk will be stored and run from.
 type KubevirtRootVolume struct {
 	// Image represents what rhcos image to use for the node pool
@@ -555,6 +575,10 @@ type KubevirtRootVolume struct {
 
 	// KubevirtVolume represents of type of storage to run the image on
 	KubevirtVolume `json:",inline"`
+
+	// CacheStrategy defines the boot image caching strategy. Default - no caching
+	// +optional
+	CacheStrategy *KubevirtCachingStrategy `json:"CacheStrategy,omitempty"`
 }
 
 // KubevirtVolumeType is a specific supported KubeVirt volumes

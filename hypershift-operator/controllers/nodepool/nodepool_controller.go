@@ -300,6 +300,63 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		ObservedGeneration: nodePool.Generation,
 	})
 
+	// Validate and get releaseImage.
+	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("Failed to get release image: %v", err.Error()),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
+
+	var kubevirtBootImage kubevirt.BootImage
+	// moved KubeVirt specific handling up here, so the caching of the boot image will start as early as possible
+	// in order to actually save time. Caching form the original location will take more time, because the VMs can't
+	// be created before the caching is 100% done. But moving this logic here, the caching will be done in parallel
+	// to the ignition settings, and so it will be ready, or almost ready, when the VMs are created.
+	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		if err := kubevirt.PlatformValidation(nodePool); err != nil {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolValidationFailedReason,
+				Message:            fmt.Sprintf("validation of NodePool KubeVirt platform failed: %s", err.Error()),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return ctrl.Result{}, fmt.Errorf("validation of NodePool KubeVirt platform failed: %w", err)
+		}
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
+
+		kubevirtBootImage, err = kubevirt.GetImage(nodePool, releaseImage, controlPlaneNamespace)
+		if err != nil {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidPlatformImageType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolValidationFailedReason,
+				Message:            fmt.Sprintf("Couldn't discover a KubeVirt Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return ctrl.Result{}, fmt.Errorf("couldn't discover a KubeVirt Image in release payload image: %w", err)
+		}
+
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidPlatformImageType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %q", kubevirtBootImage),
+			ObservedGeneration: nodePool.Generation,
+		})
+
+		err = kubevirtBootImage.CacheImage(ctx, r.Client, nodePool, hcluster.Spec.InfraID)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to create or validate KubeVirt image cache: %w", err)
+		}
+	}
+
 	// Validate IgnitionEndpoint.
 	if ignEndpoint == "" {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -348,17 +405,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
 	// Validate and get releaseImage.
-	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
-	if err != nil {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
-			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedReason,
-			Message:            fmt.Sprintf("Failed to get release image: %v", err.Error()),
-			ObservedGeneration: nodePool.Generation,
-		})
-		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
-	}
 	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolValidReleaseImageConditionType,
 		Status:             corev1.ConditionTrue,
@@ -441,41 +487,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
 			Message:            fmt.Sprintf("Bootstrap PowerVS Image is %q", powervsBootImage),
-			ObservedGeneration: nodePool.Generation,
-		})
-	}
-
-	// Validate KubeVirt platform specific input
-	var kubevirtBootImage string
-	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		if err := kubevirt.PlatformValidation(nodePool); err != nil {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedReason,
-				Message:            fmt.Sprintf("validation of NodePool KubeVirt platform failed: %s", err.Error()),
-				ObservedGeneration: nodePool.Generation,
-			})
-			return ctrl.Result{}, fmt.Errorf("validation of NodePool KubeVirt platform failed: %w", err)
-		}
-		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
-
-		kubevirtBootImage, err = kubevirt.GetImage(nodePool, releaseImage)
-		if err != nil {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidPlatformImageType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedReason,
-				Message:            fmt.Sprintf("Couldn't discover a KubeVirt Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
-				ObservedGeneration: nodePool.Generation,
-			})
-			return ctrl.Result{}, fmt.Errorf("couldn't discover a KubeVirt Image in release payload image: %w", err)
-		}
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidPlatformImageType,
-			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
-			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %q", kubevirtBootImage),
 			ObservedGeneration: nodePool.Generation,
 		})
 	}
@@ -2244,7 +2255,7 @@ func isPlatformNone(nodePool *hyperv1.NodePool) bool {
 // a func to mutate the (platform)MachineTemplate.spec, a json string representation for (platform)MachineTemplate.spec
 // and an error.
 func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool,
-	infraID, ami, powervsBootImage, kubevirtBootImage string, defaultSG bool) (client.Object, func(object client.Object) error, string, error) {
+	infraID, ami, powervsBootImage string, kubevirtBootImage kubevirt.BootImage, defaultSG bool) (client.Object, func(object client.Object) error, string, error) {
 	var mutateTemplate func(object client.Object) error
 	var template client.Object
 	var machineTemplateSpec interface{}
@@ -2281,7 +2292,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		}
 	case hyperv1.KubevirtPlatform:
 		template = &capikubevirt.KubevirtMachineTemplate{}
-		machineTemplateSpec = kubevirt.MachineTemplateSpec(kubevirtBootImage, nodePool, hcluster)
+		machineTemplateSpec = kubevirt.MachineTemplateSpec(nodePool, kubevirtBootImage, hcluster)
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capikubevirt.KubevirtMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capikubevirt.KubevirtMachineTemplateSpec)

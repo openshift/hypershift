@@ -4732,6 +4732,61 @@ AWSKMSSpec
 </tr>
 </tbody>
 </table>
+###KubevirtCachingStrategy { #hypershift.openshift.io/v1beta1.KubevirtCachingStrategy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtRootVolume">KubevirtRootVolume</a>)
+</p>
+<p>
+<p>KubevirtCachingStrategy defines the boot image caching strategy</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtCachingStrategyType">
+KubevirtCachingStrategyType
+</a>
+</em>
+</td>
+<td>
+<p>Type is the type of the caching strategy</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtCachingStrategyType { #hypershift.openshift.io/v1beta1.KubevirtCachingStrategyType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtCachingStrategy">KubevirtCachingStrategy</a>)
+</p>
+<p>
+<p>KubevirtCachingStrategyType is the type of the boot image caching mechanism for the KubeVirt provider</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;None&#34;</p></td>
+<td><p>KubevirtCachingStrategyNone means that hypershift will not cache the boot image</p>
+</td>
+</tr><tr><td><p>&#34;PVC&#34;</p></td>
+<td><p>KubevirtCachingStrategyPVC means that hypershift will cache the boot image into a PVC; only relevant when using
+a QCOW boot image, and is ignored when using a container image</p>
+</td>
+</tr></tbody>
+</table>
 ###KubevirtCompute { #hypershift.openshift.io/v1beta1.KubevirtCompute }
 <p>
 (<em>Appears on:</em>
@@ -5077,6 +5132,20 @@ KubevirtVolume
 (Members of <code>KubevirtVolume</code> are embedded into this type.)
 </p>
 <p>KubevirtVolume represents of type of storage to run the image on</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>CacheStrategy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtCachingStrategy">
+KubevirtCachingStrategy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>CacheStrategy defines the boot image caching strategy. Default - no caching</p>
 </td>
 </tr>
 </tbody>

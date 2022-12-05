@@ -2,49 +2,65 @@ package kubevirt
 
 import (
 	"fmt"
-	"strings"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/support/releaseinfo"
 )
 
-func defaultImage(releaseImage *releaseinfo.ReleaseImage) (string, error) {
+func defaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
 	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
 	if !foundArch {
-		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
+		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
 	}
 	openStack, exists := arch.Artifacts["openstack"]
 	if !exists {
-		return "", fmt.Errorf("couldn't find OS metadata for openstack")
+		return "", "", fmt.Errorf("couldn't find OS metadata for openstack")
 	}
 	artifact, exists := openStack.Formats["qcow2.gz"]
 	if !exists {
-		return "", fmt.Errorf("couldn't find OS metadata for openstack qcow2.gz")
+		return "", "", fmt.Errorf("couldn't find OS metadata for openstack qcow2.gz")
 	}
 	disk, exists := artifact["disk"]
 	if !exists {
-		return "", fmt.Errorf("couldn't find OS metadata for the openstack qcow2.gz disk")
+		return "", "", fmt.Errorf("couldn't find OS metadata for the openstack qcow2.gz disk")
 	}
 
-	return disk.Location, nil
+	return disk.Location, disk.SHA256, nil
 }
 
-func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	if nodePool.Spec.Platform.Kubevirt != nil &&
-		nodePool.Spec.Platform.Kubevirt.RootVolume != nil &&
-		nodePool.Spec.Platform.Kubevirt.RootVolume.Image != nil &&
-		nodePool.Spec.Platform.Kubevirt.RootVolume.Image.ContainerDiskImage != nil {
-
-		return fmt.Sprintf("docker://%s", *nodePool.Spec.Platform.Kubevirt.RootVolume.Image.ContainerDiskImage), nil
+func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, hostedNamespace string) (BootImage, error) {
+	var rootVolume *hyperv1.KubevirtRootVolume
+	if nodePool.Spec.Platform.Kubevirt != nil {
+		rootVolume = nodePool.Spec.Platform.Kubevirt.RootVolume
 	}
 
-	return defaultImage(releaseImage)
+	if rootVolume != nil &&
+		rootVolume.Image != nil &&
+		rootVolume.Image.ContainerDiskImage != nil {
+
+		imageName := *nodePool.Spec.Platform.Kubevirt.RootVolume.Image.ContainerDiskImage
+
+		return newContainerBootImage(imageName), nil
+	}
+
+	imageName, imageHash, err := defaultImage(releaseImage)
+	if err != nil {
+		return nil, err
+	}
+
+	// KubeVirt Caching is disabled by default
+	if rootVolume != nil && rootVolume.CacheStrategy != nil && rootVolume.CacheStrategy.Type == hyperv1.KubevirtCachingStrategyPVC {
+		return newCachedQCOWBootImage(imageName, imageHash, hostedNamespace), nil
+	}
+
+	return newQCOWBootImage(imageName), nil
 }
 
 func PlatformValidation(nodePool *hyperv1.NodePool) error {
@@ -64,15 +80,18 @@ func PlatformValidation(nodePool *hyperv1.NodePool) error {
 	return nil
 }
 
-func virtualMachineTemplateBase(image string, kvPlatform *hyperv1.KubevirtNodePoolPlatform) *capikubevirt.VirtualMachineTemplateSpec {
+func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage) *capikubevirt.VirtualMachineTemplateSpec {
+	const rootVolumeName = "rhcos"
 
-	var memory apiresource.Quantity
-	var volumeSize apiresource.Quantity
-	var cores uint32
+	var (
+		memory apiresource.Quantity
+		cores  uint32
+	)
 
-	rootVolumeName := "rhcos"
+	dvSource := bootImage.getDVSourceForVMTemplate()
+
 	runAlways := kubevirtv1.RunStrategyAlways
-	pullMethod := v1beta1.RegistryPullNode
+	kvPlatform := nodePool.Spec.Platform.Kubevirt
 
 	if kvPlatform.Compute != nil {
 		if kvPlatform.Compute.Memory != nil {
@@ -80,16 +99,6 @@ func virtualMachineTemplateBase(image string, kvPlatform *hyperv1.KubevirtNodePo
 		}
 		if kvPlatform.Compute.Cores != nil {
 			cores = *kvPlatform.Compute.Cores
-		}
-	}
-
-	if kvPlatform.RootVolume != nil {
-		if kvPlatform.RootVolume.Image != nil && kvPlatform.RootVolume.Image.ContainerDiskImage != nil {
-			image = fmt.Sprintf("docker://%s", *kvPlatform.RootVolume.Image.ContainerDiskImage)
-		}
-
-		if kvPlatform.RootVolume.Persistent != nil && kvPlatform.RootVolume.Persistent.Size != nil {
-			volumeSize = *kvPlatform.RootVolume.Persistent.Size
 		}
 	}
 
@@ -152,60 +161,41 @@ func virtualMachineTemplateBase(image string, kvPlatform *hyperv1.KubevirtNodePo
 		ObjectMeta: metav1.ObjectMeta{
 			Name: rootVolumeName,
 		},
-	}
-
-	if strings.HasPrefix(image, "docker://") {
-		dataVolume.Spec = v1beta1.DataVolumeSpec{
-			Source: &v1beta1.DataVolumeSource{
-				Registry: &v1beta1.DataVolumeSourceRegistry{
-					URL:        &image,
-					PullMethod: &pullMethod,
-				},
-			},
-		}
-	} else {
-		dataVolume.Spec = v1beta1.DataVolumeSpec{
-			Source: &v1beta1.DataVolumeSource{
-				HTTP: &v1beta1.DataVolumeSourceHTTP{
-					URL: image,
-				},
-			},
-		}
-	}
-
-	dataVolume.Spec.Storage = &v1beta1.StorageSpec{
-		Resources: corev1.ResourceRequirements{
-			Requests: map[corev1.ResourceName]apiresource.Quantity{
-				corev1.ResourceStorage: volumeSize,
-			},
+		Spec: v1beta1.DataVolumeSpec{
+			Source: dvSource,
 		},
 	}
 
-	if kvPlatform.RootVolume != nil &&
-		kvPlatform.RootVolume.Persistent != nil {
-		if kvPlatform.RootVolume.Persistent.StorageClass != nil {
-			dataVolume.Spec.Storage.StorageClassName = kvPlatform.RootVolume.Persistent.StorageClass
-		}
-		if len(kvPlatform.RootVolume.Persistent.AccessModes) != 0 {
-			var accessModes []corev1.PersistentVolumeAccessMode
-			for _, am := range kvPlatform.RootVolume.Persistent.AccessModes {
-				amv1 := corev1.PersistentVolumeAccessMode(am)
-				accessModes = append(accessModes, amv1)
+	if kvPlatform.RootVolume != nil {
+		if kvPlatform.RootVolume.Persistent != nil {
+			storageSpec := &v1beta1.StorageSpec{}
+
+			for _, ac := range kvPlatform.RootVolume.Persistent.AccessModes {
+				storageSpec.AccessModes = append(storageSpec.AccessModes, corev1.PersistentVolumeAccessMode(ac))
 			}
-			dataVolume.Spec.Storage.AccessModes = accessModes
+
+			if kvPlatform.RootVolume.Persistent.Size != nil {
+				storageSpec.Resources = corev1.ResourceRequirements{
+					Requests: map[corev1.ResourceName]apiresource.Quantity{
+						corev1.ResourceStorage: *kvPlatform.RootVolume.Persistent.Size,
+					},
+				}
+			}
+
+			if kvPlatform.RootVolume.Persistent.StorageClass != nil {
+				storageSpec.StorageClassName = kvPlatform.RootVolume.Persistent.StorageClass
+			}
+
+			dataVolume.Spec.Storage = storageSpec
 		}
 	}
-
 	template.Spec.DataVolumeTemplates = []kubevirtv1.DataVolumeTemplateSpec{dataVolume}
 
 	return template
 }
 
-func MachineTemplateSpec(image string, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) *capikubevirt.KubevirtMachineTemplateSpec {
-	nodePoolNameLabelKey := hyperv1.NodePoolNameLabel
-	infraIDLabelKey := hyperv1.InfraIDLabel
-
-	vmTemplate := virtualMachineTemplateBase(image, nodePool.Spec.Platform.Kubevirt)
+func MachineTemplateSpec(nodePool *hyperv1.NodePool, bootImage BootImage, hcluster *hyperv1.HostedCluster) *capikubevirt.KubevirtMachineTemplateSpec {
+	vmTemplate := virtualMachineTemplateBase(nodePool, bootImage)
 
 	vmTemplate.Spec.Template.Spec.Affinity = &corev1.Affinity{
 		PodAntiAffinity: &corev1.PodAntiAffinity{
@@ -216,7 +206,7 @@ func MachineTemplateSpec(image string, nodePool *hyperv1.NodePool, hcluster *hyp
 						LabelSelector: &metav1.LabelSelector{
 							MatchExpressions: []metav1.LabelSelectorRequirement{
 								{
-									Key:      nodePoolNameLabelKey,
+									Key:      hyperv1.NodePoolNameLabel,
 									Operator: metav1.LabelSelectorOpIn,
 									Values:   []string{nodePool.Name},
 								},
@@ -236,11 +226,11 @@ func MachineTemplateSpec(image string, nodePool *hyperv1.NodePool, hcluster *hyp
 		vmTemplate.Spec.Template.ObjectMeta.Labels = map[string]string{}
 	}
 
-	vmTemplate.Spec.Template.ObjectMeta.Labels[nodePoolNameLabelKey] = nodePool.Name
-	vmTemplate.Spec.Template.ObjectMeta.Labels[infraIDLabelKey] = hcluster.Spec.InfraID
+	vmTemplate.Spec.Template.ObjectMeta.Labels[hyperv1.NodePoolNameLabel] = nodePool.Name
+	vmTemplate.Spec.Template.ObjectMeta.Labels[hyperv1.InfraIDLabel] = hcluster.Spec.InfraID
 
-	vmTemplate.ObjectMeta.Labels[nodePoolNameLabelKey] = nodePool.Name
-	vmTemplate.ObjectMeta.Labels[infraIDLabelKey] = hcluster.Spec.InfraID
+	vmTemplate.ObjectMeta.Labels[hyperv1.NodePoolNameLabel] = nodePool.Name
+	vmTemplate.ObjectMeta.Labels[hyperv1.InfraIDLabel] = hcluster.Spec.InfraID
 
 	if hcluster.Spec.Platform.Kubevirt != nil && hcluster.Spec.Platform.Kubevirt.Credentials != nil {
 		vmTemplate.ObjectMeta.Namespace = hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace

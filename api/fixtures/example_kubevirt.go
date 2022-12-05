@@ -20,6 +20,8 @@ type ExampleKubevirtOptions struct {
 	BaseDomainPassthrough     bool
 	InfraKubeConfig           []byte
 	InfraNamespace            string
+	CacheBootImage            bool
+	CacheStrategyType         string
 }
 
 func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoolPlatform {
@@ -66,6 +68,13 @@ func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoo
 	if o.Image != "" {
 		exampleTemplate.RootVolume.Image = &hyperv1.KubevirtDiskImage{
 			ContainerDiskImage: &o.Image,
+		}
+	}
+
+	strategyType := hyperv1.KubevirtCachingStrategyType(o.CacheStrategyType)
+	if strategyType == hyperv1.KubevirtCachingStrategyNone || strategyType == hyperv1.KubevirtCachingStrategyPVC {
+		exampleTemplate.RootVolume.CacheStrategy = &hyperv1.KubevirtCachingStrategy{
+			Type: strategyType,
 		}
 	}
 

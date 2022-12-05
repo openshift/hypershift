@@ -1,18 +1,36 @@
 package kubevirt
 
 import (
+	"context"
+	"fmt"
 	"testing"
 
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"go.uber.org/zap/zaptest"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+)
+
+const (
+	namespace              = "my-ns"
+	poolName               = "my-pool"
+	clusterName            = "my-cluster"
+	infraId                = "infraId123"
+	hostedClusterNamespace = "hostedClusterNamespace"
+	bootImageName          = "https://rhcos.mirror.openshift.com/art/storage/releases/rhcos-4.12/412.86.202209302317-0/x86_64/rhcos-412.86.202209302317-0-openstack.x86_64.qcow2.gz"
+	imageHash              = "imageHash"
 )
 
 func TestKubevirtMachineTemplate(t *testing.T) {
@@ -26,10 +44,11 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			name: "happy flow",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "my-pool",
+					Name:      poolName,
+					Namespace: namespace,
 				},
 				Spec: hyperv1.NodePoolSpec{
-					ClusterName: "",
+					ClusterName: clusterName,
 					Replicas:    nil,
 					Config:      nil,
 					Management:  hyperv1.NodePoolManagement{},
@@ -54,7 +73,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
-						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "docker://testimage", "32Gi"),
+						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "32Gi"),
 					},
 				},
 			},
@@ -64,15 +83,162 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			err := PlatformValidation(tc.nodePool)
-			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(PlatformValidation(tc.nodePool)).To(Succeed())
 
-			result := MachineTemplateSpec("", tc.nodePool, tc.hcluster)
-			if !equality.Semantic.DeepEqual(tc.expected, result) {
-				t.Errorf(cmp.Diff(tc.expected, result))
-			}
+			bootImage := newCachedQCOWBootImage(bootImageName, imageHash, hostedClusterNamespace)
+			bootImage.dvName = bootImageNamePrefix + "12345"
+			result := MachineTemplateSpec(tc.nodePool, bootImage, tc.hcluster)
+			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
 		})
 	}
+}
+
+func TestCacheImage(t *testing.T) {
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      poolName,
+			Namespace: namespace,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: clusterName,
+			Replicas:    nil,
+			Config:      nil,
+			Management:  hyperv1.NodePoolManagement{},
+			AutoScaling: nil,
+			Platform: hyperv1.NodePoolPlatform{
+				Type:     hyperv1.KubevirtPlatform,
+				Kubevirt: generateKubevirtPlatform("5Gi", 4, "testimage", "32Gi"),
+			},
+			Release: hyperv1.Release{},
+		},
+	}
+
+	testCases := []struct {
+		name              string
+		nodePool          *hyperv1.NodePool
+		existingResources []client.Object
+		asserFunc         func(Gomega, []v1beta1.DataVolume, string, *cachedQCOWImage)
+		errExpected       bool
+		dvNamePrefix      string
+	}{
+		{
+			name:         "happy flow - no existing PVC",
+			nodePool:     nodePool,
+			errExpected:  false,
+			dvNamePrefix: bootImageNamePrefix,
+			asserFunc:    assertDV,
+		},
+		{
+			name:        "happy flow - PVC already exists",
+			nodePool:    nodePool,
+			errExpected: false,
+			existingResources: []client.Object{
+				&v1beta1.DataVolume{
+					ObjectMeta: metav1.ObjectMeta{
+						GenerateName: bootImageNamePrefix,
+						Name:         bootImageNamePrefix + "already-exists",
+						Namespace:    hostedClusterNamespace,
+						Annotations: map[string]string{
+							bootImageDVAnnotationHash: imageHash,
+						},
+						Labels: map[string]string{
+							bootImageDVLabelRoleName: bootImageDVLabelRoleValue,
+							bootImageDVLabelInfraId:  infraId,
+						},
+					},
+				},
+			},
+			dvNamePrefix: bootImageNamePrefix + "already-exists",
+			asserFunc:    assertDV,
+		},
+		{
+			name:        "cleanup - different hash",
+			nodePool:    nodePool,
+			errExpected: false,
+			existingResources: []client.Object{
+				&v1beta1.DataVolume{
+					ObjectMeta: metav1.ObjectMeta{
+						GenerateName: bootImageNamePrefix,
+						Name:         bootImageNamePrefix + "another-one",
+						Namespace:    hostedClusterNamespace,
+						Annotations: map[string]string{
+							bootImageDVAnnotationHash: "otherImageHash",
+							bootImageDVLabelInfraId:   infraId,
+						},
+						Labels: map[string]string{
+							bootImageDVLabelRoleName: bootImageDVLabelRoleValue,
+							bootImageDVLabelInfraId:  infraId,
+						},
+					},
+				},
+			},
+			dvNamePrefix: bootImageNamePrefix,
+			asserFunc:    assertDV,
+		},
+		{
+			name:        "cleanup - different cluster - should not clean",
+			nodePool:    nodePool,
+			errExpected: false,
+			existingResources: []client.Object{
+				&v1beta1.DataVolume{
+					ObjectMeta: metav1.ObjectMeta{
+						GenerateName: bootImageNamePrefix,
+						Name:         bootImageNamePrefix + "another-one",
+						Namespace:    hostedClusterNamespace,
+						Annotations: map[string]string{
+							bootImageDVAnnotationHash: imageHash,
+							bootImageDVLabelInfraId:   "not-the-same-cluster",
+						},
+						Labels: map[string]string{
+							bootImageDVLabelRoleName: bootImageDVLabelRoleValue,
+						},
+					},
+				},
+			},
+			dvNamePrefix: bootImageNamePrefix,
+			asserFunc: func(g Gomega, dvs []v1beta1.DataVolume, expectedDVNamePrefix string, bootImage *cachedQCOWImage) {
+				g.ExpectWithOffset(1, dvs).Should(HaveLen(2), "should not clear the other DV")
+				for _, dv := range dvs {
+					if dv.Name != bootImageNamePrefix+"another-one" {
+						g.ExpectWithOffset(1, dv.Name).Should(HavePrefix(expectedDVNamePrefix))
+						g.ExpectWithOffset(1, bootImage.dvName).Should(Equal(dv.Name), "failed to set the dvName filed in the cacheImage object")
+					}
+				}
+			},
+		},
+	}
+
+	ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+	for _, tc := range testCases {
+		t.Run(tc.name, func(tst *testing.T) {
+			g := NewWithT(tst)
+			scheme := runtime.NewScheme()
+			_ = corev1.AddToScheme(scheme)
+			_ = v1beta1.AddToScheme(scheme)
+			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.existingResources...).Build()
+
+			bootImage := newCachedQCOWBootImage(bootImageName, imageHash, hostedClusterNamespace)
+			err := bootImage.CacheImage(ctx, cl, tc.nodePool, infraId)
+
+			if tc.errExpected != (err != nil) {
+				if tc.errExpected {
+					g.Fail("should return error, but it didn't")
+				} else {
+					g.Fail(fmt.Sprintf(`should not return error, but it did; the error is: "%v"`, err))
+				}
+			}
+
+			dvs := v1beta1.DataVolumeList{}
+			g.Expect(cl.List(ctx, &dvs)).To(Succeed())
+			tc.asserFunc(g, dvs.Items, tc.dvNamePrefix, bootImage)
+		})
+	}
+}
+
+func assertDV(g Gomega, dvs []v1beta1.DataVolume, expectedDVNamePrefix string, bootImage *cachedQCOWImage) {
+	g.ExpectWithOffset(1, dvs).Should(HaveLen(1), "failed to read the DataVolume back; No matched DataVolume")
+	g.ExpectWithOffset(1, dvs[0].Name).Should(HavePrefix(expectedDVNamePrefix))
+	g.ExpectWithOffset(1, bootImage.dvName).Should(Equal(dvs[0].Name), "failed to set the dvName filed in the cacheImage object")
 }
 
 func generateKubevirtPlatform(memory string, cores uint32, image string, volumeSize string) *hyperv1.KubevirtNodePoolPlatform {
@@ -101,19 +267,15 @@ func generateKubevirtPlatform(memory string, cores uint32, image string, volumeS
 	return exampleTemplate
 }
 
-func generateNodeTemplate(memory string, cpu uint32, image string, volumeSize string) *capikubevirt.VirtualMachineTemplateSpec {
+func generateNodeTemplate(memory string, cpu uint32, volumeSize string) *capikubevirt.VirtualMachineTemplateSpec {
 	runAlways := kubevirtv1.RunStrategyAlways
 	guestQuantity := apiresource.MustParse(memory)
-	volumeSizeQuantity := apiresource.MustParse(volumeSize)
-	nodePoolNameLabelKey := hyperv1.NodePoolNameLabel
-	infraIDLabelKey := hyperv1.InfraIDLabel
-	pullMethod := v1beta1.RegistryPullNode
 
 	return &capikubevirt.VirtualMachineTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
-				nodePoolNameLabelKey: "my-pool",
-				infraIDLabelKey:      "1234",
+				hyperv1.NodePoolNameLabel: "my-pool",
+				hyperv1.InfraIDLabel:      "1234",
 			},
 		},
 		Spec: kubevirtv1.VirtualMachineSpec{
@@ -126,15 +288,15 @@ func generateNodeTemplate(memory string, cpu uint32, image string, volumeSize st
 					},
 					Spec: v1beta1.DataVolumeSpec{
 						Source: &v1beta1.DataVolumeSource{
-							Registry: &v1beta1.DataVolumeSourceRegistry{
-								URL:        &image,
-								PullMethod: &pullMethod,
+							PVC: &v1beta1.DataVolumeSourcePVC{
+								Namespace: hostedClusterNamespace,
+								Name:      bootImageNamePrefix + "12345",
 							},
 						},
 						Storage: &v1beta1.StorageSpec{
 							Resources: corev1.ResourceRequirements{
 								Requests: map[corev1.ResourceName]apiresource.Quantity{
-									corev1.ResourceStorage: volumeSizeQuantity,
+									corev1.ResourceStorage: apiresource.MustParse(volumeSize),
 								},
 							},
 						},
@@ -144,8 +306,8 @@ func generateNodeTemplate(memory string, cpu uint32, image string, volumeSize st
 			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						nodePoolNameLabelKey: "my-pool",
-						infraIDLabelKey:      "1234",
+						hyperv1.NodePoolNameLabel: "my-pool",
+						hyperv1.InfraIDLabel:      "1234",
 					},
 				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
@@ -159,7 +321,7 @@ func generateNodeTemplate(memory string, cpu uint32, image string, volumeSize st
 										LabelSelector: &metav1.LabelSelector{
 											MatchExpressions: []metav1.LabelSelectorRequirement{
 												{
-													Key:      nodePoolNameLabelKey,
+													Key:      hyperv1.NodePoolNameLabel,
 													Operator: metav1.LabelSelectorOpIn,
 													Values:   []string{"my-pool"},
 												},

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/support/infraid"
 )
@@ -33,6 +34,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		ContainerDiskImage:        "",
 		RootVolumeSize:            32,
 		InfraKubeConfigFile:       "",
+		CacheStrategyType:         "",
 	}
 
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.APIServerAddress, "api-server-address", opts.KubevirtPlatform.APIServerAddress, "The API server address that should be used for components outside the control plane")
@@ -45,6 +47,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.ServicePublishingStrategy, "service-publishing-strategy", opts.KubevirtPlatform.ServicePublishingStrategy, fmt.Sprintf("Define how to expose the cluster services. Supported options: %s (Use LoadBalancer and Route to expose services), %s (Select a random node to expose service access through)", IngressServicePublishingStrategy, NodePortServicePublishingStrategy))
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.InfraKubeConfigFile, "infra-kubeconfig-file", opts.KubevirtPlatform.InfraKubeConfigFile, "Path to a kubeconfig file of an external infra cluster to be used to create the guest clusters nodes onto")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.InfraNamespace, "infra-namespace", opts.KubevirtPlatform.InfraNamespace, "The namespace in the external infra cluster that is used to host the KubeVirt virtual machines. The namespace must exist prior to creating the HostedCluster")
+	cmd.Flags().StringVar(&opts.KubevirtPlatform.CacheStrategyType, "root-volume-cache-strategy", opts.KubevirtPlatform.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
 
 	cmd.MarkPersistentFlagRequired("pull-secret")
 
@@ -117,6 +120,12 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		return fmt.Errorf("external infra cluster kubeconfig was provided but an infra namespace is missing")
 	}
 
+	if opts.KubevirtPlatform.CacheStrategyType != "" &&
+		opts.KubevirtPlatform.CacheStrategyType != string(hyperv1.KubevirtCachingStrategyNone) &&
+		opts.KubevirtPlatform.CacheStrategyType != string(hyperv1.KubevirtCachingStrategyPVC) {
+		return fmt.Errorf(`wrong value for the --root-volume-cache-strategy parameter. May be only "None" or "PVC"`)
+	}
+
 	exampleOptions.Kubevirt = &apifixtures.ExampleKubevirtOptions{
 		ServicePublishingStrategy: opts.KubevirtPlatform.ServicePublishingStrategy,
 		APIServerAddress:          opts.KubevirtPlatform.APIServerAddress,
@@ -128,6 +137,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		RootVolumeAccessModes:     opts.KubevirtPlatform.RootVolumeAccessModes,
 		InfraKubeConfig:           infraKubeConfigContents,
 		InfraNamespace:            opts.KubevirtPlatform.InfraNamespace,
+		CacheStrategyType:         opts.KubevirtPlatform.CacheStrategyType,
 	}
 
 	if opts.BaseDomain != "" {

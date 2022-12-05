@@ -121,6 +121,7 @@ type KubevirtPlatformCreateOptions struct {
 	RootVolumeAccessModes     string
 	InfraKubeConfigFile       string
 	InfraNamespace            string
+	CacheStrategyType         string
 }
 
 type AWSPlatformOptions struct {
