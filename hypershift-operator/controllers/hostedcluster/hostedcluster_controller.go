@@ -925,7 +925,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	_, ignitionServerHasHealthzHandler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[ignitionServerHealthzHandlerLabel]
 	_, controlplaneOperatorManagesIgnitionServer := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
 
-	p, err := platform.GetPlatform(hcluster, utilitiesImage, pullSecretBytes)
+	p, err := platform.GetPlatform(hcluster, r.ReleaseProvider, utilitiesImage, pullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1640,7 +1640,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 		capiImage = hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
 	}
 	if capiImage == "" {
-		if capiImage, err = hyperutil.GetPayloadImage(ctx, hcluster, ImageStreamCAPI, pullSecretBytes); err != nil {
+		if capiImage, err = hyperutil.GetPayloadImage(ctx, r.ReleaseProvider, hcluster, ImageStreamCAPI, pullSecretBytes); err != nil {
 			return fmt.Errorf("failed to retrieve capi image: %w", err)
 		}
 	}
@@ -1883,7 +1883,7 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1
 // both the HostedCluster and the HostedControlPlane which the autoscaler takes
 // inputs from.
 func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte) error {
-	clusterAutoscalerImage, err := hyperutil.GetPayloadImage(ctx, hcluster, ImageStreamAutoscalerImage, pullSecretBytes)
+	clusterAutoscalerImage, err := hyperutil.GetPayloadImage(ctx, r.ReleaseProvider, hcluster, ImageStreamAutoscalerImage, pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to get image for machine approver: %w", err)
 	}
@@ -2960,7 +2960,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	}
 
 	// Cleanup Platform specifics.
-	p, err := platform.GetPlatform(hc, "", nil)
+	p, err := platform.GetPlatform(hc, nil, "", nil)
 	if err != nil {
 		return false, err
 	}
@@ -3120,7 +3120,7 @@ func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Con
 }
 
 func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte) error {
-	machineApproverImage, err := hyperutil.GetPayloadImage(ctx, hcluster, ImageStreamClusterMachineApproverImage, pullSecretBytes)
+	machineApproverImage, err := hyperutil.GetPayloadImage(ctx, r.ReleaseProvider, hcluster, ImageStreamClusterMachineApproverImage, pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to get image for machine approver: %w", err)
 	}
