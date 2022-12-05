@@ -36,10 +36,10 @@ In this section we want to dissect who creates what and what not. It contains 4 
     - 1 NAT Gateway
     - 1 Security Group (Worker Nodes)
     - 2 Route Tables (1 Private, 1 Public)
-    - 2 Hosted Zones
-        - Enough quota for:
-            - 1 Ingress Service Load Balancer (for Public Hosted Clusters)
-            - 1 Private Link (for Private Hosted Clusters)
+    - 2 Route 53 Hosted Zones
+    - Enough quota for:
+        - 1 Ingress Service Load Balancer (for Public Hosted Clusters)
+        - 1 Private Link Endpoint (for Private Hosted Clusters)
 
 #### AWS Infra Managed by Hypershift
 
@@ -61,7 +61,7 @@ In this section we want to dissect who creates what and what not. It contains 4 
 
 === "Management Cluster AWS Account"
     - NLB - Load Balancer Private Router
-    - Enpoint Service (Private Link)
+    - Endpoint Service (Private Link)
 
 === "Hosted Cluster AWS account"
     - Private Link Endpoints
@@ -90,3 +90,8 @@ In this section we want to dissect who creates what and what not. It contains 4 
 === "Hosted Cluster AWS account"
     - Network Load Balancer for default ingress
     - S3 bucket for registry
+
+!!! note
+For the Private Link networking to work, we've observed that the Endpoint zone in the hosted cluster AWS account, must match the zone of the instance resolved by the Service Endpoint in the management cluster AWS account.
+In AWS the Zone names are just alias e.g. "us-east-2b" which do not necessarily map to the same zone in different accounts.
+Because of this for Private link to be guaranteed to work, the management cluster must have subnets/workers in all zones of its region.
