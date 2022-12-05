@@ -77,6 +77,7 @@ const (
 	TokenSecretTokenKey                       = "token"
 	TokenSecretConfigKey                      = "config"
 	TokenSecretAnnotation                     = "hypershift.openshift.io/ignition-config"
+	TokenSecretNodePoolUpgradeType            = "hypershift.openshift.io/node-pool-upgrade-type"
 )
 
 type NodePoolReconciler struct {
@@ -822,6 +823,7 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 	}
 
 	tokenSecret.Annotations[TokenSecretAnnotation] = "true"
+	tokenSecret.Annotations[TokenSecretNodePoolUpgradeType] = string(nodePool.Spec.Management.UpgradeType)
 	tokenSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 	// active token should never be marked as expired.
 	delete(tokenSecret.Annotations, hyperv1.IgnitionServerTokenExpirationTimestampAnnotation)
