@@ -328,3 +328,85 @@ func ReconcileKCMLeaderElectionRoleBinding(r *rbacv1.RoleBinding) error {
 
 	return nil
 }
+
+func ReconcilePodSecurityAdmissionLabelSyncerControllerClusterRole(r *rbacv1.ClusterRole) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"namespaces"},
+			Verbs: []string{
+				"get",
+				"list",
+				"update",
+				"watch",
+				"patch",
+			},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"events"},
+			Verbs: []string{
+				"create",
+				"update",
+				"patch",
+			},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"serviceaccounts"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		},
+		{
+			APIGroups: []string{"security.openshift.io"},
+			Resources: []string{"securitycontextconstraints"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		},
+		{
+			APIGroups: []string{"rbac.authorization.k8s.io"},
+			Resources: []string{
+				"clusterroles",
+				"clusterrolebindings",
+				"roles",
+				"rolebindings",
+			},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		},
+	}
+	return nil
+}
+
+func ReconcilePodSecurityAdmissionLabelSyncerControllerRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:openshift:controller:podsecurity-admission-label-syncer-controller",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      "podsecurity-admission-label-syncer-controller",
+			Namespace: "openshift-infra",
+		},
+	}
+	return nil
+}

@@ -689,6 +689,9 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 
 		manifestAndReconcile[*rbacv1.Role]{manifest: manifests.KCMLeaderElectionRole, reconcile: rbac.ReconcileKCMLeaderElectionRole},
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.KCMLeaderElectionRoleBinding, reconcile: rbac.ReconcileKCMLeaderElectionRoleBinding},
+
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.PodSecurityAdmissionLabelSyncerControllerClusterRole, reconcile: rbac.ReconcilePodSecurityAdmissionLabelSyncerControllerClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.PodSecurityAdmissionLabelSyncerControllerRoleBinding, reconcile: rbac.ReconcilePodSecurityAdmissionLabelSyncerControllerRoleBinding},
 	}
 
 	var errs []error

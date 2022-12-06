@@ -513,6 +513,13 @@ func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hoste
 
 	namespace := inPlaceUpgradeNamespace(poolName)
 	if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, namespace, func() error {
+		if namespace.Labels == nil {
+			namespace.Labels = map[string]string{}
+		}
+		namespace.Labels["security.openshift.io/scc.podSecurityLabelSync"] = "false"
+		namespace.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
+		namespace.Labels["pod-security.kubernetes.io/audit"] = "privileged"
+		namespace.Labels["pod-security.kubernetes.io/warn"] = "privileged"
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile upgrade Namespace for hash %s: %w", targetConfigVersionHash, err)
