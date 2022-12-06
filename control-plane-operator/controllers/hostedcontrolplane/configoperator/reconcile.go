@@ -34,7 +34,6 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 		{
 			APIGroups: []string{corev1.SchemeGroupVersion.Group},
 			Resources: []string{
-				"configmaps",
 				"pods",
 			},
 			Verbs: []string{
@@ -44,6 +43,21 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 				"create",
 				"list",
 				"watch",
+			},
+		},
+		{
+			APIGroups: []string{corev1.SchemeGroupVersion.Group},
+			Resources: []string{
+				"configmaps",
+			},
+			Verbs: []string{
+				"get",
+				"patch",
+				"update",
+				"create",
+				"list",
+				"watch",
+				"delete", // Needed to be able to set owner reference on configmaps
 			},
 		},
 		{
