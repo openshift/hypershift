@@ -380,6 +380,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		if podMonitor.Annotations == nil {
 			podMonitor.Annotations = map[string]string{}
 		}
+		util.ApplyClusterIDLabelToPodMonitor(&podMonitor.Spec.PodMetricsEndpoints[0], hcp.Spec.ClusterID)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition server pod monitor: %w", err)
