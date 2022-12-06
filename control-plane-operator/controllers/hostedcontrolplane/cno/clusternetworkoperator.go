@@ -402,6 +402,7 @@ kubectl --kubeconfig $kc config use-context default`,
 			{Group: "network.operator.openshift.io", Version: "v1", Kind: "EgressRouter"},
 			{Group: "network.operator.openshift.io", Version: "v1", Kind: "OperatorPKI"},
 		}
+		o.WaitForInfrastructureResource = true
 	})
 	return nil
 }
