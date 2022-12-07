@@ -621,7 +621,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// with a consumable "Reason" and an aggregated "Message".
 	for _, machine := range machines {
 		condition := findCAPIStatusCondition(machine.Status.Conditions, capiv1.ReadyCondition)
-		if condition.Status != corev1.ConditionTrue {
+		if condition != nil && condition.Status != corev1.ConditionTrue {
 			status = corev1.ConditionFalse
 			reason = condition.Reason
 			// We append the reason as part of the higher Message, since the message is meaningless.
@@ -661,7 +661,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	for _, machine := range machines {
 		condition := findCAPIStatusCondition(machine.Status.Conditions, capiv1.MachineNodeHealthyCondition)
-		if condition.Status != corev1.ConditionTrue {
+		if condition != nil && condition.Status != corev1.ConditionTrue {
 			status = corev1.ConditionFalse
 			reason = condition.Reason
 			message = message + fmt.Sprintf("Machine %s: %s\n", machine.Name, condition.Reason)
