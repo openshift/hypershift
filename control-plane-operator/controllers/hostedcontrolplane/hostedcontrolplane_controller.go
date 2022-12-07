@@ -10,10 +10,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws/awserr"
+
+	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
@@ -75,13 +79,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	awssdk "github.com/aws/aws-sdk-go/aws"
 )
 
 const (
-	finalizer                  = "hypershift.openshift.io/finalizer"
-	DefaultAdminKubeconfigName = "admin-kubeconfig"
-	DefaultAdminKubeconfigKey  = "kubeconfig"
-
+	finalizer                              = "hypershift.openshift.io/finalizer"
+	DefaultAdminKubeconfigKey              = "kubeconfig"
+	hypershiftLocalZone                    = "hypershift.local"
 	ImageStreamAutoscalerImage             = "cluster-autoscaler"
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 )
@@ -211,6 +216,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
+	originalHostedControlPlane := hostedControlPlane.DeepCopy()
+	// This is a best effort ping to the identity provider
+	// that enables access from the operator to the cloud provider resources.
+	healthCheckIdentityProvider(ctx, hostedControlPlane)
+
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
 		if shouldCleanupCloudResources(hostedControlPlane) {
@@ -245,8 +255,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Log.Info("releaseImage is %s, but this operator is configured for %s, skipping reconciliation", hostedControlPlane.Spec.ReleaseImage, r.OperateOnReleaseImage)
 		return ctrl.Result{}, nil
 	}
-
-	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 
 	// Reconcile global configuration validation status
 	{
@@ -3254,4 +3262,70 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 	// TODO: create custom kubeconfig to the guest cluster + RBAC
 
 	return nil
+}
+
+func healthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
+	if hcp.Spec.Platform.AWS == nil {
+		return
+	}
+
+	log := ctrl.LoggerFrom(ctx)
+
+	awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
+	awsConfig := awssdk.NewConfig()
+	awsConfig.Region = awssdk.String("us-east-1")
+	route53Client := route53.New(awsSession, awsConfig)
+
+	// We try to interact with cloud provider to see validate is operational.
+	if _, err := route53Client.ListHostedZonesByNameWithContext(ctx, &route53.ListHostedZonesByNameInput{
+		DNSName: pointer.String(fmt.Sprintf("%s.%s", hcp.Name, hypershiftLocalZone)),
+	}); err != nil {
+		if awsErr, ok := err.(awserr.Error); ok {
+			// When awsErr.Code() is WebIdentityErr it's likely to be an external issue, e.g the idp resource was deleted.
+			// We don't set awsErr.Message() in the condition as it might contain aws requests IDs that would make the condition be updated in loop.
+			if awsErr.Code() == "WebIdentityErr" {
+				condition := metav1.Condition{
+					Type:               string(hyperv1.ValidAWSIdentityProvider),
+					ObservedGeneration: hcp.Generation,
+					Status:             metav1.ConditionFalse,
+					Message:            awsErr.Code(),
+					Reason:             hyperv1.InvalidIdentityProvider,
+				}
+				meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+				log.Info("Error health checking AWS identity provider", awsErr.Code(), awsErr.Message())
+				return
+			}
+
+			condition := metav1.Condition{
+				Type:               string(hyperv1.ValidAWSIdentityProvider),
+				ObservedGeneration: hcp.Generation,
+				Status:             metav1.ConditionUnknown,
+				Message:            awsErr.Code(),
+				Reason:             hyperv1.AWSErrorReason,
+			}
+			meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+			log.Info("Error health checking AWS identity provider", awsErr.Code(), awsErr.Message())
+			return
+		}
+
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAWSIdentityProvider),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Message:            err.Error(),
+			Reason:             hyperv1.StatusUnknownReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		log.Info("Error health checking AWS identity provider", "error", err)
+		return
+	}
+
+	condition := metav1.Condition{
+		Type:               string(hyperv1.ValidAWSIdentityProvider),
+		ObservedGeneration: hcp.Generation,
+		Status:             metav1.ConditionTrue,
+		Message:            hyperv1.AllIsWellMessage,
+		Reason:             hyperv1.AsExpectedReason,
+	}
+	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 }
