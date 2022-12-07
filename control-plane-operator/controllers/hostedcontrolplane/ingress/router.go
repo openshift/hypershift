@@ -212,6 +212,10 @@ func buildHCPRouterContainerMain(image, namespace, canonicalHostname string, exp
 				Name:  "STATS_PORT",
 				Value: fmt.Sprintf("%d", metricsPort),
 			},
+			{
+				Name:  "ROUTER_CANONICAL_HOSTNAME",
+				Value: canonicalHostname,
+			},
 		}
 
 		c.Image = image
@@ -220,10 +224,6 @@ func buildHCPRouterContainerMain(image, namespace, canonicalHostname string, exp
 		}
 
 		if exposeAPIServerThroughRouter {
-			c.Env = append(c.Env, corev1.EnvVar{
-				Name:  "ROUTER_CANONICAL_HOSTNAME",
-				Value: canonicalHostname,
-			})
 			c.Args = append(c.Args, "--template="+haproxyTemplateMountPath+"/"+routerTemplateConfigMapKey)
 		}
 

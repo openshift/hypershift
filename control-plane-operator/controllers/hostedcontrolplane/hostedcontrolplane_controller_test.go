@@ -1042,7 +1042,7 @@ func TestReconcileRouter(t *testing.T) {
 						}}),
 						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
-						"privateRouterHost",
+						"publicRouterHost",
 						false,
 						false,
 					)
@@ -1132,7 +1132,7 @@ func TestReconcileRouter(t *testing.T) {
 						}}),
 						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
-						"privateRouterHost",
+						"publicRouterHost",
 						false,
 						false,
 					)
