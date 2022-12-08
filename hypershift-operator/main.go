@@ -231,7 +231,14 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		HypershiftOperatorImage:       operatorImage,
 		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
+				Inner: &releaseinfo.StaticProviderDecorator{
+					Delegate: &releaseinfo.RegistryClientProvider{},
+					ComponentImages: map[string]string{
+						// TODO: Remove this override when we update CAPA to match the master branch of openshift/cluster-api-provider-aws
+						// Currently, this image points to CAPA in OCP 4.12.0-ec.3-multi
+						"aws-cluster-api-controllers": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:cadab6529bfc7327ac64d0b7d71023df062a553a16c307b537e60aabc7d3e4c9",
+					},
+				},
 				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
 			RegistryOverrides: opts.RegistryOverrides,
