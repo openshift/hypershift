@@ -62,29 +62,27 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			MatchLabels: selector,
 		}
 	}
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: s,
-		Strategy: appsv1.DeploymentStrategy{
-			Type: appsv1.RollingUpdateDeploymentStrategyType,
-			RollingUpdate: &appsv1.RollingUpdateDeployment{
-				MaxSurge:       &maxSurge,
-				MaxUnavailable: &maxUnavailable,
-			},
+	deployment.Spec.Selector = s
+	deployment.Spec.Strategy = appsv1.DeploymentStrategy{
+		Type: appsv1.RollingUpdateDeploymentStrategyType,
+		RollingUpdate: &appsv1.RollingUpdateDeployment{
+			MaxSurge:       &maxSurge,
+			MaxUnavailable: &maxUnavailable,
 		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: labels,
+	}
+	deployment.Spec.Template = corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: labels,
+		},
+		Spec: corev1.PodSpec{
+			AutomountServiceAccountToken: pointer.BoolPtr(false),
+			Containers: []corev1.Container{
+				util.BuildContainer(schedulerContainerMain(), buildSchedulerContainerMain(image, deployment.Namespace, featureGates, policy, ciphers, tlsVersion, disableProfiling)),
 			},
-			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
-				Containers: []corev1.Container{
-					util.BuildContainer(schedulerContainerMain(), buildSchedulerContainerMain(image, deployment.Namespace, featureGates, policy, ciphers, tlsVersion, disableProfiling)),
-				},
-				Volumes: []corev1.Volume{
-					util.BuildVolume(schedulerVolumeConfig(), buildSchedulerVolumeConfig),
-					util.BuildVolume(schedulerVolumeCertWorkDir(), buildSchedulerVolumeCertWorkDir),
-					util.BuildVolume(schedulerVolumeKubeconfig(), buildSchedulerVolumeKubeconfig),
-				},
+			Volumes: []corev1.Volume{
+				util.BuildVolume(schedulerVolumeConfig(), buildSchedulerVolumeConfig),
+				util.BuildVolume(schedulerVolumeCertWorkDir(), buildSchedulerVolumeCertWorkDir),
+				util.BuildVolume(schedulerVolumeKubeconfig(), buildSchedulerVolumeKubeconfig),
 			},
 		},
 	}

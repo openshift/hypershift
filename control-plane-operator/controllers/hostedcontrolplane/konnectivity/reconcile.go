@@ -311,23 +311,21 @@ func buildKonnectivityVolumeAgentCerts(v *corev1.Volume) {
 
 func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, ips []string) error {
 	ownerRef.ApplyTo(deployment)
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityAgentLabels(),
+	deployment.Spec.Selector = &metav1.LabelSelector{
+		MatchLabels: konnectivityAgentLabels(),
+	}
+	deployment.Spec.Template = corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels: konnectivityAgentLabels(),
 		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityAgentLabels(),
+		Spec: corev1.PodSpec{
+			AutomountServiceAccountToken: pointer.BoolPtr(false),
+			Containers: []corev1.Container{
+				util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, ips)),
 			},
-			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
-				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, ips)),
-				},
-				Volumes: []corev1.Volume{
-					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeAgentCerts),
-					util.BuildVolume(konnectivitySignerCA(), buildKonnectivitySignerCAkonnectivitySignerCAVolume),
-				},
+
+			Volumes: []corev1.Volume{
+				util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeAgentCerts),
 			},
 		},
 	}
