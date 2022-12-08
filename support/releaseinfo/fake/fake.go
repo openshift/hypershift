@@ -37,6 +37,14 @@ func (f *FakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecr
 						From: &corev1.ObjectReference{Name: ""},
 					},
 					{
+						Name: "aws-cluster-api-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "cluster-capi-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
 						Name: util.AvailabilityProberImageName,
 						From: &corev1.ObjectReference{Name: ""},
 					},

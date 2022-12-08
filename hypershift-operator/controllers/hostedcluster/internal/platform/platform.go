@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/none"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/powervs"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	imgUtil "github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -63,7 +64,7 @@ type Platform interface {
 }
 
 // GetPlatform gets and initializes the cloud platform the hosted cluster was created on
-func GetPlatform(hcluster *hyperv1.HostedCluster, utilitiesImage string, pullSecretBytes []byte) (Platform, error) {
+func GetPlatform(hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, utilitiesImage string, pullSecretBytes []byte) (Platform, error) {
 	var (
 		platform          Platform
 		capiImageProvider string
@@ -73,9 +74,9 @@ func GetPlatform(hcluster *hyperv1.HostedCluster, utilitiesImage string, pullSec
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		if pullSecretBytes != nil {
-			capiImageProvider, err = imgUtil.GetPayloadImage(context.TODO(), hcluster, AWSCAPIProvider, pullSecretBytes)
+			capiImageProvider, err = imgUtil.GetPayloadImage(context.TODO(), releaseProvider, hcluster, AWSCAPIProvider, pullSecretBytes)
 			if err != nil {
-				return nil, fmt.Errorf("failed to retrieve capa image: %w", err)
+				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
 			}
 		}
 		platform = aws.New(utilitiesImage, capiImageProvider)
