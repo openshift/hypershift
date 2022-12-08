@@ -76,6 +76,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
 	flag.StringVar(&globalOpts.platformRaw, "e2e.platform", string(hyperv1.AWSPlatform), "The platform to use for the tests")
 	flag.StringVar(&globalOpts.configurableClusterOptions.NetworkType, "network-type", "", "The network type to use. If unset, will default based on the OCP version.")
+	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtServicePublishingStrategy, "kubevirt-service-publishing-strategy", "Ingress", "Define how to expose the cluster services. Supported options: Ingress (Use LoadBalancer and Route to expose services), NodePort (Select a random node to expose service access through) (default: Ingress)")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSResourceGroup, "e2e.powervs-resource-group", "", "IBM Cloud Resource group")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSRegion, "e2e.powervs-region", "us-south", "IBM Cloud region. Default is us-south")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSZone, "e2e.powervs-zone", "us-south", "IBM Cloud zone. Default is us-sout")
@@ -219,32 +220,37 @@ type options struct {
 }
 
 type configurableClusterOptions struct {
-	AWSCredentialsFile         string
-	AzureCredentialsFile       string
-	AzureLocation              string
-	Region                     string
-	Zone                       stringSliceVar
-	PullSecretFile             string
-	BaseDomain                 string
-	ControlPlaneOperatorImage  string
-	AWSEndpointAccess          string
-	ExternalDNSDomain          string
-	KubeVirtContainerDiskImage string
-	KubeVirtNodeMemory         string
-	NodePoolReplicas           int
-	SSHKeyFile                 string
-	NetworkType                string
-	PowerVSResourceGroup       string
-	PowerVSRegion              string
-	PowerVSZone                string
-	PowerVSVpcRegion           string
-	PowerVSSysType             string
-	PowerVSProcType            hyperv1.PowerVSNodePoolProcType
-	PowerVSProcessors          string
-	PowerVSMemory              int
+	AWSCredentialsFile                string
+	AzureCredentialsFile              string
+	AzureLocation                     string
+	Region                            string
+	Zone                              stringSliceVar
+	PullSecretFile                    string
+	BaseDomain                        string
+	ControlPlaneOperatorImage         string
+	AWSEndpointAccess                 string
+	ExternalDNSDomain                 string
+	KubeVirtContainerDiskImage        string
+	KubeVirtNodeMemory                string
+	KubeVirtServicePublishingStrategy string
+	NodePoolReplicas                  int
+	SSHKeyFile                        string
+	NetworkType                       string
+	PowerVSResourceGroup              string
+	PowerVSRegion                     string
+	PowerVSZone                       string
+	PowerVSVpcRegion                  string
+	PowerVSSysType                    string
+	PowerVSProcType                   hyperv1.PowerVSNodePoolProcType
+	PowerVSProcessors                 string
+	PowerVSMemory                     int
 }
 
 func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
+	var servicePublishingStrategy = kubevirt.IngressServicePublishingStrategy
+	if o.configurableClusterOptions.KubeVirtServicePublishingStrategy == "NodePort" {
+		servicePublishingStrategy = kubevirt.NodePortServicePublishingStrategy
+	}
 	createOption := core.CreateOptions{
 		ReleaseImage:              o.LatestReleaseImage,
 		NodePoolReplicas:          int32(o.configurableClusterOptions.NodePoolReplicas),
@@ -262,7 +268,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
 		},
 		KubevirtPlatform: core.KubevirtPlatformCreateOptions{
-			ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
+			ServicePublishingStrategy: servicePublishingStrategy,
 			Cores:                     2,
 			Memory:                    o.configurableClusterOptions.KubeVirtNodeMemory,
 		},
