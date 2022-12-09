@@ -2821,7 +2821,7 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 
 	// Calculate router canonical hostname
 	var canonicalHostname string
-	if util.IsPublicHCP(hcp) && exposeKASThroughRouter {
+	if util.IsPublicHCP(hcp) {
 		canonicalHostname = externalRouterHost
 	} else if util.IsPrivateHCP(hcp) {
 		canonicalHostname = privateRouterHost
