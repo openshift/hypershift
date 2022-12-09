@@ -12,3 +12,19 @@ func CSISnapshotController() *operatorv1.CSISnapshotController {
 		},
 	}
 }
+
+func Storage() *operatorv1.Storage {
+	return &operatorv1.Storage{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+}
+
+func ClusterCSIDriver(name operatorv1.CSIDriverName) *operatorv1.ClusterCSIDriver {
+	return &operatorv1.ClusterCSIDriver{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: string(name),
+		},
+	}
+}
