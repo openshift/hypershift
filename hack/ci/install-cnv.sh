@@ -4,6 +4,8 @@ set -ex
 
 CNV_PRERELEASE_VERSION=${CNV_PRERELEASE_VERSION:-}
 
+CNV_DEPLOY_HPP=${CNV_DEPLOY_HPP:-}
+
 if [ -z "${CNV_PRERELEASE_VERSION}" ]
 then
   CNV_RELEASE_CHANNEL=stable
@@ -128,6 +130,8 @@ EOF
 
 oc wait hyperconverged -n openshift-cnv kubevirt-hyperconverged --for=condition=Available --timeout=15m
 
-
-readonly SCRIPT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
-"${SCRIPT_DIR}"/hpp/deploy_hpp.sh
+# Optionally deploy HPP
+if [ "$CNV_DEPLOY_HPP" = "true" ]; then
+  readonly SCRIPT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")
+  "${SCRIPT_DIR}"/hpp/deploy_hpp.sh
+fi
