@@ -4,10 +4,11 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -277,6 +278,7 @@ type HyperShiftOperatorDeployment struct {
 	MetricsSet                     metrics.MetricsSet
 	IncludeVersion                 bool
 	UWMTelemetry                   bool
+	RHOBSMonitoring                bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -422,6 +424,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				},
 			})
 		}
+	}
+
+	if o.RHOBSMonitoring {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  rhobsmonitoring.EnvironmentVariable,
+			Value: "1",
+		})
 	}
 
 	deployment := &appsv1.Deployment{
@@ -746,6 +755,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 					"exp.cluster.x-k8s.io",
 					"cluster.x-k8s.io",
 					"monitoring.coreos.com",
+					"monitoring.rhobs",
 				},
 				Resources: []string{"*"},
 				Verbs:     []string{"*"},
@@ -802,7 +812,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"apps"},
-				Resources: []string{"deployments", "statefulsets"},
+				Resources: []string{"deployments", "replicasets", "statefulsets"},
 				Verbs:     []string{"*"},
 			},
 			{
@@ -816,7 +826,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"*"},
 			},
 			{
-				APIGroups: []string{"monitoring.coreos.com"},
+				APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
 				Resources: []string{"podmonitors"},
 				Verbs:     []string{"get", "list", "watch", "create", "update"},
 			},
@@ -1301,7 +1311,7 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
-				APIGroups: []string{"monitoring.coreos.com"},
+				APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
 				Resources: []string{"podmonitors"},
 				Verbs:     []string{"get", "list", "watch"},
 			},
@@ -1351,7 +1361,7 @@ type HyperShiftValidatingWebhookConfiguration struct {
 
 func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistrationv1.ValidatingWebhookConfiguration {
 	scope := admissionregistrationv1.NamespacedScope
-	path := "/validate-hypershift-openshift-io-v1alpha1-hostedcluster"
+	path := "/validate-hypershift-openshift-io-v1beta1-hostedcluster"
 	sideEffects := admissionregistrationv1.SideEffectClassNone
 	timeout := int32(10)
 	validatingWebhookConfiguration := &admissionregistrationv1.ValidatingWebhookConfiguration{
@@ -1378,7 +1388,7 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 						},
 						Rule: admissionregistrationv1.Rule{
 							APIGroups:   []string{"hypershift.openshift.io"},
-							APIVersions: []string{"v1alpha1"},
+							APIVersions: []string{"v1beta1"},
 							Resources:   []string{"hostedclusters"},
 							Scope:       &scope,
 						},

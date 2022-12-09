@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -9,6 +10,7 @@ import (
 )
 
 const (
+	NodePoolValidGeneratedPayloadConditionType   = "ValidGeneratedPayload"
 	NodePoolValidPlatformImageType               = "ValidPlatformImage"
 	NodePoolValidHostedClusterConditionType      = "ValidHostedCluster"
 	NodePoolValidReleaseImageConditionType       = "ValidReleaseImage"
@@ -24,6 +26,8 @@ const (
 	NodePoolAsExpectedConditionReason            = "AsExpected"
 	NodePoolValidationFailedConditionReason      = "ValidationFailed"
 	NodePoolInplaceUpgradeFailedConditionReason  = "InplaceUpgradeFailed"
+	NodePoolNotFoundReason                       = "NotFound"
+	NodePoolFailedToGetReason                    = "FailedToGet"
 	// NodePoolLabel is used to label Nodes.
 	NodePoolLabel = "hypershift.openshift.io/nodePool"
 )
@@ -52,7 +56,7 @@ func init() {
 // independent of the control plane’s underlying machine architecture.
 //
 // +kubebuilder:resource:path=nodepools,shortName=np;nps,scope=Namespaced
-// +kubebuilder:storageversion
+// +kubebuilder:deprecatedversion:warning="v1alpha1 is a deprecated version for NodePool"
 // +kubebuilder:subresource:status
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas
@@ -83,6 +87,7 @@ type NodePoolSpec struct {
 	// TODO(dan): Should this be a LocalObjectReference?
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="ClusterName is immutable"
 	ClusterName string `json:"clusterName"`
 
 	// Release specifies the OCP release used for the NodePool. This informs the
@@ -94,6 +99,7 @@ type NodePoolSpec struct {
 	// and is used to configure platform specific behavior.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Platform is immutable"
 	Platform NodePoolPlatform `json:"platform"`
 
 	// Deprecated: Use Replicas instead. NodeCount will be dropped in the next
@@ -171,7 +177,8 @@ type NodePoolStatus struct {
 
 	// Conditions represents the latest available observations of the node pool's
 	// current state.
-	Conditions []NodePoolCondition `json:"conditions"`
+	// +optional
+	Conditions []NodePoolCondition `json:"conditions,omitempty"`
 }
 
 // NodePoolList contains a list of NodePools.
@@ -299,6 +306,7 @@ type NodePoolManagement struct {
 	// UpgradeType specifies the type of strategy for handling upgrades.
 	//
 	// +kubebuilder:validation:Enum=Replace;InPlace
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="UpgradeType is immutable"
 	UpgradeType UpgradeType `json:"upgradeType"`
 
 	// Replace is the configuration for rolling upgrades.
@@ -339,6 +347,7 @@ type NodePoolPlatform struct {
 	//
 	// +unionDiscriminator
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Type is immutable"
 	Type PlatformType `json:"type"`
 
 	// AWS specifies the configuration used when operating on AWS.
@@ -636,6 +645,8 @@ type AWSNodePoolPlatform struct {
 	// for the user.
 	//
 	// +kubebuilder:validation:MaxItems=25
+	// +listType=map
+	// +listMapKey=key
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 }

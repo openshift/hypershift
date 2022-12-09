@@ -2,13 +2,15 @@ package cno
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	"github.com/blang/semver"
 	routev1 "github.com/openshift/api/route/v1"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
@@ -148,7 +150,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 			Verbs:     []string{"*"},
 		},
 		{
-			APIGroups: []string{"monitoring.coreos.com"},
+			APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
 			Resources: []string{
 				"servicemonitors",
 				"prometheusrules",
@@ -249,8 +251,15 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		})
 	}
 
+	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
+		cnoEnv = append(cnoEnv, corev1.EnvVar{
+			Name:  rhobsmonitoring.EnvironmentVariable,
+			Value: "1",
+		})
+	}
+
 	if params.ExposedThroughHCPRouter {
-		cnoEnv = append(cnoEnv, corev1.EnvVar{Name: "OVN_SBDB_ROUTE_LABELS", Value: ingress.HCPRouteLabel + "=" + dep.Namespace})
+		cnoEnv = append(cnoEnv, corev1.EnvVar{Name: "OVN_SBDB_ROUTE_LABELS", Value: util.HCPRouteLabel + "=" + dep.Namespace})
 	}
 
 	var proxyVars []corev1.EnvVar
@@ -393,6 +402,7 @@ kubectl --kubeconfig $kc config use-context default`,
 			{Group: "network.operator.openshift.io", Version: "v1", Kind: "EgressRouter"},
 			{Group: "network.operator.openshift.io", Version: "v1", Kind: "OperatorPKI"},
 		}
+		o.WaitForInfrastructureResource = true
 	})
 	return nil
 }

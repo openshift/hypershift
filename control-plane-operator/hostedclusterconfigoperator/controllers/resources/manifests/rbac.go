@@ -102,3 +102,21 @@ func AuthenticatedReaderForAuthenticatedUserRolebinding() *rbacv1.RoleBinding {
 			Namespace: "kube-system",
 		}}
 }
+
+func KCMLeaderElectionRole() *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "system:openshift:leader-election-lock-kube-controller-manager",
+			Namespace: "kube-system",
+		},
+	}
+}
+
+func KCMLeaderElectionRoleBinding() *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "system:openshift:leader-election-lock-kube-controller-manager",
+			Namespace: "kube-system",
+		},
+	}
+}

@@ -424,3 +424,100 @@ func TestGetNodesToUpgrade(t *testing.T) {
 		})
 	}
 }
+
+func TestGetAvailableCandidates(t *testing.T) {
+	desiredConfigHash := "ccc"
+	awaitingNode1 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "node1",
+			Annotations: map[string]string{},
+		},
+	}
+	awaitingNode2 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "node2",
+			Annotations: map[string]string{},
+		},
+	}
+	inProgressNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node3",
+			Annotations: map[string]string{
+				DesiredMachineConfigAnnotationKey: desiredConfigHash,
+			},
+		},
+	}
+	completedNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node4",
+			Annotations: map[string]string{
+				CurrentMachineConfigAnnotationKey: desiredConfigHash,
+				DesiredMachineConfigAnnotationKey: desiredConfigHash,
+			},
+		},
+	}
+	testCases := []struct {
+		name          string
+		inputNodes    []*corev1.Node
+		targetConfig  string
+		capacity      int
+		selectedNodes []*corev1.Node
+	}{
+		{
+			name: "pick first node to upgrade",
+			inputNodes: []*corev1.Node{
+				awaitingNode1,
+				awaitingNode2,
+			},
+			targetConfig: desiredConfigHash,
+			capacity:     1,
+			selectedNodes: []*corev1.Node{
+				awaitingNode1,
+			},
+		},
+		{
+			name: "select non-completed node",
+			inputNodes: []*corev1.Node{
+				completedNode,
+				awaitingNode1,
+			},
+			targetConfig: desiredConfigHash,
+			capacity:     1,
+			selectedNodes: []*corev1.Node{
+				awaitingNode1,
+			},
+		},
+		{
+			name: "pick more nodes up to capacity",
+			inputNodes: []*corev1.Node{
+				awaitingNode1,
+				awaitingNode2,
+				inProgressNode,
+				completedNode,
+			},
+			targetConfig: desiredConfigHash,
+			capacity:     2,
+			selectedNodes: []*corev1.Node{
+				awaitingNode1,
+				awaitingNode2,
+			},
+		},
+		{
+			name: "do nothing while no additional capacity",
+			inputNodes: []*corev1.Node{
+				awaitingNode1,
+				awaitingNode2,
+				completedNode,
+			},
+			targetConfig:  desiredConfigHash,
+			capacity:      0,
+			selectedNodes: nil,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			g.Expect(getAvailableCandidates(tc.inputNodes, tc.targetConfig, tc.capacity)).To(Equal(tc.selectedNodes))
+		})
+	}
+}

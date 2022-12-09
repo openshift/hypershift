@@ -32,7 +32,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -50,6 +50,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/olm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/rbac"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -466,6 +467,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling olm resources")
 	errs = append(errs, r.reconcileOLM(ctx, hcp, releaseImage)...)
 
+	log.Info("reconciling storage resources")
+	errs = append(errs, r.reconcileStorage(ctx, hcp, releaseImage)...)
+
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
 
@@ -674,6 +678,9 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.IngressToRouteControllerRoleBinding, reconcile: rbac.ReconcileIngressToRouteControllerRoleBinding},
 
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.AuthenticatedReaderForAuthenticatedUserRolebinding, reconcile: rbac.ReconcileAuthenticatedReaderForAuthenticatedUserRolebinding},
+
+		manifestAndReconcile[*rbacv1.Role]{manifest: manifests.KCMLeaderElectionRole, reconcile: rbac.ReconcileKCMLeaderElectionRole},
+		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.KCMLeaderElectionRoleBinding, reconcile: rbac.ReconcileKCMLeaderElectionRoleBinding},
 	}
 
 	var errs []error
@@ -1418,6 +1425,26 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context) (bool,
 	if len(errs) > 0 {
 		return false, fmt.Errorf("failed to delete ingress controllers: %w", errors.NewAggregate(errs))
 	}
+
+	// Force deleting pods under openshift-ingress to unblock ingress-controller deletion.
+	// Ingress-operator is dependent on these pods deletion on removing the finalizers of ingress-controller.
+	routerPods := &corev1.PodList{}
+	if err := r.uncachedClient.List(ctx, routerPods, &client.ListOptions{Namespace: "openshift-ingress"}); err != nil {
+		return false, fmt.Errorf("failed to list pods under openshift-ingress namespace: %w", err)
+	}
+
+	for i := range routerPods.Items {
+		rp := &routerPods.Items[i]
+		log.Info("Force deleting", "pod", client.ObjectKeyFromObject(rp).String())
+		if err := r.client.Delete(ctx, rp, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64Ptr(0)}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to force delete %s", client.ObjectKeyFromObject(rp).String()))
+		}
+	}
+
+	if len(errs) > 0 {
+		return false, fmt.Errorf("failed to force delete pods under openshift-ingress namespace: %w", errors.NewAggregate(errs))
+	}
+
 	return false, nil
 }
 
@@ -1537,4 +1564,17 @@ func (a *genericListAccessor) len() int {
 
 func (a *genericListAccessor) item(i int) client.Object {
 	return (a.items.Index(i).Addr().Interface()).(client.Object)
+}
+
+func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) []error {
+	var errs []error
+
+	cr := manifests.CSISnapshotController()
+	if _, err := r.CreateOrUpdate(ctx, r.client, cr, func() error {
+		storage.ReconcileCSISnapshotController(cr)
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile CSISnapshotController : %w", err))
+	}
+	return errs
 }

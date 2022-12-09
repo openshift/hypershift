@@ -5,6 +5,7 @@ import (
 
 	"testing"
 
+	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -63,4 +64,233 @@ func TestSetResources(t *testing.T) {
 		t.Errorf("did not get any resource requests applied\n")
 	}
 
+}
+
+func TestApplyResourceRequestOverrides(t *testing.T) {
+
+	const deploymentName = "test-deployment"
+	const anotherDeploymentName = "another-deployment"
+
+	tests := []struct {
+		name      string
+		input     corev1.PodSpec
+		overrides ResourceOverrides
+		expected  corev1.PodSpec
+	}{
+		{
+			name: "simple memory override",
+			input: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "foo",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("1Gi"),
+							},
+						},
+					},
+				},
+			},
+			overrides: ResourceOverrides{
+				deploymentName: ResourcesSpec{
+					"foo": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+			},
+			expected: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "foo",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("2Gi"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "simple memory override, does not affect other settings",
+			input: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "foo",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("1Gi"),
+								corev1.ResourceCPU:    resource.MustParse("100m"),
+							},
+							Limits: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("5Gi"),
+								corev1.ResourceCPU:    resource.MustParse("1000m"),
+							},
+						},
+					},
+				},
+			},
+			overrides: ResourceOverrides{
+				deploymentName: ResourcesSpec{
+					"foo": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+			},
+			expected: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "foo",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("2Gi"),
+								corev1.ResourceCPU:    resource.MustParse("100m"),
+							},
+							Limits: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("5Gi"),
+								corev1.ResourceCPU:    resource.MustParse("1000m"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "overrides to multiple containers",
+			input: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "foo",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("1Gi"),
+								corev1.ResourceCPU:    resource.MustParse("100m"),
+							},
+						},
+					},
+					{
+						Name: "bar",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("3Gi"),
+								corev1.ResourceCPU:    resource.MustParse("200m"),
+							},
+						},
+					},
+				},
+				InitContainers: []corev1.Container{
+					{
+						Name: "init",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("100Mi"),
+								corev1.ResourceCPU:    resource.MustParse("50m"),
+							},
+						},
+					},
+				},
+			},
+			overrides: ResourceOverrides{
+				deploymentName: ResourcesSpec{
+					"foo": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+					"bar": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("100m"),
+						},
+					},
+					"init": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("200Mi"),
+							corev1.ResourceCPU:    resource.MustParse("100m"),
+						},
+					},
+				},
+			},
+			expected: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "foo",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("2Gi"),
+								corev1.ResourceCPU:    resource.MustParse("100m"),
+							},
+						},
+					},
+					{
+						Name: "bar",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("3Gi"),
+								corev1.ResourceCPU:    resource.MustParse("100m"),
+							},
+						},
+					},
+				},
+				InitContainers: []corev1.Container{
+					{
+						Name: "init",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("200Mi"),
+								corev1.ResourceCPU:    resource.MustParse("100m"),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "different deployment",
+			input: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "foo",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("1Gi"),
+							},
+						},
+					},
+				},
+			},
+			overrides: ResourceOverrides{
+				anotherDeploymentName: ResourcesSpec{
+					"foo": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("2Gi"),
+						},
+					},
+				},
+			},
+			expected: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "foo",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("1Gi"),
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			input := test.input
+			test.overrides.ApplyRequestsTo(deploymentName, &input)
+			g.Expect(input).To(Equal(test.expected))
+		})
+	}
 }

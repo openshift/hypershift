@@ -39,7 +39,7 @@ var capiResources = map[string]string{
 	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachines.yaml":          "v1beta1",
 	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachinetemplates.yaml":  "v1beta1",
 	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmvpcclusters.yaml":              "v1alpha4",
-	"hypershift-operator/hypershift.openshift.io_hostedcontrolplanes.yaml":                           "v1alpha1",
+	"hypershift-operator/hypershift.openshift.io_hostedcontrolplanes.yaml":                           "v1beta1",
 	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtclusters.yaml":            "v1alpha1",
 	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachines.yaml":            "v1alpha1",
 	"cluster-api-provider-kubevirt/infrastructure.cluster.x-k8s.io_kubevirtmachinetemplates.yaml":    "v1alpha1",
@@ -69,7 +69,7 @@ func getContents(fs embed.FS, file string) []byte {
 }
 
 // CustomResourceDefinitions returns all existing CRDs as controller-runtime objects
-func CustomResourceDefinitions(include func(path string) bool) []crclient.Object {
+func CustomResourceDefinitions(include func(path string) bool, transform func(*apiextensionsv1.CustomResourceDefinition)) []crclient.Object {
 	var allCrds []crclient.Object
 	err := fs.WalkDir(crds, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -79,7 +79,11 @@ func CustomResourceDefinitions(include func(path string) bool) []crclient.Object
 			return nil
 		}
 		if include(path) {
-			allCrds = append(allCrds, getCustomResourceDefinition(crds, path))
+			crd := getCustomResourceDefinition(crds, path)
+			if transform != nil {
+				transform(crd)
+			}
+			allCrds = append(allCrds, crd)
 		}
 		return nil
 	})

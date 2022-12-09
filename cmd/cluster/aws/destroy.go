@@ -45,6 +45,9 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 }
 
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
+	if o.AWSPlatform.PostDeleteAction != nil {
+		o.AWSPlatform.PostDeleteAction()
+	}
 	infraID := o.InfraID
 	baseDomain := o.AWSPlatform.BaseDomain
 	region := o.AWSPlatform.Region

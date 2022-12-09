@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,7 +31,7 @@ var (
 	volumeMounts = util.PodVolumeMounts{
 		kcmContainerMain().Name: {
 			kcmVolumeConfig().Name:        "/etc/kubernetes/config",
-			kcmVolumeCombinedCA().Name:    "/etc/kubernetes/certs/combined-ca",
+			kcmVolumeRootCA().Name:        "/etc/kubernetes/certs/root-ca",
 			kcmVolumeWorkLogs().Name:      "/var/log/kube-controller-manager",
 			kcmVolumeKubeconfig().Name:    "/etc/kubernetes/secrets/svc-kubeconfig",
 			kcmVolumeCertDir().Name:       "/var/run/kubernetes",
@@ -102,7 +102,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(kcmVolumeConfig(), buildKCMVolumeConfig),
-			util.BuildVolume(kcmVolumeCombinedCA(), buildKCMVolumeCombinedCA),
+			util.BuildVolume(kcmVolumeRootCA(), buildKCMVolumeRootCA),
 			util.BuildVolume(kcmVolumeWorkLogs(), buildKCMVolumeWorkLogs),
 			util.BuildVolume(kcmVolumeKubeconfig(), buildKCMVolumeKubeconfig),
 			util.BuildVolume(kcmVolumeClusterSigner(), buildKCMVolumeClusterSigner),
@@ -162,15 +162,15 @@ func buildKCMVolumeConfig(v *corev1.Volume) {
 	}
 }
 
-func kcmVolumeCombinedCA() *corev1.Volume {
+func kcmVolumeRootCA() *corev1.Volume {
 	return &corev1.Volume{
-		Name: "combined-ca",
+		Name: "root-ca",
 	}
 }
 
-func buildKCMVolumeCombinedCA(v *corev1.Volume) {
+func buildKCMVolumeRootCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
+	v.ConfigMap.Name = manifests.RootCAConfigMap("").Name
 	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 }
 
@@ -214,7 +214,7 @@ func kcmVolumeClusterSigner() *corev1.Volume {
 
 func buildKCMVolumeClusterSigner(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.ClusterSignerCASecret("").Name,
+		SecretName: manifests.CSRSignerCASecret("").Name,
 	}
 }
 
@@ -226,7 +226,7 @@ func kcmVolumeKubeconfig() *corev1.Volume {
 
 func buildKCMVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KASServiceKubeconfigSecret("").Name,
+		SecretName: manifests.KCMKubeconfigSecret("").Name,
 	}
 }
 
@@ -332,7 +332,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		"--leader-elect-resource-lock=configmapsleases",
 		"--leader-elect=true",
 		"--leader-elect-retry-period=3s",
-		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeCombinedCA().Name, certs.CASignerCertMapKey)),
+		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeRootCA().Name, certs.CASignerCertMapKey)),
 		fmt.Sprintf("--secure-port=%d", DefaultPort),
 		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),
 		fmt.Sprintf("--service-cluster-ip-range=%s", p.ServiceCIDR),

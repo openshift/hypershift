@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,7 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
@@ -145,7 +144,7 @@ func getInstanceConsoleOutput(ctx context.Context, ec2Client *ec2.EC2, instances
 			errs = append(errs, err)
 			continue
 		}
-		if err := ioutil.WriteFile(filepath.Join(outputDir, name+".log"), logOutput, 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(outputDir, name+".log"), logOutput, 0644); err != nil {
 			errs = append(errs, err)
 		}
 	}

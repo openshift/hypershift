@@ -6,7 +6,6 @@ import (
 	"crypto/x509/pkix"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/exec"
@@ -18,7 +17,7 @@ import (
 	"time"
 
 	"github.com/docker/distribution/manifest/manifestlist"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -130,7 +129,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	log.Info("discovered mco image", "image", mcoImage)
 
 	// Set up the base working directory
-	workDir, err := ioutil.TempDir(p.WorkDir, "get-payload")
+	workDir, err := os.MkdirTemp(p.WorkDir, "get-payload")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create working directory: %w", err)
 	}
@@ -262,7 +261,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			"bootstrap",
 			fmt.Sprintf("--image-references=%s", path.Join(configDir, "release-manifests", "image-references")),
 			fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
-			fmt.Sprintf("--kube-ca=%s/combined-ca.crt", configDir),
+			fmt.Sprintf("--kube-ca=%s/signer-ca.crt", configDir),
 			fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
 			fmt.Sprintf("--network-config-file=%s/cluster-network-02-config.yaml", configDir),
 			fmt.Sprintf("--proxy-config-file=%s/cluster-proxy-01-config.yaml", configDir),
@@ -301,7 +300,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 				fmt.Sprintf("--haproxy-image=%s", images["haproxy"]),
 				fmt.Sprintf("--baremetal-runtimecfg-image=%s", images["baremetal-runtimecfg"]),
 				fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
-				fmt.Sprintf("--kube-ca=%s/combined-ca.crt", configDir),
+				fmt.Sprintf("--kube-ca=%s/root-ca.crt", configDir),
 				fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
 				fmt.Sprintf("--network-config-file=%s/cluster-network-02-config.yaml", configDir),
 				fmt.Sprintf("--proxy-config-file=%s/cluster-proxy-01-config.yaml", configDir),
@@ -333,7 +332,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 
 		// Copy output to the MCC base directory
 		bootstrapManifestsDir := filepath.Join(destDir, "bootstrap", "manifests")
-		manifests, err := ioutil.ReadDir(bootstrapManifestsDir)
+		manifests, err := os.ReadDir(bootstrapManifestsDir)
 		if err != nil {
 			return fmt.Errorf("failed to read dir: %w", err)
 		}
@@ -471,7 +470,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 					log.Error(err, "failed to close mcs response body")
 				}
 			}()
-			p, err := ioutil.ReadAll(res.Body)
+			p, err := io.ReadAll(res.Body)
 			if err != nil {
 				log.Error(err, "failed to read mcs response body")
 				return false, nil

@@ -13,16 +13,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilpointer "k8s.io/utils/pointer"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	HCPRouteLabel   = "hypershift.openshift.io/hosted-control-plane"
 	metricsPort     = 1936
 	routerHTTPPort  = 8080
 	routerHTTPSPort = 8443
@@ -98,7 +96,7 @@ func ReconcileRouterTemplateConfigmap(cm *corev1.ConfigMap) {
 	cm.Data[routerTemplateConfigMapKey] = string(bytes.Replace(routerTemplate, []byte(`<<namespace>>`), []byte(cm.Namespace), 1))
 }
 
-func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, canonicalHostname string, exposeAPIServerThroughRouter bool) error {
+func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, canonicalHostname string, exposeAPIServerThroughRouter bool, isPrivateOnly bool) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: hcpRouterLabels(),
@@ -109,7 +107,7 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.Ow
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(hcpRouterContainerMain(), buildHCPRouterContainerMain(image, deployment.Namespace, canonicalHostname, exposeAPIServerThroughRouter)),
+					util.BuildContainer(hcpRouterContainerMain(), buildHCPRouterContainerMain(image, deployment.Namespace, canonicalHostname, exposeAPIServerThroughRouter, isPrivateOnly)),
 				},
 				ServiceAccountName: manifests.RouterServiceAccount("").Name,
 				Volumes:            nil,
@@ -129,14 +127,17 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.Ow
 }
 
 func hcpRouterContainerMain() *corev1.Container {
-
 	return &corev1.Container{
 		Name: "private-router",
 	}
 }
 
-func buildHCPRouterContainerMain(image, namespace, canonicalHostname string, exposeAPIServerThroughRouter bool) func(*corev1.Container) {
+func buildHCPRouterContainerMain(image, namespace, canonicalHostname string, exposeAPIServerThroughRouter bool, isPrivateOnly bool) func(*corev1.Container) {
 	const haproxyTemplateMountPath = "/usr/local/haproxy/hypershift-template"
+	routeLabels := fmt.Sprintf("%s=%s", util.HCPRouteLabel, namespace)
+	if isPrivateOnly {
+		routeLabels = fmt.Sprintf("%s,%s=%s", routeLabels, util.InternalRouteLabel, "true")
+	}
 	return func(c *corev1.Container) {
 		c.Env = []corev1.EnvVar{
 			{
@@ -193,7 +194,7 @@ func buildHCPRouterContainerMain(image, namespace, canonicalHostname string, exp
 			},
 			{
 				Name:  "ROUTE_LABELS",
-				Value: fmt.Sprintf("%s=%s", HCPRouteLabel, namespace),
+				Value: routeLabels,
 			},
 			{
 				Name:  "SSL_MIN_VERSION",
@@ -211,21 +212,21 @@ func buildHCPRouterContainerMain(image, namespace, canonicalHostname string, exp
 				Name:  "STATS_PORT",
 				Value: fmt.Sprintf("%d", metricsPort),
 			},
-		}
-
-		if exposeAPIServerThroughRouter {
-			c.Env = append(c.Env, corev1.EnvVar{
+			{
 				Name:  "ROUTER_CANONICAL_HOSTNAME",
 				Value: canonicalHostname,
-			})
+			},
 		}
+
 		c.Image = image
 		c.Args = []string{
 			"--namespace", namespace,
 		}
+
 		if exposeAPIServerThroughRouter {
 			c.Args = append(c.Args, "--template="+haproxyTemplateMountPath+"/"+routerTemplateConfigMapKey)
 		}
+
 		c.StartupProbe = &corev1.Probe{
 			FailureThreshold: 120,
 			ProbeHandler: corev1.ProbeHandler{
@@ -411,12 +412,3 @@ func ReconcileRouterService(svc *corev1.Service, kasPort int32, internal bool) e
 
 //go:embed router.template
 var routerTemplate []byte
-
-func AddHCPRouteLabel(target crclient.Object) {
-	labels := target.GetLabels()
-	if labels == nil {
-		labels = map[string]string{}
-	}
-	labels[HCPRouteLabel] = target.GetNamespace()
-	target.SetLabels(labels)
-}

@@ -10,6 +10,7 @@ import (
 )
 
 var nullString = "null"
+var nilString = "<nil>"
 var nullBytes = []byte(nullString)
 
 // IPNet wraps net.IPNet to get CIDR serialization.
@@ -42,7 +43,7 @@ func (ipnet *IPNet) String() string {
 
 // MarshalJSON interface for an IPNet
 func (ipnet *IPNet) MarshalJSON() (data []byte, err error) {
-	if len(ipnet.IP) == 0 {
+	if ipnet == nil || len(ipnet.IP) == 0 {
 		return nullBytes, nil
 	}
 
@@ -61,6 +62,12 @@ func (ipnet *IPNet) UnmarshalJSON(b []byte) (err error) {
 	err = json.Unmarshal(b, &cidr)
 	if err != nil {
 		return fmt.Errorf("could not unmarshal string: %w", err)
+	}
+
+	if cidr == nilString {
+		ipnet.IP = net.IP{}
+		ipnet.Mask = net.IPMask{}
+		return nil
 	}
 
 	parsedIPNet, err := ParseCIDR(cidr)

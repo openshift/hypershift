@@ -5,14 +5,14 @@ import (
 	"strings"
 
 	"github.com/blang/semver"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
 
 // LatestSupportedVersion is the latest minor OCP version supported by the
 // HyperShift operator.
 // NOTE: The .0 (z release) should be ignored. It's only here to support
 // semver parsing.
-var LatestSupportedVersion = semver.MustParse("4.12.0")
+var LatestSupportedVersion = semver.MustParse("4.13.0")
 var MinSupportedVersion = semver.MustParse(subtractMinor(&LatestSupportedVersion, uint64(SupportedPreviousMinorVersions)).String())
 
 // SupportedPreviousMinorVersions is the number of minor versions prior to current

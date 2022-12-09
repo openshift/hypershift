@@ -8,9 +8,7 @@ import (
 	"reflect"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
-
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -24,10 +22,33 @@ type Webhook struct{}
 
 // SetupWebhookWithManager sets up HostedCluster webhooks.
 func SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
+	err := ctrl.NewWebhookManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}).
 		WithValidator(&Webhook{}).
 		Complete()
+	if err != nil {
+		return fmt.Errorf("unable to register hostedcluster webhook: %w", err)
+	}
+	err = ctrl.NewWebhookManagedBy(mgr).
+		For(&hyperv1.NodePool{}).
+		Complete()
+	if err != nil {
+		return fmt.Errorf("unable to register nodepool webhook: %w", err)
+	}
+	err = ctrl.NewWebhookManagedBy(mgr).
+		For(&hyperv1.HostedControlPlane{}).
+		Complete()
+	if err != nil {
+		return fmt.Errorf("unable to register hostedcontrolplane webhook: %w", err)
+	}
+	err = ctrl.NewWebhookManagedBy(mgr).
+		For(&hyperv1.AWSEndpointService{}).
+		Complete()
+	if err != nil {
+		return fmt.Errorf("unable to register awsendpointservice webhook: %w", err)
+	}
+	return nil
+
 }
 
 var _ webhook.CustomValidator = &Webhook{}
@@ -67,47 +88,6 @@ func compareCIDREntries(ce []cidrEntry) field.ErrorList {
 	return errs
 }
 
-func validateNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
-	var errs field.ErrorList
-	var cidrEntries []cidrEntry
-
-	podCIDR := hc.Spec.Networking.PodCIDR
-	serviceCIDR := hc.Spec.Networking.ServiceCIDR
-	machineCIDR := hc.Spec.Networking.MachineCIDR
-
-	// Validate CIDR format..
-	_, serviceNet, err := net.ParseCIDR(serviceCIDR)
-	if err != nil {
-		errs = append(errs, field.Invalid(field.NewPath("spec.networking.serviceCIDR"), serviceCIDR, err.Error()))
-	} else {
-		ce := cidrEntry{*serviceNet, *field.NewPath("spec.networking.serviceCIDR")}
-		cidrEntries = append(cidrEntries, ce)
-	}
-
-	_, podNet, err := net.ParseCIDR(podCIDR)
-	if err != nil {
-		errs = append(errs, field.Invalid(field.NewPath("spec.networking.podCIDR"), podCIDR, err.Error()))
-	} else {
-		ce := cidrEntry{*podNet, *field.NewPath("spec.networking.podCIDR")}
-		cidrEntries = append(cidrEntries, ce)
-	}
-
-	_, machineNet, err := net.ParseCIDR(machineCIDR)
-	if err != nil {
-		errs = append(errs, field.Invalid(field.NewPath("spec.networking.machineCIDR"), machineCIDR, err.Error()))
-	} else {
-		ce := cidrEntry{*machineNet, *field.NewPath("spec.networking.machineCIDR")}
-		cidrEntries = append(cidrEntries, ce)
-	}
-
-	// Bail if we can't parse.
-	if len(errs) > 0 {
-		return errs
-	}
-
-	return compareCIDREntries(cidrEntries)
-}
-
 func validateSliceNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
 	var cidrEntries []cidrEntry
 
@@ -128,8 +108,7 @@ func validateSliceNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
 }
 
 func validateHostedClusterCreate(hc *hyperv1.HostedCluster) error {
-	errs := validateNetworkCIDRs(hc)
-	errs = append(errs, validateSliceNetworkCIDRs(hc)...)
+	errs := validateSliceNetworkCIDRs(hc)
 
 	return errs.ToAggregate()
 }
@@ -172,10 +151,6 @@ func filterMutableHostedClusterSpecFields(spec *hyperv1.HostedClusterSpec) {
 		spec.Platform.AWS.ResourceTags = nil
 		// This is to enable reconcileDeprecatedAWSRoles.
 		spec.Platform.AWS.RolesRef = hyperv1.AWSRolesRef{}
-		spec.Platform.AWS.Roles = []hyperv1.AWSRoleCredentials{}
-		spec.Platform.AWS.NodePoolManagementCreds = corev1.LocalObjectReference{}
-		spec.Platform.AWS.ControlPlaneOperatorCreds = corev1.LocalObjectReference{}
-		spec.Platform.AWS.KubeCloudControllerCreds = corev1.LocalObjectReference{}
 	}
 
 	// This is to enable reconcileDeprecatedNetworkSettings

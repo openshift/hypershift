@@ -3,7 +3,7 @@ package aws
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"regexp"
 	"time"
 
@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
 )
@@ -137,7 +137,7 @@ func (o *CreateBastionOpts) Run(ctx context.Context) (string, string, error) {
 	// Read SSH public key
 	if len(o.SSHKeyFile) > 0 {
 		var err error
-		sshPublicKey, err = ioutil.ReadFile(o.SSHKeyFile)
+		sshPublicKey, err = os.ReadFile(o.SSHKeyFile)
 		if err != nil {
 			return "", "", fmt.Errorf("cannot read SSH public key from %s: %v", o.SSHKeyFile, err)
 		}

@@ -2796,8 +2796,18 @@ has been created for the specified NLB in the management VPC</p>
 <td></td>
 </tr><tr><td><p>&#34;CloudResourcesDestroyed&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;ClusterVersionAvailable&#34;</p></td>
+<td><p>ClusterVersionAvailable bubbles up Failing configv1.OperatorAvailable from the CVO.</p>
+</td>
 </tr><tr><td><p>&#34;ClusterVersionFailing&#34;</p></td>
-<td></td>
+<td><p>ClusterVersionFailing bubbles up Failing from the CVO.</p>
+</td>
+</tr><tr><td><p>&#34;ClusterVersionProgressing&#34;</p></td>
+<td><p>ClusterVersionProgressing bubbles up configv1.OperatorProgressing from the CVO.</p>
+</td>
+</tr><tr><td><p>&#34;ClusterVersionReleaseAccepted&#34;</p></td>
+<td><p>ClusterVersionReleaseAccepted bubbles up Failing ReleaseAccepted from the CVO.</p>
+</td>
 </tr><tr><td><p>&#34;ClusterVersionSucceeding&#34;</p></td>
 <td><p>ClusterVersionSucceeding indicates the current status of the desired release
 version of the HostedCluster as indicated by the Failing condition in the
@@ -2808,7 +2818,8 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 underlying cluster&rsquo;s ClusterVersion.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
-<td></td>
+<td><p>EtcdAvailable bubbles up the same condition from HCP.</p>
+</td>
 </tr><tr><td><p>&#34;EtcdSnapshotRestored&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
@@ -2832,19 +2843,21 @@ an initial deployment or upgrade.</p>
 HostedCluster is available to handle ignition requests.</p>
 </td>
 </tr><tr><td><p>&#34;InfrastructureReady&#34;</p></td>
-<td></td>
+<td><p>InfrastructureReady bubbles up the same condition from HCP.</p>
+</td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
-<td></td>
+<td><p>KubeAPIServerAvailable bubbles up the same condition from HCP.</p>
+</td>
 </tr><tr><td><p>&#34;PlatformCredentialsFound&#34;</p></td>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
 desired platform are valid.</p>
 </td>
 </tr><tr><td><p>&#34;ReconciliationActive&#34;</p></td>
-<td><p>ReconciliationActive indicates if reconciliation of the hostedcluster is
+<td><p>ReconciliationActive indicates if reconciliation of the HostedCluster is
 active or paused.</p>
 </td>
 </tr><tr><td><p>&#34;ReconciliationSucceeded&#34;</p></td>
-<td><p>ReconciliationSucceeded indicates if the hostedcluster reconciliation
+<td><p>ReconciliationSucceeded indicates if the HostedCluster reconciliation
 succeeded.</p>
 </td>
 </tr><tr><td><p>&#34;SupportedHostedCluster&#34;</p></td>
@@ -2863,7 +2876,8 @@ healthy.</p>
 ClusterConfiguration specified for the HostedCluster is valid.</p>
 </td>
 </tr><tr><td><p>&#34;ValidHostedControlPlaneConfiguration&#34;</p></td>
-<td></td>
+<td><p>ValidHostedControlPlaneConfiguration bubbles up the same condition from HCP.</p>
+</td>
 </tr><tr><td><p>&#34;ValidOIDCConfiguration&#34;</p></td>
 <td><p>ValidOIDCConfiguration indicates if an AWS cluster&rsquo;s OIDC condition is
 detected as invalid.</p>
@@ -3577,6 +3591,21 @@ It exposes the config for instances to become kubernetes nodes.</p>
 </tr>
 <tr>
 <td>
+<code>controlPlaneEndpoint</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.APIEndpoint">
+APIEndpoint
+</a>
+</em>
+</td>
+<td>
+<p>ControlPlaneEndpoint contains the endpoint information by which
+external clients can access the control plane. This is populated
+after the infrastructure is ready.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>oauthCallbackURLTemplate</code></br>
 <em>
 string
@@ -3599,6 +3628,7 @@ This is populated after the infrastructure is ready.</p>
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>Conditions represents the latest available observations of a control
 plane&rsquo;s current state.</p>
 </td>
@@ -4251,6 +4281,7 @@ for the guest cluster.</p>
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>Condition contains details for one aspect of the current state of the HostedControlPlane.
 Current condition types are: &ldquo;Available&rdquo;</p>
 </td>
@@ -5817,6 +5848,7 @@ the NodePool.</p>
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>Conditions represents the latest available observations of the node pool&rsquo;s
 current state.</p>
 </td>

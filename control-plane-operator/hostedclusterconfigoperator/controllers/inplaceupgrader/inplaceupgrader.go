@@ -235,51 +235,85 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 		}
 	}
 	nodesToUpgrade := getNodesToUpgrade(nodes, targetConfigVersionHash, maxUnavail)
-	err = r.performNodesUpgrade(ctx, r.guestClusterClient, nodePoolUpgradeAPI.spec.poolRef.GetName(), nodesToUpgrade, targetConfigVersionHash, mcoImage)
+	err = r.setNodesDesiredConfig(ctx, r.guestClusterClient, nodePoolUpgradeAPI.spec.poolRef.GetName(), nodesToUpgrade, targetConfigVersionHash)
 	if err != nil {
 		return fmt.Errorf("failed to set hosted nodes for inplace upgrade: %w", err)
 	}
 
+	err = r.reconcileUpgradePods(ctx, r.guestClusterClient, nodes, nodePoolUpgradeAPI.spec.poolRef.GetName(), mcoImage)
+	if err != nil {
+		return fmt.Errorf("failed to delete idle upgrade pods: %w", err)
+	}
 	return nil
 }
 
-func (r *Reconciler) performNodesUpgrade(ctx context.Context, hostedClusterClient client.Client, poolName string, nodes []*corev1.Node, targetConfigVersionHash, mcoImage string) error {
+func (r *Reconciler) setNodesDesiredConfig(ctx context.Context, hostedClusterClient client.Client, poolName string, nodes []*corev1.Node, targetConfigVersionHash string) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	for idx, node := range nodes {
+	for _, node := range nodes {
+		if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, node, func() error {
+			// Set the actual annotation
+			node.Annotations[DesiredMachineConfigAnnotationKey] = targetConfigVersionHash
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile node desired config annotations: %w", err)
+		} else {
+			log.Info("Reconciled Node desired config annotations", "result", result)
+		}
+	}
+	return nil
+}
+
+// reconcileUpgradePods checks if any Machine Config Daemon pods are running on nodes that are not currently performing an update
+func (r *Reconciler) reconcileUpgradePods(ctx context.Context, hostedClusterClient client.Client, nodes []*corev1.Node, poolName, mcoImage string) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	for _, node := range nodes {
 		// Set the upgrade pod
 		// TODO (jerzhang): maybe this can be a daemonset instead, since we are using a state machine MCD now
 		// There are also considerations on how to properly handle multiple upgrades, or to force upgrades
 		// on degraded nodes, etc.
 		namespace := inPlaceUpgradeNamespace(poolName)
 		pod := inPlaceUpgradePod(namespace.Name, node.Name)
-		if err := hostedClusterClient.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}, pod); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to get upgrade pod for node %s: %w", node.Name, err)
-			}
-			pod := inPlaceUpgradePod(namespace.Name, node.Name)
-			if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, pod, func() error {
-				return r.createUpgradePod(
-					pod,
-					node.Name,
-					poolName,
-					mcoImage,
-				)
-			}); err != nil {
-				return fmt.Errorf("failed to create upgrade pod for node %s: %w", node.Name, err)
-			} else {
-				log.Info("create upgrade pod", "result", result)
-			}
-		}
 
-		if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, nodes[idx], func() error {
-			// Set the actual annotation
-			nodes[idx].Annotations[DesiredMachineConfigAnnotationKey] = targetConfigVersionHash
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile node desired config annotations: %w", err)
+		if node.Annotations[CurrentMachineConfigAnnotationKey] == node.Annotations[DesiredMachineConfigAnnotationKey] &&
+			node.Annotations[DesiredDrainerAnnotationKey] == node.Annotations[LastAppliedDrainerAnnotationKey] {
+			// the node is updated and does not require a MCD running
+			if err := hostedClusterClient.Get(ctx, client.ObjectKeyFromObject(pod), pod); err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				return fmt.Errorf("error getting upgrade MCD pod: %w", err)
+			}
+			if pod.DeletionTimestamp != nil {
+				continue
+			}
+			if err := hostedClusterClient.Delete(ctx, pod); err != nil {
+				if apierrors.IsNotFound(err) {
+					continue
+				}
+				return fmt.Errorf("error deleting upgrade MCD pod: %w", err)
+			}
+			log.Info("Deleted idle upgrade pod")
 		} else {
-			log.Info("Reconciled Node desired config annotations", "result", result)
+			if err := hostedClusterClient.Get(ctx, types.NamespacedName{Namespace: pod.Namespace, Name: pod.Name}, pod); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to get upgrade pod for node %s: %w", node.Name, err)
+				}
+				pod := inPlaceUpgradePod(namespace.Name, node.Name)
+				if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, pod, func() error {
+					return r.createUpgradePod(
+						pod,
+						node.Name,
+						poolName,
+						mcoImage,
+					)
+				}); err != nil {
+					return fmt.Errorf("failed to create upgrade pod for node %s: %w", node.Name, err)
+				} else {
+					log.Info("create upgrade pod", "result", result)
+				}
+			}
 		}
 	}
 	return nil
@@ -452,6 +486,10 @@ func getAlreadyUnavailableCandidates(nodes []*corev1.Node, targetConfig string) 
 }
 
 func getAvailableCandidates(nodes []*corev1.Node, targetConfig string, capacity int) []*corev1.Node {
+	if capacity < 1 {
+		return nil
+	}
+
 	// We only look at nodes which aren't already targeting our desired config,
 	// and do not have an ongoing update
 	var candidateNodes []*corev1.Node
@@ -542,6 +580,9 @@ func (r *Reconciler) nodeToMachineSet(o client.Object) []reconcile.Request {
 	}
 
 	machineOwner := metav1.GetControllerOf(machine)
+	if machineOwner == nil {
+		return nil
+	}
 	if machineOwner.Kind != "MachineSet" {
 		return nil
 	}

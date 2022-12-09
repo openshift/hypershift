@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 	"time"
 
@@ -81,7 +81,7 @@ func NewCreateCommand() *cobra.Command {
 }
 
 func readCredentials(path string) (*apifixtures.AzureCreds, error) {
-	raw, err := ioutil.ReadFile(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read from %s: %w", path, err)
 	}
@@ -395,7 +395,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		if err != nil {
 			return nil, fmt.Errorf("failed to serialize result: %w", err)
 		}
-		if err := ioutil.WriteFile(o.OutputFile, resultSerialized, 0644); err != nil {
+		if err := os.WriteFile(o.OutputFile, resultSerialized, 0644); err != nil {
 			// Be nice and print the data so it doesn't get lost
 			l.Error(err, "Writing output file failed", "outputfile", o.OutputFile, "data", string(resultSerialized))
 			return nil, fmt.Errorf("failed to write result to --output-file: %w", err)

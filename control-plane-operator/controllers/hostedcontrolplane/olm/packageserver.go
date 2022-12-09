@@ -3,6 +3,7 @@ package olm
 import (
 	"strings"
 
+	"github.com/openshift/hypershift/support/assets"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -14,7 +15,7 @@ import (
 )
 
 var (
-	packageServerDeployment = MustDeployment("assets/packageserver-deployment.yaml")
+	packageServerDeployment = assets.MustDeployment(content.ReadFile, "assets/packageserver-deployment.yaml")
 )
 
 func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, apiPort *int32, noProxy []string) error {

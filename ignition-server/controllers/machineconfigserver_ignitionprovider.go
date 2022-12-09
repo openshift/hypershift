@@ -6,13 +6,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net/http"
 	"text/template"
 	"time"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
@@ -161,7 +161,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 		}
 
 		defer res.Body.Close()
-		payload, err = ioutil.ReadAll(res.Body)
+		payload, err = io.ReadAll(res.Body)
 		if err != nil {
 			return false, fmt.Errorf("error reading http request body for machine config server pod: %w", err)
 		}
@@ -193,7 +193,7 @@ $(sed 's/^/    /g' /etc/cloudconfig/cloud.conf)
 EOF
 machine-config-operator bootstrap \
 --root-ca=/assets/manifests/root-ca.crt \
---kube-ca=/assets/manifests/combined-ca.crt \
+--kube-ca=/assets/manifests/root-ca.crt \
 --machine-config-operator-image={{ .mcoImage }} \
 --machine-config-oscontent-image={{ .osContentImage }} \
 --infra-image={{ .podImage }} \

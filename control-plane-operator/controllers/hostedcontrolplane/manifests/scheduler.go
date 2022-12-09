@@ -23,3 +23,7 @@ func SchedulerDeployment(ns string) *appsv1.Deployment {
 		},
 	}
 }
+
+func SchedulerKubeconfigSecret(controlPlaneNS string) *corev1.Secret {
+	return secretFor(controlPlaneNS, "kube-scheduler-kubeconfig")
+}

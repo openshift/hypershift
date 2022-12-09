@@ -3,8 +3,9 @@ package olm
 import (
 	"strings"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/assets"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -13,17 +14,18 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 )
 
 var (
-	catalogOperatorMetricsService = MustService("assets/catalog-metrics-service.yaml")
-	catalogOperatorDeployment     = MustDeployment("assets/catalog-operator-deployment.yaml")
+	catalogOperatorMetricsService = assets.MustService(content.ReadFile, "assets/catalog-metrics-service.yaml")
+	catalogOperatorDeployment     = assets.MustDeployment(content.ReadFile, "assets/catalog-operator-deployment.yaml")
 
-	olmOperatorMetricsService = MustService("assets/olm-metrics-service.yaml")
-	olmOperatorDeployment     = MustDeployment("assets/olm-operator-deployment.yaml")
+	olmOperatorMetricsService = assets.MustService(content.ReadFile, "assets/olm-metrics-service.yaml")
+	olmOperatorDeployment     = assets.MustDeployment(content.ReadFile, "assets/olm-operator-deployment.yaml")
 )
 
 func olmOperatorLabels() map[string]string {
@@ -166,11 +168,11 @@ func ReconcileOLMOperatorServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor,
 						Key: "tls.key",
 					},
 					CA: prometheusoperatorv1.SecretOrConfigMap{
-						Secret: &corev1.SecretKeySelector{
+						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
+								Name: manifests.RootCAConfigMap(sm.Namespace).Name,
 							},
-							Key: "ca.crt",
+							Key: certs.CASignerCertMapKey,
 						},
 					},
 				},

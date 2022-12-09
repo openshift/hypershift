@@ -12,7 +12,6 @@ func init() {
 
 // HostedControlPlane defines the desired state of HostedControlPlane
 // +kubebuilder:resource:path=hostedcontrolplanes,shortName=hcp;hcps,scope=Namespaced,categories=cluster-api
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
 // +kubebuilder:object:root=true
 type HostedControlPlane struct {
@@ -214,16 +213,11 @@ type KubeconfigSecretRef struct {
 type ConditionType string
 
 const (
-	HostedControlPlaneAvailable          ConditionType = "Available"
-	HostedControlPlaneDegraded           ConditionType = "Degraded"
-	EtcdAvailable                        ConditionType = "EtcdAvailable"
-	EtcdSnapshotRestored                 ConditionType = "EtcdSnapshotRestored"
-	KubeAPIServerAvailable               ConditionType = "KubeAPIServerAvailable"
-	InfrastructureReady                  ConditionType = "InfrastructureReady"
-	ValidHostedControlPlaneConfiguration ConditionType = "ValidHostedControlPlaneConfiguration"
-	ClusterVersionFailing                ConditionType = "ClusterVersionFailing"
-	CVOScaledDown                        ConditionType = "CVOScaledDown"
-	CloudResourcesDestroyed              ConditionType = "CloudResourcesDestroyed"
+	HostedControlPlaneAvailable ConditionType = "Available"
+	HostedControlPlaneDegraded  ConditionType = "Degraded"
+	EtcdSnapshotRestored        ConditionType = "EtcdSnapshotRestored"
+	CVOScaledDown               ConditionType = "CVOScaledDown"
+	CloudResourcesDestroyed     ConditionType = "CloudResourcesDestroyed"
 )
 
 // HostedControlPlaneStatus defines the observed state of HostedControlPlane
@@ -287,8 +281,8 @@ type HostedControlPlaneStatus struct {
 
 	// Condition contains details for one aspect of the current state of the HostedControlPlane.
 	// Current condition types are: "Available"
-	// +kubebuilder:validation:Required
-	Conditions []metav1.Condition `json:"conditions"`
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 type APIEndpoint struct {

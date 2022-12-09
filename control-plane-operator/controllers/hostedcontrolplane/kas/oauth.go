@@ -48,15 +48,21 @@ const oauthMetadata = `{
 }
 `
 
-func ReconcileAuthenticationTokenWebhookConfigSecret(secret *corev1.Secret, ownerRef config.OwnerRef, authenticatorSecret *corev1.Secret) error {
+func ReconcileAuthenticationTokenWebhookConfigSecret(
+	secret *corev1.Secret,
+	ownerRef config.OwnerRef,
+	authenticatorSecret *corev1.Secret,
+	servingCA *corev1.ConfigMap,
+) error {
 	ownerRef.ApplyTo(secret)
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	var ca, crt, key []byte
+	var ca string
+	var crt, key []byte
 	var ok bool
-	if ca, ok = authenticatorSecret.Data[certs.CASignerCertMapKey]; !ok {
-		return fmt.Errorf("expected %s key in authenticator secret", certs.CASignerCertMapKey)
+	if ca, ok = servingCA.Data[certs.CASignerCertMapKey]; !ok {
+		return fmt.Errorf("expected %s key in the root CA configMap", certs.CASignerCertMapKey)
 	}
 	if crt, ok = authenticatorSecret.Data[corev1.TLSCertKey]; !ok {
 		return fmt.Errorf("expected %s key in authenticator secret", corev1.TLSCertKey)
@@ -65,7 +71,7 @@ func ReconcileAuthenticationTokenWebhookConfigSecret(secret *corev1.Secret, owne
 		return fmt.Errorf("expected %s key in authenticator secret", corev1.TLSPrivateKeyKey)
 	}
 	url := fmt.Sprintf("https://openshift-oauth-apiserver.%s.svc:443/apis/oauth.openshift.io/v1/tokenreviews", secret.GetNamespace())
-	kubeConfigBytes, err := generateAuthenticationTokenWebhookConfig(url, crt, key, ca)
+	kubeConfigBytes, err := generateAuthenticationTokenWebhookConfig(url, crt, key, []byte(ca))
 	if err != nil {
 		return err
 	}

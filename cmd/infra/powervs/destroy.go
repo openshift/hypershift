@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/IBM-Cloud/power-go-client/power/models"
-	"github.com/IBM/networking-go-sdk/dnsrecordsv1"
-	"io/ioutil"
-	"k8s.io/apimachinery/pkg/util/errors"
+	"os"
 	"strings"
 	"time"
+
+	"github.com/IBM-Cloud/power-go-client/power/models"
+	"github.com/IBM/networking-go-sdk/dnsrecordsv1"
+	"k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -113,7 +114,7 @@ func NewDestroyCommand() *cobra.Command {
 func (options *DestroyInfraOptions) Run(ctx context.Context) error {
 	var infra *Infra
 	if len(options.InfrastructureJson) > 0 {
-		rawInfra, err := ioutil.ReadFile(options.InfrastructureJson)
+		rawInfra, err := os.ReadFile(options.InfrastructureJson)
 		if err != nil {
 			return fmt.Errorf("failed to read infra json file: %w", err)
 		}
@@ -342,6 +343,9 @@ func destroyPowerVsDhcpServer(ctx context.Context, infra *Infra, cloudInstanceID
 	f := func() (bool, error) {
 		dhcpInstance, err := instanceClient.Get(dhcpID)
 		if err != nil {
+			if err = isNotRetryableError(err, timeoutErrorKeywords); err == nil {
+				return false, nil
+			}
 			errMsg := err.Error()
 			// when instance becomes does not exist, infra destroy can proceed
 			if strings.Contains(errMsg, "pvm-instance does not exist") {
@@ -416,11 +420,13 @@ func destroyPowerVsCloudInstance(ctx context.Context, options *DestroyInfraOptio
 
 // monitorPowerVsJob monitoring the submitted deletion job
 func monitorPowerVsJob(id string, client *instance.IBMPIJobClient, infraID string, timeout time.Duration) error {
-
 	f := func() (bool, error) {
 		job, err := client.Get(id)
 		if err != nil {
-			return false, err
+			if err = isNotRetryableError(err, timeoutErrorKeywords); err != nil {
+				return false, err
+			}
+			return false, nil
 		}
 		if job == nil {
 			return false, fmt.Errorf("job returned for %s is nil", id)
@@ -492,8 +498,19 @@ func destroyPowerVsCloudConnection(ctx context.Context, options *DestroyInfraOpt
 			}
 		}
 	} else {
+
+		deleteCloudConnection := func(id string) error {
+			for retry := 0; retry < 5; retry++ {
+				if err = deletePowerVsCloudConnection(options, id, client, jobClient); err == nil {
+					return nil
+				}
+				log(options.InfraID).Info("retrying cloud connection deletion")
+			}
+			return err
+		}
+
 		if infra != nil && infra.CloudConnectionID != "" {
-			return deletePowerVsCloudConnection(options, infra.CloudConnectionID, client, jobClient)
+			return deleteCloudConnection(infra.CloudConnectionID)
 		}
 		var cloudConnL *models.CloudConnections
 		cloudConnL, err = client.GetAll()
@@ -510,7 +527,7 @@ func destroyPowerVsCloudConnection(ctx context.Context, options *DestroyInfraOpt
 
 		for _, cloudConn := range cloudConnL.CloudConnections {
 			if *cloudConn.Name == cloudConnName {
-				return deletePowerVsCloudConnection(options, *cloudConn.CloudConnectionID, client, jobClient)
+				return deleteCloudConnection(*cloudConn.CloudConnectionID)
 			}
 		}
 	}
@@ -627,7 +644,15 @@ func destroyVpcSubnet(options *DestroyInfraOptions, infra *Infra, resourceGroupI
 // deleteVpcSubnet deletes the subnet id passed and LB attached to it
 func deleteVpcSubnet(id string, v1 *vpcv1.VpcV1, options *DestroyInfraOptions) error {
 	// deleting the load balancer before proceeding to subnet deletion, since LB is an attached resource to the subnet
-	if err := destroyVpcLB(options, id, v1); err != nil {
+	var err error
+	for retry := 0; retry < 5; retry++ {
+		if err = destroyVpcLB(options, id, v1); err == nil {
+			break
+		}
+		log(options.InfraID).Info("retrying VPC Load Balancer deletion")
+	}
+
+	if err != nil {
 		log(options.InfraID).Error(err, "error destroying VPC Load Balancer")
 		return fmt.Errorf("error destroying VPC Load Balancer %w", err)
 	}

@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/util"
@@ -82,7 +82,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	// Load or create infrastructure for the cluster
 	var infra *awsinfra.CreateInfraOutput
 	if len(opts.InfrastructureJSON) > 0 {
-		rawInfra, err := ioutil.ReadFile(opts.InfrastructureJSON)
+		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
 		if err != nil {
 			return fmt.Errorf("failed to read infra json file: %w", err)
 		}
@@ -121,7 +121,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 
 	var iamInfo *awsinfra.CreateIAMOutput
 	if len(opts.AWSPlatform.IAMJSON) > 0 {
-		rawIAM, err := ioutil.ReadFile(opts.AWSPlatform.IAMJSON)
+		rawIAM, err := os.ReadFile(opts.AWSPlatform.IAMJSON)
 		if err != nil {
 			return fmt.Errorf("failed to read iam json file: %w", err)
 		}
@@ -173,6 +173,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			SubnetID: &outputZone.SubnetID,
 		})
 	}
+
 	exampleOptions.AWS = &apifixtures.ExampleAWSOptions{
 		Region:             infra.Region,
 		Zones:              zones,

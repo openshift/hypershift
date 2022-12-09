@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -16,6 +16,7 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
@@ -79,11 +80,16 @@ var (
 		"0000_50_cluster-image-registry-operator_07-operator-ibm-cloud-managed.yaml",
 		"0000_50_cluster-image-registry-operator_07-operator-service.yaml",
 		"0000_90_cluster-image-registry-operator_02_operator-servicemonitor.yaml",
+		"0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml",
 
 		// TODO: Remove these when cluster profiles annotations are fixed
 		"0000_50_cloud-credential-operator_01-operator-config.yaml",
 		"0000_50_cluster-authentication-operator_02_config.cr.yaml",
 		"0000_90_etcd-operator_03_prometheusrule.yaml",
+
+		// TODO: Remove when cluster-csi-snapshot-controller-operator stops shipping
+		// its ibm-cloud-managed deployment.
+		"0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml",
 	}
 )
 
@@ -245,7 +251,18 @@ func resourcesToRemove() []resourceDesc {
 			name:       "cluster-image-registry-operator",
 			namespace:  "openshift-image-registry",
 		},
-	}
+		{
+			apiVersion: "apps/v1",
+			kind:       "Deployment",
+			name:       "cluster-storage-operator",
+			namespace:  "openshift-cluster-storage-operator",
+		},
+		{
+			apiVersion: "apps/v1",
+			kind:       "Deployment",
+			name:       "csi-snapshot-controller-operator",
+			namespace:  "openshift-cluster-storage-operator",
+		}}
 }
 
 func preparePayloadScript() string {
@@ -453,26 +470,12 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 			TLSConfig: &prometheusoperatorv1.TLSConfig{
 				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
 					ServerName: "cluster-version-operator",
-					Cert: prometheusoperatorv1.SecretOrConfigMap{
-						Secret: &corev1.SecretKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
-							},
-							Key: "tls.crt",
-						},
-					},
-					KeySecret: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{
-							Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
-						},
-						Key: "tls.key",
-					},
 					CA: prometheusoperatorv1.SecretOrConfigMap{
-						Secret: &corev1.SecretKeySelector{
+						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
+								Name: manifests.RootCAConfigMap(sm.Namespace).Name,
 							},
-							Key: "ca.crt",
+							Key: certs.CASignerCertMapKey,
 						},
 					},
 				},

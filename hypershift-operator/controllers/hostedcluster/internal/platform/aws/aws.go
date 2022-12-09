@@ -7,7 +7,7 @@ import (
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
@@ -25,20 +25,19 @@ import (
 )
 
 const (
-	// Image built from https://github.com/openshift/cluster-api-provider-aws/tree/release-1.1
-	// Upstream canonical image comes from  https://console.cloud.google.com/gcr/images/k8s-artifacts-prod
-	// us.gcr.io/k8s-artifacts-prod/cluster-api-aws/cluster-api-aws-controller:v1.1.0
-	imageCAPA = "registry.ci.openshift.org/hypershift/cluster-api-aws-controller:v1.1.0"
+	ImageStreamCAPA = "aws-cluster-api-controllers"
 )
 
-func New(utilitiesImage string) *AWS {
+func New(utilitiesImage string, capiProviderImage string) *AWS {
 	return &AWS{
-		utilitiesImage: utilitiesImage,
+		utilitiesImage:    utilitiesImage,
+		capiProviderImage: capiProviderImage,
 	}
 }
 
 type AWS struct {
-	utilitiesImage string
+	utilitiesImage    string
+	capiProviderImage string
 }
 
 func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
@@ -63,7 +62,7 @@ func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOr
 }
 
 func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
-	providerImage := imageCAPA
+	providerImage := p.capiProviderImage
 	if envImage := os.Getenv(images.AWSCAPIProviderEnvVar); len(envImage) > 0 {
 		providerImage = envImage
 	}
@@ -161,7 +160,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 								Value: "true",
 							},
 						},
-						Command: []string{"/manager"},
+						Command: []string{"/bin/cluster-api-provider-aws-controller-manager"},
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
 							"--alsologtostderr",
 							"--v=4",

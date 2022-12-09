@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,7 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperapi "github.com/openshift/hypershift/api"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -112,7 +111,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret); err != nil {
 		return fmt.Errorf("failed to get guest cluster kubeconfig secret: %w", err)
 	}
-	kubeconfigFile, err := ioutil.TempFile(os.TempDir(), "kubeconfig-")
+	kubeconfigFile, err := os.CreateTemp(os.TempDir(), "kubeconfig-")
 	if err != nil {
 		return fmt.Errorf("failed to create tempfile for kubeconfig: %w", err)
 	}
@@ -238,7 +237,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		}
 	}
 
-	files, err := ioutil.ReadDir(opts.ArtifactDir)
+	files, err := os.ReadDir(opts.ArtifactDir)
 	if err != nil {
 		return fmt.Errorf("failed to list artifactDir %s: %w", opts.ArtifactDir, err)
 	}
@@ -408,7 +407,7 @@ func outputLog(ctx context.Context, l logr.Logger, fileName string, req *restcli
 	for _, c := range checker {
 		c(fileName, b)
 	}
-	if err := ioutil.WriteFile(fileName, b, 0644); err != nil {
+	if err := os.WriteFile(fileName, b, 0644); err != nil {
 		l.Error(err, "Failed to write file", "file", fileName)
 	}
 }
@@ -450,7 +449,7 @@ func gatherNetworkLogs(ocCommand, controlPlaneNamespace, artifactDir string, ctx
 				l.Info("Get ovn db status command returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
 			}
 			fileName := filepath.Join(dir, fmt.Sprintf("%s_%s_status", pod.Name, dbName))
-			if err := ioutil.WriteFile(fileName, out, 0644); err != nil {
+			if err := os.WriteFile(fileName, out, 0644); err != nil {
 				l.Error(err, "Failed to write file", "file", fileName)
 			}
 		}

@@ -5,8 +5,16 @@ import (
 	"hash/fnv"
 	"strings"
 
+	routev1 "github.com/openshift/api/route/v1"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+
 	"k8s.io/apimachinery/pkg/util/validation"
 )
+
+const HCPRouteLabel = "hypershift.openshift.io/hosted-control-plane"
+const InternalRouteLabel = "hypershift.openshift.io/internal-route"
 
 // ShortenRouteHostnameIfNeeded will return a shortened hostname if the route hostname will exceed
 // the allowed DNS name size. If the hostname is not too long, an empty string is returned so that
@@ -76,4 +84,64 @@ func hash(s string) string {
 	intHash := hash.Sum32()
 	result := fmt.Sprintf("%08x", intHash)
 	return result
+}
+
+func ReconcileExternalRoute(route *routev1.Route, hostname string, defaultIngressDomain string, serviceName string) error {
+	if hostname != "" {
+		AddHCPRouteLabel(route)
+		if route.Annotations == nil {
+			route.Annotations = map[string]string{}
+		}
+		route.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = hostname
+		route.Spec.Host = hostname
+	} else {
+		if route.Spec.Host == "" {
+			route.Spec.Host = ShortenRouteHostnameIfNeeded(route.Name, route.Namespace, defaultIngressDomain)
+		}
+	}
+
+	route.Spec.To = routev1.RouteTargetReference{
+		Kind: "Service",
+		Name: serviceName,
+	}
+	route.Spec.TLS = &routev1.TLSConfig{
+		Termination:                   routev1.TLSTerminationPassthrough,
+		InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
+	}
+	return nil
+}
+
+func ReconcileInternalRoute(route *routev1.Route, hcName string, serviceName string) error {
+	AddHCPRouteLabel(route)
+	AddInternalRouteLabel(route)
+	if route.Spec.Host == "" {
+		route.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", strings.TrimSuffix(route.Name, "-internal"), hcName)
+	}
+	route.Spec.To = routev1.RouteTargetReference{
+		Kind: "Service",
+		Name: serviceName,
+	}
+	route.Spec.TLS = &routev1.TLSConfig{
+		Termination:                   routev1.TLSTerminationPassthrough,
+		InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
+	}
+	return nil
+}
+
+func AddHCPRouteLabel(target crclient.Object) {
+	labels := target.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[HCPRouteLabel] = target.GetNamespace()
+	target.SetLabels(labels)
+}
+
+func AddInternalRouteLabel(target crclient.Object) {
+	labels := target.GetLabels()
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[InternalRouteLabel] = "true"
+	target.SetLabels(labels)
 }
