@@ -1569,12 +1569,30 @@ func (a *genericListAccessor) item(i int) client.Object {
 func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) []error {
 	var errs []error
 
-	cr := manifests.CSISnapshotController()
-	if _, err := r.CreateOrUpdate(ctx, r.client, cr, func() error {
-		storage.ReconcileCSISnapshotController(cr)
+	snapshotController := manifests.CSISnapshotController()
+	if _, err := r.CreateOrUpdate(ctx, r.client, snapshotController, func() error {
+		storage.ReconcileCSISnapshotController(snapshotController)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile CSISnapshotController : %w", err))
+	}
+
+	storageCR := manifests.Storage()
+	if _, err := r.CreateOrUpdate(ctx, r.client, storageCR, func() error {
+		storage.ReconcileStorage(storageCR)
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile Storage : %w", err))
+	}
+
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		driver := manifests.ClusterCSIDriver(operatorv1.AWSEBSCSIDriver)
+		if _, err := r.CreateOrUpdate(ctx, r.client, storageCR, func() error {
+			storage.ReconcileClusterCSIDriver(driver)
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile ClusterCSIDriver %s: %w", driver.Name, err))
+		}
 	}
 	return errs
 }
