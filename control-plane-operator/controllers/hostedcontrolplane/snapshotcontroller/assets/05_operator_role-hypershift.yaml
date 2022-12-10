@@ -9,20 +9,35 @@ rules:
   resources:
   - leases
   verbs:
-  - '*'
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
 - apiGroups:
   - apps
   resources:
   - deployments
   - replicasets
   verbs:
-  - '*'
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
 - apiGroups:
   - policy
   resources:
   - poddisruptionbudgets
   verbs:
-  - '*'
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
 - apiGroups:
   - ""
   resources:
@@ -30,7 +45,12 @@ rules:
   - services
   - configmaps
   verbs:
-  - '*'
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
 - apiGroups:
   - ""
   resources:
