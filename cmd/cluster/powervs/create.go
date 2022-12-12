@@ -51,6 +51,9 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.PowerVSPlatform.Debug, "debug", opts.PowerVSPlatform.Debug, "Enabling this will print PowerVS API Request & Response logs")
 	cmd.Flags().BoolVar(&opts.PowerVSPlatform.RecreateSecrets, "recreate-secrets", opts.PowerVSPlatform.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
 
+	cmd.MarkFlagRequired("resource-group")
+	cmd.MarkPersistentFlagRequired("pull-secret")
+
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
 	cmd.Flags().MarkHidden("cloud-instance-id")

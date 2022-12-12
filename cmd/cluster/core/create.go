@@ -8,6 +8,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strings"
 	"time"
@@ -70,6 +71,7 @@ type CreateOptions struct {
 	Timeout                          time.Duration
 	Log                              logr.Logger
 	SkipAPIBudgetVerification        bool
+	CredentialSecretName             string
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -169,11 +171,38 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		annotations[hyperv1.ControlPlaneOperatorImageAnnotation] = opts.ControlPlaneOperatorImage
 	}
 
-	pullSecret, err := os.ReadFile(opts.PullSecretFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read pull secret file: %w", err)
+	var pullSecret []byte
+	var err error
+	if len(opts.CredentialSecretName) > 0 {
+		pullSecret, err = util.GetDockerConfigJSON(opts.CredentialSecretName, opts.Namespace)
+		if err != nil {
+			return nil, err
+		}
+	}
+	// overrides if pullSecretFile is set
+	if len(opts.PullSecretFile) > 0 {
+		pullSecret, err = ioutil.ReadFile(opts.PullSecretFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read pull secret file: %w", err)
+		}
 	}
 	var sshKey, sshPrivateKey []byte
+	if len(opts.CredentialSecretName) > 0 {
+		var secret *corev1.Secret
+		secret, err = util.GetSecret(opts.CredentialSecretName, opts.Namespace)
+		if err != nil {
+			return nil, err
+		}
+		sshKey = secret.Data["ssh-publickey"]
+		if len(sshKey) == 0 {
+			return nil, fmt.Errorf("the ssh-publickey is invalid {namespace: %s, secret: %s}", opts.Namespace, opts.CredentialSecretName)
+		}
+		sshPrivateKey = secret.Data["ssh-privatekey"]
+		if len(sshPrivateKey) == 0 {
+			return nil, fmt.Errorf("the ssh-privatekey is invalid {namespace: %s, secret: %s}", opts.Namespace, opts.CredentialSecretName)
+		}
+	}
+	// overrides secret if SSHKeyFile is set
 	if len(opts.SSHKeyFile) > 0 {
 		if opts.GenerateSSH {
 			return nil, fmt.Errorf("--generate-ssh and --ssh-key cannot be specified together")
@@ -412,10 +441,23 @@ func defaultNetworkType(ctx context.Context, opts *CreateOptions, releaseProvide
 }
 
 func getReleaseSemanticVersion(ctx context.Context, opts *CreateOptions, provider releaseinfo.Provider, readFile func(string) ([]byte, error)) (*semver.Version, error) {
-	pullSecretBytes, err := readFile(opts.PullSecretFile)
-	if err != nil {
-		return nil, fmt.Errorf("cannot read pull secret file %s: %w", opts.PullSecretFile, err)
+	var pullSecretBytes []byte
+	var err error
+	if len(opts.CredentialSecretName) > 0 {
+		pullSecretBytes, err = util.GetDockerConfigJSON(opts.CredentialSecretName, opts.Namespace)
+		if err != nil {
+			return nil, err
+		}
 	}
+	// overrides secret if set
+	if len(opts.PullSecretFile) > 0 {
+		pullSecretBytes, err = readFile(opts.PullSecretFile)
+		if err != nil {
+			return nil, fmt.Errorf("cannot read pull secret file %s: %w", opts.PullSecretFile, err)
+		}
+
+	}
+
 	releaseImage, err := provider.Lookup(ctx, opts.ReleaseImage, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get version information from %s: %w", opts.ReleaseImage, err)
