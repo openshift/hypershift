@@ -12,7 +12,7 @@ require (
 	github.com/IBM/platform-services-go-sdk v0.28.5
 	github.com/IBM/vpc-go-sdk v0.26.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
-	github.com/aws/aws-sdk-go v1.44.84
+	github.com/aws/aws-sdk-go v1.44.155
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.14.1
 	github.com/coreos/ignition/v2 v2.10.1
@@ -44,7 +44,7 @@ require (
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.19.1
 	golang.org/x/crypto v0.0.0-20220622213112-05595931fe9d
-	golang.org/x/net v0.0.0-20220927171203-f486391704dc
+	golang.org/x/net v0.1.0
 	golang.org/x/time v0.0.0-20220210224613-90d013bbcef8
 	gopkg.in/ini.v1 v1.66.4
 	gopkg.in/square/go-jose.v2 v2.5.1
@@ -164,9 +164,9 @@ require (
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20220608161450-d0670ef3b1eb // indirect
-	golang.org/x/sys v0.0.0-20220728004956-3c1f35247d10 // indirect
-	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
-	golang.org/x/text v0.3.7 // indirect
+	golang.org/x/sys v0.1.0 // indirect
+	golang.org/x/term v0.1.0 // indirect
+	golang.org/x/text v0.4.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.2.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.28.0 // indirect
