@@ -89,7 +89,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
-	cmd.Flags().StringSliceVar(&opts.Zones, "zones", opts.Zones, "The availablity zones in which NodePool can be created")
+	cmd.Flags().StringSliceVar(&opts.Zones, "zones", opts.Zones, "The availability zones in which NodePool can be created")
 	cmd.Flags().BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
 
 	cmd.MarkFlagRequired("infra-id")
