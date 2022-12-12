@@ -154,21 +154,26 @@ type Secrets struct {
 // Infra resource info in IBM Cloud for setting up hypershift nodepool
 type Infra struct {
 	ID                string            `json:"id"`
+	Region            string            `json:"region"`
+	Zone              string            `json:"zone"`
+	VPCRegion         string            `json:"vpcRegion"`
 	AccountID         string            `json:"accountID"`
+	BaseDomain        string            `json:"baseDomain"`
 	CISCRN            string            `json:"cisCrn"`
 	CISDomainID       string            `json:"cisDomainID"`
-	ResourceGroupID   string            `json:"resourceGroupID"`
+	ResourceGroup     string            `json:"resourceGroup"`
+	ResourceGroupID   string            `json:"-"`
 	CloudInstanceID   string            `json:"cloudInstanceID"`
 	DHCPSubnet        string            `json:"dhcpSubnet"`
 	DHCPSubnetID      string            `json:"dhcpSubnetID"`
-	DHCPID            string            `json:"dhcpID"`
-	CloudConnectionID string            `json:"cloudConnectionID"`
+	DHCPID            string            `json:"-"`
+	CloudConnectionID string            `json:"-"`
 	VPCName           string            `json:"vpcName"`
-	VPCID             string            `json:"vpcID"`
-	VPCCRN            string            `json:"vpcCrn"`
+	VPCID             string            `json:"-"`
+	VPCCRN            string            `json:"-"`
 	VPCRoutingTableID string            `json:"-"`
 	VPCSubnetName     string            `json:"vpcSubnetName"`
-	VPCSubnetID       string            `json:"vpcSubnetID"`
+	VPCSubnetID       string            `json:"-"`
 	Stats             InfraCreationStat `json:"stats"`
 	Secrets           Secrets           `json:"secrets"`
 }
@@ -232,7 +237,14 @@ func (options *CreateInfraOptions) Run(ctx context.Context) error {
 		return err
 	}
 
-	infra := &Infra{ID: options.InfraID}
+	infra := &Infra{
+		ID:            options.InfraID,
+		BaseDomain:    options.BaseDomain,
+		ResourceGroup: options.ResourceGroup,
+		Region:        options.Region,
+		Zone:          options.Zone,
+		VPCRegion:     options.VPCRegion,
+	}
 
 	defer func() {
 		out := os.Stdout
