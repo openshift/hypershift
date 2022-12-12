@@ -68,6 +68,8 @@ type IBMVPCMachineStatus struct {
 
 	InstanceID string `json:"instanceID,omitempty"`
 
+	// Ready is true when the provider resource is ready.
+	// +optional
 	Ready bool `json:"ready"`
 
 	// Addresses contains the GCP instance associated addresses.

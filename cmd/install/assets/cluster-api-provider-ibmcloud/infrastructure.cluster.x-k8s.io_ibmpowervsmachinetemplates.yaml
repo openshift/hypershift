@@ -57,6 +57,12 @@ spec:
                             description: Name of resource
                             minLength: 1
                             type: string
+                          regex:
+                            description: Regular expression to match resource, In
+                              case of multiple resources matches the provided regular
+                              expression the first matched resource will be selected
+                            minLength: 1
+                            type: string
                         type: object
                       imageRef:
                         description: ImageRef is an optional reference to a provider-specific
@@ -82,6 +88,12 @@ spec:
                             type: string
                           name:
                             description: Name of resource
+                            minLength: 1
+                            type: string
+                          regex:
+                            description: Regular expression to match resource, In
+                              case of multiple resources matches the provided regular
+                              expression the first matched resource will be selected
                             minLength: 1
                             type: string
                         type: object
@@ -122,7 +134,21 @@ spec:
           status:
             description: IBMPowerVSMachineTemplateStatus defines the observed state
               of IBMPowerVSMachineTemplate.
+            properties:
+              capacity:
+                additionalProperties:
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                  x-kubernetes-int-or-string: true
+                description: 'Capacity defines the resource capacity for this machine.
+                  This value is used for autoscaling from zero operations as defined
+                  in: https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20210310-opt-in-autoscaling-from-zero.md'
+                type: object
             type: object
         type: object
     served: true
     storage: true
+    subresources:
+      status: {}

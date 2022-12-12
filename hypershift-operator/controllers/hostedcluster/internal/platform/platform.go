@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	AWSCAPIProvider = "aws-cluster-api-controllers"
+	AWSCAPIProvider     = "aws-cluster-api-controllers"
+	PowerVSCAPIProvider = "ibmcloud-cluster-api-controllers"
 )
 
 var _ Platform = aws.AWS{}
@@ -91,7 +92,13 @@ func GetPlatform(hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.Pr
 	case hyperv1.AzurePlatform:
 		platform = &azure.Azure{}
 	case hyperv1.PowerVSPlatform:
-		platform = &powervs.PowerVS{}
+		if pullSecretBytes != nil {
+			capiImageProvider, err = imgUtil.GetPayloadImage(context.TODO(), releaseProvider, hcluster, PowerVSCAPIProvider, pullSecretBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
+			}
+		}
+		platform = powervs.New(capiImageProvider)
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}

@@ -20,9 +20,28 @@ spec:
       jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
       name: Cluster
       type: string
+    - description: Machine object to which this IBMPowerVSMachine belongs
+      jsonPath: .metadata.ownerReferences[?(@.kind=="Machine")].name
+      name: Machine
+      priority: 1
+      type: string
+    - description: Time duration since creation of IBMPowerVSMachine
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
     - description: Cluster infrastructure is ready for IBM PowerVS instances
       jsonPath: .status.ready
       name: Ready
+      type: string
+    - description: Instance Internal Addresses
+      jsonPath: .status.addresses[?(@.type=="InternalIP")].address
+      name: Internal-IP
+      priority: 1
+      type: string
+    - description: Instance External Addresses
+      jsonPath: .status.addresses[?(@.type=="ExternalIP")].address
+      name: External-IP
+      priority: 1
       type: string
     - description: PowerVS instance state
       jsonPath: .status.instanceState
@@ -64,6 +83,12 @@ spec:
                     description: Name of resource
                     minLength: 1
                     type: string
+                  regex:
+                    description: Regular expression to match resource, In case of
+                      multiple resources matches the provided regular expression the
+                      first matched resource will be selected
+                    minLength: 1
+                    type: string
                 type: object
               imageRef:
                 description: ImageRef is an optional reference to a provider-specific
@@ -89,6 +114,12 @@ spec:
                     type: string
                   name:
                     description: Name of resource
+                    minLength: 1
+                    type: string
+                  regex:
+                    description: Regular expression to match resource, In case of
+                      multiple resources matches the provided regular expression the
+                      first matched resource will be selected
                     minLength: 1
                     type: string
                 type: object

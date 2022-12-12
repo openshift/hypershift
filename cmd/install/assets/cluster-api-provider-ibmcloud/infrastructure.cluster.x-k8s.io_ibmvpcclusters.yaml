@@ -61,6 +61,16 @@ spec:
                 - host
                 - port
                 type: object
+              controlPlaneLoadBalancer:
+                description: ControlPlaneLoadBalancer is optional configuration for
+                  customizing control plane behavior.
+                properties:
+                  name:
+                    description: Name sets the name of the VPC load balancer.
+                    maxLength: 64
+                    pattern: ^[A-Za-z0-9]([A-Za-z0-9]{0,31}|[-A-Za-z0-9]{0,30}[A-Za-z0-9])$
+                    type: string
+                type: object
               region:
                 description: The IBM Cloud Region the cluster lives in.
                 type: string
@@ -81,8 +91,58 @@ spec:
           status:
             description: IBMVPCClusterStatus defines the observed state of IBMVPCCluster.
             properties:
+              conditions:
+                description: Conditions defines current service state of the load
+                  balancer.
+                items:
+                  description: Condition defines an observation of a Cluster API resource
+                    operational state.
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status
+                        to another. This should be when the underlying condition changed.
+                        If that is not known, then using the time when the API field
+                        changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: A human readable message indicating details about
+                        the transition. This field may be empty.
+                      type: string
+                    reason:
+                      description: The reason for the condition's last transition
+                        in CamelCase. The specific API may choose whether or not this
+                        field is considered a guaranteed API. This field may not be
+                        empty.
+                      type: string
+                    severity:
+                      description: Severity provides an explicit classification of
+                        Reason code, so the users or machines can immediately understand
+                        the current situation and act accordingly. The Severity field
+                        MUST be set only when Status=False.
+                      type: string
+                    status:
+                      description: Status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: Type of condition in CamelCase or in foo.example.com/CamelCase.
+                        Many .condition.type values are consistent across resources
+                        like Available, but because arbitrary conditions can be useful
+                        (see .node.status.conditions), the ability to deconflict is
+                        important.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - status
+                  - type
+                  type: object
+                type: array
+              controlPlaneLoadBalancerState:
+                description: ControlPlaneLoadBalancerState is the status of the load
+                  balancer.
+                type: string
               ready:
-                description: Bastion Instance `json:"bastion,omitempty"`
+                description: Ready is true when the provider resource is ready.
                 type: boolean
               subnet:
                 description: Subnet describes a subnet.
@@ -121,12 +181,11 @@ spec:
                     type: string
                   floatingIPID:
                     type: string
+                  loadBalancerIPID:
+                    type: string
                 required:
                 - address
-                - floatingIPID
                 type: object
-            required:
-            - ready
             type: object
         type: object
     served: true
