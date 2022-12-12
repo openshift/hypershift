@@ -196,15 +196,15 @@ func (o *CreateInfraOptions) existingDHCPOptions(client ec2iface.EC2API) (string
 	return optID, nil
 }
 
-func (o *CreateInfraOptions) CreatePrivateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID string, zone string, cidr string) (string, error) {
-	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-private-%s", o.InfraID, zone))
+func (o *CreateInfraOptions) CreatePrivateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID string, zone string, cidr string, outpostARN string) (string, error) {
+	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-private-%s", o.InfraID, zone), outpostARN)
 }
 
 func (o *CreateInfraOptions) CreatePublicSubnet(l logr.Logger, client ec2iface.EC2API, vpcID string, zone string, cidr string) (string, error) {
-	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-public-%s", o.InfraID, zone))
+	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-public-%s", o.InfraID, zone), "")
 }
 
-func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID, zone, cidr, name string) (string, error) {
+func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID, zone, cidr, name, outpostARN string) (string, error) {
 	subnetID, err := o.existingSubnet(client, name)
 	if err != nil {
 		return "", err
@@ -213,14 +213,19 @@ func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API,
 		l.Info("Found existing subnet", "name", name, "id", subnetID)
 		return subnetID, nil
 	}
+	var outpostARNPtr *string
+	if outpostARN != "" {
+		outpostARNPtr = aws.String(outpostARN)
+	}
 	result, err := client.CreateSubnet(&ec2.CreateSubnetInput{
 		AvailabilityZone:  aws.String(zone),
 		VpcId:             aws.String(vpcID),
 		CidrBlock:         aws.String(cidr),
+		OutpostArn:        outpostARNPtr,
 		TagSpecifications: o.ec2TagSpecifications("subnet", name),
 	})
 	if err != nil {
-		return "", fmt.Errorf("cannot create public subnet: %w", err)
+		return "", fmt.Errorf("cannot create subnet %s: %w", name, err)
 	}
 	backoff := wait.Backoff{
 		Steps:    10,

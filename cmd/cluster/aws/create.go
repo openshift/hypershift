@@ -37,7 +37,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Region to use for AWS infrastructure.")
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.Zones, "zones", opts.AWSPlatform.Zones, "The availablity zones in which NodePools will be created")
 	cmd.Flags().StringVar(&opts.AWSPlatform.InstanceType, "instance-type", opts.AWSPlatform.InstanceType, "Instance type for AWS instances.")
-	cmd.Flags().StringVar(&opts.AWSPlatform.RootVolumeType, "root-volume-type", opts.AWSPlatform.RootVolumeType, "The type of the root volume (e.g. gp3, io2) for machines in the NodePool")
+	cmd.Flags().StringVar(&opts.AWSPlatform.RootVolumeType, "root-volume-type", opts.AWSPlatform.RootVolumeType, "The type of the root volume (e.g. gp3, io2) for machines in the NodePool. If outpost-arn is set, gp2 only will be used.")
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeIOPS, "root-volume-iops", opts.AWSPlatform.RootVolumeIOPS, "The iops of the root volume when specifying type:io1 for machines in the NodePool")
 	cmd.Flags().Int64Var(&opts.AWSPlatform.RootVolumeSize, "root-volume-size", opts.AWSPlatform.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.AdditionalTags, "additional-tags", opts.AWSPlatform.AdditionalTags, "Additional tags to set on AWS resources")
@@ -45,6 +45,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.EtcdKMSKeyARN, "kms-key-arn", opts.AWSPlatform.EtcdKMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 	cmd.Flags().BoolVar(&opts.AWSPlatform.EnableProxy, "enable-proxy", opts.AWSPlatform.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
 	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with a platform credential (--aws-creds), --pull-secret and --base-domain value. The secret must exist in the supplied \"--namespace\"")
+	cmd.Flags().StringVar(&opts.AWSPlatform.OutpostARN, "outpost-arn", opts.AWSPlatform.OutpostARN, "The ARN of AWS Outpost in which nodes will be created")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -130,6 +131,11 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			return fmt.Errorf("base-domain flag is required if infra-json is not provided")
 		}
 	}
+	// Only gp2 volume type is supported by EBS on AWS Outposts
+	// More info - https://docs.aws.amazon.com/whitepapers/latest/aws-outposts-high-availability-design/storage.html
+	if opts.AWSPlatform.OutpostARN != "" {
+		opts.AWSPlatform.RootVolumeType = "gp2"
+	}
 	if infra == nil {
 		if len(infraID) == 0 {
 			infraID = infraid.New(opts.Name)
@@ -146,6 +152,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			Zones:              opts.AWSPlatform.Zones,
 			EnableProxy:        opts.AWSPlatform.EnableProxy,
 			SSHKeyFile:         opts.SSHKeyFile,
+			OutpostARN:         opts.AWSPlatform.OutpostARN,
 		}
 		infra, err = opt.CreateInfra(ctx, opts.Log)
 		if err != nil {

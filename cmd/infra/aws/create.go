@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/outposts"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -38,6 +39,7 @@ type CreateInfraOptions struct {
 	SSHKeyFile         string
 
 	additionalEC2Tags []*ec2.Tag
+	OutpostARN        string
 }
 
 type CreateInfraOutputZone struct {
@@ -91,6 +93,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.Flags().StringSliceVar(&opts.Zones, "zones", opts.Zones, "The availablity zones in which NodePool can be created")
 	cmd.Flags().BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
+	cmd.Flags().StringVar(&opts.OutpostARN, "outpost-arn", opts.OutpostARN, "The ARN of AWS Outpost in which nodes will be created")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
@@ -140,6 +143,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	awsSession := awsutil.NewSession("cli-create-infra", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, o.Region)
 	ec2Client := ec2.New(awsSession, awsutil.NewConfig())
 	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
+	outpostsClient := outposts.New(awsSession, awsutil.NewConfig())
 
 	var err error
 	if err = o.parseAdditionalTags(); err != nil {
@@ -151,6 +155,13 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		Region:      o.Region,
 		Name:        o.Name,
 		BaseDomain:  o.BaseDomain,
+	}
+	if o.OutpostARN != "" {
+		outpost, err := outpostsClient.GetOutpost(&outposts.GetOutpostInput{OutpostId: aws.String(o.OutpostARN)})
+		if err != nil {
+			return nil, fmt.Errorf("failed to get outpost: %w", err)
+		}
+		o.Zones = []string{aws.StringValue(outpost.Outpost.AvailabilityZone)}
 	}
 	if len(o.Zones) == 0 {
 		zone, err := o.firstZone(l, ec2Client)
@@ -189,7 +200,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		return nil, err
 	}
 	for _, zone := range o.Zones {
-		privateSubnetID, err := o.CreatePrivateSubnet(l, ec2Client, result.VPCID, zone, privateNetwork.String())
+		privateSubnetID, err := o.CreatePrivateSubnet(l, ec2Client, result.VPCID, zone, privateNetwork.String(), o.OutpostARN)
 		if err != nil {
 			return nil, err
 		}
