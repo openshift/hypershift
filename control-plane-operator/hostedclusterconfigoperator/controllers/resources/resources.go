@@ -1478,7 +1478,7 @@ func (r *reconciler) ensureServiceLoadBalancersRemoved(ctx context.Context) (boo
 	found, err := cleanupResources(ctx, r.client, &corev1.ServiceList{}, func(obj client.Object) bool {
 		svc := obj.(*corev1.Service)
 		return svc.Spec.Type == corev1.ServiceTypeLoadBalancer
-	})
+	}, false)
 	if err != nil {
 		return false, fmt.Errorf("failed to remove load balancer services: %w", err)
 	}
@@ -1495,13 +1495,13 @@ func (r *reconciler) ensurePersistentVolumesRemoved(ctx context.Context) (bool, 
 		log.Info("There are no more persistent volumes. Nothing to cleanup.")
 		return true, nil
 	}
-	if _, err := cleanupResources(ctx, r.client, &corev1.PersistentVolumeClaimList{}, nil); err != nil {
+	if _, err := cleanupResources(ctx, r.client, &corev1.PersistentVolumeClaimList{}, nil, false); err != nil {
 		return false, fmt.Errorf("failed to remove persistent volume claims: %w", err)
 	}
 	if _, err := cleanupResources(ctx, r.uncachedClient, &corev1.PodList{}, func(obj client.Object) bool {
 		pod := obj.(*corev1.Pod)
 		return hasAttachedPVC(pod)
-	}); err != nil {
+	}, true); err != nil {
 		return false, fmt.Errorf("failed to remove pods: %w", err)
 	}
 	return false, nil
@@ -1524,7 +1524,7 @@ func shouldCleanupCloudResources(hcp *hyperv1.HostedControlPlane) bool {
 // cleanupResources generically deletes resources of a given type using an optional filter
 // function. The result is a boolean indicating whether resources were found that match
 // the filter and an error if one occurred.
-func cleanupResources(ctx context.Context, c client.Client, list client.ObjectList, filter func(client.Object) bool) (bool, error) {
+func cleanupResources(ctx context.Context, c client.Client, list client.ObjectList, filter func(client.Object) bool, force bool) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	if err := c.List(ctx, list); err != nil {
 		return false, fmt.Errorf("cannot list %T: %w", list, err)
@@ -1539,8 +1539,14 @@ func cleanupResources(ctx context.Context, c client.Client, list client.ObjectLi
 			foundResource = true
 			if obj.GetDeletionTimestamp().IsZero() {
 				log.Info("Deleting resource", "type", fmt.Sprintf("%T", obj), "name", client.ObjectKeyFromObject(obj).String())
-				if err := c.Delete(ctx, obj); err != nil {
-					errs = append(errs, err)
+				var deleteErr error
+				if force {
+					deleteErr = c.Delete(ctx, obj, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64Ptr(0)})
+				} else {
+					deleteErr = c.Delete(ctx, obj)
+				}
+				if deleteErr != nil {
+					errs = append(errs, deleteErr)
 				}
 			}
 		}
