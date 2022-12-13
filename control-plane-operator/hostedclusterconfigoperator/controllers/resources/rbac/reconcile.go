@@ -391,6 +391,66 @@ func ReconcilePodSecurityAdmissionLabelSyncerControllerClusterRole(r *rbacv1.Clu
 	return nil
 }
 
+func ReconcileImageTriggerControllerClusterRole(r *rbacv1.ClusterRole) error {
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{
+				"apps.openshift.io",
+			},
+			Resources: []string{"deploymentconfigs"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+				"update",
+			},
+		},
+		{
+			APIGroups: []string{
+				"build.openshift.io",
+			},
+			Resources: []string{"buildconfigs"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+				"update",
+			},
+		},
+		{
+			APIGroups: []string{
+				"apps",
+			},
+			Resources: []string{
+				"deployments",
+				"daemonsets",
+				"statefulsets",
+			},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+				"update",
+			},
+		},
+		{
+			APIGroups: []string{
+				"batch",
+			},
+			Resources: []string{
+				"cronjobs",
+			},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+				"update",
+			},
+		},
+	}
+	return nil
+}
+
 func ReconcilePodSecurityAdmissionLabelSyncerControllerRoleBinding(r *rbacv1.ClusterRoleBinding) error {
 	if r.Annotations == nil {
 		r.Annotations = map[string]string{}
@@ -406,6 +466,23 @@ func ReconcilePodSecurityAdmissionLabelSyncerControllerRoleBinding(r *rbacv1.Clu
 			Kind:      "ServiceAccount",
 			Name:      "podsecurity-admission-label-syncer-controller",
 			Namespace: "openshift-infra",
+		},
+	}
+	return nil
+}
+
+func ReconcileImageTriggerControllerClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:openshift:openshift-controller-manager:image-trigger-controller",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Namespace: "openshift-infra",
+			Name:      "image-trigger-controller",
 		},
 	}
 	return nil
