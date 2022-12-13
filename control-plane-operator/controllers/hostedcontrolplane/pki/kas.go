@@ -33,6 +33,7 @@ func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.Own
 	dnsNames := []string{
 		"localhost",
 		"kubernetes",
+		"kubernetes.default",
 		"kubernetes.default.svc",
 		"kubernetes.default.svc.cluster.local",
 		// TODO: add private KAS endpoint name
