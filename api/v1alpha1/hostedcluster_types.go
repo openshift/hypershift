@@ -118,6 +118,13 @@ const (
 	// removed when deleting the corresponding HostedCluster. If set to "true", resources created on the cloud provider during the life
 	// of the cluster will be removed, including image registry storage, ingress dns records, load balancers, and persistent storage.
 	CleanupCloudResourcesAnnotation = "hypershift.openshift.io/cleanup-cloud-resources"
+
+	// ResourceRequestOverrideAnnotationPrefix is a prefix for an annotation to override resource requests for a particular deployment/container
+	// in a hosted control plane. The format of the annotation is:
+	// resource-request-override.hypershift.openshift.io/[deployment-name].[container-name]: [resource-type-1]=[value1],[resource-type-2]=[value2],...
+	// For example, to override the memory and cpu request for the Kubernetes APIServer:
+	// resource-request-override.hypershift.openshift.io/kube-apiserver.kube-apiserver: memory=3Gi,cpu=2000m
+	ResourceRequestOverrideAnnotationPrefix = "resource-request-override.hypershift.openshift.io"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
@@ -548,7 +555,7 @@ type ServiceNetworkEntry struct {
 	CIDR ipnet.IPNet `json:"cidr"`
 }
 
-//+kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
+// +kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
 type CIDRBlock string
 
 // APIServerNetworking specifies how the APIServer is exposed inside a cluster
@@ -905,6 +912,8 @@ type AWSPlatformSpec struct {
 	// for the user.
 	//
 	// +kubebuilder:validation:MaxItems=25
+	// +listType=map
+	// +listMapKey=key
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 
@@ -1436,7 +1445,7 @@ type ManagedEtcdStorageSpec struct {
 	//
 	// +optional
 	// +immutable
-	RestoreSnapshotURL []string `json:"restoreSnapshotURL"`
+	RestoreSnapshotURL []string `json:"restoreSnapshotURL,omitempty"`
 }
 
 // PersistentVolumeEtcdStorageSpec is the configuration for PersistentVolume
@@ -1637,110 +1646,6 @@ type AESCBCSpec struct {
 	BackupKey *corev1.LocalObjectReference `json:"backupKey,omitempty"`
 }
 
-const (
-	// HostedClusterAvailable indicates whether the HostedCluster has a healthy
-	// control plane.
-	HostedClusterAvailable ConditionType = "Available"
-
-	// HostedClusterProgressing indicates whether the HostedCluster is attempting
-	// an initial deployment or upgrade.
-	HostedClusterProgressing ConditionType = "Progressing"
-
-	// HostedClusterDegraded indicates whether the HostedCluster is encountering
-	// an error that may require user intervention to resolve.
-	HostedClusterDegraded ConditionType = "Degraded"
-
-	// IgnitionEndpointAvailable indicates whether the ignition server for the
-	// HostedCluster is available to handle ignition requests.
-	IgnitionEndpointAvailable ConditionType = "IgnitionEndpointAvailable"
-
-	// UnmanagedEtcdAvailable indicates whether a user-managed etcd cluster is
-	// healthy.
-	UnmanagedEtcdAvailable ConditionType = "UnmanagedEtcdAvailable"
-
-	// ValidHostedClusterConfiguration indicates (if status is true) that the
-	// ClusterConfiguration specified for the HostedCluster is valid.
-	ValidHostedClusterConfiguration ConditionType = "ValidConfiguration"
-
-	// SupportedHostedCluster indicates whether a HostedCluster is supported by
-	// the current configuration of the hypershift-operator.
-	// e.g. If HostedCluster requests endpointAcess Private but the hypershift-operator
-	// is running on a management cluster outside AWS or is not configured with AWS
-	// credentials, the HostedCluster is not supported.
-	SupportedHostedCluster ConditionType = "SupportedHostedCluster"
-
-	// ClusterVersionSucceeding indicates the current status of the desired release
-	// version of the HostedCluster as indicated by the Failing condition in the
-	// underlying cluster's ClusterVersion.
-	ClusterVersionSucceeding ConditionType = "ClusterVersionSucceeding"
-
-	// ClusterVersionUpgradeable indicates the Upgradeable condition in the
-	// underlying cluster's ClusterVersion.
-	ClusterVersionUpgradeable ConditionType = "ClusterVersionUpgradeable"
-
-	// ReconciliationActive indicates if reconciliation of the hostedcluster is
-	// active or paused.
-	ReconciliationActive ConditionType = "ReconciliationActive"
-
-	// ReconciliationSucceeded indicates if the hostedcluster reconciliation
-	// succeeded.
-	ReconciliationSucceeded ConditionType = "ReconciliationSucceeded"
-
-	// ValidOIDCConfiguration indicates if an AWS cluster's OIDC condition is
-	// detected as invalid.
-	ValidOIDCConfiguration ConditionType = "ValidOIDCConfiguration"
-
-	// ValidReleaseImage indicates if the release image set in the spec is valid
-	// for the HostedCluster. For example, this can be set false if the
-	// HostedCluster itself attempts an unsupported version before 4.9 or an
-	// unsupported upgrade e.g y-stream upgrade before 4.11.
-	ValidReleaseImage ConditionType = "ValidReleaseImage"
-
-	// PlatformCredentialsFound indicates that credentials required for the
-	// desired platform are valid.
-	PlatformCredentialsFound ConditionType = "PlatformCredentialsFound"
-)
-
-const (
-	IgnitionServerDeploymentAsExpectedReason    = "IgnitionServerDeploymentAsExpected"
-	IgnitionServerDeploymentStatusUnknownReason = "IgnitionServerDeploymentStatusUnknown"
-	IgnitionServerDeploymentNotFoundReason      = "IgnitionServerDeploymentNotFound"
-	IgnitionServerDeploymentUnavailableReason   = "IgnitionServerDeploymentUnavailable"
-
-	HostedClusterAsExpectedReason          = "HostedClusterAsExpected"
-	HostedClusterWaitingForAvailableReason = "HostedClusterWaitingForAvailable"
-	InvalidConfigurationReason             = "InvalidConfiguration"
-
-	DeploymentNotFoundReason            = "DeploymentNotFound"
-	DeploymentStatusUnknownReason       = "DeploymentStatusUnknown"
-	DeploymentWaitingForAvailableReason = "DeploymentWaitingForAvailable"
-
-	HostedControlPlaneComponentsUnavailableReason = "ComponentsUnavailable"
-	KubeconfigWaitingForCreateReason              = "KubeconfigWaitingForCreate"
-	ClusterVersionStatusUnknownReason             = "ClusterVersionStatusUnknown"
-
-	StatusUnknownReason = "StatusUnknown"
-	AsExpectedReason    = "AsExpected"
-
-	EtcdQuorumAvailableReason     = "QuorumAvailable"
-	EtcdWaitingForQuorumReason    = "EtcdWaitingForQuorum"
-	EtcdStatusUnknownReason       = "EtcdStatusUnknown"
-	EtcdStatefulSetNotFoundReason = "StatefulSetNotFound"
-
-	UnsupportedHostedClusterReason = "UnsupportedHostedCluster"
-
-	UnmanagedEtcdStatusUnknownReason = "UnmanagedEtcdStatusUnknown"
-	UnmanagedEtcdMisconfiguredReason = "UnmanagedEtcdMisconfigured"
-	UnmanagedEtcdAsExpected          = "UnmanagedEtcdAsExpected"
-
-	InsufficientClusterCapabilitiesReason = "InsufficientClusterCapabilities"
-
-	OIDCConfigurationInvalidReason    = "OIDCConfigurationInvalid"
-	PlatformCredentialsNotFoundReason = "PlatformCredentialsNotFound"
-
-	InvalidImageReason = "InvalidImage"
-)
-
 // HostedClusterStatus is the latest observed status of a HostedCluster.
 type HostedClusterStatus struct {
 	// Version is the status of the release version applied to the
@@ -1763,6 +1668,12 @@ type HostedClusterStatus struct {
 	// +optional
 	IgnitionEndpoint string `json:"ignitionEndpoint,omitempty"`
 
+	// ControlPlaneEndpoint contains the endpoint information by which
+	// external clients can access the control plane. This is populated
+	// after the infrastructure is ready.
+	// +kubebuilder:validation:Optional
+	ControlPlaneEndpoint APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
+
 	// OAuthCallbackURLTemplate contains a template for the URL to use as a callback
 	// for identity providers. The [identity-provider-name] placeholder must be replaced
 	// with the name of an identity provider defined on the HostedCluster.
@@ -1772,7 +1683,8 @@ type HostedClusterStatus struct {
 
 	// Conditions represents the latest available observations of a control
 	// plane's current state.
-	Conditions []metav1.Condition `json:"conditions"`
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // ClusterVersionStatus reports the status of the cluster versioning,
@@ -1903,8 +1815,8 @@ type ClusterConfiguration struct {
 //
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=hostedclusters,shortName=hc;hcs,scope=Namespaced
-// +kubebuilder:storageversion
 // +kubebuilder:subresource:status
+// +kubebuilder:deprecatedversion:warning="v1alpha1 is a deprecated version for HostedCluster"
 // +kubebuilder:printcolumn:name="Version",type="string",JSONPath=".status.version.history[?(@.state==\"Completed\")].version",description="Version"
 // +kubebuilder:printcolumn:name="KubeConfig",type="string",JSONPath=".status.kubeconfig.name",description="KubeConfig Secret"
 // +kubebuilder:printcolumn:name="Progress",type="string",JSONPath=".status.version.history[?(@.state!=\"\")].state",description="Progress"

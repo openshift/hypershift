@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/config"
@@ -376,16 +376,22 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 		return err
 	}
 
-	rootCA := manifests.RootCASecret(hcp.Namespace)
+	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
 	if err := client.Get(ctx, crclient.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return fmt.Errorf("failed to get root ca cert secret: %w", err)
 	}
+
+	csrSigner := manifests.CSRSignerCASecret(hcp.Namespace)
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
+		return fmt.Errorf("failed to get csr signer cert secret: %w", err)
+	}
+
 	if err != nil {
 		return err
 	}
 	tenantControllerKubeconfigSecret := manifests.KubevirtCSIDriverTenantKubeConfig(infraNamespace)
 	_, err = createOrUpdate(ctx, client, tenantControllerKubeconfigSecret, func() error {
-		return pki.ReconcileServiceAccountKubeconfig(tenantControllerKubeconfigSecret, rootCA, hcp, manifests.KubevirtCSIDriverTenantNamespaceStr, "kubevirt-csi-controller-sa")
+		return pki.ReconcileServiceAccountKubeconfig(tenantControllerKubeconfigSecret, csrSigner, rootCA, hcp, manifests.KubevirtCSIDriverTenantNamespaceStr, "kubevirt-csi-controller-sa")
 	})
 	if err != nil {
 		return err

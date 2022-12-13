@@ -21,17 +21,17 @@ spec:
       replacement: the-cluster-id
       targetLabel: _id
     path: /metrics
+    port: metrics
     relabelings:
     - action: replace
       replacement: the-cluster-id
       targetLabel: _id
     scheme: https
-    targetPort: metrics
     tlsConfig:
       ca:
-        secret:
+        configMap:
           key: ca.crt
-          name: metrics-client
+          name: root-ca
       cert: {}
       serverName: cluster-image-registry-operator
   selector:

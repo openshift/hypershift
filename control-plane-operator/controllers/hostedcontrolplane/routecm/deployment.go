@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"path"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -26,9 +27,10 @@ const (
 var (
 	volumeMounts = util.PodVolumeMounts{
 		routeOCMContainerMain().Name: {
-			routeOCMVolumeConfig().Name:      "/etc/kubernetes/config",
-			routeOCMVolumeServingCert().Name: "/etc/kubernetes/certs",
-			routeOCMVolumeKubeconfig().Name:  "/etc/kubernetes/secrets/svc-kubeconfig",
+			routeOCMVolumeConfig().Name:       "/etc/kubernetes/config",
+			routeOCMVolumeServingCert().Name:  "/etc/kubernetes/certs",
+			routeOCMVolumeKubeconfig().Name:   "/etc/kubernetes/secrets/svc-kubeconfig",
+			common.VolumeTotalClientCA().Name: "/etc/kubernetes/client-ca", // comes from the generic OCM config
 		},
 	}
 )
@@ -77,6 +79,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image string, config *co
 		util.BuildVolume(routeOCMVolumeConfig(), buildRouteOCMVolumeConfig),
 		util.BuildVolume(routeOCMVolumeServingCert(), buildRouteOCMVolumeServingCert),
 		util.BuildVolume(routeOCMVolumeKubeconfig(), buildRouteOCMVolumeKubeconfig),
+		util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
 	}
 	deploymentConfig.ApplyTo(deployment)
 	return nil

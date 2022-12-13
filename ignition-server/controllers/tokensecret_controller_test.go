@@ -6,11 +6,10 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/support/util"
-
 	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,12 +36,53 @@ func TestReconcile(t *testing.T) {
 	}
 
 	compressedConfigBytes := compressedConfig.Bytes()
+	// badConfig contains data that the controller does not know how to decode and decompress.
+	badConfig := []byte("bad config")
 
 	testCases := []struct {
 		name       string
 		secret     client.Object
 		validation func(t *testing.T, secret client.Object)
 	}{
+		{
+			name: "When the payload can not be generated it should report message and reason in the token secret",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "test",
+					Annotations: map[string]string{
+						TokenSecretAnnotation: "true",
+					},
+					CreationTimestamp: metav1.Now(),
+				},
+				Immutable: nil,
+				Data: map[string][]byte{
+					TokenSecretTokenKey:   []byte(uuid.New().String()),
+					TokenSecretReleaseKey: []byte("release"),
+					TokenSecretConfigKey:  badConfig,
+				},
+			},
+			validation: func(t *testing.T, secret client.Object) {
+				ctx := context.Background()
+				r := TokenSecretReconciler{
+					Client:           fake.NewClientBuilder().WithObjects(secret).Build(),
+					IgnitionProvider: &fakeIgnitionProvider{},
+					PayloadStore:     NewPayloadStore(),
+				}
+				g := NewWithT(t)
+				_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(secret)})
+				g.Expect(err).To(HaveOccurred())
+
+				// Get the secret.
+				freshSecret := &corev1.Secret{}
+				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				// Validate data for conditions
+				g.Expect(freshSecret.Data[TokenSecretReasonKey]).To(BeEquivalentTo(InvalidConfigReason))
+				g.Expect(freshSecret.Data[TokenSecretMessageKey]).To(BeEquivalentTo("Failed to decode and decompress config: could not initialize gzip reader: illegal base64 data at input byte 3"))
+			},
+		},
 		{
 			name: "When a secret token ID is not cached it should be reconciled storing or deleting the payload",
 			secret: &corev1.Secret{
@@ -101,6 +141,11 @@ func TestReconcile(t *testing.T) {
 				g.Expect(freshSecret.Data[TokenSecretOldTokenKey]).To(BeEquivalentTo(originalSecret.Data[TokenSecretTokenKey]))
 				// Validate a TokenSecretTokenGenerationTime was added.
 				g.Expect(freshSecret.Annotations[TokenSecretTokenGenerationTime]).ToNot(BeEmpty())
+
+				// Validate data for conditions
+				g.Expect(freshSecret.Data[TokenSecretPayloadKey]).To(BeEquivalentTo(fakePayload))
+				g.Expect(freshSecret.Data[TokenSecretReasonKey]).To(BeEquivalentTo(hyperv1.AsExpectedReason))
+				g.Expect(freshSecret.Data[TokenSecretMessageKey]).To(BeEquivalentTo("Payload generated successfully"))
 
 				// Delete the secret.
 				err = r.Client.Delete(ctx, secret)
@@ -209,6 +254,45 @@ func TestReconcile(t *testing.T) {
 				value, found = r.PayloadStore.Get(string(newToken))
 				g.Expect(found).To(BeTrue())
 				g.Expect(value.Payload).To(BeEquivalentTo(fakePayload))
+			},
+		},
+		{
+			name: "When the nodepool upgrade strategy is replace, the token secret should not contain the machine payload",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "test",
+					Annotations: map[string]string{
+						TokenSecretAnnotation:          "true",
+						TokenSecretNodePoolUpgradeType: string(hyperv1.UpgradeTypeReplace),
+					},
+					CreationTimestamp: metav1.Now(),
+				},
+				Immutable: nil,
+				Data: map[string][]byte{
+					TokenSecretTokenKey:   []byte(uuid.New().String()),
+					TokenSecretReleaseKey: []byte("release"),
+					TokenSecretConfigKey:  compressedConfigBytes,
+				},
+			},
+			validation: func(t *testing.T, secret client.Object) {
+				ctx := context.Background()
+				r := TokenSecretReconciler{
+					Client:           fake.NewClientBuilder().WithObjects(secret).Build(),
+					IgnitionProvider: &fakeIgnitionProvider{},
+					PayloadStore:     NewPayloadStore(),
+				}
+				g := NewWithT(t)
+				_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(secret)})
+				g.Expect(err).ToNot(HaveOccurred())
+
+				// Get the secret.
+				freshSecret := &corev1.Secret{}
+				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
+				g.Expect(err).ToNot(HaveOccurred())
+
+				// Validate that the payload was not stored in the token secret
+				g.Expect(freshSecret.Data[TokenSecretPayloadKey]).To(BeEmpty())
 			},
 		},
 	}
@@ -374,21 +458,21 @@ func TestIsTokenExpired(t *testing.T) {
 		{
 			name: "when the token expiration timestamp is in the past it should return that it is expired (true)",
 			annotations: map[string]string{
-				v1alpha1.IgnitionServerTokenExpirationTimestampAnnotation: time.Now().Add(-4 * time.Hour).Format(time.RFC3339),
+				hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: time.Now().Add(-4 * time.Hour).Format(time.RFC3339),
 			},
 			expectedIsExpired: true,
 		},
 		{
 			name: "when the token expiration timestamp is in the future it should return that it is not expired (false)",
 			annotations: map[string]string{
-				v1alpha1.IgnitionServerTokenExpirationTimestampAnnotation: time.Now().Add(4 * time.Hour).Format(time.RFC3339),
+				hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: time.Now().Add(4 * time.Hour).Format(time.RFC3339),
 			},
 			expectedIsExpired: false,
 		},
 		{
 			name: "when the token expiration timestamp has an invalid value it should return that it is expired (true)",
 			annotations: map[string]string{
-				v1alpha1.IgnitionServerTokenExpirationTimestampAnnotation: "badvalue",
+				hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: "badvalue",
 			},
 			expectedIsExpired: true,
 		},

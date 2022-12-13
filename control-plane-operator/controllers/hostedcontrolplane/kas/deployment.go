@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"path"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -15,6 +15,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
@@ -44,8 +45,9 @@ var (
 			kasVolumeRootCA().Name:                 "/etc/kubernetes/certs/root-ca",
 			kasVolumeServerCert().Name:             "/etc/kubernetes/certs/server",
 			kasVolumeAggregatorCert().Name:         "/etc/kubernetes/certs/aggregator",
-			kasVolumeAggregatorCA().Name:           "/etc/kubernetes/certs/aggregator-ca",
-			kasVolumeClientCA().Name:               "/etc/kubernetes/certs/client-ca",
+			common.VolumeAggregatorCA().Name:       "/etc/kubernetes/certs/aggregator-ca",
+			common.VolumeTotalClientCA().Name:      "/etc/kubernetes/certs/client-ca",
+			kasVolumeEtcdCA().Name:                 "/etc/kubernetes/certs/etcd-ca",
 			kasVolumeEtcdClientCert().Name:         "/etc/kubernetes/certs/etcd",
 			kasVolumeServiceAccountKey().Name:      "/etc/kubernetes/secrets/svcacct-key",
 			kasVolumeOauthMetadata().Name:          "/etc/kubernetes/oauth",
@@ -176,12 +178,13 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeRootCA(), buildKASVolumeRootCA),
 				util.BuildVolume(kasVolumeServerCert(), buildKASVolumeServerCert),
 				util.BuildVolume(kasVolumeAggregatorCert(), buildKASVolumeAggregatorCert),
-				util.BuildVolume(kasVolumeAggregatorCA(), buildKASVolumeAggregatorCA),
+				util.BuildVolume(common.VolumeAggregatorCA(), common.BuildVolumeAggregatorCA),
 				util.BuildVolume(kasVolumeServiceAccountKey(), buildKASVolumeServiceAccountKey),
+				util.BuildVolume(kasVolumeEtcdCA(), buildKASVolumeEtcdCA),
 				util.BuildVolume(kasVolumeEtcdClientCert(), buildKASVolumeEtcdClientCert),
 				util.BuildVolume(kasVolumeOauthMetadata(), buildKASVolumeOauthMetadata),
 				util.BuildVolume(kasVolumeAuthTokenWebhookConfig(), buildKASVolumeAuthTokenWebhookConfig),
-				util.BuildVolume(kasVolumeClientCA(), buildKASVolumeClientCA),
+				util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
 				util.BuildVolume(kasVolumeKubeletClientCert(), buildKASVolumeKubeletClientCert),
 				util.BuildVolume(kasVolumeKubeletClientCA(), buildKASVolumeKubeletClientCA),
 				util.BuildVolume(kasVolumeKonnectivityClientCert(), buildKASVolumeKonnectivityClientCert),
@@ -478,20 +481,6 @@ func buildKASVolumeRootCA(v *corev1.Volume) {
 	v.Secret.SecretName = manifests.RootCASecret("").Name
 }
 
-// TODO: generate separate volume to merge our CA with user-supplied CA
-func kasVolumeClientCA() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "client-ca",
-	}
-}
-func buildKASVolumeClientCA(v *corev1.Volume) {
-	if v.ConfigMap == nil {
-		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	}
-	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
-	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
-}
-
 func kasVolumeServerCert() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "server-crt",
@@ -515,7 +504,7 @@ func buildKASVolumeKubeletClientCA(v *corev1.Volume) {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	}
 	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
-	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
+	v.ConfigMap.Name = manifests.TotalClientCABundle("").Name
 }
 
 func kasVolumeKonnectivityClientCert() *corev1.Volume {
@@ -536,25 +525,13 @@ func kasVolumeAggregatorCert() *corev1.Volume {
 		Name: "aggregator-crt",
 	}
 }
+
 func buildKASVolumeAggregatorCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
 	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.KASAggregatorCertSecret("").Name
-}
-
-func kasVolumeAggregatorCA() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "aggregator-ca",
-	}
-}
-func buildKASVolumeAggregatorCA(v *corev1.Volume) {
-	if v.ConfigMap == nil {
-		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	}
-	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
-	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
 }
 
 func kasVolumeEgressSelectorConfig() *corev1.Volume {
@@ -609,6 +586,17 @@ func buildKASVolumeEtcdClientCert(v *corev1.Volume) {
 	}
 	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
+}
+
+func kasVolumeEtcdCA() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "etcd-ca",
+	}
+}
+
+func buildKASVolumeEtcdCA(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.EtcdSignerCAConfigMap("").Name
 }
 
 func kasVolumeOauthMetadata() *corev1.Volume {

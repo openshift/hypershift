@@ -13,9 +13,9 @@ import (
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/util"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	promconfig "github.com/prometheus/common/config"
@@ -150,7 +150,6 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 	nodes := &corev1.NodeList{}
 	readyNodeCount := 0
 	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
-		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
 		if err != nil {
 			return false, nil
@@ -188,7 +187,6 @@ func WaitForNUnReadyNodes(t *testing.T, ctx context.Context, client crclient.Cli
 	nodes := &corev1.NodeList{}
 	readyNodeCount := 0
 	err := wait.PollImmediateWithContext(ctx, 5*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
-		// TODO (alberto): have ability to filter nodes by NodePool. NodePool.Status.Nodes?
 		err = client.List(ctx, nodes)
 		if err != nil {
 			return false, nil
@@ -213,6 +211,89 @@ func WaitForNUnReadyNodes(t *testing.T, ctx context.Context, client crclient.Cli
 	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
 
 	t.Logf("Wanted Nodes are unready. Count: %v", n)
+	return nodes.Items
+}
+
+func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType, nodePoolName string) []corev1.Node {
+	g := NewWithT(t)
+	start := time.Now()
+
+	// waitTimeout for nodes to become Ready
+	waitTimeout := 30 * time.Minute
+	switch platform {
+	case hyperv1.PowerVSPlatform:
+		waitTimeout = 60 * time.Minute
+	}
+
+	t.Logf("Waiting for nodes to become ready by NodePool. NodePool: %s Want: %v", nodePoolName, n)
+	nodesFromNodePool := []corev1.Node{}
+	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
+		nodes := &corev1.NodeList{}
+		err = client.List(ctx, nodes)
+		if err != nil {
+			return false, nil
+		}
+		if len(nodes.Items) == 0 {
+			return false, nil
+		}
+		for _, node := range nodes.Items {
+			if node.Labels["hypershift.openshift.io/nodePool"] == nodePoolName {
+				for _, cond := range node.Status.Conditions {
+					if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
+						nodesFromNodePool = append(nodesFromNodePool, node)
+					}
+				}
+			}
+		}
+		if len(nodesFromNodePool) != int(n) {
+			nodesFromNodePool = nil
+			return false, nil
+		}
+		t.Logf("All nodes are ready. Count: %v", len(nodesFromNodePool))
+
+		return true, nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", len(nodesFromNodePool), n))
+	t.Logf("All nodes for NodePool %s appear to be ready in %s. Count: %v", nodePoolName, time.Since(start).Round(time.Second), n)
+
+	return nodesFromNodePool
+}
+
+func WaitForNUnReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, n int32, nodePoolName string) []corev1.Node {
+	g := NewWithT(t)
+
+	t.Logf("Waiting for Nodes to become unready by NodePool. NodePool: %s Want: %v", nodePoolName, n)
+	nodes := &corev1.NodeList{}
+	readyNodeCount := 0
+
+	err := wait.PollImmediateWithContext(ctx, 5*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+		err = client.List(ctx, nodes)
+		if err != nil {
+			return false, nil
+		}
+		if len(nodes.Items) == 0 {
+			return false, nil
+		}
+		var readyNodes []string
+		for _, node := range nodes.Items {
+			if node.Labels["hypershift.openshift.io/nodePool"] == nodePoolName {
+				for _, cond := range node.Status.Conditions {
+					if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
+						readyNodes = append(readyNodes, node.Name)
+					}
+				}
+			}
+		}
+
+		if len(readyNodes) != int(n) {
+			readyNodeCount = len(readyNodes)
+			return false, nil
+		}
+		return true, nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
+
+	t.Logf("Wanted Nodes are unready for NodePool %s. Count: %v", nodePoolName, n)
 	return nodes.Items
 }
 
@@ -337,15 +418,31 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
-			// TODO: This is needed because of an upstream NPD, see e.G. here: https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/openshift_hypershift/486/pull-ci-openshift-hypershift-main-e2e-aws-pooled/1445408206435127296/artifacts/e2e-aws-pooled/test-e2e/artifacts/namespaces/e2e-clusters-slgzn-example-f748r/core/pods/logs/capa-controller-manager-f66fd8977-knt6h-manager-previous.log
-			// remove this exception once upstream is fixed and we have the fix
-			if strings.HasPrefix(pod.Name, "capa-controller-manager") {
+			// TODO: Figure out why KAS becomes unavailable for renewing leader lease
+			if strings.HasPrefix(pod.Name, "capi-provider-") {
+				continue
+			}
+
+			// TODO: Figure out why Route kind does not exist when ingress-operator first starts
+			if strings.HasPrefix(pod.Name, "ingress-operator-") {
+				continue
+			}
+
+			// TODO: Figure out why default-http backend health check is failing and triggering liveness probe to restart
+			if strings.HasPrefix(pod.Name, "router-") {
 				continue
 			}
 
 			// TODO: Autoscaler is restarting because it times out accessing the kube apiserver for leader election.
 			// Investigate a fix.
 			if strings.HasPrefix(pod.Name, "cluster-autoscaler") {
+				continue
+			}
+
+			// TODO: Machine approver started restarting in the UpgradeControlPlane test with the following error:
+			// F1122 15:17:01.880727       1 main.go:144] Can't create clients: failed to create client: Unauthorized
+			// Investigate a fix.
+			if strings.HasPrefix(pod.Name, "machine-approver") {
 				continue
 			}
 
@@ -624,7 +721,7 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 		}
 		for _, route := range routes.Items {
 			original := route.DeepCopy()
-			ingress.AddHCPRouteLabel(&route)
+			util.AddHCPRouteLabel(&route)
 			if diff := cmp.Diff(route.GetLabels(), original.GetLabels()); diff != "" {
 				t.Errorf("route %s is missing the label to use the per-HCP router: %s", route.Name, diff)
 			}

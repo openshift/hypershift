@@ -3,7 +3,7 @@ package install
 import (
 	"bytes"
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"testing"
 
 	"gopkg.in/yaml.v2"
@@ -18,7 +18,7 @@ func ExecuteTestCommand(args []string) ([]byte, error) {
 	if err != nil {
 		return []byte{}, err
 	}
-	return ioutil.ReadAll(b)
+	return io.ReadAll(b)
 }
 
 func ExecuteTemplateYamlGenerationCommand(args []string) (map[string]interface{}, error) {

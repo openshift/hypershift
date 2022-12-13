@@ -19,6 +19,12 @@ const (
 	observedConfigKey = "config"
 )
 
+type ObservedConfig struct {
+	Image   *configv1.Image
+	Build   *configv1.Build
+	Project *configv1.Project
+}
+
 func ReconcileObservedConfig(cm *corev1.ConfigMap, config runtime.Object) error {
 	serializedConfig, err := util.SerializeResource(config, api.Scheme)
 	if err != nil {

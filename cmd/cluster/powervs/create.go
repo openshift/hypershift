@@ -4,13 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"syscall"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
 	"github.com/openshift/hypershift/support/infraid"
@@ -111,7 +110,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	// Load or create infrastructure for the cluster
 	var infra *powervsinfra.Infra
 	if len(opts.InfrastructureJSON) > 0 {
-		rawInfra, err := ioutil.ReadFile(opts.InfrastructureJSON)
+		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
 		if err != nil {
 			return fmt.Errorf("failed to read infra json file: %w", err)
 		}

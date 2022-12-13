@@ -3,7 +3,7 @@ package olm
 import (
 	"strings"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
 
 type OperatorLifecycleManagerParams struct {

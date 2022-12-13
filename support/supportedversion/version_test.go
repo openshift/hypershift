@@ -5,12 +5,12 @@ import (
 
 	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
 
 func TestSupportedVersions(t *testing.T) {
 	g := NewGomegaWithT(t)
-	g.Expect(Supported()).To(Equal([]string{"4.12", "4.11", "4.10"}))
+	g.Expect(Supported()).To(Equal([]string{"4.13", "4.12", "4.11"}))
 }
 
 func TestIsValidReleaseVersion(t *testing.T) {

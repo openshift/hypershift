@@ -8,10 +8,24 @@ theme:
 plugins:
 - search
 - mermaid2
+- glightbox:
+    touchNavigation: true
+    loop: false
+    effect: zoom
+    width: 100%
+    height: auto
+    zoomable: true
+    draggable: true
+    skip_classes:
+      - custom-skip-class-name
+    auto_caption: false
+    caption_position: bottom
 docs_dir: content
 repo_url: https://github.com/openshift/hypershift
 edit_uri: edit/main/docs/content
 repo_name: openshift/hypershift
+extra_javascript:
+  - https://unpkg.com/mermaid@9.2.2/dist/mermaid.min.js
 markdown_extensions:
 - toc:
     toc_depth: "2-2"
@@ -40,16 +54,17 @@ nav:
   - how-to/restart-control-plane-components.md
   - how-to/pause-reconciliation.md
   - how-to/debug-nodes.md
-  - how-to/external-dns.md
   - how-to/metrics-sets.md
-  - how-to/node-tuning.md
   - 'Automated Machine Management':
     - how-to/automated-machine-management/index.md
     - how-to/automated-machine-management/scale-to-zero-dataplane.md
+    - how-to/automated-machine-management/nodepool-upgrades.md
+    - how-to/automated-machine-management/node-tuning.md
   - "AWS":
     - how-to/aws/create-infra-iam-separately.md
     - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
     - how-to/aws/deploy-aws-private-clusters.md
+    - how-to/aws/external-dns.md
     - how-to/aws/etc-backup-restore.md
     - how-to/aws/migrate-hosted-cluster.md
   - 'Azure':
@@ -68,6 +83,8 @@ nav:
   - reference/index.md
   - reference/goals-and-design-invariants.md
   - reference/api.md
+  - "Infrastructure":
+    - "AWS": reference/infrastructure/aws.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
   - reference/multi-platform-support.md

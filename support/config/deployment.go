@@ -3,10 +3,11 @@ package config
 import (
 	"strings"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -43,6 +44,7 @@ type DeploymentConfig struct {
 	ReadinessProbes           ReadinessProbes       `json:"readinessProbes"`
 	Resources                 ResourcesSpec         `json:"resources"`
 	DebugDeployments          sets.String           `json:"debugDeployments"`
+	ResourceRequestOverrides  ResourceOverrides     `json:"resourceRequestOverrides"`
 }
 
 func (c *DeploymentConfig) SetContainerResourcesIfPresent(container *corev1.Container) {
@@ -106,10 +108,10 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	c.Scheduling.ApplyTo(&deployment.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&deployment.Spec.Template.ObjectMeta)
 	c.SecurityContexts.ApplyTo(&deployment.Spec.Template.Spec)
-	c.Resources.ApplyTo(&deployment.Spec.Template.Spec)
 	c.LivenessProbes.ApplyTo(&deployment.Spec.Template.Spec)
 	c.ReadinessProbes.ApplyTo(&deployment.Spec.Template.Spec)
 	c.Resources.ApplyTo(&deployment.Spec.Template.Spec)
+	c.ResourceRequestOverrides.ApplyRequestsTo(deployment.Name, &deployment.Spec.Template.Spec)
 	c.AdditionalAnnotations.ApplyTo(&deployment.Spec.Template.ObjectMeta)
 }
 
@@ -118,10 +120,10 @@ func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
 	c.Scheduling.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&daemonset.Spec.Template.ObjectMeta)
 	c.SecurityContexts.ApplyTo(&daemonset.Spec.Template.Spec)
-	c.Resources.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.LivenessProbes.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.ReadinessProbes.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.Resources.ApplyTo(&daemonset.Spec.Template.Spec)
+	c.ResourceRequestOverrides.ApplyRequestsTo(daemonset.Name, &daemonset.Spec.Template.Spec)
 	c.AdditionalAnnotations.ApplyTo(&daemonset.Spec.Template.ObjectMeta)
 }
 
@@ -130,10 +132,10 @@ func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
 	c.Scheduling.ApplyTo(&sts.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&sts.Spec.Template.ObjectMeta)
 	c.SecurityContexts.ApplyTo(&sts.Spec.Template.Spec)
-	c.Resources.ApplyTo(&sts.Spec.Template.Spec)
 	c.LivenessProbes.ApplyTo(&sts.Spec.Template.Spec)
 	c.ReadinessProbes.ApplyTo(&sts.Spec.Template.Spec)
 	c.Resources.ApplyTo(&sts.Spec.Template.Spec)
+	c.ResourceRequestOverrides.ApplyRequestsTo(sts.Name, &sts.Spec.Template.Spec)
 	c.AdditionalAnnotations.ApplyTo(&sts.Spec.Template.ObjectMeta)
 }
 
@@ -286,9 +288,51 @@ func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, multiZon
 	}
 	c.DebugDeployments = debugDeployments(hcp)
 
+	c.ResourceRequestOverrides = resourceRequestOverrides(hcp)
+
 	c.setLocation(hcp, multiZoneSpreadLabels)
 	// TODO (alberto): make this private, atm is needed for the konnectivity agent daemonset.
 	c.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
+}
+
+func resourceRequestOverrides(hcp *hyperv1.HostedControlPlane) ResourceOverrides {
+	result := ResourceOverrides{}
+	for key, value := range hcp.Annotations {
+		if strings.HasPrefix(key, hyperv1.ResourceRequestOverrideAnnotationPrefix+"/") {
+			result = parseResourceRequestOverrideAnnotation(key, value, result)
+		}
+	}
+	return result
+}
+
+func parseResourceRequestOverrideAnnotation(key, value string, overrides ResourceOverrides) ResourceOverrides {
+	keyParts := strings.SplitN(key, "/", 2)
+	deploymentContainerParts := strings.SplitN(keyParts[1], ".", 2)
+	deployment, container := deploymentContainerParts[0], deploymentContainerParts[1]
+	resourceRequests := strings.Split(value, ",")
+	spec, exists := overrides[deployment]
+	if !exists {
+		spec = ResourcesSpec{}
+	}
+	requirements, exists := spec[container]
+	if !exists {
+		requirements = corev1.ResourceRequirements{}
+	}
+	if requirements.Requests == nil {
+		requirements.Requests = corev1.ResourceList{}
+	}
+	for _, request := range resourceRequests {
+		requestParts := strings.SplitN(request, "=", 2)
+		quantity, err := resource.ParseQuantity(requestParts[1])
+		if err != nil {
+			// Skip this request if invalid
+			continue
+		}
+		requirements.Requests[corev1.ResourceName(requestParts[0])] = quantity
+	}
+	spec[container] = requirements
+	overrides[deployment] = spec
+	return overrides
 }
 
 // debugDeployments returns a set of deployments to debug based on the

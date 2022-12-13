@@ -6,7 +6,7 @@ import (
 	"path"
 
 	"github.com/blang/semver"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,6 +17,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/certs"
 	hcpconfig "github.com/openshift/hypershift/support/config"
@@ -143,7 +144,7 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("authentication-token-webhook-config-file", cpath(kasVolumeAuthTokenWebhookConfig().Name, KubeconfigKey))
 	args.Set("authentication-token-webhook-version", "v1")
 	args.Set("authorization-mode", "Scope", "SystemMasters", "RBAC", "Node")
-	args.Set("client-ca-file", cpath(kasVolumeClientCA().Name, certs.CASignerCertMapKey))
+	args.Set("client-ca-file", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey))
 	if p.CloudProviderConfigRef != nil {
 		args.Set("cloud-config", cloudProviderConfig(p.CloudProviderConfigRef.Name, p.CloudProvider))
 	}
@@ -168,7 +169,7 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")
 	args.Set("endpoint-reconciler-type", "lease")
-	args.Set("etcd-cafile", cpath(kasVolumeEtcdClientCert().Name, pki.EtcdClientCAKey))
+	args.Set("etcd-cafile", cpath(kasVolumeEtcdCA().Name, certs.CASignerCertMapKey))
 	args.Set("etcd-certfile", cpath(kasVolumeEtcdClientCert().Name, pki.EtcdClientCrtKey))
 	args.Set("etcd-keyfile", cpath(kasVolumeEtcdClientCert().Name, pki.EtcdClientKeyKey))
 	args.Set("etcd-prefix", "kubernetes.io")
@@ -189,7 +190,7 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("proxy-client-cert-file", cpath(kasVolumeAggregatorCert().Name, corev1.TLSCertKey))
 	args.Set("proxy-client-key-file", cpath(kasVolumeAggregatorCert().Name, corev1.TLSPrivateKeyKey))
 	args.Set("requestheader-allowed-names", requestHeaderAllowedNames()...)
-	args.Set("requestheader-client-ca-file", cpath(kasVolumeAggregatorCA().Name, certs.CASignerCertMapKey))
+	args.Set("requestheader-client-ca-file", cpath(common.VolumeAggregatorCA().Name, certs.CASignerCertMapKey))
 	args.Set("requestheader-extra-headers-prefix", "X-Remote-Extra-")
 	args.Set("requestheader-group-headers", "X-Remote-Group")
 	args.Set("requestheader-username-headers", "X-Remote-User")

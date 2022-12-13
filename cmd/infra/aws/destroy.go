@@ -209,6 +209,30 @@ func (o *DestroyInfraOptions) DestroyV2ELBs(ctx context.Context, client elbv2ifa
 	if err != nil {
 		errs = append(errs, err)
 	}
+	deleteTargetGroups := func(out *elbv2.DescribeTargetGroupsOutput, _ bool) bool {
+		for _, tg := range out.TargetGroups {
+			if aws.StringValue(tg.VpcId) != aws.StringValue(vpcID) {
+				continue
+			}
+			_, err := client.DeleteTargetGroupWithContext(ctx, &elbv2.DeleteTargetGroupInput{
+				TargetGroupArn: tg.TargetGroupArn,
+			})
+			if err != nil {
+				errs = append(errs, err)
+			} else {
+				o.Log.Info("Deleted TargetGroup", "name", aws.StringValue(tg.TargetGroupName))
+			}
+		}
+		return true
+	}
+	err = client.DescribeTargetGroupsPagesWithContext(ctx,
+		&elbv2.DescribeTargetGroupsInput{},
+		deleteTargetGroups,
+	)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
 	return errs
 }
 

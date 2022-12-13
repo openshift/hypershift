@@ -9,8 +9,11 @@ import (
 const (
 	KubeAPIServerServiceName        = "kube-apiserver"
 	KubeAPIServerPrivateServiceName = "kube-apiserver-private"
-	OauthServiceName                = "oauth-openshift"
-	oauthRouteName                  = "oauth"
+	kubeAPIServerExternalRouteName  = "kube-apiserver"
+	kubeAPIServerInternalRouteName  = "kube-apiserver-internal"
+	oauthServiceName                = "oauth-openshift"
+	oauthExternalRouteName          = "oauth"
+	oauthInternalRouteName          = "oauth-internal"
 	konnectivityServerServiceName   = "konnectivity-server"
 	openshiftAPIServerServiceName   = "openshift-apiserver"
 	oauthAPIServerName              = "openshift-oauth-apiserver"
@@ -38,7 +41,7 @@ func KubeAPIServerPrivateService(hostedClusterNamespace string) *corev1.Service 
 func KubeAPIServerExternalRoute(hostedClusterNamespace string) *routev1.Route {
 	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kube-apiserver",
+			Name:      kubeAPIServerExternalRouteName,
 			Namespace: hostedClusterNamespace,
 		},
 	}
@@ -47,7 +50,7 @@ func KubeAPIServerExternalRoute(hostedClusterNamespace string) *routev1.Route {
 func KubeAPIServerInternalRoute(hostedClusterNamespace string) *routev1.Route {
 	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kube-apiserver-internal",
+			Name:      kubeAPIServerInternalRouteName,
 			Namespace: hostedClusterNamespace,
 		},
 	}
@@ -56,17 +59,26 @@ func KubeAPIServerInternalRoute(hostedClusterNamespace string) *routev1.Route {
 func OauthServerService(hostedClusterNamespace string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      OauthServiceName,
+			Name:      oauthServiceName,
 			Namespace: hostedClusterNamespace,
 		},
 	}
 }
 
-func OauthServerRoute(hostedClusterNamespace string) *routev1.Route {
+func OauthServerExternalRoute(hostedClusterNamespace string) *routev1.Route {
 	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedClusterNamespace,
-			Name:      oauthRouteName,
+			Name:      oauthExternalRouteName,
+		},
+	}
+}
+
+func OauthServerInternalRoute(hostedClusterNamespace string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hostedClusterNamespace,
+			Name:      oauthInternalRouteName,
 		},
 	}
 }

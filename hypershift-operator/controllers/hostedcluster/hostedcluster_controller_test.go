@@ -1,9 +1,7 @@
 package hostedcluster
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -14,12 +12,11 @@ import (
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/api"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	version "github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
@@ -32,9 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/runtime"
-	serializerjson "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -401,10 +395,6 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 			}
 			g := NewGomegaWithT(t)
 			if test.networking != nil {
-				// deprecated values should still be populated
-				g.Expect(hostedControlPlane.Spec.APIPort).To(Equal(test.expectedAPIPort))
-				g.Expect(hostedControlPlane.Spec.APIAdvertiseAddress).To(Equal(test.expectedAPIAdvertiseAddress))
-
 				// new values should also be populated
 				g.Expect(hostedControlPlane.Spec.Networking.APIServer).ToNot(BeNil())
 				g.Expect(hostedControlPlane.Spec.Networking.APIServer.Port).To(Equal(test.expectedAPIPort))
@@ -840,7 +830,7 @@ func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
 }
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
-
+	releaseImage, _ := version.LookupDefaultOCPVersion()
 	hostedClusters := []*hyperv1.HostedCluster{
 		{
 			ObjectMeta: metav1.ObjectMeta{Name: "agent"},
@@ -848,6 +838,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				Platform: hyperv1.PlatformSpec{
 					Type:  hyperv1.AgentPlatform,
 					Agent: &hyperv1.AgentPlatformSpec{AgentNamespace: "agent-namespace"},
+				},
+				Release: hyperv1.Release{
+					Image: releaseImage.PullSpec,
 				},
 			},
 			Status: hyperv1.HostedClusterStatus{
@@ -872,6 +865,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						},
 					},
 				},
+				Release: hyperv1.Release{
+					Image: releaseImage.PullSpec,
+				},
 			},
 		},
 		{
@@ -879,6 +875,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.NonePlatform,
+				},
+				Release: hyperv1.Release{
+					Image: releaseImage.PullSpec,
 				},
 			},
 		},
@@ -889,6 +888,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					Type:     hyperv1.IBMCloudPlatform,
 					IBMCloud: &hyperv1.IBMCloudPlatformSpec{},
 				},
+				Release: hyperv1.Release{
+					Image: releaseImage.PullSpec,
+				},
 			},
 		},
 		{
@@ -896,6 +898,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.KubevirtPlatform,
+				},
+				Release: hyperv1.Release{
+					Image: releaseImage.PullSpec,
 				},
 			},
 		},
@@ -1148,10 +1153,11 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 
 func TestValidateReleaseImage(t *testing.T) {
 	testCases := []struct {
-		name           string
-		other          []crclient.Object
-		hostedCluster  *hyperv1.HostedCluster
-		expectedResult error
+		name                  string
+		other                 []crclient.Object
+		hostedCluster         *hyperv1.HostedCluster
+		expectedResult        error
+		expectedNotFoundError bool
 	}{
 		{
 			name: "no pull secret, error",
@@ -1165,7 +1171,8 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: errors.New("failed to get pull secret: secrets \"pull-secret\" not found"),
+			expectedResult:        errors.New("failed to get pull secret: secrets \"pull-secret\" not found"),
+			expectedNotFoundError: true,
 		},
 		{
 			name: "invalid pull secret, error",
@@ -1256,13 +1263,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.10.0",
+						Image: "image-4.11.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: hyperv1.Release{
-							Image: "image-4.11.0",
+							Image: "image-4.12.0",
 						},
 					},
 				},
@@ -1288,13 +1295,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.11.0",
+						Image: "image-4.12.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: hyperv1.Release{
-							Image: "image-4.10.0",
+							Image: "image-4.11.0",
 						},
 					},
 				},
@@ -1320,13 +1327,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.11.0",
+						Image: "image-4.12.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: hyperv1.Release{
-							Image: "image-4.10.0",
+							Image: "image-4.11.0",
 						},
 					},
 				},
@@ -1346,13 +1353,13 @@ func TestValidateReleaseImage(t *testing.T) {
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Networking: hyperv1.ClusterNetworking{
-						NetworkType: hyperv1.OpenShiftSDN,
+						NetworkType: hyperv1.OVNKubernetes,
 					},
 					PullSecret: corev1.LocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.10.0",
+						Image: "image-4.11.0",
 					},
 				},
 			},
@@ -1371,19 +1378,19 @@ func TestValidateReleaseImage(t *testing.T) {
 			hostedCluster: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Networking: hyperv1.ClusterNetworking{
-						NetworkType: hyperv1.OpenShiftSDN,
+						NetworkType: hyperv1.OVNKubernetes,
 					},
 					PullSecret: corev1.LocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.10.0",
+						Image: "image-4.11.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: hyperv1.Release{
-							Image: "image-4.10.0",
+							Image: "image-4.11.0",
 						},
 					},
 				},
@@ -1409,13 +1416,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.10.0",
+						Image: "image-4.11.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: hyperv1.Release{
-							Image: "image-4.10.1",
+							Image: "image-4.11.1",
 						},
 					},
 				},
@@ -1447,7 +1454,7 @@ func TestValidateReleaseImage(t *testing.T) {
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: hyperv1.Release{
-							Image: "image-4.11.0",
+							Image: "image-4.12.0",
 						},
 					},
 				},
@@ -1465,9 +1472,10 @@ func TestValidateReleaseImage(t *testing.T) {
 						"image-4.7.0":  "4.7.0",
 						"image-4.9.0":  "4.9.0",
 						"image-4.10.0": "4.10.0",
-						"image-4.10.1": "4.10.1",
 						"image-4.11.0": "4.11.0",
+						"image-4.11.1": "4.11.1",
 						"image-4.12.0": "4.12.0",
+						"image-4.13.0": "4.13.0",
 					},
 				},
 			}
@@ -1476,6 +1484,10 @@ func TestValidateReleaseImage(t *testing.T) {
 			actual := r.validateReleaseImage(ctx, tc.hostedCluster)
 			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
 				t.Errorf("actual validation result differs from expected: %s", diff)
+			}
+			if tc.expectedNotFoundError {
+				g := NewGomegaWithT(t)
+				g.Expect(errors2.IsNotFound(actual)).To(BeTrue())
 			}
 		})
 	}
@@ -1606,72 +1618,6 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestConfigurationFieldsToRawExtensions(t *testing.T) {
-	config := &hyperv1.ClusterConfiguration{
-		Ingress: &configv1.IngressSpec{Domain: "example.com"},
-		Proxy:   &configv1.ProxySpec{HTTPProxy: "http://10.0.136.57:3128", HTTPSProxy: "http://10.0.136.57:3128"},
-	}
-	result, err := configurationFieldsToRawExtensions(config)
-	if err != nil {
-		t.Fatalf("configurationFieldsToRawExtensions: %v", err)
-	}
-
-	// Check that serialized resources do not contain a status section
-	for i, rawExt := range result {
-		unstructuredObj := &unstructured.Unstructured{}
-		_, _, err := unstructured.UnstructuredJSONScheme.Decode(rawExt.Raw, nil, unstructuredObj)
-		if err != nil {
-			t.Fatalf("unexpected decode error: %v", err)
-		}
-		_, exists, err := unstructured.NestedFieldNoCopy(unstructuredObj.Object, "status")
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if exists {
-			t.Errorf("status field exists for resource %d", i)
-		}
-	}
-
-	serialized, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-
-	var roundtripped []runtime.RawExtension
-	if err := json.Unmarshal(serialized, &roundtripped); err != nil {
-		t.Fatalf("json.Unmarshal: %v", err)
-	}
-
-	// CreateOrUpdate does a naive DeepEqual which can not deal with custom unmarshallers, so make
-	// sure the output matches a roundtripped result.
-	if diff := cmp.Diff(result, roundtripped); diff != "" {
-		t.Errorf("output does not match a json-roundtripped version: %s", diff)
-	}
-
-	var ingress configv1.Ingress
-	if err := json.Unmarshal(result[0].Raw, &ingress); err != nil {
-		t.Fatalf("failed to unmarshal raw data: %v", err)
-	}
-	if ingress.APIVersion == "" || ingress.Kind == "" {
-		t.Errorf("rawObject has no apiVersion or kind set: %+v", ingress.ObjectMeta)
-	}
-	if ingress.Spec.Domain != "example.com" {
-		t.Errorf("ingress does not have expected domain: %q", ingress.Spec.Domain)
-	}
-
-	var proxy configv1.Proxy
-	if err := json.Unmarshal(result[1].Raw, &proxy); err != nil {
-		t.Fatalf("failed to unmarshal raw data: %v", err)
-	}
-	if proxy.APIVersion == "" || proxy.Kind == "" {
-		t.Errorf("rawObject has no apiVersion or kind set: %+v", proxy.ObjectMeta)
-	}
-	if proxy.Spec.HTTPProxy != "http://10.0.136.57:3128" {
-		t.Errorf("proxy does not have expected HTTPProxy: %q", proxy.Spec.HTTPProxy)
-	}
-
 }
 
 func TestIsUpgradeable(t *testing.T) {
@@ -1814,367 +1760,6 @@ func TestIsUpgradeable(t *testing.T) {
 				return
 			}
 		})
-	}
-}
-
-func TestReconcileDeprecatedAWSRoles(t *testing.T) {
-	testNamespace := "test"
-
-	// Emulate user input secrets pre-created by the CLI.
-	kubeCloudControllerARN := "kubeCloudControllerARN"
-	kubeCloudControllerSecretName := "kubeCloudControllerCreds"
-	kubeCloudControllerSecret := &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testNamespace,
-			Name:      kubeCloudControllerSecretName,
-		},
-		Data: map[string][]byte{
-			"credentials": []byte(fmt.Sprintf(`[default]
-role_arn = %s
-web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
-`, kubeCloudControllerARN)),
-		},
-	}
-
-	nodePoolManagementARN := "nodePoolManagementARN"
-	nodePoolManagementSecretName := "nodePoolManagementCreds"
-	nodePoolManagementSecret := &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testNamespace,
-			Name:      nodePoolManagementSecretName,
-		},
-		Data: map[string][]byte{
-			"credentials": []byte(fmt.Sprintf(`[default]
-role_arn = %s
-web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
-`, nodePoolManagementARN)),
-		},
-	}
-
-	controlPlaneOperatorARN := "controlPlaneOperatorARN"
-	controlPlaneOperatorSecretName := "controlPlaneOperatorCreds"
-	controlPlaneOperatorSecret := &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Secret",
-			APIVersion: corev1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testNamespace,
-			Name:      controlPlaneOperatorSecretName,
-		},
-		Data: map[string][]byte{
-			"credentials": []byte(fmt.Sprintf(`[default]
-role_arn = %s
-web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
-`, controlPlaneOperatorARN)),
-		},
-	}
-
-	// Emulate user input.
-	ingressARN := "ingressARN"
-	imageRegistryARN := "registryARN"
-	storageARN := "ebsARN"
-	networkARN := "networkARN"
-
-	hc := &hyperv1.HostedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "",
-			Namespace: testNamespace,
-		},
-		Spec: hyperv1.HostedClusterSpec{
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AWSPlatform,
-				AWS: &hyperv1.AWSPlatformSpec{
-					RolesRef: hyperv1.AWSRolesRef{
-						IngressARN:              "",
-						ImageRegistryARN:        "",
-						StorageARN:              "",
-						NetworkARN:              "",
-						KubeCloudControllerARN:  "",
-						NodePoolManagementARN:   "",
-						ControlPlaneOperatorARN: "",
-					},
-					Roles: []hyperv1.AWSRoleCredentials{
-						{
-							ARN:       ingressARN,
-							Namespace: "openshift-ingress-operator",
-							Name:      "cloud-credentials",
-						},
-						{
-							ARN:       imageRegistryARN,
-							Namespace: "openshift-image-registry",
-							Name:      "installer-cloud-credentials",
-						},
-						{
-							ARN:       storageARN,
-							Namespace: "openshift-cluster-csi-drivers",
-							Name:      "ebs-cloud-credentials",
-						},
-						{
-							ARN:       networkARN,
-							Namespace: "openshift-cloud-network-config-controller",
-							Name:      "cloud-credentials",
-						},
-					},
-					KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: kubeCloudControllerSecretName},
-					NodePoolManagementCreds:   corev1.LocalObjectReference{Name: nodePoolManagementSecretName},
-					ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: controlPlaneOperatorSecretName},
-				},
-			},
-		},
-		Status: hyperv1.HostedClusterStatus{},
-	}
-
-	// Expect old fields to be migrated.
-	expectedAWSPlatformSpec := &hyperv1.AWSPlatformSpec{
-		Region:              "",
-		CloudProviderConfig: nil,
-		ServiceEndpoints:    nil,
-		RolesRef: hyperv1.AWSRolesRef{
-			IngressARN:              ingressARN,
-			ImageRegistryARN:        imageRegistryARN,
-			StorageARN:              storageARN,
-			NetworkARN:              networkARN,
-			KubeCloudControllerARN:  kubeCloudControllerARN,
-			NodePoolManagementARN:   nodePoolManagementARN,
-			ControlPlaneOperatorARN: controlPlaneOperatorARN,
-		},
-		Roles:                     nil,
-		KubeCloudControllerCreds:  corev1.LocalObjectReference{},
-		NodePoolManagementCreds:   corev1.LocalObjectReference{},
-		ControlPlaneOperatorCreds: corev1.LocalObjectReference{},
-		ResourceTags:              nil,
-		EndpointAccess:            "",
-	}
-
-	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(controlPlaneOperatorSecret, nodePoolManagementSecret, kubeCloudControllerSecret).Build()
-	r := &HostedClusterReconciler{Client: client}
-
-	g := NewGomegaWithT(t)
-	err := r.reconcileDeprecatedAWSRoles(context.Background(), hc)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(hc.Spec.Platform.AWS).To(BeEquivalentTo(expectedAWSPlatformSpec))
-}
-
-func TestEnsureHCPAWSRolesBackwardCompatibility(t *testing.T) {
-	ingressARN := "ingressARN"
-	imageRegistryARN := "imageRegistryARN"
-	storageARN := "storageARN"
-	networkARN := "networkARN"
-
-	hc := &hyperv1.HostedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "",
-			Namespace: "",
-		},
-		Spec: hyperv1.HostedClusterSpec{
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AWSPlatform,
-				AWS: &hyperv1.AWSPlatformSpec{
-					RolesRef: hyperv1.AWSRolesRef{
-						IngressARN:              ingressARN,
-						ImageRegistryARN:        imageRegistryARN,
-						StorageARN:              storageARN,
-						NetworkARN:              networkARN,
-						KubeCloudControllerARN:  "anything",
-						NodePoolManagementARN:   "anything",
-						ControlPlaneOperatorARN: "anything",
-					},
-				},
-			},
-		},
-	}
-
-	expectedAWSPlatformSpec := &hyperv1.AWSPlatformSpec{
-		Region:              "",
-		CloudProviderConfig: nil,
-		ServiceEndpoints:    nil,
-		RolesRef: hyperv1.AWSRolesRef{
-			IngressARN:              ingressARN,
-			ImageRegistryARN:        imageRegistryARN,
-			StorageARN:              storageARN,
-			NetworkARN:              networkARN,
-			KubeCloudControllerARN:  "anything",
-			NodePoolManagementARN:   "anything",
-			ControlPlaneOperatorARN: "anything",
-		},
-		Roles: []hyperv1.AWSRoleCredentials{
-			{
-				ARN:       ingressARN,
-				Namespace: "openshift-ingress-operator",
-				Name:      "cloud-credentials",
-			},
-			{
-				ARN:       imageRegistryARN,
-				Namespace: "openshift-image-registry",
-				Name:      "installer-cloud-credentials",
-			},
-			{
-				ARN:       storageARN,
-				Namespace: "openshift-cluster-csi-drivers",
-				Name:      "ebs-cloud-credentials",
-			},
-			{
-				ARN:       networkARN,
-				Namespace: "openshift-cloud-network-config-controller",
-				Name:      "cloud-credentials",
-			},
-		},
-		KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: platformaws.KubeCloudControllerCredsSecret("").Name},
-		NodePoolManagementCreds:   corev1.LocalObjectReference{},
-		ControlPlaneOperatorCreds: corev1.LocalObjectReference{},
-		ResourceTags:              nil,
-		EndpointAccess:            "",
-	}
-
-	g := NewGomegaWithT(t)
-	hcp := &hyperv1.HostedControlPlane{
-		Spec: hyperv1.HostedControlPlaneSpec{
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AWSPlatform,
-				AWS: &hyperv1.AWSPlatformSpec{
-					Region:                    "",
-					CloudProviderConfig:       nil,
-					ServiceEndpoints:          nil,
-					RolesRef:                  hyperv1.AWSRolesRef{},
-					Roles:                     nil,
-					KubeCloudControllerCreds:  corev1.LocalObjectReference{},
-					NodePoolManagementCreds:   corev1.LocalObjectReference{},
-					ControlPlaneOperatorCreds: corev1.LocalObjectReference{},
-					ResourceTags:              nil,
-					EndpointAccess:            "",
-				},
-			},
-		},
-	}
-	ensureHCPAWSRolesBackwardCompatibility(hc, hcp)
-	g.Expect(hcp.Spec.Platform.AWS).To(BeEquivalentTo(expectedAWSPlatformSpec))
-}
-
-func TestReconcileDeprecatedGlobalConfig(t *testing.T) {
-	hc := &hyperv1.HostedCluster{}
-	hc.Name = "fake-name"
-	hc.Namespace = "fake-namespace"
-
-	apiServer := &configv1.APIServer{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: configv1.SchemeGroupVersion.String(),
-			Kind:       "APIServer",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster",
-		},
-		Spec: configv1.APIServerSpec{
-			Audit: configv1.Audit{
-				// Populate kubebuilder default for comparison
-				// https://github.com/openshift/api/blob/f120778bee805ad1a7a4f05a6430332cf5811813/config/v1/types_apiserver.go#L57
-				Profile: configv1.DefaultAuditProfileType,
-			},
-			ClientCA: configv1.ConfigMapNameReference{
-				Name: "fake-ca",
-			},
-		},
-	}
-
-	jsonSerializer := serializerjson.NewSerializerWithOptions(
-		serializerjson.DefaultMetaFactory, hyperapi.Scheme, hyperapi.Scheme,
-		serializerjson.SerializerOptions{Yaml: false, Pretty: true, Strict: false},
-	)
-
-	serializedAPIServer := &bytes.Buffer{}
-	err := jsonSerializer.Encode(apiServer, serializedAPIServer)
-	if err != nil {
-		t.Fatalf("failed to serialize apiserver: %v", err)
-	}
-
-	hc.Spec.Configuration = &hyperv1.ClusterConfiguration{
-		Items: []runtime.RawExtension{
-			{
-				Raw: serializedAPIServer.Bytes(),
-			},
-		},
-		ConfigMapRefs: []corev1.LocalObjectReference{
-			{
-				Name: "fake-ca",
-			},
-		},
-		SecretRefs: []corev1.LocalObjectReference{
-			{
-				Name: "fake-creds",
-			},
-		},
-	}
-
-	fakeClient := fake.NewClientBuilder().
-		WithScheme(hyperapi.Scheme).
-		WithObjects(hc).
-		Build()
-	reconciler := &HostedClusterReconciler{
-		Client: fakeClient,
-	}
-
-	originalSpec := hc.Spec.DeepCopy()
-	if err := reconciler.reconcileDeprecatedGlobalConfig(context.Background(), hc); err != nil {
-		t.Fatalf("unexpected reconcile error: %v", err)
-	}
-
-	// Update fields if required.
-	if !equality.Semantic.DeepEqual(&hc.Spec, originalSpec) {
-		err := reconciler.Client.Update(context.Background(), hc)
-		if err != nil {
-			t.Fatalf("unexpected update error: %v", err)
-		}
-	}
-
-	updatedHc := &hyperv1.HostedCluster{}
-	if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(hc), updatedHc); err != nil {
-		t.Fatalf("unexpected get error: %v", err)
-	}
-	if updatedHc.Spec.Configuration == nil {
-		t.Fatalf("unexpected nil configuration")
-	}
-	if len(updatedHc.Spec.Configuration.Items) == 0 {
-		t.Errorf("empty deprecated configuration")
-	}
-	if len(updatedHc.Spec.Configuration.ConfigMapRefs) == 0 {
-		t.Errorf("empty configmap refs")
-	}
-	if len(updatedHc.Spec.Configuration.SecretRefs) == 0 {
-		t.Errorf("emtpy secret refs")
-	}
-	if !equality.Semantic.DeepEqual(&apiServer.Spec, updatedHc.Spec.Configuration.APIServer) {
-		t.Errorf("unexpected apiserver spec: %#v", updatedHc.Spec.Configuration.APIServer)
-	}
-
-	// Update deprecated field, remove test when field is unsupported
-	apiServer.Spec.ClientCA.Name = "updated-ca"
-	serializedAPIServer.Reset()
-	err = jsonSerializer.Encode(apiServer, serializedAPIServer)
-	if err != nil {
-		t.Fatalf("failed to serialize apiserver: %v", err)
-	}
-	updatedHc.Spec.Configuration.Items = []runtime.RawExtension{{Raw: serializedAPIServer.Bytes()}}
-	if err := reconciler.reconcileDeprecatedGlobalConfig(context.Background(), updatedHc); err != nil {
-		t.Fatalf("unexpected reconcile error: %v", err)
-	}
-	err = reconciler.Client.Update(context.Background(), updatedHc)
-	if err != nil {
-		t.Fatalf("unexpected update error: %v", err)
-	}
-	updatedHcAgain := &hyperv1.HostedCluster{}
-	if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(updatedHc), updatedHcAgain); err != nil {
-		t.Fatalf("unexpected get error: %v", err)
-	}
-	if !equality.Semantic.DeepEqual(&apiServer.Spec, updatedHcAgain.Spec.Configuration.APIServer) {
-		t.Errorf("unexpected apiserver spec on update: %#v", updatedHcAgain.Spec.Configuration.APIServer)
 	}
 }
 

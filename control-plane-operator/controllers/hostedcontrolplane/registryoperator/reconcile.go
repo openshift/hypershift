@@ -13,7 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
@@ -422,22 +422,21 @@ func ReconcilePodMonitor(pm *prometheusoperatorv1.PodMonitor, clusterID string, 
 	pm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{
 		MatchNames: []string{pm.Namespace},
 	}
-	targetPort := intstr.FromString("metrics")
 	pm.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{
 		{
-			Interval:   "60s",
-			TargetPort: &targetPort,
-			Path:       "/metrics",
-			Scheme:     "https",
+			Interval: "60s",
+			Port:     "metrics",
+			Path:     "/metrics",
+			Scheme:   "https",
 			TLSConfig: &prometheusoperatorv1.PodMetricsEndpointTLSConfig{
 				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
 					ServerName: metricsHostname,
 					CA: prometheusoperatorv1.SecretOrConfigMap{
-						Secret: &corev1.SecretKeySelector{
+						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.MetricsClientCertSecret(pm.Namespace).Name,
+								Name: manifests.RootCAConfigMap(pm.Namespace).Name,
 							},
-							Key: "ca.crt",
+							Key: certs.CASignerCertMapKey,
 						},
 					},
 				},

@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -88,7 +87,7 @@ func getImageFile(t *testing.T, sut *imageFileCache, imageRef string, imageFile 
 }
 
 func simulateFileCorruption(t *testing.T, cacheDir string) {
-	files, err := ioutil.ReadDir(cacheDir)
+	files, err := os.ReadDir(cacheDir)
 	if err != nil {
 		t.Fatal("failed to open cache directory", err)
 	}

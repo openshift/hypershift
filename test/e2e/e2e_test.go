@@ -7,7 +7,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net/http"
 	"os"
@@ -19,7 +19,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/version"
@@ -84,6 +84,7 @@ func TestMain(m *testing.M) {
 	flag.Var(&globalOpts.configurableClusterOptions.PowerVSProcType, "e2e.powervs-proc-type", "Processor type (dedicated, shared, capped). Default is shared")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSProcessors, "e2e.powervs-processors", "0.5", "Number of processors allocated. Default is 0.5")
 	flag.IntVar(&globalOpts.configurableClusterOptions.PowerVSMemory, "e2e.powervs-memory", 32, "Amount of memory allocated (in GB). Default is 32")
+	flag.BoolVar(&globalOpts.SkipAPIBudgetVerification, "e2e.skip-api-budget", false, "Bool to avoid send metrics to E2E Server on local test execution.")
 
 	flag.Parse()
 
@@ -180,7 +181,7 @@ func dumpTestMetrics(log logr.Logger, artifactDir string) {
 		return
 	}
 
-	body, err := ioutil.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
 		log.Error(err, "failed to read response body from metrics endpoint")
 		return
@@ -211,6 +212,10 @@ type options struct {
 
 	configurableClusterOptions configurableClusterOptions
 	additionalTags             stringSliceVar
+
+	// SkipAPIBudgetVerification implies that you are executing the e2e tests
+	// from local to verify that them works fine before push
+	SkipAPIBudgetVerification bool
 }
 
 type configurableClusterOptions struct {
@@ -284,6 +289,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		Annotations: []string{
 			fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
 		},
+		SkipAPIBudgetVerification: o.SkipAPIBudgetVerification,
 	}
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {

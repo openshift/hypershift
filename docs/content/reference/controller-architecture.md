@@ -78,7 +78,7 @@ A single version of the the HyperShift Operator knows how to manage multiple hos
 
 The HyperShift Operator is responsible for:
 
-- Processing `HostedCluster` and `NodePool` resources and managing Control Plane Operator and CAPI deployments which do the actual work of installing a control plane.
+- Processing `HostedCluster` and `NodePool` resources and managing Control Plane Operator and [Cluster API (CAPI)](https://github.com/kubernetes-sigs/cluster-api) deployments which do the actual work of installing a control plane.
 - Managing the lifecycle of the hosted cluster by handling rollouts of new Control Plane Operator and CAPI deployments based on version changes to `HostedCluster` and `NodePool` resources.
 - Aggregating and surfacing information about clusters.
 

@@ -16,7 +16,7 @@ import (
 var _ releaseinfo.ProviderWithRegistryOverrides = &FakeReleaseProvider{}
 
 type FakeReleaseProvider struct {
-	// Version of the returned release iamge. Defaults to 4.10.0 if unset.
+	// Version of the returned release iamge. Defaults to 4.11.0 if unset.
 	Version string
 	// Allows image-based versioning
 	ImageVersion map[string]string
@@ -25,7 +25,7 @@ type FakeReleaseProvider struct {
 func (f *FakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
 	releaseImage := &releaseinfo.ReleaseImage{
 		ImageStream: &imagev1.ImageStream{
-			ObjectMeta: metav1.ObjectMeta{Name: "4.10.0"},
+			ObjectMeta: metav1.ObjectMeta{Name: "4.11.0"},
 			Spec: imagev1.ImageStreamSpec{
 				Tags: []imagev1.TagReference{
 					{
@@ -34,6 +34,14 @@ func (f *FakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecr
 					},
 					{
 						Name: "cluster-machine-approver",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "aws-cluster-api-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "cluster-capi-controllers",
 						From: &corev1.ObjectReference{Name: ""},
 					},
 					{

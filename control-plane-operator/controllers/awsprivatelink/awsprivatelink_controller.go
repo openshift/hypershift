@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/upsert"
@@ -502,9 +502,6 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 		log.Info("DNS record created", "fqdn", fqdn)
 	}
 
-	//lint:ignore SA1019 we reset the deprecated field precicely
-	// because it is deprecated.
-	awsEndpointService.Status.DNSName = ""
 	awsEndpointService.Status.DNSNames = fqdns
 	awsEndpointService.Status.DNSZoneID = zoneID
 
@@ -571,6 +568,27 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		}); err != nil {
 			return false, err
 		}
+
+		// check if Endpoint exists in AWS
+		output, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{
+			VpcEndpointIds: []*string{aws.String(endpointID)},
+		})
+		if err != nil {
+			awsErr, ok := err.(awserr.Error)
+			if ok {
+				if awsErr.Code() != "InvalidVpcEndpointId.NotFound" {
+					return false, err
+				}
+			} else {
+				return false, err
+			}
+
+		}
+
+		if output != nil && len(output.VpcEndpoints) != 0 {
+			return false, fmt.Errorf("resource requested for deletion but still present")
+		}
+
 		log.Info("endpoint deleted", "endpointID", endpointID)
 	}
 

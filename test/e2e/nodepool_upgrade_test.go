@@ -5,7 +5,8 @@ package e2e
 
 import (
 	"context"
-	"io/ioutil"
+
+	"io"
 	"os"
 	"testing"
 	"time"
@@ -14,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -57,7 +58,7 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 	pullSecretFile, err := os.Open(clusterOpts.PullSecretFile)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to open pull secret file")
 	defer pullSecretFile.Close()
-	pullSecret, err := ioutil.ReadAll(pullSecretFile)
+	pullSecret, err := io.ReadAll(pullSecretFile)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to read pull secret file")
 	previousReleaseInfo, err := releaseInfoProvider.Lookup(ctx, globalOpts.PreviousReleaseImage, pullSecret)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for previous image")
@@ -165,7 +166,7 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 	pullSecretFile, err := os.Open(clusterOpts.PullSecretFile)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to open pull secret file")
 	defer pullSecretFile.Close()
-	pullSecret, err := ioutil.ReadAll(pullSecretFile)
+	pullSecret, err := io.ReadAll(pullSecretFile)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to read pull secret file")
 	previousReleaseInfo, err := releaseInfoProvider.Lookup(ctx, globalOpts.PreviousReleaseImage, pullSecret)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for previous image")

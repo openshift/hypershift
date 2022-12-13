@@ -5,7 +5,7 @@ import (
 	"path"
 	"strings"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -166,6 +166,6 @@ func schedulerVolumeKubeconfig() *corev1.Volume {
 
 func buildSchedulerVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KASServiceKubeconfigSecret("").Name,
+		SecretName: manifests.SchedulerKubeconfigSecret("").Name,
 	}
 }

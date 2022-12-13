@@ -11,7 +11,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -60,6 +60,7 @@ func TestCreateCluster(t *testing.T) {
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
 }
 
 func TestNoneCreateCluster(t *testing.T) {

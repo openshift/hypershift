@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -16,8 +15,6 @@ import (
 )
 
 const (
-	HypershiftRouteLabel = "hypershift.openshift.io/hosted-control-plane"
-
 	// DebugDeploymentsAnnotation contains a comma separated list of deployment names which should always be scaled to 0
 	// for development.
 	DebugDeploymentsAnnotation = "hypershift.openshift.io/debug-deployments"
@@ -137,7 +134,7 @@ func decompress(r io.Reader) (*bytes.Buffer, error) {
 
 	defer gz.Close()
 
-	data, err := ioutil.ReadAll(gz)
+	data, err := io.ReadAll(gz)
 	if err != nil {
 		return bytes.NewBuffer(nil), fmt.Errorf("could not decompress payload: %w", err)
 	}

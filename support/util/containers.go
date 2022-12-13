@@ -64,11 +64,15 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 	if !reflect.DeepEqual(spec.InitContainers[0], availabilityProberContainer) {
 		spec.InitContainers[0] = availabilityProberContainer
 	}
+	if opts.WaitForInfrastructureResource {
+		availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--wait-for-infrastructure-resource"))
+	}
 }
 
 type AvailabilityProberOpts struct {
-	KubeconfigVolumeName string
-	RequiredAPIs         []schema.GroupVersionKind
+	KubeconfigVolumeName          string
+	RequiredAPIs                  []schema.GroupVersionKind
+	WaitForInfrastructureResource bool
 }
 
 type AvailabilityProberOpt func(*AvailabilityProberOpts)

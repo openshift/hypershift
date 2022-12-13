@@ -5,8 +5,9 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -282,4 +283,112 @@ func TestSetLocation(t *testing.T) {
 		},
 	}
 	g.Expect(expected.Scheduling.Affinity.PodAntiAffinity).To(BeEquivalentTo(cfg.Scheduling.Affinity.PodAntiAffinity))
+}
+
+func TestResourceRequestOverrides(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		expected    ResourceOverrides
+	}{
+		{
+			name:     "no annotations",
+			expected: ResourceOverrides{},
+		},
+		{
+			name: "override memory",
+			annotations: map[string]string{
+				"random": "foobar",
+				"resource-request-override.hypershift.openshift.io/my-deployment.main-container": "memory=1Gi",
+			},
+			expected: ResourceOverrides{
+				"my-deployment": ResourcesSpec{
+					"main-container": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "override memory and cpu",
+			annotations: map[string]string{
+				"random": "foobar",
+				"resource-request-override.hypershift.openshift.io/my-deployment.main-container": "memory=1Gi,cpu=500m",
+			},
+			expected: ResourceOverrides{
+				"my-deployment": ResourcesSpec{
+					"main-container": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "overrides for different containers",
+			annotations: map[string]string{
+				"random": "foobar",
+				"resource-request-override.hypershift.openshift.io/my-deployment.main-container": "memory=1Gi",
+				"resource-request-override.hypershift.openshift.io/my-deployment.init-container": "cpu=500m",
+			},
+			expected: ResourceOverrides{
+				"my-deployment": ResourcesSpec{
+					"main-container": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+					},
+					"init-container": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("500m"),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "overrides for different deployments",
+			annotations: map[string]string{
+				"random": "foobar",
+				"resource-request-override.hypershift.openshift.io/my-deployment.main-container":     "memory=1Gi",
+				"resource-request-override.hypershift.openshift.io/my-deployment.init-container":     "cpu=500m",
+				"resource-request-override.hypershift.openshift.io/second-deployment.main-container": "cpu=300m,memory=500Mi",
+			},
+			expected: ResourceOverrides{
+				"my-deployment": ResourcesSpec{
+					"main-container": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("1Gi"),
+						},
+					},
+					"init-container": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU: resource.MustParse("500m"),
+						},
+					},
+				},
+				"second-deployment": ResourcesSpec{
+					"main-container": corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceMemory: resource.MustParse("500Mi"),
+							corev1.ResourceCPU:    resource.MustParse("300m"),
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Annotations = test.annotations
+			actual := resourceRequestOverrides(hcp)
+			g.Expect(actual).To(Equal(test.expected))
+		})
+	}
 }

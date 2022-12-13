@@ -18,7 +18,7 @@ RUN cd /usr/bin && \
     ln -s control-plane-operator availability-prober && \
     ln -s control-plane-operator token-minter
 
-ENTRYPOINT /usr/bin/hypershift
+ENTRYPOINT ["/usr/bin/hypershift"]
 
 LABEL io.openshift.hypershift.control-plane-operator-subcommands=true
 LABEL io.openshift.hypershift.control-plane-operator-skips-haproxy=true

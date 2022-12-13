@@ -7,8 +7,7 @@ import (
 	"strings"
 
 	routev1 "github.com/openshift/api/route/v1"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/certs"
@@ -41,7 +40,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 	log := ctrl.LoggerFrom(ctx)
 
 	controlPlaneNamespace := hcp.Namespace
-	serviceStrategy := servicePublishingStrategyByType(hcp, hyperv1.Ignition)
+	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.Ignition)
 	if serviceStrategy == nil {
 		//lint:ignore ST1005 Ignition is proper name
 		return fmt.Errorf("Ignition service strategy not specified")
@@ -56,42 +55,26 @@ func ReconcileIgnitionServer(ctx context.Context,
 	var ignitionServerAddress string
 	switch serviceStrategy.Type {
 	case hyperv1.Route:
-		// Reconcile route
+		// Reconcile routes
 		ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace)
-		if _, err := createOrUpdate(ctx, c, ignitionServerRoute, func() error {
-			// The route host is considered immutable, so set it only once upon creation
-			// and ignore updates.
-			if ignitionServerRoute.CreationTimestamp.IsZero() {
-				switch {
-				case !util.ConnectsThroughInternetToControlplane(hcp.Spec.Platform):
-					ignitionServerRoute.Spec.Host = fmt.Sprintf("%s.apps.%s.hypershift.local", ignitionServerRoute.Name, hcp.Name)
-					ingress.AddHCPRouteLabel(ignitionServerRoute)
-				case serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "":
-					ignitionServerRoute.Spec.Host = serviceStrategy.Route.Hostname
-					ingress.AddHCPRouteLabel(ignitionServerRoute)
-				default:
-					ignitionServerRoute.Spec.Host = util.ShortenRouteHostnameIfNeeded(ignitionServerRoute.Name, ignitionServerRoute.Namespace, defaultIngressDomain)
+		if util.IsPrivateHCP(hcp) {
+			if _, err := createOrUpdate(ctx, c, ignitionServerRoute, func() error {
+				reconcileInternalRoute(ignitionServerRoute, config.OwnerRefFrom(hcp))
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile ignition internal route: %w", err)
+			}
+		} else {
+			if _, err := createOrUpdate(ctx, c, ignitionServerRoute, func() error {
+				hostname := ""
+				if serviceStrategy.Route != nil {
+					hostname = serviceStrategy.Route.Hostname
 				}
+				reconcileExternalRoute(ignitionServerRoute, config.OwnerRefFrom(hcp), hostname, defaultIngressDomain)
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile ignition external route: %w", err)
 			}
-
-			if ignitionServerRoute.Annotations == nil {
-				ignitionServerRoute.Annotations = map[string]string{}
-			}
-			if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
-				ignitionServerRoute.ObjectMeta.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = serviceStrategy.Route.Hostname
-			}
-			ignitionServerRoute.Spec.TLS = &routev1.TLSConfig{
-				Termination:                   routev1.TLSTerminationPassthrough,
-				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
-			}
-			ignitionServerRoute.Spec.To = routev1.RouteTargetReference{
-				Kind:   "Service",
-				Name:   ignitionserver.ResourceName,
-				Weight: utilpointer.Int32Ptr(100),
-			}
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile ignition route: %w", err)
 		}
 
 		// The route must be admitted and assigned a host before we can generate certs
@@ -397,6 +380,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		if podMonitor.Annotations == nil {
 			podMonitor.Annotations = map[string]string{}
 		}
+		util.ApplyClusterIDLabelToPodMonitor(&podMonitor.Spec.PodMetricsEndpoints[0], hcp.Spec.ClusterID)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition server pod monitor: %w", err)
@@ -404,15 +388,6 @@ func ReconcileIgnitionServer(ctx context.Context,
 		log.Info("Reconciled ignition server podmonitor", "result", result)
 	}
 
-	return nil
-}
-
-func servicePublishingStrategyByType(hcp *hyperv1.HostedControlPlane, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
-	for _, mapping := range hcp.Spec.Services {
-		if mapping.Service == svcType {
-			return &mapping.ServicePublishingStrategy
-		}
-	}
 	return nil
 }
 
@@ -443,6 +418,17 @@ func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.Servi
 	}
 	svc.Spec.Ports[0] = portSpec
 	return nil
+}
+
+func reconcileExternalRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string) error {
+	ownerRef.ApplyTo(route)
+	return util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, ignitionserver.Service(route.Namespace).Name)
+}
+
+func reconcileInternalRoute(route *routev1.Route, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(route)
+	// Assumes ownerRef is the HCP
+	return util.ReconcileInternalRoute(route, ownerRef.Reference.Name, ignitionserver.Service(route.Namespace).Name)
 }
 
 func convertRegistryOverridesToCommandLineFlag(registryOverrides map[string]string) string {

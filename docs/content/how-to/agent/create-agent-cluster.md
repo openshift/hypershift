@@ -469,7 +469,7 @@ NAME                                         VERSION   AVAILABLE   PROGRESSING  
 clusterversion.config.openshift.io/version             False       True          40m     Unable to apply 4.11.5: the cluster operator console has not yet successfully rolled out
 
 NAME                                                                           VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-clusteroperator.config.openshift.io/console                                    4.11.5    False       False         False      11m     RouteHealthAvailable: failed to GET route (https://console-openshift-console.apps.hypercluster1.e2e.bos.redhat.com): Get "https://console-openshift-console.apps.hypercluster1.e2e.bos.redhat.com": dial tcp 10.19.3.29:443: connect: connection refused
+clusteroperator.config.openshift.io/console                                    4.11.5    False       False         False      11m     RouteHealthAvailable: failed to GET route (https://console-openshift-console.apps.hypercluster1.domain.com): Get "https://console-openshift-console.apps.hypercluster1.domain.com": dial tcp 10.19.3.29:443: connect: connection refused
 clusteroperator.config.openshift.io/csi-snapshot-controller                    4.11.5    True        False         False      10m     
 clusteroperator.config.openshift.io/dns                                        4.11.5    True        False         False      9m16s   
 clusteroperator.config.openshift.io/image-registry                             4.11.5    True        False         False      9m5s    
@@ -527,9 +527,6 @@ kind: OperatorGroup
 metadata:
   name: metallb-operator-operatorgroup
   namespace: metallb
-spec:
-  targetNamespaces:
-  - metallb
 ---
 apiVersion: operators.coreos.com/v1alpha1
 kind: Subscription
@@ -557,7 +554,7 @@ EOF
 
 #### Step 2 - Get the MetalLB Operator Configured
 
-We will create an `AddressPool` with a single IP address. This IP address must be on the same subnet as the network used by the cluster nodes.
+We will create an `IPAddressPool` with a single IP address. This IP address must be on the same subnet as the network used by the cluster nodes.
 
 
 > **WARN:** Change `INGRESS_IP` env var to match your environments addressing.
@@ -566,8 +563,8 @@ We will create an `AddressPool` with a single IP address. This IP address must b
 export INGRESS_IP=192.168.122.23
 
 envsubst <<"EOF" | oc --kubeconfig ${HOSTED_CLUSTER_NAME}.kubeconfig apply -f -
-apiVersion: metallb.io/v1alpha1
-kind: AddressPool
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
 metadata:
   name: ingress-public-ip
   namespace: metallb

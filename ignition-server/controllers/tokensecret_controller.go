@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/util"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
@@ -28,7 +28,11 @@ const (
 	TokenSecretTokenKey            = "token"
 	TokenSecretOldTokenKey         = "old_token"
 	TokenSecretPayloadKey          = "payload"
+	TokenSecretMessageKey          = "message"
+	InvalidConfigReason            = "InvalidConfig"
+	TokenSecretReasonKey           = "reason"
 	TokenSecretAnnotation          = "hypershift.openshift.io/ignition-config"
+	TokenSecretNodePoolUpgradeType = "hypershift.openshift.io/node-pool-upgrade-type"
 	TokenSecretTokenGenerationTime = "hypershift.openshift.io/last-token-generation-time"
 	// Set the ttl 1h above the reconcile resync period so every existing
 	// token Secret has the chance to rotate their token ID during a reconciliation cycle
@@ -241,6 +245,12 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	compressedConfig := tokenSecret.Data[TokenSecretConfigKey]
 	config, err := util.DecodeAndDecompress(compressedConfig)
 	if err != nil {
+		patch := tokenSecret.DeepCopy()
+		patch.Data[TokenSecretReasonKey] = []byte(InvalidConfigReason)
+		patch.Data[TokenSecretMessageKey] = []byte(fmt.Sprintf("Failed to decode and decompress config: %s", err))
+		if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -257,6 +267,12 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return payload, err
 	}()
 	if err != nil {
+		patch := tokenSecret.DeepCopy()
+		patch.Data[TokenSecretReasonKey] = []byte(InvalidConfigReason)
+		patch.Data[TokenSecretMessageKey] = []byte(fmt.Sprintf("Failed to generate payload: %s", err))
+		if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -269,11 +285,17 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		r.PayloadStore.Set(string(oldToken), CacheValue{Payload: payload, SecretName: tokenSecret.Name})
 	}
 
-	// Store the cached payload in the secret to be consumed by in place upgrades.
 	patch := tokenSecret.DeepCopy()
 	patch.Data[TokenSecretPayloadKey] = payload
+	if string(hyperv1.UpgradeTypeReplace) == tokenSecret.Annotations[TokenSecretNodePoolUpgradeType] {
+		delete(patch.Data, TokenSecretPayloadKey)
+	}
+
+	patch.Data[TokenSecretReasonKey] = []byte(hyperv1.AsExpectedReason)
+	patch.Data[TokenSecretMessageKey] = []byte("Payload generated successfully")
+
 	if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content")
+		return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
 	}
 
 	return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
