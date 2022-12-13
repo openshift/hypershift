@@ -36,7 +36,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 
 	// Wait for Nodes to be Ready
-	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
+	numNodes := int32(int(clusterOpts.NodePoolReplicas) * len(clusterOpts.AWSPlatform.Zones))
 	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the first rollout to be complete

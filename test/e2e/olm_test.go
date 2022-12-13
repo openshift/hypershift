@@ -48,7 +48,6 @@ func TestOLM(t *testing.T) {
 
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	clusterOpts.NodePoolReplicas = 1
 	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
 
 	// Get guest client
