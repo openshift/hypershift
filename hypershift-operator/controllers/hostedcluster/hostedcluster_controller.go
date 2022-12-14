@@ -394,9 +394,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Set version status
-	{
-		hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
-	}
+	hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
 
 	// Set the ClusterVersionSucceeding based on the hostedcontrolplane
 	{
@@ -1378,6 +1376,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		}
 	}
 
+	hcp.Spec.Channel = hcluster.Spec.Channel
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
@@ -2851,10 +2850,16 @@ func reconcileAutoScalerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Ro
 // computeClusterVersionStatus determines the ClusterVersionStatus of the
 // given HostedCluster and returns it.
 func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) *hyperv1.ClusterVersionStatus {
+	if hcp != nil && hcp.Status.VersionStatus != nil {
+		return hcp.Status.VersionStatus
+	}
+
 	// If there's no history, rebuild it from scratch.
 	if hcluster.Status.Version == nil || len(hcluster.Status.Version.History) == 0 {
 		return &hyperv1.ClusterVersionStatus{
-			Desired:            hcluster.Spec.Release,
+			Desired: configv1.Release{
+				Image: hcluster.Spec.Release.Image,
+			},
 			ObservedGeneration: hcluster.Generation,
 			History: []configv1.UpdateHistory{
 				{
@@ -2866,8 +2871,12 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 		}
 	}
 
-	// Reconcile the current version with the latest resource states.
+	// Assume the previous status is still current.
 	version := hcluster.Status.Version.DeepCopy()
+
+	// The following code is legacy support to preserve
+	// compatability with older HostedControlPlane controllers, which
+	// may not be populating hcp.Status.VersionStatus.
 
 	// If the hosted control plane doesn't exist, there's no way to assess the
 	// rollout so return early.
@@ -2880,6 +2889,7 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	// quite right because the intent here is to identify a terminal rollout
 	// state. For now it assumes when status.releaseImage matches, that rollout
 	// is definitely done.
+	//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 	hcpRolloutComplete := (hcp.Spec.ReleaseImage == hcp.Status.ReleaseImage) && (version.Desired.Image == hcp.Status.ReleaseImage)
 	if !hcpRolloutComplete {
 		return version
@@ -2887,8 +2897,11 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 
 	// The rollout is complete, so update the current history entry
 	version.History[0].State = configv1.CompletedUpdate
+	//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 	version.History[0].Version = hcp.Status.Version
+	//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 	if hcp.Status.LastReleaseImageTransitionTime != nil {
+		//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 		version.History[0].CompletionTime = hcp.Status.LastReleaseImageTransitionTime.DeepCopy()
 	}
 

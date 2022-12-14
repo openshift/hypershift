@@ -187,7 +187,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling clusterversion")
-	if err := r.reconcileClusterVersion(ctx); err != nil {
+	if err := r.reconcileClusterVersion(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile clusterversion: %w", err))
 	}
 
@@ -653,11 +653,11 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 	return errors.NewAggregate(errs)
 }
 
-func (r *reconciler) reconcileClusterVersion(ctx context.Context) error {
+func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.HostedControlPlane) error { //TODO(akshay): not sure if I should've added the hcp here to use for the channel.
 	clusterVersion := &configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}}
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.Upstream = ""
-		clusterVersion.Spec.Channel = ""
+		clusterVersion.Spec.Channel = hcp.Spec.Channel
 		clusterVersion.Spec.DesiredUpdate = nil
 		return nil
 	}); err != nil {
