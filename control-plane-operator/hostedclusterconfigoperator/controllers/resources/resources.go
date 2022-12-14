@@ -840,7 +840,7 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
 		clusterVersion.Spec.Capabilities = nil
 		clusterVersion.Spec.Upstream = ""
-		clusterVersion.Spec.Channel = ""
+		clusterVersion.Spec.Channel = hcp.Spec.Channel
 		clusterVersion.Spec.DesiredUpdate = nil
 		return nil
 	}); err != nil {
