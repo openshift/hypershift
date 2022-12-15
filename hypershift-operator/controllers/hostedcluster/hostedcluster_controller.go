@@ -346,10 +346,35 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 			// Persist status updates
 			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
-				if apierrors.IsConflict(err) {
-					return ctrl.Result{Requeue: true}, nil
-				}
 				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+			}
+		}
+	}
+
+	// Bubble up CloudResourcesDestroyed condition from the hostedControlPlane.
+	// We set this condition even if the HC is being deleted, so we can construct SLIs for deletion times.
+	{
+		if hcp != nil && hcp.DeletionTimestamp != nil {
+			freshCondition := &metav1.Condition{
+				Type:               string(hyperv1.CloudResourcesDestroyed),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: hcluster.Generation,
+			}
+
+			cloudResourcesDestroyedCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+			if cloudResourcesDestroyedCondition != nil {
+				freshCondition = cloudResourcesDestroyedCondition
+			}
+
+			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+			if oldCondition == nil || oldCondition.Status != freshCondition.Status {
+				freshCondition.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
+				// Persist status updates
+				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+				}
 			}
 		}
 	}
