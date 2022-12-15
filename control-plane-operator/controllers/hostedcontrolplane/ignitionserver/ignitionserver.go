@@ -36,6 +36,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 	hasHealthzHandler bool,
 	registryOverrides map[string]string,
 	managementClusterHasCapabilitySecurityContextConstraint bool,
+	ownerRef config.OwnerRef,
 ) error {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -59,7 +60,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace)
 		if util.IsPrivateHCP(hcp) {
 			if _, err := createOrUpdate(ctx, c, ignitionServerRoute, func() error {
-				reconcileInternalRoute(ignitionServerRoute, config.OwnerRefFrom(hcp))
+				reconcileInternalRoute(ignitionServerRoute, ownerRef)
 				return nil
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile ignition internal route: %w", err)
@@ -70,7 +71,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 				if serviceStrategy.Route != nil {
 					hostname = serviceStrategy.Route.Hostname
 				}
-				reconcileExternalRoute(ignitionServerRoute, config.OwnerRefFrom(hcp), hostname, defaultIngressDomain)
+				reconcileExternalRoute(ignitionServerRoute, ownerRef, hostname, defaultIngressDomain)
 				return nil
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile ignition external route: %w", err)
@@ -364,6 +365,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 
 	// Reconcile PodMonitor
 	podMonitor := ignitionserver.PodMonitor(controlPlaneNamespace)
+	ownerRef.ApplyTo(podMonitor)
 	if result, err := createOrUpdate(ctx, c, podMonitor, func() error {
 		podMonitor.Spec.Selector = *ignitionServerDeployment.Spec.Selector
 		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{
@@ -371,12 +373,6 @@ func ReconcileIgnitionServer(ctx context.Context,
 			Port:     "metrics",
 		}}
 		podMonitor.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{MatchNames: []string{controlPlaneNamespace}}
-		podMonitor.SetOwnerReferences([]metav1.OwnerReference{{
-			APIVersion: hyperv1.GroupVersion.String(),
-			Kind:       "HostedControlPlane",
-			Name:       hcp.Name,
-			UID:        hcp.UID,
-		}})
 		if podMonitor.Annotations == nil {
 			podMonitor.Annotations = map[string]string{}
 		}

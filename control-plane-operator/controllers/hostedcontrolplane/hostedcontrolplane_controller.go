@@ -669,6 +669,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		// The healthz handler was added before the CPO started to mange te ignition server and its the same binary,
 		// so we know it always exists here.
 		true,
+		config.OwnerRefFrom(hostedControlPlane),
 	); err != nil {
 		return fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
@@ -3189,7 +3190,7 @@ func (r *HostedControlPlaneReconciler) reconcileAutoscaler(ctx context.Context, 
 		return fmt.Errorf("availability prober image not found")
 	}
 
-	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, autoscalerImage, availabilityProberImage, createOrUpdate, r.SetDefaultSecurityContext)
+	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, autoscalerImage, availabilityProberImage, createOrUpdate, r.SetDefaultSecurityContext, config.OwnerRefFrom(hcp))
 }
 
 func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -3203,7 +3204,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Cont
 		return fmt.Errorf("availability prober image not found")
 	}
 
-	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, availabilityProberImage, createOrUpdate, r.SetDefaultSecurityContext)
+	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, availabilityProberImage, createOrUpdate, r.SetDefaultSecurityContext, config.OwnerRefFrom(hcp))
 }
 
 func shouldCleanupCloudResources(hcp *hyperv1.HostedControlPlane) bool {
