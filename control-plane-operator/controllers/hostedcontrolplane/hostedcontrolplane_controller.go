@@ -612,6 +612,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		true,
 		r.ReleaseProvider.GetRegistryOverrides(),
 		r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
+		config.OwnerRefFrom(hostedControlPlane),
 	); err != nil {
 		return fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
@@ -2768,7 +2769,7 @@ func (r *HostedControlPlaneReconciler) reconcileAutoscaler(ctx context.Context, 
 
 		autoscalerDeployment := manifests.AutoscalerDeployment(hcp.Namespace)
 		_, err = createOrUpdate(ctx, r.Client, autoscalerDeployment, func() error {
-			return autoscaler.ReconcileAutoscalerDeployment(autoscalerDeployment, hcp, autoscalerServiceAccount, capiKubeConfigSecret, hcp.Spec.Autoscaling, autoscalerImage, availabilityProberImage, r.SetDefaultSecurityContext)
+			return autoscaler.ReconcileAutoscalerDeployment(autoscalerDeployment, hcp, autoscalerServiceAccount, capiKubeConfigSecret, hcp.Spec.Autoscaling, autoscalerImage, availabilityProberImage, r.SetDefaultSecurityContext, config.OwnerRefFrom(hcp))
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)
@@ -2824,7 +2825,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Cont
 
 		deployment := manifests.MachineApproverDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-			return machineapprover.ReconcileMachineApproverDeployment(deployment, hcp, sa, kubeconfigSecretName, cm, machineApproverImage, availabilityProberImage, r.SetDefaultSecurityContext)
+			return machineapprover.ReconcileMachineApproverDeployment(deployment, hcp, sa, kubeconfigSecretName, cm, machineApproverImage, availabilityProberImage, r.SetDefaultSecurityContext, config.OwnerRefFrom(hcp))
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
 		}

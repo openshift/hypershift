@@ -72,8 +72,8 @@ func ReconcileMachineApproverRoleBinding(binding *rbacv1.RoleBinding, role *rbac
 	return nil
 }
 
-func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeconfigSecretName string, cm *corev1.ConfigMap, machineApproverImage, availabilityProberImage string, setDefaultSecurityContext bool) error {
-	config.OwnerRefFrom(hcp).ApplyTo(deployment)
+func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeconfigSecretName string, cm *corev1.ConfigMap, machineApproverImage, availabilityProberImage string, setDefaultSecurityContext bool, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(deployment)
 
 	// TODO: enable leader election when the flag is added in machine-approver
 	args := []string{

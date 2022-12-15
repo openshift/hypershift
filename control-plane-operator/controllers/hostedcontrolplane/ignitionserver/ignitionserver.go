@@ -40,6 +40,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 	hasHealthzHandler bool,
 	registryOverrides map[string]string,
 	managementClusterHasCapabilitySecurityContextConstraint bool,
+	ownerRef config.OwnerRef,
 ) error {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -393,6 +394,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 
 	// Reconcile PodMonitor
 	podMonitor := ignitionserver.PodMonitor(controlPlaneNamespace)
+	ownerRef.ApplyTo(podMonitor)
 	if result, err := createOrUpdate(ctx, c, podMonitor, func() error {
 		podMonitor.Spec.Selector = *ignitionServerDeployment.Spec.Selector
 		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{
@@ -400,12 +402,6 @@ func ReconcileIgnitionServer(ctx context.Context,
 			Port:     "metrics",
 		}}
 		podMonitor.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{MatchNames: []string{controlPlaneNamespace}}
-		podMonitor.SetOwnerReferences([]metav1.OwnerReference{{
-			APIVersion: hyperv1.GroupVersion.String(),
-			Kind:       "HostedControlPlane",
-			Name:       hcp.Name,
-			UID:        hcp.UID,
-		}})
 		if podMonitor.Annotations == nil {
 			podMonitor.Annotations = map[string]string{}
 		}
