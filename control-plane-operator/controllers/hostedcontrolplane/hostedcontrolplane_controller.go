@@ -707,6 +707,14 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		if err := r.reconcileManagedEtcd(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile etcd: %w", err)
 		}
+		ready, err := util.IsStatefulSetReady(ctx, r, manifests.EtcdStatefulSet(hostedControlPlane.Namespace))
+		if err != nil {
+			return fmt.Errorf("failed to determine whether etcd is ready: %w", err)
+		}
+		if !ready {
+			r.Log.Info("Waiting for etcd statefulset to become ready")
+			return nil
+		}
 	case hyperv1.Unmanaged:
 		if err := r.reconcileUnmanagedEtcd(ctx, hostedControlPlane, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile etcd: %w", err)
