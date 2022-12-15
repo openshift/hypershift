@@ -35,9 +35,11 @@ func NewSession(agent string, credentialsFile string, credKey string, credSecret
 func NewAWSRoute53Config() *aws.Config {
 	awsRoute53Config := NewConfig()
 	awsRoute53Config.Retryer = client.DefaultRetryer{
-		NumMaxRetries:    10,
+		NumMaxRetries:    5,
 		MinRetryDelay:    5 * time.Second,
 		MinThrottleDelay: 10 * time.Second,
+		MaxRetryDelay:    5 * time.Second,
+		MaxThrottleDelay: 10 * time.Second,
 	}
 	return awsRoute53Config
 }
@@ -47,9 +49,11 @@ func NewConfig() *aws.Config {
 
 	awsConfig := aws.NewConfig()
 	awsConfig.Retryer = client.DefaultRetryer{
-		NumMaxRetries:    10,
+		NumMaxRetries:    5,
 		MinRetryDelay:    5 * time.Second,
 		MinThrottleDelay: 5 * time.Second,
+		MaxRetryDelay:    5 * time.Second,
+		MaxThrottleDelay: 5 * time.Second,
 	}
 	return awsConfig
 }
