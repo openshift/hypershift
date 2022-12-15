@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
+	"github.com/openshift/hypershift/support/config"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"go.uber.org/zap/zaptest"
 	appsv1 "k8s.io/api/apps/v1"
@@ -302,7 +303,7 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Name = "name"
 			hcp.Namespace = "namespace"
-			err := autoscaler.ReconcileAutoscalerDeployment(deployment, hcp, sa, secret, test.AutoscalerOptions, "clusterAutoscalerImage", "availabilityProberImage", false)
+			err := autoscaler.ReconcileAutoscalerDeployment(deployment, hcp, sa, secret, test.AutoscalerOptions, "clusterAutoscalerImage", "availabilityProberImage", false, config.OwnerRefFrom(hcp))
 			if err != nil {
 				t.Error(err)
 			}
