@@ -250,6 +250,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoints: %w", err))
 	}
 
+	log.Info("reconciling install configmap")
+	if err := r.reconcileInstallConfigMap(ctx, releaseImage); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile install configmap: %w", err))
+	}
+
 	log.Info("reconciling guest cluster alert rules")
 	if err := r.reconcileGuestClusterAlertRules(ctx); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile guest cluster alert rules: %w", err))
@@ -1505,6 +1510,29 @@ func (r *reconciler) ensurePersistentVolumesRemoved(ctx context.Context) (bool, 
 		return false, fmt.Errorf("failed to remove pods: %w", err)
 	}
 	return false, nil
+}
+
+func (r *reconciler) reconcileInstallConfigMap(ctx context.Context, releaseImage *releaseinfo.ReleaseImage) error {
+	cm := manifests.InstallConfigMap()
+	if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
+		if cm.Data == nil {
+			cm.Data = map[string]string{}
+		}
+		cm.Data["invoker"] = "hypershift"
+		// Only set 'version' if unset. This is meant to preserve the version with
+		// which the cluster was installed and not followup upgrade versions.
+		if _, hasVersion := cm.Data["version"]; !hasVersion {
+			componentVersions, err := releaseImage.ComponentVersions()
+			if err != nil {
+				return fmt.Errorf("failed to look up component versions: %w", err)
+			}
+			cm.Data["version"] = componentVersions["release"]
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile install configmap: %w", err)
+	}
+	return nil
 }
 
 func hasAttachedPVC(pod *corev1.Pod) bool {
