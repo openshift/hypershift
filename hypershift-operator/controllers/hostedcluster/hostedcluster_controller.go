@@ -925,7 +925,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	_, ignitionServerHasHealthzHandler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[ignitionServerHealthzHandlerLabel]
 	_, controlplaneOperatorManagesIgnitionServer := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
 
-	p, err := platform.GetPlatform(hcluster, r.ReleaseProvider, utilitiesImage, pullSecretBytes)
+	p, err := platform.GetPlatform(ctx, hcluster, r.ReleaseProvider, utilitiesImage, pullSecretBytes)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1634,7 +1634,14 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	// Reconcile CAPI manager deployment
 	var capiImage string
 	if envImage := os.Getenv(images.CAPIEnvVar); len(envImage) > 0 {
-		capiImage = envImage
+		version, err := hyperutil.GetPayloadVersion(ctx, r.ReleaseProvider, hcluster, pullSecretBytes)
+		if err != nil {
+			return fmt.Errorf("failed to lookup payload version: %w", err)
+		}
+		// Use environment variable image only if using HCP release < 4.12
+		if version.Major == 4 && version.Minor < 12 {
+			capiImage = envImage
+		}
 	}
 	if _, ok := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]; ok {
 		capiImage = hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
@@ -2959,7 +2966,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	}
 
 	// Cleanup Platform specifics.
-	p, err := platform.GetPlatform(hc, nil, "", nil)
+	p, err := platform.GetPlatform(ctx, hc, nil, "", nil)
 	if err != nil {
 		return false, err
 	}
