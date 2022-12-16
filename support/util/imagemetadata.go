@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/blang/semver"
 	"github.com/docker/distribution/registry/client/transport"
 	"github.com/golang/groupcache/lru"
 	"k8s.io/client-go/rest"
@@ -106,4 +107,17 @@ func GetPayloadImage(ctx context.Context, releaseImageProvider releaseinfo.Provi
 		return "", fmt.Errorf("image does not exist for release: %q", image)
 	}
 	return image, nil
+}
+
+func GetPayloadVersion(ctx context.Context, releaseImageProvider releaseinfo.Provider, hc *hyperv1.HostedCluster, pullSecret []byte) (*semver.Version, error) {
+	releaseImage, err := releaseImageProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+	versionStr := releaseImage.Version()
+	version, err := semver.Parse(versionStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse version (%s): %w", versionStr, err)
+	}
+	return &version, nil
 }
