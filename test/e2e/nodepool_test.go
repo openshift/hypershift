@@ -28,14 +28,14 @@ var (
 func TestNodePool(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
-	nptSigEnd := make(chan bool, tNPCounter)
+	testSigEnd := make(chan bool, tNPCounter)
 	ctx, cancel := context.WithCancel(testContext)
 	go func() {
-		for _ = range nptSigEnd {
+		for _ = range testSigEnd {
 			t.Logf("Finish signal received")
 		}
 		t.Log("Test: NodePool finished")
-		close(nptSigEnd)
+		close(testSigEnd)
 		cancel()
 	}()
 
@@ -54,8 +54,8 @@ func TestNodePool(t *testing.T) {
 
 	//IMPORTANT: Ensure you updates the "tNPCounter" with the right number of test to execute.
 	//This way the buffered channel will be closed accordingly
-	t.Run("TestNodePoolAutoRepair", testNodePoolAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts, nptSigEnd))
-	t.Run("TestNodepoolMachineconfigGetsRolledout", testNodepoolMachineconfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts, nptSigEnd))
+	t.Run("TestNodePoolAutoRepair", testNodePoolAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts, testSigEnd))
+	t.Run("TestNodepoolMachineconfigGetsRolledout", testNodepoolMachineconfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts, testSigEnd))
 }
 
 // nodePoolScaleDownToZero function will scaleDown the nodePool created for the current tests

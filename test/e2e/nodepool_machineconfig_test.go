@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions, nptSigEnd chan<- bool) func(t *testing.T) {
+func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions, testSigEnd chan<- bool) func(t *testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
@@ -43,7 +43,7 @@ func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClien
 		defer func() {
 			t.Log("Test: NodePool MachineConfig finished")
 			cancel()
-			nptSigEnd <- true
+			testSigEnd <- true
 		}()
 
 		// List NodePools (should exists only one)
@@ -106,7 +106,7 @@ func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClien
 		}
 		defer nodePoolScaleDownToZero(ctx, mgmtClient, *nodePool, t)
 
-		numNodes := int32(2)
+		numNodes := oneReplicas
 		t.Logf("Waiting for Nodes %d\n", numNodes)
 		nodes := e2eutil.WaitForNReadyNodesByNodePool(t, ctx, hostedClusterClient, numNodes, hostedCluster.Spec.Platform.Type, nodePool.Name)
 		t.Logf("Desired replicas available for nodePool: %v", nodePool.Name)

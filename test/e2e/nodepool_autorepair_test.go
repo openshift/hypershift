@@ -22,7 +22,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func testNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions, nptSigEnd chan<- bool) func(t *testing.T) {
+func testNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions, testSigEnd chan<- bool) func(t *testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
@@ -32,7 +32,7 @@ func testNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Clien
 		defer func() {
 			t.Log("Test: NodePoolAutoRepair finished")
 			cancel()
-			nptSigEnd <- true
+			testSigEnd <- true
 		}()
 
 		// List NodePools (should exists only one)
