@@ -367,7 +367,7 @@ type ServicePublishingStrategyMapping struct {
 type ServicePublishingStrategy struct {
 	// Type is the publishing strategy used for the service.
 	//
-	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route;None
+	// +kubebuilder:validation:Enum=LoadBalancer;NodePort;Route;None;S3
 	// +immutable
 	Type PublishingStrategyType `json:"type"`
 
@@ -391,6 +391,8 @@ var (
 	NodePort PublishingStrategyType = "NodePort"
 	// Route exposes services with a Route + ClusterIP kube service.
 	Route PublishingStrategyType = "Route"
+	// S3 exposes a service through an S3 bucket
+	S3 PublishingStrategyType = "S3"
 	// None disables exposing the service
 	None PublishingStrategyType = "None"
 )
