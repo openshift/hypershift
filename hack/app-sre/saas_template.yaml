@@ -26806,6 +26806,7 @@ objects:
                             - NodePort
                             - Route
                             - None
+                            - S3
                             type: string
                         required:
                         - type
@@ -33395,6 +33396,7 @@ objects:
                             - NodePort
                             - Route
                             - None
+                            - S3
                             type: string
                         required:
                         - type
