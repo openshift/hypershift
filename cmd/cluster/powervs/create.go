@@ -52,6 +52,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.PowerVSPlatform.RecreateSecrets, "recreate-secrets", opts.PowerVSPlatform.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
 
 	cmd.MarkFlagRequired("resource-group")
+	cmd.MarkPersistentFlagRequired("pull-secret")
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
@@ -59,12 +60,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().MarkHidden("cloud-connection")
 	cmd.Flags().MarkHidden("vpc")
 
-	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
-		if opts.BaseDomain == "" {
-			return fmt.Errorf("--base-domain can't be empty")
-		}
-		return nil
-	}
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		sigs := make(chan os.Signal, 1)
@@ -85,20 +80,10 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 
 func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
 	var err error
-	if err = validate(opts); err != nil {
-		return err
-	}
 	if err = core.Validate(ctx, opts); err != nil {
 		return err
 	}
 	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
-}
-
-func validate(opts *core.CreateOptions) error {
-	if opts.BaseDomain == "" {
-		return fmt.Errorf("--base-domain can't be empty")
-	}
-	return nil
 }
 
 func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
@@ -120,10 +105,15 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		}
 	}
 
+	if opts.BaseDomain == "" && infra == nil {
+		return fmt.Errorf("base-domain flag is required if infra-json is not provided")
+	}
+
+	if opts.PowerVSPlatform.ResourceGroup == "" && infra == nil {
+		return fmt.Errorf("resource-group flag is required if infra-json is not provided")
+	}
+
 	if infra == nil {
-		if len(infraID) == 0 {
-			infraID = infraid.New(opts.Name)
-		}
 		opt := &powervsinfra.CreateInfraOptions{
 			Name:            opts.Name,
 			Namespace:       opts.Namespace,
@@ -140,28 +130,35 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			Debug:           opts.PowerVSPlatform.Debug,
 			RecreateSecrets: opts.PowerVSPlatform.RecreateSecrets,
 		}
-		infra = &powervsinfra.Infra{ID: opts.InfraID}
+		infra = &powervsinfra.Infra{
+			ID:            infraID,
+			BaseDomain:    opts.BaseDomain,
+			ResourceGroup: opts.PowerVSPlatform.ResourceGroup,
+			Region:        opts.PowerVSPlatform.Region,
+			Zone:          opts.PowerVSPlatform.Zone,
+			VPCRegion:     opts.PowerVSPlatform.VPCRegion,
+		}
 		err = infra.SetupInfra(ctx, opt)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
 		}
 	}
 
-	exampleOptions.BaseDomain = opts.BaseDomain
+	exampleOptions.BaseDomain = infra.BaseDomain
 	exampleOptions.MachineCIDR = defaultCIDRBlock
 	exampleOptions.PrivateZoneID = infra.CISDomainID
 	exampleOptions.PublicZoneID = infra.CISDomainID
-	exampleOptions.InfraID = infraID
+	exampleOptions.InfraID = infra.ID
 	exampleOptions.PowerVS = &apifixtures.ExamplePowerVSOptions{
 		AccountID:       infra.AccountID,
-		ResourceGroup:   opts.PowerVSPlatform.ResourceGroup,
-		Region:          opts.PowerVSPlatform.Region,
-		Zone:            opts.PowerVSPlatform.Zone,
+		ResourceGroup:   infra.ResourceGroup,
+		Region:          infra.Region,
+		Zone:            infra.Zone,
 		CISInstanceCRN:  infra.CISCRN,
 		CloudInstanceID: infra.CloudInstanceID,
 		Subnet:          infra.DHCPSubnet,
 		SubnetID:        infra.DHCPSubnetID,
-		VPCRegion:       opts.PowerVSPlatform.VPCRegion,
+		VPCRegion:       infra.VPCRegion,
 		VPC:             infra.VPCName,
 		VPCSubnet:       infra.VPCSubnetName,
 		SysType:         opts.PowerVSPlatform.SysType,

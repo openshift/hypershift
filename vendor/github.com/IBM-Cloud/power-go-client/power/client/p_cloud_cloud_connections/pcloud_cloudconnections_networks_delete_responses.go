@@ -86,22 +86,20 @@ func NewPcloudCloudconnectionsNetworksDeleteOK() *PcloudCloudconnectionsNetworks
 OK
 */
 type PcloudCloudconnectionsNetworksDeleteOK struct {
-	Payload *models.CloudConnection
+	Payload models.Object
 }
 
 func (o *PcloudCloudconnectionsNetworksDeleteOK) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections/{cloud_connection_id}/networks/{network_id}][%d] pcloudCloudconnectionsNetworksDeleteOK  %+v", 200, o.Payload)
 }
-func (o *PcloudCloudconnectionsNetworksDeleteOK) GetPayload() *models.CloudConnection {
+func (o *PcloudCloudconnectionsNetworksDeleteOK) GetPayload() models.Object {
 	return o.Payload
 }
 
 func (o *PcloudCloudconnectionsNetworksDeleteOK) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
-	o.Payload = new(models.CloudConnection)
-
 	// response payload
-	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
+	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
 		return err
 	}
 

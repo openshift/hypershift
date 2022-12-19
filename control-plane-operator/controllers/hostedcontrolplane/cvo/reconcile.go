@@ -262,7 +262,32 @@ func resourcesToRemove() []resourceDesc {
 			kind:       "Deployment",
 			name:       "csi-snapshot-controller-operator",
 			namespace:  "openshift-cluster-storage-operator",
-		}}
+		},
+		{
+			apiVersion: "apps/v1",
+			kind:       "Deployment",
+			name:       "aws-ebs-csi-driver-operator",
+			namespace:  "openshift-cluster-csi-drivers",
+		},
+		{
+			apiVersion: "apps/v1",
+			kind:       "Deployment",
+			name:       "aws-ebs-csi-driver-controller",
+			namespace:  "openshift-cluster-csi-drivers",
+		},
+		{
+			apiVersion: "apps/v1",
+			kind:       "Deployment",
+			name:       "csi-snapshot-webhook",
+			namespace:  "openshift-cluster-storage-operator",
+		},
+		{
+			apiVersion: "apps/v1",
+			kind:       "Deployment",
+			name:       "csi-snapshot-controller",
+			namespace:  "openshift-cluster-storage-operator",
+		},
+	}
 }
 
 func preparePayloadScript() string {

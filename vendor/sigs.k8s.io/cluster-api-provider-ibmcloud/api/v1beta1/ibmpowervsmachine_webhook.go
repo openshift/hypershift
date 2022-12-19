@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -111,7 +112,7 @@ func (r *IBMPowerVSMachine) validateIBMPowerVSMachineProcType() *field.Error {
 }
 
 func (r *IBMPowerVSMachine) validateIBMPowerVSMachineNetwork() *field.Error {
-	if res, err := validateIBMPowerVSResourceReference(r.Spec.Network, "Network"); !res {
+	if res, err := validateIBMPowerVSNetworkReference(r.Spec.Network); !res {
 		return err
 	}
 	return nil

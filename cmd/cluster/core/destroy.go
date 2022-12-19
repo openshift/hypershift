@@ -36,6 +36,7 @@ type DestroyOptions struct {
 	InfraID               string
 	DestroyCloudResources bool
 	Log                   logr.Logger
+	CredentialSecretName  string
 }
 
 type AWSPlatformDestroyOptions struct {
