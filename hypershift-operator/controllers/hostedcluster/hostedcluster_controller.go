@@ -1472,6 +1472,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.DisableProfilingAnnotation,
 		hyperv1.PrivateIngressControllerAnnotation,
 		hyperv1.CleanupCloudResourcesAnnotation,
+		hyperv1.HypershiftAWSLoadBalancerCrossZoneLoadBalancingEnabled,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]

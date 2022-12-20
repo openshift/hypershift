@@ -124,6 +124,13 @@ const (
 	// For example, to override the memory and cpu request for the Kubernetes APIServer:
 	// resource-request-override.hypershift.openshift.io/kube-apiserver.kube-apiserver: memory=3Gi,cpu=2000m
 	ResourceRequestOverrideAnnotationPrefix = "resource-request-override.hypershift.openshift.io"
+
+	// HypershiftAWSLoadBalancerCrossZoneLoadBalancingEnabled applies https://kubernetes-sigs.github.io/aws-load-balancer-controller/v2.1/guide/service/annotations/
+	// service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled in the load balancer services of the hosted control plane endpoints.
+	// AWS Private link requires endpoint and service endpoints to exist in the same underlying zone. To ensure that requirement is satisfied in
+	// Regions with more than 3 zones, managed services create subnets in all of them. That and having this enabled in the load balancers would make the private link
+	// communication to always succeed.
+	HypershiftAWSLoadBalancerCrossZoneLoadBalancingEnabled = "hypershift.openshift.io/aws-load-balancer-cross-zone-load-balancing-enabled"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
