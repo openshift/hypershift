@@ -1433,6 +1433,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile etcd peer secret: %w", err)
 	}
 
+	// Etcd metrics secret
+	etcdMetricsSecret := manifests.EtcdMetricsSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdMetricsSecret, func() error {
+		return pki.ReconcileEtcdMetricsSecret(etcdMetricsSecret, etcdSignerSecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd metrics secret: %w", err)
+	}
+
 	// Etcd metrics signer
 	// Etcd signer for all the etcd-related certs
 	etcdMetricsSignerSecret := manifests.EtcdMetricsSignerSecret(hcp.Namespace)

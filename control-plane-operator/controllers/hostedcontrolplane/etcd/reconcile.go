@@ -93,6 +93,14 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 			},
 		},
 		{
+			Name: "metrics-tls",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: manifests.EtcdMetricsSecret(ss.Namespace).Name,
+				},
+			},
+		},
+		{
 			Name: "server-tls",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
@@ -275,9 +283,9 @@ func buildEtcdMetricsContainer(p *EtcdParams, namespace string) func(c *corev1.C
           --metrics-addr https://0.0.0.0:2381 \
           --listen-addr 127.0.0.1:2383 \
           --advertise-client-url ""  \
-          --key /etc/etcd/tls/peer/peer.key \
+          --key /etc/etcd/tls/metrics/metrics.key \
           --key-file /etc/etcd/tls/server/server.key \
-          --cert /etc/etcd/tls/peer/peer.crt \
+          --cert /etc/etcd/tls/metrics/metrics.crt \
           --cert-file /etc/etcd/tls/server/server.crt \
           --cacert /etc/etcd/tls/etcd-ca/ca.crt \
           --trusted-ca-file /etc/etcd/tls/etcd-metrics-ca/ca.crt
@@ -288,8 +296,8 @@ func buildEtcdMetricsContainer(p *EtcdParams, namespace string) func(c *corev1.C
 		c.Command = []string{"/bin/sh", "-c", script}
 		c.VolumeMounts = []corev1.VolumeMount{
 			{
-				Name:      "peer-tls",
-				MountPath: "/etc/etcd/tls/peer",
+				Name:      "metrics-tls",
+				MountPath: "/etc/etcd/tls/metrics",
 			},
 			{
 				Name:      "server-tls",

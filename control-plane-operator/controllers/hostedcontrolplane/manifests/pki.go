@@ -90,6 +90,10 @@ func EtcdPeerSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "etcd-peer-tls")
 }
 
+func EtcdMetricsSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "etcd-metrics-tls")
+}
+
 func EtcdMetricsSignerSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "etcd-metrics-signer")
 }

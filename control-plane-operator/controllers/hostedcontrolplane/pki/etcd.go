@@ -18,6 +18,9 @@ const (
 
 	EtcdPeerCrtKey = "peer.crt"
 	EtcdPeerKeyKey = "peer.key"
+
+	EtcdMetricsCrtKey = "metrics.crt"
+	EtcdMetricsKeyKey = "metrics.key"
 )
 
 func ReconcileEtcdClientSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
@@ -45,9 +48,16 @@ func ReconcileEtcdPeerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef
 	dnsNames := []string{
 		fmt.Sprintf("*.etcd-discovery.%s.svc", secret.Namespace),
 		fmt.Sprintf("*.etcd-discovery.%s.svc.cluster.local", secret.Namespace),
+	}
+
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-discovery", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, "", dnsNames, nil)
+}
+
+func ReconcileEtcdMetricsSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	dnsNames := []string{
 		"127.0.0.1",
 		"::1",
 	}
 
-	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-discovery", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdPeerCrtKey, EtcdPeerKeyKey, "", dnsNames, nil)
+	return reconcileSignedCertWithKeysAndAddresses(secret, ca, ownerRef, "etcd-metrics", []string{"kubernetes"}, X509UsageClientServerAuth, EtcdMetricsCrtKey, EtcdMetricsKeyKey, "", dnsNames, nil)
 }
