@@ -22,13 +22,13 @@ var (
 	zeroReplicas int32 = 0
 	oneReplicas  int32 = 1
 	// This Counter refers to the total number of tests that this one will run.
-	tNPCounter int32 = 2
+	testNodePoolCounter int32 = 2
 )
 
 func TestNodePool(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
-	testSigEnd := make(chan bool, tNPCounter)
+	testSigEnd := make(chan bool, testNodePoolCounter)
 	ctx, cancel := context.WithCancel(testContext)
 	go func() {
 		for _ = range testSigEnd {
@@ -52,8 +52,8 @@ func TestNodePool(t *testing.T) {
 	guestCluster := e2eutil.CreateCluster(t, ctx, mgmtClient, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, mgmtClient, guestCluster)
 
-	//IMPORTANT: Ensure you updates the "tNPCounter" with the right number of test to execute.
-	//This way the buffered channel will be closed accordingly
+	// IMPORTANT: Ensure you updates the "testNodePoolCounter" with the right number of test to execute.
+	// This way the buffered channel will be closed accordingly
 	t.Run("TestNodePoolAutoRepair", testNodePoolAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts, testSigEnd))
 	t.Run("TestNodepoolMachineconfigGetsRolledout", testNodepoolMachineconfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts, testSigEnd))
 }
