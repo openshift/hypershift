@@ -160,7 +160,6 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 								Value: "true",
 							},
 						},
-						Command: []string{"/bin/cluster-api-provider-aws-controller-manager"},
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
 							"--alsologtostderr",
 							"--v=4",
