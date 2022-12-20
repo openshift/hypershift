@@ -58,14 +58,14 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 			availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--required-api=%s,%s,%s", api.Group, api.Version, api.Kind))
 		}
 	}
+	if opts.WaitForInfrastructureResource {
+		availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--wait-for-infrastructure-resource"))
+	}
 	if len(spec.InitContainers) == 0 || spec.InitContainers[0].Name != "availability-prober" {
 		spec.InitContainers = append([]corev1.Container{{}}, spec.InitContainers...)
 	}
 	if !reflect.DeepEqual(spec.InitContainers[0], availabilityProberContainer) {
 		spec.InitContainers[0] = availabilityProberContainer
-	}
-	if opts.WaitForInfrastructureResource {
-		availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--wait-for-infrastructure-resource"))
 	}
 }
 
