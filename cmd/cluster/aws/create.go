@@ -44,8 +44,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.EndpointAccess, "endpoint-access", opts.AWSPlatform.EndpointAccess, "Access for control plane endpoints (Public, PublicAndPrivate, Private)")
 	cmd.Flags().StringVar(&opts.AWSPlatform.EtcdKMSKeyARN, "kms-key-arn", opts.AWSPlatform.EtcdKMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 	cmd.Flags().BoolVar(&opts.AWSPlatform.EnableProxy, "enable-proxy", opts.AWSPlatform.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
-
-	cmd.MarkFlagRequired("aws-creds")
+	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with a platform credential (--aws-creds), --pull-secret and --base-domain value. The secret must exist in the supplied \"--namespace\"")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -53,6 +52,21 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			var cancel context.CancelFunc
 			ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
 			defer cancel()
+		}
+
+		if len(opts.CredentialSecretName) == 0 {
+			if err := isRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
+				return err
+			}
+			if err := isRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
+				return err
+			}
+		} else {
+			//Check the secret exists now, otherwise stop.
+			opts.Log.Info("Retreiving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
+			if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
+				return err
+			}
 		}
 
 		if err := CreateCluster(ctx, opts); err != nil {
@@ -91,6 +105,24 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			return fmt.Errorf("failed to load infra json: %w", err)
 		}
 	}
+
+	var AWSKey, AWSSecretKey string
+	if len(opts.CredentialSecretName) > 0 {
+		//The opts.BaseDomain value is returned as-is if the input value len(opts.BaseDomain) > 0
+		opts.BaseDomain, AWSKey, AWSSecretKey, err = util.ExtractOptionsFromSecret(
+			client,
+			opts.CredentialSecretName,
+			opts.Namespace,
+			opts.BaseDomain)
+		if err != nil {
+			return err
+		}
+		// Allow the AWS credentials file to override the secret's AWS credentials
+		if len(opts.AWSPlatform.AWSCredentialsFile) > 0 {
+			AWSSecretKey = ""
+			AWSKey = ""
+		}
+	}
 	if opts.BaseDomain == "" {
 		if infra != nil {
 			opts.BaseDomain = infra.BaseDomain
@@ -106,6 +138,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			Region:             opts.AWSPlatform.Region,
 			InfraID:            infraID,
 			AWSCredentialsFile: opts.AWSPlatform.AWSCredentialsFile,
+			AWSSecretKey:       AWSSecretKey,
+			AWSKey:             AWSKey,
 			Name:               opts.Name,
 			BaseDomain:         opts.BaseDomain,
 			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
@@ -133,6 +167,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		opt := awsinfra.CreateIAMOptions{
 			Region:             opts.AWSPlatform.Region,
 			AWSCredentialsFile: opts.AWSPlatform.AWSCredentialsFile,
+			AWSSecretKey:       AWSSecretKey,
+			AWSKey:             AWSKey,
 			InfraID:            infra.InfraID,
 			IssuerURL:          opts.AWSPlatform.IssuerURL,
 			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
@@ -190,6 +226,14 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		ResourceTags:       tags,
 		EndpointAccess:     opts.AWSPlatform.EndpointAccess,
 		ProxyAddress:       infra.ProxyAddr,
+	}
+	return nil
+}
+
+// IsRequiredOption returns a cobra style error message when the flag value is empty
+func isRequiredOption(flag string, value string) error {
+	if len(value) == 0 {
+		return fmt.Errorf("required flag(s) \"%s\" not set", flag)
 	}
 	return nil
 }

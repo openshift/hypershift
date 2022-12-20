@@ -64,6 +64,13 @@ func validateIBMPowerVSResourceReference(res IBMPowerVSResourceReference, resTyp
 	return true, nil
 }
 
+func validateIBMPowerVSNetworkReference(res IBMPowerVSResourceReference) (bool, *field.Error) {
+	if (res.ID != nil && res.Name != nil) || (res.ID != nil && res.RegEx != nil) || (res.Name != nil && res.RegEx != nil) {
+		return false, field.Invalid(field.NewPath("spec", "Network"), res, "Only one of Network - ID, Name or RegEx can be specified")
+	}
+	return true, nil
+}
+
 func validateIBMPowerVSMemoryValues(resValue string) bool {
 	if val, err := strconv.ParseUint(resValue, 10, 64); err != nil || val < 2 {
 		return false

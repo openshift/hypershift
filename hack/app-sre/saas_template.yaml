@@ -10059,7 +10059,30 @@ objects:
       singular: ibmpowervscluster
     scope: Namespaced
     versions:
-    - name: v1beta1
+    - additionalPrinterColumns:
+      - description: Cluster to which this IBMPowerVSCluster belongs
+        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+        name: Cluster
+        type: string
+      - description: Time duration since creation of IBMPowerVSCluster
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
+      - jsonPath: .spec.serviceInstanceID
+        name: PowerVS Cloud Instance ID
+        priority: 1
+        type: string
+      - description: Control Plane Endpoint
+        jsonPath: .spec.controlPlaneEndpoint.host
+        name: Endpoint
+        priority: 1
+        type: string
+      - description: Control Plane Port
+        jsonPath: .spec.controlPlaneEndpoint.port
+        name: Port
+        priority: 1
+        type: string
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: IBMPowerVSCluster is the Schema for the ibmpowervsclusters
@@ -10106,6 +10129,12 @@ objects:
                       type: string
                     name:
                       description: Name of resource
+                      minLength: 1
+                      type: string
+                    regex:
+                      description: Regular expression to match resource, In case of
+                        multiple resources matches the provided regular expression
+                        the first matched resource will be selected
                       minLength: 1
                       type: string
                   type: object
@@ -10325,9 +10354,28 @@ objects:
         jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
         name: Cluster
         type: string
+      - description: Machine object to which this IBMPowerVSMachine belongs
+        jsonPath: .metadata.ownerReferences[?(@.kind=="Machine")].name
+        name: Machine
+        priority: 1
+        type: string
+      - description: Time duration since creation of IBMPowerVSMachine
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
       - description: Cluster infrastructure is ready for IBM PowerVS instances
         jsonPath: .status.ready
         name: Ready
+        type: string
+      - description: Instance Internal Addresses
+        jsonPath: .status.addresses[?(@.type=="InternalIP")].address
+        name: Internal-IP
+        priority: 1
+        type: string
+      - description: Instance External Addresses
+        jsonPath: .status.addresses[?(@.type=="ExternalIP")].address
+        name: External-IP
+        priority: 1
         type: string
       - description: PowerVS instance state
         jsonPath: .status.instanceState
@@ -10371,6 +10419,12 @@ objects:
                       description: Name of resource
                       minLength: 1
                       type: string
+                    regex:
+                      description: Regular expression to match resource, In case of
+                        multiple resources matches the provided regular expression
+                        the first matched resource will be selected
+                      minLength: 1
+                      type: string
                   type: object
                 imageRef:
                   description: ImageRef is an optional reference to a provider-specific
@@ -10396,6 +10450,12 @@ objects:
                       type: string
                     name:
                       description: Name of resource
+                      minLength: 1
+                      type: string
+                    regex:
+                      description: Regular expression to match resource, In case of
+                        multiple resources matches the provided regular expression
+                        the first matched resource will be selected
                       minLength: 1
                       type: string
                   type: object
@@ -10618,6 +10678,12 @@ objects:
                               description: Name of resource
                               minLength: 1
                               type: string
+                            regex:
+                              description: Regular expression to match resource, In
+                                case of multiple resources matches the provided regular
+                                expression the first matched resource will be selected
+                              minLength: 1
+                              type: string
                           type: object
                         imageRef:
                           description: ImageRef is an optional reference to a provider-specific
@@ -10643,6 +10709,12 @@ objects:
                               type: string
                             name:
                               description: Name of resource
+                              minLength: 1
+                              type: string
+                            regex:
+                              description: Regular expression to match resource, In
+                                case of multiple resources matches the provided regular
+                                expression the first matched resource will be selected
                               minLength: 1
                               type: string
                           type: object
@@ -10684,10 +10756,24 @@ objects:
             status:
               description: IBMPowerVSMachineTemplateStatus defines the observed state
                 of IBMPowerVSMachineTemplate.
+              properties:
+                capacity:
+                  additionalProperties:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                  description: 'Capacity defines the resource capacity for this machine.
+                    This value is used for autoscaling from zero operations as defined
+                    in: https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20210310-opt-in-autoscaling-from-zero.md'
+                  type: object
               type: object
           type: object
       served: true
       storage: true
+      subresources:
+        status: {}
   status:
     acceptedNames:
       kind: ""
@@ -10759,6 +10845,16 @@ objects:
                   - host
                   - port
                   type: object
+                controlPlaneLoadBalancer:
+                  description: ControlPlaneLoadBalancer is optional configuration
+                    for customizing control plane behavior.
+                  properties:
+                    name:
+                      description: Name sets the name of the VPC load balancer.
+                      maxLength: 64
+                      pattern: ^[A-Za-z0-9]([A-Za-z0-9]{0,31}|[-A-Za-z0-9]{0,30}[A-Za-z0-9])$
+                      type: string
+                  type: object
                 region:
                   description: The IBM Cloud Region the cluster lives in.
                   type: string
@@ -10779,8 +10875,59 @@ objects:
             status:
               description: IBMVPCClusterStatus defines the observed state of IBMVPCCluster.
               properties:
+                conditions:
+                  description: Conditions defines current service state of the load
+                    balancer.
+                  items:
+                    description: Condition defines an observation of a Cluster API
+                      resource operational state.
+                    properties:
+                      lastTransitionTime:
+                        description: Last time the condition transitioned from one
+                          status to another. This should be when the underlying condition
+                          changed. If that is not known, then using the time when
+                          the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: A human readable message indicating details about
+                          the transition. This field may be empty.
+                        type: string
+                      reason:
+                        description: The reason for the condition's last transition
+                          in CamelCase. The specific API may choose whether or not
+                          this field is considered a guaranteed API. This field may
+                          not be empty.
+                        type: string
+                      severity:
+                        description: Severity provides an explicit classification
+                          of Reason code, so the users or machines can immediately
+                          understand the current situation and act accordingly. The
+                          Severity field MUST be set only when Status=False.
+                        type: string
+                      status:
+                        description: Status of the condition, one of True, False,
+                          Unknown.
+                        type: string
+                      type:
+                        description: Type of condition in CamelCase or in foo.example.com/CamelCase.
+                          Many .condition.type values are consistent across resources
+                          like Available, but because arbitrary conditions can be
+                          useful (see .node.status.conditions), the ability to deconflict
+                          is important.
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - status
+                    - type
+                    type: object
+                  type: array
+                controlPlaneLoadBalancerState:
+                  description: ControlPlaneLoadBalancerState is the status of the
+                    load balancer.
+                  type: string
                 ready:
-                  description: Bastion Instance `json:"bastion,omitempty"`
+                  description: Ready is true when the provider resource is ready.
                   type: boolean
                 subnet:
                   description: Subnet describes a subnet.
@@ -10819,12 +10966,11 @@ objects:
                       type: string
                     floatingIPID:
                       type: string
+                    loadBalancerIPID:
+                      type: string
                   required:
                   - address
-                  - floatingIPID
                   type: object
-              required:
-              - ready
               type: object
           type: object
       served: true
@@ -10948,9 +11094,8 @@ objects:
                     this machine.
                   type: string
                 ready:
+                  description: Ready is true when the provider resource is ready.
                   type: boolean
-              required:
-              - ready
               type: object
           type: object
       served: true

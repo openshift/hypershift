@@ -13,3 +13,11 @@ func ReconcileOperatorSpec(spec *operatorv1.OperatorSpec) {
 func ReconcileCSISnapshotController(csi *operatorv1.CSISnapshotController) {
 	ReconcileOperatorSpec(&csi.Spec.OperatorSpec)
 }
+
+func ReconcileStorage(storage *operatorv1.Storage) {
+	ReconcileOperatorSpec(&storage.Spec.OperatorSpec)
+}
+
+func ReconcileClusterCSIDriver(driver *operatorv1.ClusterCSIDriver) {
+	ReconcileOperatorSpec(&driver.Spec.OperatorSpec)
+}

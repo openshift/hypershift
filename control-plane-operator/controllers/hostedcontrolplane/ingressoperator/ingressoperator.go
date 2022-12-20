@@ -206,7 +206,7 @@ func ingressOperatorSocks5ProxyContainer(socks5ProxyImage string) corev1.Contain
 	c := corev1.Container{
 		Name:    socks5ProxyContainerName,
 		Image:   socks5ProxyImage,
-		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy"},
+		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--resolve-from-guest-cluster-dns=true"},
 		Args: []string{
 			"run",
 			// Do not route cloud provider traffic through konnektivity and thus nodes to speed

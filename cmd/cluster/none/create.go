@@ -23,6 +23,8 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.NonePlatform.APIServerAddress, "external-api-server-address", opts.NonePlatform.APIServerAddress, "The external API Server Address when using platform none")
 	cmd.Flags().BoolVar(&opts.NonePlatform.ExposeThroughLoadBalancer, "expose-through-load-balancer", opts.NonePlatform.ExposeThroughLoadBalancer, "If the services should be exposed through LoadBalancer. If not set, nodeports will be used instead")
 
+	cmd.MarkPersistentFlagRequired("pull-secret")
+
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if opts.Timeout > 0 {

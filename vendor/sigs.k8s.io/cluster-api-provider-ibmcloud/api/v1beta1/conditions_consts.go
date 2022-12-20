@@ -65,3 +65,13 @@ const (
 	// ImageImportedCondition reports on current status of the image import job. Ready indicates the import job is finished.
 	ImageImportedCondition capiv1beta1.ConditionType = "ImageImported"
 )
+
+const (
+	// LoadBalancerNotReadyReason used when cluster is waiting for load balancer to be ready before proceeding.
+	LoadBalancerNotReadyReason = "LoadBalancerNotReady"
+)
+
+const (
+	// LoadBalancerReadyCondition reports on current status of the load balancer. Ready indicates the load balancer is in a active state.
+	LoadBalancerReadyCondition capiv1beta1.ConditionType = "LoadBalancerReady"
+)
