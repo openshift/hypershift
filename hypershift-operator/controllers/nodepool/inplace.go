@@ -176,7 +176,7 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 	isUpdatingVersion := isUpdatingVersion(nodePool, targetVersion)
 
 	if message != "" && isUpdatingVersion {
-		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
 			Status:             status,
 			ObservedGeneration: nodePool.Generation,
@@ -186,7 +186,7 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 	}
 
 	if message != "" && isUpdatingConfig {
-		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
 			Status:             status,
 			ObservedGeneration: nodePool.Generation,
@@ -208,7 +208,7 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 				reason = c.Reason
 			}
 
-			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolReadyConditionType,
 				Status:             c.Status,
 				ObservedGeneration: nodePool.Generation,
