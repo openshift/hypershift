@@ -33,7 +33,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions, testSigEnd chan<- bool) func(t *testing.T) {
+func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts core.CreateOptions) func(t *testing.T) {
 	return func(t *testing.T) {
 		t.Parallel()
 		g := NewWithT(t)
@@ -43,7 +43,6 @@ func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClien
 		defer func() {
 			t.Log("Test: NodePool MachineConfig finished")
 			cancel()
-			testSigEnd <- true
 		}()
 
 		// List NodePools (should exists only one)
@@ -193,8 +192,7 @@ func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClien
 			return true, nil
 		})
 		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed waiting for all pods in the machine config update verification DS to be ready: %v", err))
-
-		e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, mgmtClient, hostedClusterClient, hostedCluster.Namespace)
+		g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodes)))
 		e2eutil.EnsureNoCrashingPods(t, ctx, mgmtClient, hostedCluster)
 		e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, mgmtClient, hostedCluster)
 		e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, mgmtClient, hostedCluster)
