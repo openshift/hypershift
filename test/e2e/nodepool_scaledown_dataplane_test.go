@@ -5,89 +5,110 @@ package e2e
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestScaleDownDataPlane(t *testing.T) {
-	t.Parallel()
 	g := NewWithT(t)
-	var nodePools hyperv1.NodePoolList
-	var zeroReplicas int32 = 0
 
-	testContext := context.Background()
-	client, err := e2eutil.GetClient()
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
+	ctx, cancel := context.WithCancel(parentCtx)
+	originalNP := hyperv1.NodePool{}
+	defer func() {
+		t.Log("Test: NodePool ScaleDown DataPlane finished")
+		cancel()
+	}()
 
-	ctx, cancel := context.WithCancel(testContext)
-	defer cancel()
-
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	numZones := int32(len(clusterOpts.AWSPlatform.Zones))
-	if numZones <= 1 {
-		clusterOpts.NodePoolReplicas = 2
-	} else if numZones == 2 {
-		clusterOpts.NodePoolReplicas = 1
-	} else {
-		clusterOpts.NodePoolReplicas = 1
-	}
-	clusterOpts.AutoRepair = true
-	clusterOpts.AWSPlatform.InstanceType = "m6i.xlarge"
-	clusterOpts.BeforeApply = func(o crclient.Object) {
-		switch v := o.(type) {
-		case *hyperv1.NodePool:
-			v.Spec.NodeDrainTimeout = &metav1.Duration{
-				Duration: 1 * time.Second,
-			}
+	// List NodePools (should exists only one)
+	nodePools := &hyperv1.NodePoolList{}
+	err := mgmtClient.List(ctx, nodePools, &crclient.ListOptions{
+		Namespace: hostedCluster.Namespace,
+	})
+	g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepools")
+	for _, nodePool := range nodePools.Items {
+		if !strings.Contains(nodePool.Name, "-test-") {
+			originalNP = nodePool
 		}
 	}
+	g.Expect(originalNP.Name).NotTo(BeEmpty())
+	g.Expect(originalNP.Name).NotTo(ContainSubstring("test"))
+	awsNPInfo := originalNP.Spec.Platform.AWS
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
-	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
+	// Define a new Nodepool
+	nodePool := &hyperv1.NodePool{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "NodePool",
+			APIVersion: hyperv1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hostedCluster.Name + "-" + "test-autorepair",
+			Namespace: hostedCluster.Namespace,
+		},
+		Spec: hyperv1.NodePoolSpec{
+			NodeDrainTimeout: &metav1.Duration{
+				Duration: 1 * time.Second,
+			},
+			Management: hyperv1.NodePoolManagement{
+				UpgradeType: hyperv1.UpgradeTypeReplace,
+				AutoRepair:  true,
+			},
+			ClusterName: hostedCluster.Name,
+			Replicas:    &oneReplicas,
+			Release: hyperv1.Release{
+				Image: hostedCluster.Spec.Release.Image,
+			},
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hostedCluster.Spec.Platform.Type,
+				AWS:  awsNPInfo,
+			},
+		},
+	}
 
-	// Wait for HC to finish the deployment
-	t.Logf("Waiting for initial cluster rollout. Image: %s", hostedCluster.Spec.Release.Image)
-	e2eutil.WaitForImageRollout(t, ctx, client, guestClient, hostedCluster, hostedCluster.Spec.Release.Image)
-	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+	// Create NodePool for current test
+	err = mgmtClient.Create(ctx, nodePool)
+	if err != nil {
+		if !errors.IsAlreadyExists(err) {
+			t.Fatalf("failed to create nodePool %s with Autorepair function: %v", nodePool.Name, err)
+		}
+		err = nodePoolRecreate(t, ctx, nodePool, mgmtClient)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to Create the NodePool")
+	}
+	defer nodePoolScaleDownToZero(ctx, mgmtClient, *nodePool, t)
 
-	// Find NodePools.
-	err = client.List(ctx, &nodePools, &crclient.ListOptions{Namespace: hostedCluster.Namespace})
-	g.Expect(err).NotTo(HaveOccurred(), "failed to list NodePools")
-	numNodes := int32(numZones * clusterOpts.NodePoolReplicas)
+	numNodes := int32(1)
 
-	// Wait for NodePools to roll out the initial version.
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+	t.Logf("Waiting for Nodes %d\n", numNodes)
+	nodes := e2eutil.WaitForNReadyNodesByNodePool(t, ctx, hostedClusterClient, numNodes, hostedCluster.Spec.Platform.Type, nodePool.Name)
+	t.Logf("Desired replicas available for nodePool: %v", nodePool.Name)
+
+	// Wait for the rollout to be reported complete
+	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
+	e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedClusterClient, hostedCluster, globalOpts.LatestReleaseImage)
 
 	// Update NodePool images to the latest.
-	for _, nodePool := range nodePools.Items {
-		err = client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-
-		t.Logf("Scalling down NodePool %s to replicas %d", nodePool.Name, zeroReplicas)
-		original := nodePool.DeepCopy()
-		nodePool.Spec.Replicas = &zeroReplicas
-		err = client.Patch(ctx, &nodePool, crclient.MergeFrom(original))
-		g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool replicas")
-	}
+	t.Logf("Scalling down NodePool %s to replicas %d", nodePool.Name, zeroReplicas)
+	np := nodePool.DeepCopy()
+	nodePool.Spec.Replicas = &zeroReplicas
+	err = client.Patch(ctx, &nodePool, crclient.MergeFrom(np))
+	g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool replicas")
 
 	// Wait for NodePools to get updated
-	for _, nodePool := range nodePools.Items {
-		err := wait.PollUntil(10*time.Second, func() (done bool, err error) {
-			t.Logf("Waiting until NodePool scales to the desired state: Nodepool %s Replicas %d\n", nodePool.Name, zeroReplicas)
-			err = client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
+	err := wait.PollUntil(10*time.Second, func() (done bool, err error) {
+		t.Logf("Waiting until NodePool scales to the desired state: Nodepool %s Replicas %d\n", nodePool.Name, zeroReplicas)
+		err = client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
+		g.Expect(err).NotTo(HaveOccurred())
 
-			return nodePool.Status.Replicas == *nodePool.Spec.Replicas, nil
-		}, ctx.Done())
-		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for new node to become available")
-		t.Logf("Scale down Done!: Nodepool %s Replicas %d\n", nodePool.Name, zeroReplicas)
-	}
+		return nodePool.Status.Replicas == *nodePool.Spec.Replicas, nil
+	}, ctx.Done())
+	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for new node to become available")
+	t.Logf("Scale down Done!: Nodepool %s Replicas %d\n", nodePool.Name, zeroReplicas)
 }
