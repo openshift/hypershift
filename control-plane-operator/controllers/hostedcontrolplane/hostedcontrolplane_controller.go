@@ -907,7 +907,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, apiServerService, func() error {
-		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, p.AllowedCIDRBlocks, util.IsPublicHCP(hcp))
+		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, p.AllowedCIDRBlocks, util.IsPublicHCP(hcp), hcp)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
@@ -1082,10 +1082,11 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	exposeKASThroughRouter := util.IsRouteKAS(hcp)
 	// Create the Service type LB internal for private endpoints.
 	pubSvc := manifests.RouterPublicService(hcp.Namespace)
+	_, crossZoneLoadBalancingEnabled := hcp.Annotations[hyperv1.HypershiftAWSLoadBalancerCrossZoneLoadBalancingEnabled]
 	if util.IsPrivateHCP(hcp) {
 		svc := manifests.PrivateRouterService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, svc, func() error {
-			return ingress.ReconcileRouterService(svc, util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), true)
+			return ingress.ReconcileRouterService(svc, util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), true, crossZoneLoadBalancingEnabled)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router service: %w", err)
 		}
@@ -1107,7 +1108,7 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	// When Public access endpoint we need to create a Service type LB external for the KAS.
 	if util.IsPublicHCP(hcp) && exposeKASThroughRouter {
 		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
-			return ingress.ReconcileRouterService(pubSvc, util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), false)
+			return ingress.ReconcileRouterService(pubSvc, util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), false, crossZoneLoadBalancingEnabled)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router service: %w", err)
 		}
