@@ -36,15 +36,6 @@ func EtcdSignerCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
-func EtcdMetricsSignerCAConfigMap(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "etcd-metrics-ca",
-			Namespace: ns,
-		},
-	}
-}
-
 func AggregatorClientCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -78,25 +69,11 @@ func EtcdSignerSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "etcd-signer")
 }
 
-func EtcdClientSecret(ns string) *corev1.Secret {
-	return secretFor(ns, "etcd-client-tls")
-}
+func EtcdClientSecret(ns string) *corev1.Secret { return secretFor(ns, "etcd-client-tls") }
 
-func EtcdServerSecret(ns string) *corev1.Secret {
-	return secretFor(ns, "etcd-server-tls")
-}
+func EtcdServerSecret(ns string) *corev1.Secret { return secretFor(ns, "etcd-server-tls") }
 
-func EtcdPeerSecret(ns string) *corev1.Secret {
-	return secretFor(ns, "etcd-peer-tls")
-}
-
-func EtcdMetricsSignerSecret(ns string) *corev1.Secret {
-	return secretFor(ns, "etcd-metrics-signer")
-}
-
-func EtcdMetricsClientSecret(ns string) *corev1.Secret {
-	return secretFor(ns, "etcd-metrics-client-tls")
-}
+func EtcdPeerSecret(ns string) *corev1.Secret { return secretFor(ns, "etcd-peer-tls") }
 
 func KASServerCertSecret(ns string) *corev1.Secret { return secretFor(ns, "kas-server-crt") }
 

@@ -70,14 +70,6 @@ func ReconcileEtcdSignerConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef
 	return reconcileAggregateCA(cm, ownerRef, etcdSigner)
 }
 
-func ReconcileEtcdMetricsSignerSecret(secret *corev1.Secret, ownerref config.OwnerRef) error {
-	return reconcileSelfSignedCA(secret, ownerref, "etcd-metrics-signer", "openshift")
-}
-
-func ReconcileEtcdMetricsSignerConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdMetricsSigner *corev1.Secret) error {
-	return reconcileAggregateCA(cm, ownerRef, etcdMetricsSigner)
-}
-
 func ReconcileClusterSignerCA(secret *corev1.Secret, ownerRef config.OwnerRef) error {
 	return reconcileSelfSignedCA(secret, ownerRef, "cluster-signer", "openshift")
 }

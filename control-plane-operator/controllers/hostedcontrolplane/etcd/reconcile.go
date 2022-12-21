@@ -18,7 +18,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	policyv1 "k8s.io/api/policy/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
@@ -33,12 +32,6 @@ func etcdContainer() *corev1.Container {
 func etcdInitContainer() *corev1.Container {
 	return &corev1.Container{
 		Name: "etcd-init",
-	}
-}
-
-func etcdMetricsContainer() *corev1.Container {
-	return &corev1.Container{
-		Name: "etcd-metrics",
 	}
 }
 
@@ -74,7 +67,6 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 
 	ss.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(etcdContainer(), buildEtcdContainer(p, ss.Namespace)),
-		util.BuildContainer(etcdMetricsContainer(), buildEtcdMetricsContainer(p, ss.Namespace)),
 	}
 
 	if len(p.StorageSpec.RestoreSnapshotURL) > 0 && !p.SnapshotRestored {
@@ -118,16 +110,6 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 				},
 			},
 		},
-		{
-			Name: "etcd-metrics-ca",
-			VolumeSource: corev1.VolumeSource{
-				ConfigMap: &corev1.ConfigMapVolumeSource{
-					LocalObjectReference: corev1.LocalObjectReference{
-						Name: manifests.EtcdMetricsSignerCAConfigMap(ss.Namespace).Name,
-					},
-				},
-			},
-		},
 	}
 
 	p.DeploymentConfig.ApplyToStatefulSet(ss)
@@ -167,7 +149,7 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 --listen-peer-urls=https://${POD_IP}:2380 \
 --listen-client-urls=https://${POD_IP}:2379,https://localhost:2379 \
 --advertise-client-urls=https://${HOSTNAME}.etcd-client.${NAMESPACE}.svc:2379 \
---listen-metrics-urls=https://0.0.0.0:2382 \
+--listen-metrics-urls=https://${POD_IP}:2381,https://localhost:2381 \
 --initial-cluster-token=etcd-cluster \
 --initial-cluster=${INITIAL_CLUSTER} \
 --initial-cluster-state=new \
@@ -252,6 +234,11 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 				ContainerPort: 2380,
 				Protocol:      corev1.ProtocolTCP,
 			},
+			{
+				Name:          "metrics",
+				ContainerPort: 2381,
+				Protocol:      corev1.ProtocolTCP,
+			},
 		}
 		c.ReadinessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
@@ -263,59 +250,6 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 			InitialDelaySeconds: 5,
 			PeriodSeconds:       5,
 			FailureThreshold:    6,
-		}
-	}
-}
-
-func buildEtcdMetricsContainer(p *EtcdParams, namespace string) func(c *corev1.Container) {
-	return func(c *corev1.Container) {
-		script := `
-		etcd grpc-proxy start \
-          --endpoints https://localhost:2382 \
-          --metrics-addr https://0.0.0.0:2381 \
-          --listen-addr 127.0.0.1:2383 \
-          --advertise-client-url ""  \
-          --key /etc/etcd/tls/peer/peer.key \
-          --key-file /etc/etcd/tls/server/server.key \
-          --cert /etc/etcd/tls/peer/peer.crt \
-          --cert-file /etc/etcd/tls/server/server.crt \
-          --cacert /etc/etcd/tls/etcd-ca/ca.crt \
-          --trusted-ca-file /etc/etcd/tls/etcd-metrics-ca/ca.crt
-		`
-
-		c.Image = p.EtcdImage
-		c.ImagePullPolicy = corev1.PullIfNotPresent
-		c.Command = []string{"/bin/sh", "-c", script}
-		c.VolumeMounts = []corev1.VolumeMount{
-			{
-				Name:      "peer-tls",
-				MountPath: "/etc/etcd/tls/peer",
-			},
-			{
-				Name:      "server-tls",
-				MountPath: "/etc/etcd/tls/server",
-			},
-			{
-				Name:      "etcd-ca",
-				MountPath: "/etc/etcd/tls/etcd-ca", // our own peer client cert
-			},
-			{
-				Name:      "etcd-metrics-ca",
-				MountPath: "/etc/etcd/tls/etcd-metrics-ca", // incoming client certs
-			},
-		}
-		c.Ports = []corev1.ContainerPort{
-			{
-				Name:          "metrics",
-				ContainerPort: 2381,
-				Protocol:      corev1.ProtocolTCP,
-			},
-		}
-		c.Resources = corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("40m"),
-				corev1.ResourceMemory: resource.MustParse("200Mi"),
-			},
 		}
 	}
 }
@@ -372,6 +306,8 @@ func ReconcileClientService(service *corev1.Service, ownerRef config.OwnerRef) e
 }
 
 // ReconcileServiceMonitor
+// TODO: Exposing the client cert to monitoring isn't great, but metrics
+// TLS can't yet be independently configured. See: https://github.com/etcd-io/etcd/pull/10504
 func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string, metricsSet metrics.MetricsSet) error {
 	ownerRef.ApplyTo(sm)
 
@@ -390,21 +326,21 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 					Cert: prometheusoperatorv1.SecretOrConfigMap{
 						Secret: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.EtcdMetricsClientSecret(sm.Namespace).Name,
+								Name: manifests.EtcdClientSecret(sm.Namespace).Name,
 							},
 							Key: pki.EtcdClientCrtKey,
 						},
 					},
 					KeySecret: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: manifests.EtcdMetricsClientSecret(sm.Namespace).Name,
+							Name: manifests.EtcdClientSecret(sm.Namespace).Name,
 						},
 						Key: pki.EtcdClientKeyKey,
 					},
 					CA: prometheusoperatorv1.SecretOrConfigMap{
 						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.EtcdMetricsSignerCAConfigMap(sm.Namespace).Name,
+								Name: manifests.EtcdSignerCAConfigMap(sm.Namespace).Name,
 							},
 							Key: certs.CASignerCertMapKey,
 						},
