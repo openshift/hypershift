@@ -1565,6 +1565,12 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.Platform.Type = hyperv1.NonePlatform
 	}
 
+	if hcluster.Spec.Configuration != nil {
+		hcp.Spec.Configuration = hcluster.Spec.Configuration.DeepCopy()
+	} else {
+		hcp.Spec.Configuration = nil
+	}
+
 	return nil
 }
 
