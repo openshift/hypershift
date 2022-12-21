@@ -171,7 +171,6 @@ const (
 	HostedControlPlaneDegraded  ConditionType = "Degraded"
 	EtcdSnapshotRestored        ConditionType = "EtcdSnapshotRestored"
 	CVOScaledDown               ConditionType = "CVOScaledDown"
-	CloudResourcesDestroyed     ConditionType = "CloudResourcesDestroyed"
 )
 
 // HostedControlPlaneStatus defines the observed state of HostedControlPlane
