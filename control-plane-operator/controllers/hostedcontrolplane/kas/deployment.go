@@ -47,7 +47,6 @@ var (
 			kasVolumeAggregatorCert().Name:         "/etc/kubernetes/certs/aggregator",
 			common.VolumeAggregatorCA().Name:       "/etc/kubernetes/certs/aggregator-ca",
 			common.VolumeTotalClientCA().Name:      "/etc/kubernetes/certs/client-ca",
-			kasVolumeEtcdCA().Name:                 "/etc/kubernetes/certs/etcd-ca",
 			kasVolumeEtcdClientCert().Name:         "/etc/kubernetes/certs/etcd",
 			kasVolumeServiceAccountKey().Name:      "/etc/kubernetes/secrets/svcacct-key",
 			kasVolumeOauthMetadata().Name:          "/etc/kubernetes/oauth",
@@ -180,7 +179,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeAggregatorCert(), buildKASVolumeAggregatorCert),
 				util.BuildVolume(common.VolumeAggregatorCA(), common.BuildVolumeAggregatorCA),
 				util.BuildVolume(kasVolumeServiceAccountKey(), buildKASVolumeServiceAccountKey),
-				util.BuildVolume(kasVolumeEtcdCA(), buildKASVolumeEtcdCA),
 				util.BuildVolume(kasVolumeEtcdClientCert(), buildKASVolumeEtcdClientCert),
 				util.BuildVolume(kasVolumeOauthMetadata(), buildKASVolumeOauthMetadata),
 				util.BuildVolume(kasVolumeAuthTokenWebhookConfig(), buildKASVolumeAuthTokenWebhookConfig),
@@ -586,17 +584,6 @@ func buildKASVolumeEtcdClientCert(v *corev1.Volume) {
 	}
 	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
-}
-
-func kasVolumeEtcdCA() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "etcd-ca",
-	}
-}
-
-func buildKASVolumeEtcdCA(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.Name = manifests.EtcdSignerCAConfigMap("").Name
 }
 
 func kasVolumeOauthMetadata() *corev1.Volume {

@@ -184,8 +184,8 @@ func oauthVolumeEtcdClientCA() *corev1.Volume {
 }
 
 func buildOAuthVolumeEtcdClientCA(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.Name = manifests.EtcdSignerCAConfigMap("").Name
+	v.Secret = &corev1.SecretVolumeSource{}
+	v.Secret.SecretName = manifests.RootCASecret("").Name
 }
 
 func oauthVolumeServingCert() *corev1.Volume {

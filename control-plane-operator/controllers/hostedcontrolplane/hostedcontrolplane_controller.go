@@ -1394,22 +1394,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile root CA configmap: %w", err)
 	}
 
-	// Etcd signer for all the etcd-related certs
-	etcdSignerSecret := manifests.EtcdSignerSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, etcdSignerSecret, func() error {
-		return pki.ReconcileEtcdSignerSecret(etcdSignerSecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd signer CA secret: %w", err)
-	}
-
-	etcdSignerCM := manifests.EtcdSignerCAConfigMap(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, etcdSignerCM, func() error {
-		// TODO remove rootCA. rootCASecret is temporarily added for upgrade scenarios. ibihim
-		return pki.ReconcileEtcdSignerConfigMap(etcdSignerCM, p.OwnerRef, etcdSignerSecret, rootCASecret)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd signer CA configmap: %w", err)
-	}
-
 	// Etcd client secret
 	etcdClientSecret := manifests.EtcdClientSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, etcdClientSecret, func() error {
