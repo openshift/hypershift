@@ -134,7 +134,7 @@ func setupMetrics(mgr manager.Manager) error {
 		return fmt.Errorf("failed to to register clusterDeletionTime metric: %w", err)
 	}
 	if err := crmetrics.Registry.Register(metrics.clusterGuestCloudResourcesDeletionTime); err != nil {
-		return fmt.Errorf("failed to to register clusterDeletionTime metric: %w", err)
+		return fmt.Errorf("failed to to register clusterGuestCloudResourcesDeletionTime metric: %w", err)
 	}
 	if err := crmetrics.Registry.Register(metrics.clusterAvailableTime); err != nil {
 		return fmt.Errorf("failed to to register clusterAvailableTime metric: %w", err)
@@ -208,7 +208,7 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 
 		guestCloudResourcesDeletionTime := clusterGuestCloudResourcesDeletionTime(&hc)
 		if guestCloudResourcesDeletionTime != nil {
-			m.clusterAvailableTime.WithLabelValues(crclient.ObjectKeyFromObject(&hc).String()).Set(*guestCloudResourcesDeletionTime)
+			m.clusterGuestCloudResourcesDeletionTime.WithLabelValues(crclient.ObjectKeyFromObject(&hc).String()).Set(*guestCloudResourcesDeletionTime)
 		}
 	}
 
