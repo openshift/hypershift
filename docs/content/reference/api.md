@@ -1353,8 +1353,8 @@ Value must be one of:
 <a href="#hypershift.openshift.io/v1alpha1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
 </p>
 <p>
-<p>AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
-Only one of ID, ARN or Filters may be specified. Specifying more than one will result in
+<p>AWSResourceReference is a reference to a specific AWS resource by ID or filters.
+Only one of ID or Filters may be specified. Specifying more than one will result in
 a validation error.</p>
 </p>
 <table>
@@ -1375,18 +1375,6 @@ string
 <td>
 <em>(Optional)</em>
 <p>ID of resource</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>arn</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>ARN of resource</p>
 </td>
 </tr>
 <tr>
