@@ -35,7 +35,7 @@ import (
 	"k8s.io/utils/clock"
 	clocktesting "k8s.io/utils/clock/testing"
 	"k8s.io/utils/pointer"
-	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	"sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -618,10 +618,10 @@ func TestReconcileCAPICluster(t *testing.T) {
 					Name:      "cluster1",
 				},
 			},
-			infraCR: &capiawsv1.AWSCluster{
+			infraCR: &capiaws.AWSCluster{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "AWSCluster",
-					APIVersion: capiawsv1.GroupVersion.String(),
+					APIVersion: capiaws.GroupVersion.String(),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster1",
@@ -645,7 +645,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 						Name:       "cluster1",
 					},
 					InfrastructureRef: &corev1.ObjectReference{
-						APIVersion: capiawsv1.GroupVersion.String(),
+						APIVersion: capiaws.GroupVersion.String(),
 						Kind:       "AWSCluster",
 						Namespace:  "master-cluster1",
 						Name:       "cluster1",
@@ -1026,12 +1026,12 @@ func TestReconcileAWSSubnets(t *testing.T) {
 
 	infraCRName := "test"
 	hcpNamespace := "hcp"
-	infraCR := &capiawsv1.AWSCluster{
+	infraCR := &capiaws.AWSCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      infraCRName,
 			Namespace: hcpNamespace,
 		},
-		Spec: capiawsv1.AWSClusterSpec{},
+		Spec: capiaws.AWSClusterSpec{},
 	}
 
 	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2).Build()
@@ -1045,14 +1045,14 @@ func TestReconcileAWSSubnets(t *testing.T) {
 	err := r.reconcileAWSSubnets(context.Background(), createOrUpdate, infraCR, req.Namespace, req.Name, hcpNamespace)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	freshInfraCR := &capiawsv1.AWSCluster{
+	freshInfraCR := &capiaws.AWSCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      infraCRName,
 			Namespace: hcpNamespace,
 		}}
 	err = client.Get(context.Background(), crclient.ObjectKeyFromObject(freshInfraCR), freshInfraCR)
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(freshInfraCR.Spec.NetworkSpec.Subnets).To(BeEquivalentTo([]capiawsv1.SubnetSpec{
+	g.Expect(freshInfraCR.Spec.NetworkSpec.Subnets).To(BeEquivalentTo([]capiaws.SubnetSpec{
 		{
 			ID: "1",
 		},

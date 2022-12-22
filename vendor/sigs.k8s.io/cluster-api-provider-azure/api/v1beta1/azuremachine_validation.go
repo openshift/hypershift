@@ -20,9 +20,8 @@ import (
 	"encoding/base64"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-11-01/compute"
 	"github.com/google/uuid"
-
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-04-01/compute"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
@@ -40,10 +39,6 @@ func ValidateAzureMachineSpec(spec AzureMachineSpec) field.ErrorList {
 	}
 
 	if errs := ValidateSSHKey(spec.SSHPublicKey, field.NewPath("sshPublicKey")); len(errs) > 0 {
-		allErrs = append(allErrs, errs...)
-	}
-
-	if errs := ValidateSystemAssignedIdentity(spec.Identity, "", spec.RoleAssignmentName, field.NewPath("roleAssignmentName")); len(errs) > 0 {
 		allErrs = append(allErrs, errs...)
 	}
 
@@ -77,17 +72,17 @@ func ValidateSSHKey(sshKey string, fldPath *field.Path) field.ErrorList {
 }
 
 // ValidateSystemAssignedIdentity validates the system-assigned identities list.
-func ValidateSystemAssignedIdentity(identityType VMIdentity, old, new string, fldPath *field.Path) field.ErrorList {
+func ValidateSystemAssignedIdentity(identityType VMIdentity, oldIdentity, newIdentity string, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	if identityType == VMIdentitySystemAssigned {
-		if _, err := uuid.Parse(new); err != nil {
-			allErrs = append(allErrs, field.Invalid(fldPath, new, "Role assignment name must be a valid GUID. It is optional and will be auto-generated when not specified."))
+		if _, err := uuid.Parse(newIdentity); err != nil {
+			allErrs = append(allErrs, field.Invalid(fldPath, newIdentity, "Role assignment name must be a valid GUID. It is optional and will be auto-generated when not specified."))
 		}
-		if old != "" && old != new {
-			allErrs = append(allErrs, field.Invalid(fldPath, new, "Role assignment name should not be modified after AzureMachine creation."))
+		if oldIdentity != "" && oldIdentity != newIdentity {
+			allErrs = append(allErrs, field.Invalid(fldPath, newIdentity, "Role assignment name should not be modified after AzureMachine creation."))
 		}
-	} else if len(new) != 0 {
+	} else if newIdentity != "" {
 		allErrs = append(allErrs, field.Forbidden(fldPath, "Role assignment name should only be set when using system assigned identity."))
 	}
 
@@ -144,7 +139,7 @@ func ValidateDataDisks(dataDisks []DataDisk, fieldPath *field.Path) field.ErrorL
 		}
 
 		// validate cachingType
-		allErrs = append(allErrs, validateCachingType(disk.CachingType, fieldPath)...)
+		allErrs = append(allErrs, validateCachingType(disk.CachingType, fieldPath, disk.ManagedDisk)...)
 	}
 	return allErrs
 }
@@ -163,7 +158,7 @@ func ValidateOSDisk(osDisk OSDisk, fieldPath *field.Path) field.ErrorList {
 		allErrs = append(allErrs, field.Required(fieldPath.Child("OSType"), "the OS type cannot be empty"))
 	}
 
-	allErrs = append(allErrs, validateCachingType(osDisk.CachingType, fieldPath)...)
+	allErrs = append(allErrs, validateCachingType(osDisk.CachingType, fieldPath, osDisk.ManagedDisk)...)
 
 	if osDisk.ManagedDisk != nil {
 		if errs := validateManagedDisk(osDisk.ManagedDisk, fieldPath.Child("managedDisk"), true); len(errs) > 0 {
@@ -236,23 +231,23 @@ func ValidateDataDisksUpdate(oldDataDisks, newDataDisks []DataDisk, fieldPath *f
 	return allErrs
 }
 
-func validateManagedDisksUpdate(old, new *ManagedDiskParameters, fieldPath *field.Path) field.ErrorList {
+func validateManagedDisksUpdate(oldDiskParams, newDiskParams *ManagedDiskParameters, fieldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	fieldErrMsg := "changing managed disk options after machine creation is not allowed"
 
-	if new != nil && old != nil {
-		if new.StorageAccountType != old.StorageAccountType {
-			allErrs = append(allErrs, field.Invalid(fieldPath.Child("storageAccountType"), new, fieldErrMsg))
+	if newDiskParams != nil && oldDiskParams != nil {
+		if newDiskParams.StorageAccountType != oldDiskParams.StorageAccountType {
+			allErrs = append(allErrs, field.Invalid(fieldPath.Child("storageAccountType"), newDiskParams, fieldErrMsg))
 		}
-		if new.DiskEncryptionSet != nil && old.DiskEncryptionSet != nil {
-			if new.DiskEncryptionSet.ID != old.DiskEncryptionSet.ID {
-				allErrs = append(allErrs, field.Invalid(fieldPath.Child("diskEncryptionSet").Child("ID"), new, fieldErrMsg))
+		if newDiskParams.DiskEncryptionSet != nil && oldDiskParams.DiskEncryptionSet != nil {
+			if newDiskParams.DiskEncryptionSet.ID != oldDiskParams.DiskEncryptionSet.ID {
+				allErrs = append(allErrs, field.Invalid(fieldPath.Child("diskEncryptionSet").Child("ID"), newDiskParams, fieldErrMsg))
 			}
-		} else if (new.DiskEncryptionSet != nil && old.DiskEncryptionSet == nil) || (new.DiskEncryptionSet == nil && old.DiskEncryptionSet != nil) {
-			allErrs = append(allErrs, field.Invalid(fieldPath.Child("diskEncryptionSet"), new, fieldErrMsg))
+		} else if (newDiskParams.DiskEncryptionSet != nil && oldDiskParams.DiskEncryptionSet == nil) || (newDiskParams.DiskEncryptionSet == nil && oldDiskParams.DiskEncryptionSet != nil) {
+			allErrs = append(allErrs, field.Invalid(fieldPath.Child("diskEncryptionSet"), newDiskParams, fieldErrMsg))
 		}
-	} else if (new != nil && old == nil) || (new == nil && old != nil) {
-		allErrs = append(allErrs, field.Invalid(fieldPath, new, fieldErrMsg))
+	} else if (newDiskParams != nil && oldDiskParams == nil) || (newDiskParams == nil && oldDiskParams != nil) {
+		allErrs = append(allErrs, field.Invalid(fieldPath, newDiskParams, fieldErrMsg))
 	}
 
 	return allErrs
@@ -279,9 +274,15 @@ func validateStorageAccountType(storageAccountType string, fieldPath *field.Path
 	return allErrs
 }
 
-func validateCachingType(cachingType string, fieldPath *field.Path) field.ErrorList {
+func validateCachingType(cachingType string, fieldPath *field.Path, managedDisk *ManagedDiskParameters) field.ErrorList {
 	allErrs := field.ErrorList{}
 	cachingTypeChildPath := fieldPath.Child("CachingType")
+
+	if managedDisk != nil && managedDisk.StorageAccountType == string(compute.StorageAccountTypesUltraSSDLRS) {
+		if cachingType != string(compute.CachingTypesNone) {
+			allErrs = append(allErrs, field.Invalid(cachingTypeChildPath, cachingType, fmt.Sprintf("cachingType '%s' is not supported when storageAccountType is '%s'. Allowed values are: '%s'", cachingType, compute.StorageAccountTypesUltraSSDLRS, compute.CachingTypesNone)))
+		}
+	}
 
 	for _, possibleCachingType := range compute.PossibleCachingTypesValues() {
 		if string(possibleCachingType) == cachingType {

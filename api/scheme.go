@@ -20,7 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"

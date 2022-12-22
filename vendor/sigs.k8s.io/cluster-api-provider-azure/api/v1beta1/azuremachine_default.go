@@ -19,17 +19,16 @@ package v1beta1
 import (
 	"encoding/base64"
 
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-11-01/compute"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	ctrl "sigs.k8s.io/controller-runtime"
-
 	utilSSH "sigs.k8s.io/cluster-api-provider-azure/util/ssh"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 // SetDefaultSSHPublicKey sets the default SSHPublicKey for an AzureMachine.
 func (s *AzureMachineSpec) SetDefaultSSHPublicKey() error {
-	sshKeyData := s.SSHPublicKey
-	if sshKeyData == "" {
+	if sshKeyData := s.SSHPublicKey; sshKeyData == "" {
 		_, publicRsaKey, err := utilSSH.GenerateSSHKey()
 		if err != nil {
 			return err
@@ -37,7 +36,6 @@ func (s *AzureMachineSpec) SetDefaultSSHPublicKey() error {
 
 		s.SSHPublicKey = base64.StdEncoding.EncodeToString(ssh.MarshalAuthorizedKey(publicRsaKey))
 	}
-
 	return nil
 }
 
@@ -70,7 +68,12 @@ func (s *AzureMachineSpec) SetDataDisksDefaults() {
 			}
 		}
 		if disk.CachingType == "" {
-			s.DataDisks[i].CachingType = "ReadWrite"
+			if s.DataDisks[i].ManagedDisk != nil &&
+				s.DataDisks[i].ManagedDisk.StorageAccountType == string(compute.StorageAccountTypesUltraSSDLRS) {
+				s.DataDisks[i].CachingType = string(compute.CachingTypesNone)
+			} else {
+				s.DataDisks[i].CachingType = string(compute.CachingTypesReadWrite)
+			}
 		}
 	}
 }
@@ -84,13 +87,24 @@ func (s *AzureMachineSpec) SetIdentityDefaults() {
 	}
 }
 
+// SetSpotEvictionPolicyDefaults sets the defaults for the spot VM eviction policy.
+func (s *AzureMachineSpec) SetSpotEvictionPolicyDefaults() {
+	if s.SpotVMOptions != nil && s.SpotVMOptions.EvictionPolicy == nil {
+		defaultPolicy := SpotEvictionPolicyDeallocate
+		if s.OSDisk.DiffDiskSettings != nil && s.OSDisk.DiffDiskSettings.Option == "Local" {
+			defaultPolicy = SpotEvictionPolicyDelete
+		}
+		s.SpotVMOptions.EvictionPolicy = &defaultPolicy
+	}
+}
+
 // SetDefaults sets to the defaults for the AzureMachineSpec.
 func (s *AzureMachineSpec) SetDefaults() {
-	err := s.SetDefaultSSHPublicKey()
-	if err != nil {
+	if err := s.SetDefaultSSHPublicKey(); err != nil {
 		ctrl.Log.WithName("SetDefault").Error(err, "SetDefaultSshPublicKey failed")
 	}
 	s.SetDefaultCachingType()
 	s.SetDataDisksDefaults()
 	s.SetIdentityDefaults()
+	s.SetSpotEvictionPolicyDefaults()
 }
