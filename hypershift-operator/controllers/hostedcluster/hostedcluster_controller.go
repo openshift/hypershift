@@ -186,15 +186,6 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		builder.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
 	}
 
-	// TODO (alberto): drop this once this is fixed upstream https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2864.
-	builder.Watches(&source.Kind{Type: &hyperv1.NodePool{}}, handler.EnqueueRequestsFromMapFunc(func(obj client.Object) []reconcile.Request {
-		nodePool, ok := obj.(*hyperv1.NodePool)
-		if !ok {
-			return []reconcile.Request{}
-		}
-		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: nodePool.GetNamespace(), Name: nodePool.Spec.ClusterName}}}
-	}))
-
 	// Set based on SCC capability
 	// When SCC is available (OpenShift), the container's security context and UID range is automatically set
 	// When SCC is not available (Kubernetes), we want to explicitly set a default (non-root) security context
@@ -3948,24 +3939,6 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 	}
 	// Sort for stable update detection (is this needed?)
 	sort.Strings(subnetIDs)
-
-	// Reconcile subnet IDs in AWSCluster
-	// TODO (alberto): drop this once this is fixed upstream https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2864.
-	awsInfraCR, ok := infraCR.(*capiaws.AWSCluster)
-	if !ok {
-		return nil
-	}
-	subnets := capiaws.Subnets{}
-	for _, subnetID := range subnetIDs {
-		subnets = append(subnets, capiaws.SubnetSpec{ID: subnetID})
-	}
-	_, err = createOrUpdate(ctx, r.Client, awsInfraCR, func() error {
-		awsInfraCR.Spec.NetworkSpec.Subnets = subnets
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile networks for CAPA Infra CR: %w", err)
-	}
 	return nil
 }
 
