@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage/assets"
 	assets2 "github.com/openshift/hypershift/support/assets"
@@ -65,5 +66,6 @@ func ReconcileOperatorServiceAccount(
 	params *Params) error {
 
 	params.OwnerRef.ApplyTo(sa)
+	util.EnsurePullSecret(sa, common.PullSecret("").Name)
 	return nil
 }
