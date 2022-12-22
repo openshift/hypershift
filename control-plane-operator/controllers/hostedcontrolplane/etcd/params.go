@@ -12,6 +12,7 @@ import (
 
 type EtcdParams struct {
 	EtcdImage string
+	CPOImage  string
 
 	OwnerRef         config.OwnerRef `json:"ownerRef"`
 	DeploymentConfig config.DeploymentConfig
@@ -30,6 +31,7 @@ func etcdPodSelector() map[string]string {
 func NewEtcdParams(hcp *hyperv1.HostedControlPlane, images map[string]string) *EtcdParams {
 	p := &EtcdParams{
 		EtcdImage:    images["etcd"],
+		CPOImage:     images["controlplane-operator"],
 		OwnerRef:     config.OwnerRefFrom(hcp),
 		Availability: hcp.Spec.ControllerAvailabilityPolicy,
 	}

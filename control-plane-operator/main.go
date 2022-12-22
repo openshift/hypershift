@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
+	"github.com/openshift/hypershift/dnsresolver"
 	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
@@ -126,6 +127,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(tokenminter.NewStartCommand())
 	cmd.AddCommand(ignitionserver.NewStartCommand())
 	cmd.AddCommand(kubernetesdefaultproxy.NewStartCommand())
+	cmd.AddCommand(dnsresolver.NewCommand())
 
 	return cmd
 
