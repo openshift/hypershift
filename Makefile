@@ -124,13 +124,11 @@ cluster-api-provider-azure: $(CONTROLLER_GEN)
 api-docs: $(GENAPIDOCS)
 	hack/gen-api-docs.sh $(GENAPIDOCS) $(DIR)
 
+# generate the SelectorSyncSet template file to be applied via app-interface
 .PHONY: app-sre-saas-template
 app-sre-saas-template: hypershift
+	# do not set oidc-storage-provider-s3-* parameters as these are not used
 	bin/hypershift install \
-		--oidc-storage-provider-s3-bucket-name=bucket \
-		--oidc-storage-provider-s3-secret=oidc-s3-creds \
-		--oidc-storage-provider-s3-region=us-east-1 \
-		--oidc-storage-provider-s3-secret-key=credentials \
 		--platform-monitoring=None \
 		--enable-ci-debug-output=false \
 		--enable-admin-rbac-generation=true \
@@ -143,7 +141,7 @@ app-sre-saas-template: hypershift
 		--external-dns-domain-filter=service.hypershift.example.org \
 		--external-dns-txt-owner-id=txt-owner-id \
 		--metrics-set=SRE \
-		render --template --format yaml > $(DIR)/hack/app-sre/saas_template.yaml
+		render --sss-template --format yaml > $(DIR)/hack/app-sre/saas_template.yaml
 
 # Run tests
 .PHONY: test

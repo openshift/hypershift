@@ -30,6 +30,25 @@ var (
 	TemplateParamExternalDNSCredsSecret   = "EXTERNAL_DNS_CREDS_SECRET"
 	TemplateParamExternalDNSDomainFilter  = "EXTERNAL_DNS_DOMAIN_FILTER"
 	TemplateParamExternalDNSTxtOwnerID    = "EXTERNAL_DNS_TXT_OWNER_ID"
+
+	SSSTemplateParamEnvironment               = "SSS_ENVIRONMENT"
+	SSSTemplateParamManagementClusterKey      = "SSS_MANAGEMENT_CLUSTER_KEY"
+	SSSTemplateParamManagementClusterOperator = "SSS_MANAGEMENT_CLUSTER_OPERATOR"
+	SSSTemplateParamManagementClusterValue    = "SSS_MANAGEMENT_CLUSTER_VALUE"
+	SSSTemplateParamSectorKey                 = "SSS_SECTOR_KEY"
+	SSSTemplateParamSectorOperator            = "SSS_SECTOR_OPERATOR"
+	SSSTemplateParamSectorValue               = "SSS_SECTOR_VALUE"
+
+	SSSTemplateParamDefaultEnvironment               = "integration"
+	SSSTemplateParamDefaultManagementClusterKey      = "ext-hypershift.openshift.io/cluster-type"
+	SSSTemplateParamDefaultManagementClusterOperator = "In"
+	SSSTemplateParamDefaultManagementClusterValue    = "management-cluster"
+	// since the ext-hypershift.openshift.io/sector label does not exist (yet?), we can use regions as sectors for now.
+	// This is a default, so can be overriden with parameters
+	// SSSTemplateParamDefaultSectorKey                 = "ext-hypershift.openshift.io/sector"
+	SSSTemplateParamDefaultSectorKey      = "hive.openshift.io/cluster-region"
+	SSSTemplateParamDefaultSectorOperator = "In"
+	SSSTemplateParamDefaultSectorValue    = "us-east-1"
 )
 
 func NewRenderCommand(opts *Options) *cobra.Command {
@@ -40,6 +59,7 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&opts.Template, "template", false, "Render as Openshift template instead of plain manifests")
+	cmd.Flags().BoolVar(&opts.SSSTemplate, "sss-template", false, "Render as a Hie SelectorSyncSet Openshift template instead of plain manifests")
 	cmd.Flags().StringVar(&opts.Format, "format", RenderFormatYaml, fmt.Sprintf("Output format for the manifests, supports %s and %s", RenderFormatYaml, RenderFormatJson))
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -52,7 +72,13 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 
 		var objects []crclient.Object
 
-		if opts.Template {
+		if opts.SSSTemplate {
+			templateObject, err := hyperShiftOperatorSSSTemplateManifest(opts)
+			if err != nil {
+				return err
+			}
+			objects = []crclient.Object{templateObject}
+		} else if opts.Template {
 			templateObject, err := hyperShiftOperatorTemplateManifest(opts)
 			if err != nil {
 				return err
@@ -87,21 +113,21 @@ func (o *Options) ValidateRender() error {
 	return nil
 }
 
-func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) {
-	templateParameters := []map[string]string{}
+func hyperShiftOperatorTemplateObjects(opts *Options) ([]crclient.Object, []map[string]interface{}, error) {
+	templateParameters := []map[string]interface{}{}
 
 	// image parameter
 	templateParameters = append(
 		templateParameters,
-		map[string]string{"name": TemplateParamHyperShiftImage, "value": version.HypershiftImageBase},
-		map[string]string{"name": TemplateParamHyperShiftImageTag, "value": version.HypershiftImageTag},
+		map[string]interface{}{"name": TemplateParamHyperShiftImage, "value": version.HypershiftImageBase, "required": true},
+		map[string]interface{}{"name": TemplateParamHyperShiftImageTag, "value": version.HypershiftImageTag, "required": true},
 	)
 	opts.HyperShiftImage = fmt.Sprintf("${%s}:${%s}", TemplateParamHyperShiftImage, TemplateParamHyperShiftImageTag)
 
 	// namespace parameter
 	templateParameters = append(
 		templateParameters,
-		map[string]string{"name": TemplateParamNamespace, "value": opts.Namespace},
+		map[string]interface{}{"name": TemplateParamNamespace, "value": opts.Namespace, "required": true},
 	)
 	opts.Namespace = fmt.Sprintf("${%s}", TemplateParamNamespace)
 
@@ -109,10 +135,10 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		templateParameters = append(
 			templateParameters,
-			map[string]string{"name": TemplateParamOIDCS3Name},
-			map[string]string{"name": TemplateParamOIDCS3Region},
-			map[string]string{"name": TemplateParamOIDCS3CredsSecret, "value": opts.OIDCStorageProviderS3CredentialsSecret},
-			map[string]string{"name": TemplateParamOIDCS3CredsSecretKey, "value": opts.OIDCStorageProviderS3CredentialsSecretKey},
+			map[string]interface{}{"name": TemplateParamOIDCS3Name, "required": true},
+			map[string]interface{}{"name": TemplateParamOIDCS3Region, "required": true},
+			map[string]interface{}{"name": TemplateParamOIDCS3CredsSecret, "value": opts.OIDCStorageProviderS3CredentialsSecret, "required": true},
+			map[string]interface{}{"name": TemplateParamOIDCS3CredsSecretKey, "value": opts.OIDCStorageProviderS3CredentialsSecretKey, "required": true},
 		)
 		opts.OIDCStorageProviderS3BucketName = fmt.Sprintf("${%s}", TemplateParamOIDCS3Name)
 		opts.OIDCStorageProviderS3Region = fmt.Sprintf("${%s}", TemplateParamOIDCS3Region)
@@ -124,9 +150,9 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 	if opts.AWSPrivateCredentialsSecret != "" {
 		templateParameters = append(
 			templateParameters,
-			map[string]string{"name": TemplateParamAWSPrivateRegion, "value": opts.AWSPrivateRegion},
-			map[string]string{"name": TemplateParamAWSPrivateCredsSecret, "value": opts.AWSPrivateCredentialsSecret},
-			map[string]string{"name": TemplateParamAWSPrivateCredsSecretKey, "value": opts.AWSPrivateCredentialsSecretKey},
+			map[string]interface{}{"name": TemplateParamAWSPrivateRegion, "value": opts.AWSPrivateRegion, "required": true},
+			map[string]interface{}{"name": TemplateParamAWSPrivateCredsSecret, "value": opts.AWSPrivateCredentialsSecret, "required": true},
+			map[string]interface{}{"name": TemplateParamAWSPrivateCredsSecretKey, "value": opts.AWSPrivateCredentialsSecretKey, "required": true},
 		)
 		opts.AWSPrivateRegion = fmt.Sprintf("${%s}", TemplateParamAWSPrivateRegion)
 		opts.AWSPrivateCredentialsSecret = fmt.Sprintf("${%s}", TemplateParamAWSPrivateCredsSecret)
@@ -137,8 +163,8 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 	if opts.ExternalDNSProvider != "" && opts.ExternalDNSDomainFilter != "" && opts.ExternalDNSCredentialsSecret != "" {
 		templateParameters = append(
 			templateParameters,
-			map[string]string{"name": TemplateParamExternalDNSDomainFilter, "value": opts.ExternalDNSDomainFilter},
-			map[string]string{"name": TemplateParamExternalDNSCredsSecret, "value": opts.ExternalDNSCredentialsSecret},
+			map[string]interface{}{"name": TemplateParamExternalDNSDomainFilter, "value": opts.ExternalDNSDomainFilter, "required": true},
+			map[string]interface{}{"name": TemplateParamExternalDNSCredsSecret, "value": opts.ExternalDNSCredentialsSecret, "required": true},
 		)
 		opts.ExternalDNSDomainFilter = fmt.Sprintf("${%s}", TemplateParamExternalDNSDomainFilter)
 		opts.ExternalDNSCredentialsSecret = fmt.Sprintf("${%s}", TemplateParamExternalDNSCredsSecret)
@@ -146,7 +172,7 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 		if opts.ExternalDNSTxtOwnerId != "" {
 			templateParameters = append(
 				templateParameters,
-				map[string]string{"name": TemplateParamExternalDNSTxtOwnerID, "value": opts.ExternalDNSTxtOwnerId},
+				map[string]interface{}{"name": TemplateParamExternalDNSTxtOwnerID, "value": opts.ExternalDNSTxtOwnerId, "required": true},
 			)
 			opts.ExternalDNSTxtOwnerId = fmt.Sprintf("${%s}", TemplateParamExternalDNSTxtOwnerID)
 		}
@@ -156,7 +182,7 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 	// create manifests
 	objects, err := hyperShiftOperatorManifests(*opts)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// patch those manifests, where the template parameter placeholder was not injectable with opts (e.g. type mistmatch)
@@ -165,12 +191,90 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 	}
 	templateParameters = append(
 		templateParameters,
-		map[string]string{"name": TemplateParamOperatorReplicas, "value": "1"},
+		map[string]interface{}{"name": TemplateParamOperatorReplicas, "value": "1", "required": true},
 	)
 	patchedObjects, err := applyPatchesToObjects(objects, patches)
 	if err != nil {
+		return nil, nil, err
+	}
+
+	return patchedObjects, templateParameters, nil
+}
+
+func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) {
+	objects, templateParameters, err := hyperShiftOperatorTemplateObjects(opts)
+	if err != nil {
 		return nil, err
 	}
+	// wrap into template
+	template := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"kind":       "Template",
+			"apiVersion": "v1",
+			"metadata": map[string]string{
+				"name": "hypershift-operator-template",
+			},
+			"objects":    objects,
+			"parameters": templateParameters,
+		},
+	}
+	return template, nil
+}
+
+func hyperShiftOperatorSSSTemplateManifest(opts *Options) (crclient.Object, error) {
+	objects, templateParameters, err := hyperShiftOperatorTemplateObjects(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// wrap into sss
+	sss := map[string]interface{}{
+		"kind":       "SelectorSyncSet",
+		"apiVersion": "hive.openshift.io/v1",
+		"metadata": map[string]interface{}{
+			"name": fmt.Sprintf("hypershift-operator-${%s}-${%s}", SSSTemplateParamEnvironment, SSSTemplateParamSectorValue),
+			"annotations": map[string]string{
+				"kubernetes.io/description": "Deploys hypershift-operator on the selected environment/sector management clusters",
+			},
+		},
+		"spec": map[string]interface{}{
+			"clusterDeploymentSelector": map[string]interface{}{
+				"matchLabels": map[string]interface{}{
+					"api.openshift.com/managed": "true",
+				},
+				"matchExpressions": []map[string]interface{}{{
+					"key":      "api.openshift.com/fedramp",
+					"operator": "NotIn",
+					"values":   "true",
+				}, {
+					"key":      "api.openshift.com/environment",
+					"operator": "In",
+					"values":   []string{fmt.Sprintf("${%s}", SSSTemplateParamEnvironment)},
+				}, {
+					"key":      fmt.Sprintf("${%s}", SSSTemplateParamManagementClusterKey),
+					"operator": fmt.Sprintf("${%s}", SSSTemplateParamManagementClusterOperator),
+					"values":   []string{fmt.Sprintf("${%s}", SSSTemplateParamManagementClusterValue)},
+				}, {
+					"key":      fmt.Sprintf("${%s}", SSSTemplateParamSectorKey),
+					"operator": fmt.Sprintf("${%s}", SSSTemplateParamSectorOperator),
+					"values":   []string{fmt.Sprintf("${%s}", SSSTemplateParamSectorValue)},
+				}},
+			},
+			"resourceApplyMode": "Sync",
+			"resources":         objects,
+		},
+	}
+
+	templateParameters = append(
+		templateParameters,
+		map[string]interface{}{"name": SSSTemplateParamEnvironment, "value": SSSTemplateParamDefaultEnvironment, "required": true},
+		map[string]interface{}{"name": SSSTemplateParamManagementClusterKey, "value": SSSTemplateParamDefaultManagementClusterKey, "required": true},
+		map[string]interface{}{"name": SSSTemplateParamManagementClusterOperator, "value": SSSTemplateParamDefaultManagementClusterOperator, "required": true},
+		map[string]interface{}{"name": SSSTemplateParamManagementClusterValue, "value": SSSTemplateParamDefaultManagementClusterValue, "required": true},
+		map[string]interface{}{"name": SSSTemplateParamSectorKey, "value": SSSTemplateParamDefaultSectorKey, "required": true},
+		map[string]interface{}{"name": SSSTemplateParamSectorOperator, "value": SSSTemplateParamDefaultSectorOperator, "required": true},
+		map[string]interface{}{"name": SSSTemplateParamSectorValue, "value": SSSTemplateParamDefaultSectorValue, "required": true},
+	)
 
 	// wrap into template
 	template := &unstructured.Unstructured{
@@ -178,9 +282,9 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 			"kind":       "Template",
 			"apiVersion": "v1",
 			"metadata": map[string]interface{}{
-				"name": "hypershift-operator-template",
+				"name": "hypershift-operator-sss-template",
 			},
-			"objects":    patchedObjects,
+			"objects":    []map[string]interface{}{sss},
 			"parameters": templateParameters,
 		},
 	}

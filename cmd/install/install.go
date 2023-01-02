@@ -57,6 +57,7 @@ type Options struct {
 	EnableValidatingWebhook                   bool
 	EnableConversionWebhook                   bool
 	Template                                  bool
+	SSSTemplate                               bool
 	Format                                    string
 	ExcludeEtcdManifests                      bool
 	PlatformMonitoring                        metrics.PlatformMonitoring
@@ -544,7 +545,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		OIDCStorageProviderS3SecretKey: opts.OIDCStorageProviderS3CredentialsSecretKey,
 		Images:                         images,
 		MetricsSet:                     opts.MetricsSet,
-		IncludeVersion:                 !opts.Template,
+		IncludeVersion:                 !opts.Template && !opts.SSSTemplate,
 		UWMTelemetry:                   opts.EnableUWMTelemetryRemoteWrite,
 		RHOBSMonitoring:                opts.RHOBSMonitoring,
 	}.Build()
