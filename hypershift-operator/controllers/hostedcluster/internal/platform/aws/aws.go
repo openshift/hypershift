@@ -271,39 +271,20 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 		}
 	}
 
+	if hcluster.Spec.SecretEncryption != nil && hcluster.Spec.SecretEncryption.KMS != nil && hcluster.Spec.SecretEncryption.KMS.AWS != nil &&
+		hcluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN != "" && hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN != "" {
+		err := syncSecret(AWSKMSCredsSecret(controlPlaneNamespace), hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN)
+		if err != nil {
+			errs = append(errs, err)
+		}
+	}
+
 	return utilerrors.NewAggregate(errs)
 }
 
 func (AWS) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
-	if hcluster.Spec.SecretEncryption.KMS.AWS == nil || len(hcluster.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name) == 0 {
-		return fmt.Errorf("aws kms metadata nil")
-	}
-	var src corev1.Secret
-	if err := c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name}, &src); err != nil {
-		return fmt.Errorf("failed to get ibmcloud kms credentials %s: %w", hcluster.Spec.SecretEncryption.KMS.IBMCloud.Auth.Unmanaged.Credentials.Name, err)
-	}
-	if _, ok := src.Data[hyperv1.AWSCredentialsFileSecretKey]; !ok {
-		return fmt.Errorf("aws credential key %s not present in auth secret", hyperv1.AWSCredentialsFileSecretKey)
-	}
-	hostedControlPlaneAWSKMSAuthSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: controlPlaneNamespace,
-			Name:      src.Name,
-		},
-	}
-	_, err := createOrUpdate(ctx, c, hostedControlPlaneAWSKMSAuthSecret, func() error {
-		if hostedControlPlaneAWSKMSAuthSecret.Data == nil {
-			hostedControlPlaneAWSKMSAuthSecret.Data = map[string][]byte{}
-		}
-		hostedControlPlaneAWSKMSAuthSecret.Data[hyperv1.AWSCredentialsFileSecretKey] = src.Data[hyperv1.AWSCredentialsFileSecretKey]
-		hostedControlPlaneAWSKMSAuthSecret.Type = corev1.SecretTypeOpaque
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed reconciling aws kms backup key: %w", err)
-	}
 	return nil
 }
 
@@ -387,6 +368,15 @@ func AWSEBSCSIDriverCredsSecret(controlPlaneNamespace string) *corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      "ebs-cloud-credentials",
+		},
+	}
+}
+
+func AWSKMSCredsSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "kms-creds",
 		},
 	}
 }
