@@ -174,6 +174,25 @@ func randomBool() bool {
 	return rand.Intn(2) == 1
 }
 
+func secretEncryptionFuzzer(in *SecretEncryptionSpec, c fuzz.Continue) {
+	c.FuzzNoCustom(in)
+	in.KMS = &KMSSpec{
+		Provider: AWS,
+		AWS: &AWSKMSSpec{
+			Region: "",
+			ActiveKey: AWSKMSKeyEntry{
+				ARN: c.RandString(),
+			},
+			BackupKey: nil,
+			Auth: AWSKMSAuthSpec{
+				Credentials: corev1.LocalObjectReference{
+					Name: c.RandString(),
+				},
+			},
+		},
+	}
+}
+
 func awsRolesRefFuzzer(in *AWSPlatformSpec, c fuzz.Continue) {
 	c.FuzzNoCustom(in)
 	roles := []AWSRoleCredentials{
@@ -264,6 +283,10 @@ func fixupHostedCluster(in conversion.Convertible) {
 		})
 		hc.Spec.Platform.AWS.Roles = roles
 	}
+
+	if hc.Spec.SecretEncryption.KMS != nil && hc.Spec.SecretEncryption.KMS.AWS != nil {
+		hc.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN = ""
+	}
 }
 
 func fixupHostedControlPlane(in conversion.Convertible) {
@@ -289,11 +312,16 @@ func fixupHostedControlPlane(in conversion.Convertible) {
 		})
 		hcp.Spec.Platform.AWS.Roles = roles
 	}
+
+	if hcp.Spec.SecretEncryption.KMS != nil && hcp.Spec.SecretEncryption.KMS.AWS != nil {
+		hcp.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN = ""
+	}
 }
 
 func hostedClusterFuzzerFuncs(_ runtimeserializer.CodecFactory) []interface{} {
 	return []interface{}{
 		awsRolesRefFuzzer,
+		secretEncryptionFuzzer,
 		configFuzzer,
 		networkingFuzzer,
 		v1beta1ConfigFuzzer,
@@ -305,6 +333,7 @@ func hostedControlPlaneFuzzerFuncs(_ runtimeserializer.CodecFactory) []interface
 	return []interface{}{
 		hcpFuzzer,
 		awsRolesRefFuzzer,
+		secretEncryptionFuzzer,
 		configFuzzer,
 		networkingFuzzer,
 		v1beta1NetworkingFuzzer,

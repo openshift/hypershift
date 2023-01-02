@@ -1623,10 +1623,55 @@ type AWSKMSSpec struct {
 
 // AWSKMSAuthSpec defines metadata about the management of credentials used to interact with AWS KMS
 type AWSKMSAuthSpec struct {
+	// Deprecated
+	// This field is deprecated and will be removed in a future release. Use AWSKMSRoleARN instead.
 	// Credentials contains the name of the secret that holds the aws credentials that can be used
 	// to make the necessary KMS calls. It should at key AWSCredentialsFileSecretKey contain the
 	// aws credentials file that can be used to configure AWS SDKs
 	Credentials corev1.LocalObjectReference `json:"credentials"`
+
+	// The referenced role must have a trust relationship that allows it to be assumed via web identity.
+	// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
+	// Example:
+	// {
+	//		"Version": "2012-10-17",
+	//		"Statement": [
+	//			{
+	//				"Effect": "Allow",
+	//				"Principal": {
+	//					"Federated": "{{ .ProviderARN }}"
+	//				},
+	//					"Action": "sts:AssumeRoleWithWebIdentity",
+	//				"Condition": {
+	//					"StringEquals": {
+	//						"{{ .ProviderName }}:sub": {{ .ServiceAccounts }}
+	//					}
+	//				}
+	//			}
+	//		]
+	//	}
+	//
+	// AWSKMSARN is an ARN value referencing a role appropriate for managing the auth via the AWS KMS key.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//	"Version": "2012-10-17",
+	//	"Statement": [
+	//    	{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"kms:Encrypt",
+	//				"kms:Decrypt",
+	//				"kms:ReEncrypt*",
+	//				"kms:GenerateDataKey*",
+	//				"kms:DescribeKey"
+	//			],
+	//			"Resource": %q
+	//		}
+	//	]
+	// }
+	AWSKMSRoleARN string `json:"awsKms"`
 }
 
 // AWSKMSKeyEntry defines metadata to locate the encryption key in AWS

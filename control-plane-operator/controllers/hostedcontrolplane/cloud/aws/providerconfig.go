@@ -38,3 +38,12 @@ func KubeCloudControllerCredsSecret(controlPlaneNamespace string) *corev1.Secret
 		},
 	}
 }
+
+func AWSKMSCredsSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "kms-creds",
+		},
+	}
+}
