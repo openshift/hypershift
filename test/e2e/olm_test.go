@@ -62,6 +62,9 @@ func TestOLM(t *testing.T) {
 	guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name).Name
 	t.Logf("Hosted control plane namespace is %s", guestNamespace)
 
+	waitCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+
 	t.Logf("Retrieving Red Hat catalogSource deployment image")
 	redhatCatalogDeployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -69,13 +72,13 @@ func TestOLM(t *testing.T) {
 			Namespace: guestNamespace,
 		},
 	}
-	err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+	err = wait.PollImmediateUntilWithContext(waitCtx, 5*time.Second, func(ctx context.Context) (bool, error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(redhatCatalogDeployment), redhatCatalogDeployment); err != nil {
 			t.Logf("failed to get Red Hat Catalog deployment %s/%s: %s", redhatCatalogDeployment.Namespace, redhatCatalogDeployment.Name, err)
 			return false, nil
 		}
 		return true, nil
-	}, ctx.Done())
+	})
 
 	t.Logf("Creating guest cluster catalogSource using the Red Hat operators image from the hosted control plane")
 	guestClusterCatalogSource := &operatorsv1alpha1.CatalogSource{
@@ -90,13 +93,13 @@ func TestOLM(t *testing.T) {
 			DisplayName: "OLM HyperShift Test CatalogSource",
 		},
 	}
-	err = wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+	err = wait.PollImmediateUntilWithContext(waitCtx, 5*time.Second, func(ctx context.Context) (bool, error) {
 		if err := guestClient.Create(ctx, guestClusterCatalogSource); err != nil && !apierrors.IsAlreadyExists(err) {
 			t.Logf("failed to create guest cluster catalogSource %s/%s: %s", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err)
 			return false, nil
 		}
 		return true, nil
-	}, ctx.Done())
+	})
 	g.Expect(err).NotTo(HaveOccurred(), "unable to create guest cluster catalogSource")
 	t.Logf("guest cluster catalogSource created")
 
@@ -105,9 +108,9 @@ func TestOLM(t *testing.T) {
 		g.Expect(err != nil && !apierrors.IsNotFound(err)).To(BeFalse(), fmt.Sprintf("failed to delete guest cluster catalogSource %s/%s: %v", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err))
 	}()
 
-	t.Run("Guest cluster catalogSources serve content", testGuestClusterCatalogReady(ctx, guestClient))
-	t.Run("Install operator from Red Hat operators catalogSource", testOperatorInstallationFromSource(ctx, guestClient, redhatOperatorsCatalogSourceName))
-	t.Run("Install operator from guest cluster catalogSource", testOperatorInstallationFromSource(ctx, guestClient, guestClusterCatalogSourceName))
+	t.Run("Guest cluster catalogSources serve content", testGuestClusterCatalogReady(waitCtx, guestClient))
+	t.Run("Install operator from Red Hat operators catalogSource", testOperatorInstallationFromSource(waitCtx, guestClient, redhatOperatorsCatalogSourceName))
+	t.Run("Install operator from guest cluster catalogSource", testOperatorInstallationFromSource(waitCtx, guestClient, guestClusterCatalogSourceName))
 }
 
 // testGuestClusterCatalogReady ensures that Catalog Operator is able to connect to the CatalogSource created on the guestCluster.
