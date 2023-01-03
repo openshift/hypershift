@@ -119,6 +119,12 @@ func (o *Options) ValidateRender() error {
 	return nil
 }
 
+// templatize creates a template parameter for the provided option
+func templatize(templateParameters *[]map[string]interface{}, option *string, paramName string, required bool) {
+	*templateParameters = append(*templateParameters, map[string]interface{}{"name": paramName, "value": *option, "required": required})
+	*option = fmt.Sprintf("${%s}", paramName)
+}
+
 func hyperShiftOperatorTemplateObjects(opts *Options) ([]crclient.Object, []map[string]interface{}, error) {
 	templateParameters := []map[string]interface{}{}
 
@@ -131,101 +137,46 @@ func hyperShiftOperatorTemplateObjects(opts *Options) ([]crclient.Object, []map[
 	opts.HyperShiftImage = fmt.Sprintf("${%s}:${%s}", TemplateParamHyperShiftImage, TemplateParamHyperShiftImageTag)
 
 	// namespace parameter
-	templateParameters = append(
-		templateParameters,
-		map[string]interface{}{"name": TemplateParamNamespace, "value": opts.Namespace, "required": true},
-	)
-	opts.Namespace = fmt.Sprintf("${%s}", TemplateParamNamespace)
+	templatize(&templateParameters, &opts.Namespace, TemplateParamNamespace, true)
 
 	// oidc S3 parameter
 	if opts.OIDCStorageProviderS3BucketName != "" {
-		templateParameters = append(
-			templateParameters,
-			map[string]interface{}{"name": TemplateParamOIDCS3Name, "required": true},
-			map[string]interface{}{"name": TemplateParamOIDCS3Region, "required": true},
-			map[string]interface{}{"name": TemplateParamOIDCS3CredsSecret, "value": opts.OIDCStorageProviderS3CredentialsSecret, "required": true},
-			map[string]interface{}{"name": TemplateParamOIDCS3CredsSecretKey, "value": opts.OIDCStorageProviderS3CredentialsSecretKey, "required": true},
-		)
-		opts.OIDCStorageProviderS3BucketName = fmt.Sprintf("${%s}", TemplateParamOIDCS3Name)
-		opts.OIDCStorageProviderS3Region = fmt.Sprintf("${%s}", TemplateParamOIDCS3Region)
-		opts.OIDCStorageProviderS3CredentialsSecret = fmt.Sprintf("${%s}", TemplateParamOIDCS3CredsSecret)
-		opts.OIDCStorageProviderS3CredentialsSecretKey = fmt.Sprintf("${%s}", TemplateParamOIDCS3CredsSecretKey)
+		templatize(&templateParameters, &opts.OIDCStorageProviderS3BucketName, TemplateParamOIDCS3Name, true)
+		templatize(&templateParameters, &opts.OIDCStorageProviderS3Region, TemplateParamOIDCS3Region, true)
+		templatize(&templateParameters, &opts.OIDCStorageProviderS3CredentialsSecret, TemplateParamOIDCS3CredsSecret, true)
+		templatize(&templateParameters, &opts.OIDCStorageProviderS3CredentialsSecretKey, TemplateParamOIDCS3CredsSecretKey, true)
 	}
 
 	// aws private credentials
 	if opts.AWSPrivateCredentialsSecret != "" {
-		templateParameters = append(
-			templateParameters,
-			map[string]interface{}{"name": TemplateParamAWSPrivateCredsSecret, "value": opts.AWSPrivateCredentialsSecret, "required": true},
-			map[string]interface{}{"name": TemplateParamAWSPrivateCredsSecretKey, "value": opts.AWSPrivateCredentialsSecretKey, "required": true},
-		)
-		opts.AWSPrivateCredentialsSecret = fmt.Sprintf("${%s}", TemplateParamAWSPrivateCredsSecret)
-		opts.AWSPrivateCredentialsSecretKey = fmt.Sprintf("${%s}", TemplateParamAWSPrivateCredsSecretKey)
+		templatize(&templateParameters, &opts.AWSPrivateCredentialsSecret, TemplateParamAWSPrivateCredsSecret, true)
+		templatize(&templateParameters, &opts.AWSPrivateCredentialsSecretKey, TemplateParamAWSPrivateCredsSecretKey, true)
 		if opts.AWSPrivateRegion != "" {
-			templateParameters = append(
-				templateParameters,
-				map[string]interface{}{"name": TemplateParamAWSPrivateRegion, "value": opts.AWSPrivateRegion, "required": true},
-			)
-			opts.AWSPrivateRegion = fmt.Sprintf("${%s}", TemplateParamAWSPrivateRegion)
-		}
-		if opts.AWSPrivateRegion != "" {
-			templateParameters = append(
-				templateParameters,
-				map[string]interface{}{"name": TemplateParamAWSPrivateRegion, "value": opts.AWSPrivateRegion, "required": true},
-			)
-			opts.AWSPrivateRegion = fmt.Sprintf("${%s}", TemplateParamAWSPrivateRegion)
+			templatize(&templateParameters, &opts.AWSPrivateRegion, TemplateParamAWSPrivateRegion, true)
 		}
 		if opts.AWSPrivateRegionSecret != "" {
-			templateParameters = append(
-				templateParameters,
-				map[string]interface{}{"name": TemplateParamAWSPrivateRegionSecret, "value": opts.AWSPrivateRegionSecret, "required": true},
-				map[string]interface{}{"name": TemplateParamAWSPrivateRegionSecretKey, "value": opts.AWSPrivateRegionSecretKey, "required": true},
-			)
-			opts.AWSPrivateRegionSecret = fmt.Sprintf("${%s}", TemplateParamAWSPrivateRegionSecret)
-			opts.AWSPrivateRegionSecretKey = fmt.Sprintf("${%s}", TemplateParamAWSPrivateRegionSecretKey)
+			templatize(&templateParameters, &opts.AWSPrivateRegionSecret, TemplateParamAWSPrivateRegionSecret, true)
+			templatize(&templateParameters, &opts.AWSPrivateRegionSecretKey, TemplateParamAWSPrivateRegionSecretKey, true)
 		}
 	}
 
 	// external DNS
 	if opts.ExternalDNSProvider != "" && (opts.ExternalDNSDomainFilter != "" || opts.ExternalDNSDomainFilterSecret != "") && opts.ExternalDNSCredentialsSecret != "" {
-		templateParameters = append(
-			templateParameters,
-			map[string]interface{}{"name": TemplateParamExternalDNSCredsSecret, "value": opts.ExternalDNSCredentialsSecret, "required": true},
-		)
-		opts.ExternalDNSCredentialsSecret = fmt.Sprintf("${%s}", TemplateParamExternalDNSCredsSecret)
-
+		templatize(&templateParameters, &opts.ExternalDNSCredentialsSecret, TemplateParamExternalDNSCredsSecret, true)
 		if opts.ExternalDNSDomainFilter != "" {
-			templateParameters = append(
-				templateParameters,
-				map[string]interface{}{"name": TemplateParamExternalDNSDomainFilter, "value": opts.ExternalDNSDomainFilter, "required": true},
-			)
-			opts.ExternalDNSDomainFilter = fmt.Sprintf("${%s}", TemplateParamExternalDNSDomainFilter)
+			templatize(&templateParameters, &opts.ExternalDNSDomainFilter, TemplateParamExternalDNSDomainFilter, true)
 		}
 		if opts.ExternalDNSDomainFilterSecret != "" {
-			templateParameters = append(
-				templateParameters,
-				map[string]interface{}{"name": TemplateParamExternalDNSDomainFilterSecret, "value": opts.ExternalDNSDomainFilterSecret, "required": true},
-				map[string]interface{}{"name": TemplateParamExternalDNSDomainFilterSecretKey, "value": opts.ExternalDNSDomainFilterSecretKey, "required": true},
-			)
-			opts.ExternalDNSDomainFilterSecret = fmt.Sprintf("${%s}", TemplateParamExternalDNSDomainFilterSecret)
-			opts.ExternalDNSDomainFilterSecretKey = fmt.Sprintf("${%s}", TemplateParamExternalDNSDomainFilterSecretKey)
+			templatize(&templateParameters, &opts.ExternalDNSDomainFilterSecret, TemplateParamExternalDNSDomainFilterSecret, true)
+			templatize(&templateParameters, &opts.ExternalDNSDomainFilterSecretKey, TemplateParamExternalDNSDomainFilterSecretKey, true)
 		}
 
 		if opts.ExternalDNSTxtOwnerId != "" {
-			templateParameters = append(
-				templateParameters,
-				map[string]interface{}{"name": TemplateParamExternalDNSTxtOwnerID, "value": opts.ExternalDNSTxtOwnerId, "required": true},
-			)
-			opts.ExternalDNSTxtOwnerId = fmt.Sprintf("${%s}", TemplateParamExternalDNSTxtOwnerID)
+			templatize(&templateParameters, &opts.ExternalDNSTxtOwnerId, TemplateParamExternalDNSTxtOwnerID, true)
 		}
 		if opts.ExternalDNSTxtOwnerIdSecret != "" {
-			templateParameters = append(
-				templateParameters,
-				map[string]interface{}{"name": TemplateParamExternalDNSTxtOwnerIDSecret, "value": opts.ExternalDNSTxtOwnerIdSecret, "required": true},
-				map[string]interface{}{"name": TemplateParamExternalDNSTxtOwnerIDSecretKey, "value": opts.ExternalDNSTxtOwnerIdSecretKey, "required": true},
-			)
-			opts.ExternalDNSTxtOwnerIdSecret = fmt.Sprintf("${%s}", TemplateParamExternalDNSTxtOwnerIDSecret)
-			opts.ExternalDNSTxtOwnerIdSecretKey = fmt.Sprintf("${%s}", TemplateParamExternalDNSTxtOwnerIDSecretKey)
+			templatize(&templateParameters, &opts.ExternalDNSTxtOwnerIdSecret, TemplateParamExternalDNSTxtOwnerIDSecret, true)
+			templatize(&templateParameters, &opts.ExternalDNSTxtOwnerIdSecretKey, TemplateParamExternalDNSTxtOwnerIDSecretKey, true)
 		}
 	}
 
