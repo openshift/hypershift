@@ -67,6 +67,8 @@ type Options struct {
 	AWSPrivateCredentialsSecret               string
 	AWSPrivateCredentialsSecretKey            string
 	AWSPrivateRegion                          string
+	AWSPrivateRegionSecret                    string
+	AWSPrivateRegionSecretKey                 string
 	OIDCStorageProviderS3Region               string
 	OIDCStorageProviderS3BucketName           string
 	OIDCStorageProviderS3Credentials          string
@@ -76,7 +78,11 @@ type Options struct {
 	ExternalDNSCredentials                    string
 	ExternalDNSCredentialsSecret              string
 	ExternalDNSDomainFilter                   string
+	ExternalDNSDomainFilterSecret             string
+	ExternalDNSDomainFilterSecretKey          string
 	ExternalDNSTxtOwnerId                     string
+	ExternalDNSTxtOwnerIdSecret               string
+	ExternalDNSTxtOwnerIdSecretKey            string
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
 	MetricsSet                                metrics.MetricsSet
@@ -89,8 +95,14 @@ func (o *Options) Validate() error {
 
 	switch hyperv1.PlatformType(o.PrivatePlatform) {
 	case hyperv1.AWSPlatform:
-		if (len(o.AWSPrivateCreds) == 0 && len(o.AWSPrivateCredentialsSecret) == 0) || len(o.AWSPrivateRegion) == 0 {
-			errs = append(errs, fmt.Errorf("--aws-private-region and --aws-private-creds or --aws-private-secret are required with --private-platform=%s", hyperv1.AWSPlatform))
+		if (len(o.AWSPrivateCreds) == 0 && len(o.AWSPrivateCredentialsSecret) == 0) || (len(o.AWSPrivateRegion) == 0 && len(o.AWSPrivateRegionSecret) == 0) {
+			errs = append(errs, fmt.Errorf("--aws-private-region (or --aws-private-region-secret) and --aws-private-creds (or --aws-private-secret) are required with --private-platform=%s", hyperv1.AWSPlatform))
+		}
+		if len(o.AWSPrivateRegion) != 0 && len(o.AWSPrivateRegionSecret) != 0 {
+			errs = append(errs, fmt.Errorf("only one of --aws-private-region and --aws-private-region-secret can be set"))
+		}
+		if len(o.AWSPrivateRegion) == 0 && (len(o.AWSPrivateRegionSecret) == 0 || len(o.AWSPrivateRegionSecretKey) == 0) {
+			errs = append(errs, fmt.Errorf("both --aws-private-region-secret and --aws-private-region-secret-key must be set if --aws-private-region is not set"))
 		}
 	case hyperv1.NonePlatform:
 	default:
@@ -115,10 +127,28 @@ func (o *Options) Validate() error {
 		if len(o.ExternalDNSCredentials) != 0 && len(o.ExternalDNSCredentialsSecret) != 0 {
 			errs = append(errs, fmt.Errorf("only one of --external-dns-credentials or --external-dns-credentials-secret is supported"))
 		}
-		if len(o.ExternalDNSDomainFilter) == 0 {
-			errs = append(errs, fmt.Errorf("--external-dns-domain-filter is required with --external-dns-provider"))
+
+		if len(o.ExternalDNSDomainFilter) == 0 && len(o.ExternalDNSDomainFilterSecret) == 0 {
+			errs = append(errs, fmt.Errorf("--external-dns-domain-filter (or --external-dns-domain-filter-secret) is required with --external-dns-provider"))
+		}
+		if len(o.ExternalDNSDomainFilter) != 0 && len(o.ExternalDNSDomainFilterSecret) != 0 {
+			errs = append(errs, fmt.Errorf("only one of --external-dns-domain-filter and --external-dns-domain-filter-secret can be set"))
+		}
+		if len(o.ExternalDNSDomainFilter) == 0 && (len(o.ExternalDNSDomainFilterSecret) == 0 || len(o.ExternalDNSDomainFilterSecretKey) == 0) {
+			errs = append(errs, fmt.Errorf("both --external-dns-domain-filter-secret and --external-dns-domain-filter-secret-key must be set if --external-dns-domain-filter is not set"))
+		}
+
+		if len(o.ExternalDNSTxtOwnerId) != 0 && len(o.ExternalDNSTxtOwnerIdSecret) != 0 {
+			errs = append(errs, fmt.Errorf("only one of --external-dns-txt-owner-id and --external-dns-txt-owner-id-secret can be set"))
+		}
+		if len(o.ExternalDNSTxtOwnerId) == 0 {
+			if (len(o.ExternalDNSTxtOwnerIdSecret) == 0 && len(o.ExternalDNSTxtOwnerIdSecretKey) != 0) ||
+				(len(o.ExternalDNSTxtOwnerIdSecret) != 0 && len(o.ExternalDNSTxtOwnerIdSecretKey) == 0) {
+				errs = append(errs, fmt.Errorf("--external-dns-txt-owner-id-secret and --external-dns-txt-owner-id-secret-key must both be set or not at all"))
+			}
 		}
 	}
+
 	if o.HyperShiftImage != version.HyperShiftImage && len(o.ImageRefsFile) > 0 {
 		errs = append(errs, fmt.Errorf("only one of --hypershift-image or --image-refs-file should be specified"))
 	}
@@ -168,7 +198,9 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCreds, "aws-private-creds", opts.AWSPrivateCreds, "Path to an AWS credentials file with privileges sufficient to manage private cluster resources")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecret, "aws-private-secret", "", "Name of an existing secret containing the AWS private link credentials.")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecretKey, "aws-private-secret-key", "credentials", "Name of the secret key containing the AWS private link credentials.")
-	cmd.PersistentFlags().StringVar(&opts.AWSPrivateRegion, "aws-private-region", opts.AWSPrivateRegion, "AWS region where private clusters are supported by this operator")
+	cmd.PersistentFlags().StringVar(&opts.AWSPrivateRegion, "aws-private-region", opts.AWSPrivateRegion, "AWS region where private clusters are supported by this operator. Incompatible with --aws-private-region-secret")
+	cmd.PersistentFlags().StringVar(&opts.AWSPrivateRegionSecret, "aws-private-region-secret", opts.AWSPrivateRegionSecret, "Name of the secret containing a key with the AWS region where private clusters are supported by this operator. Incompatible with --aws-private-region. Requires --aws-private-region-secret-key")
+	cmd.PersistentFlags().StringVar(&opts.AWSPrivateRegionSecretKey, "aws-private-region-secret-key", opts.AWSPrivateRegionSecretKey, "Name of the secret key giving the AWS region where private clusters are supported by this operator. Requires --aws-private-region-secret")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", "", "Region of the OIDC bucket. Required for AWS guest clusters")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for writing the OIDC documents into the S3 bucket. Required for AWS guest clusters")
@@ -177,8 +209,12 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSProvider, "external-dns-provider", opts.OIDCStorageProviderS3Credentials, "Provider to use for managing DNS records using external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentials, "external-dns-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for managing DNS records using external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentialsSecret, "external-dns-secret", "", "Name of an existing secret containing the external-dns credentials.")
-	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specifed domain.")
-	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specifed domain. Incompatible with --external-dns-domain-filter-secret")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilterSecret, "external-dns-domain-filter-secret", "", "Name of the secret containing the external-dns domain filter. Incompatible with --external-dns-domain-filter. Requires --external-dns-domain-filter-secret-key")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilterSecretKey, "external-dns-domain-filter-secret-key", "", "Secret key containing the external-dns domain filter. Requires --external-dns-domain-filter-secret")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID. Incompatible with --external-dns-txt-owner-id-secret")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerIdSecret, "external-dns-txt-owner-id-secret", "", "Name of the secret containing the external-dns TXT registry owner ID. Incompatible with --external-dns-txt-owner-id. Requires external-dns-txt-owner-id-secret-key")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerIdSecretKey, "external-dns-txt-owner-id-secret-key", "", "Secret key containing the external-dns TXT registry owner ID. Requires --external-dns-txt-owner-id-secret")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", false, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
@@ -516,12 +552,16 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		externalDNSDeployment := assets.ExternalDNSDeployment{
 			Namespace: operatorNamespace,
 			// TODO: need to look this up from somewhere
-			Image:             "registry.redhat.io/edo/external-dns-rhel8@sha256:e8c50c1c158d08a99b1f388c65860c533209299fd0ff87f5c9fe29d7c9b5a4d1",
-			ServiceAccount:    externalDNSServiceAccount,
-			Provider:          opts.ExternalDNSProvider,
-			DomainFilter:      opts.ExternalDNSDomainFilter,
-			CredentialsSecret: externalDNSSecret,
-			TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
+			Image:                 "registry.redhat.io/edo/external-dns-rhel8@sha256:e8c50c1c158d08a99b1f388c65860c533209299fd0ff87f5c9fe29d7c9b5a4d1",
+			ServiceAccount:        externalDNSServiceAccount,
+			Provider:              opts.ExternalDNSProvider,
+			DomainFilter:          opts.ExternalDNSDomainFilter,
+			DomainFilterSecret:    opts.ExternalDNSDomainFilterSecret,
+			DomainFilterSecretKey: opts.ExternalDNSDomainFilterSecretKey,
+			CredentialsSecret:     externalDNSSecret,
+			TxtOwnerId:            opts.ExternalDNSTxtOwnerId,
+			TxtOwnerIdSecret:      opts.ExternalDNSTxtOwnerIdSecret,
+			TxtOwnerIdSecretKey:   opts.ExternalDNSTxtOwnerIdSecretKey,
 		}.Build()
 		objects = append(objects, externalDNSDeployment)
 	}
@@ -537,6 +577,8 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		EnableWebhook:                  opts.EnableValidatingWebhook || opts.EnableConversionWebhook,
 		PrivatePlatform:                opts.PrivatePlatform,
 		AWSPrivateRegion:               opts.AWSPrivateRegion,
+		AWSPrivateRegionSecret:         opts.AWSPrivateRegionSecret,
+		AWSPrivateRegionSecretKey:      opts.AWSPrivateRegionSecretKey,
 		AWSPrivateSecret:               operatorCredentialsSecret,
 		AWSPrivateSecretKey:            opts.AWSPrivateCredentialsSecretKey,
 		OIDCBucketName:                 opts.OIDCStorageProviderS3BucketName,

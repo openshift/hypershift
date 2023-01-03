@@ -133,13 +133,16 @@ app-sre-saas-template: hypershift
 		--enable-ci-debug-output=false \
 		--enable-admin-rbac-generation=true \
 		--private-platform=AWS \
-		--aws-private-region=eu-east-1 \
+		--aws-private-region-secret=aws-credentials \
+		--aws-private-region-secret-key=region \
 		--aws-private-secret=aws-credentials \
 		--aws-private-secret-key=credentials \
 		--external-dns-provider=aws \
 		--external-dns-secret=dns-credentials \
-		--external-dns-domain-filter=service.hypershift.example.org \
-		--external-dns-txt-owner-id=txt-owner-id \
+		--external-dns-domain-filter-secret=dns-credentials \
+		--external-dns-domain-filter-secret-key=domain-filter \
+		--external-dns-txt-owner-id-secret=dns-credentials \
+		--external-dns-txt-owner-id-secret-key=txt-owner-id \
 		--metrics-set=SRE \
 		render --sss-template --format yaml > $(DIR)/hack/app-sre/saas_template.yaml
 

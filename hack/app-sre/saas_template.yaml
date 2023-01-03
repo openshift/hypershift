@@ -389,16 +389,28 @@ objects:
             - args:
               - --source=service
               - --source=openshift-route
-              - --domain-filter=${EXTERNAL_DNS_DOMAIN_FILTER}
+              - --domain-filter=$(DOMAIN_FILTER)
               - --provider=aws
               - --registry=txt
               - --txt-suffix=-external-dns
-              - --txt-owner-id=${EXTERNAL_DNS_TXT_OWNER_ID}
+              - --txt-owner-id=$(TXT_OWNER_ID)
               - --aws-zone-type=public
               - --aws-batch-change-interval=10s
               command:
               - /external-dns
               env:
+              - name: TXT_OWNER_ID
+                valueFrom:
+                  secretKeyRef:
+                    key: ${EXTERNAL_DNS_TXT_OWNER_ID_SECRET_KEY}
+                    name: ${EXTERNAL_DNS_TXT_OWNER_ID_SECRET}
+                    optional: false
+              - name: DOMAIN_FILTER
+                valueFrom:
+                  secretKeyRef:
+                    key: ${EXTERNAL_DNS_DOMAIN_FILTER_SECRET_KEY}
+                    name: ${EXTERNAL_DNS_DOMAIN_FILTER_SECRET}
+                    optional: false
               - name: AWS_SHARED_CREDENTIALS_FILE
                 value: /etc/provider/credentials
               - name: AWS_REGION
@@ -488,7 +500,11 @@ objects:
               - name: AWS_SHARED_CREDENTIALS_FILE
                 value: /etc/provider/${AWS_PRIVATE_CREDS_SECRET_KEY}
               - name: AWS_REGION
-                value: ${AWS_PRIVATE_REGION}
+                valueFrom:
+                  secretKeyRef:
+                    key: ${AWS_PRIVATE_REGION_SECRET_KEY}
+                    name: ${AWS_PRIVATE_REGION_SECRET}
+                    optional: false
               - name: AWS_SDK_LOAD_CONFIG
                 value: "1"
               image: ${OPERATOR_IMG}:${IMAGE_TAG}
@@ -45801,22 +45817,31 @@ parameters:
 - name: NAMESPACE
   required: true
   value: hypershift
-- name: AWS_PRIVATE_REGION
-  required: true
-  value: eu-east-1
 - name: AWS_PRIVATE_CREDS_SECRET
   required: true
   value: aws-credentials
 - name: AWS_PRIVATE_CREDS_SECRET_KEY
   required: true
   value: credentials
-- name: EXTERNAL_DNS_DOMAIN_FILTER
+- name: AWS_PRIVATE_REGION_SECRET
   required: true
-  value: service.hypershift.example.org
+  value: aws-credentials
+- name: AWS_PRIVATE_REGION_SECRET_KEY
+  required: true
+  value: region
 - name: EXTERNAL_DNS_CREDS_SECRET
   required: true
   value: dns-credentials
-- name: EXTERNAL_DNS_TXT_OWNER_ID
+- name: EXTERNAL_DNS_DOMAIN_FILTER_SECRET
+  required: true
+  value: dns-credentials
+- name: EXTERNAL_DNS_DOMAIN_FILTER_SECRET_KEY
+  required: true
+  value: domain-filter
+- name: EXTERNAL_DNS_TXT_OWNER_ID_SECRET
+  required: true
+  value: dns-credentials
+- name: EXTERNAL_DNS_TXT_OWNER_ID_SECRET_KEY
   required: true
   value: txt-owner-id
 - name: OPERATOR_REPLICAS

@@ -136,22 +136,68 @@ func (o ExternalDNSCredsSecret) Build() *corev1.Secret {
 	return secret
 }
 
-type ExternalDNSDeployment struct {
-	Namespace         *corev1.Namespace
-	Image             string
-	ServiceAccount    *corev1.ServiceAccount
-	Provider          string
-	DomainFilter      string
-	CredentialsSecret *corev1.Secret
-	TxtOwnerId        string
+func envVarFromValueOrSecretKeyRef(varName string, varValue string, secretName string, secretKey string, optional bool) corev1.EnvVar {
+	if len(varValue) > 0 {
+		return corev1.EnvVar{
+			Name:  varName,
+			Value: varValue,
+		}
+	}
+	return corev1.EnvVar{
+		Name: varName,
+		ValueFrom: &corev1.EnvVarSource{
+			SecretKeyRef: &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: secretName,
+				},
+				Key:      secretKey,
+				Optional: &optional,
+			},
+		},
+	}
 }
+
+type ExternalDNSDeployment struct {
+	Namespace             *corev1.Namespace
+	Image                 string
+	ServiceAccount        *corev1.ServiceAccount
+	Provider              string
+	DomainFilter          string
+	DomainFilterSecret    string
+	DomainFilterSecretKey string
+	CredentialsSecret     *corev1.Secret
+	TxtOwnerId            string
+	TxtOwnerIdSecret      string
+	TxtOwnerIdSecretKey   string
+}
+
+var (
+	ExternalDNSEnvVarTxtOwnerID   = "TXT_OWNER_ID"
+	ExternalDNSEnvVarDomainFilter = "DOMAIN_FILTER"
+)
 
 func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 	replicas := int32(1)
 	txtOwnerId := o.TxtOwnerId
-	if txtOwnerId == "" {
+	if txtOwnerId == "" && o.TxtOwnerIdSecret == "" {
 		txtOwnerId = uuid.NewString()
 	}
+
+	txtOwnerIdEnvVar := envVarFromValueOrSecretKeyRef(
+		ExternalDNSEnvVarTxtOwnerID,
+		txtOwnerId,
+		o.TxtOwnerIdSecret,
+		o.TxtOwnerIdSecretKey,
+		false,
+	)
+	domainFilterEnvVar := envVarFromValueOrSecretKeyRef(
+		ExternalDNSEnvVarDomainFilter,
+		o.DomainFilter,
+		o.DomainFilterSecret,
+		o.DomainFilterSecretKey,
+		false,
+	)
+
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -184,14 +230,18 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 							Image:           o.Image,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Command:         []string{"/external-dns"},
+							Env: []corev1.EnvVar{
+								txtOwnerIdEnvVar,
+								domainFilterEnvVar,
+							},
 							Args: []string{
 								"--source=service",
 								"--source=openshift-route",
-								fmt.Sprintf("--domain-filter=%s", o.DomainFilter),
+								fmt.Sprintf("--domain-filter=$(%s)", ExternalDNSEnvVarDomainFilter),
 								fmt.Sprintf("--provider=%s", o.Provider),
 								"--registry=txt",
 								"--txt-suffix=-external-dns",
-								fmt.Sprintf("--txt-owner-id=%s", txtOwnerId),
+								fmt.Sprintf("--txt-owner-id=$(%s)", ExternalDNSEnvVarTxtOwnerID),
 							},
 							Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 7979}},
 							LivenessProbe: &corev1.Probe{
@@ -274,6 +324,8 @@ type HyperShiftOperatorDeployment struct {
 	AWSPrivateSecret               *corev1.Secret
 	AWSPrivateSecretKey            string
 	AWSPrivateRegion               string
+	AWSPrivateRegionSecret         string
+	AWSPrivateRegionSecretKey      string
 	OIDCBucketName                 string
 	OIDCBucketRegion               string
 	OIDCStorageProviderS3Secret    *corev1.Secret
@@ -399,10 +451,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					Name:  "AWS_SHARED_CREDENTIALS_FILE",
 					Value: "/etc/provider/" + o.AWSPrivateSecretKey,
 				},
-				corev1.EnvVar{
-					Name:  "AWS_REGION",
-					Value: o.AWSPrivateRegion,
-				},
+				envVarFromValueOrSecretKeyRef(
+					"AWS_REGION",
+					o.AWSPrivateRegion,
+					o.AWSPrivateRegionSecret,
+					o.AWSPrivateRegionSecretKey,
+					false,
+				),
 				corev1.EnvVar{
 					Name:  "AWS_SDK_LOAD_CONFIG",
 					Value: "1",
