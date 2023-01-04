@@ -258,8 +258,14 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		})
 	}
 
-	if params.ExposedThroughHCPRouter {
+	if params.ExposedThroughHCPRouter && !params.IsPrivate {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{Name: "OVN_SBDB_ROUTE_LABELS", Value: util.HCPRouteLabel + "=" + dep.Namespace})
+	}
+	if params.IsPrivate {
+		cnoEnv = append(cnoEnv, corev1.EnvVar{Name: "OVN_SBDB_ROUTE_LABELS", Value: fmt.Sprintf("%v=%v,%v=%v",
+			util.HCPRouteLabel, dep.Namespace,
+			util.InternalRouteLabel, "true"),
+		})
 	}
 
 	var proxyVars []corev1.EnvVar
