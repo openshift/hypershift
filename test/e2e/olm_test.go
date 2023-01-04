@@ -33,6 +33,9 @@ const (
 // TestOLM executes a suite of olm tests which ensure that olm is
 // behaving as expected on the guest cluster.
 func TestOLM(t *testing.T) {
+	// Skip test until https://issues.redhat.com/browse/OCPBUGS-4600 is fixed
+	// Pod restarts are already ignored for *-catalog pods
+	t.SkipNow()
 	t.Parallel()
 
 	g := NewWithT(t)
