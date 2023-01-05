@@ -9,10 +9,6 @@ import (
 	"io"
 	"os"
 	"testing"
-	"time"
-
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -104,34 +100,15 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool image")
 	}
 
-	// Check the upgrade is signalled in a condition.
-	for _, nodePool := range nodePools.Items {
-		err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
-			err = client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-
-			for _, condition := range nodePool.Status.Conditions {
-				if condition.Type == hyperv1.NodePoolUpdatingVersionConditionType && condition.Status == corev1.ConditionTrue {
-					return true, nil
-				}
-			}
-			return false, nil
-		}, ctx.Done())
-		g.Expect(err).NotTo(HaveOccurred(), "failed to find UpdatingVersionCondition condition")
-		t.Log("NodePool have UpdatingVersionCondition condition")
-	}
-
-	// Wait for at least 1 Node to be unready, so we know the process is started.
-	e2eutil.WaitForNUnReadyNodes(t, ctx, guestClient, 1)
-	t.Log("Upgrade has stated as at least 1 Node to is unready")
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
-
 	// Wait for NodePools to roll out the latest version
 	// TODO: Consider doing this in parallel
 	for _, nodePool := range nodePools.Items {
 		e2eutil.WaitForNodePoolVersion(t, ctx, client, &nodePool, latestReleaseInfo.Version())
 		e2eutil.WaitForNodePoolConditionsNotToBePresent(t, ctx, client, &nodePool, hyperv1.NodePoolUpdatingVersionConditionType)
 	}
+
+	// Verify all nodes are ready after the upgrade
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 }
@@ -212,34 +189,15 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred(), "failed update nodePool image")
 	}
 
-	// Check the upgrade is signalled in a condition.
-	for _, nodePool := range nodePools.Items {
-		err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
-			err = client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-
-			for _, condition := range nodePool.Status.Conditions {
-				if condition.Type == hyperv1.NodePoolUpdatingVersionConditionType && condition.Status == corev1.ConditionTrue {
-					return true, nil
-				}
-			}
-			return false, nil
-		}, ctx.Done())
-		g.Expect(err).NotTo(HaveOccurred(), "failed to find UpdatingVersionCondition condition")
-		t.Log("NodePool have UpdatingVersionCondition condition")
-	}
-
-	// Wait for at least 1 Node to be unready, so we know the process is started.
-	e2eutil.WaitForNUnReadyNodes(t, ctx, guestClient, 1)
-	t.Log("Upgrade has started as at least 1 Node to is unready")
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
-
 	// Wait for NodePools to roll out the latest version.
 	// TODO: Consider doing this in parallel
 	for _, nodePool := range nodePools.Items {
 		e2eutil.WaitForNodePoolVersion(t, ctx, client, &nodePool, latestReleaseInfo.Version())
 		e2eutil.WaitForNodePoolConditionsNotToBePresent(t, ctx, client, &nodePool, hyperv1.NodePoolUpdatingVersionConditionType)
 	}
+
+	// Verify all nodes are ready after the upgrade
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 }
