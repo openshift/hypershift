@@ -79,8 +79,8 @@ func ReconcileMachineApproverRoleBinding(binding *rbacv1.RoleBinding, role *rbac
 	return nil
 }
 
-func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeconfigSecretName string, cm *corev1.ConfigMap, machineApproverImage, availabilityProberImage string, setDefaultSecurityContext bool) error {
-	config.OwnerRefFrom(hcp).ApplyTo(deployment)
+func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeconfigSecretName string, cm *corev1.ConfigMap, machineApproverImage, availabilityProberImage string, setDefaultSecurityContext bool, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(deployment)
 
 	// TODO: enable leader election when the flag is added in machine-approver
 	args := []string{
@@ -215,10 +215,10 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 	return nil
 }
 
-func ReconcileMachineApprover(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, machineApproverImage, availabilityProberImage string, createOrUpdate upsert.CreateOrUpdateFN, setDefaultSecurityContext bool) error {
+func ReconcileMachineApprover(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, machineApproverImage, availabilityProberImage string, createOrUpdate upsert.CreateOrUpdateFN, setDefaultSecurityContext bool, ownerRef config.OwnerRef) error {
 	role := manifests.MachineApproverRole(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, c, role, func() error {
-		return ReconcileMachineApproverRole(role, config.OwnerRefFrom(hcp))
+		return ReconcileMachineApproverRole(role, ownerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine-approver role: %w", err)
 	}
@@ -226,7 +226,7 @@ func ReconcileMachineApprover(ctx context.Context, c client.Client, hcp *hyperv1
 	sa := manifests.MachineApproverServiceAccount(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, c, sa, func() error {
 		util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
-		config.OwnerRefFrom(hcp).ApplyTo(sa)
+		ownerRef.ApplyTo(sa)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine-approver service account: %w", err)
@@ -234,13 +234,13 @@ func ReconcileMachineApprover(ctx context.Context, c client.Client, hcp *hyperv1
 
 	roleBinding := manifests.MachineApproverRoleBinding(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, c, roleBinding, func() error {
-		return ReconcileMachineApproverRoleBinding(roleBinding, role, sa, config.OwnerRefFrom(hcp))
+		return ReconcileMachineApproverRoleBinding(roleBinding, role, sa, ownerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine-approver role binding: %w", err)
 	}
 	cm := manifests.ConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, c, cm, func() error {
-		return ReconcileMachineApproverConfig(cm, config.OwnerRefFrom(hcp))
+		return ReconcileMachineApproverConfig(cm, ownerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine-approver config: %w", err)
 	}
@@ -250,7 +250,7 @@ func ReconcileMachineApprover(ctx context.Context, c client.Client, hcp *hyperv1
 		kubeconfigSecretName := manifests.KASServiceKubeconfigSecret(hcp.Namespace).Name
 		deployment := manifests.MachineApproverDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, c, deployment, func() error {
-			return ReconcileMachineApproverDeployment(deployment, hcp, sa, kubeconfigSecretName, cm, machineApproverImage, availabilityProberImage, setDefaultSecurityContext)
+			return ReconcileMachineApproverDeployment(deployment, hcp, sa, kubeconfigSecretName, cm, machineApproverImage, availabilityProberImage, setDefaultSecurityContext, ownerRef)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile machine-approver deployment: %w", err)
 		}

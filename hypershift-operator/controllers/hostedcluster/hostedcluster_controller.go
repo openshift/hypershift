@@ -132,7 +132,7 @@ type HostedClusterReconciler struct {
 	// 2) The OCP version being deployed is the latest version supported by Hypershift
 	HypershiftOperatorImage string
 
-	// releaseProvider looks up the OCP version for the release images in HostedClusters
+	// ReleaseProvider looks up the OCP version for the release images in HostedClusters
 	ReleaseProvider releaseinfo.ProviderWithRegistryOverrides
 
 	// SetDefaultSecurityContext is used to configure Security Context for containers
@@ -949,6 +949,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 	_, ignitionServerHasHealthzHandler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[ignitionServerHealthzHandlerLabel]
 	_, controlplaneOperatorManagesIgnitionServer := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
+	_, controlPlaneOperatorManagesMachineAutoscaler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]
+	_, controlPlaneOperatorManagesMachineApprover := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]
 
 	p, err := platform.GetPlatform(ctx, hcluster, r.ReleaseProvider, utilitiesImage, pullSecretBytes)
 	if err != nil {
@@ -1390,19 +1392,32 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
+	// Get release image version, if needed
+	var releaseImageVersion semver.Version
+	if !controlPlaneOperatorManagesMachineAutoscaler || !controlPlaneOperatorManagesMachineApprover || !controlplaneOperatorManagesIgnitionServer {
+		releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
+		}
+		releaseImageVersion, err = semver.Parse(releaseInfo.Version())
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
+		}
+	}
+
 	// In >= 4.11 We want to move most of the components reconciliation down to the CPO https://issues.redhat.com/browse/HOSTEDCP-375.
 	// For IBM existing clusters < 4.11 we need to stay consistent and keep deploying existing pods to satisfy validations.
 	// TODO (alberto): drop this after dropping < 4.11 support.
-	if _, hasLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]; !hasLabel {
+	if !controlPlaneOperatorManagesMachineAutoscaler {
 		// Reconcile the autoscaler.
-		err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes)
+		err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
 		}
 	}
-	if _, hasLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]; !hasLabel {
+	if !controlPlaneOperatorManagesMachineApprover {
 		// Reconcile the machine approver.
-		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes); err != nil {
+		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
 		}
 	}
@@ -1429,6 +1444,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			ignitionServerHasHealthzHandler,
 			r.ReleaseProvider.GetRegistryOverrides(),
 			r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
+			config.MutatingOwnerRefFromHCP(hcp, releaseImageVersion),
 		); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
 		}
@@ -1920,17 +1936,17 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1
 // reconcileAutoscaler orchestrates reconciliation of autoscaler components using
 // both the HostedCluster and the HostedControlPlane which the autoscaler takes
 // inputs from.
-func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte) error {
+func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte, releaseVersion semver.Version) error {
 	clusterAutoscalerImage, err := hyperutil.GetPayloadImage(ctx, r.ReleaseProvider, hcluster, ImageStreamAutoscalerImage, pullSecretBytes)
 	if err != nil {
-		return fmt.Errorf("failed to get image for machine approver: %w", err)
+		return fmt.Errorf("failed to get image for cluster autoscaler: %w", err)
 	}
 	// TODO: can remove this override when all IBM production clusters upgraded to a version that uses the release image
 	if imageVal, ok := hcluster.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
 		clusterAutoscalerImage = imageVal
 	}
 
-	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, clusterAutoscalerImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext)
+	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, clusterAutoscalerImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
 }
 
 // GetControlPlaneOperatorImage resolves the appropriate control plane operator
@@ -3156,7 +3172,7 @@ func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Con
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte) error {
+func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte, releaseVersion semver.Version) error {
 	machineApproverImage, err := hyperutil.GetPayloadImage(ctx, r.ReleaseProvider, hcluster, ImageStreamClusterMachineApproverImage, pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to get image for machine approver: %w", err)
@@ -3166,7 +3182,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		machineApproverImage = imageVal
 	}
 
-	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext)
+	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
 }
 
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
@@ -3353,22 +3369,27 @@ func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error)
 // Depending on the awsEndpointAccessType, the routes will be exposed through a HCP router exposed via load balancer external or internal,
 // or through the management cluster ingress.
 // 1 - When Public
-//		If the HO has external DNS support:
-// 			All serviceTypes including KAS should be Routes (with RoutePublishingStrategy.hostname != "").
-// 			They will be exposed through a common HCP router exposed via Service type LB external.
-//		If the HO has no external DNS support:
-//			The KAS serviceType should be LoadBalancer. It will be exposed through a dedicated Service type LB external.
-// 			All other serviceTypes should be Routes. They will be exposed by the management cluster default ingress.
+//
+//	If the HO has external DNS support:
+//		All serviceTypes including KAS should be Routes (with RoutePublishingStrategy.hostname != "").
+//		They will be exposed through a common HCP router exposed via Service type LB external.
+//	If the HO has no external DNS support:
+//		The KAS serviceType should be LoadBalancer. It will be exposed through a dedicated Service type LB external.
+//		All other serviceTypes should be Routes. They will be exposed by the management cluster default ingress.
+//
 // 2 - When PublicAndPrivate
-//		If the HO has external DNS support:
-// 			All serviceTypes including KAS should be Routes (with RoutePublishingStrategy.hostname != "").
-// 			They will be exposed through a common HCP router exposed via both Service type LB internal and external.
-//		If the HO has no external DNS support:
-//			The KAS serviceType should be LoadBalancer. It will be exposed through a dedicated Service type LB external.
-// 			All other serviceTypes should be Routes. They will be exposed by a common HCP router is exposed via Service type LB internal.
+//
+//	If the HO has external DNS support:
+//		All serviceTypes including KAS should be Routes (with RoutePublishingStrategy.hostname != "").
+//		They will be exposed through a common HCP router exposed via both Service type LB internal and external.
+//	If the HO has no external DNS support:
+//		The KAS serviceType should be LoadBalancer. It will be exposed through a dedicated Service type LB external.
+//		All other serviceTypes should be Routes. They will be exposed by a common HCP router is exposed via Service type LB internal.
+//
 // 3 - When Private
-//		The KAS serviceType should be Route or Load balancer. TODO (alberto): remove Load balancer choice for private.
-// 		All other serviceTypes should be Routes. They will be exposed by a common HCP router exposed via Service type LB internal.
+//
+//	The KAS serviceType should be Route or Load balancer. TODO (alberto): remove Load balancer choice for private.
+//	All other serviceTypes should be Routes. They will be exposed by a common HCP router exposed via Service type LB internal.
 func (r *HostedClusterReconciler) validateAWSConfig(hc *hyperv1.HostedCluster) error {
 	if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
 		return nil
