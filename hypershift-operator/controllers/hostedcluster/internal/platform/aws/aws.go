@@ -7,6 +7,7 @@ import (
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
+	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/images"
@@ -28,16 +29,18 @@ const (
 	ImageStreamCAPA = "aws-cluster-api-controllers"
 )
 
-func New(utilitiesImage string, capiProviderImage string) *AWS {
+func New(utilitiesImage string, capiProviderImage string, payloadVersion *semver.Version) *AWS {
 	return &AWS{
 		utilitiesImage:    utilitiesImage,
 		capiProviderImage: capiProviderImage,
+		payloadVersion:    payloadVersion,
 	}
 }
 
 type AWS struct {
 	utilitiesImage    string
 	capiProviderImage string
+	payloadVersion    *semver.Version
 }
 
 func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
@@ -64,7 +67,10 @@ func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOr
 func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	providerImage := p.capiProviderImage
 	if envImage := os.Getenv(images.AWSCAPIProviderEnvVar); len(envImage) > 0 {
-		providerImage = envImage
+		// Only override CAPA image with env var if payload version < 4.12
+		if p.payloadVersion != nil && p.payloadVersion.Major == 4 && p.payloadVersion.Minor < 12 {
+			providerImage = envImage
+		}
 	}
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIProviderAWSImage]; ok {
 		providerImage = override

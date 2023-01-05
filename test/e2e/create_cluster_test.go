@@ -6,8 +6,10 @@ package e2e
 import (
 	"context"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	. "github.com/onsi/gomega"
 
@@ -87,4 +89,51 @@ func TestNoneCreateCluster(t *testing.T) {
 
 	// etcd restarts for me once always and apiserver two times before running stable
 	// e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+}
+
+// TestCreateClusterPrivate implements a smoke test that creates a private cluster.
+// Validations requiring guest cluster client are dropped here since the kas is not accessible when private.
+// In the future we might want to leverage https://issues.redhat.com/browse/HOSTEDCP-697 to access guest cluster.
+func TestCreateClusterPrivate(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
+	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.Private)
+
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
+
+	_, err = e2eutil.WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
+
+	// Ensure NodePools have all Nodes ready.
+	waitTimeout := 30 * time.Minute
+	err = wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
+		var nodePoolList hyperv1.NodePoolList
+		if err := client.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: hostedCluster.Namespace}); err != nil {
+			t.Fatalf("failed to list nodepools: %v", err)
+		}
+		for _, nodePool := range nodePoolList.Items {
+			if *nodePool.Spec.Replicas != nodePool.Status.Replicas {
+				t.Logf("Waiting. NodePool %q wants %v replicas but has %v", nodePool.Name, *nodePool.Spec.Replicas, nodePool.Status.Replicas)
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+
+	// Wait for the rollout to be complete
+	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
+	e2eutil.WaitForImageRolloutWithNoPreRolloutPlatformCheck(t, testContext, client, hostedCluster, globalOpts.LatestReleaseImage)
+
+	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 }

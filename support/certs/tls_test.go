@@ -1,6 +1,7 @@
 package certs_test
 
 import (
+	"bytes"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"net"
@@ -14,6 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/certs"
 )
 
@@ -220,5 +222,77 @@ func TestReconcileSignedCertWithCustomCAKeys(t *testing.T) {
 	if diff := cmp.Diff(expectedKeys, actualKeys); diff != "" {
 		t.Errorf("unexpected keys in cert secret: %s", diff)
 
+	}
+}
+
+func TestCertChainingAttributesPresent(t *testing.T) {
+	caKey, caCert, err := certs.GenerateSelfSignedCertificate(&certs.CertCfg{
+		Subject:   pkix.Name{CommonName: "testca", OrganizationalUnit: []string{"randomorg"}},
+		KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		Validity:  certs.ValidityTenYears,
+		IsCA:      true,
+	})
+
+	if err != nil {
+		t.Fatalf("failed to generate CA cert: %v", err)
+	}
+
+	// The root CA only needs SKID
+	caSKID := caCert.SubjectKeyId
+	if len(caSKID) == 0 {
+		t.Errorf("CA is missing SKID")
+	}
+
+	key, cert, err := certs.GenerateSignedCertificate(caKey, caCert, &certs.CertCfg{
+		Subject:      pkix.Name{CommonName: "server cert", OrganizationalUnit: []string{"testorg"}},
+		KeyUsages:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsages: pki.X509UsageServerAuth,
+		Validity:     certs.ValidityOneYear,
+		DNSNames:     []string{"distant.lands.far"},
+	})
+
+	if err != nil {
+		t.Fatalf("failed to generate server cert: %v", err)
+	}
+
+	if caKey.Equal(key) {
+		t.Errorf("DANGEROUS!!! The CA private key matches the private key of the certificate it signed!")
+	}
+
+	if !bytes.Equal(cert.AuthorityKeyId, caSKID) {
+		t.Errorf("the server cert AKID does not match the CA SKID")
+	}
+
+	if bytes.Equal(cert.SubjectKeyId, cert.AuthorityKeyId) {
+		t.Errorf("The leaf certificate SKID and AKID matches. This should never happen!")
+	}
+
+	caSubKey, caSubCert, err := certs.GenerateSignedCertificate(caKey, caCert, &certs.CertCfg{
+		Subject:   pkix.Name{CommonName: "testca-sub", OrganizationalUnit: []string{"randomorg"}},
+		KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		Validity:  certs.ValidityTenYears,
+		IsCA:      true,
+	})
+
+	if err != nil {
+		t.Fatalf("failed to generate sub CA cert: %v", err)
+	}
+
+	if caSubKey.Equal(caKey) {
+		t.Errorf("DANGEROUS!!! The CA private key matches the private key of the sub-CA certificate it signed!")
+	}
+
+	subSKID := caSubCert.SubjectKeyId
+	subAKID := caSubCert.AuthorityKeyId
+	if len(subSKID) == 0 {
+		t.Errorf("subCA cert is missing SKID")
+	}
+
+	if !bytes.Equal(subAKID, caSKID) {
+		t.Errorf("the subCA AKID does not equal root CA SKID!")
+	}
+
+	if bytes.Equal(subSKID, subAKID) {
+		t.Errorf("The sub-CA certificate SKID and AKID matches. This should never happen!")
 	}
 }

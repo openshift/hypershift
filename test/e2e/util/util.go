@@ -311,11 +311,16 @@ func preRolloutPlatformCheck(t *testing.T, ctx context.Context, client crclient.
 }
 
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
-	g := NewWithT(t)
-	start := time.Now()
-
 	preRolloutPlatformCheck(t, ctx, client, guestClient, hostedCluster)
+	WaitForImageRolloutWithNoPreRolloutPlatformCheck(t, ctx, client, hostedCluster, image)
 
+}
+
+// WaitForImageRolloutWithNoPreRolloutPlatformCheck is like WaitForImageRollout but without calling preRolloutPlatformCheck.
+// This is useful when your test can't access the guest cluster e.g. TestCreateClusterPrivate.
+func WaitForImageRolloutWithNoPreRolloutPlatformCheck(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
+	start := time.Now()
+	g := NewWithT(t)
 	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
 		latest := hostedCluster.DeepCopy()

@@ -201,6 +201,11 @@ func ReconcileAutoscalerRole(role *rbacv1.Role, owner config.OwnerRef) error {
 			},
 			Verbs: []string{"*"},
 		},
+		{
+			APIGroups: []string{"infrastructure.cluster.x-k8s.io"},
+			Resources: []string{"*"},
+			Verbs:     []string{"get", "list"},
+		},
 	}
 	return nil
 }

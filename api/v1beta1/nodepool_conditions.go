@@ -51,6 +51,10 @@ const (
 
 	// NodePoolReconciliationActiveConditionType signals the state of nodePool.spec.pausedUntil.
 	NodePoolReconciliationActiveConditionType = "ReconciliationActive"
+
+	// NodePoolReachedIgnitionEndpoint signals if at least an instance was able to reach the ignition endpoint to get the payload.
+	// When this is false for too long it may require external user intervention to resolve. E.g. Enable AWS security groups to enable networking access.
+	NodePoolReachedIgnitionEndpoint = "ReachedIgnitionEndpoint"
 )
 
 // Reasons
@@ -61,4 +65,5 @@ const (
 	NodePoolFailedToGetReason          = "FailedToGet"
 	IgnitionEndpointMissingReason      = "IgnitionEndpointMissing"
 	IgnitionCACertMissingReason        = "IgnitionCACertMissing"
+	IgnitionNotReached                 = "ignitionNotReached"
 )

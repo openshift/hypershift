@@ -15,22 +15,38 @@ import (
 
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	nodepool "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/util"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	client "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 const namespaceEnvVariableName = "MY_NAMESPACE"
 
-// We only match /ignition
-var ignPathPattern = regexp.MustCompile("^/ignition[^/ ]*$")
-var payloadStore = controllers.NewPayloadStore()
+var (
+	// We only match /ignition
+	ignPathPattern                       = regexp.MustCompile("^/ignition[^/ ]*$")
+	payloadStore                         = controllers.NewPayloadStore()
+	getRequestsPerNodePool               = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "ign_server_get_request"}, []string{"nodePool"})
+	TokenSecretIgnitionReachedAnnotation = "hypershift.openshift.io/ignition-reached"
+)
+
+func init() {
+	metrics.Registry.MustRegister(
+		getRequestsPerNodePool,
+	)
+}
 
 type Options struct {
 	Addr              string
@@ -169,10 +185,15 @@ func run(ctx context.Context, opts Options) error {
 	go mgr.Start(ctx)
 
 	mgr.GetLogger().Info("Using opts", "opts", fmt.Sprintf("%+v", opts))
+	eventRecorder := mgr.GetEventRecorderFor("ignition-server")
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("User Agent: %s. Requested: %s", r.Header.Get("User-Agent"), r.URL.Path)
+
+		tokenSecret := nodepool.TokenSecret(os.Getenv(namespaceEnvVariableName),
+			util.ParseNamespacedName(r.Header.Get("NodePool")).Name,
+			r.Header.Get("TargetConfigVersionHash"))
 
 		if !ignPathPattern.MatchString(r.URL.Path) {
 			// No pattern matched; send 404 response.
@@ -188,6 +209,7 @@ func run(ctx context.Context, opts Options) error {
 		if len(auth) < n || auth[:n] != bearerPrefix {
 			log.Printf("Invalid Authorization header value prefix")
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			eventRecorder.Event(tokenSecret, corev1.EventTypeWarning, "GetPayloadFailed", "Bad header")
 			return
 		}
 		encodedToken := auth[n:]
@@ -195,6 +217,7 @@ func run(ctx context.Context, opts Options) error {
 		if err != nil {
 			log.Printf("Invalid token value")
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			eventRecorder.Event(tokenSecret, corev1.EventTypeWarning, "GetPayloadFailed", "Token invalid")
 			return
 		}
 
@@ -205,11 +228,25 @@ func run(ctx context.Context, opts Options) error {
 			// https://coreos.github.io/ignition/operator-notes/#http-backoff-and-retry
 			log.Printf("Token not found")
 			http.Error(w, "Token not found", http.StatusNetworkAuthenticationRequired)
+			eventRecorder.Event(tokenSecret, corev1.EventTypeWarning, "GetPayloadFailed", "Token not found in cache")
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
 		w.Write(value.Payload)
+
+		eventRecorder.Event(tokenSecret, corev1.EventTypeNormal, "GetPayload", "")
+		getRequestsPerNodePool.WithLabelValues(r.Header.Get("NodePool")).Inc()
+
+		// Annotate tokenSecret so NodePool controller can set a conditions based on it.
+		if err := mgr.GetClient().Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
+			log.Printf("Failed to get tokenSecret resource: %q: %s", client.ObjectKeyFromObject(tokenSecret).String(), err)
+		} else {
+			tokenSecret.Annotations[TokenSecretIgnitionReachedAnnotation] = "True"
+			if err := mgr.GetClient().Update(ctx, tokenSecret); err != nil {
+				log.Printf("Failed to update tokenSecret: %q: %s", tokenSecret.Name, err)
+			}
+		}
 	})
 	mux.HandleFunc("/healthz", func(http.ResponseWriter, *http.Request) {})
 

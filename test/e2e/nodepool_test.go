@@ -26,13 +26,15 @@ var (
 func TestNodePool(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
-
 	ctx, cancel := context.WithCancel(testContext)
+
 	defer func() {
 		t.Log("Test: NodePool finished")
 		cancel()
 	}()
 
+	// Set of tests
+	// Each test should have their own NodePool
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
 	mgmtClient, err := e2eutil.GetClient()
@@ -44,9 +46,10 @@ func TestNodePool(t *testing.T) {
 	guestCluster := e2eutil.CreateCluster(t, ctx, mgmtClient, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, mgmtClient, guestCluster)
 
-	// Set of tests
-	// Each test should have their own NodePool
-	t.Run("TestNodePoolAutoRepair", testNodePoolAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+	t.Run("Refactored", func(t *testing.T) {
+		t.Run("TestNodePoolAutoRepair", testNodePoolAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+		t.Run("TestNodepoolMachineconfigGetsRolledout", testNodepoolMachineconfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+	})
 }
 
 // nodePoolScaleDownToZero function will scaleDown the nodePool created for the current tests

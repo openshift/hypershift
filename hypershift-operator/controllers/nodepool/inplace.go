@@ -152,7 +152,6 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 	setMachineSetReplicas(nodePool, machineSet)
 
 	// Bubble up upgrading NodePoolUpdatingVersionConditionType.
-	// TODO (alberto): differentiate with NodePoolUpdatingConfigConditionType.
 	var status corev1.ConditionStatus
 	reason := ""
 	message := ""
@@ -169,9 +168,26 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 		reason = hyperv1.NodePoolInplaceUpgradeFailedReason
 		message = machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]
 	}
-	if message != "" {
-		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+
+	// Check if config needs to be updated.
+	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
+
+	// Check if version needs to be updated.
+	isUpdatingVersion := isUpdatingVersion(nodePool, targetVersion)
+
+	if message != "" && isUpdatingVersion {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
+			Status:             status,
+			ObservedGeneration: nodePool.Generation,
+			Message:            message,
+			Reason:             reason,
+		})
+	}
+
+	if message != "" && isUpdatingConfig {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
 			Status:             status,
 			ObservedGeneration: nodePool.Generation,
 			Message:            message,
@@ -192,7 +208,7 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 				reason = c.Reason
 			}
 
-			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolReadyConditionType,
 				Status:             c.Status,
 				ObservedGeneration: nodePool.Generation,
