@@ -1,6 +1,7 @@
 package snapshotcontroller
 
 import (
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller/assets"
 	assets2 "github.com/openshift/hypershift/support/assets"
@@ -78,5 +79,6 @@ func ReconcileOperatorServiceAccount(
 
 	params.OwnerRef.ApplyTo(sa)
 	sa.AutomountServiceAccountToken = operatorServiceAccount.AutomountServiceAccountToken
+	util.EnsurePullSecret(sa, common.PullSecret("").Name)
 	return nil
 }

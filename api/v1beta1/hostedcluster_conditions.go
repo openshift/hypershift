@@ -34,6 +34,11 @@ const (
 	// supported by the underlying management cluster.
 	// A failure here is unlikely to resolve without the changing user input.
 	ValidHostedControlPlaneConfiguration ConditionType = "ValidHostedControlPlaneConfiguration"
+	// CloudResourcesDestroyed bubbles up the same condition from HCP. It signals if the cloud provider infrastructure created by Kubernetes
+	// in the consumer cloud provider account was destroyed.
+	// A failure here may require external user intervention to resolve. E.g. cloud provider perms were corrupted. E.g. the guest cluster was broken
+	// and kube resource deletion that affects cloud infra like service type load balancer can't succeed.
+	CloudResourcesDestroyed ConditionType = "CloudResourcesDestroyed"
 
 	// Bubble up from HCP which bubbles up from CVO.
 
