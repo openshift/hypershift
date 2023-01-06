@@ -2,16 +2,12 @@ package certs
 
 import (
 	"bytes"
-	"crypto"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/asn1"
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
@@ -48,12 +44,6 @@ type CertCfg struct {
 	Subject      pkix.Name
 	Validity     time.Duration
 	IsCA         bool
-}
-
-// rsaPublicKey reflects the ASN.1 structure of a PKCS#1 public key.
-type rsaPublicKey struct {
-	N *big.Int
-	E int
 }
 
 // GenerateSelfSignedCertificate generates a key/cert pair defined by CertCfg.
@@ -126,13 +116,14 @@ func SelfSignedCertificate(cfg *CertCfg, key *rsa.PrivateKey) (*x509.Certificate
 	}
 	// verifies that the CN and/or OU for the cert is set
 	if len(cfg.Subject.CommonName) == 0 || len(cfg.Subject.OrganizationalUnit) == 0 {
-		return nil, errors.Errorf("certification's subject is not set, or invalid")
+		return nil, errors.Errorf("certificate subject is not set, or invalid")
 	}
-	pub := key.Public()
-	cert.SubjectKeyId, err = generateSubjectKeyID(pub)
+
+	cert.SubjectKeyId, err = rsaPubKeySHA1Hash(&key.PublicKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to set subject key identifier")
 	}
+
 	certBytes, err := x509.CreateCertificate(rand.Reader, &cert, &cert, key.Public(), key)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create certificate")
@@ -166,11 +157,12 @@ func signedCertificate(
 		Version:               3,
 		BasicConstraintsValid: true,
 	}
-	pub := caCert.PublicKey.(*rsa.PublicKey)
-	certTmpl.SubjectKeyId, err = generateSubjectKeyID(pub)
+
+	certTmpl.SubjectKeyId, err = rsaPubKeySHA1Hash(&key.PublicKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to set subject key identifier")
 	}
+
 	certBytes, err := x509.CreateCertificate(rand.Reader, &certTmpl, caCert, key.Public(), caKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create x509 certificate")
@@ -178,25 +170,12 @@ func signedCertificate(
 	return x509.ParseCertificate(certBytes)
 }
 
-// generateSubjectKeyID generates a SHA-1 hash of the subject public key.
-func generateSubjectKeyID(pub crypto.PublicKey) ([]byte, error) {
-	var publicKeyBytes []byte
-	var err error
-
-	switch pub := pub.(type) {
-	case *rsa.PublicKey:
-		publicKeyBytes, err = asn1.Marshal(rsaPublicKey{N: pub.N, E: pub.E})
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to Marshal ans1 public key")
-		}
-	case *ecdsa.PublicKey:
-		publicKeyBytes = elliptic.Marshal(pub.Curve, pub.X, pub.Y)
-	default:
-		return nil, errors.New("only RSA and ECDSA public keys supported")
+func rsaPubKeySHA1Hash(pub *rsa.PublicKey) ([]byte, error) {
+	hash := sha1.New()
+	if _, err := hash.Write(pub.N.Bytes()); err != nil {
+		return nil, err
 	}
-
-	hash := sha1.Sum(publicKeyBytes)
-	return hash[:], nil
+	return hash.Sum(nil), nil
 }
 
 // PrivateKeyToPem converts an rsa.PrivateKey object to pem string

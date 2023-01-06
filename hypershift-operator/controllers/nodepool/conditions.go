@@ -23,16 +23,16 @@ const (
 // We want to relax validation to ease bubbling up from CAPI which uses their own type not honouring metav1 validations, particularly "Reason" accepts pretty much free string.
 // TODO (alberto): work upstream towards consolidation and programmatic Reasons.
 
-// setStatusCondition sets the corresponding condition in conditions to newCondition.
+// SetStatusCondition sets the corresponding condition in conditions to newCondition.
 // conditions must be non-nil.
 // 1. if the condition of the specified type already exists (all fields of the existing condition are updated to
 //    newCondition, LastTransitionTime is set to now if the new status differs from the old status)
 // 2. if a condition of the specified type does not exist (LastTransitionTime is set to now() if unset, and newCondition is appended)
-func setStatusCondition(conditions *[]hyperv1.NodePoolCondition, newCondition hyperv1.NodePoolCondition) {
+func SetStatusCondition(conditions *[]hyperv1.NodePoolCondition, newCondition hyperv1.NodePoolCondition) {
 	if conditions == nil {
 		return
 	}
-	existingCondition := findStatusCondition(*conditions, newCondition.Type)
+	existingCondition := FindStatusCondition(*conditions, newCondition.Type)
 	if existingCondition == nil {
 		if newCondition.LastTransitionTime.IsZero() {
 			newCondition.LastTransitionTime = metav1.NewTime(time.Now())
@@ -72,8 +72,8 @@ func removeStatusCondition(conditions *[]hyperv1.NodePoolCondition, conditionTyp
 	*conditions = newConditions
 }
 
-// findStatusCondition finds the conditionType in conditions.
-func findStatusCondition(conditions []hyperv1.NodePoolCondition, conditionType string) *hyperv1.NodePoolCondition {
+// FindStatusCondition finds the conditionType in conditions.
+func FindStatusCondition(conditions []hyperv1.NodePoolCondition, conditionType string) *hyperv1.NodePoolCondition {
 	for i := range conditions {
 		if conditions[i].Type == conditionType {
 			return &conditions[i]
@@ -83,7 +83,7 @@ func findStatusCondition(conditions []hyperv1.NodePoolCondition, conditionType s
 	return nil
 }
 
-// findStatusCondition finds the conditionType in conditions.
+// FindStatusCondition finds the conditionType in conditions.
 func findCAPIStatusCondition(conditions []capiv1.Condition, conditionType capiv1.ConditionType) *capiv1.Condition {
 	for i := range conditions {
 		if conditions[i].Type == conditionType {

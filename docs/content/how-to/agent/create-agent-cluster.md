@@ -416,7 +416,7 @@ In order to get the cluster in a running state we need to add some nodes to it. 
 We add nodes to our HostedCluster by scaling the NodePool object. In this case we will start by scaling the NodePool object to two nodes:
 
 ~~~sh
-oc -n ${CLUSTERS_NAMESPACE} scale nodepool ${HOSTED_CLUSTER_NAME} --replicas 2
+oc -n ${CLUSTERS_NAMESPACE} scale nodepool ${NODEPOOL_NAME} --replicas 2
 ~~~
 
 The ClusterAPI Agent provider will pick two agents randomly that will get assigned to the HostedCluster. These agents will go over different states and will finally join the HostedCluster as OpenShift nodes.

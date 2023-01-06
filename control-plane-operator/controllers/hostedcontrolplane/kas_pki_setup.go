@@ -201,7 +201,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return pki.ReconcileTotalClientCA(
 			totalClientCA,
 			p.OwnerRef,
-			append(totalClientCABundle, rootCASecret)...,
+			totalClientCABundle...,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile combined CA: %w", err)

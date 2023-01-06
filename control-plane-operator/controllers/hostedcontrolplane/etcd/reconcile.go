@@ -36,6 +36,12 @@ func etcdInitContainer() *corev1.Container {
 	}
 }
 
+func ensureDNSContainer() *corev1.Container {
+	return &corev1.Container{
+		Name: "ensure-dns",
+	}
+}
+
 func etcdMetricsContainer() *corev1.Container {
 	return &corev1.Container{
 		Name: "etcd-metrics",
@@ -77,10 +83,13 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 		util.BuildContainer(etcdMetricsContainer(), buildEtcdMetricsContainer(p, ss.Namespace)),
 	}
 
+	ss.Spec.Template.Spec.InitContainers = []corev1.Container{
+		util.BuildContainer(ensureDNSContainer(), buildEnsureDNSContainer(p, ss.Namespace)),
+	}
+
 	if len(p.StorageSpec.RestoreSnapshotURL) > 0 && !p.SnapshotRestored {
-		ss.Spec.Template.Spec.InitContainers = []corev1.Container{
-			util.BuildContainer(etcdInitContainer(), buildEtcdInitContainer(p)),
-		}
+		ss.Spec.Template.Spec.InitContainers = append(ss.Spec.Template.Spec.InitContainers,
+			util.BuildContainer(etcdInitContainer(), buildEtcdInitContainer(p)))
 	}
 
 	ss.Spec.Template.Spec.Volumes = []corev1.Volume{
@@ -154,6 +163,21 @@ func buildEtcdInitContainer(p *EtcdParams) func(c *corev1.Container) {
 				MountPath: "/var/lib",
 			},
 		}
+	}
+}
+
+func buildEnsureDNSContainer(p *EtcdParams, ns string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Env = []corev1.EnvVar{
+			{
+				Name:  "NAMESPACE",
+				Value: ns,
+			},
+		}
+		c.Image = p.CPOImage
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.Command = []string{"/bin/bash"}
+		c.Args = []string{"-c", "exec control-plane-operator resolve-dns ${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc"}
 	}
 }
 
