@@ -37,6 +37,10 @@ const (
 	// CapabilityProxy indicates if the cluster supports the
 	// proxies.config.openshift.io api
 	CapabilityProxy
+
+	// CapabilityDNS indicates if the cluster supports the
+	// dnses.config.openshift.io api
+	CapabilityDNS
 )
 
 // ManagementClusterCapabilities holds all information about optional capabilities of
@@ -125,6 +129,15 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 	}
 	if hasProxyCap {
 		discoveredCapabilities[CapabilityProxy] = struct{}{}
+	}
+
+	// check for dns capability
+	hasDNSCap, err := isAPIResourceRegistered(client, configv1.GroupVersion, "dnses")
+	if err != nil {
+		return nil, err
+	}
+	if hasDNSCap {
+		discoveredCapabilities[CapabilityDNS] = struct{}{}
 	}
 
 	return &ManagementClusterCapabilities{capabilities: discoveredCapabilities}, nil
