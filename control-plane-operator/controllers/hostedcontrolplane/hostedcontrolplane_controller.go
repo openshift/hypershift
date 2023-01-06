@@ -664,11 +664,11 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		releaseImage.ComponentImages()[util.CPOImageName],
 		hostedControlPlane,
 		r.DefaultIngressDomain,
-		r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
-		r.ReleaseProvider.GetRegistryOverrides(),
-		// The healthz handler was added before the CPO started to mange te ignition server and its the same binary,
+	        // The healthz handler was added before the CPO started to mange te ignition server and its the same binary,
 		// so we know it always exists here.
-		true,
+		true,		
+		r.ReleaseProvider.GetRegistryOverrides(),
+		r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
 		config.OwnerRefFrom(hostedControlPlane),
 	); err != nil {
 		return fmt.Errorf("failed to reconcile ignition server: %w", err)
