@@ -3244,9 +3244,16 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	}
 
 	// Reconcile KAS Network Policy
+	var managementClusterNetwork *configv1.Network
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityNetworks) {
+		managementClusterNetwork = &configv1.Network{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(managementClusterNetwork), managementClusterNetwork); err != nil {
+			return fmt.Errorf("failed to get management cluster network config: %w", err)
+		}
+	}
 	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileKASNetworkPolicy(policy, hcluster)
+		return reconcileKASNetworkPolicy(policy, hcluster, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
 	}
@@ -3596,9 +3603,10 @@ func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) err
 	return nil
 }
 
-func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
 	port := intstr.FromInt(int(hyperutil.BindAPIPortWithDefaultFromHostedCluster(hcluster, config.DefaultAPIServerPort)))
 	protocol := corev1.ProtocolTCP
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			From: []networkingv1.NetworkPolicyPeer{},
@@ -3626,12 +3634,96 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 		}
 	}
 
+	// NetworkPolicy egress is broken for 4.11 on OpenShiftSDN, this is a workaround
+	// https://issues.redhat.com/browse/OCPBUGS-2105
+	if managementClusterNetwork != nil && managementClusterNetwork.Spec.NetworkType != "OpenShiftSDN" {
+		// Allow traffic to same namespace
+		policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+			{
+				To: []networkingv1.NetworkPolicyPeer{
+					{
+						PodSelector: &metav1.LabelSelector{},
+					},
+				},
+			},
+		}
+
+		if len(managementClusterNetwork.Spec.ClusterNetwork) > 0 {
+			clusterNetworks := []string{}
+			for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
+				clusterNetworks = append(clusterNetworks, network.CIDR)
+			}
+
+			// Allow to any destination not on the management cluster service network
+			// i.e. block all inter-namespace egress from KAS not allowed by other rules
+			policy.Spec.Egress = append(policy.Spec.Egress,
+				networkingv1.NetworkPolicyEgressRule{
+					To: []networkingv1.NetworkPolicyPeer{
+						{
+							IPBlock: &networkingv1.IPBlock{
+								CIDR:   "0.0.0.0/0",
+								Except: clusterNetworks,
+							},
+						},
+					},
+				})
+		}
+
+		if isOpenShiftDNS {
+			// Allow traffic to openshift-dns namespace
+			dnsUDPPort := intstr.FromInt(5353)
+			dnsUDPProtocol := corev1.ProtocolUDP
+			dnsTCPPort := intstr.FromInt(5353)
+			dnsTCPProtocol := corev1.ProtocolTCP
+			policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+				To: []networkingv1.NetworkPolicyPeer{
+					{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"kubernetes.io/metadata.name": "openshift-dns",
+							},
+						},
+					},
+				},
+				Ports: []networkingv1.NetworkPolicyPort{
+					{
+						Port:     &dnsUDPPort,
+						Protocol: &dnsUDPProtocol,
+					},
+					{
+						Port:     &dnsTCPPort,
+						Protocol: &dnsTCPProtocol,
+					},
+				},
+			})
+		} else {
+			// All traffic to any destination on port 53 for both TCP and UDP
+			dnsUDPPort := intstr.FromInt(53)
+			dnsUDPProtocol := corev1.ProtocolUDP
+			dnsTCPPort := intstr.FromInt(53)
+			dnsTCPProtocol := corev1.ProtocolTCP
+			policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+				Ports: []networkingv1.NetworkPolicyPort{
+					{
+						Port:     &dnsUDPPort,
+						Protocol: &dnsUDPProtocol,
+					},
+					{
+						Port:     &dnsTCPPort,
+						Protocol: &dnsTCPProtocol,
+					},
+				},
+			})
+		}
+		policy.Spec.PolicyTypes = append(policy.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
+	}
+
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"app": "kube-apiserver",
 		},
 	}
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+
 	return nil
 }
 
