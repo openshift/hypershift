@@ -15,7 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
-func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int, apiAllowedCIDRBlocks []string, isPublic bool, hcp *hyperv1.HostedControlPlane) error {
+func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int, apiAllowedCIDRBlocks []string, isPublic, isPrivate bool) error {
 	util.EnsureOwnerRef(svc, owner)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = kasLabels()
@@ -49,7 +49,7 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
 				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
 			}
-			if _, crossZoneLoadBalancingEnabled := hcp.Annotations[hyperv1.HypershiftAWSLoadBalancerCrossZoneLoadBalancingEnabled]; crossZoneLoadBalancingEnabled {
+			if isPrivate {
 				svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
 			}
 		} else {
@@ -126,10 +126,7 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 		svc.Annotations = map[string]string{}
 	}
 
-	if _, crossZoneLoadBalancingEnabled := hcp.Annotations[hyperv1.HypershiftAWSLoadBalancerCrossZoneLoadBalancingEnabled]; crossZoneLoadBalancingEnabled {
-		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
-	}
-
+	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
 	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
 	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
 	svc.Spec.Ports[0] = portSpec
