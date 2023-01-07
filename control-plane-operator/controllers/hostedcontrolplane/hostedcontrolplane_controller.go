@@ -847,10 +847,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile image registry operator: %w", err)
 	}
 
-	// Reconcile cluster storage operator
-	r.Log.Info("Reconciling cluster storage operator")
-	if err = r.reconcileClusterStorageOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile cluster storage operator: %w", err)
+	if hostedControlPlane.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+		// Reconcile cluster storage operator
+		r.Log.Info("Reconciling cluster storage operator")
+		if err = r.reconcileClusterStorageOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile cluster storage operator: %w", err)
+		}
 	}
 
 	// Reconcile Ignition
@@ -872,16 +874,18 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to ensure control plane: %w", err)
 	}
 
-	// Reconcile cloud csi driver
-	r.Log.Info("Reconciling CSI Driver")
-	if err := r.reconcileCSIDriver(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile csi driver: %w", err)
-	}
+	if hostedControlPlane.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+		// Reconcile cloud csi driver
+		r.Log.Info("Reconciling CSI Driver")
+		if err := r.reconcileCSIDriver(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile csi driver: %w", err)
+		}
 
-	// Reconcile CSI snapshot controller operator
-	r.Log.Info("Reconciling CSI snapshot controller operator")
-	if err := r.reconcileCSISnapshotControllerOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile CSI snapshot controller operator: %w", err)
+		// Reconcile CSI snapshot controller operator
+		r.Log.Info("Reconciling CSI snapshot controller operator")
+		if err := r.reconcileCSISnapshotControllerOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile CSI snapshot controller operator: %w", err)
+		}
 	}
 
 	return nil
@@ -2375,7 +2379,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, util.APIPort(hcp))
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, util.APIPort(hcp), p.PlatformType)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}

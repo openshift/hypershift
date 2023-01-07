@@ -104,7 +104,7 @@ func cvoLabels() map[string]string {
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image, cliImage, availabilityProberImage, clusterID string, apiPort *int32) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image, cliImage, availabilityProberImage, clusterID string, apiPort *int32, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -127,7 +127,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
 				InitContainers: []corev1.Container{
-					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(image)),
+					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(image, platformType)),
 					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterID)),
 				},
 				Containers: []corev1.Container{
@@ -172,13 +172,13 @@ func cvoContainerMain() *corev1.Container {
 	}
 }
 
-func buildCVOContainerPrepPayload(image string) func(c *corev1.Container) {
+func buildCVOContainerPrepPayload(image string, platformType hyperv1.PlatformType) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"/bin/bash"}
 		c.Args = []string{
 			"-c",
-			preparePayloadScript(),
+			preparePayloadScript(platformType),
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
@@ -213,21 +213,47 @@ type resourceDesc struct {
 	kind       string
 }
 
-func resourcesToRemove() []resourceDesc {
-	return []resourceDesc{
-		{
-			apiVersion: "apps/v1",
-			kind:       "Deployment",
-			name:       "network-operator",
-			namespace:  "openshift-network-operator",
-		},
-		{
-			apiVersion: "rbac.authorization.k8s.io/v1",
-			kind:       "ClusterRoleBinding",
-			name:       "default-account-cluster-network-operator",
-		},
-		/* TODO: Add these to the remove list when no longer used for POCs (IBM) */
-		/*
+func resourcesToRemove(platformType hyperv1.PlatformType) []resourceDesc {
+	switch platformType {
+	case hyperv1.IBMCloudPlatform:
+		return []resourceDesc{
+			{
+				apiVersion: "apps/v1",
+				kind:       "Deployment",
+				name:       "network-operator",
+				namespace:  "openshift-network-operator",
+			},
+			{
+				apiVersion: "rbac.authorization.k8s.io/v1",
+				kind:       "ClusterRoleBinding",
+				name:       "default-account-cluster-network-operator",
+			},
+			{
+				apiVersion: "apps/v1",
+				kind:       "Deployment",
+				name:       "cluster-node-tuning-operator",
+				namespace:  "openshift-cluster-node-tuning-operator",
+			},
+			{
+				apiVersion: "apps/v1",
+				kind:       "Deployment",
+				name:       "cluster-image-registry-operator",
+				namespace:  "openshift-image-registry",
+			},
+		}
+	default:
+		return []resourceDesc{
+			{
+				apiVersion: "apps/v1",
+				kind:       "Deployment",
+				name:       "network-operator",
+				namespace:  "openshift-network-operator",
+			},
+			{
+				apiVersion: "rbac.authorization.k8s.io/v1",
+				kind:       "ClusterRoleBinding",
+				name:       "default-account-cluster-network-operator",
+			},
 			{
 				apiVersion: "apiextensions.k8s.io/v1",
 				kind:       "CustomResourceDefinition",
@@ -238,59 +264,59 @@ func resourcesToRemove() []resourceDesc {
 				kind:       "CustomResourceDefinition",
 				name:       "machineconfigpools.machineconfiguration.openshift.io",
 			},
-		*/
-		{
-			apiVersion: "apps/v1",
-			kind:       "Deployment",
-			name:       "cluster-node-tuning-operator",
-			namespace:  "openshift-cluster-node-tuning-operator",
-		},
-		{
-			apiVersion: "apps/v1",
-			kind:       "Deployment",
-			name:       "cluster-image-registry-operator",
-			namespace:  "openshift-image-registry",
-		},
-		{
-			apiVersion: "apps/v1",
-			kind:       "Deployment",
-			name:       "cluster-storage-operator",
-			namespace:  "openshift-cluster-storage-operator",
-		},
-		{
-			apiVersion: "apps/v1",
-			kind:       "Deployment",
-			name:       "csi-snapshot-controller-operator",
-			namespace:  "openshift-cluster-storage-operator",
-		},
-		{
-			apiVersion: "apps/v1",
-			kind:       "Deployment",
-			name:       "aws-ebs-csi-driver-operator",
-			namespace:  "openshift-cluster-csi-drivers",
-		},
-		{
-			apiVersion: "apps/v1",
-			kind:       "Deployment",
-			name:       "aws-ebs-csi-driver-controller",
-			namespace:  "openshift-cluster-csi-drivers",
-		},
-		{
-			apiVersion: "apps/v1",
-			kind:       "Deployment",
-			name:       "csi-snapshot-webhook",
-			namespace:  "openshift-cluster-storage-operator",
-		},
-		{
-			apiVersion: "apps/v1",
-			kind:       "Deployment",
-			name:       "csi-snapshot-controller",
-			namespace:  "openshift-cluster-storage-operator",
-		},
+			{
+				apiVersion: "apps/v1",
+				kind:       "Deployment",
+				name:       "cluster-node-tuning-operator",
+				namespace:  "openshift-cluster-node-tuning-operator",
+			},
+			{
+				apiVersion: "apps/v1",
+				kind:       "Deployment",
+				name:       "cluster-image-registry-operator",
+				namespace:  "openshift-image-registry",
+			},
+			{
+				apiVersion: "apps/v1",
+				kind:       "Deployment",
+				name:       "cluster-storage-operator",
+				namespace:  "openshift-cluster-storage-operator",
+			},
+			{
+				apiVersion: "apps/v1",
+				kind:       "Deployment",
+				name:       "csi-snapshot-controller-operator",
+				namespace:  "openshift-cluster-storage-operator",
+			},
+			{
+				apiVersion: "apps/v1",
+				kind:       "Deployment",
+				name:       "aws-ebs-csi-driver-operator",
+				namespace:  "openshift-cluster-csi-drivers",
+			},
+			{
+				apiVersion: "apps/v1",
+				kind:       "Deployment",
+				name:       "aws-ebs-csi-driver-controller",
+				namespace:  "openshift-cluster-csi-drivers",
+			},
+			{
+				apiVersion: "apps/v1",
+				kind:       "Deployment",
+				name:       "csi-snapshot-webhook",
+				namespace:  "openshift-cluster-storage-operator",
+			},
+			{
+				apiVersion: "apps/v1",
+				kind:       "Deployment",
+				name:       "csi-snapshot-controller",
+				namespace:  "openshift-cluster-storage-operator",
+			},
+		}
 	}
 }
 
-func preparePayloadScript() string {
+func preparePayloadScript(platformType hyperv1.PlatformType) string {
 	payloadDir := volumeMounts.Path(cvoContainerPrepPayload().Name, cvoVolumePayload().Name)
 	var stmts []string
 
@@ -301,16 +327,21 @@ func preparePayloadScript() string {
 		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
 	for _, manifest := range manifestsToOmit {
+		if platformType == hyperv1.IBMCloudPlatform {
+			if manifest == "0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml" || manifest == "0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml" {
+				continue
+			}
+		}
 		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", manifest)))
 	}
-	toRemove := resourcesToRemove()
+	toRemove := resourcesToRemove(platformType)
 	if len(toRemove) > 0 {
 		// NOTE: the name of the cleanup file indicates the CVO runlevel for the cleanup.
 		// A level of 0000_01 forces the cleanup to happen first without waiting for any cluster operators to
 		// become available.
 		stmts = append(stmts, fmt.Sprintf("cat > %s/release-manifests/0000_01_cleanup.yaml <<EOF", payloadDir))
 	}
-	for _, desc := range resourcesToRemove() {
+	for _, desc := range toRemove {
 		stmts = append(stmts,
 			"---",
 			fmt.Sprintf("apiVersion: %s", desc.apiVersion),
