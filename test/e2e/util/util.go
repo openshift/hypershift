@@ -444,6 +444,10 @@ func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Con
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
+			// OLM catalogs rely on imagePullPolicy Always for updates
+			if strings.HasPrefix(pod.Name, "catalog-") {
+				continue
+			}
 			for _, initContainer := range pod.Spec.InitContainers {
 				if initContainer.ImagePullPolicy != corev1.PullIfNotPresent {
 					t.Errorf("container %s in pod %s has doesn't have imagePullPolicy %s but %s", initContainer.Name, pod.Name, corev1.PullIfNotPresent, initContainer.ImagePullPolicy)
