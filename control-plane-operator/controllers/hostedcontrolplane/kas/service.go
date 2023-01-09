@@ -50,6 +50,10 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
 			}
 			if isPrivate {
+				// AWS Private link requires endpoint and service endpoints to exist in the same underlying zone.
+				// To ensure that requirement is satisfied in Regions with more than 3 zones, managed services create subnets in all of them.
+				// That and having this enabled in the load balancers would make the private link communication to always succeed.
+				// Without this the connection might go to a subnet without Node and so it would be rejected.
 				svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
 			}
 		} else {
