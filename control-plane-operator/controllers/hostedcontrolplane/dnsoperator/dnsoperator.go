@@ -62,6 +62,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 	}
 	p.DeploymentConfig.AdditionalLabels = map[string]string{
 		"name":                        "dns-operator",
+		"app":                         "dns-operator",
 		hyperv1.ControlPlaneComponent: "dns-operator",
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
