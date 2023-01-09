@@ -31,6 +31,9 @@ func TestCreateCluster(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	// Exercise external-dns integration for PublicAndPrivate clusters in this test
+	// since doing it on every test case results in route53 rate limiting and flakes in CI
+	clusterOpts.ExternalDNSDomain = globalOpts.configurableClusterOptions.ExternalDNSDomain
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
@@ -105,6 +108,9 @@ func TestCreateClusterPrivate(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	// Exercise external-dns integration for Private clusters in this test
+	// since doing it on every test case results in route53 rate limiting and flakes in CI
+	clusterOpts.ExternalDNSDomain = globalOpts.configurableClusterOptions.ExternalDNSDomain
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.Private)
 

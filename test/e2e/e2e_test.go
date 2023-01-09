@@ -252,7 +252,6 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		BaseDomain:                o.configurableClusterOptions.BaseDomain,
 		PullSecretFile:            o.configurableClusterOptions.PullSecretFile,
 		ControlPlaneOperatorImage: o.configurableClusterOptions.ControlPlaneOperatorImage,
-		ExternalDNSDomain:         o.configurableClusterOptions.ExternalDNSDomain,
 		AWSPlatform: core.AWSPlatformOptions{
 			InstanceType:       "m5.large",
 			RootVolumeSize:     64,
