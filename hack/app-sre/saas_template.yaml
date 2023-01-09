@@ -360,6 +360,7 @@ objects:
           - --txt-suffix=-external-dns
           - --txt-owner-id=${EXTERNAL_DNS_TXT_OWNER_ID}
           - --aws-zone-type=public
+          - --aws-batch-change-interval=10s
           command:
           - /external-dns
           env:
