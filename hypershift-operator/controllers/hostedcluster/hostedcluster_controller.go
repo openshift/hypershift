@@ -1779,9 +1779,6 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		// Enforce ServiceAccount.
 		deployment.Spec.Template.Spec.ServiceAccountName = capiProviderServiceAccount.Name
 
-		// TODO (alberto): Reconsider enable this back when we face a real need
-		// with no better solution.
-		// deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 		deploymentConfig := config.DeploymentConfig{
 			Scheduling: config.Scheduling{
 				PriorityClass: config.DefaultPriorityClass,
@@ -1790,6 +1787,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		}
 
 		deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+		deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 		deploymentConfig.ApplyTo(deployment)
 
 		return nil
@@ -2230,8 +2228,9 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 	}
 
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
-	deploymentConfig.ApplyTo(deployment)
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
+	deploymentConfig.ApplyTo(deployment)
+
 	return nil
 }
 
@@ -2603,8 +2602,9 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 	}
 
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
-	deploymentConfig.ApplyTo(deployment)
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
+	deploymentConfig.ApplyTo(deployment)
+
 	return nil
 }
 
