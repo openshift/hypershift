@@ -4,6 +4,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -113,6 +114,14 @@ func KubevirtCSIDriverTenantNodeClusterRoleBinding(ns string) *rbacv1.ClusterRol
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kubevirt-csi-node-binding",
 			Namespace: ns,
+		},
+	}
+}
+
+func KubevirtCSIDriverDefaultTenantStorageClass() *storagev1.StorageClass {
+	return &storagev1.StorageClass{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kubevirt-csi-infra-default",
 		},
 	}
 }
