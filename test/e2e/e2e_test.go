@@ -64,6 +64,8 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.ExternalDNSDomain, "e2e.external-dns-domain", "", "domain that external-dns will use to create DNS records for HCP endpoints")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtContainerDiskImage, "e2e.kubevirt-container-disk-image", "", "DEPRECATED (ignored will be removed soon)")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtNodeMemory, "e2e.kubevirt-node-memory", "4Gi", "the amount of memory to provide to each workload node")
+	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtInfraKubeconfigFile, "e2e.kubevirt-infra-kubeconfig", "", "path to the kubeconfig file of the external infra cluster")
+	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtInfraNamespace, "e2e.kubevirt-infra-namespace", "", "the namespace on the infra cluster the workers will be created on")
 	flag.IntVar(&globalOpts.configurableClusterOptions.NodePoolReplicas, "e2e.node-pool-replicas", 2, "the number of replicas for each node pool in the cluster")
 	flag.StringVar(&globalOpts.LatestReleaseImage, "e2e.latest-release-image", "", "The latest OCP release image for use by tests")
 	flag.StringVar(&globalOpts.PreviousReleaseImage, "e2e.previous-release-image", "", "The previous OCP release image relative to the latest")
@@ -219,29 +221,31 @@ type options struct {
 }
 
 type configurableClusterOptions struct {
-	AWSCredentialsFile         string
-	AzureCredentialsFile       string
-	AzureLocation              string
-	Region                     string
-	Zone                       stringSliceVar
-	PullSecretFile             string
-	BaseDomain                 string
-	ControlPlaneOperatorImage  string
-	AWSEndpointAccess          string
-	ExternalDNSDomain          string
-	KubeVirtContainerDiskImage string
-	KubeVirtNodeMemory         string
-	NodePoolReplicas           int
-	SSHKeyFile                 string
-	NetworkType                string
-	PowerVSResourceGroup       string
-	PowerVSRegion              string
-	PowerVSZone                string
-	PowerVSVpcRegion           string
-	PowerVSSysType             string
-	PowerVSProcType            hyperv1.PowerVSNodePoolProcType
-	PowerVSProcessors          string
-	PowerVSMemory              int
+	AWSCredentialsFile          string
+	AzureCredentialsFile        string
+	AzureLocation               string
+	Region                      string
+	Zone                        stringSliceVar
+	PullSecretFile              string
+	BaseDomain                  string
+	ControlPlaneOperatorImage   string
+	AWSEndpointAccess           string
+	ExternalDNSDomain           string
+	KubeVirtContainerDiskImage  string
+	KubeVirtNodeMemory          string
+	KubeVirtInfraKubeconfigFile string
+	KubeVirtInfraNamespace      string
+	NodePoolReplicas            int
+	SSHKeyFile                  string
+	NetworkType                 string
+	PowerVSResourceGroup        string
+	PowerVSRegion               string
+	PowerVSZone                 string
+	PowerVSVpcRegion            string
+	PowerVSSysType              string
+	PowerVSProcType             hyperv1.PowerVSNodePoolProcType
+	PowerVSProcessors           string
+	PowerVSMemory               int
 }
 
 var nextAWSZoneIndex = 0
@@ -269,6 +273,8 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
 			Cores:                     2,
 			Memory:                    o.configurableClusterOptions.KubeVirtNodeMemory,
+			InfraKubeConfigFile:       o.configurableClusterOptions.KubeVirtInfraKubeconfigFile,
+			InfraNamespace:            o.configurableClusterOptions.KubeVirtInfraNamespace,
 		},
 		AzurePlatform: core.AzurePlatformOptions{
 			CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
@@ -369,7 +375,7 @@ func (o *options) Validate() error {
 	if len(o.configurableClusterOptions.BaseDomain) == 0 {
 		// The KubeVirt e2e tests don't require a base domain right now.
 		//
-		// For KubeVirt, the e2e tests generate a base domain within the *apps domain
+		// For KubeVirt, the e2e tests generate a base domain within the *.apps domain
 		// of the ocp cluster. So, the guest cluster's base domain is a
 		// subdomain of the hypershift infra/mgmt cluster's base domain.
 		//
@@ -377,11 +383,11 @@ func (o *options) Validate() error {
 		//   Infra/Mgmt cluster's DNS
 		//     Base: example.com
 		//     Cluster: mgmt-cluster.example.com
-		//     Apps:    *apps.mgmt-cluster.example.com
+		//     Apps:    *.apps.mgmt-cluster.example.com
 		//   KubeVirt Guest cluster's DNS
 		//     Base: apps.mgmt-cluster.example.com
 		//     Cluster: guest.apps.mgmt-cluster.example.com
-		//     Apps: *apps.guest.apps.mgmt-cluster.example.com
+		//     Apps: *.apps.guest.apps.mgmt-cluster.example.com
 		//
 		// This is possible using OCP wildcard routes
 		if o.Platform != hyperv1.KubevirtPlatform {

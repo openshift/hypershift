@@ -88,6 +88,7 @@ type reconciler struct {
 	rootCA                    string
 	clusterSignerCA           string
 	cpClient                  client.Client
+	kubevirtInfraClient       client.Client
 	hcpName                   string
 	hcpNamespace              string
 	releaseProvider           releaseinfo.Provider
@@ -137,6 +138,18 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		return fmt.Errorf("failed to create uncached client: %w", err)
 	}
 
+	// if kubevirt infra config is not used, it is being set the same as the mgmt config
+	kubevirtInfraClient, err := client.New(opts.KubevirtInfraConfig, client.Options{
+		Scheme: opts.Manager.GetScheme(),
+		Mapper: opts.Manager.GetRESTMapper(),
+		Opts: client.WarningHandlerOptions{
+			SuppressWarnings: true,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create kubevirt infra uncached client: %w", err)
+	}
+
 	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: &reconciler{
 		client:                    opts.Manager.GetClient(),
 		uncachedClient:            uncachedClient,
@@ -145,6 +158,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		rootCA:                    opts.InitialCA,
 		clusterSignerCA:           opts.ClusterSignerCA,
 		cpClient:                  opts.CPCluster.GetClient(),
+		kubevirtInfraClient:       kubevirtInfraClient,
 		hcpName:                   opts.HCPName,
 		hcpNamespace:              opts.Namespace,
 		releaseProvider:           opts.ReleaseProvider,
@@ -773,29 +787,34 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 			errs = append(errs, fmt.Errorf("failed to retrieve guest cluster ingress NodePort: %w", err))
 		}
 
-		hcpNamespace := hcp.Namespace
+		var namespace string
+		if hcp.Spec.Platform.Kubevirt.Credentials != nil {
+			namespace = hcp.Spec.Platform.Kubevirt.Credentials.InfraNamespace
+		} else {
+			namespace = hcp.Namespace
+		}
 
 		// Manifests for infra/mgmt cluster passthrough service
-		cpService := manifests.IngressDefaultIngressPassthroughService(hcpNamespace)
+		cpService := manifests.IngressDefaultIngressPassthroughService(namespace)
 
 		cpService.Name = fmt.Sprintf("%s-%s",
 			manifests.IngressDefaultIngressPassthroughServiceName,
 			hcp.Spec.Platform.Kubevirt.GenerateID)
 
 		// Manifests for infra/mgmt cluster passthrough routes
-		cpPassthroughRoute := manifests.IngressDefaultIngressPassthroughRoute(hcpNamespace)
+		cpPassthroughRoute := manifests.IngressDefaultIngressPassthroughRoute(namespace)
 
 		cpPassthroughRoute.Name = fmt.Sprintf("%s-%s",
 			manifests.IngressDefaultIngressPassthroughRouteName,
 			hcp.Spec.Platform.Kubevirt.GenerateID)
 
-		if _, err := r.CreateOrUpdate(ctx, r.cpClient, cpService, func() error {
+		if _, err := r.CreateOrUpdate(ctx, r.kubevirtInfraClient, cpService, func() error {
 			return ingress.ReconcileDefaultIngressPassthroughService(cpService, defaultIngressNodePortService, hcp)
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile kubevirt ingress passthrough service: %w", err))
 		}
 
-		if _, err := r.CreateOrUpdate(ctx, r.cpClient, cpPassthroughRoute, func() error {
+		if _, err := r.CreateOrUpdate(ctx, r.kubevirtInfraClient, cpPassthroughRoute, func() error {
 			return ingress.ReconcileDefaultIngressPassthroughRoute(cpPassthroughRoute, cpService, hcp)
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile kubevirt ingress passthrough route: %w", err))
@@ -1484,7 +1503,7 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 		remaining.Insert("image-registry")
 	}
 	log.Info("Ensuring ingress controllers are removed")
-	removed, err = r.ensureIngressControllersRemoved(ctx)
+	removed, err = r.ensureIngressControllersRemoved(ctx, hcp)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -1580,7 +1599,7 @@ func reconcileCreationBlockerWebhook(wh *admissionregistrationv1.ValidatingWebho
 	}
 }
 
-func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context) (bool, error) {
+func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	ingressControllers := &operatorv1.IngressControllerList{}
 	if err := r.client.List(ctx, ingressControllers); err != nil {
@@ -1621,6 +1640,44 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context) (bool,
 
 	if len(errs) > 0 {
 		return false, fmt.Errorf("failed to force delete pods under openshift-ingress namespace: %w", errors.NewAggregate(errs))
+	}
+
+	// Remove ingress service and route that were created by HCCO in case of basedomain passthrough feature is enabled
+	if hcp.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
+		hcp.Spec.Platform.Kubevirt != nil &&
+		hcp.Spec.Platform.Kubevirt.BaseDomainPassthrough != nil &&
+		*hcp.Spec.Platform.Kubevirt.BaseDomainPassthrough {
+		{
+			var namespace string
+			if hcp.Spec.Platform.Kubevirt.Credentials != nil {
+				namespace = hcp.Spec.Platform.Kubevirt.Credentials.InfraNamespace
+			} else {
+				namespace = hcp.Namespace
+			}
+			cpService := manifests.IngressDefaultIngressPassthroughService(namespace)
+			cpService.Name = fmt.Sprintf("%s-%s",
+				manifests.IngressDefaultIngressPassthroughServiceName,
+				hcp.Spec.Platform.Kubevirt.GenerateID)
+
+			cpPassthroughRoute := manifests.IngressDefaultIngressPassthroughRoute(namespace)
+			cpPassthroughRoute.Name = fmt.Sprintf("%s-%s",
+				manifests.IngressDefaultIngressPassthroughRouteName,
+				hcp.Spec.Platform.Kubevirt.GenerateID)
+
+			err := r.kubevirtInfraClient.Delete(ctx, cpService)
+			if err != nil && !apierrors.IsNotFound(err) {
+				errs = append(errs, fmt.Errorf("failed to delete %s: %w", client.ObjectKeyFromObject(cpService).String(), err))
+			}
+
+			err = r.kubevirtInfraClient.Delete(ctx, cpPassthroughRoute)
+			if err != nil && !apierrors.IsNotFound(err) {
+				errs = append(errs, fmt.Errorf("failed to delete %s: %w", client.ObjectKeyFromObject(cpPassthroughRoute).String(), err))
+			}
+		}
+	}
+
+	if len(errs) > 0 {
+		return false, fmt.Errorf("failed to delete ingress resources on infra cluster: %w", errors.NewAggregate(errs))
 	}
 
 	return false, nil

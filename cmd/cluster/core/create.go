@@ -31,7 +31,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 )
 
-// ApplyPlatformSpecifics can be used to create platform specific values as well as enriching the fixure with additional values
+// ApplyPlatformSpecifics can be used to create platform specific values as well as enriching the fixture with additional values
 type ApplyPlatformSpecifics = func(ctx context.Context, fixture *apifixtures.ExampleOptions, options *CreateOptions) error
 
 type CreateOptions struct {
@@ -118,6 +118,8 @@ type KubevirtPlatformCreateOptions struct {
 	RootVolumeSize            uint32
 	RootVolumeStorageClass    string
 	RootVolumeAccessModes     string
+	InfraKubeConfigFile       string
+	InfraNamespace            string
 }
 
 type AWSPlatformOptions struct {

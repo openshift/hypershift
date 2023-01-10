@@ -201,7 +201,7 @@ func virtualMachineTemplateBase(image string, kvPlatform *hyperv1.KubevirtNodePo
 	return template
 }
 
-func MachineTemplateSpec(image string, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) *capikubevirt.KubevirtMachineTemplateSpec {
+func MachineTemplateSpec(image string, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) *capikubevirt.KubevirtMachineTemplateSpec {
 	nodePoolNameLabelKey := hyperv1.NodePoolNameLabel
 	infraIDLabelKey := hyperv1.InfraIDLabel
 
@@ -237,10 +237,14 @@ func MachineTemplateSpec(image string, nodePool *hyperv1.NodePool, hc *hyperv1.H
 	}
 
 	vmTemplate.Spec.Template.ObjectMeta.Labels[nodePoolNameLabelKey] = nodePool.Name
-	vmTemplate.Spec.Template.ObjectMeta.Labels[infraIDLabelKey] = hc.Spec.InfraID
+	vmTemplate.Spec.Template.ObjectMeta.Labels[infraIDLabelKey] = hcluster.Spec.InfraID
 
 	vmTemplate.ObjectMeta.Labels[nodePoolNameLabelKey] = nodePool.Name
-	vmTemplate.ObjectMeta.Labels[infraIDLabelKey] = hc.Spec.InfraID
+	vmTemplate.ObjectMeta.Labels[infraIDLabelKey] = hcluster.Spec.InfraID
+
+	if hcluster.Spec.Platform.Kubevirt != nil && hcluster.Spec.Platform.Kubevirt.Credentials != nil {
+		vmTemplate.ObjectMeta.Namespace = hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace
+	}
 
 	return &capikubevirt.KubevirtMachineTemplateSpec{
 		Template: capikubevirt.KubevirtMachineTemplateResource{

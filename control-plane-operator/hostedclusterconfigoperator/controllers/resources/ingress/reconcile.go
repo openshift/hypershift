@@ -10,7 +10,6 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	"github.com/openshift/hypershift/support/config"
 )
 
 func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool, isPrivate bool) error {
@@ -97,10 +96,8 @@ func ReconcileDefaultIngressControllerCertSecret(certSecret *corev1.Secret, sour
 }
 
 func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultNodePort *corev1.Service, hcp *hyperv1.HostedControlPlane) error {
-
 	detectedHTTPSNodePort := int32(0)
 
-	ownerRef := config.OwnerRefFrom(hcp)
 	for _, port := range defaultNodePort.Spec.Ports {
 		if port.Port == 443 {
 			detectedHTTPSNodePort = port.NodePort
@@ -128,17 +125,12 @@ func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultN
 		hyperv1.InfraIDLabel: hcp.Spec.InfraID,
 	}
 	service.Spec.Type = corev1.ServiceTypeClusterIP
-
 	service.Labels[hyperv1.InfraIDLabel] = hcp.Spec.InfraID
-
-	ownerRef.ApplyTo(service)
 
 	return nil
 }
 
 func ReconcileDefaultIngressPassthroughRoute(route *routev1.Route, cpService *corev1.Service, hcp *hyperv1.HostedControlPlane) error {
-	ownerRef := config.OwnerRefFrom(hcp)
-
 	if route.Labels == nil {
 		route.Labels = map[string]string{}
 	}
@@ -152,8 +144,6 @@ func ReconcileDefaultIngressPassthroughRoute(route *routev1.Route, cpService *co
 		Name: cpService.Name,
 	}
 	route.Labels[hyperv1.InfraIDLabel] = hcp.Spec.InfraID
-
-	ownerRef.ApplyTo(route)
 
 	return nil
 }

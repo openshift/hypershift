@@ -2,6 +2,7 @@ package kubevirt
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -28,12 +29,21 @@ type Kubevirt struct{}
 
 func (p Kubevirt) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
+	controlPlaneNamespace string, _ hyperv1.APIEndpoint) (client.Object, error) {
 	kubevirtCluster := &capikubevirt.KubevirtCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      hcluster.Spec.InfraID,
 		},
+	}
+	kvPlatform := hcluster.Spec.Platform.Kubevirt
+	if kvPlatform != nil && kvPlatform.Credentials != nil {
+		var infraClusterSecretRef = &corev1.ObjectReference{
+			Name:      hyperv1.KubeVirtInfraCredentialsSecretName,
+			Namespace: controlPlaneNamespace,
+			Kind:      "Secret",
+		}
+		kubevirtCluster.Spec.InfraClusterSecretRef = infraClusterSecretRef
 	}
 	if _, err := createOrUpdate(ctx, c, kubevirtCluster, func() error {
 		reconcileKubevirtCluster(kubevirtCluster, hcluster)
@@ -154,7 +164,30 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 func (p Kubevirt) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
-	return nil
+
+	// If external infra cluster kubeconfig has been provided, copy the secret from the "clusters" to the hosted control plane namespace
+	// with the predictable name "kubevirt-infra-credentials"
+	kvPlatform := hcluster.Spec.Platform.Kubevirt
+	if kvPlatform == nil || kvPlatform.Credentials == nil {
+		return nil
+	}
+
+	var sourceSecret corev1.Secret
+	secretName := client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.Kubevirt.Credentials.InfraKubeConfigSecret.Name}
+	if err := c.Get(ctx, secretName, &sourceSecret); err != nil {
+		return fmt.Errorf("failed to get secret %s: %w", secretName, err)
+	}
+	targetSecret := credentialsSecret(controlPlaneNamespace)
+	_, err := createOrUpdate(ctx, c, targetSecret, func() error {
+		if targetSecret.Data == nil {
+			targetSecret.Data = map[string][]byte{}
+		}
+		for k, v := range sourceSecret.Data {
+			targetSecret.Data[k] = v
+		}
+		return nil
+	})
+	return err
 }
 
 func (Kubevirt) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
@@ -175,6 +208,20 @@ func (Kubevirt) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"virtualmachineinstances", "virtualmachines"},
 			Verbs:     []string{"*"},
 		},
+	}
+}
+
+func credentialsSecret(hcpNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hyperv1.KubeVirtInfraCredentialsSecretName,
+			Namespace: hcpNamespace,
+		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		Type: corev1.SecretTypeOpaque,
 	}
 }
 

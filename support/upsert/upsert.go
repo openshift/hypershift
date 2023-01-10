@@ -138,7 +138,7 @@ func mutate(f controllerutil.MutateFn, key crclient.ObjectKey, obj crclient.Obje
 		return err
 	}
 	if newKey := crclient.ObjectKeyFromObject(obj); key != newKey {
-		return fmt.Errorf("MutateFn cannot mutate object name and/or object namespace")
+		return fmt.Errorf("MutateFn cannot mutate object name and/or object namespace. key: %s, kind: %s, namespace: %s", key, obj.GetObjectKind(), obj.GetNamespace())
 	}
 	return nil
 }

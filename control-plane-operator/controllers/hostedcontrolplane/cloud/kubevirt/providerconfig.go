@@ -41,7 +41,7 @@ func (c *CloudConfig) serialize() (string, error) {
 	return string(out), nil
 }
 
-func cloudConfig(hcp *hyperv1.HostedControlPlane) CloudConfig {
+func cloudConfig(hcp *hyperv1.HostedControlPlane, namespace string, kubeconfigPath string) CloudConfig {
 	return CloudConfig{
 		LoadBalancer: LoadBalancerConfig{
 			Enabled: true,
@@ -50,7 +50,8 @@ func cloudConfig(hcp *hyperv1.HostedControlPlane) CloudConfig {
 			Enabled:              true,
 			ZoneAndRegionEnabled: false,
 		},
-		Namespace: hcp.Namespace,
+		Namespace:  namespace,
+		Kubeconfig: kubeconfigPath,
 		InfraLabels: map[string]string{
 			hyperv1.InfraIDLabel: hcp.Spec.InfraID,
 		},

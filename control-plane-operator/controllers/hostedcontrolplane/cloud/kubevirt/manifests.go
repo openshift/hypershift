@@ -69,3 +69,9 @@ func ccmCloudConfig() *corev1.Volume {
 		Name: "cloud-config",
 	}
 }
+
+func ccmInfraKubeconfig() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "infra-kubeconfig",
+	}
+}

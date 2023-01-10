@@ -4908,6 +4908,51 @@ More info: <a href="https://kubernetes.io/docs/concepts/storage/persistent-volum
 </tr>
 </tbody>
 </table>
+###KubevirtPlatformCredentials { #hypershift.openshift.io/v1beta1.KubevirtPlatformCredentials }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtPlatformSpec">KubevirtPlatformSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>infraKubeConfigSecret</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubeconfigSecretRef">
+KubeconfigSecretRef
+</a>
+</em>
+</td>
+<td>
+<p>InfraKubeConfigSecret is a reference to a secret that contains the kubeconfig for the external infra cluster
+that will be used to host the KubeVirt virtual machines for this cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>infraNamespace</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>InfraNamespace defines the namespace on the external infra cluster that is used to host the KubeVirt
+virtual machines. This namespace must already exist before creating the HostedCluster and the kubeconfig
+referenced in the InfraKubeConfigSecret must have access to manage the required resources within this
+namespace.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###KubevirtPlatformSpec { #hypershift.openshift.io/v1beta1.KubevirtPlatformSpec }
 <p>
 (<em>Appears on:</em>
@@ -4963,6 +5008,24 @@ string
 <em>(Optional)</em>
 <p>GenerateID is used to uniquely apply a name suffix to resources associated with
 kubevirt infrastructure resources</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>credentials</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtPlatformCredentials">
+KubevirtPlatformCredentials
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Credentials defines the client credentials used when creating KubeVirt virtual machines.
+Defining credentials is only necessary when the KubeVirt virtual machines are being placed
+on a cluster separate from the one hosting the Hosted Control Plane components.</p>
+<p>The default behavior when Credentials is not defined is for the KubeVirt VMs to be placed on
+the same cluster and namespace as the Hosted Control Plane.</p>
 </td>
 </tr>
 </tbody>

@@ -274,9 +274,39 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			panic(fmt.Sprintf("service publishing type %s is not supported", o.Kubevirt.ServicePublishingStrategy))
 		}
 
+		if o.Kubevirt.InfraKubeConfig != nil {
+			infraKubeConfigSecret := &corev1.Secret{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Secret",
+					APIVersion: corev1.SchemeGroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      o.Name + "-infra-credentials",
+					Namespace: o.Namespace,
+				},
+				Data: map[string][]byte{
+					"kubeconfig": o.Kubevirt.InfraKubeConfig,
+				},
+				Type: corev1.SecretTypeOpaque,
+			}
+			resources = append(resources, infraKubeConfigSecret)
+			platformSpec.Kubevirt = &hyperv1.KubevirtPlatformSpec{
+				Credentials: &hyperv1.KubevirtPlatformCredentials{
+					InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
+						Name: infraKubeConfigSecret.Name,
+						Key:  "kubeconfig",
+					},
+				},
+			}
+		}
+		if o.Kubevirt.InfraNamespace != "" {
+			platformSpec.Kubevirt.Credentials.InfraNamespace = o.Kubevirt.InfraNamespace
+		}
+
 		if o.Kubevirt.BaseDomainPassthrough {
 			platformSpec.Kubevirt.BaseDomainPassthrough = &o.Kubevirt.BaseDomainPassthrough
 		}
+
 	case o.Azure != nil:
 		credentialSecret := &corev1.Secret{
 			TypeMeta: metav1.TypeMeta{

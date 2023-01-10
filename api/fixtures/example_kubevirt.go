@@ -18,6 +18,8 @@ type ExampleKubevirtOptions struct {
 	RootVolumeStorageClass    string
 	RootVolumeAccessModes     string
 	BaseDomainPassthrough     bool
+	InfraKubeConfig           []byte
+	InfraNamespace            string
 }
 
 func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoolPlatform {
