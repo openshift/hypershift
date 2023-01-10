@@ -52,6 +52,13 @@ func init() {
 	rand.Seed(time.Now().UnixNano())
 }
 
+func varArray(arr *[]string) func(string) error {
+	return func(rawArg string) error {
+		*arr = strings.Split(rawArg, ",")
+		return nil
+	}
+}
+
 // TestMain deals with global options and setting up a signal-bound context
 // for all tests to use.
 func TestMain(m *testing.M) {
@@ -85,6 +92,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSProcessors, "e2e.powervs-processors", "0.5", "Number of processors allocated. Default is 0.5")
 	flag.IntVar(&globalOpts.configurableClusterOptions.PowerVSMemory, "e2e.powervs-memory", 32, "Amount of memory allocated (in GB). Default is 32")
 	flag.BoolVar(&globalOpts.SkipAPIBudgetVerification, "e2e.skip-api-budget", false, "Bool to avoid send metrics to E2E Server on local test execution.")
+	flag.Func("e2e.annotations", "Comma seperated annotations to apply to the hostedcluster (key=value).", varArray(&globalOpts.Annotations))
 
 	flag.Parse()
 
@@ -216,6 +224,9 @@ type options struct {
 	// SkipAPIBudgetVerification implies that you are executing the e2e tests
 	// from local to verify that them works fine before push
 	SkipAPIBudgetVerification bool
+
+	// Annotations will be used as the annotations of the hostedCluster CR
+	Annotations []string
 }
 
 type configurableClusterOptions struct {
@@ -286,9 +297,9 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		ClusterCIDR: "10.132.0.0/14",
 		BeforeApply: o.BeforeApply,
 		Log:         util.NewLogr(t),
-		Annotations: []string{
+		Annotations: append([]string{
 			fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
-		},
+		}, o.Annotations...),
 		SkipAPIBudgetVerification: o.SkipAPIBudgetVerification,
 	}
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
@@ -304,6 +315,10 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		createOption.GenerateSSH = true
 	} else {
 		createOption.SSHKeyFile = o.configurableClusterOptions.SSHKeyFile
+	}
+
+	for antName, antValue := range o.Annotations {
+		createOption.Annotations[antName] = antValue
 	}
 
 	return createOption
