@@ -1218,7 +1218,6 @@ type AWSRolesRef struct {
 	//				"ec2:DeleteVpcEndpoints",
 	//				"ec2:CreateTags",
 	//				"route53:ListHostedZones",
-	// 				"route53:ListHostedZonesByName"
 	//			],
 	//			"Resource": "*"
 	//		},

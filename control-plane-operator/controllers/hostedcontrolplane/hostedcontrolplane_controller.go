@@ -12,7 +12,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
 
-	"github.com/aws/aws-sdk-go/service/route53"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	routev1 "github.com/openshift/api/route/v1"
@@ -87,7 +87,6 @@ import (
 const (
 	finalizer                              = "hypershift.openshift.io/finalizer"
 	DefaultAdminKubeconfigKey              = "kubeconfig"
-	hypershiftLocalZone                    = "hypershift.local"
 	ImageStreamAutoscalerImage             = "cluster-autoscaler"
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 )
@@ -3340,12 +3339,10 @@ func healthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedControl
 	awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
 	awsConfig := awssdk.NewConfig()
 	awsConfig.Region = awssdk.String("us-east-1")
-	route53Client := route53.New(awsSession, awsConfig)
+	ec2Client := ec2.New(awsSession, awsConfig)
 
 	// We try to interact with cloud provider to see validate is operational.
-	if _, err := route53Client.ListHostedZonesByNameWithContext(ctx, &route53.ListHostedZonesByNameInput{
-		DNSName: pointer.String(fmt.Sprintf("%s.%s", hcp.Name, hypershiftLocalZone)),
-	}); err != nil {
+	if _, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{}); err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
 			// When awsErr.Code() is WebIdentityErr it's likely to be an external issue, e.g the idp resource was deleted.
 			// We don't set awsErr.Message() in the condition as it might contain aws requests IDs that would make the condition be updated in loop.
