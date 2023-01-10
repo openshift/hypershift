@@ -566,6 +566,16 @@ func (o *CreateInfraOptions) hasNATGatewayRoute(table *ec2.RouteTable, natGatewa
 	return false
 }
 
+func (o *CreateInfraOptions) hasLocalGatewayRoute(table *ec2.RouteTable, localGatewayID string) bool {
+	for _, route := range table.Routes {
+		if aws.StringValue(route.LocalGatewayId) == localGatewayID &&
+			aws.StringValue(route.DestinationCidrBlock) == "0.0.0.0/0" {
+			return true
+		}
+	}
+	return false
+}
+
 func (o *CreateInfraOptions) hasInternetGatewayRoute(table *ec2.RouteTable, igwID string) bool {
 	for _, route := range table.Routes {
 		if aws.StringValue(route.GatewayId) == igwID &&

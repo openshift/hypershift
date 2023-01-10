@@ -120,22 +120,23 @@ type KubevirtPlatformCreateOptions struct {
 }
 
 type AWSPlatformOptions struct {
-	AWSCredentialsFile string
-	AdditionalTags     []string
-	IAMJSON            string
-	InstanceType       string
-	IssuerURL          string
-	PrivateZoneID      string
-	PublicZoneID       string
-	Region             string
-	RootVolumeIOPS     int64
-	RootVolumeSize     int64
-	RootVolumeType     string
-	EndpointAccess     string
-	Zones              []string
-	EtcdKMSKeyARN      string
-	EnableProxy        bool
-	OutpostARN         string
+	AWSCredentialsFile       string
+	AdditionalTags           []string
+	IAMJSON                  string
+	InstanceType             string
+	IssuerURL                string
+	PrivateZoneID            string
+	PublicZoneID             string
+	Region                   string
+	RootVolumeIOPS           int64
+	RootVolumeSize           int64
+	RootVolumeType           string
+	EndpointAccess           string
+	Zones                    []string
+	EtcdKMSKeyARN            string
+	EnableProxy              bool
+	OutpostARN               string
+	LocalGatewayRouteTableID string
 }
 
 type AzurePlatformOptions struct {

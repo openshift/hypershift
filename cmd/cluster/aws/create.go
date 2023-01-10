@@ -46,6 +46,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.AWSPlatform.EnableProxy, "enable-proxy", opts.AWSPlatform.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
 	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with a platform credential (--aws-creds), --pull-secret and --base-domain value. The secret must exist in the supplied \"--namespace\"")
 	cmd.Flags().StringVar(&opts.AWSPlatform.OutpostARN, "outpost-arn", opts.AWSPlatform.OutpostARN, "The ARN of AWS Outpost in which nodes will be created")
+	cmd.Flags().StringVar(&opts.AWSPlatform.LocalGatewayRouteTableID, "local-gateway-route-table-id", opts.AWSPlatform.LocalGatewayRouteTableID, "Use AWS Outpost local gateway route table ID for routing traffic of private subnet")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -141,18 +142,19 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			infraID = infraid.New(opts.Name)
 		}
 		opt := awsinfra.CreateInfraOptions{
-			Region:             opts.AWSPlatform.Region,
-			InfraID:            infraID,
-			AWSCredentialsFile: opts.AWSPlatform.AWSCredentialsFile,
-			AWSSecretKey:       AWSSecretKey,
-			AWSKey:             AWSKey,
-			Name:               opts.Name,
-			BaseDomain:         opts.BaseDomain,
-			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
-			Zones:              opts.AWSPlatform.Zones,
-			EnableProxy:        opts.AWSPlatform.EnableProxy,
-			SSHKeyFile:         opts.SSHKeyFile,
-			OutpostARN:         opts.AWSPlatform.OutpostARN,
+			Region:                   opts.AWSPlatform.Region,
+			InfraID:                  infraID,
+			AWSCredentialsFile:       opts.AWSPlatform.AWSCredentialsFile,
+			AWSSecretKey:             AWSSecretKey,
+			AWSKey:                   AWSKey,
+			Name:                     opts.Name,
+			BaseDomain:               opts.BaseDomain,
+			AdditionalTags:           opts.AWSPlatform.AdditionalTags,
+			Zones:                    opts.AWSPlatform.Zones,
+			EnableProxy:              opts.AWSPlatform.EnableProxy,
+			SSHKeyFile:               opts.SSHKeyFile,
+			OutpostARN:               opts.AWSPlatform.OutpostARN,
+			LocalGatewayRouteTableID: opts.AWSPlatform.LocalGatewayRouteTableID,
 		}
 		infra, err = opt.CreateInfra(ctx, opts.Log)
 		if err != nil {

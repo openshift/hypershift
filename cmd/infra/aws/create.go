@@ -38,8 +38,9 @@ type CreateInfraOptions struct {
 	EnableProxy        bool
 	SSHKeyFile         string
 
-	additionalEC2Tags []*ec2.Tag
-	OutpostARN        string
+	additionalEC2Tags        []*ec2.Tag
+	OutpostARN               string
+	LocalGatewayRouteTableID string
 }
 
 type CreateInfraOutputZone struct {
@@ -94,6 +95,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringSliceVar(&opts.Zones, "zones", opts.Zones, "The availablity zones in which NodePool can be created")
 	cmd.Flags().BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
 	cmd.Flags().StringVar(&opts.OutpostARN, "outpost-arn", opts.OutpostARN, "The ARN of AWS Outpost in which nodes will be created")
+	cmd.Flags().StringVar(&opts.LocalGatewayRouteTableID, "local-gateway-route-table-id", opts.LocalGatewayRouteTableID, "Use AWS Outpost local gateway route table ID for routing traffic of private subnet")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
@@ -216,9 +218,18 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 				return nil, err
 			}
 		}
-		privateRouteTable, err := o.CreatePrivateRouteTable(l, ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
-		if err != nil {
-			return nil, err
+		var privateRouteTable string
+		if o.OutpostARN != "" && o.LocalGatewayRouteTableID != "" {
+			// Create a route table for the private subnet to route traffic to the local gateway
+			privateRouteTable, err = o.createPrivateRouteTableWithLocalGateway(l, ec2Client, zone, result.VPCID, privateSubnetID)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			privateRouteTable, err = o.CreatePrivateRouteTable(l, ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
+			if err != nil {
+				return nil, err
+			}
 		}
 		endpointRouteTableIds = append(endpointRouteTableIds, aws.String(privateRouteTable))
 		result.Zones = append(result.Zones, &CreateInfraOutputZone{
@@ -266,6 +277,81 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 
 	}
 	return result, nil
+}
+
+func (o *CreateInfraOptions) createPrivateRouteTableWithLocalGateway(l logr.Logger, ec2Client *ec2.EC2, zone, vpcID, privateSubnetID string) (string, error) {
+	gateways, err := ec2Client.DescribeLocalGateways(&ec2.DescribeLocalGatewaysInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("outpost-arn"),
+				Values: []*string{aws.String(o.OutpostARN)},
+			},
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(gateways.LocalGateways) != 1 {
+		return "", fmt.Errorf("expected one local gateway, got %d", len(gateways.LocalGateways))
+	}
+
+	// check local gateway route table exists
+	_, err = ec2Client.DescribeLocalGatewayRouteTables(&ec2.DescribeLocalGatewayRouteTablesInput{
+		LocalGatewayRouteTableIds: []*string{aws.String(o.LocalGatewayRouteTableID)},
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to describe local gateway route table %s: %w", o.LocalGatewayRouteTableID, err)
+	}
+
+	// associate VPC with AWS Outpost local gateway
+	name := fmt.Sprintf("lgw-rtb-vpc-assoc-%s-%s", vpcID, o.InfraID)
+	_, err = ec2Client.CreateLocalGatewayRouteTableVpcAssociation(&ec2.CreateLocalGatewayRouteTableVpcAssociationInput{
+		LocalGatewayRouteTableId: aws.String(o.LocalGatewayRouteTableID),
+		VpcId:                    aws.String(vpcID),
+		TagSpecifications:        o.ec2TagSpecifications("local-gateway-route-table-vpc-association", name),
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to associate VPC with local gateway: %w", err)
+	}
+	tableName := fmt.Sprintf("%s-private-%s", o.InfraID, zone)
+	routeTable, err := o.existingRouteTable(l, ec2Client, tableName)
+	if err != nil {
+		return "", err
+	}
+	if routeTable == nil {
+		routeTable, err = o.createRouteTable(l, ec2Client, vpcID, tableName)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	localGatewayID := aws.StringValue(gateways.LocalGateways[0].LocalGatewayId)
+	if !o.hasLocalGatewayRoute(routeTable, localGatewayID) {
+		_, err = ec2Client.CreateRoute(&ec2.CreateRouteInput{
+			RouteTableId:         routeTable.RouteTableId,
+			LocalGatewayId:       aws.String(localGatewayID),
+			DestinationCidrBlock: aws.String("0.0.0.0/0"),
+		})
+		if err != nil {
+			return "", fmt.Errorf("cannot create local gateway route in private route table: %w", err)
+		}
+		l.Info("Created route to local gateway", "route table", aws.StringValue(routeTable.RouteTableId), "local gateway", localGatewayID)
+	} else {
+		l.Info("Found existing route to local gateway", "route table", aws.StringValue(routeTable.RouteTableId), "local gateway", localGatewayID)
+	}
+	if !o.hasAssociatedSubnet(routeTable, privateSubnetID) {
+		_, err = ec2Client.AssociateRouteTable(&ec2.AssociateRouteTableInput{
+			RouteTableId: routeTable.RouteTableId,
+			SubnetId:     aws.String(privateSubnetID),
+		})
+		if err != nil {
+			return "", fmt.Errorf("cannot associate private route table with subnet: %w", err)
+		}
+		l.Info("Associated subnet with route table", "route table", aws.StringValue(routeTable.RouteTableId), "subnet", privateSubnetID)
+	} else {
+		l.Info("Subnet already associated with route table", "route table", aws.StringValue(routeTable.RouteTableId), "subnet", privateSubnetID)
+	}
+	return aws.StringValue(routeTable.RouteTableId), nil
 }
 
 func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger, client ec2iface.EC2API, subnetID, vpcID string, sshKeys string) (string, error) {

@@ -584,7 +584,24 @@ func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2ifac
 				errs = append(errs, childErrs...)
 				continue
 			}
-			_, err := ec2client.DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
+
+			// Retrieve a list of all local gateway IDs
+			input := &ec2.DescribeLocalGatewayRouteTableVpcAssociationsInput{Filters: vpcFilter(vpc.VpcId)}
+			result, err := ec2client.DescribeLocalGatewayRouteTableVpcAssociationsWithContext(ctx, input)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to describe local gateways: %w", err))
+			}
+			if result != nil {
+				for _, association := range result.LocalGatewayRouteTableVpcAssociations {
+					_, err := ec2client.DeleteLocalGatewayRouteTableVpcAssociationWithContext(ctx, &ec2.DeleteLocalGatewayRouteTableVpcAssociationInput{
+						LocalGatewayRouteTableVpcAssociationId: association.LocalGatewayRouteTableVpcAssociationId,
+					})
+					if err != nil {
+						errs = append(errs, fmt.Errorf("failed to disassociate local gateway route table: %w", err))
+					}
+				}
+			}
+			_, err = ec2client.DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
 				VpcId: vpc.VpcId,
 			})
 			if err != nil {
