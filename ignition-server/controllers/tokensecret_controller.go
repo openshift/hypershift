@@ -85,14 +85,15 @@ type IgnitionProvider interface {
 // stores it in the PayloadsStore, and rotates the token ID periodically.
 // A token Secret is by contractual convention:
 // type: Secret
-//   metadata:
-//   annotations:
-// 	   hypershift.openshift.io/ignition-config: "true"
-//	 data:
-//     token: <authz token>
-//     old_token: <authz token>
-//     release: <release image string>
-//     config: |-
+//
+//	  metadata:
+//	  annotations:
+//		   hypershift.openshift.io/ignition-config: "true"
+//		 data:
+//	    token: <authz token>
+//	    old_token: <authz token>
+//	    release: <release image string>
+//	    config: |-
 type TokenSecretReconciler struct {
 	client.Client
 	IgnitionProvider IgnitionProvider

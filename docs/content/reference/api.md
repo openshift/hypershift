@@ -1344,6 +1344,22 @@ Value must be one of:
 </p>
 </td>
 </tr>
+<tr>
+<td>
+<code>additionalAllowedPrincipals</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AdditionalAllowedPrincipals specifies a list of additional allowed principal ARNs
+to be added to the hosted control plane&rsquo;s VPC Endpoint Service to enable additional
+VPC Endpoint connection requests to be automatically accepted.
+See <a href="https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html">https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html</a>
+for more details around VPC Endpoint Service allowed principals.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSResourceReference { #hypershift.openshift.io/v1alpha1.AWSResourceReference }

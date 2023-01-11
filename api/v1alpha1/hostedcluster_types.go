@@ -924,6 +924,15 @@ type AWSPlatformSpec struct {
 	// +kubebuilder:default=Public
 	// +optional
 	EndpointAccess AWSEndpointAccessType `json:"endpointAccess,omitempty"`
+
+	// AdditionalAllowedPrincipals specifies a list of additional allowed principal ARNs
+	// to be added to the hosted control plane's VPC Endpoint Service to enable additional
+	// VPC Endpoint connection requests to be automatically accepted.
+	// See https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html
+	// for more details around VPC Endpoint Service allowed principals.
+	//
+	// +optional
+	AdditionalAllowedPrincipals []string `json:"additionalAllowedPrincipals,omitempty"`
 }
 
 type AWSRoleCredentials struct {
