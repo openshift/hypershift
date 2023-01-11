@@ -53,6 +53,7 @@ type CreateOptions struct {
 	BaseDomain                       string
 	NetworkType                      string
 	NodePoolReplicas                 int32
+	NodeDrainTimeout                 time.Duration
 	PullSecretFile                   string
 	ReleaseImage                     string
 	Render                           bool
@@ -254,6 +255,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		Name:                             opts.Name,
 		NetworkType:                      hyperv1.NetworkType(opts.NetworkType),
 		NodePoolReplicas:                 opts.NodePoolReplicas,
+		NodeDrainTimeout:                 opts.NodeDrainTimeout,
 		PullSecret:                       pullSecret,
 		ReleaseImage:                     opts.ReleaseImage,
 		SSHPrivateKey:                    sshPrivateKey,
