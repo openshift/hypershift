@@ -3239,7 +3239,7 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 		}
 
 		if timeElapsed > resourceDeletionTimeout {
-			log.Info("Giving up on resource deletion since there has not been an update in %s", duration.ShortHumanDuration(timeElapsed))
+			log.Info("Giving up on resource deletion since there has not been an update before timeout", "timeElapsed", duration.ShortHumanDuration(timeElapsed))
 			return true, nil
 		}
 		return false, nil
