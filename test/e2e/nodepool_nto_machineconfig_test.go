@@ -57,7 +57,6 @@ func TestNTOMachineConfigGetsRolledOut(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 	clusterOpts.BeforeApply = func(o crclient.Object) {
 		nodePool, isNodepool := o.(*hyperv1.NodePool)
 		if !isNodepool {
@@ -79,8 +78,7 @@ func TestNTOMachineConfigGetsRolledOut(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
 
 	// Wait for Nodes to be Ready
-	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, clusterOpts.NodePoolReplicas, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the rollout to be complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
@@ -171,7 +169,6 @@ func TestNTOMachineConfigAppliedInPlace(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 	clusterOpts.BeforeApply = func(o crclient.Object) {
 		nodePool, isNodepool := o.(*hyperv1.NodePool)
 		if !isNodepool {
@@ -187,8 +184,7 @@ func TestNTOMachineConfigAppliedInPlace(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
 
 	// Wait for Nodes to be Ready
-	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, clusterOpts.NodePoolReplicas, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the rollout to be complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)

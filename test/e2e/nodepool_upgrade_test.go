@@ -32,8 +32,6 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ReleaseImage = globalOpts.LatestReleaseImage
-	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
-
 	clusterOpts.BeforeApply = func(o crclient.Object) {
 		switch v := o.(type) {
 		case *hyperv1.NodePool:
@@ -69,7 +67,7 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 
 	// Wait for Nodes to be Ready.
-	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
+	numNodes := clusterOpts.NodePoolReplicas
 	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the first rollout to be complete and refresh the HostedCluster.
@@ -127,8 +125,6 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ReleaseImage = globalOpts.LatestReleaseImage
-	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
-
 	clusterOpts.BeforeApply = func(o crclient.Object) {
 		switch v := o.(type) {
 		case *hyperv1.NodePool:
@@ -158,8 +154,7 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 
 	// Wait for Nodes to be Ready
-	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, clusterOpts.NodePoolReplicas, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the first rollout to be complete and refresh the hostedcluster
 	t.Logf("Waiting for initial cluster rollout. Image: %s", hostedCluster.Spec.Release.Image)
@@ -197,7 +192,7 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 	}
 
 	// Verify all nodes are ready after the upgrade
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, clusterOpts.NodePoolReplicas, hostedCluster.Spec.Platform.Type)
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 }

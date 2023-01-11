@@ -244,15 +244,19 @@ type configurableClusterOptions struct {
 	PowerVSMemory              int
 }
 
+var nextAWSZoneIndex = 0
+
 func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 	createOption := core.CreateOptions{
-		ReleaseImage:              o.LatestReleaseImage,
-		NodePoolReplicas:          int32(o.configurableClusterOptions.NodePoolReplicas),
-		NetworkType:               string(o.configurableClusterOptions.NetworkType),
-		BaseDomain:                o.configurableClusterOptions.BaseDomain,
-		PullSecretFile:            o.configurableClusterOptions.PullSecretFile,
-		ControlPlaneOperatorImage: o.configurableClusterOptions.ControlPlaneOperatorImage,
-		ExternalDNSDomain:         o.configurableClusterOptions.ExternalDNSDomain,
+		ReleaseImage:                     o.LatestReleaseImage,
+		NodePoolReplicas:                 2,
+		ControlPlaneAvailabilityPolicy:   string(hyperv1.SingleReplica),
+		InfrastructureAvailabilityPolicy: string(hyperv1.SingleReplica),
+		NetworkType:                      string(o.configurableClusterOptions.NetworkType),
+		BaseDomain:                       o.configurableClusterOptions.BaseDomain,
+		PullSecretFile:                   o.configurableClusterOptions.PullSecretFile,
+		ControlPlaneOperatorImage:        o.configurableClusterOptions.ControlPlaneOperatorImage,
+		ExternalDNSDomain:                o.configurableClusterOptions.ExternalDNSDomain,
 		AWSPlatform: core.AWSPlatformOptions{
 			InstanceType:       "m5.large",
 			RootVolumeSize:     64,
@@ -296,8 +300,18 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		// align with default for e2e.aws-region flag
 		createOption.AWSPlatform.Zones = []string{"us-east-1a"}
 	} else {
-		createOption.AWSPlatform.Zones = strings.Split(o.configurableClusterOptions.Zone.String(), ",")
-		createOption.AzurePlatform.AvailabilityZones = strings.Split(o.configurableClusterOptions.Zone.String(), ",")
+		// For AWS, select a single zone for InfrastructureAvailabilityPolicy: SingleReplica guest cluster.
+		// This option is currently not configurable through flags and not set manually
+		// in any test, so we know InfrastructureAvailabilityPolicy is SingleReplica.
+		// If any test changes this in the future, we need to add logic here to make the
+		// guest cluster multi-zone in that case.
+		zones := strings.Split(o.configurableClusterOptions.Zone.String(), ",")
+		awsGuestZone := zones[nextAWSZoneIndex]
+		nextAWSZoneIndex = (nextAWSZoneIndex + 1) % len(zones)
+		createOption.AWSPlatform.Zones = []string{awsGuestZone}
+
+		// Assign all Azure zones to guest cluster
+		createOption.AzurePlatform.AvailabilityZones = zones
 	}
 
 	if o.configurableClusterOptions.SSHKeyFile == "" {
