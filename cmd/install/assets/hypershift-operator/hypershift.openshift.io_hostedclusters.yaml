@@ -5640,10 +5640,9 @@ spec:
                               [ { \"Effect\": \"Allow\", \"Action\": [ \"ec2:CreateVpcEndpoint\",
                               \"ec2:DescribeVpcEndpoints\", \"ec2:ModifyVpcEndpoint\",
                               \"ec2:DeleteVpcEndpoints\", \"ec2:CreateTags\", \"route53:ListHostedZones\",
-                              \"route53:ListHostedZonesByName\" ], \"Resource\": \"*\"
-                              }, { \"Effect\": \"Allow\", \"Action\": [ \"route53:ChangeResourceRecordSets\",
-                              \"route53:ListResourceRecordSets\" ], \"Resource\":
-                              \"arn:aws:route53:::%s\" } ] }"
+                              ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\", \"Action\":
+                              [ \"route53:ChangeResourceRecordSets\", \"route53:ListResourceRecordSets\"
+                              ], \"Resource\": \"arn:aws:route53:::%s\" } ] }"
                             type: string
                           imageRegistryARN:
                             description: "ImageRegistryARN is an ARN value referencing
