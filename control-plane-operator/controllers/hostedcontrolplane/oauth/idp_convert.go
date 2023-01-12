@@ -362,7 +362,7 @@ func convertProviderConfigToIDPData(
 		}
 		data.provider = openIDProvider
 
-		if configOverride.Challenge != nil {
+		if configOverride != nil && configOverride.Challenge != nil {
 			data.challenge = *configOverride.Challenge
 		} else {
 			// openshift CR validating in kube-apiserver does not allow
