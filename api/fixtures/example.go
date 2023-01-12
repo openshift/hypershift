@@ -139,34 +139,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 
 	switch {
 	case o.AWS != nil:
-		buildAWSCreds := func(name, arn string) *corev1.Secret {
-			return &corev1.Secret{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "Secret",
-					APIVersion: corev1.SchemeGroupVersion.String(),
-				},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: namespace.Name,
-					Name:      name,
-				},
-				Data: map[string][]byte{
-					"credentials": []byte(fmt.Sprintf(`[default]
-role_arn = %s
-web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
-`, arn)),
-				},
-			}
-		}
-
-		var kmsCredsSecret *corev1.Secret
-		if len(o.AWS.KMSProviderRoleARN) > 0 {
-			kmsCredsSecret = buildAWSCreds(o.Name+"-kms-creds", o.AWS.KMSProviderRoleARN)
-		}
-		awsResources := &ExampleAWSResources{
-			kmsCredsSecret,
-		}
 		endpointAccess := hyperv1.AWSEndpointAccessType(o.AWS.EndpointAccess)
-		resources = awsResources.AsObjects()
 		platformSpec = hyperv1.PlatformSpec{
 			Type: hyperv1.AWSPlatform,
 			AWS: &hyperv1.AWSPlatformSpec{
@@ -191,7 +164,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 			}
 		}
 
-		if kmsCredsSecret != nil {
+		if len(o.AWS.KMSProviderRoleARN) > 0 {
 			secretEncryption = &hyperv1.SecretEncryptionSpec{
 				Type: hyperv1.KMS,
 				KMS: &hyperv1.KMSSpec{
@@ -202,9 +175,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 							ARN: o.AWS.KMSKeyARN,
 						},
 						Auth: hyperv1.AWSKMSAuthSpec{
-							Credentials: corev1.LocalObjectReference{
-								Name: awsResources.KMSProviderAWSCreds.Name,
-							},
+							AWSKMSRoleARN: o.AWS.KMSProviderRoleARN,
 						},
 					},
 				},

@@ -114,6 +114,12 @@ func fixupHostedClusterBeforeConversion(hc *HostedCluster) error {
 	if err := reconcileDeprecatedNetworkSettings(&hc.Spec.Networking); err != nil {
 		return err
 	}
+	if hc.Spec.SecretEncryption != nil && hc.Spec.SecretEncryption.KMS != nil &&
+		hc.Spec.SecretEncryption.KMS.AWS != nil && hc.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name != "" &&
+		hc.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN == "" {
+		hc.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN = convertSecretNameToARN(hc.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name)
+	}
+
 	return nil
 }
 
@@ -122,6 +128,12 @@ func fixupHostedClusterAfterConversion(hc *HostedCluster) error {
 		populatedDeprecatedAWSRoles(hc.Spec.Platform.AWS)
 	}
 	populateDeprecatedNetworkingFields(&hc.Spec.Networking)
+
+	if hc.Spec.SecretEncryption != nil && hc.Spec.SecretEncryption.KMS != nil &&
+		hc.Spec.SecretEncryption.KMS.AWS != nil {
+		hc.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name = convertARNToSecretName(hc.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN)
+	}
+
 	return populateDeprecatedGlobalConfig(hc.Spec.Configuration)
 }
 
@@ -133,6 +145,12 @@ func fixupHostedControlPlaneBeforeConversion(hcp *HostedControlPlane) error {
 		return err
 	}
 	reconcileDeprecatedHCPNetworkSettings(hcp)
+
+	if hcp.Spec.SecretEncryption != nil && hcp.Spec.SecretEncryption.KMS != nil &&
+		hcp.Spec.SecretEncryption.KMS.AWS != nil && hcp.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name != "" {
+		hcp.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN = convertSecretNameToARN(hcp.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name)
+	}
+
 	if err := reconcileDeprecatedNetworkSettings(&hcp.Spec.Networking); err != nil {
 		return err
 	}
@@ -145,6 +163,12 @@ func fixupHostedControlPlaneAfterConversion(hcp *HostedControlPlane) error {
 	if hcp.Spec.Platform.AWS != nil {
 		populatedDeprecatedAWSRoles(hcp.Spec.Platform.AWS)
 	}
+
+	if hcp.Spec.SecretEncryption != nil && hcp.Spec.SecretEncryption.KMS != nil &&
+		hcp.Spec.SecretEncryption.KMS.AWS != nil && hcp.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN != "" {
+		hcp.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name = convertARNToSecretName(hcp.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN)
+	}
+
 	return populateDeprecatedGlobalConfig(hcp.Spec.Configuration)
 }
 

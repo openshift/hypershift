@@ -943,9 +943,59 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>Credentials contains the name of the secret that holds the aws credentials that can be used
+<p>Deprecated
+This field is deprecated and will be removed in a future release. Use AWSKMSRoleARN instead.
+Credentials contains the name of the secret that holds the aws credentials that can be used
 to make the necessary KMS calls. It should at key AWSCredentialsFileSecretKey contain the
 aws credentials file that can be used to configure AWS SDKs</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>awsKms</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>The referenced role must have a trust relationship that allows it to be assumed via web identity.
+<a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html">https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html</a>.
+Example:
+{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Principal&rdquo;: {
+&ldquo;Federated&rdquo;: &ldquo;{{ .ProviderARN }}&rdquo;
+},
+&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;{{ .ProviderName }}:sub&rdquo;: {{ .ServiceAccounts }}
+}
+}
+}
+]
+}</p>
+<p>AWSKMSARN is an ARN value referencing a role appropriate for managing the auth via the AWS KMS key.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;kms:Encrypt&rdquo;,
+&ldquo;kms:Decrypt&rdquo;,
+&ldquo;kms:ReEncrypt<em>&rdquo;,
+&ldquo;kms:GenerateDataKey</em>&rdquo;,
+&ldquo;kms:DescribeKey&rdquo;
+],
+&ldquo;Resource&rdquo;: %q
+}
+]
+}</p>
 </td>
 </tr>
 </tbody>

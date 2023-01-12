@@ -410,6 +410,16 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, err
 		}
 	}
+	if hcluster.Spec.SecretEncryption != nil && hcluster.Spec.SecretEncryption.KMS != nil && hcluster.Spec.SecretEncryption.KMS.AWS != nil {
+		if strings.HasPrefix(hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN, "arn-from-secret::") {
+			secretName := strings.TrimPrefix(hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN, "arn-from-secret::")
+			arn, err := r.getARNFromSecret(ctx, secretName, hcluster.Namespace)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to get ARN from secret %s/%s: %w", hcluster.Namespace, secretName, err)
+			}
+			hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN = arn
+		}
+	}
 
 	// Update fields if required.
 	if !equality.Semantic.DeepEqual(&hcluster.Spec, originalSpec) {
@@ -4272,5 +4282,6 @@ func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, roles
 		}
 		rolesRef.KubeCloudControllerARN = arn
 	}
+
 	return nil
 }
