@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"strings"
 	"time"
@@ -181,7 +180,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 	}
 	// overrides if pullSecretFile is set
 	if len(opts.PullSecretFile) > 0 {
-		pullSecret, err = ioutil.ReadFile(opts.PullSecretFile)
+		pullSecret, err = os.ReadFile(opts.PullSecretFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read pull secret file: %w", err)
 		}
