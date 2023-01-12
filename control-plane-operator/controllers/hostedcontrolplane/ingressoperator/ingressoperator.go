@@ -156,6 +156,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		{Name: "ingress-operator-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.IngressOperatorKubeconfig("").Name, DefaultMode: utilpointer.Int32Ptr(0640)}}},
 		{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32Ptr(0640)}}},
 		{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32Ptr(0640)}}},
+		{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32Ptr(0640)}}},
 	}
 
 	if params.Platform == hyperv1.AWSPlatform {
@@ -225,7 +226,8 @@ func ingressOperatorSocks5ProxyContainer(socks5ProxyImage string) corev1.Contain
 		},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "admin-kubeconfig", MountPath: "/etc/kubernetes"},
-			{Name: "konnectivity-proxy-cert", MountPath: "/etc/konnectivity-proxy-tls"},
+			{Name: "konnectivity-proxy-cert", MountPath: "/etc/konnectivity/proxy-client"},
+			{Name: "konnectivity-proxy-ca", MountPath: "/etc/konnectivity/proxy-ca"},
 		},
 	}
 	proxy.SetEnvVars(&c.Env)
