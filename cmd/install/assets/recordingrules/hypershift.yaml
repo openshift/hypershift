@@ -40,7 +40,7 @@ groups:
     expr: avg by (app, namespace, pod) (
             sum(
               rate(
-                container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
+                container_cpu_usage_seconds_total{container_name!="POD",container!=""}[2m]
               )
             ) by (pod, namespace)
           * on (pod, namespace) group_left(app)
@@ -50,7 +50,7 @@ groups:
           count by (app, namespace, pod) (
             sum(
               rate(
-                container_cpu_usage_seconds_total{container_name!="POD",container!=""}[1m]
+                container_cpu_usage_seconds_total{container_name!="POD",container!=""}[2m]
               )
             ) by (pod, namespace)
           * on (pod, namespace) group_left(app)
