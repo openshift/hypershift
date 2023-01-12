@@ -215,7 +215,7 @@ type resourceDesc struct {
 
 func resourcesToRemove(platformType hyperv1.PlatformType) []resourceDesc {
 	switch platformType {
-	case hyperv1.IBMCloudPlatform:
+	case hyperv1.IBMCloudPlatform, hyperv1.PowerVSPlatform:
 		return []resourceDesc{
 			{
 				apiVersion: "apps/v1",
@@ -327,7 +327,7 @@ func preparePayloadScript(platformType hyperv1.PlatformType) string {
 		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
 	for _, manifest := range manifestsToOmit {
-		if platformType == hyperv1.IBMCloudPlatform {
+		if platformType == hyperv1.IBMCloudPlatform || platformType == hyperv1.PowerVSPlatform {
 			if manifest == "0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml" || manifest == "0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml" {
 				continue
 			}
