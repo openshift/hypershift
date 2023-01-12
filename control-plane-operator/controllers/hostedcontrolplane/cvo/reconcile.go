@@ -5,14 +5,19 @@ import (
 	"path"
 	"strings"
 
+	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -206,112 +211,29 @@ func buildCVOContainerBootstrap(image, clusterID string) func(*corev1.Container)
 	}
 }
 
-type resourceDesc struct {
-	name       string
-	namespace  string
-	apiVersion string
-	kind       string
-}
-
-func resourcesToRemove(platformType hyperv1.PlatformType) []resourceDesc {
+func ResourcesToRemove(platformType hyperv1.PlatformType) []client.Object {
 	switch platformType {
 	case hyperv1.IBMCloudPlatform, hyperv1.PowerVSPlatform:
-		return []resourceDesc{
-			{
-				apiVersion: "apps/v1",
-				kind:       "Deployment",
-				name:       "network-operator",
-				namespace:  "openshift-network-operator",
-			},
-			{
-				apiVersion: "rbac.authorization.k8s.io/v1",
-				kind:       "ClusterRoleBinding",
-				name:       "default-account-cluster-network-operator",
-			},
-			{
-				apiVersion: "apps/v1",
-				kind:       "Deployment",
-				name:       "cluster-node-tuning-operator",
-				namespace:  "openshift-cluster-node-tuning-operator",
-			},
-			{
-				apiVersion: "apps/v1",
-				kind:       "Deployment",
-				name:       "cluster-image-registry-operator",
-				namespace:  "openshift-image-registry",
-			},
+		return []client.Object{
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "network-operator", Namespace: "openshift-network-operator"}},
+			&rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "default-account-cluster-network-operator"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "cluster-node-tuning-operator", Namespace: "openshift-cluster-node-tuning-operator"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "cluster-image-registry-operator", Namespace: "openshift-image-registry"}},
 		}
 	default:
-		return []resourceDesc{
-			{
-				apiVersion: "apps/v1",
-				kind:       "Deployment",
-				name:       "network-operator",
-				namespace:  "openshift-network-operator",
-			},
-			{
-				apiVersion: "rbac.authorization.k8s.io/v1",
-				kind:       "ClusterRoleBinding",
-				name:       "default-account-cluster-network-operator",
-			},
-			{
-				apiVersion: "apiextensions.k8s.io/v1",
-				kind:       "CustomResourceDefinition",
-				name:       "machineconfigs.machineconfiguration.openshift.io",
-			},
-			{
-				apiVersion: "apiextensions.k8s.io/v1",
-				kind:       "CustomResourceDefinition",
-				name:       "machineconfigpools.machineconfiguration.openshift.io",
-			},
-			{
-				apiVersion: "apps/v1",
-				kind:       "Deployment",
-				name:       "cluster-node-tuning-operator",
-				namespace:  "openshift-cluster-node-tuning-operator",
-			},
-			{
-				apiVersion: "apps/v1",
-				kind:       "Deployment",
-				name:       "cluster-image-registry-operator",
-				namespace:  "openshift-image-registry",
-			},
-			{
-				apiVersion: "apps/v1",
-				kind:       "Deployment",
-				name:       "cluster-storage-operator",
-				namespace:  "openshift-cluster-storage-operator",
-			},
-			{
-				apiVersion: "apps/v1",
-				kind:       "Deployment",
-				name:       "csi-snapshot-controller-operator",
-				namespace:  "openshift-cluster-storage-operator",
-			},
-			{
-				apiVersion: "apps/v1",
-				kind:       "Deployment",
-				name:       "aws-ebs-csi-driver-operator",
-				namespace:  "openshift-cluster-csi-drivers",
-			},
-			{
-				apiVersion: "apps/v1",
-				kind:       "Deployment",
-				name:       "aws-ebs-csi-driver-controller",
-				namespace:  "openshift-cluster-csi-drivers",
-			},
-			{
-				apiVersion: "apps/v1",
-				kind:       "Deployment",
-				name:       "csi-snapshot-webhook",
-				namespace:  "openshift-cluster-storage-operator",
-			},
-			{
-				apiVersion: "apps/v1",
-				kind:       "Deployment",
-				name:       "csi-snapshot-controller",
-				namespace:  "openshift-cluster-storage-operator",
-			},
+		return []client.Object{
+			&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "machineconfigs.machineconfiguration.openshift.io"}},
+			&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "machineconfigpools.machineconfiguration.openshift.io"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "network-operator", Namespace: "openshift-network-operator"}},
+			&rbacv1.ClusterRoleBinding{ObjectMeta: metav1.ObjectMeta{Name: "default-account-cluster-network-operator"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "cluster-node-tuning-operator", Namespace: "openshift-cluster-node-tuning-operator"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "cluster-image-registry-operator", Namespace: "openshift-image-registry"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "cluster-storage-operator", Namespace: "openshift-cluster-storage-operator"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "csi-snapshot-controller-operator", Namespace: "openshift-cluster-storage-operator"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "aws-ebs-csi-driver-operator", Namespace: "openshift-cluster-csi-drivers"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "aws-ebs-csi-driver-controller", Namespace: "openshift-cluster-csi-drivers"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "csi-snapshot-webhook", Namespace: "openshift-cluster-storage-operator"}},
+			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "csi-snapshot-controller", Namespace: "openshift-cluster-storage-operator"}},
 		}
 	}
 }
@@ -334,23 +256,29 @@ func preparePayloadScript(platformType hyperv1.PlatformType) string {
 		}
 		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", manifest)))
 	}
-	toRemove := resourcesToRemove(platformType)
+	toRemove := ResourcesToRemove(platformType)
 	if len(toRemove) > 0 {
 		// NOTE: the name of the cleanup file indicates the CVO runlevel for the cleanup.
 		// A level of 0000_01 forces the cleanup to happen first without waiting for any cluster operators to
 		// become available.
 		stmts = append(stmts, fmt.Sprintf("cat > %s/release-manifests/0000_01_cleanup.yaml <<EOF", payloadDir))
 	}
-	for _, desc := range toRemove {
+	for _, obj := range toRemove {
+		name := obj.GetName()
+		namespace := obj.GetNamespace()
+		gvk, err := apiutil.GVKForObject(obj, api.Scheme)
+		if err != nil {
+			continue
+		}
 		stmts = append(stmts,
 			"---",
-			fmt.Sprintf("apiVersion: %s", desc.apiVersion),
-			fmt.Sprintf("kind: %s", desc.kind),
+			fmt.Sprintf("apiVersion: %s", gvk.GroupVersion().String()),
+			fmt.Sprintf("kind: %s", gvk.Kind),
 			"metadata:",
-			fmt.Sprintf("  name: %s", desc.name),
+			fmt.Sprintf("  name: %s", name),
 		)
-		if desc.namespace != "" {
-			stmts = append(stmts, fmt.Sprintf("  namespace: %s", desc.namespace))
+		if namespace != "" {
+			stmts = append(stmts, fmt.Sprintf("  namespace: %s", namespace))
 		}
 		stmts = append(stmts,
 			"  annotations:",
