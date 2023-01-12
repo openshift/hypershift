@@ -79,6 +79,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	// ----------
 
 	totalClientCABundle := []*corev1.Secret{}
+	kubeletClientCABundle := []*corev1.Secret{}
 
 	// signer
 	kubeControlPlaneSigner, err := reconcileSigner(
@@ -122,6 +123,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return err
 	}
 	totalClientCABundle = append(totalClientCABundle, kasToKubeletSigner)
+	kubeletClientCABundle = append(kubeletClientCABundle, kasToKubeletSigner)
 
 	// KAS to kubelet client cert
 	if _, err := reconcileSub(
@@ -170,6 +172,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return err
 	}
 	totalClientCABundle = append(totalClientCABundle, csrSigner)
+	kubeletClientCABundle = append(kubeletClientCABundle, csrSigner)
 
 	// KAS bootstrap client cert secret
 	if _, err := reconcileSub(
@@ -205,6 +208,17 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile combined CA: %w", err)
+	}
+
+	kubeletClientCA := manifests.KubeletClientCABundle(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kubeletClientCA, func() error {
+		return pki.ReconcileKubeletClientCA(
+			kubeletClientCA,
+			p.OwnerRef,
+			kubeletClientCABundle...,
+		)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kubelet client CA: %w", err)
 	}
 
 	return nil

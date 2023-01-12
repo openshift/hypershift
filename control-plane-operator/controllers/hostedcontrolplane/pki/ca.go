@@ -58,6 +58,10 @@ func ReconcileTotalClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, sign
 	return reconcileAggregateCA(cm, ownerRef, signers...)
 }
 
+func ReconcileKubeletClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, signers ...*corev1.Secret) error {
+	return reconcileAggregateCA(cm, ownerRef, signers...)
+}
+
 func ReconcileRootCA(secret *corev1.Secret, ownerRef config.OwnerRef) error {
 	return reconcileSelfSignedCA(secret, ownerRef, "root-ca", "openshift")
 }
