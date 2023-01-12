@@ -256,7 +256,6 @@ func generateHAProxyStaticPod(image, internalAPIAddress string, internalAPIPort 
 		pod.Namespace = "kube-system"
 		pod.Labels = map[string]string{
 			"k8s-app": "kube-apiserver-proxy",
-			"hypershift.openshift.io/control-plane-component": "kube-apiserver-proxy",
 		}
 		pod.Spec.HostNetwork = true
 		pod.Spec.PriorityClassName = "system-node-critical"
@@ -338,7 +337,6 @@ func generateKubernetesDefaultProxyPod(image string, listenAddr string, proxyAdd
 				Namespace: "kube-system",
 				Labels: map[string]string{
 					"k8s-app": "kube-apiserver-proxy",
-					"hypershift.openshift.io/control-plane-component": "kube-apiserver-proxy",
 				},
 			},
 			Spec: corev1.PodSpec{
