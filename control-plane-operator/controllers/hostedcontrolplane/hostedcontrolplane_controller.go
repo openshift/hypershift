@@ -649,6 +649,13 @@ func useHCPRouter(hostedControlPlane *hyperv1.HostedControlPlane) bool {
 	return util.IsPrivateHCP(hostedControlPlane) || util.IsPublicKASWithDNS(hostedControlPlane)
 }
 
+func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool {
+	if hostedControlPlane.Spec.Platform.Type == hyperv1.IBMCloudPlatform || hostedControlPlane.Spec.Platform.Type == hyperv1.PowerVSPlatform {
+		return false
+	}
+	return true
+}
+
 func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImage *releaseinfo.ReleaseImage, infraStatus InfrastructureStatus) error {
 	if useHCPRouter(hostedControlPlane) {
 		r.Log.Info("Reconciling router")
@@ -848,7 +855,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile image registry operator: %w", err)
 	}
 
-	if hostedControlPlane.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+	if IsStorageAndCSIManaged(hostedControlPlane) {
 		// Reconcile cluster storage operator
 		r.Log.Info("Reconciling cluster storage operator")
 		if err = r.reconcileClusterStorageOperator(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
@@ -875,7 +882,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to ensure control plane: %w", err)
 	}
 
-	if hostedControlPlane.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+	if IsStorageAndCSIManaged(hostedControlPlane) {
 		// Reconcile cloud csi driver
 		r.Log.Info("Reconciling CSI Driver")
 		if err := r.reconcileCSIDriver(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
