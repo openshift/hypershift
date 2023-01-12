@@ -103,6 +103,7 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 			util.BuildVolume(oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs),
 			{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32Ptr(0640)}}},
 			{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32Ptr(0640)}}},
+			{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32Ptr(0640)}}},
 		},
 	}
 	deploymentConfig.ApplyTo(deployment)
@@ -271,7 +272,8 @@ func socks5ProxyContainer(socks5ProxyImage string) corev1.Container {
 		},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "admin-kubeconfig", MountPath: "/etc/kubernetes"},
-			{Name: "konnectivity-proxy-cert", MountPath: "/etc/konnectivity-proxy-tls"},
+			{Name: "konnectivity-proxy-cert", MountPath: "/etc/konnectivity/proxy-client"},
+			{Name: "konnectivity-proxy-ca", MountPath: "/etc/konnectivity/proxy-ca"},
 		},
 	}
 

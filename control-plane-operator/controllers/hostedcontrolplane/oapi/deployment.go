@@ -51,7 +51,8 @@ var (
 		},
 		oasSocks5ProxyContainer().Name: {
 			oasVolumeKubeconfig().Name:            "/etc/kubernetes/secrets/kubeconfig",
-			oasVolumeKonnectivityProxyCert().Name: "/etc/konnectivity-proxy-tls",
+			oasVolumeKonnectivityProxyCert().Name: "/etc/konnectivity/proxy-client",
+			oasVolumeKonnectivityProxyCA().Name:   "/etc/konnectivity/proxy-ca",
 		},
 	}
 )
@@ -121,6 +122,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			util.BuildVolume(oasVolumeServingCert(), buildOASVolumeServingCert),
 			util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
 			util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
+			util.BuildVolume(oasVolumeKonnectivityProxyCA(), buildOASVolumeKonnectivityProxyCA),
 			util.BuildVolume(oasTrustAnchorVolume(), func(v *corev1.Volume) { v.EmptyDir = &corev1.EmptyDirVolumeSource{} }),
 			util.BuildVolume(serviceCASignerVolume(), func(v *corev1.Volume) {
 				v.ConfigMap = &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.ServiceServingCA(deployment.Namespace).Name}}
@@ -323,6 +325,12 @@ func oasVolumeKonnectivityProxyCert() *corev1.Volume {
 	}
 }
 
+func oasVolumeKonnectivityProxyCA() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "oas-konnectivity-proxy-ca",
+	}
+}
+
 func oasTrustAnchorVolume() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "oas-trust-anchor",
@@ -345,4 +353,9 @@ func buildOASVolumeKonnectivityProxyCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
 	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
+}
+
+func buildOASVolumeKonnectivityProxyCA(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
 }

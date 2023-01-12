@@ -59,9 +59,9 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&connectDirectlyToCloudAPIs, "connect-directly-to-cloud-apis", false, "If true, traffic destined for AWS or Azure APIs should be sent there directly rather than going through konnectivity. If enabled, proxy env vars from the mgmt cluster must be propagated to this container")
 	cmd.Flags().BoolVar(&resolveFromGuestClusterDNS, "resolve-from-guest-cluster-dns", false, "If DNS resolving should use the guest clusters cluster-dns")
 
-	cmd.Flags().StringVar(&caCertPath, "ca-cert-path", "/etc/konnectivity-proxy-tls/ca.crt", "The path to the konnectivity client's ca-cert.")
-	cmd.Flags().StringVar(&clientCertPath, "tls-cert-path", "/etc/konnectivity-proxy-tls/tls.crt", "The path to the konnectivity client's tls certificate.")
-	cmd.Flags().StringVar(&clientKeyPath, "tls-key-path", "/etc/konnectivity-proxy-tls/tls.key", "The path to the konnectivity client's private key.")
+	cmd.Flags().StringVar(&caCertPath, "ca-cert-path", "/etc/konnectivity/proxy-ca/ca.crt", "The path to the konnectivity client's ca-cert.")
+	cmd.Flags().StringVar(&clientCertPath, "tls-cert-path", "/etc/konnectivity/proxy-client/tls.crt", "The path to the konnectivity client's tls certificate.")
+	cmd.Flags().StringVar(&clientKeyPath, "tls-key-path", "/etc/konnectivity/proxy-client/tls.key", "The path to the konnectivity client's private key.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		l.Info("Starting proxy", "version", version.String())
