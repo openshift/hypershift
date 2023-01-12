@@ -125,6 +125,12 @@ objects:
     verbs:
     - '*'
   - apiGroups:
+    - image.openshift.io
+    resources:
+    - '*'
+    verbs:
+    - '*'
+  - apiGroups:
     - security.openshift.io
     resources:
     - securitycontextconstraints

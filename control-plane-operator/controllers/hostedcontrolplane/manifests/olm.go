@@ -1,6 +1,7 @@
 package manifests
 
 import (
+	imagev1 "github.com/openshift/api/image/v1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -8,6 +9,15 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+func CatalogsImageStream(ns string) *imagev1.ImageStream {
+	return &imagev1.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "catalogs",
+			Namespace: ns,
+		},
+	}
+}
 
 // Certified Operators Catalog
 
