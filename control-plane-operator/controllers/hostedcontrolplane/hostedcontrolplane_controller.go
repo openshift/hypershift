@@ -595,7 +595,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		true,
 		r.ReleaseProvider.GetRegistryOverrides(),
 		r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
-		config.OwnerRefFrom(hostedControlPlane),
 	); err != nil {
 		return fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
