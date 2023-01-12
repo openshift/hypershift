@@ -406,6 +406,56 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 	}
 }
 
+func TestReconcileHostedControlPlaneConfiguration(t *testing.T) {
+	idp := configv1.IdentityProvider{
+		Name: "htpasswd",
+		IdentityProviderConfig: configv1.IdentityProviderConfig{
+			Type: configv1.IdentityProviderTypeHTPasswd,
+		},
+	}
+
+	tests := []struct {
+		name          string
+		configuration *hyperv1.ClusterConfiguration
+	}{
+		{
+			name:          "not specified",
+			configuration: nil,
+		},
+		{
+			name: "cluster configuration specified",
+			configuration: &hyperv1.ClusterConfiguration{
+				OAuth: &configv1.OAuthSpec{
+					IdentityProviders: []configv1.IdentityProvider{
+						idp,
+					},
+				},
+				Ingress: &configv1.IngressSpec{
+					Domain: "test.domain.com",
+				},
+				Network: &configv1.NetworkSpec{
+					NetworkType: "OpenShiftSDN",
+				},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			hostedCluster := &hyperv1.HostedCluster{}
+			hostedCluster.Spec.Configuration = test.configuration
+			hostedControlPlane := &hyperv1.HostedControlPlane{}
+			g := NewGomegaWithT(t)
+
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// DeepEqual to check that all ClusterConfiguration fields are deep copied to HostedControlPlane
+			g.Expect(hostedControlPlane.Spec.Configuration).To(BeEquivalentTo(test.configuration))
+		})
+	}
+}
+
 func TestServiceFirstNodePortAvailable(t *testing.T) {
 	tests := []struct {
 		name              string
