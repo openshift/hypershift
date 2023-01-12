@@ -50,6 +50,7 @@ update: deps api api-docs app-sre-saas-template
 verify: update staticcheck fmt vet promtool
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
+	git diff --exit-code HEAD --
 	$(eval STATUS = $(shell git status -s))
 	$(if $(strip $(STATUS)),$(error untracked files detected: ${STATUS}))
 
