@@ -2724,11 +2724,6 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 		return fmt.Errorf("failed to get root ca: %w", err)
 	}
 
-	signerCA := manifests.KubeAPIServerToKubeletSigner(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(signerCA), signerCA); err != nil {
-		return fmt.Errorf("failed to get KAS to Kubelet signer ca: %w", err)
-	}
-
 	pullSecret := common.PullSecret(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return fmt.Errorf("failed to get pull secret: %w", err)
@@ -2742,7 +2737,12 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 		}
 	}
 
-	p := mcs.NewMCSParams(hcp, rootCA, signerCA, pullSecret, userCA)
+	kubeletClientCA := manifests.KubeletClientCABundle(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(kubeletClientCA), kubeletClientCA); err != nil {
+		return fmt.Errorf("failed to get root kubelet client CA: %w", err)
+	}
+
+	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, userCA, kubeletClientCA)
 
 	cm := manifests.MachineConfigServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, cm, func() error {
