@@ -3,6 +3,7 @@ package fixtures
 import (
 	"crypto/rand"
 	"fmt"
+	"time"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 
@@ -57,6 +58,7 @@ type ExampleOptions struct {
 	SSHPublicKey                     []byte
 	SSHPrivateKey                    []byte
 	NodePoolReplicas                 int32
+	NodeDrainTimeout                 time.Duration
 	ImageContentSources              []hyperv1.ImageContentSource
 	InfraID                          string
 	MachineCIDR                      string
@@ -505,6 +507,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				Platform: hyperv1.NodePoolPlatform{
 					Type: cluster.Spec.Platform.Type,
 				},
+				NodeDrainTimeout: &metav1.Duration{Duration: o.NodeDrainTimeout},
 			},
 		}
 	}
