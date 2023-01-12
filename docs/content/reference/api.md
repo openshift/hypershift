@@ -677,6 +677,33 @@ the purpose of the change. In future we plan to propagate this field in-place.
 </tr>
 <tr>
 <td>
+<code>nodeLabels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeLabels propagates a list of labels to Nodes, only once on creation.
+Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>taints</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.Taint">
+[]Taint
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Taints if specified, propagates a list of taints to Nodes, only once on creation.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>pausedUntil</code></br>
 <em>
 string
@@ -5815,6 +5842,33 @@ the purpose of the change. In future we plan to propagate this field in-place.
 </tr>
 <tr>
 <td>
+<code>nodeLabels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeLabels propagates a list of labels to Nodes, only once on creation.
+Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>taints</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.Taint">
+[]Taint
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Taints if specified, propagates a list of taints to Nodes, only once on creation.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>pausedUntil</code></br>
 <em>
 string
@@ -7113,6 +7167,63 @@ ServicePublishingStrategy
 <p>ServiceType defines what control plane services can be exposed from the
 management control plane.</p>
 </p>
+###Taint { #hypershift.openshift.io/v1alpha1.Taint }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolSpec">NodePoolSpec</a>)
+</p>
+<p>
+<p>Taint is as v1 Core but without TimeAdded.
+<a href="https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053">https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053</a></p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>key</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Required. The taint key to be applied to a node.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>value</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>The taint value corresponding to the taint key.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>effect</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#tainteffect-v1-core">
+Kubernetes core/v1.TaintEffect
+</a>
+</em>
+</td>
+<td>
+<p>Required. The effect of the taint on pods
+that do not tolerate the taint.
+Valid effects are NoSchedule, PreferNoSchedule and NoExecute.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###UnmanagedEtcdSpec { #hypershift.openshift.io/v1alpha1.UnmanagedEtcdSpec }
 <p>
 (<em>Appears on:</em>

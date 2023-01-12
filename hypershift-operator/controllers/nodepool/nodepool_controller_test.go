@@ -1856,3 +1856,50 @@ func TestCreateValidGeneratedPayloadCondition(t *testing.T) {
 		})
 	}
 }
+
+func TestTaintsToJSON(t *testing.T) {
+	testCases := []struct {
+		name     string
+		taints   []hyperv1.Taint
+		expected string
+	}{
+		{
+			name:     "",
+			taints:   []hyperv1.Taint{},
+			expected: "[]",
+		},
+		{
+			name: "",
+			taints: []hyperv1.Taint{
+				{
+					Key:    "foo",
+					Value:  "bar",
+					Effect: "any",
+				},
+				{
+					Key:    "foo2",
+					Value:  "bar2",
+					Effect: "any",
+				},
+			},
+			expected: `[{"key":"foo","value":"bar","effect":"any"},{"key":"foo2","value":"bar2","effect":"any"}]`,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			taints, err := taintsToJSON(tc.taints)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(taints).To(BeEquivalentTo(tc.expected))
+
+			// validate decoding.
+			var coreTaints []corev1.Taint
+			err = json.Unmarshal([]byte(taints), &coreTaints)
+			g.Expect(err).ToNot(HaveOccurred())
+			node := &corev1.Node{}
+			node.Spec.Taints = append(node.Spec.Taints, coreTaints...)
+			g.Expect(node.Spec.Taints).To(ContainElements(coreTaints))
+		})
+	}
+}

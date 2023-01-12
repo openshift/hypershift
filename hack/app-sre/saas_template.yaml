@@ -34034,6 +34034,12 @@ objects:
                     rolling update, which kind of defeats the purpose of the change.
                     In future we plan to propagate this field in-place. https://github.com/kubernetes-sigs/cluster-api/issues/5880'
                   type: string
+                nodeLabels:
+                  additionalProperties:
+                    type: string
+                  description: NodeLabels propagates a list of labels to Nodes, only
+                    once on creation. Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
+                  type: object
                 pausedUntil:
                   description: 'PausedUntil is a field that can be used to pause reconciliation
                     on a resource. Either a date can be provided in RFC3339 format
@@ -34529,6 +34535,28 @@ objects:
                     maintain. If unset, the default value is 0.
                   format: int32
                   type: integer
+                taints:
+                  description: Taints if specified, propagates a list of taints to
+                    Nodes, only once on creation.
+                  items:
+                    description: Taint is as v1 Core but without TimeAdded. https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053
+                    properties:
+                      effect:
+                        description: Required. The effect of the taint on pods that
+                          do not tolerate the taint. Valid effects are NoSchedule,
+                          PreferNoSchedule and NoExecute.
+                        type: string
+                      key:
+                        description: Required. The taint key to be applied to a node.
+                        type: string
+                      value:
+                        description: The taint value corresponding to the taint key.
+                        type: string
+                    required:
+                    - effect
+                    - key
+                    type: object
+                  type: array
                 tuningConfig:
                   description: "TuningConfig is a list of references to ConfigMaps
                     containing serialized Tuned resources to define the tuning configuration
@@ -34835,6 +34863,12 @@ objects:
                     rolling update, which kind of defeats the purpose of the change.
                     In future we plan to propagate this field in-place. https://github.com/kubernetes-sigs/cluster-api/issues/5880'
                   type: string
+                nodeLabels:
+                  additionalProperties:
+                    type: string
+                  description: NodeLabels propagates a list of labels to Nodes, only
+                    once on creation. Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
+                  type: object
                 pausedUntil:
                   description: 'PausedUntil is a field that can be used to pause reconciliation
                     on a resource. Either a date can be provided in RFC3339 format
@@ -35321,6 +35355,28 @@ objects:
                     maintain. If unset, the default value is 0.
                   format: int32
                   type: integer
+                taints:
+                  description: Taints if specified, propagates a list of taints to
+                    Nodes, only once on creation.
+                  items:
+                    description: Taint is as v1 Core but without TimeAdded. https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053
+                    properties:
+                      effect:
+                        description: Required. The effect of the taint on pods that
+                          do not tolerate the taint. Valid effects are NoSchedule,
+                          PreferNoSchedule and NoExecute.
+                        type: string
+                      key:
+                        description: Required. The taint key to be applied to a node.
+                        type: string
+                      value:
+                        description: The taint value corresponding to the taint key.
+                        type: string
+                    required:
+                    - effect
+                    - key
+                    type: object
+                  type: array
                 tuningConfig:
                   description: "TuningConfig is a list of references to ConfigMaps
                     containing serialized Tuned resources to define the tuning configuration
