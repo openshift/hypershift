@@ -2250,6 +2250,16 @@ spec:
                     description: AWS specifies configuration for clusters running
                       on Amazon Web Services.
                     properties:
+                      additionalAllowedPrincipals:
+                        description: AdditionalAllowedPrincipals specifies a list
+                          of additional allowed principal ARNs to be added to the
+                          hosted control plane's VPC Endpoint Service to enable additional
+                          VPC Endpoint connection requests to be automatically accepted.
+                          See https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html
+                          for more details around VPC Endpoint Service allowed principals.
+                        items:
+                          type: string
+                        type: array
                       cloudProviderConfig:
                         description: 'CloudProviderConfig specifies AWS networking
                           configuration for the control plane. This is mainly used
@@ -5549,6 +5559,16 @@ spec:
                     description: AWS specifies configuration for clusters running
                       on Amazon Web Services.
                     properties:
+                      additionalAllowedPrincipals:
+                        description: AdditionalAllowedPrincipals specifies a list
+                          of additional allowed principal ARNs to be added to the
+                          hosted control plane's VPC Endpoint Service to enable additional
+                          VPC Endpoint connection requests to be automatically accepted.
+                          See https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html
+                          for more details around VPC Endpoint Service allowed principals.
+                        items:
+                          type: string
+                        type: array
                       cloudProviderConfig:
                         description: 'CloudProviderConfig specifies AWS networking
                           configuration for the control plane. This is mainly used

@@ -66,7 +66,7 @@ var (
 	configJSONFileName = "config.json"
 )
 
-//ReadSpecificDockerConfigJSONFile attempts to read docker configJSON from a given file path.
+// ReadSpecificDockerConfigJSONFile attempts to read docker configJSON from a given file path.
 func ReadSpecificDockerConfigJSONFile(filePath string) (cfg DockerConfig, err error) {
 	var contents []byte
 
