@@ -923,7 +923,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if controlPlaneNamespace.Labels == nil {
 			controlPlaneNamespace.Labels = make(map[string]string)
 		}
-		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = ""
+		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = "true"
 		if r.EnableOCPClusterMonitoring {
 			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
 		}
