@@ -36,6 +36,7 @@ import (
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -472,16 +473,18 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling olm resources")
 	errs = append(errs, r.reconcileOLM(ctx, hcp, releaseImage)...)
 
-	log.Info("reconciling storage resources")
-	errs = append(errs, r.reconcileStorage(ctx, hcp, releaseImage)...)
+	if hostedcontrolplane.IsStorageAndCSIManaged(hcp) {
+		log.Info("reconciling storage resources")
+		errs = append(errs, r.reconcileStorage(ctx, hcp, releaseImage)...)
+
+		log.Info("reconciling node level csi configuration")
+		if err := r.reconcileCSIDriver(ctx, hcp, releaseImage); err != nil {
+			errs = append(errs, err)
+		}
+	}
 
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
-
-	log.Info("reconciling node level csi configuration")
-	if err := r.reconcileCSIDriver(ctx, hcp, releaseImage); err != nil {
-		errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
-	}
 
 	// Delete the DNS operator deployment in the hosted cluster, if it is
 	// present there.  A separate DNS operator deployment runs as part of
