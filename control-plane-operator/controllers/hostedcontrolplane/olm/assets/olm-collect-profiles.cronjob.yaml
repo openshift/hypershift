@@ -40,5 +40,6 @@ spec:
                 name: olm-collect-profiles
             - name: secret-volume
               secret:
+                defaultMode: 0640
                 secretName: metrics-client
           restartPolicy: Never
