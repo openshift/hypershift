@@ -1,7 +1,6 @@
 package kas
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -57,7 +56,7 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{test.apiServiceMapping}
 			hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: test.port, AdvertiseAddress: test.advertiseAddress}
-			p := NewKubeAPIServerParams(context.Background(), hcp, map[string]string{}, "", 0, "", 0, false)
+			p := NewKubeAPIServerParams(hcp, map[string]string{}, "", 0, "", 0, false)
 			g := NewGomegaWithT(t)
 			g.Expect(p.AdvertiseAddress).To(Equal(test.expectedAddress))
 			g.Expect(p.APIServerPort).To(Equal(test.expectedPort))

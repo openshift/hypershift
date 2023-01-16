@@ -28,7 +28,7 @@ type Kubevirt struct{}
 
 func (p Kubevirt) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
+	controlPlaneNamespace string, _ hyperv1.APIEndpoint) (client.Object, error) {
 	kubevirtCluster := &capikubevirt.KubevirtCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
@@ -151,15 +151,15 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 	}, nil
 }
 
-func (p Kubevirt) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+func (p Kubevirt) ReconcileCredentials(_ context.Context, _ client.Client, _ upsert.CreateOrUpdateFN,
+	_ *hyperv1.HostedCluster,
+	_ string) error {
 	return nil
 }
 
-func (Kubevirt) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+func (Kubevirt) ReconcileSecretEncryption(_ context.Context, _ client.Client, _ upsert.CreateOrUpdateFN,
+	_ *hyperv1.HostedCluster,
+	_ string) error {
 	return nil
 }
 
@@ -178,6 +178,6 @@ func (Kubevirt) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	}
 }
 
-func (Kubevirt) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (Kubevirt) DeleteCredentials(_ context.Context, _ client.Client, _ *hyperv1.HostedCluster, _ string) error {
 	return nil
 }

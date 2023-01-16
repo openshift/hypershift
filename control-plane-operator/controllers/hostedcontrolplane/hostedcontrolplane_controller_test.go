@@ -1386,7 +1386,7 @@ type fakeMessageCollector struct {
 	msg string
 }
 
-func (c *fakeMessageCollector) ErrorMessages(resource client.Object) ([]string, error) {
+func (c *fakeMessageCollector) ErrorMessages(client.Object) ([]string, error) {
 	return []string{c.msg}, nil
 }
 

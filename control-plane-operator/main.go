@@ -383,7 +383,7 @@ func NewStartCommand() *cobra.Command {
 				ServiceName:            manifests.KubeAPIServerPrivateServiceName,
 				HCPNamespace:           namespace,
 				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-			}).SetupWithManager(ctx, mgr); err != nil {
+			}).SetupWithManager(mgr); err != nil {
 				controllerName := awsprivatelink.ControllerName(manifests.KubeAPIServerPrivateServiceName)
 				setupLog.Error(err, "unable to create controller", "controller", controllerName)
 				os.Exit(1)
@@ -397,7 +397,7 @@ func NewStartCommand() *cobra.Command {
 				ServiceName:            manifests.PrivateRouterService("").Name,
 				HCPNamespace:           namespace,
 				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
-			}).SetupWithManager(ctx, mgr); err != nil {
+			}).SetupWithManager(mgr); err != nil {
 				controllerName := awsprivatelink.ControllerName(manifests.PrivateRouterService("").Name)
 				setupLog.Error(err, "unable to create controller", "controller", controllerName)
 				os.Exit(1)

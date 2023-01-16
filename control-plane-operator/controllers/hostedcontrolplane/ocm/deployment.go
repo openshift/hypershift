@@ -41,7 +41,7 @@ func openShiftControllerManagerLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, config *corev1.ConfigMap, deploymentConfig config.DeploymentConfig) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image string, config *corev1.ConfigMap, deploymentConfig config.DeploymentConfig) error {
 	configBytes, ok := config.Data[configKey]
 	if !ok {
 		return fmt.Errorf("openshift apiserver configuration is not expected to be empty")

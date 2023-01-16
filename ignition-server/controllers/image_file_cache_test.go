@@ -40,47 +40,47 @@ func TestImageFileCache(t *testing.T) {
 
 	// first file should miss the cache
 	content = "test1"
-	response1, err1 := getImageFile(t, sut, "ref1", "dir/file1")
+	response1, err1 := getImageFile(sut, "ref1", "dir/file1")
 	g.Expect(err1).Should(Succeed())
 	g.Expect(called).To(Equal(1)) // incremented
 	g.Expect(response1).To(Equal(content))
 
 	// next call should hit the cache
-	response2, err2 := getImageFile(t, sut, "ref1", "dir/file1")
+	response2, err2 := getImageFile(sut, "ref1", "dir/file1")
 	g.Expect(err2).Should(Succeed())
 	g.Expect(called).To(Equal(1)) // not incremented
 	g.Expect(response2).To(Equal(content))
 
 	// corrupted files should be re-downloaded
 	simulateFileCorruption(t, cacheDir)
-	response2bis, err2bis := getImageFile(t, sut, "ref1", "dir/file1")
+	response2bis, err2bis := getImageFile(sut, "ref1", "dir/file1")
 	g.Expect(err2bis).Should(Succeed())
 	g.Expect(called).To(Equal(2)) // incremented
 	g.Expect(response2bis).To(Equal(content))
 
 	// call with different imageRef should miss the cache
 	content = "test2"
-	response3, err3 := getImageFile(t, sut, "ref2", "dir/file1")
+	response3, err3 := getImageFile(sut, "ref2", "dir/file1")
 	g.Expect(err3).Should(Succeed())
 	g.Expect(called).To(Equal(3)) // incremented
 	g.Expect(response3).To(Equal(content))
 
 	// next call to get the same image file should hit the cache
-	response4, err4 := getImageFile(t, sut, "ref2", "dir/file1")
+	response4, err4 := getImageFile(sut, "ref2", "dir/file1")
 	g.Expect(err4).Should(Succeed())
 	g.Expect(called).To(Equal(3)) // not incremented
 	g.Expect(response4).To(Equal(content))
 
 	// registry client failure should be propagated back to the caller
 	fail = true
-	_, err5 := getImageFile(t, sut, "ref2", "dir/file2")
+	_, err5 := getImageFile(sut, "ref2", "dir/file2")
 	g.Expect(called).To(Equal(4)) // incremented
 	g.Expect(err5).Should(HaveOccurred())
 	g.Expect(err5.Error()).Should(ContainSubstring("mocked failure"))
 	t.Log("failure message returned:", err5)
 }
 
-func getImageFile(t *testing.T, sut *imageFileCache, imageRef string, imageFile string) (string, error) {
+func getImageFile(sut *imageFileCache, imageRef string, imageFile string) (string, error) {
 	var buff bytes.Buffer
 	sutErr := sut.extractImageFile(context.Background(), imageRef, []byte("pull-secret"), imageFile, &buff)
 	return buff.String(), sutErr

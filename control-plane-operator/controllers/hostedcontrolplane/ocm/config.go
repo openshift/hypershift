@@ -22,7 +22,7 @@ const (
 	configKey = "config.yaml"
 )
 
-func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
+func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.Image, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}

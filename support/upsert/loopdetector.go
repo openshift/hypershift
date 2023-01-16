@@ -35,7 +35,7 @@ const LoopDetectorWarningMessage = "WARNING: Object got updated more than one ti
 // in the future.
 // Once we did a no-op update, we will ignore the object because we assume that if we have
 // a bug in the defaulting, we will end up always updating.
-func updateLoopThreshold(o runtime.Object) int {
+func updateLoopThreshold() int {
 	// Give some leeway, if we actually revert defaults we will do a lot more than this
 	return 10
 }
@@ -77,7 +77,7 @@ func (uld *updateLoopDetector) recordActualUpdate(original, modified runtime.Obj
 	updateEventCount := uld.updateEventCount[cacheKey]
 	uld.lock.Unlock()
 
-	if updateEventCount < updateLoopThreshold(original) {
+	if updateEventCount < updateLoopThreshold() {
 		return
 	}
 

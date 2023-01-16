@@ -103,7 +103,7 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 	case *routev1.Route:
 		defaultRouteSpec(&existingTyped.Spec, &obj.(*routev1.Route).Spec)
 	case *apiextensionsv1.CustomResourceDefinition:
-		defaultCRDSpec(&existingTyped.Spec, &obj.(*apiextensionsv1.CustomResourceDefinition).Spec)
+		defaultCRDSpec(&obj.(*apiextensionsv1.CustomResourceDefinition).Spec)
 	case *admissionregistrationv1.MutatingWebhookConfiguration:
 		defaultMutatingWebhookConfiguration(&existingTyped.Webhooks, &obj.(*admissionregistrationv1.MutatingWebhookConfiguration).Webhooks)
 	}
@@ -425,7 +425,7 @@ func defaultContainerPort(original, mutated *corev1.ContainerPort) {
 	}
 }
 
-func defaultCRDSpec(original, mutated *apiextensionsv1.CustomResourceDefinitionSpec) {
+func defaultCRDSpec(mutated *apiextensionsv1.CustomResourceDefinitionSpec) {
 	if mutated.Conversion == nil {
 		mutated.Conversion = &apiextensionsv1.CustomResourceConversion{
 			Strategy: apiextensionsv1.NoneConverter,

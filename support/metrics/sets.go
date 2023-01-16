@@ -363,7 +363,7 @@ func HostedClusterConfigOperatorRelabelConfigs(set MetricsSet) []*prometheusoper
 	}
 }
 
-func ControlPlaneOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+func ControlPlaneOperatorRelabelConfigs() []*prometheusoperatorv1.RelabelConfig {
 	// For now, no filtering will occur for the CPO
 	return nil
 }

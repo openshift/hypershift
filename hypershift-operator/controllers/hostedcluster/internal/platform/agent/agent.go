@@ -166,9 +166,7 @@ func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, create
 	return nil
 }
 
-func (Agent) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+func (Agent) ReconcileSecretEncryption(context.Context, client.Client, upsert.CreateOrUpdateFN, *hyperv1.HostedCluster, string) error {
 	return nil
 }
 

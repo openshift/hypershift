@@ -7,15 +7,15 @@ import (
 type LivenessProbes map[string]corev1.Probe
 
 func (p LivenessProbes) ApplyTo(podSpec *corev1.PodSpec) {
-	for i, c := range podSpec.InitContainers {
-		p.ApplyToContainer(c.Name, &podSpec.InitContainers[i])
+	for i := range podSpec.InitContainers {
+		p.ApplyToContainer(&podSpec.InitContainers[i])
 	}
-	for i, c := range podSpec.Containers {
-		p.ApplyToContainer(c.Name, &podSpec.Containers[i])
+	for i := range podSpec.Containers {
+		p.ApplyToContainer(&podSpec.Containers[i])
 	}
 }
 
-func (p LivenessProbes) ApplyToContainer(container string, c *corev1.Container) {
+func (p LivenessProbes) ApplyToContainer(c *corev1.Container) {
 	if probe, ok := p[c.Name]; ok {
 		c.LivenessProbe = &probe
 	}
@@ -24,15 +24,15 @@ func (p LivenessProbes) ApplyToContainer(container string, c *corev1.Container) 
 type ReadinessProbes map[string]corev1.Probe
 
 func (p ReadinessProbes) ApplyTo(podSpec *corev1.PodSpec) {
-	for i, c := range podSpec.InitContainers {
-		p.ApplyToContainer(c.Name, &podSpec.InitContainers[i])
+	for i := range podSpec.InitContainers {
+		p.ApplyToContainer(&podSpec.InitContainers[i])
 	}
-	for i, c := range podSpec.Containers {
-		p.ApplyToContainer(c.Name, &podSpec.Containers[i])
+	for i := range podSpec.Containers {
+		p.ApplyToContainer(&podSpec.Containers[i])
 	}
 }
 
-func (p ReadinessProbes) ApplyToContainer(container string, c *corev1.Container) {
+func (p ReadinessProbes) ApplyToContainer(c *corev1.Container) {
 	if probe, ok := p[c.Name]; ok {
 		c.ReadinessProbe = &probe
 	}

@@ -27,7 +27,7 @@ type fakeEC2Client struct {
 	setPerms *ec2.ModifyVpcEndpointServicePermissionsInput
 }
 
-func (f *fakeEC2Client) CreateVpcEndpointServiceConfigurationWithContext(ctx aws.Context, in *ec2.CreateVpcEndpointServiceConfigurationInput, o ...request.Option) (*ec2.CreateVpcEndpointServiceConfigurationOutput, error) {
+func (f *fakeEC2Client) CreateVpcEndpointServiceConfigurationWithContext(_ aws.Context, in *ec2.CreateVpcEndpointServiceConfigurationInput, _ ...request.Option) (*ec2.CreateVpcEndpointServiceConfigurationOutput, error) {
 	if f.created != nil {
 		return nil, errors.New("already created endpoint service")
 	}
@@ -44,7 +44,7 @@ func (f *fakeElbv2Client) DescribeLoadBalancersWithContext(aws.Context, *elbv2.D
 	return f.out, nil
 }
 
-func (f *fakeEC2Client) DescribeVpcEndpointServicePermissions(in *ec2.DescribeVpcEndpointServicePermissionsInput) (*ec2.DescribeVpcEndpointServicePermissionsOutput, error) {
+func (f *fakeEC2Client) DescribeVpcEndpointServicePermissions(_ *ec2.DescribeVpcEndpointServicePermissionsInput) (*ec2.DescribeVpcEndpointServicePermissionsOutput, error) {
 	return f.permsOut, nil
 }
 

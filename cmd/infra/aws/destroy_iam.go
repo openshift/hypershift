@@ -79,7 +79,7 @@ func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
 	iamClient := iam.New(awsSession, awsConfig)
 
 	var err error
-	err = o.DestroyOIDCResources(ctx, iamClient)
+	err = o.DestroyOIDCResources(iamClient)
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {
 	return nil
 }
 
-func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient iamiface.IAMAPI) error {
+func (o *DestroyIAMOptions) DestroyOIDCResources(iamClient iamiface.IAMAPI) error {
 	oidcProviderList, err := iamClient.ListOpenIDConnectProviders(&iam.ListOpenIDConnectProvidersInput{})
 	if err != nil {
 		return err

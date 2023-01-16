@@ -22,7 +22,7 @@ type FakeReleaseProvider struct {
 	ImageVersion map[string]string
 }
 
-func (f *FakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
+func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
 	releaseImage := &releaseinfo.ReleaseImage{
 		ImageStream: &imagev1.ImageStream{
 			ObjectMeta: metav1.ObjectMeta{Name: "4.12.0"},

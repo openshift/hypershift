@@ -60,7 +60,7 @@ type AWSEndpointServiceReconciler struct {
 	controlPlaneOperatorRoleARNFn func(context.Context, *hyperv1.HostedCluster) (string, error)
 }
 
-func mapNodePoolToAWSEndpointServicesFunc(c client.Client) func(obj client.Object) []reconcile.Request {
+func mapNodePoolToAWSEndpointServicesFunc() func(obj client.Object) []reconcile.Request {
 	return func(obj client.Object) []reconcile.Request {
 		nodePool, ok := obj.(*hyperv1.NodePool)
 		if !ok {
@@ -72,7 +72,7 @@ func mapNodePoolToAWSEndpointServicesFunc(c client.Client) func(obj client.Objec
 	}
 }
 
-func mapHostedClusterToAWSEndpointServicesFunc(c client.Client) func(obj client.Object) []reconcile.Request {
+func mapHostedClusterToAWSEndpointServicesFunc() func(obj client.Object) []reconcile.Request {
 	return func(obj client.Object) []reconcile.Request {
 		hc, ok := obj.(*hyperv1.HostedCluster)
 		if !ok {
@@ -115,8 +115,8 @@ func awsEndpointServicesByName(ns string) []reconcile.Request {
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.AWSEndpointService{}).
-		Watches(&source.Kind{Type: &hyperv1.NodePool{}}, handler.EnqueueRequestsFromMapFunc(mapNodePoolToAWSEndpointServicesFunc(r))).
-		Watches(&source.Kind{Type: &hyperv1.HostedCluster{}}, handler.EnqueueRequestsFromMapFunc(mapHostedClusterToAWSEndpointServicesFunc(r))).
+		Watches(&source.Kind{Type: &hyperv1.NodePool{}}, handler.EnqueueRequestsFromMapFunc(mapNodePoolToAWSEndpointServicesFunc())).
+		Watches(&source.Kind{Type: &hyperv1.HostedCluster{}}, handler.EnqueueRequestsFromMapFunc(mapHostedClusterToAWSEndpointServicesFunc())).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(3*time.Second, 30*time.Second),
 			MaxConcurrentReconciles: 10,
@@ -568,7 +568,7 @@ func (r *AWSEndpointServiceReconciler) hostedCluster(ctx context.Context, hcp *h
 	return hc, nil
 }
 
-func (r *AWSEndpointServiceReconciler) controlPlaneOperatorRoleARN(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
+func (r *AWSEndpointServiceReconciler) controlPlaneOperatorRoleARN(_ context.Context, hc *hyperv1.HostedCluster) (string, error) {
 	if hc.Spec.Platform.AWS == nil || hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN == "" {
 		return "", fmt.Errorf("hosted cluster does not have control plane operator credentials")
 	}

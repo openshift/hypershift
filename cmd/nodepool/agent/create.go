@@ -11,7 +11,7 @@ import (
 
 type AgentPlatformCreateOptions struct{}
 
-func NewAgentPlatformCreateOptions(cmd *cobra.Command) *AgentPlatformCreateOptions {
+func NewAgentPlatformCreateOptions() *AgentPlatformCreateOptions {
 	platformOpts := &AgentPlatformCreateOptions{}
 
 	return platformOpts
@@ -24,14 +24,14 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	platformOpts := NewAgentPlatformCreateOptions(cmd)
+	platformOpts := NewAgentPlatformCreateOptions()
 
 	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
 	return cmd
 }
 
-func (o *AgentPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
+func (o *AgentPlatformCreateOptions) UpdateNodePool(context.Context, *hyperv1.NodePool, *hyperv1.HostedCluster, crclient.Client) error {
 	return nil
 }
 

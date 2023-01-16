@@ -51,7 +51,7 @@ type opts struct {
 	availabilityZone string
 }
 
-func (o *opts) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
+func (o *opts) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
 	nodePool.Spec.Platform.Type = hyperv1.AzurePlatform
 	nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
 		VMSize:           o.instanceType,

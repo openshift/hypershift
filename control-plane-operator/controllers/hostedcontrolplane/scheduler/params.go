@@ -1,8 +1,6 @@
 package scheduler
 
 import (
-	"context"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -25,7 +23,7 @@ type KubeSchedulerParams struct {
 	DisableProfiling        bool                    `json:"disableProfiling"`
 }
 
-func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *KubeSchedulerParams {
+func NewKubeSchedulerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *KubeSchedulerParams {
 	params := &KubeSchedulerParams{
 		HyperkubeImage:          images["hyperkube"],
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],

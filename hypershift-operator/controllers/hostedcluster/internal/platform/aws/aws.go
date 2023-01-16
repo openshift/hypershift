@@ -280,9 +280,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 	return utilerrors.NewAggregate(errs)
 }
 
-func (AWS) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+func (AWS) ReconcileSecretEncryption(context.Context, client.Client, upsert.CreateOrUpdateFN, *hyperv1.HostedCluster, string) error {
 	return nil
 }
 
@@ -357,7 +355,7 @@ func (AWS) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }
 
-func (AWS) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (AWS) DeleteCredentials(context.Context, client.Client, *hyperv1.HostedCluster, string) error {
 	return nil
 }
 

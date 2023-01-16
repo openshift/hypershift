@@ -28,7 +28,7 @@ func (a *Azure) ReconcileCAPIInfraCR(
 	createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string,
-	apiEndpoint hyperv1.APIEndpoint,
+	_ hyperv1.APIEndpoint,
 ) (client.Object, error) {
 
 	cluster := &capiazure.AzureCluster{
@@ -59,7 +59,7 @@ func (a *Azure) ReconcileCAPIInfraCR(
 	return cluster, nil
 }
 
-func (a *Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (a *Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	image := providerImage
 	if envImage := os.Getenv(images.AzureCAPIProviderEnvVar); len(envImage) > 0 {
 		image = envImage
@@ -162,7 +162,7 @@ func (a *Azure) ReconcileCredentials(ctx context.Context, c client.Client, creat
 	return err
 }
 
-func (a *Azure) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (a *Azure) ReconcileSecretEncryption(context.Context, client.Client, upsert.CreateOrUpdateFN, *hyperv1.HostedCluster, string) error {
 	return nil
 }
 
@@ -170,6 +170,6 @@ func (a *Azure) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }
 
-func (a *Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (a *Azure) DeleteCredentials(context.Context, client.Client, *hyperv1.HostedCluster, string) error {
 	return nil
 }

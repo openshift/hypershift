@@ -31,7 +31,7 @@ type PowerVS struct {
 	capiProviderImage string
 }
 
-func (p PowerVS) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (p PowerVS) DeleteCredentials(_ context.Context, _ client.Client, _ *hyperv1.HostedCluster, _ string) error {
 	//TODO(mkumatag): implement me
 	return nil
 }
@@ -329,9 +329,9 @@ func (p PowerVS) ReconcileCredentials(ctx context.Context, c client.Client, crea
 	return nil
 }
 
-func (PowerVS) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+func (PowerVS) ReconcileSecretEncryption(_ context.Context, _ client.Client, _ upsert.CreateOrUpdateFN,
+	_ *hyperv1.HostedCluster,
+	_ string) error {
 	return nil
 }
 

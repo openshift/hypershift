@@ -10,13 +10,13 @@ var _ capabilities.CapabiltyChecker = &FakeCapabilitiesSupportAllExcept{}
 
 type FakeSupportAllCapabilities struct{}
 
-func (f *FakeSupportAllCapabilities) Has(capabilities ...capabilities.CapabilityType) bool {
+func (f *FakeSupportAllCapabilities) Has(...capabilities.CapabilityType) bool {
 	return true
 }
 
 type FakeSupportNoCapabilities struct{}
 
-func (f *FakeSupportNoCapabilities) Has(capabilities ...capabilities.CapabilityType) bool {
+func (f *FakeSupportNoCapabilities) Has(...capabilities.CapabilityType) bool {
 	return false
 }
 

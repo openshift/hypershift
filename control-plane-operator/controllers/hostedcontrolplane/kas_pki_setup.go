@@ -15,13 +15,7 @@ import (
 type signerReconciler func(*corev1.Secret, config.OwnerRef) error
 type subReconciler func(target, ca *corev1.Secret, ownerRef config.OwnerRef) error
 
-func (r *HostedControlPlaneReconciler) setupKASClientSigners(
-	ctx context.Context,
-	hcp *hyperv1.HostedControlPlane,
-	p *pki.PKIParams,
-	createOrUpdate upsert.CreateOrUpdateFN,
-	rootCASecret *corev1.Secret,
-) error {
+func (r *HostedControlPlaneReconciler) setupKASClientSigners(ctx context.Context, hcp *hyperv1.HostedControlPlane, p *pki.PKIParams, createOrUpdate upsert.CreateOrUpdateFN) error {
 	reconcileSigner := func(s *corev1.Secret, reconciler signerReconciler) (*corev1.Secret, error) {
 		applyFunc := func() error {
 			return reconciler(s, p.OwnerRef)

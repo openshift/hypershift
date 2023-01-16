@@ -54,7 +54,7 @@ func SetupWebhookWithManager(mgr ctrl.Manager) error {
 var _ webhook.CustomValidator = &Webhook{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type.
-func (webhook *Webhook) ValidateCreate(ctx context.Context, obj runtime.Object) error {
+func (webhook *Webhook) ValidateCreate(_ context.Context, obj runtime.Object) error {
 	hostedCluster, ok := obj.(*hyperv1.HostedCluster)
 	if !ok {
 		return apierrors.NewBadRequest(fmt.Sprintf("expected a HostedCluster but got a %T", obj))
@@ -138,7 +138,7 @@ func validateHostedClusterCreate(hc *hyperv1.HostedCluster) error {
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type.
-func (webhook *Webhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) error {
+func (webhook *Webhook) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) error {
 	newHC, ok := newObj.(*hyperv1.HostedCluster)
 	if !ok {
 		return apierrors.NewBadRequest(fmt.Sprintf("expected a HostedCluster but got a %T", newObj))
@@ -153,7 +153,7 @@ func (webhook *Webhook) ValidateUpdate(ctx context.Context, oldObj, newObj runti
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type.
-func (webhook *Webhook) ValidateDelete(_ context.Context, obj runtime.Object) error {
+func (webhook *Webhook) ValidateDelete(_ context.Context, _ runtime.Object) error {
 	return nil
 }
 

@@ -174,7 +174,7 @@ func reconcileController(controller *appsv1.Deployment, componentImages map[stri
 	return nil
 }
 
-func reconcileInfraSA(sa *corev1.ServiceAccount) error {
+func reconcileInfraSA() error {
 	return nil
 }
 
@@ -195,7 +195,7 @@ func reconcileInfraRoleBinding(roleBinding *rbacv1.RoleBinding) error {
 	return nil
 }
 
-func reconcileTenantControllerSA(sa *corev1.ServiceAccount) error {
+func reconcileTenantControllerSA() error {
 	return nil
 }
 
@@ -228,7 +228,7 @@ func reconcileDefaultTenantStorageClass(sc *storagev1.StorageClass) error {
 	return nil
 }
 
-func reconcileTenantNodeSA(sa *corev1.ServiceAccount) error {
+func reconcileTenantNodeSA() error {
 	return nil
 }
 
@@ -285,7 +285,7 @@ func reconcileTenantDaemonset(ds *appsv1.DaemonSet, componentImages map[string]s
 	return nil
 }
 
-func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, componentImages map[string]string) error {
+func ReconcileTenant(client crclient.Client, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, componentImages map[string]string) error {
 
 	tenantNamespace := manifests.KubevirtCSIDriverTenantNamespaceStr
 
@@ -297,7 +297,7 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 
 	tenantNodeServiceAccount := manifests.KubevirtCSIDriverTenantNodeSA(tenantNamespace)
 	_, err = createOrUpdate(ctx, client, tenantNodeServiceAccount, func() error {
-		return reconcileTenantNodeSA(tenantNodeServiceAccount)
+		return reconcileTenantNodeSA()
 	})
 	if err != nil {
 		return err
@@ -337,7 +337,7 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 
 	tenantControllerServiceAccount := manifests.KubevirtCSIDriverTenantControllerSA(tenantNamespace)
 	_, err = createOrUpdate(ctx, client, tenantControllerServiceAccount, func() error {
-		return reconcileTenantControllerSA(tenantControllerServiceAccount)
+		return reconcileTenantControllerSA()
 	})
 	if err != nil {
 		return err
@@ -375,7 +375,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 
 	infraServiceAccount := manifests.KubevirtCSIDriverInfraSA(infraNamespace)
 	_, err := createOrUpdate(ctx, client, infraServiceAccount, func() error {
-		return reconcileInfraSA(infraServiceAccount)
+		return reconcileInfraSA()
 	})
 	if err != nil {
 		return err

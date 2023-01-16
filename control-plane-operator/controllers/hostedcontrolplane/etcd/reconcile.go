@@ -80,7 +80,7 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 
 	ss.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(etcdContainer(), buildEtcdContainer(p, ss.Namespace)),
-		util.BuildContainer(etcdMetricsContainer(), buildEtcdMetricsContainer(p, ss.Namespace)),
+		util.BuildContainer(etcdMetricsContainer(), buildEtcdMetricsContainer(p)),
 	}
 
 	ss.Spec.Template.Spec.InitContainers = []corev1.Container{
@@ -291,7 +291,7 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 	}
 }
 
-func buildEtcdMetricsContainer(p *EtcdParams, namespace string) func(c *corev1.Container) {
+func buildEtcdMetricsContainer(p *EtcdParams) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		script := `
 		etcd grpc-proxy start \

@@ -25,7 +25,7 @@ func CAPIManagerServiceAccount(controlPlaneNamespace string) *corev1.ServiceAcco
 	}
 }
 
-func CAPIManagerClusterRole(controlPlaneNamespace string) *rbacv1.ClusterRole {
+func CAPIManagerClusterRole() *rbacv1.ClusterRole {
 	return &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "hypershift-cluster-api",

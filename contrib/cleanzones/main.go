@@ -98,7 +98,7 @@ func main() {
 				continue
 			}
 			log.Printf("deleting hosted zone %s with id %s", *zone.Name, *zone.Id)
-			deleteZone(ctx, strings.TrimSuffix(*zone.Name, "."), strings.TrimPrefix(*zone.Id, "/hostedzone/"), route53client)
+			deleteZone(ctx, strings.TrimPrefix(*zone.Id, "/hostedzone/"), route53client)
 		}
 		return !lastPage
 	})
@@ -162,7 +162,7 @@ func main() {
 	}
 }
 
-func deleteZone(ctx context.Context, zoneName string, zoneId string, client route53iface.Route53API) error {
+func deleteZone(ctx context.Context, zoneId string, client route53iface.Route53API) error {
 	err := deleteRecords(ctx, client, zoneId)
 	if err != nil {
 		return fmt.Errorf("failed to delete zone records")

@@ -14,7 +14,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
-	"github.com/openshift/hypershift/support/config"
 )
 
 const (
@@ -22,7 +21,7 @@ const (
 	bindPort  = 10357
 )
 
-func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, minTLSVersion string, cipherSuites []string) error {
+func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, minTLSVersion string, cipherSuites []string) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}

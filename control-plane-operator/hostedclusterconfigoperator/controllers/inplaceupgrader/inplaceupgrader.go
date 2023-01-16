@@ -234,7 +234,7 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 		}
 	}
 	nodesToUpgrade := getNodesToUpgrade(nodes, targetConfigVersionHash, maxUnavail)
-	err = r.setNodesDesiredConfig(ctx, r.guestClusterClient, nodePoolUpgradeAPI.spec.poolRef.GetName(), nodesToUpgrade, targetConfigVersionHash)
+	err = r.setNodesDesiredConfig(ctx, r.guestClusterClient, nodesToUpgrade, targetConfigVersionHash)
 	if err != nil {
 		return fmt.Errorf("failed to set hosted nodes for inplace upgrade: %w", err)
 	}
@@ -246,7 +246,7 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 	return nil
 }
 
-func (r *Reconciler) setNodesDesiredConfig(ctx context.Context, hostedClusterClient client.Client, poolName string, nodes []*corev1.Node, targetConfigVersionHash string) error {
+func (r *Reconciler) setNodesDesiredConfig(ctx context.Context, hostedClusterClient client.Client, nodes []*corev1.Node, targetConfigVersionHash string) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	for _, node := range nodes {
@@ -437,7 +437,7 @@ func deleteUpgradeManifests(ctx context.Context, hostedClusterClient client.Clie
 
 func getNodesToUpgrade(nodes []*corev1.Node, targetConfig string, maxUnavailable int) []*corev1.Node {
 	// First, get nodes depending on how much capacity we have for additional updates
-	capacity := getCapacity(nodes, targetConfig, maxUnavailable)
+	capacity := getCapacity(nodes, maxUnavailable)
 	availableCandidates := getAvailableCandidates(nodes, targetConfig, capacity)
 
 	// Next, we get the currently updating candidates, that aren't targetting the latest config
@@ -446,7 +446,7 @@ func getNodesToUpgrade(nodes []*corev1.Node, targetConfig string, maxUnavailable
 	return append(availableCandidates, alreadyUnavailableNodes...)
 }
 
-func getCapacity(nodes []*corev1.Node, targetConfig string, maxUnavailable int) int {
+func getCapacity(nodes []*corev1.Node, maxUnavailable int) int {
 	// get how many machines we can update based on maxUnavailable
 	// In the MCO logic, unavailable is defined as any of:
 	// - config does not match

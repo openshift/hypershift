@@ -59,7 +59,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	return cmd
 }
 
-func (o *PowerVSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
+func (o *PowerVSPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
 	nodePool.Spec.Platform.Type = hyperv1.PowerVSPlatform
 	nodePool.Spec.Platform.PowerVS = &hyperv1.PowerVSNodePoolPlatform{
 		SystemType:    o.SysType,

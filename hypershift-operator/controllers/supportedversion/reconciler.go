@@ -60,7 +60,7 @@ type supportedVersions struct {
 	Versions []string `json:"versions"`
 }
 
-func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+func (r *Reconciler) Reconcile(ctx context.Context, _ reconcile.Request) (reconcile.Result, error) {
 	return reconcile.Result{}, r.ensureSupportedVersionConfigMap(ctx)
 }
 

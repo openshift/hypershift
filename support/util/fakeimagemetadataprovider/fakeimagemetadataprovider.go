@@ -10,6 +10,6 @@ type FakeImageMetadataProvider struct {
 	Result *dockerv1client.DockerImageConfig
 }
 
-func (f *FakeImageMetadataProvider) ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error) {
+func (f *FakeImageMetadataProvider) ImageMetadata(context.Context, string, []byte) (*dockerv1client.DockerImageConfig, error) {
 	return f.Result, nil
 }

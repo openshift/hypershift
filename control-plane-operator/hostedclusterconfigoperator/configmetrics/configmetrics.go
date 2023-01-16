@@ -8,7 +8,6 @@ with some slight adjustments to use a controller-runtime cache rather than a sta
 import (
 	"context"
 
-	"github.com/blang/semver"
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
@@ -45,7 +44,7 @@ type configMetrics struct {
 	cache           crclient.Reader
 }
 
-func (m *configMetrics) Create(version *semver.Version) bool {
+func (m *configMetrics) Create() bool {
 	return true
 }
 

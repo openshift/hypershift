@@ -12,26 +12,26 @@ import (
 
 type None struct{}
 
-func (p None) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
+func (p None) ReconcileCAPIInfraCR(_ context.Context, _ client.Client, _ upsert.CreateOrUpdateFN,
+	_ *hyperv1.HostedCluster,
+	_ string, _ hyperv1.APIEndpoint) (client.Object, error) {
 
 	return nil, nil
 }
 
-func (p None) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p None) CAPIProviderDeploymentSpec(_ *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	return nil, nil
 }
 
-func (p None) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+func (p None) ReconcileCredentials(_ context.Context, _ client.Client, _ upsert.CreateOrUpdateFN,
+	_ *hyperv1.HostedCluster,
+	_ string) error {
 	return nil
 }
 
-func (None) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+func (None) ReconcileSecretEncryption(_ context.Context, _ client.Client, _ upsert.CreateOrUpdateFN,
+	_ *hyperv1.HostedCluster,
+	_ string) error {
 	return nil
 }
 
@@ -39,6 +39,6 @@ func (None) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }
 
-func (None) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (None) DeleteCredentials(_ context.Context, _ client.Client, _ *hyperv1.HostedCluster, _ string) error {
 	return nil
 }

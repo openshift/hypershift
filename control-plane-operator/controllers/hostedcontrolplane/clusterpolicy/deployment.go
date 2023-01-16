@@ -32,7 +32,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, image string, deploymentConfig config.DeploymentConfig, availabilityProberImage string, apiServerPort *int32) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image string, deploymentConfig config.DeploymentConfig, availabilityProberImage string, apiServerPort *int32) error {
 	// preserve existing resource requirements for main CPC container
 	mainContainer := util.FindContainer(cpcContainerMain().Name, deployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {

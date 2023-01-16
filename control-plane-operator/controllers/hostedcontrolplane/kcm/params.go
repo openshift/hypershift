@@ -1,8 +1,6 @@
 package kcm
 
 import (
-	"context"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -39,7 +37,7 @@ const (
 	DefaultPort = 10257
 )
 
-func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *KubeControllerManagerParams {
+func NewKubeControllerManagerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *KubeControllerManagerParams {
 	params := &KubeControllerManagerParams{
 		// TODO: Come up with sane defaults for scheduling APIServer pods
 		// Expose configuration

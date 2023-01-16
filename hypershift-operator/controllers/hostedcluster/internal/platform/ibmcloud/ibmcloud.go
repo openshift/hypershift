@@ -55,13 +55,13 @@ func (p IBMCloud) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, cre
 	return ibmCluster, nil
 }
 
-func (p IBMCloud) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+func (p IBMCloud) CAPIProviderDeploymentSpec(_ *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
 	return nil, nil
 }
 
-func (p IBMCloud) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
-	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string) error {
+func (p IBMCloud) ReconcileCredentials(_ context.Context, _ client.Client, _ upsert.CreateOrUpdateFN,
+	_ *hyperv1.HostedCluster,
+	_ string) error {
 	return nil
 }
 
@@ -107,6 +107,6 @@ func (IBMCloud) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }
 
-func (IBMCloud) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (IBMCloud) DeleteCredentials(_ context.Context, _ client.Client, _ *hyperv1.HostedCluster, _ string) error {
 	return nil
 }

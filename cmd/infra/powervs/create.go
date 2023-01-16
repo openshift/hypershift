@@ -377,7 +377,7 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return fmt.Errorf("error setup powervs dhcp server: %w", err)
 	}
 
-	if err = infra.isCloudConnectionReady(ctx, options, session); err != nil {
+	if err = infra.isCloudConnectionReady(ctx, session); err != nil {
 		return fmt.Errorf("cloud connection is not up: %w", err)
 	}
 
@@ -1188,7 +1188,7 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, options *CreateInfraOp
 		}
 	} else {
 		log(infra.ID).Info("Creating PowerVS DHCPServer...")
-		dhcpServer, err = infra.createPowerVSDhcp(options, client)
+		dhcpServer, err = infra.createPowerVSDhcp(client)
 	}
 
 	if err != nil {
@@ -1249,7 +1249,7 @@ func isDHCPServerActive(client *instance.IBMPIDhcpClient, infraID string, dhcpID
 }
 
 // createPowerVSDhcp creates a new dhcp server in powervs
-func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *instance.IBMPIDhcpClient) (*models.DHCPServerDetail, error) {
+func (infra *Infra) createPowerVSDhcp(client *instance.IBMPIDhcpClient) (*models.DHCPServerDetail, error) {
 	startTime := time.Now()
 	var dhcpServer *models.DHCPServerDetail
 
@@ -1281,7 +1281,7 @@ func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *insta
 }
 
 // isCloudConnectionReady make sure cloud connection is connected with dhcp server private network and vpc, and it is in established state
-func (infra *Infra) isCloudConnectionReady(ctx context.Context, options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
+func (infra *Infra) isCloudConnectionReady(ctx context.Context, session *ibmpisession.IBMPISession) error {
 	log(infra.ID).Info("Making sure PowerVS Cloud Connection is ready ...")
 	var err error
 

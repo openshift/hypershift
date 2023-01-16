@@ -7,7 +7,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 type OpenShiftRouteControllerManagerParams struct {
@@ -18,7 +17,7 @@ type OpenShiftRouteControllerManagerParams struct {
 	config.OwnerRef
 }
 
-func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, images map[string]string, setDefaultSecurityContext bool) *OpenShiftRouteControllerManagerParams {
+func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *OpenShiftRouteControllerManagerParams {
 	params := &OpenShiftRouteControllerManagerParams{
 		OpenShiftControllerManagerImage: images["route-controller-manager"],
 	}

@@ -86,7 +86,7 @@ func ControllerName(name string) string {
 	return fmt.Sprintf("%s-observer", name)
 }
 
-func (r *PrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
+func (r *PrivateServiceObserver) SetupWithManager(mgr ctrl.Manager) error {
 	r.log = ctrl.Log.WithName(r.ControllerName).WithValues("name", r.ServiceName, "namespace", r.ServiceNamespace)
 	var err error
 	r.clientset, err = kubeclient.NewForConfig(mgr.GetConfig())

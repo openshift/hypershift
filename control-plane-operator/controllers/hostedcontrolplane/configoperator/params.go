@@ -1,8 +1,6 @@
 package configoperator
 
 import (
-	"context"
-
 	utilpointer "k8s.io/utils/pointer"
 
 	corev1 "k8s.io/api/core/v1"
@@ -24,7 +22,7 @@ type HostedClusterConfigOperatorParams struct {
 	AvailabilityProberImage string
 }
 
-func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, openShiftVersion, kubernetesVersion string, setDefaultSecurityContext bool) *HostedClusterConfigOperatorParams {
+func NewHostedClusterConfigOperatorParams(hcp *hyperv1.HostedControlPlane, images map[string]string, openShiftVersion, kubernetesVersion string, setDefaultSecurityContext bool) *HostedClusterConfigOperatorParams {
 	params := &HostedClusterConfigOperatorParams{
 		Image:                   images["hosted-cluster-config-operator"],
 		ReleaseImage:            hcp.Spec.ReleaseImage,

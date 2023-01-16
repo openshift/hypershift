@@ -855,7 +855,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			Message:            "HostedCluster is at expected version",
 			Reason:             hyperv1.AsExpectedReason,
 		}
-		progressing, err := isProgressing(ctx, hcluster)
+		progressing, err := isProgressing(hcluster)
 		if err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
@@ -1317,7 +1317,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileAWSSubnets(ctx, createOrUpdate, infraCR, req.Namespace, req.Name, controlPlaneNamespace.Name); err != nil {
+	if err := r.reconcileAWSSubnets(ctx, createOrUpdate, infraCR, req.Namespace, req.Name); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -1682,7 +1682,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	}
 
 	// Reconcile CAPI manager cluster role
-	capiManagerClusterRole := clusterapi.CAPIManagerClusterRole(controlPlaneNamespace.Name)
+	capiManagerClusterRole := clusterapi.CAPIManagerClusterRole()
 	_, err = createOrUpdate(ctx, r.Client, capiManagerClusterRole, func() error {
 		return reconcileCAPIManagerClusterRole(capiManagerClusterRole)
 	})
@@ -1927,7 +1927,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{
 			Interval:             "15s",
 			Port:                 "metrics",
-			MetricRelabelConfigs: metrics.ControlPlaneOperatorRelabelConfigs(r.MetricsSet),
+			MetricRelabelConfigs: metrics.ControlPlaneOperatorRelabelConfigs(),
 		}}
 		podMonitor.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{MatchNames: []string{controlPlaneNamespace.Name}}
 		podMonitor.SetOwnerReferences([]metav1.OwnerReference{{
@@ -3285,7 +3285,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	// Reconcile openshift-monitoring Network Policy
 	policy = networkpolicy.OpenshiftMonitoringNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileOpenshiftMonitoringNetworkPolicy(policy, hcluster)
+		return reconcileOpenshiftMonitoringNetworkPolicy(policy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
 	}
@@ -3294,7 +3294,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		policy = networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcilePrivateRouterNetworkPolicy(policy, hcluster)
+			return reconcilePrivateRouterNetworkPolicy(policy)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
@@ -3314,7 +3314,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				// Reconcile nodeport-oauth Network Policy
 				policy = networkpolicy.NodePortOauthNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortOauthNetworkPolicy(policy, hcluster)
+					return reconcileNodePortOauthNetworkPolicy(policy)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile oauth server nodeport network policy: %w", err)
 				}
@@ -3324,7 +3324,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				// Reconcile nodeport-ignition Network Policy
 				policy = networkpolicy.NodePortIgnitionNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortIgnitionNetworkPolicy(policy, hcluster)
+					return reconcileNodePortIgnitionNetworkPolicy(policy)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile ignition nodeport network policy: %w", err)
 				}
@@ -3334,7 +3334,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				// Reconcile nodeport-konnectivity Network Policy
 				policy = networkpolicy.NodePortKonnectivityNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortKonnectivityNetworkPolicy(policy, hcluster)
+					return reconcileNodePortKonnectivityNetworkPolicy(policy)
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
 				}
@@ -3423,7 +3423,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
 }
 
-func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
+func isProgressing(hc *hyperv1.HostedCluster) (bool, error) {
 	for _, condition := range hc.Status.Conditions {
 		switch condition.Type {
 		case string(hyperv1.SupportedHostedCluster), string(hyperv1.ValidHostedClusterConfiguration), string(hyperv1.ValidReleaseImage), string(hyperv1.ReconciliationActive):
@@ -3764,7 +3764,7 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 	return nil
 }
 
-func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	httpPort := intstr.FromInt(8080)
 	httpsPort := intstr.FromInt(8443)
 	protocol := corev1.ProtocolTCP
@@ -3792,7 +3792,7 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 	return nil
 }
 
-func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	port := intstr.FromInt(6443)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -3815,7 +3815,7 @@ func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 	return nil
 }
 
-func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	port := intstr.FromInt(9090)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -3838,7 +3838,7 @@ func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, 
 	return nil
 }
 
-func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	port := intstr.FromInt(8091)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -3861,7 +3861,7 @@ func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPoli
 	return nil
 }
 
-func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			From: []networkingv1.NetworkPolicyPeer{
@@ -4128,8 +4128,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
-	infraCR client.Object, namespace, clusterName, hcpNamespace string) error {
+func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, infraCR client.Object, namespace, clusterName string) error {
 
 	nodePools, err := listNodePools(ctx, r.Client, namespace, clusterName)
 	if err != nil {
