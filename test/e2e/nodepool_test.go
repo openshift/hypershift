@@ -49,6 +49,7 @@ func TestNodePool(t *testing.T) {
 	t.Run("Refactored", func(t *testing.T) {
 		t.Run("TestNodePoolAutoRepair", testNodePoolAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
 		t.Run("TestNodepoolMachineconfigGetsRolledout", testNodepoolMachineconfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+		t.Run("TestNodepoolScaleDownDataPlane", testNodepoolScaleDownDataPlane(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
 	})
 }
 
