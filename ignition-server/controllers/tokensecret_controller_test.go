@@ -365,8 +365,8 @@ func TestGetTokenIDTimeLived(t *testing.T) {
 }
 
 func TestTokenIDNeedRotation(t *testing.T) {
-	timeLivedHalfTTL := time.Duration(ttl / 2)
-	timeLivedLessThanTTL := time.Duration(ttl/2 - 1)
+	timeLivedHalfTTL := ttl / 2
+	timeLivedLessThanTTL := ttl/2 - 1
 	testCases := []struct {
 		name         string
 		timeLived    *time.Duration

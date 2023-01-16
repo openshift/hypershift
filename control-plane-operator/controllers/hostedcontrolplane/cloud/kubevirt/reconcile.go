@@ -25,7 +25,7 @@ func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane)
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	cm.Data[CloudConfigKey] = string(serializedCfg)
+	cm.Data[CloudConfigKey] = serializedCfg
 
 	return nil
 }

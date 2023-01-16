@@ -41,7 +41,7 @@ func ReconcileConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdURL, in
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift apiserver config: %w", err)
 	}
-	cm.Data[openshiftAPIServerConfigKey] = string(serializedConfig)
+	cm.Data[openshiftAPIServerConfigKey] = serializedConfig
 	return nil
 }
 

@@ -3425,10 +3425,10 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 
 func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
 	for _, condition := range hc.Status.Conditions {
-		switch string(condition.Type) {
+		switch condition.Type {
 		case string(hyperv1.SupportedHostedCluster), string(hyperv1.ValidHostedClusterConfiguration), string(hyperv1.ValidReleaseImage), string(hyperv1.ReconciliationActive):
 			if condition.Status == metav1.ConditionFalse {
-				return false, fmt.Errorf("%s condition is false", string(condition.Type))
+				return false, fmt.Errorf("%s condition is false", condition.Type)
 			}
 		case string(hyperv1.ClusterVersionUpgradeable):
 			_, _, err := isUpgradeable(hc)

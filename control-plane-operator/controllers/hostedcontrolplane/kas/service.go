@@ -123,7 +123,7 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	} else {
 		svc.Spec.Ports = []corev1.ServicePort{portSpec}
 	}
-	portSpec.Port = int32(apiServerPort)
+	portSpec.Port = apiServerPort
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(int(apiServerListenPort))
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer

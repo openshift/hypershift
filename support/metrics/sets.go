@@ -38,7 +38,7 @@ func MetricsSetFromString(str string) (MetricsSet, error) {
 		return DefaultMetricsSet, nil
 	}
 	for _, value := range allMetricsSets.List() {
-		if strings.EqualFold(string(value), str) {
+		if strings.EqualFold(value, str) {
 			return MetricsSet(value), nil
 		}
 	}

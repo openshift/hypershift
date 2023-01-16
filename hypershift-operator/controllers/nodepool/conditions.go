@@ -107,7 +107,7 @@ func generateReconciliationActiveCondition(pausedUntilField *string, objectGener
 			msgString = fmt.Sprintf("Reconciliation paused until: %s", *pausedUntilField)
 		}
 		return hyperv1.NodePoolCondition{
-			Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
+			Type:               hyperv1.NodePoolReconciliationActiveConditionType,
 			Status:             corev1.ConditionFalse,
 			Reason:             reconciliationPausedConditionReason,
 			Message:            msgString,
@@ -121,7 +121,7 @@ func generateReconciliationActiveCondition(pausedUntilField *string, objectGener
 		msgString = "Invalid value provided for PausedUntil field"
 	}
 	return hyperv1.NodePoolCondition{
-		Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
+		Type:               hyperv1.NodePoolReconciliationActiveConditionType,
 		Status:             corev1.ConditionTrue,
 		Reason:             reasonString,
 		Message:            msgString,

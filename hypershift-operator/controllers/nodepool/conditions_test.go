@@ -25,7 +25,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			name:             "if the pausedUntil field does not exist then ReconciliationActive condition is true",
 			inputPausedField: nil,
 			expectedCondition: hyperv1.NodePoolCondition{
-				Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
+				Type:               hyperv1.NodePoolReconciliationActiveConditionType,
 				Status:             corev1.ConditionTrue,
 				Reason:             reconciliationActiveConditionReason,
 				Message:            "Reconciliation active on resource",
@@ -36,7 +36,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			name:             "if pausedUntil field is later than time.Now ReconciliationActive condition is false",
 			inputPausedField: fakeFutureDate,
 			expectedCondition: hyperv1.NodePoolCondition{
-				Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
+				Type:               hyperv1.NodePoolReconciliationActiveConditionType,
 				Status:             corev1.ConditionFalse,
 				Reason:             reconciliationPausedConditionReason,
 				Message:            fmt.Sprintf("Reconciliation paused until: %s", *fakeFutureDate),
@@ -47,7 +47,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			name:             "if pausedUntil field is before time.Now then ReconciliationActive condition is true",
 			inputPausedField: fakePastDate,
 			expectedCondition: hyperv1.NodePoolCondition{
-				Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
+				Type:               hyperv1.NodePoolReconciliationActiveConditionType,
 				Status:             corev1.ConditionTrue,
 				Reason:             reconciliationActiveConditionReason,
 				Message:            "Reconciliation active on resource",
@@ -58,7 +58,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 			name:             "if pausedUntil field is true then ReconciliationActive condition is false",
 			inputPausedField: pointer.StringPtr("true"),
 			expectedCondition: hyperv1.NodePoolCondition{
-				Type:               string(hyperv1.NodePoolReconciliationActiveConditionType),
+				Type:               hyperv1.NodePoolReconciliationActiveConditionType,
 				Status:             corev1.ConditionFalse,
 				Reason:             reconciliationPausedConditionReason,
 				Message:            "Reconciliation paused until field removed",

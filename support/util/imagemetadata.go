@@ -47,7 +47,7 @@ func (*RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context, i
 
 	// If the image reference contains a digest, immediately look it up in the cache
 	if ref.ID != "" {
-		if imageConfigObject, exists := imageMetadataCache.Get(string(ref.ID)); exists {
+		if imageConfigObject, exists := imageMetadataCache.Get(ref.ID); exists {
 			return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
 		}
 	}

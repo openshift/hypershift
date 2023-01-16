@@ -107,7 +107,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
-					Port:   intstr.FromInt(int(OAuthServerPort)),
+					Port:   intstr.FromInt(OAuthServerPort),
 					Path:   "healthz",
 				},
 			},
@@ -123,7 +123,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
-					Port:   intstr.FromInt(int(OAuthServerPort)),
+					Port:   intstr.FromInt(OAuthServerPort),
 					Path:   "healthz",
 				},
 			},

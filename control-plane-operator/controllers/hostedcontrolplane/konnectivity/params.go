@@ -39,7 +39,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(healthPort)),
+					Port:   intstr.FromInt(healthPort),
 					Path:   "healthz",
 				},
 			},
@@ -55,7 +55,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(healthPort)),
+					Port:   intstr.FromInt(healthPort),
 					Path:   "healthz",
 				},
 			},
@@ -92,7 +92,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(healthPort)),
+					Port:   intstr.FromInt(healthPort),
 					Path:   "healthz",
 				},
 			},
@@ -122,7 +122,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(healthPort)),
+					Port:   intstr.FromInt(healthPort),
 					Path:   "healthz",
 				},
 			},

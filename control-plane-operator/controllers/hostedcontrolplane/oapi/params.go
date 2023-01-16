@@ -70,7 +70,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
-						Port:   intstr.FromInt(int(OpenShiftAPIServerPort)),
+						Port:   intstr.FromInt(OpenShiftAPIServerPort),
 						Path:   "healthz",
 					},
 				},
@@ -86,7 +86,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
-						Port:   intstr.FromInt(int(OpenShiftAPIServerPort)),
+						Port:   intstr.FromInt(OpenShiftAPIServerPort),
 						Path:   "healthz",
 					},
 				},
@@ -117,7 +117,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
-						Port:   intstr.FromInt(int(OpenShiftOAuthAPIServerPort)),
+						Port:   intstr.FromInt(OpenShiftOAuthAPIServerPort),
 						Path:   "healthz",
 					},
 				},
@@ -133,7 +133,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 				ProbeHandler: corev1.ProbeHandler{
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
-						Port:   intstr.FromInt(int(OpenShiftOAuthAPIServerPort)),
+						Port:   intstr.FromInt(OpenShiftOAuthAPIServerPort),
 						Path:   "readyz",
 					},
 				},

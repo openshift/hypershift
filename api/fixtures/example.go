@@ -446,7 +446,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				Namespace: namespace.Name,
 			},
 			Data: map[string]string{
-				"ca-bundle.crt": string(o.AdditionalTrustBundle),
+				"ca-bundle.crt": o.AdditionalTrustBundle,
 			},
 		}
 		cluster.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: userCABundleCM.Name}
