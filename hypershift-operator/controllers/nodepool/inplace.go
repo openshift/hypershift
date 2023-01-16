@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/openshift/hypershift/api"
@@ -91,6 +92,21 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 			NodeDrainTimeout: nodePool.Spec.NodeDrainTimeout,
 		},
 	}
+
+	// Propagate labels.
+	for k, v := range nodePool.Spec.NodeLabels {
+		// Propagated managed labels down to Machines with a known hardcoded prefix
+		// so the CPO HCCO Node controller can recongnise them and apply them to Nodes.
+		labelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, k)
+		machineSet.Spec.Template.Labels[labelKey] = v
+	}
+
+	// Propagate taints.
+	taintsInJSON, err := taintsToJSON(nodePool.Spec.Taints)
+	if err != nil {
+		return err
+	}
+	machineSet.Spec.Template.Annotations[nodePoolAnnotationTaints] = taintsInJSON
 
 	// Propagate version and userData Secret to the MachineSet.
 	if userDataSecret.Name != k8sutilspointer.StringPtrDerefOr(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName, "") {

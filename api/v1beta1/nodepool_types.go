@@ -109,6 +109,15 @@ type NodePoolSpec struct {
 	// +optional
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
 
+	// NodeLabels propagates a list of labels to Nodes, only once on creation.
+	// Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
+	// +optional
+	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
+
+	// Taints if specified, propagates a list of taints to Nodes, only once on creation.
+	// +optional
+	Taints []Taint `json:"taints,omitempty"`
+
 	// PausedUntil is a field that can be used to pause reconciliation on a resource.
 	// Either a date can be provided in RFC3339 format or a boolean. If a date is
 	// provided: reconciliation is paused on the resource until that date. If the boolean true is
@@ -734,4 +743,18 @@ type NodePoolCondition struct {
 
 	// +kubebuilder:validation:Minimum=0
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+}
+
+// Taint is as v1 Core but without TimeAdded.
+// https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053
+type Taint struct {
+	// Required. The taint key to be applied to a node.
+	Key string `json:"key"`
+	// The taint value corresponding to the taint key.
+	// +optional
+	Value string `json:"value,omitempty"`
+	// Required. The effect of the taint on pods
+	// that do not tolerate the taint.
+	// Valid effects are NoSchedule, PreferNoSchedule and NoExecute.
+	Effect corev1.TaintEffect `json:"effect"`
 }
