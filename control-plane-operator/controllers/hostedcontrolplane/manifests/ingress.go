@@ -6,18 +6,8 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 )
-
-func IngressDefaultIngressControllerWorkerManifest(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-manifest-default-ingress-controller",
-			Namespace: ns,
-		},
-	}
-}
 
 func IngressDefaultIngressController() *operatorv1.IngressController {
 	return &operatorv1.IngressController{
@@ -95,23 +85,6 @@ func RouterTemplateConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "router-template",
-			Namespace: ns,
-		},
-	}
-}
-
-func DNSConfig() *configv1.DNS {
-	return &configv1.DNS{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster",
-		},
-	}
-}
-
-func IngressDefaultIngressControllerCertWorkerManifest(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "user-manifest-default-ingress-controller-cert",
 			Namespace: ns,
 		},
 	}

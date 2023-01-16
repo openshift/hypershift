@@ -202,15 +202,6 @@ func CertToPem(cert *x509.Certificate) []byte {
 }
 
 // CSRToPem converts an x509.CertificateRequest to a pem string
-func CSRToPem(cert *x509.CertificateRequest) []byte {
-	certInPem := pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "CERTIFICATE REQUEST",
-			Bytes: cert.Raw,
-		},
-	)
-	return certInPem
-}
 
 // PublicKeyToPem converts an rsa.PublicKey object to pem string
 func PublicKeyToPem(key *rsa.PublicKey) ([]byte, error) {

@@ -3,15 +3,12 @@ package assets
 import (
 	"fmt"
 
-	imagev1 "github.com/openshift/api/image/v1"
+	"github.com/openshift/hypershift/support/api"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
-
-	"github.com/openshift/hypershift/support/api"
 )
 
 type AssetReader func(name string) ([]byte, error)
@@ -76,18 +73,6 @@ func MustRoleBinding(reader AssetReader, fileName string) *rbacv1.RoleBinding {
 	roleBinding := &rbacv1.RoleBinding{}
 	deserializeResource(reader, fileName, roleBinding)
 	return roleBinding
-}
-
-func MustAPIService(reader AssetReader, fileName string) *apiregistrationv1.APIService {
-	apiService := &apiregistrationv1.APIService{}
-	deserializeResource(reader, fileName, apiService)
-	return apiService
-}
-
-func MustEndpoints(reader AssetReader, fileName string) *corev1.Endpoints {
-	ep := &corev1.Endpoints{}
-	deserializeResource(reader, fileName, ep)
-	return ep
 }
 
 func deserializeResource(reader AssetReader, fileName string, obj runtime.Object) {

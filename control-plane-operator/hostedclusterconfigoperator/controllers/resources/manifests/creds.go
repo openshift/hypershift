@@ -31,12 +31,3 @@ func AWSStorageCloudCredsSecret() *corev1.Secret {
 		},
 	}
 }
-
-func AWSNetworkCloudCredsSecret() *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "openshift-cloud-network-config-controller",
-			Name:      "cloud-credentials",
-		},
-	}
-}

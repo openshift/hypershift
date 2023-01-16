@@ -12,14 +12,6 @@ func MachineCIDRs(machineNetwork []hyperv1.MachineNetworkEntry) []string {
 	return cidrs
 }
 
-func FirstMachineCIDR(machineNetwork []hyperv1.MachineNetworkEntry) string {
-	machineCIDRs := MachineCIDRs(machineNetwork)
-	if len(machineCIDRs) > 0 {
-		return machineCIDRs[0]
-	}
-	return ""
-}
-
 func ServiceCIDRs(serviceNetwork []hyperv1.ServiceNetworkEntry) []string {
 	var cidrs []string
 	for _, entry := range serviceNetwork {

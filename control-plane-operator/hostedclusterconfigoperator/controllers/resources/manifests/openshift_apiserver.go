@@ -3,7 +3,6 @@ package manifests
 import (
 	"fmt"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
@@ -51,24 +50,6 @@ func OpenShiftAPIServerAPIServiceGroups() []string {
 
 func OpenShiftAPIServerService(ns string) *corev1.Service {
 	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openshift-apiserver",
-			Namespace: ns,
-		},
-	}
-}
-
-func OpenShiftAPIServerConfig(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openshift-apiserver",
-			Namespace: ns,
-		},
-	}
-}
-
-func OpenShiftAPIServerDeployment(ns string) *appsv1.Deployment {
-	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openshift-apiserver",
 			Namespace: ns,
