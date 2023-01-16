@@ -9,7 +9,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	version "github.com/openshift/hypershift/cmd/version"
+	"github.com/openshift/hypershift/cmd/version"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"

@@ -14,7 +14,7 @@ import (
 	"github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	version "github.com/openshift/hypershift/cmd/version"
+	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	socks5 "github.com/armon/go-socks5"
+	"github.com/armon/go-socks5"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
