@@ -1658,7 +1658,7 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		driver := manifests.ClusterCSIDriver(operatorv1.AWSEBSCSIDriver)
-		if _, err := r.CreateOrUpdate(ctx, r.client, storageCR, func() error {
+		if _, err := r.CreateOrUpdate(ctx, r.client, driver, func() error {
 			storage.ReconcileClusterCSIDriver(driver)
 			return nil
 		}); err != nil {
