@@ -124,6 +124,11 @@ const (
 	// For example, to override the memory and cpu request for the Kubernetes APIServer:
 	// resource-request-override.hypershift.openshift.io/kube-apiserver.kube-apiserver: memory=3Gi,cpu=2000m
 	ResourceRequestOverrideAnnotationPrefix = "resource-request-override.hypershift.openshift.io"
+
+	// LimitedSupportLabel is a label that can be used by consumers to indicate
+	// a cluster is somehow out of regular support policy.
+	// https://docs.openshift.com/rosa/rosa_architecture/rosa_policy_service_definition/rosa-service-definition.html#rosa-limited-support_rosa-service-definition.
+	LimitedSupportLabel = "hypershift.openshift.io/limited-support"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
