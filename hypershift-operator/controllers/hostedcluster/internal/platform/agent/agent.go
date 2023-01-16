@@ -133,6 +133,7 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 	return deploymentSpec, nil
 }
 
+// ReconcileCredentials creates a role binding and binds it to the Agent
 // TODO add a new method to Platform interface?
 func (p Agent) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,

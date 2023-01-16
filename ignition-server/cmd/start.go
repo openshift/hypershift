@@ -58,11 +58,11 @@ type Options struct {
 	MetricsAddr       string
 }
 
-// This is an https server that enable us to satisfy
+// NewStartCommand is a https server that enable us to satisfy
 // 1 - 1 relation between clusters and ign endpoints.
 // It runs a token Secret controller.
 // The token Secret controller uses an IgnitionProvider provider implementation
-// (e.g machineConfigServerIgnitionProvider) to keep up to date a payload store in memory.
+// (e.g. machineConfigServerIgnitionProvider) to keep up to date a payload store in memory.
 // The payload store has the structure "NodePool token": "payload".
 // A token represents a given cluster version (and in the future also a machine Config) at any given point in time.
 // For a request to succeed a token needs to be passed in the Header.

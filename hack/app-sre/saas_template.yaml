@@ -42634,6 +42634,8 @@ objects:
                                     the desired Access Modes the root volume should
                                     have. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes'
                                   items:
+                                    description: PersistentVolumeAccessMode contains
+                                      the persistent volume access mode
                                     enum:
                                     - ReadWriteOnce
                                     - ReadWriteMany
@@ -42868,10 +42870,10 @@ objects:
                   description: Conditions represents the latest available observations
                     of the node pool's current state.
                   items:
-                    description: We define our own condition type since metav1.Condition
-                      has validation for Reason that might be broken by what we bubble
-                      up from CAPI. NodePoolCondition defines an observation of NodePool
-                      resource operational state.
+                    description: NodePoolCondition defines an observation of NodePool
+                      resource operational state. We define our own condition type
+                      since metav1.Condition has validation for Reason that might
+                      be broken by what we bubble up from CAPI.
                     properties:
                       lastTransitionTime:
                         description: Last time the condition transitioned from one
@@ -43475,6 +43477,8 @@ objects:
                                     the desired Access Modes the root volume should
                                     have. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes'
                                   items:
+                                    description: PersistentVolumeAccessMode contains
+                                      the persistent volume access mode
                                     enum:
                                     - ReadWriteOnce
                                     - ReadWriteMany
@@ -43706,10 +43710,10 @@ objects:
                   description: Conditions represents the latest available observations
                     of the node pool's current state.
                   items:
-                    description: We define our own condition type since metav1.Condition
-                      has validation for Reason that might be broken by what we bubble
-                      up from CAPI. NodePoolCondition defines an observation of NodePool
-                      resource operational state.
+                    description: NodePoolCondition defines an observation of NodePool
+                      resource operational state. We define our own condition type
+                      since metav1.Condition has validation for Reason that might
+                      be broken by what we bubble up from CAPI.
                     properties:
                       lastTransitionTime:
                         description: Last time the condition transitioned from one

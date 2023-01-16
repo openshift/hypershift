@@ -7,7 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-// Create TLS keys for csi-snapshot-webhook.
+// ReconcileCSISnapshotWebhookTLS creates TLS keys for csi-snapshot-webhook.
 // In standalone OCP it's created automatically when csi-snapshot-controller-operator creates Service for
 // the webhook with annotation `service.openshift.io/serving-cert-secret-name`, in HyperShift
 // it must be done by control-plane-operator.

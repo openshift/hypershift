@@ -8,7 +8,7 @@ const (
 	CloudConfigKey = "cloud-config"
 )
 
-// Cloud Config is a copy of the relevant subset of the upstream type
+// CloudConfig is a copy of the relevant subset of the upstream type
 // at https://github.com/kubevirt/cloud-provider-kubevirt/blob/main/pkg/provider/cloud.go
 type CloudConfig struct {
 	Kubeconfig   string             `yaml:"kubeconfig"`

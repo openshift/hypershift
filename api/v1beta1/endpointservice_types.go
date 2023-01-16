@@ -14,7 +14,7 @@ const (
 	// has been created for the specified NLB in the management VPC
 	AWSEndpointServiceAvailable ConditionType = "EndpointServiceAvailable"
 
-	// AWSEndpointServiceAvailable indicates whether the AWS Endpoint has been
+	// AWSEndpointAvailable indicates whether the AWS Endpoint has been
 	// created in the guest VPC
 	AWSEndpointAvailable ConditionType = "EndpointAvailable"
 
@@ -65,11 +65,11 @@ type AWSEndpointServiceStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
+// AWSEndpointService specifies a request for an Endpoint Service in AWS
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=awsendpointservices,scope=Namespaced
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
-// AWSEndpointService specifies a request for an Endpoint Service in AWS
 type AWSEndpointService struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -78,8 +78,8 @@ type AWSEndpointService struct {
 	Status AWSEndpointServiceStatus `json:"status,omitempty"`
 }
 
-// +kubebuilder:object:root=true
 // AWSEndpointServiceList contains a list of AWSEndpointService
+// +kubebuilder:object:root=true
 type AWSEndpointServiceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

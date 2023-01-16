@@ -395,7 +395,7 @@ func ReconcileClientService(service *corev1.Service, ownerRef config.OwnerRef) e
 	return nil
 }
 
-// ReconcileServiceMonitor
+// ReconcileServiceMonitor creates a scrapeable endpoint serving Prometheus metrics and applies it to the cluster
 func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string, metricsSet metrics.MetricsSet) error {
 	ownerRef.ApplyTo(sm)
 

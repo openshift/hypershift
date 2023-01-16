@@ -504,6 +504,7 @@ type KubevirtCompute struct {
 	Cores *uint32 `json:"cores"`
 }
 
+// PersistentVolumeAccessMode contains the persistent volume access mode
 // +kubebuilder:validation:Enum=ReadWriteOnce;ReadWriteMany;ReadOnly;ReadWriteOncePod
 type PersistentVolumeAccessMode corev1.PersistentVolumeAccessMode
 
@@ -723,9 +724,9 @@ type AzureNodePoolPlatform struct {
 	AvailabilityZone string `json:"availabilityZone,omitempty"`
 }
 
+// NodePoolCondition defines an observation of NodePool resource operational state.
 // We define our own condition type since metav1.Condition has validation
 // for Reason that might be broken by what we bubble up from CAPI.
-// NodePoolCondition defines an observation of NodePool resource operational state.
 type NodePoolCondition struct {
 	// Type of condition in CamelCase or in foo.example.com/CamelCase.
 	// Many .condition.type values are consistent across resources like Available, but because arbitrary conditions

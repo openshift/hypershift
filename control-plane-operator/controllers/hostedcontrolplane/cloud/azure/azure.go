@@ -13,7 +13,7 @@ const (
 	Provider       = "azure"
 )
 
-// ReconcileCloudConfigWithCredentials reconciles as expected by Nodes Kubelet.
+// ReconcileCloudConfig reconciles as expected by Nodes Kubelet.
 func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
 	cfg := azureConfigWithoutCredentials(hcp, credentialsSecret)
 	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")

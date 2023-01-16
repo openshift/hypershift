@@ -396,6 +396,7 @@ func DefaultProfileName(infraID string) string {
 	return infraID + "-worker"
 }
 
+// CreateOIDCResources creates the OIDC provider
 // inputs: none
 // outputs rsa keypair
 func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*CreateIAMOutput, error) {

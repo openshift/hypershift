@@ -36,7 +36,7 @@ func init() {
 	AddToScheme(localScheme)
 }
 
-// HostedCluster conversion
+// ConvertTo conversion
 func (h *HostedCluster) ConvertTo(rawDst conversion.Hub) error {
 	temp := h.DeepCopy()
 	if err := fixupHostedClusterBeforeConversion(temp); err != nil {

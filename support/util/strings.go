@@ -4,7 +4,7 @@ import (
 	"strings"
 )
 
-// Contains checks if a comma-delimited string contains a specific string.
+// StringListContains checks if a comma-delimited string contains a specific string.
 func StringListContains(list string, s string) bool {
 	slice := strings.Split(list, ",")
 	for _, a := range slice {

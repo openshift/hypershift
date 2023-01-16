@@ -276,8 +276,8 @@ type APIEndpoint struct {
 	Port int32 `json:"port"`
 }
 
-// +kubebuilder:object:root=true
 // HostedControlPlaneList contains a list of HostedControlPlanes.
+// +kubebuilder:object:root=true
 type HostedControlPlaneList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

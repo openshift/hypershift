@@ -145,7 +145,7 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 	return nil
 }
 
-// CreateOIDCRole create an IAM Role with a trust policy for the OIDC provider
+// DestroyOIDCRole create an IAM Role with a trust policy for the OIDC provider
 func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string) error {
 	roleName := fmt.Sprintf("%s-%s", o.InfraID, name)
 	_, err := client.DeleteRolePolicy(&iam.DeleteRolePolicyInput{
