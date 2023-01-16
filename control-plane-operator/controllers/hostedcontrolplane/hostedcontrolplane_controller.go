@@ -588,7 +588,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			message = ""
 			status = metav1.ConditionTrue
 		}
-		hostedControlPlane.Status.Ready = (status == metav1.ConditionTrue)
+		hostedControlPlane.Status.Ready = status == metav1.ConditionTrue
 		condition := metav1.Condition{
 			Type:               string(hyperv1.HostedControlPlaneAvailable),
 			Status:             status,

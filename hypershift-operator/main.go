@@ -291,8 +291,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// Start controller to manage supported versions configmap
-	if err := (supportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
-		SetupWithManager(mgr)); err != nil {
+	if err := supportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
+		SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create supported version controller: %w", err)
 	}
 

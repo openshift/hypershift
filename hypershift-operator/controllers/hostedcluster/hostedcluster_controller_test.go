@@ -1640,7 +1640,7 @@ func TestIsUpgradeable(t *testing.T) {
 				t.Errorf("isUpgradeable() upgrading = %v, want %v", upgrading, test.upgrading)
 			}
 			if (err == nil) == test.err {
-				t.Errorf("isUpgradeable() err = %v, want %v", (err == nil), test.err)
+				t.Errorf("isUpgradeable() err = %v, want %v", err == nil, test.err)
 				return
 			}
 		})
@@ -1935,7 +1935,7 @@ func TestIsProgressing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := isProgressing(context.TODO(), tt.hc)
+			got, err := isProgressing(tt.hc)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("isProgressing() error = %v, wantErr %v", err, tt.wantErr)
 				return
