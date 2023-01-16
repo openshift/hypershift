@@ -15,7 +15,6 @@ var (
 	X509UsageClientServerAuth = append(X509UsageClientAuth, X509UsageServerAuth...)
 
 	X509DefaultUsage = x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature
-	X509SignerUsage  = X509DefaultUsage | x509.KeyUsageCertSign
 )
 
 func reconcileSignedCert(secret *corev1.Secret, ca *corev1.Secret, ownerRef config.OwnerRef, cn string, org []string, extUsages []x509.ExtKeyUsage) error {

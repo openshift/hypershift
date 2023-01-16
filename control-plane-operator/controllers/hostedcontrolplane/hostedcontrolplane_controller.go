@@ -98,8 +98,6 @@ const (
 	resourceDeletionTimeout = 2 * time.Minute
 )
 
-var NoopReconcile controllerutil.MutateFn = func() error { return nil }
-
 type InfrastructureStatus struct {
 	APIHost                 string
 	APIPort                 int32
