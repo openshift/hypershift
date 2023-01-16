@@ -9,12 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const (
-	ResourceName = "ignition-server"
-
-	// TokenSecretKey is the data key for the ignition token secret.
-	TokenSecretKey = "token"
-)
+const ResourceName = "ignition-server"
 
 func Route(namespace string) *routev1.Route {
 	return &routev1.Route{

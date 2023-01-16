@@ -25,11 +25,9 @@ import (
 )
 
 const (
-	KubeAPIServerConfigKey  = "config.json"
-	OauthMetadataConfigKey  = "oauthMetadata.json"
-	AuditLogFile            = "audit.log"
-	EgressSelectorConfigKey = "config.yaml"
-	DefaultEtcdPort         = 2379
+	KubeAPIServerConfigKey = "config.json"
+	OauthMetadataConfigKey = "oauthMetadata.json"
+	AuditLogFile           = "audit.log"
 )
 
 func ReconcileConfig(config *corev1.ConfigMap,

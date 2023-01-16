@@ -54,10 +54,6 @@ func konnectivityAgentLabels() map[string]string {
 	}
 }
 
-const (
-	KubeconfigKey = "kubeconfig"
-)
-
 func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{

@@ -22,10 +22,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
-const (
-	AWSCloudProviderCredsKey = "credentials"
-	configHashAnnotation     = "kube-controller-manager.hypershift.openshift.io/config-hash"
-)
+const configHashAnnotation = "kube-controller-manager.hypershift.openshift.io/config-hash"
 
 var (
 	volumeMounts = util.PodVolumeMounts{

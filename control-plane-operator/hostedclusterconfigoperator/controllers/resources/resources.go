@@ -69,7 +69,6 @@ import (
 const (
 	ControllerName       = "resources"
 	SecretHashAnnotation = "hypershift.openshift.io/kubeadmin-secret-hash"
-	observedConfigKey    = "config"
 )
 
 var (

@@ -6,8 +6,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const OpenShiftControllerManagerOperatorNamespace = "openshift-controller-manager-operator"
-
 func OpenShiftControllerManagerServiceCA() *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{

@@ -51,7 +51,6 @@ const (
 	nodePoolAnnotationMaxUnavailable         = "hypershift.openshift.io/nodePoolMaxUnavailable"
 
 	TokenSecretPayloadKey = "payload"
-	TokenSecretReleaseKey = "release"
 )
 
 type Reconciler struct {

@@ -27,10 +27,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	ImageStreamCAPA = "aws-cluster-api-controllers"
-)
-
 func New(utilitiesImage string, capiProviderImage string, payloadVersion *semver.Version) *AWS {
 	return &AWS{
 		utilitiesImage:    utilitiesImage,

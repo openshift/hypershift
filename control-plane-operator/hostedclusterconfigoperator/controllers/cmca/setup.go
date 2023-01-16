@@ -20,10 +20,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 )
 
-const (
-	ManagedConfigNamespace                 = "openshift-config-managed"
-	ControllerManagerAdditionalCAConfigMap = "controller-manager-additional-ca"
-)
+const ManagedConfigNamespace = "openshift-config-managed"
 
 func Setup(cfg *operator.HostedClusterConfigOperatorConfig) error {
 	if err := setupConfigMapObserver(cfg); err != nil {

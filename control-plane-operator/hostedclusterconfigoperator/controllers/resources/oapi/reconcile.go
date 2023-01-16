@@ -8,13 +8,7 @@ import (
 	"k8s.io/utils/pointer"
 )
 
-const (
-	OpenShiftServicePort        = 443
-	openshiftAPIServerConfigKey = "config.yaml"
-	configNamespace             = "openshift-config"
-	configHashAnnotation        = "openshift-apiserver.hypershift.openshift.io/config-hash"
-	crdPresentAnnotation        = "openshift-apiserver.hypershift.openshift.io/rolebindingrestrictions-present"
-)
+const OpenShiftServicePort = 443
 
 func ReconcileAPIService(apiService *apiregistrationv1.APIService, svc *corev1.Service, ca *corev1.Secret, group string) {
 	groupName := fmt.Sprintf("%s.openshift.io", group)
