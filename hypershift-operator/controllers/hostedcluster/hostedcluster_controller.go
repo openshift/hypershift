@@ -132,7 +132,7 @@ type HostedClusterReconciler struct {
 	// 2) The OCP version being deployed is the latest version supported by Hypershift
 	HypershiftOperatorImage string
 
-	// releaseProvider looks up the OCP version for the release images in HostedClusters
+	// ReleaseProvider looks up the OCP version for the release images in HostedClusters
 	ReleaseProvider releaseinfo.ProviderWithRegistryOverrides
 
 	// SetDefaultSecurityContext is used to configure Security Context for containers
@@ -408,6 +408,16 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if hcluster.Spec.Platform.AWS != nil {
 		if err := r.dereferenceAWSRoles(ctx, &hcluster.Spec.Platform.AWS.RolesRef, hcluster.Namespace); err != nil {
 			return ctrl.Result{}, err
+		}
+	}
+	if hcluster.Spec.SecretEncryption != nil && hcluster.Spec.SecretEncryption.KMS != nil && hcluster.Spec.SecretEncryption.KMS.AWS != nil {
+		if strings.HasPrefix(hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN, "arn-from-secret::") {
+			secretName := strings.TrimPrefix(hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN, "arn-from-secret::")
+			arn, err := r.getARNFromSecret(ctx, secretName, hcluster.Namespace)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to get ARN from secret %s/%s: %w", hcluster.Namespace, secretName, err)
+			}
+			hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN = arn
 		}
 	}
 
@@ -913,7 +923,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if controlPlaneNamespace.Labels == nil {
 			controlPlaneNamespace.Labels = make(map[string]string)
 		}
-		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = ""
+		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = "true"
 		if r.EnableOCPClusterMonitoring {
 			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
 		}
@@ -949,6 +959,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 	_, ignitionServerHasHealthzHandler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[ignitionServerHealthzHandlerLabel]
 	_, controlplaneOperatorManagesIgnitionServer := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
+	_, controlPlaneOperatorManagesMachineAutoscaler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]
+	_, controlPlaneOperatorManagesMachineApprover := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]
 
 	p, err := platform.GetPlatform(ctx, hcluster, r.ReleaseProvider, utilitiesImage, pullSecretBytes)
 	if err != nil {
@@ -1390,19 +1402,32 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
+	// Get release image version, if needed
+	var releaseImageVersion semver.Version
+	if !controlPlaneOperatorManagesMachineAutoscaler || !controlPlaneOperatorManagesMachineApprover || !controlplaneOperatorManagesIgnitionServer {
+		releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
+		}
+		releaseImageVersion, err = semver.Parse(releaseInfo.Version())
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
+		}
+	}
+
 	// In >= 4.11 We want to move most of the components reconciliation down to the CPO https://issues.redhat.com/browse/HOSTEDCP-375.
 	// For IBM existing clusters < 4.11 we need to stay consistent and keep deploying existing pods to satisfy validations.
 	// TODO (alberto): drop this after dropping < 4.11 support.
-	if _, hasLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]; !hasLabel {
+	if !controlPlaneOperatorManagesMachineAutoscaler {
 		// Reconcile the autoscaler.
-		err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes)
+		err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
 		}
 	}
-	if _, hasLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]; !hasLabel {
+	if !controlPlaneOperatorManagesMachineApprover {
 		// Reconcile the machine approver.
-		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes); err != nil {
+		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
 		}
 	}
@@ -1429,6 +1454,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			ignitionServerHasHealthzHandler,
 			r.ReleaseProvider.GetRegistryOverrides(),
 			r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
+			config.MutatingOwnerRefFromHCP(hcp, releaseImageVersion),
 		); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
 		}
@@ -1763,9 +1789,6 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		// Enforce ServiceAccount.
 		deployment.Spec.Template.Spec.ServiceAccountName = capiProviderServiceAccount.Name
 
-		// TODO (alberto): Reconsider enable this back when we face a real need
-		// with no better solution.
-		// deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 		deploymentConfig := config.DeploymentConfig{
 			Scheduling: config.Scheduling{
 				PriorityClass: config.DefaultPriorityClass,
@@ -1774,6 +1797,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		}
 
 		deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+		deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 		deploymentConfig.ApplyTo(deployment)
 
 		return nil
@@ -1920,17 +1944,17 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1
 // reconcileAutoscaler orchestrates reconciliation of autoscaler components using
 // both the HostedCluster and the HostedControlPlane which the autoscaler takes
 // inputs from.
-func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte) error {
+func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte, releaseVersion semver.Version) error {
 	clusterAutoscalerImage, err := hyperutil.GetPayloadImage(ctx, r.ReleaseProvider, hcluster, ImageStreamAutoscalerImage, pullSecretBytes)
 	if err != nil {
-		return fmt.Errorf("failed to get image for machine approver: %w", err)
+		return fmt.Errorf("failed to get image for cluster autoscaler: %w", err)
 	}
 	// TODO: can remove this override when all IBM production clusters upgraded to a version that uses the release image
 	if imageVal, ok := hcluster.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
 		clusterAutoscalerImage = imageVal
 	}
 
-	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, clusterAutoscalerImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext)
+	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, clusterAutoscalerImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
 }
 
 // GetControlPlaneOperatorImage resolves the appropriate control plane operator
@@ -2214,8 +2238,9 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 	}
 
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
-	deploymentConfig.ApplyTo(deployment)
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
+	deploymentConfig.ApplyTo(deployment)
+
 	return nil
 }
 
@@ -2257,6 +2282,11 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 		},
 		{
 			APIGroups: []string{"route.openshift.io"},
+			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		},
+		{
+			APIGroups: []string{"image.openshift.io"},
 			Resources: []string{"*"},
 			Verbs:     []string{"*"},
 		},
@@ -2476,7 +2506,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 }
 
 func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool) error {
-	defaultMode := int32(416)
+	defaultMode := int32(0640)
 	capiManagerLabels := map[string]string{
 		"name":                        "cluster-api",
 		"app":                         "cluster-api",
@@ -2587,8 +2617,9 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 	}
 
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
-	deploymentConfig.ApplyTo(deployment)
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
+	deploymentConfig.ApplyTo(deployment)
+
 	return nil
 }
 
@@ -3156,7 +3187,7 @@ func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Con
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte) error {
+func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte, releaseVersion semver.Version) error {
 	machineApproverImage, err := hyperutil.GetPayloadImage(ctx, r.ReleaseProvider, hcluster, ImageStreamClusterMachineApproverImage, pullSecretBytes)
 	if err != nil {
 		return fmt.Errorf("failed to get image for machine approver: %w", err)
@@ -3166,7 +3197,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 		machineApproverImage = imageVal
 	}
 
-	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext)
+	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
 }
 
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
@@ -3189,9 +3220,21 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	}
 
 	// Reconcile KAS Network Policy
+	// NetworkPolicy egress is broken for 4.11 on OpenShiftSDN, this is a workaround
+	// https://issues.redhat.com/browse/OCPBUGS-2105
+	isOpenShiftSDN := false
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityNetworks) {
+		managementClusterNetwork := &configv1.Network{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(managementClusterNetwork), managementClusterNetwork); err != nil {
+			return fmt.Errorf("failed to get management cluster network config: %w", err)
+		}
+		if managementClusterNetwork.Spec.NetworkType == "OpenShiftSDN" {
+			isOpenShiftSDN = true
+		}
+	}
 	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileKASNetworkPolicy(policy, hcluster)
+		return reconcileKASNetworkPolicy(policy, hcluster, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), !isOpenShiftSDN)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
 	}
@@ -3353,22 +3396,27 @@ func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error)
 // Depending on the awsEndpointAccessType, the routes will be exposed through a HCP router exposed via load balancer external or internal,
 // or through the management cluster ingress.
 // 1 - When Public
-//		If the HO has external DNS support:
-// 			All serviceTypes including KAS should be Routes (with RoutePublishingStrategy.hostname != "").
-// 			They will be exposed through a common HCP router exposed via Service type LB external.
-//		If the HO has no external DNS support:
-//			The KAS serviceType should be LoadBalancer. It will be exposed through a dedicated Service type LB external.
-// 			All other serviceTypes should be Routes. They will be exposed by the management cluster default ingress.
+//
+//	If the HO has external DNS support:
+//		All serviceTypes including KAS should be Routes (with RoutePublishingStrategy.hostname != "").
+//		They will be exposed through a common HCP router exposed via Service type LB external.
+//	If the HO has no external DNS support:
+//		The KAS serviceType should be LoadBalancer. It will be exposed through a dedicated Service type LB external.
+//		All other serviceTypes should be Routes. They will be exposed by the management cluster default ingress.
+//
 // 2 - When PublicAndPrivate
-//		If the HO has external DNS support:
-// 			All serviceTypes including KAS should be Routes (with RoutePublishingStrategy.hostname != "").
-// 			They will be exposed through a common HCP router exposed via both Service type LB internal and external.
-//		If the HO has no external DNS support:
-//			The KAS serviceType should be LoadBalancer. It will be exposed through a dedicated Service type LB external.
-// 			All other serviceTypes should be Routes. They will be exposed by a common HCP router is exposed via Service type LB internal.
+//
+//	If the HO has external DNS support:
+//		All serviceTypes including KAS should be Routes (with RoutePublishingStrategy.hostname != "").
+//		They will be exposed through a common HCP router exposed via both Service type LB internal and external.
+//	If the HO has no external DNS support:
+//		The KAS serviceType should be LoadBalancer. It will be exposed through a dedicated Service type LB external.
+//		All other serviceTypes should be Routes. They will be exposed by a common HCP router is exposed via Service type LB internal.
+//
 // 3 - When Private
-//		The KAS serviceType should be Route or Load balancer. TODO (alberto): remove Load balancer choice for private.
-// 		All other serviceTypes should be Routes. They will be exposed by a common HCP router exposed via Service type LB internal.
+//
+//	The KAS serviceType should be Route or Load balancer. TODO (alberto): remove Load balancer choice for private.
+//	All other serviceTypes should be Routes. They will be exposed by a common HCP router exposed via Service type LB internal.
 func (r *HostedClusterReconciler) validateAWSConfig(hc *hyperv1.HostedCluster) error {
 	if hc.Spec.Platform.Type != hyperv1.AWSPlatform {
 		return nil
@@ -3529,9 +3577,10 @@ func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) err
 	return nil
 }
 
-func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftMgmtCluster bool, specifyEgress bool) error {
 	port := intstr.FromInt(kas.APIServerListenPort)
 	protocol := corev1.ProtocolTCP
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			From: []networkingv1.NetworkPolicyPeer{},
@@ -3558,12 +3607,73 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 		})
 	}
 
+	if specifyEgress {
+		// Allow traffic to same namespace
+		policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+			{
+				To: []networkingv1.NetworkPolicyPeer{
+					{
+						PodSelector: &metav1.LabelSelector{},
+					},
+				},
+			},
+		}
+
+		if isOpenShiftMgmtCluster {
+			// Allow traffic to openshift-dns namespace
+			dnsUDPPort := intstr.FromInt(5353)
+			dnsUDPProtocol := corev1.ProtocolUDP
+			dnsTCPPort := intstr.FromInt(5353)
+			dnsTCPProtocol := corev1.ProtocolTCP
+			policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+				To: []networkingv1.NetworkPolicyPeer{
+					{
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"kubernetes.io/metadata.name": "openshift-dns",
+							},
+						},
+					},
+				},
+				Ports: []networkingv1.NetworkPolicyPort{
+					{
+						Port:     &dnsUDPPort,
+						Protocol: &dnsUDPProtocol,
+					},
+					{
+						Port:     &dnsTCPPort,
+						Protocol: &dnsTCPProtocol,
+					},
+				},
+			})
+		} else {
+			// All traffic to any destination on port 53 for both TCP and UDP
+			dnsUDPPort := intstr.FromInt(53)
+			dnsUDPProtocol := corev1.ProtocolUDP
+			dnsTCPPort := intstr.FromInt(53)
+			dnsTCPProtocol := corev1.ProtocolTCP
+			policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+				Ports: []networkingv1.NetworkPolicyPort{
+					{
+						Port:     &dnsUDPPort,
+						Protocol: &dnsUDPProtocol,
+					},
+					{
+						Port:     &dnsTCPPort,
+						Protocol: &dnsTCPProtocol,
+					},
+				},
+			})
+		}
+		policy.Spec.PolicyTypes = append(policy.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
+	}
+
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"app": "kube-apiserver",
 		},
 	}
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+
 	return nil
 }
 
@@ -4177,5 +4287,6 @@ func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, roles
 		}
 		rolesRef.KubeCloudControllerARN = arn
 	}
+
 	return nil
 }

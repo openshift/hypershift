@@ -2250,6 +2250,16 @@ spec:
                     description: AWS specifies configuration for clusters running
                       on Amazon Web Services.
                     properties:
+                      additionalAllowedPrincipals:
+                        description: AdditionalAllowedPrincipals specifies a list
+                          of additional allowed principal ARNs to be added to the
+                          hosted control plane's VPC Endpoint Service to enable additional
+                          VPC Endpoint connection requests to be automatically accepted.
+                          See https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html
+                          for more details around VPC Endpoint Service allowed principals.
+                        items:
+                          type: string
+                        type: array
                       cloudProviderConfig:
                         description: 'CloudProviderConfig specifies AWS networking
                           configuration for the control plane. This is mainly used
@@ -2875,13 +2885,31 @@ spec:
                             description: Auth defines metadata about the management
                               of credentials used to interact with AWS KMS
                             properties:
+                              awsKms:
+                                description: "The referenced role must have a trust
+                                  relationship that allows it to be assumed via web
+                                  identity. https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
+                                  Example: { \"Version\": \"2012-10-17\", \"Statement\":
+                                  [ { \"Effect\": \"Allow\", \"Principal\": { \"Federated\":
+                                  \"{{ .ProviderARN }}\" }, \"Action\": \"sts:AssumeRoleWithWebIdentity\",
+                                  \"Condition\": { \"StringEquals\": { \"{{ .ProviderName
+                                  }}:sub\": {{ .ServiceAccounts }} } } } ] } \n AWSKMSARN
+                                  is an ARN value referencing a role appropriate for
+                                  managing the auth via the AWS KMS key. \n The following
+                                  is an example of a valid policy document: \n { \"Version\":
+                                  \"2012-10-17\", \"Statement\": [ { \"Effect\": \"Allow\",
+                                  \"Action\": [ \"kms:Encrypt\", \"kms:Decrypt\",
+                                  \"kms:ReEncrypt*\", \"kms:GenerateDataKey*\", \"kms:DescribeKey\"
+                                  ], \"Resource\": %q } ] }"
+                                type: string
                               credentials:
-                                description: Credentials contains the name of the
-                                  secret that holds the aws credentials that can be
-                                  used to make the necessary KMS calls. It should
-                                  at key AWSCredentialsFileSecretKey contain the aws
-                                  credentials file that can be used to configure AWS
-                                  SDKs
+                                description: Deprecated This field is deprecated and
+                                  will be removed in a future release. Use AWSKMSRoleARN
+                                  instead. Credentials contains the name of the secret
+                                  that holds the aws credentials that can be used
+                                  to make the necessary KMS calls. It should at key
+                                  AWSCredentialsFileSecretKey contain the aws credentials
+                                  file that can be used to configure AWS SDKs
                                 properties:
                                   name:
                                     description: 'Name of the referent. More info:
@@ -2892,6 +2920,7 @@ spec:
                                 type: object
                                 x-kubernetes-map-type: atomic
                             required:
+                            - awsKms
                             - credentials
                             type: object
                           backupKey:
@@ -5530,6 +5559,16 @@ spec:
                     description: AWS specifies configuration for clusters running
                       on Amazon Web Services.
                     properties:
+                      additionalAllowedPrincipals:
+                        description: AdditionalAllowedPrincipals specifies a list
+                          of additional allowed principal ARNs to be added to the
+                          hosted control plane's VPC Endpoint Service to enable additional
+                          VPC Endpoint connection requests to be automatically accepted.
+                          See https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html
+                          for more details around VPC Endpoint Service allowed principals.
+                        items:
+                          type: string
+                        type: array
                       cloudProviderConfig:
                         description: 'CloudProviderConfig specifies AWS networking
                           configuration for the control plane. This is mainly used
@@ -5640,10 +5679,9 @@ spec:
                               [ { \"Effect\": \"Allow\", \"Action\": [ \"ec2:CreateVpcEndpoint\",
                               \"ec2:DescribeVpcEndpoints\", \"ec2:ModifyVpcEndpoint\",
                               \"ec2:DeleteVpcEndpoints\", \"ec2:CreateTags\", \"route53:ListHostedZones\",
-                              \"route53:ListHostedZonesByName\" ], \"Resource\": \"*\"
-                              }, { \"Effect\": \"Allow\", \"Action\": [ \"route53:ChangeResourceRecordSets\",
-                              \"route53:ListResourceRecordSets\" ], \"Resource\":
-                              \"arn:aws:route53:::%s\" } ] }"
+                              ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\", \"Action\":
+                              [ \"route53:ChangeResourceRecordSets\", \"route53:ListResourceRecordSets\"
+                              ], \"Resource\": \"arn:aws:route53:::%s\" } ] }"
                             type: string
                           imageRegistryARN:
                             description: "ImageRegistryARN is an ARN value referencing
@@ -6103,24 +6141,25 @@ spec:
                             description: Auth defines metadata about the management
                               of credentials used to interact with AWS KMS
                             properties:
-                              credentials:
-                                description: Credentials contains the name of the
-                                  secret that holds the aws credentials that can be
-                                  used to make the necessary KMS calls. It should
-                                  at key AWSCredentialsFileSecretKey contain the aws
-                                  credentials file that can be used to configure AWS
-                                  SDKs
-                                properties:
-                                  name:
-                                    description: 'Name of the referent. More info:
-                                      https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                      TODO: Add other useful fields. apiVersion, kind,
-                                      uid?'
-                                    type: string
-                                type: object
-                                x-kubernetes-map-type: atomic
+                              awsKms:
+                                description: "The referenced role must have a trust
+                                  relationship that allows it to be assumed via web
+                                  identity. https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
+                                  Example: { \"Version\": \"2012-10-17\", \"Statement\":
+                                  [ { \"Effect\": \"Allow\", \"Principal\": { \"Federated\":
+                                  \"{{ .ProviderARN }}\" }, \"Action\": \"sts:AssumeRoleWithWebIdentity\",
+                                  \"Condition\": { \"StringEquals\": { \"{{ .ProviderName
+                                  }}:sub\": {{ .ServiceAccounts }} } } } ] } \n AWSKMSARN
+                                  is an ARN value referencing a role appropriate for
+                                  managing the auth via the AWS KMS key. \n The following
+                                  is an example of a valid policy document: \n { \"Version\":
+                                  \"2012-10-17\", \"Statement\": [ { \"Effect\": \"Allow\",
+                                  \"Action\": [ \"kms:Encrypt\", \"kms:Decrypt\",
+                                  \"kms:ReEncrypt*\", \"kms:GenerateDataKey*\", \"kms:DescribeKey\"
+                                  ], \"Resource\": %q } ] }"
+                                type: string
                             required:
-                            - credentials
+                            - awsKms
                             type: object
                           backupKey:
                             description: BackupKey defines the old key during the

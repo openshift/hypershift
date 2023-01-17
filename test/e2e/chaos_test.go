@@ -61,7 +61,6 @@ func TestEtcdChaos(t *testing.T) {
 
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 	clusterOpts.NodePoolReplicas = 0
 
 	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir)

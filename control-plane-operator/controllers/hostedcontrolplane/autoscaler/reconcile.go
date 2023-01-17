@@ -21,8 +21,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoscalerImage, availabilityProberImage string, setDefaultSecurityContext bool) error {
-	config.OwnerRefFrom(hcp).ApplyTo(deployment)
+func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeConfigSecret *corev1.Secret, options hyperv1.ClusterAutoscaling, clusterAutoscalerImage, availabilityProberImage string, setDefaultSecurityContext bool, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(deployment)
 	args := []string{
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
@@ -95,7 +95,8 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 						Name: "target-kubeconfig",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName: kubeConfigSecret.Name,
+								SecretName:  kubeConfigSecret.Name,
+								DefaultMode: k8sutilspointer.Int32Ptr(0640),
 								Items: []corev1.KeyToPath{
 									{
 										// TODO: should the key be published on status?
@@ -230,10 +231,10 @@ func ReconcileAutoscalerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Ro
 }
 
 // ReconcileAutoscaler orchestrates reconciliation of autoscaler components.
-func ReconcileAutoscaler(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, autoscalerImage, availabilityProberImage string, createOrUpdate upsert.CreateOrUpdateFN, setDefaultSecurityContext bool) error {
+func ReconcileAutoscaler(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, autoscalerImage, availabilityProberImage string, createOrUpdate upsert.CreateOrUpdateFN, setDefaultSecurityContext bool, ownerRef config.OwnerRef) error {
 	autoscalerRole := manifests.AutoscalerRole(hcp.Namespace)
 	_, err := createOrUpdate(ctx, c, autoscalerRole, func() error {
-		return ReconcileAutoscalerRole(autoscalerRole, config.OwnerRefFrom(hcp))
+		return ReconcileAutoscalerRole(autoscalerRole, ownerRef)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile autoscaler role: %w", err)
@@ -242,7 +243,7 @@ func ReconcileAutoscaler(ctx context.Context, c client.Client, hcp *hyperv1.Host
 	autoscalerServiceAccount := manifests.AutoscalerServiceAccount(hcp.Namespace)
 	_, err = createOrUpdate(ctx, c, autoscalerServiceAccount, func() error {
 		util.EnsurePullSecret(autoscalerServiceAccount, controlplaneoperator.PullSecret("").Name)
-		config.OwnerRefFrom(hcp).ApplyTo(autoscalerServiceAccount)
+		ownerRef.ApplyTo(autoscalerServiceAccount)
 		return nil
 	})
 	if err != nil {
@@ -251,7 +252,7 @@ func ReconcileAutoscaler(ctx context.Context, c client.Client, hcp *hyperv1.Host
 
 	autoscalerRoleBinding := manifests.AutoscalerRoleBinding(hcp.Namespace)
 	_, err = createOrUpdate(ctx, c, autoscalerRoleBinding, func() error {
-		return ReconcileAutoscalerRoleBinding(autoscalerRoleBinding, autoscalerRole, autoscalerServiceAccount, config.OwnerRefFrom(hcp))
+		return ReconcileAutoscalerRoleBinding(autoscalerRoleBinding, autoscalerRole, autoscalerServiceAccount, ownerRef)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile autoscaler role binding: %w", err)
@@ -274,7 +275,7 @@ func ReconcileAutoscaler(ctx context.Context, c client.Client, hcp *hyperv1.Host
 
 		autoscalerDeployment := manifests.AutoscalerDeployment(hcp.Namespace)
 		_, err = createOrUpdate(ctx, c, autoscalerDeployment, func() error {
-			return ReconcileAutoscalerDeployment(autoscalerDeployment, hcp, autoscalerServiceAccount, capiKubeConfigSecret, hcp.Spec.Autoscaling, autoscalerImage, availabilityProberImage, setDefaultSecurityContext)
+			return ReconcileAutoscalerDeployment(autoscalerDeployment, hcp, autoscalerServiceAccount, capiKubeConfigSecret, hcp.Spec.Autoscaling, autoscalerImage, availabilityProberImage, setDefaultSecurityContext, ownerRef)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile autoscaler deployment: %w", err)

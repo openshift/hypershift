@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: redhat-marketplace-catalog
+  annotations:
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:redhat-marketplace"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
 spec:
   selector:
     matchLabels:
@@ -19,7 +21,7 @@ spec:
         kubernetes.io/os: linux
       containers:
         - name: registry
-          image: registry.redhat.io/redhat/redhat-marketplace-index:v4.11
+          image: catalogs:redhat-marketplace
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 50051

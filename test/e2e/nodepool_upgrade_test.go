@@ -9,15 +9,12 @@ import (
 	"io"
 	"os"
 	"testing"
-	"time"
-
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/wait"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -38,6 +35,23 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 	clusterOpts.ReleaseImage = globalOpts.LatestReleaseImage
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 
+	syncedLabelsKey := "e2e.propagate.validation"
+	syncedLabelsValue := "true"
+	syncedLabels := map[string]string{
+		syncedLabelsKey: syncedLabelsValue,
+	}
+	syncedTaints := []hyperv1.Taint{
+		{
+			Key:    "foo",
+			Value:  "bar",
+			Effect: corev1.TaintEffectPreferNoSchedule,
+		},
+	}
+	wantedTaint := corev1.Taint{
+		Key:    syncedTaints[0].Key,
+		Value:  syncedTaints[0].Value,
+		Effect: syncedTaints[0].Effect,
+	}
 	clusterOpts.BeforeApply = func(o crclient.Object) {
 		switch v := o.(type) {
 		case *hyperv1.NodePool:
@@ -49,6 +63,9 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 					MaxSurge:       func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(3)),
 				},
 			}
+			v.Spec.NodeLabels = syncedLabels
+			// TODO (alberto): move this into a dedicated NodePool.
+			v.Spec.Taints = syncedTaints
 		}
 	}
 
@@ -73,7 +90,7 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 
 	// Wait for Nodes to be Ready.
-	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
+	numNodes := clusterOpts.NodePoolReplicas
 	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the first rollout to be complete and refresh the HostedCluster.
@@ -93,6 +110,18 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 		e2eutil.WaitForNodePoolVersion(t, ctx, client, &nodePool, previousReleaseInfo.Version())
 	}
 
+	// TODO (alberto): move into WaitForNReadyNodes after this PR gets merged so it's validated by any call to the function in any test.
+	// It's has to wait for the PR to merged otherwise the control_plane_upgrade_test would fail.
+	t.Logf("Validating all Nodes have the synced labels and taints")
+	nodes := &corev1.NodeList{}
+	if err := guestClient.List(ctx, nodes); err != nil {
+		t.Fatalf("failed to list nodes in guest cluster: %v", err)
+	}
+	for _, node := range nodes.Items {
+		g.Expect(node.Labels).To(HaveKeyWithValue(syncedLabelsKey, syncedLabelsValue))
+		g.Expect(node.Spec.Taints).To(ContainElement(wantedTaint))
+	}
+
 	// Update NodePool images to the latest.
 	for _, nodePool := range nodePools.Items {
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
@@ -104,33 +133,26 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool image")
 	}
 
-	// Check the upgrade is signalled in a condition.
-	for _, nodePool := range nodePools.Items {
-		err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
-			err = client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-
-			for _, condition := range nodePool.Status.Conditions {
-				if condition.Type == hyperv1.NodePoolUpdatingVersionConditionType && condition.Status == corev1.ConditionTrue {
-					return true, nil
-				}
-			}
-			return false, nil
-		}, ctx.Done())
-		g.Expect(err).NotTo(HaveOccurred(), "failed to find UpdatingVersionCondition condition")
-		t.Log("NodePool have UpdatingVersionCondition condition")
-	}
-
-	// Wait for at least 1 Node to be unready, so we know the process is started.
-	e2eutil.WaitForNUnReadyNodes(t, ctx, guestClient, 1)
-	t.Log("Upgrade has stated as at least 1 Node to is unready")
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
-
 	// Wait for NodePools to roll out the latest version
 	// TODO: Consider doing this in parallel
 	for _, nodePool := range nodePools.Items {
 		e2eutil.WaitForNodePoolVersion(t, ctx, client, &nodePool, latestReleaseInfo.Version())
 		e2eutil.WaitForNodePoolConditionsNotToBePresent(t, ctx, client, &nodePool, hyperv1.NodePoolUpdatingVersionConditionType)
+	}
+
+	// Verify all nodes are ready after the upgrade
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+
+	// TODO (alberto): move into WaitForNReadyNodes after this PR gets merged so it's validated by any call to the function in any test.
+	// It's has to wait for the PR to merged otherwise the control_plane_upgrade_test would fail.
+	t.Logf("Validating all Nodes have the synced labels and taints")
+	nodes = &corev1.NodeList{}
+	if err := guestClient.List(ctx, nodes); err != nil {
+		t.Fatalf("failed to list nodes in guest cluster: %v", err)
+	}
+	for _, node := range nodes.Items {
+		g.Expect(node.Labels).To(HaveKeyWithValue(syncedLabelsKey, syncedLabelsValue))
+		g.Expect(node.Spec.Taints).To(ContainElement(wantedTaint))
 	}
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
@@ -150,8 +172,6 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ReleaseImage = globalOpts.LatestReleaseImage
-	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
-
 	clusterOpts.BeforeApply = func(o crclient.Object) {
 		switch v := o.(type) {
 		case *hyperv1.NodePool:
@@ -181,8 +201,7 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 
 	// Wait for Nodes to be Ready
-	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, clusterOpts.NodePoolReplicas, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the first rollout to be complete and refresh the hostedcluster
 	t.Logf("Waiting for initial cluster rollout. Image: %s", hostedCluster.Spec.Release.Image)
@@ -212,34 +231,15 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred(), "failed update nodePool image")
 	}
 
-	// Check the upgrade is signalled in a condition.
-	for _, nodePool := range nodePools.Items {
-		err := wait.PollUntil(5*time.Second, func() (done bool, err error) {
-			err = client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-
-			for _, condition := range nodePool.Status.Conditions {
-				if condition.Type == hyperv1.NodePoolUpdatingVersionConditionType && condition.Status == corev1.ConditionTrue {
-					return true, nil
-				}
-			}
-			return false, nil
-		}, ctx.Done())
-		g.Expect(err).NotTo(HaveOccurred(), "failed to find UpdatingVersionCondition condition")
-		t.Log("NodePool have UpdatingVersionCondition condition")
-	}
-
-	// Wait for at least 1 Node to be unready, so we know the process is started.
-	e2eutil.WaitForNUnReadyNodes(t, ctx, guestClient, 1)
-	t.Log("Upgrade has started as at least 1 Node to is unready")
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
-
 	// Wait for NodePools to roll out the latest version.
 	// TODO: Consider doing this in parallel
 	for _, nodePool := range nodePools.Items {
 		e2eutil.WaitForNodePoolVersion(t, ctx, client, &nodePool, latestReleaseInfo.Version())
 		e2eutil.WaitForNodePoolConditionsNotToBePresent(t, ctx, client, &nodePool, hyperv1.NodePoolUpdatingVersionConditionType)
 	}
+
+	// Verify all nodes are ready after the upgrade
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, clusterOpts.NodePoolReplicas, hostedCluster.Spec.Platform.Type)
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 }

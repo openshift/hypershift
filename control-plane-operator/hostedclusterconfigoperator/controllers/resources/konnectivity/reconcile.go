@@ -29,21 +29,23 @@ var (
 	}
 )
 
-func konnectivityAgentLabels() map[string]string {
-	return map[string]string{
-		"app":                         "konnectivity-agent",
-		hyperv1.ControlPlaneComponent: "konnectivity-agent",
-	}
-}
-
 func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32, platform hyperv1.PlatformType, proxy configv1.ProxyStatus) {
+	var labels map[string]string
+	if daemonset.Spec.Selector != nil && daemonset.Spec.Selector.MatchLabels != nil {
+		labels = daemonset.Spec.Selector.MatchLabels
+	} else {
+		labels = map[string]string{
+			"app": "konnectivity-agent",
+		}
+	}
+
 	daemonset.Spec = appsv1.DaemonSetSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: konnectivityAgentLabels(),
+			MatchLabels: labels,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: konnectivityAgentLabels(),
+				Labels: labels,
 			},
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
@@ -135,7 +137,8 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 
 func buildKonnectivityVolumeWorkerAgentCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.KonnectivityAgentSecret("").Name,
+		SecretName:  manifests.KonnectivityAgentSecret("").Name,
+		DefaultMode: pointer.Int32Ptr(0640),
 	}
 }
 

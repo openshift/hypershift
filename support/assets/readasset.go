@@ -3,6 +3,7 @@ package assets
 import (
 	"fmt"
 
+	imagev1 "github.com/openshift/api/image/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -57,6 +58,12 @@ func MustCronJob(reader AssetReader, fileName string) *batchv1.CronJob {
 	cronJob := &batchv1.CronJob{}
 	deserializeResource(reader, fileName, cronJob)
 	return cronJob
+}
+
+func MustImageStream(reader AssetReader, fileName string) *imagev1.ImageStream {
+	imageStream := &imagev1.ImageStream{}
+	deserializeResource(reader, fileName, imageStream)
+	return imageStream
 }
 
 func MustRole(reader AssetReader, fileName string) *rbacv1.Role {

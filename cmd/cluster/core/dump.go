@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
@@ -19,6 +20,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -205,6 +207,8 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capikubevirt.KubevirtMachineTemplate{},
 		&capikubevirt.KubevirtCluster{},
 		&routev1.Route{},
+		&imagev1.ImageStream{},
+		&networkingv1.NetworkPolicy{},
 	}
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	if opts.AgentNamespace != "" {

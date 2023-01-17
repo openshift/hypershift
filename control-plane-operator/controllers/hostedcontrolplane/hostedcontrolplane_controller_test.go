@@ -193,6 +193,9 @@ func TestReconcileAPIServerService(t *testing.T) {
 			s.Spec.LoadBalancerSourceRanges = nil
 		})...)
 	}
+	withCrossZoneAnnotation := func(svc *corev1.Service) {
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+	}
 	kasExternalRoute := routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: targetNamespace,
@@ -272,8 +275,8 @@ func TestReconcileAPIServerService(t *testing.T) {
 			},
 
 			expectedServices: []corev1.Service{
-				kasPublicService(),
-				kasPrivateService(),
+				kasPublicService(withCrossZoneAnnotation),
+				kasPrivateService(withCrossZoneAnnotation),
 			},
 		},
 		{
@@ -291,7 +294,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 					s.Spec.Type = corev1.ServiceTypeClusterIP
 					delete(s.Annotations, "external-dns.alpha.kubernetes.io/hostname")
 				}),
-				kasPrivateService(),
+				kasPrivateService(withCrossZoneAnnotation),
 			},
 		},
 		{
@@ -478,7 +481,7 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Name = "name"
 			hcp.Namespace = "namespace"
-			err := autoscaler.ReconcileAutoscalerDeployment(deployment, hcp, sa, secret, test.AutoscalerOptions, "clusterAutoscalerImage", "availabilityProberImage", false)
+			err := autoscaler.ReconcileAutoscalerDeployment(deployment, hcp, sa, secret, test.AutoscalerOptions, "clusterAutoscalerImage", "availabilityProberImage", false, config.OwnerRefFrom(hcp))
 			if err != nil {
 				t.Error(err)
 			}
@@ -1252,6 +1255,9 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 			s.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
 		})...)
 	}
+	withCrossZoneAnnotation := func(svc *corev1.Service) {
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+	}
 	tests := []struct {
 		name                         string
 		endpointAccess               hyperv1.AWSEndpointAccessType
@@ -1272,8 +1278,8 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 			endpointAccess:               hyperv1.PublicAndPrivate,
 			exposeAPIServerThroughRouter: true,
 			expectedServices: []corev1.Service{
-				*privateService(),
-				*publicService(),
+				*privateService(withCrossZoneAnnotation),
+				*publicService(withCrossZoneAnnotation),
 			},
 		},
 		{
@@ -1281,7 +1287,7 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 			endpointAccess:               hyperv1.Private,
 			exposeAPIServerThroughRouter: true,
 			expectedServices: []corev1.Service{
-				*privateService(),
+				*privateService(withCrossZoneAnnotation),
 			},
 		},
 		{
@@ -1290,7 +1296,7 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 			exposeAPIServerThroughRouter: true,
 			existingObjects:              []client.Object{publicService(), privateService()},
 			expectedServices: []corev1.Service{
-				*privateService(),
+				*privateService(withCrossZoneAnnotation),
 			},
 		},
 		{

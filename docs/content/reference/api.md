@@ -677,6 +677,33 @@ the purpose of the change. In future we plan to propagate this field in-place.
 </tr>
 <tr>
 <td>
+<code>nodeLabels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeLabels propagates a list of labels to Nodes, only once on creation.
+Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>taints</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.Taint">
+[]Taint
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Taints if specified, propagates a list of taints to Nodes, only once on creation.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>pausedUntil</code></br>
 <em>
 string
@@ -943,9 +970,59 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>Credentials contains the name of the secret that holds the aws credentials that can be used
+<p>Deprecated
+This field is deprecated and will be removed in a future release. Use AWSKMSRoleARN instead.
+Credentials contains the name of the secret that holds the aws credentials that can be used
 to make the necessary KMS calls. It should at key AWSCredentialsFileSecretKey contain the
 aws credentials file that can be used to configure AWS SDKs</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>awsKms</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>The referenced role must have a trust relationship that allows it to be assumed via web identity.
+<a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html">https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html</a>.
+Example:
+{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Principal&rdquo;: {
+&ldquo;Federated&rdquo;: &ldquo;{{ .ProviderARN }}&rdquo;
+},
+&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;{{ .ProviderName }}:sub&rdquo;: {{ .ServiceAccounts }}
+}
+}
+}
+]
+}</p>
+<p>AWSKMSARN is an ARN value referencing a role appropriate for managing the auth via the AWS KMS key.</p>
+<p>The following is an example of a valid policy document:</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;kms:Encrypt&rdquo;,
+&ldquo;kms:Decrypt&rdquo;,
+&ldquo;kms:ReEncrypt<em>&rdquo;,
+&ldquo;kms:GenerateDataKey</em>&rdquo;,
+&ldquo;kms:DescribeKey&rdquo;
+],
+&ldquo;Resource&rdquo;: %q
+}
+]
+}</p>
 </td>
 </tr>
 </tbody>
@@ -1342,6 +1419,22 @@ Value must be one of:
 &#34;Public&#34;, 
 &#34;PublicAndPrivate&#34;
 </p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalAllowedPrincipals</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AdditionalAllowedPrincipals specifies a list of additional allowed principal ARNs
+to be added to the hosted control plane&rsquo;s VPC Endpoint Service to enable additional
+VPC Endpoint connection requests to be automatically accepted.
+See <a href="https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html">https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html</a>
+for more details around VPC Endpoint Service allowed principals.</p>
 </td>
 </tr>
 </tbody>
@@ -5765,6 +5858,33 @@ the purpose of the change. In future we plan to propagate this field in-place.
 </tr>
 <tr>
 <td>
+<code>nodeLabels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeLabels propagates a list of labels to Nodes, only once on creation.
+Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>taints</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.Taint">
+[]Taint
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Taints if specified, propagates a list of taints to Nodes, only once on creation.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>pausedUntil</code></br>
 <em>
 string
@@ -7063,6 +7183,63 @@ ServicePublishingStrategy
 <p>ServiceType defines what control plane services can be exposed from the
 management control plane.</p>
 </p>
+###Taint { #hypershift.openshift.io/v1alpha1.Taint }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1alpha1.NodePoolSpec">NodePoolSpec</a>)
+</p>
+<p>
+<p>Taint is as v1 Core but without TimeAdded.
+<a href="https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053">https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053</a></p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>key</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Required. The taint key to be applied to a node.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>value</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>The taint value corresponding to the taint key.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>effect</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#tainteffect-v1-core">
+Kubernetes core/v1.TaintEffect
+</a>
+</em>
+</td>
+<td>
+<p>Required. The effect of the taint on pods
+that do not tolerate the taint.
+Valid effects are NoSchedule, PreferNoSchedule and NoExecute.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###UnmanagedEtcdSpec { #hypershift.openshift.io/v1alpha1.UnmanagedEtcdSpec }
 <p>
 (<em>Appears on:</em>

@@ -108,7 +108,7 @@ spec:
         name: tmpfs
       - name: apiservice-cert
         secret:
-          defaultMode: 416
+          defaultMode: 0640
           items:
           - key: tls.crt
             path: apiserver.crt
@@ -117,11 +117,13 @@ spec:
           secretName: packageserver-cert
       - name: webhook-cert
         secret:
-          defaultMode: 416
+          defaultMode: 0640
           secretName: packageserver-cert
       - name: kubeconfig
         secret:
+          defaultMode: 0640
           secretName: service-network-admin-kubeconfig
       - name: oas-konnectivity-proxy-cert
         secret:
+          defaultMode: 0640
           secretName: konnectivity-client

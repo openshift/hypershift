@@ -7,7 +7,9 @@ import (
 	"net/url"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -19,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,6 +36,7 @@ import (
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -205,10 +209,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	if !hcp.DeletionTimestamp.IsZero() {
 		if shouldCleanupCloudResources(hcp) {
 			log.Info("Cleaning up hosted cluster cloud resources")
-			err := r.destroyCloudResources(ctx, hcp)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
+			return r.destroyCloudResources(ctx, hcp)
 		}
 		return ctrl.Result{}, nil
 	}
@@ -472,16 +473,18 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling olm resources")
 	errs = append(errs, r.reconcileOLM(ctx, hcp, releaseImage)...)
 
-	log.Info("reconciling storage resources")
-	errs = append(errs, r.reconcileStorage(ctx, hcp, releaseImage)...)
+	if hostedcontrolplane.IsStorageAndCSIManaged(hcp) {
+		log.Info("reconciling storage resources")
+		errs = append(errs, r.reconcileStorage(ctx, hcp, releaseImage)...)
+
+		log.Info("reconciling node level csi configuration")
+		if err := r.reconcileCSIDriver(ctx, hcp, releaseImage); err != nil {
+			errs = append(errs, err)
+		}
+	}
 
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
-
-	log.Info("reconciling node level csi configuration")
-	if err := r.reconcileCSIDriver(ctx, hcp, releaseImage); err != nil {
-		errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
-	}
 
 	// Delete the DNS operator deployment in the hosted cluster, if it is
 	// present there.  A separate DNS operator deployment runs as part of
@@ -1283,59 +1286,93 @@ func (r *reconciler) reconcileAWSIdentityWebhook(ctx context.Context) []error {
 	return errs
 }
 
-func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) (ctrl.Result, error) {
+	remaining, err := r.ensureCloudResourcesDestroyed(ctx, hcp)
+
+	var status metav1.ConditionStatus
+	var reason, message string
+
+	if err != nil {
+		reason = "ErrorOccurred"
+		status = metav1.ConditionFalse
+		message = fmt.Sprintf("Error: %v", err)
+	} else {
+		if remaining.Len() == 0 {
+			reason = "CloudResourcesDestroyed"
+			status = metav1.ConditionTrue
+			message = "All guest resources destroyed"
+		} else {
+			reason = "RemainingCloudResources"
+			status = metav1.ConditionFalse
+			message = fmt.Sprintf("Remaining resources: %s", strings.Join(remaining.List(), ","))
+		}
+	}
+	resourcesDestroyedCond := &metav1.Condition{
+		Type:    string(hyperv1.CloudResourcesDestroyed),
+		Status:  status,
+		Reason:  reason,
+		Message: message,
+		// Here LastTransitionTime is used to indicate the last time the condition was updated by this
+		// controller. This is used by the CPO as a heartbeat to determine whether resource deletion is
+		// still in progress.
+		LastTransitionTime: metav1.Now(),
+	}
+	meta.SetStatusCondition(&hcp.Status.Conditions, *resourcesDestroyedCond)
+	if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to set resources destroyed condition: %w", err)
+	}
+
+	if remaining.Len() > 0 {
+		// If we are still waiting for resources to go away, ensure we are requeued in at most 30 secs
+		// so we can at least update the timestamp on the condition.
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	} else {
+		return ctrl.Result{}, nil
+	}
+}
+
+func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyperv1.HostedControlPlane) (sets.String, error) {
 	log := ctrl.LoggerFrom(ctx)
+	remaining := sets.NewString()
 	log.Info("Ensuring resource creation is blocked in cluster")
 	if err := r.ensureResourceCreationIsBlocked(ctx); err != nil {
-		return err
+		return remaining, err
 	}
 	var errs []error
-	allRemoved := true
 	log.Info("Ensuring image registry storage is removed")
 	removed, err := r.ensureImageRegistryStorageRemoved(ctx)
 	if err != nil {
 		errs = append(errs, err)
 	}
-	allRemoved = allRemoved && removed
+	if !removed {
+		remaining.Insert("image-registry")
+	}
 	log.Info("Ensuring ingress controllers are removed")
 	removed, err = r.ensureIngressControllersRemoved(ctx)
 	if err != nil {
 		errs = append(errs, err)
 	}
-	allRemoved = allRemoved && removed
+	if !removed {
+		remaining.Insert("ingress-controllers")
+	}
 	log.Info("Ensuring load balancers are removed")
 	removed, err = r.ensureServiceLoadBalancersRemoved(ctx)
 	if err != nil {
 		errs = append(errs, err)
 	}
-	allRemoved = allRemoved && removed
+	if !removed {
+		remaining.Insert("loadbalancers")
+	}
 	log.Info("Ensuring persistent volumes are removed")
 	removed, err = r.ensurePersistentVolumesRemoved(ctx)
 	if err != nil {
 		errs = append(errs, err)
 	}
-	allRemoved = allRemoved && removed
-
-	if len(errs) > 0 {
-		return errors.NewAggregate(errs)
+	if !removed {
+		remaining.Insert("persistent-volumes")
 	}
 
-	if !allRemoved {
-		return nil
-	}
-
-	resourcesDestroyedCond := &metav1.Condition{
-		Type:   string(hyperv1.CloudResourcesDestroyed),
-		Status: metav1.ConditionTrue,
-		Reason: "CloudResourcesDestroyed",
-	}
-
-	meta.SetStatusCondition(&hcp.Status.Conditions, *resourcesDestroyedCond)
-	if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
-		return fmt.Errorf("failed to set resources destroyed condition: %w", err)
-	}
-
-	return nil
+	return remaining, errors.NewAggregate(errs)
 }
 
 func (r *reconciler) ensureResourceCreationIsBlocked(ctx context.Context) error {
@@ -1621,7 +1658,7 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		driver := manifests.ClusterCSIDriver(operatorv1.AWSEBSCSIDriver)
-		if _, err := r.CreateOrUpdate(ctx, r.client, storageCR, func() error {
+		if _, err := r.CreateOrUpdate(ctx, r.client, driver, func() error {
 			storage.ReconcileClusterCSIDriver(driver)
 			return nil
 		}); err != nil {

@@ -2,10 +2,12 @@ package globalconfig
 
 import (
 	"fmt"
+	"testing"
+
 	"github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
-	"testing"
+	"k8s.io/utils/pointer"
 )
 
 func TestApplyNamedCertificateMounts(t *testing.T) {
@@ -46,7 +48,8 @@ func TestApplyNamedCertificateMounts(t *testing.T) {
 					Name: "named-cert-1",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							SecretName: "example-cert",
+							SecretName:  "example-cert",
+							DefaultMode: pointer.Int32Ptr(0640),
 						},
 					},
 				},

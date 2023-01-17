@@ -625,7 +625,7 @@ func TestDestroyCloudResources(t *testing.T) {
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
-			err := r.destroyCloudResources(context.Background(), fakeHCP)
+			_, err := r.destroyCloudResources(context.Background(), fakeHCP)
 			g.Expect(err).ToNot(HaveOccurred())
 			verifyCleanupWebhook(g, guestClient)
 			if test.verify != nil {

@@ -251,7 +251,10 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 				// thus we can assume us-east-1 without having to request it on the command line
 				Value: "us-east-1",
 			})
-		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args, "--aws-zone-type=public")
+		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
+			"--aws-zone-type=public",
+			"--aws-batch-change-interval=10s",
+		)
 	}
 
 	return deployment
@@ -772,6 +775,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"route.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"image.openshift.io"},
 				Resources: []string{"*"},
 				Verbs:     []string{"*"},
 			},

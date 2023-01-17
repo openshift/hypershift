@@ -18,6 +18,7 @@ type CVOParams struct {
 	ClusterID               string
 	OwnerRef                config.OwnerRef
 	DeploymentConfig        config.DeploymentConfig
+	PlatformType            hyperv1.PlatformType
 }
 
 func NewCVOParams(hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *CVOParams {
@@ -27,6 +28,7 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, images map[string]string, set
 		Image:                   hcp.Spec.ReleaseImage,
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ClusterID:               hcp.Spec.ClusterID,
+		PlatformType:            hcp.Spec.Platform.Type,
 	}
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		cvoContainerPrepPayload().Name: {

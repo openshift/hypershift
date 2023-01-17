@@ -77,6 +77,7 @@ const (
 	nodePoolAnnotationMaxUnavailable         = "hypershift.openshift.io/nodePoolMaxUnavailable"
 
 	nodePoolAnnotationPlatformMachineTemplate = "hypershift.openshift.io/nodePoolPlatformMachineTemplate"
+	nodePoolAnnotationTaints                  = "hypershift.openshift.io/nodePoolTaints"
 	nodePoolCoreIgnitionConfigLabel           = "hypershift.openshift.io/core-ignition-config"
 	TokenSecretTokenGenerationTime            = "hypershift.openshift.io/last-token-generation-time"
 	TokenSecretReleaseKey                     = "release"
@@ -91,6 +92,8 @@ const (
 	nodeTuningGeneratedConfigLabel = "hypershift.openshift.io/nto-generated-machine-config"
 
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
+
+	labelManagedPrefix = "managed.hypershift.openshift.io"
 )
 
 type NodePoolReconciler struct {
@@ -1280,6 +1283,21 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		},
 	}
 
+	// Propagate labels.
+	for k, v := range nodePool.Spec.NodeLabels {
+		// Propagated managed labels down to Machines with a known hardcoded prefix
+		// so the CPO HCCO Node controller can recongnise them and apply them to Nodes.
+		labelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, k)
+		machineDeployment.Spec.Template.Labels[labelKey] = v
+	}
+
+	// Propagate taints.
+	taintsInJSON, err := taintsToJSON(nodePool.Spec.Taints)
+	if err != nil {
+		return err
+	}
+	machineDeployment.Spec.Template.Annotations[nodePoolAnnotationTaints] = taintsInJSON
+
 	// Set strategy
 	machineDeployment.Spec.Strategy = &capiv1.MachineDeploymentStrategy{}
 	machineDeployment.Spec.Strategy.Type = capiv1.MachineDeploymentStrategyType(nodePool.Spec.Management.Replace.Strategy)
@@ -1366,6 +1384,15 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	}
 
 	return nil
+}
+
+func taintsToJSON(taints []hyperv1.Taint) (string, error) {
+	taintsInJSON, err := json.Marshal(taints)
+	if err != nil {
+		return "", err
+	}
+
+	return string(taintsInJSON), nil
 }
 
 func (r *NodePoolReconciler) reconcileMachineHealthCheck(mhc *capiv1.MachineHealthCheck,

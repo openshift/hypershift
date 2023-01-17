@@ -62,6 +62,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 	}
 	p.DeploymentConfig.AdditionalLabels = map[string]string{
 		"name":                        "dns-operator",
+		"app":                         "dns-operator",
 		hyperv1.ControlPlaneComponent: "dns-operator",
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
@@ -82,16 +83,16 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 //
 // * The operator is configured with a kubeconfig for the managed cluster.
 //
-// * The operator metrics are exposed using cleartext rather than being
-//   protected using kube-rbac-proxy.  (However, CoreDNS's metrics are still
-//   protected using kube-rbac-proxy on the hosted cluster.)
+//   - The operator metrics are exposed using cleartext rather than being
+//     protected using kube-rbac-proxy.  (However, CoreDNS's metrics are still
+//     protected using kube-rbac-proxy on the hosted cluster.)
 //
-// * The operator has HyperShift-specific annotations, labels, owner reference,
-//   and affinity rules and omits the node selector for control-plane nodes.
+//   - The operator has HyperShift-specific annotations, labels, owner reference,
+//     and affinity rules and omits the node selector for control-plane nodes.
 //
-// * The operator has an init container that probes the hosted cluster's
-//   kube-apiserver to verify that the dnses.operator.openshift.io API is
-//   available.
+//   - The operator has an init container that probes the hosted cluster's
+//     kube-apiserver to verify that the dnses.operator.openshift.io API is
+//     available.
 //
 // The DNS operator does not require access to the cloud platform API,
 // hosted-cluster services, or external services, so the operator does not
@@ -143,7 +144,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
 				SecretName:  "dns-operator-kubeconfig",
-				DefaultMode: utilpointer.Int32Ptr(416),
+				DefaultMode: utilpointer.Int32Ptr(0640),
 			},
 		},
 	}}

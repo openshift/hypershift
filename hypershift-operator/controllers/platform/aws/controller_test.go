@@ -54,43 +54,106 @@ func (f *fakeEC2Client) ModifyVpcEndpointServicePermissions(in *ec2.ModifyVpcEnd
 }
 
 func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
-	elbClient := &fakeElbv2Client{out: &elbv2.DescribeLoadBalancersOutput{LoadBalancers: []*elbv2.LoadBalancer{{
-		LoadBalancerArn: aws.String("lb-arn"),
-		State:           &elbv2.LoadBalancerState{Code: aws.String(elbv2.LoadBalancerStateEnumActive)},
-	}}}}
+	const mockControlPlaneOperatorRoleArn = "fakeRoleARN"
 
-	infra := &configv1.Infrastructure{
-		ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
-		Status:     configv1.InfrastructureStatus{InfrastructureName: "management-cluster-infra-id"},
-	}
-	client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(infra).Build()
-
-	ec2Client := &fakeEC2Client{
-		createOut: &ec2.CreateVpcEndpointServiceConfigurationOutput{ServiceConfiguration: &ec2.ServiceConfiguration{ServiceName: aws.String("ep-service")}},
-		permsOut:  &ec2.DescribeVpcEndpointServicePermissionsOutput{},
-	}
-
-	roleARN := "fakeRoleARN"
-	r := AWSEndpointServiceReconciler{
-		Client: client,
-		controlPlaneOperatorRoleARNFn: func(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
-			return roleARN, nil
+	tests := []struct {
+		name                        string
+		additionalAllowedPrincipals []string
+		existingAllowedPrincipals   []string
+		expectedPrincipalsToAdd     []string
+		expectedPrincipalsToRemove  []string
+	}{
+		{
+			name:                    "no additional principals",
+			expectedPrincipalsToAdd: []string{mockControlPlaneOperatorRoleArn},
+		},
+		{
+			name:                        "additional principals",
+			additionalAllowedPrincipals: []string{"additional1", "additional2"},
+			expectedPrincipalsToAdd:     []string{mockControlPlaneOperatorRoleArn, "additional1", "additional2"},
+		},
+		{
+			name:                       "removing extra principals",
+			existingAllowedPrincipals:  []string{"existing1", "existing2"},
+			expectedPrincipalsToAdd:    []string{mockControlPlaneOperatorRoleArn},
+			expectedPrincipalsToRemove: []string{"existing1", "existing2"},
 		},
 	}
 
-	if err := r.reconcileAWSEndpointServiceStatus(context.Background(), &hyperv1.AWSEndpointService{}, nil, ec2Client, elbClient); err != nil {
-		t.Fatalf("reconcileAWSEndpointServiceStatus failed: %v", err)
-	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			elbClient := &fakeElbv2Client{out: &elbv2.DescribeLoadBalancersOutput{LoadBalancers: []*elbv2.LoadBalancer{{
+				LoadBalancerArn: aws.String("lb-arn"),
+				State:           &elbv2.LoadBalancerState{Code: aws.String(elbv2.LoadBalancerStateEnumActive)},
+			}}}}
 
-	if actual, expected := *ec2Client.created.TagSpecifications[0].Tags[0].Key, "kubernetes.io/cluster/management-cluster-infra-id"; actual != expected {
-		t.Errorf("expected first tag key to be %s, was %s", expected, actual)
-	}
+			infra := &configv1.Infrastructure{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Status:     configv1.InfrastructureStatus{InfrastructureName: "management-cluster-infra-id"},
+			}
+			client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(infra).Build()
 
-	if actual, expected := *ec2Client.created.TagSpecifications[0].Tags[0].Value, "owned"; actual != expected {
-		t.Errorf("expected first tags value to be %s, was %s", expected, actual)
-	}
+			// Populate the test's existingAllowedPrincipals into the fakeEC2Client
+			existingAllowedPrincipals := make([]*ec2.AllowedPrincipal, len(test.existingAllowedPrincipals))
+			for i, p := range test.existingAllowedPrincipals {
+				existingAllowedPrincipals[i] = &ec2.AllowedPrincipal{Principal: aws.String(p)}
+			}
 
-	if actual, expected := aws.StringValueSlice(ec2Client.setPerms.AddAllowedPrincipals)[0], roleARN; actual != expected {
-		t.Errorf("expected role arn to be added as an allowed principal, actual: %v", aws.StringValueSlice(ec2Client.setPerms.AddAllowedPrincipals))
+			ec2Client := &fakeEC2Client{
+				createOut: &ec2.CreateVpcEndpointServiceConfigurationOutput{ServiceConfiguration: &ec2.ServiceConfiguration{ServiceName: aws.String("ep-service")}},
+				permsOut: &ec2.DescribeVpcEndpointServicePermissionsOutput{
+					AllowedPrincipals: existingAllowedPrincipals,
+				},
+			}
+
+			r := AWSEndpointServiceReconciler{
+				Client: client,
+				controlPlaneOperatorRoleARNFn: func(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
+					return mockControlPlaneOperatorRoleArn, nil
+				},
+			}
+
+			if err := r.reconcileAWSEndpointServiceStatus(context.Background(), &hyperv1.AWSEndpointService{}, &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							AdditionalAllowedPrincipals: test.additionalAllowedPrincipals,
+						},
+					},
+				},
+			}, ec2Client, elbClient); err != nil {
+				t.Fatalf("reconcileAWSEndpointServiceStatus failed: %v", err)
+			}
+
+			if actual, expected := *ec2Client.created.TagSpecifications[0].Tags[0].Key, "kubernetes.io/cluster/management-cluster-infra-id"; actual != expected {
+				t.Errorf("expected first tag key to be %s, was %s", expected, actual)
+			}
+
+			if actual, expected := *ec2Client.created.TagSpecifications[0].Tags[0].Value, "owned"; actual != expected {
+				t.Errorf("expected first tags value to be %s, was %s", expected, actual)
+			}
+
+			actualToAdd := map[string]struct{}{mockControlPlaneOperatorRoleArn: {}}
+			for _, arn := range ec2Client.setPerms.AddAllowedPrincipals {
+				actualToAdd[*arn] = struct{}{}
+			}
+
+			for _, arn := range test.expectedPrincipalsToAdd {
+				if _, ok := actualToAdd[arn]; !ok {
+					t.Errorf("expected %v to be added as allowed principals, actual: %v", test.expectedPrincipalsToAdd, actualToAdd)
+				}
+			}
+
+			actualToRemove := map[string]struct{}{}
+			for _, arn := range ec2Client.setPerms.RemoveAllowedPrincipals {
+				actualToRemove[*arn] = struct{}{}
+			}
+
+			for _, arn := range test.expectedPrincipalsToRemove {
+				if _, ok := actualToRemove[arn]; !ok {
+					t.Errorf("expected %v to be added as allowed principals, actual: %v", test.expectedPrincipalsToRemove, actualToRemove)
+				}
+			}
+		})
 	}
 }

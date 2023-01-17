@@ -63,6 +63,15 @@ func TotalClientCABundle(ns string) *corev1.ConfigMap {
 	}
 }
 
+func KubeletClientCABundle(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kubelet-client-ca",
+			Namespace: ns,
+		},
+	}
+}
+
 func MetricsClientCertSecret(ns string) *corev1.Secret { return secretFor(ns, "metrics-client") }
 
 func UserCAConfigMap(ns string) *corev1.ConfigMap {

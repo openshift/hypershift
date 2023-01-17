@@ -180,40 +180,6 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 	return nodes.Items
 }
 
-func WaitForNUnReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32) []corev1.Node {
-	g := NewWithT(t)
-
-	t.Logf("Waiting for Nodes to become unready. Want: %v", n)
-	nodes := &corev1.NodeList{}
-	readyNodeCount := 0
-	err := wait.PollImmediateWithContext(ctx, 5*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
-		err = client.List(ctx, nodes)
-		if err != nil {
-			return false, nil
-		}
-		if len(nodes.Items) == 0 {
-			return false, nil
-		}
-		var readyNodes []string
-		for _, node := range nodes.Items {
-			for _, cond := range node.Status.Conditions {
-				if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
-					readyNodes = append(readyNodes, node.Name)
-				}
-			}
-		}
-		if len(readyNodes) != int(n) {
-			readyNodeCount = len(readyNodes)
-			return false, nil
-		}
-		return true, nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
-
-	t.Logf("Wanted Nodes are unready. Count: %v", n)
-	return nodes.Items
-}
-
 func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType, nodePoolName string) []corev1.Node {
 	g := NewWithT(t)
 	start := time.Now()
@@ -257,44 +223,6 @@ func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crcl
 	t.Logf("All nodes for NodePool %s appear to be ready in %s. Count: %v", nodePoolName, time.Since(start).Round(time.Second), n)
 
 	return nodesFromNodePool
-}
-
-func WaitForNUnReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, n int32, nodePoolName string) []corev1.Node {
-	g := NewWithT(t)
-
-	t.Logf("Waiting for Nodes to become unready by NodePool. NodePool: %s Want: %v", nodePoolName, n)
-	nodes := &corev1.NodeList{}
-	readyNodeCount := 0
-
-	err := wait.PollImmediateWithContext(ctx, 5*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
-		err = client.List(ctx, nodes)
-		if err != nil {
-			return false, nil
-		}
-		if len(nodes.Items) == 0 {
-			return false, nil
-		}
-		var readyNodes []string
-		for _, node := range nodes.Items {
-			if node.Labels["hypershift.openshift.io/nodePool"] == nodePoolName {
-				for _, cond := range node.Status.Conditions {
-					if cond.Type == corev1.NodeReady && cond.Status != corev1.ConditionTrue {
-						readyNodes = append(readyNodes, node.Name)
-					}
-				}
-			}
-		}
-
-		if len(readyNodes) != int(n) {
-			readyNodeCount = len(readyNodes)
-			return false, nil
-		}
-		return true, nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure guest nodes became ready, ready: (%d/%d): ", readyNodeCount, n))
-
-	t.Logf("Wanted Nodes are unready for NodePool %s. Count: %v", nodePoolName, n)
-	return nodes.Items
 }
 
 func preRolloutPlatformCheck(t *testing.T, ctx context.Context, client crclient.Client, guestClient crclient.Client, hc *hyperv1.HostedCluster) {
@@ -400,7 +328,9 @@ func WaitForNodePoolVersion(t *testing.T, ctx context.Context, client crclient.C
 	start := time.Now()
 
 	t.Logf("Waiting for nodepool %s/%s to report version %s (currently %s)", nodePool.Namespace, nodePool.Name, version, nodePool.Status.Version)
-	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (done bool, err error) {
+	// TestInPlaceUpgradeNodePool must update nodes in the pool squentially and it takes about 5m per node
+	// TestInPlaceUpgradeNodePool currently uses a single nodepool with 2 replicas so 20m should be enough time (2x expected)
+	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 20*time.Minute, func(ctx context.Context) (done bool, err error) {
 		latest := nodePool.DeepCopy()
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), latest)
 		if err != nil {

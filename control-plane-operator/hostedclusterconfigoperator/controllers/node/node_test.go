@@ -1,6 +1,7 @@
 package node
 
 import (
+	"context"
 	"testing"
 
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -112,9 +113,22 @@ func TestNodeToNodePoolName(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			got, err := r.nodeToNodePoolName(tc.node)
+			got, err := r.nodeToNodePoolName(context.Background(), tc.node)
 			g.Expect(got).To(Equal(tc.expectedNodePoolName))
 			g.Expect(err != nil).To(Equal(tc.error))
 		})
 	}
+}
+
+func TestGetManagedLabels(t *testing.T) {
+	g := NewWithT(t)
+	labels := map[string]string{
+		labelManagedPrefix + "." + "foo": "bar",
+		"not-managed":                    "true",
+	}
+
+	managedLabels := getManagedLabels(labels)
+	g.Expect(managedLabels).To(BeEquivalentTo(map[string]string{
+		"foo": "bar",
+	}))
 }

@@ -124,6 +124,11 @@ const (
 	// For example, to override the memory and cpu request for the Kubernetes APIServer:
 	// resource-request-override.hypershift.openshift.io/kube-apiserver.kube-apiserver: memory=3Gi,cpu=2000m
 	ResourceRequestOverrideAnnotationPrefix = "resource-request-override.hypershift.openshift.io"
+
+	// LimitedSupportLabel is a label that can be used by consumers to indicate
+	// a cluster is somehow out of regular support policy.
+	// https://docs.openshift.com/rosa/rosa_architecture/rosa_policy_service_definition/rosa-service-definition.html#rosa-limited-support_rosa-service-definition.
+	LimitedSupportLabel = "hypershift.openshift.io/limited-support"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
@@ -524,7 +529,7 @@ type ServiceNetworkEntry struct {
 	CIDR ipnet.IPNet `json:"cidr"`
 }
 
-//+kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
+// +kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
 type CIDRBlock string
 
 // APIServerNetworking specifies how the APIServer is exposed inside a cluster
@@ -864,6 +869,15 @@ type AWSPlatformSpec struct {
 	// +kubebuilder:default=Public
 	// +optional
 	EndpointAccess AWSEndpointAccessType `json:"endpointAccess,omitempty"`
+
+	// AdditionalAllowedPrincipals specifies a list of additional allowed principal ARNs
+	// to be added to the hosted control plane's VPC Endpoint Service to enable additional
+	// VPC Endpoint connection requests to be automatically accepted.
+	// See https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html
+	// for more details around VPC Endpoint Service allowed principals.
+	//
+	// +optional
+	AdditionalAllowedPrincipals []string `json:"additionalAllowedPrincipals,omitempty"`
 }
 
 type AWSRoleCredentials struct {
@@ -1218,7 +1232,6 @@ type AWSRolesRef struct {
 	//				"ec2:DeleteVpcEndpoints",
 	//				"ec2:CreateTags",
 	//				"route53:ListHostedZones",
-	// 				"route53:ListHostedZonesByName"
 	//			],
 	//			"Resource": "*"
 	//		},
@@ -1562,12 +1575,50 @@ type AWSKMSSpec struct {
 	Auth AWSKMSAuthSpec `json:"auth"`
 }
 
-// AWSKMSAuthSpec defines metadata about the management of credentials used to interact with AWS KMS
+// AWSKMSAuthSpec defines metadata about the management of credentials used to interact and encrypt data via AWS KMS key.
 type AWSKMSAuthSpec struct {
-	// Credentials contains the name of the secret that holds the aws credentials that can be used
-	// to make the necessary KMS calls. It should at key AWSCredentialsFileSecretKey contain the
-	// aws credentials file that can be used to configure AWS SDKs
-	Credentials corev1.LocalObjectReference `json:"credentials"`
+	// The referenced role must have a trust relationship that allows it to be assumed via web identity.
+	// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
+	// Example:
+	// {
+	//		"Version": "2012-10-17",
+	//		"Statement": [
+	//			{
+	//				"Effect": "Allow",
+	//				"Principal": {
+	//					"Federated": "{{ .ProviderARN }}"
+	//				},
+	//					"Action": "sts:AssumeRoleWithWebIdentity",
+	//				"Condition": {
+	//					"StringEquals": {
+	//						"{{ .ProviderName }}:sub": {{ .ServiceAccounts }}
+	//					}
+	//				}
+	//			}
+	//		]
+	//	}
+	//
+	// AWSKMSARN is an ARN value referencing a role appropriate for managing the auth via the AWS KMS key.
+	//
+	// The following is an example of a valid policy document:
+	//
+	// {
+	//	"Version": "2012-10-17",
+	//	"Statement": [
+	//    	{
+	//			"Effect": "Allow",
+	//			"Action": [
+	//				"kms:Encrypt",
+	//				"kms:Decrypt",
+	//				"kms:ReEncrypt*",
+	//				"kms:GenerateDataKey*",
+	//				"kms:DescribeKey"
+	//			],
+	//			"Resource": %q
+	//		}
+	//	]
+	// }
+	AWSKMSRoleARN string `json:"awsKms"`
 }
 
 // AWSKMSKeyEntry defines metadata to locate the encryption key in AWS

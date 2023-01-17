@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,6 +37,9 @@ type hypershiftMetrics struct {
 	clusterDeletionTime                    *prometheus.GaugeVec
 	clusterGuestCloudResourcesDeletionTime *prometheus.GaugeVec
 
+	clusterProxy                       *prometheus.GaugeVec
+	clusterIdentityProviders           *prometheus.GaugeVec
+	clusterLimitedSupportEnabled       *prometheus.GaugeVec
 	hostedClusters                     *prometheus.GaugeVec
 	hostedClustersWithFailureCondition *prometheus.GaugeVec
 	hostedClustersNodePools            *prometheus.GaugeVec
@@ -67,6 +72,18 @@ func newMetrics(client crclient.Client, log logr.Logger) *hypershiftMetrics {
 			Help: "Time in seconds it took from initial cluster creation to HostedClusterAvailable condition becoming true",
 			Name: "hypershift_cluster_available_duration_seconds",
 		}, []string{"name"}),
+		clusterProxy: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Help: "Indicates cluster proxy state for each cluster",
+			Name: "hypershift_cluster_proxy",
+		}, []string{"namespace", "name", "proxy_http", "proxy_https", "proxy_trusted_ca"}),
+		clusterIdentityProviders: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Help: "Indicates the number any identity provider in the fleet",
+			Name: "hypershift_cluster_identity_providers",
+		}, []string{"identity_provider"}),
+		clusterLimitedSupportEnabled: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Help: "Indicates if limited support is enabled for each cluster",
+			Name: "hypershift_cluster_limited_support_enabled",
+		}, []string{"namespace", "name"}),
 		hostedClusters: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "hypershift_hostedclusters",
 			Help: "Number of HostedClusters by platform",
@@ -139,6 +156,15 @@ func setupMetrics(mgr manager.Manager) error {
 	if err := crmetrics.Registry.Register(metrics.clusterAvailableTime); err != nil {
 		return fmt.Errorf("failed to to register clusterAvailableTime metric: %w", err)
 	}
+	if err := crmetrics.Registry.Register(metrics.clusterProxy); err != nil {
+		return fmt.Errorf("failed to to register clusterProxy metric: %w", err)
+	}
+	if err := crmetrics.Registry.Register(metrics.clusterIdentityProviders); err != nil {
+		return fmt.Errorf("failed to to register clusterIdentityProviders metric: %w", err)
+	}
+	if err := crmetrics.Registry.Register(metrics.clusterLimitedSupportEnabled); err != nil {
+		return fmt.Errorf("failed to to register clusterLimitedSupportEnabled metric: %w", err)
+	}
 	if err := crmetrics.Registry.Register(metrics.hostedClusters); err != nil {
 		return fmt.Errorf("failed to to register hostedClusters metric: %w", err)
 	}
@@ -178,7 +204,50 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 	hcCount := newLabelCounter()
 	hcByConditions := newLabelCounter()
 
+	identityProvidersCounter := map[configv1.IdentityProviderType]float64{
+		configv1.IdentityProviderTypeBasicAuth:     0,
+		configv1.IdentityProviderTypeGitHub:        0,
+		configv1.IdentityProviderTypeGitLab:        0,
+		configv1.IdentityProviderTypeGoogle:        0,
+		configv1.IdentityProviderTypeHTPasswd:      0,
+		configv1.IdentityProviderTypeKeystone:      0,
+		configv1.IdentityProviderTypeLDAP:          0,
+		configv1.IdentityProviderTypeOpenID:        0,
+		configv1.IdentityProviderTypeRequestHeader: 0,
+	}
+
 	for _, hc := range hostedClusters.Items {
+		// Collect proxy metric.
+		var proxyHTTP, proxyHTTPS, proxyTrustedCA string
+		if hc.Spec.Configuration != nil && hc.Spec.Configuration.Proxy != nil {
+			if hc.Spec.Configuration.Proxy.HTTPProxy != "" {
+				proxyHTTP = "1"
+			}
+			if hc.Spec.Configuration.Proxy.HTTPSProxy != "" {
+				proxyHTTPS = "1"
+			}
+			if hc.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+				proxyTrustedCA = "1"
+			}
+			m.clusterProxy.WithLabelValues(hc.Namespace, hc.Name, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(1)
+		} else {
+			m.clusterProxy.WithLabelValues(hc.Namespace, hc.Name, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(0)
+		}
+
+		// Group identityProviders by type.
+		if hc.Spec.Configuration != nil && hc.Spec.Configuration.OAuth != nil {
+			for _, identityProvider := range hc.Spec.Configuration.OAuth.IdentityProviders {
+				identityProvidersCounter[identityProvider.Type] = identityProvidersCounter[identityProvider.Type] + 1
+			}
+		}
+
+		// Collect limited support metric.
+		if _, ok := hc.Labels[hyperv1.LimitedSupportLabel]; ok {
+			m.clusterLimitedSupportEnabled.WithLabelValues(hc.Namespace, hc.Name).Set(1)
+		} else {
+			m.clusterLimitedSupportEnabled.WithLabelValues(hc.Namespace, hc.Name).Set(0)
+		}
+
 		creationTime := clusterCreationTime(&hc)
 		if creationTime != nil {
 			m.clusterCreationTime.WithLabelValues(hc.Namespace + "/" + hc.Name).Set(*creationTime)
@@ -210,6 +279,11 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 		if guestCloudResourcesDeletionTime != nil {
 			m.clusterGuestCloudResourcesDeletionTime.WithLabelValues(crclient.ObjectKeyFromObject(&hc).String()).Set(*guestCloudResourcesDeletionTime)
 		}
+	}
+
+	// Collect identityProvider metric.
+	for identityProvider, count := range identityProvidersCounter {
+		m.clusterIdentityProviders.WithLabelValues(string(identityProvider)).Set(count)
 	}
 
 	// Capture cluster deletion time.

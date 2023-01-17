@@ -142,6 +142,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 	}
 	dep.Spec.Template.Labels = map[string]string{
 		"name":                        operatorName,
+		"app":                         operatorName,
 		hyperv1.ControlPlaneComponent: operatorName,
 	}
 

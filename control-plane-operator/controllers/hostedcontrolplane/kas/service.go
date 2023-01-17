@@ -15,7 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
-func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int, apiAllowedCIDRBlocks []string, isPublic bool) error {
+func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int, apiAllowedCIDRBlocks []string, isPublic, isPrivate bool) error {
 	util.EnsureOwnerRef(svc, owner)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = kasLabels()
@@ -48,6 +48,13 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
 				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
+			}
+			if isPrivate {
+				// AWS Private link requires endpoint and service endpoints to exist in the same underlying zone.
+				// To ensure that requirement is satisfied in Regions with more than 3 zones, managed services create subnets in all of them.
+				// That and having this enabled in the load balancers would make the private link communication to always succeed.
+				// Without this the connection might go to a subnet without Node and so it would be rejected.
+				svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
 			}
 		} else {
 			svc.Spec.Type = corev1.ServiceTypeClusterIP
@@ -122,6 +129,8 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
 	}
+
+	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
 	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
 	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
 	svc.Spec.Ports[0] = portSpec

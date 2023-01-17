@@ -5,6 +5,7 @@ package e2e
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,7 +32,14 @@ func TestCreateCluster(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
+	zones := strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ",")
+	if len(zones) >= 3 {
+		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
+		t.Logf("Sufficient zones available for InfrastructureAvailabilityPolicy HighlyAvailable")
+		clusterOpts.AWSPlatform.Zones = zones
+		clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
+		clusterOpts.NodePoolReplicas = 1
+	}
 
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
 
@@ -40,7 +48,7 @@ func TestCreateCluster(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
 
 	// Wait for Nodes to be Ready
-	numNodes := int32(globalOpts.configurableClusterOptions.NodePoolReplicas * len(clusterOpts.AWSPlatform.Zones))
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
 	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// TODO (alberto): move into WaitForNReadyNodes after this PR github.com/openshift/hypershift/pull/1702 gets merged so it's validated by any call to the function in any test.
@@ -76,8 +84,6 @@ func TestNoneCreateCluster(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	clusterOpts.ControlPlaneAvailabilityPolicy = "SingleReplica"
-
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir)
 
 	// Wait for the rollout to be reported complete

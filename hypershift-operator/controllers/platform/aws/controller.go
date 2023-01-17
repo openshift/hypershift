@@ -441,16 +441,17 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx con
 	for _, allowed := range permResp.AllowedPrincipals {
 		oldPerms.Insert(aws.StringValue(allowed.Principal))
 	}
-	desriredPerms := sets.NewString(controlPlaneOperatorRoleARN)
+	desiredPerms := sets.NewString(controlPlaneOperatorRoleARN)
+	desiredPerms = desiredPerms.Insert(hostedCluster.Spec.Platform.AWS.AdditionalAllowedPrincipals...)
 
-	if !desriredPerms.Equal(oldPerms) {
+	if !desiredPerms.Equal(oldPerms) {
 		input := &ec2.ModifyVpcEndpointServicePermissionsInput{
 			ServiceId: aws.String(serviceID),
 		}
-		if added := desriredPerms.Difference(oldPerms).List(); len(added) > 0 {
+		if added := desiredPerms.Difference(oldPerms).List(); len(added) > 0 {
 			input.AddAllowedPrincipals = aws.StringSlice(added)
 		}
-		if removed := oldPerms.Difference(desriredPerms).List(); len(removed) > 0 {
+		if removed := oldPerms.Difference(desiredPerms).List(); len(removed) > 0 {
 			input.RemoveAllowedPrincipals = aws.StringSlice(removed)
 		}
 		_, err := ec2Client.ModifyVpcEndpointServicePermissions(input)
