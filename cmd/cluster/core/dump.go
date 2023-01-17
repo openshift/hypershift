@@ -12,6 +12,7 @@ import (
 	"github.com/go-logr/logr"
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
@@ -206,6 +207,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capikubevirt.KubevirtMachineTemplate{},
 		&capikubevirt.KubevirtCluster{},
 		&routev1.Route{},
+		&imagev1.ImageStream{},
 		&networkingv1.NetworkPolicy{},
 	}
 	resourceList := strings.Join(resourceTypes(resources), ",")

@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: certified-operators-catalog
+  annotations:
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
 spec:
   selector:
     matchLabels:
@@ -9,6 +11,8 @@ spec:
   replicas: 1
   template:
     metadata:
+      annotations:
+        alpha.image.policy.openshift.io/resolve-names: '*'
       labels:
         olm.catalogSource: certified-operators
         app: certified-operators-catalog
@@ -19,7 +23,7 @@ spec:
         kubernetes.io/os: linux
       containers:
         - name: registry
-          image: registry.redhat.io/redhat/certified-operator-index:v4.11
+          image: catalogs:certified-operators
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 50051

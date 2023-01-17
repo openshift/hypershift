@@ -779,6 +779,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"*"},
 			},
 			{
+				APIGroups: []string{"image.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+			{
 				APIGroups: []string{"security.openshift.io"},
 				Resources: []string{"securitycontextconstraints"},
 				Verbs:     []string{"*"},

@@ -2515,6 +2515,13 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImage.ComponentImages(), releaseImage.Version(), r.SetDefaultSecurityContext)
 
 	if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {
+		catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
+			return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile certified operators service: %w", err)
+		}
+
 		certifiedOperatorsService := manifests.CertifiedOperatorsService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, certifiedOperatorsService, func() error {
 			return olm.ReconcileCertifiedOperatorsService(certifiedOperatorsService, p.OwnerRef)
@@ -2582,31 +2589,6 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 			return olm.ReconcileCatalogRolloutRoleBinding(catalogRolloutRoleBinding, p.OwnerRef)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile catalog rollout rolebinding: %w", err)
-		}
-
-		certifiedOperatorsCronJob := manifests.CertifiedOperatorsCronJob(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, certifiedOperatorsCronJob, func() error {
-			return olm.ReconcileCertifiedOperatorsCronJob(certifiedOperatorsCronJob, p.OwnerRef, p.CLIImage)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile certified operators cronjob: %w", err)
-		}
-		communityOperatorsCronJob := manifests.CommunityOperatorsCronJob(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, communityOperatorsCronJob, func() error {
-			return olm.ReconcileCommunityOperatorsCronJob(communityOperatorsCronJob, p.OwnerRef, p.CLIImage)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile community operators cronjob: %w", err)
-		}
-		marketplaceOperatorsCronJob := manifests.RedHatMarketplaceOperatorsCronJob(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, marketplaceOperatorsCronJob, func() error {
-			return olm.ReconcileRedHatMarketplaceOperatorsCronJob(marketplaceOperatorsCronJob, p.OwnerRef, p.CLIImage)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile marketplace operators cronjob: %w", err)
-		}
-		redHatOperatorsCronJob := manifests.RedHatOperatorsCronJob(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, redHatOperatorsCronJob, func() error {
-			return olm.ReconcileRedHatOperatorsCronJob(redHatOperatorsCronJob, p.OwnerRef, p.CLIImage)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile red hat operators cronjob: %w", err)
 		}
 	}
 

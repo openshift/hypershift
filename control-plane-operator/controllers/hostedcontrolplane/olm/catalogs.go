@@ -11,7 +11,8 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	batchv1 "k8s.io/api/batch/v1"
+	imagev1 "github.com/openshift/api/image/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 
@@ -86,36 +87,70 @@ func ReconcileRedHatOperatorsDeployment(deployment *appsv1.Deployment, ownerRef 
 
 func reconcileCatalogDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, sourceDeployment *appsv1.Deployment) error {
 	ownerRef.ApplyTo(deployment)
+	if deployment.Annotations == nil {
+		deployment.Annotations = map[string]string{}
+	}
+	for k, v := range sourceDeployment.Annotations {
+		deployment.Annotations[k] = v
+	}
+	image := "from:imagestream"
+	// If deployment already exists, imagestream tag will already populate the container image
+	if len(deployment.Spec.Template.Spec.Containers) > 0 && deployment.Spec.Template.Spec.Containers[0].Image != "" {
+		image = deployment.Spec.Template.Spec.Containers[0].Image
+	}
 	deployment.Spec = sourceDeployment.DeepCopy().Spec
+	deployment.Spec.Template.Spec.Containers[0].Image = image
 	dc.ApplyTo(deployment)
 	return nil
 }
 
-var (
-	certifiedCatalogRolloutCronJob         = assets.MustCronJob(content.ReadFile, "assets/catalog-certified-rollout.cronjob.yaml")
-	communityCatalogRolloutCronJob         = assets.MustCronJob(content.ReadFile, "assets/catalog-community-rollout.cronjob.yaml")
-	redHatMarketplaceCatalogRolloutCronJob = assets.MustCronJob(content.ReadFile, "assets/catalog-redhat-marketplace-rollout.cronjob.yaml")
-	redHatOperatorsCatalogRolloutCronJob   = assets.MustCronJob(content.ReadFile, "assets/catalog-redhat-operators-rollout.cronjob.yaml")
-)
-
-func ReconcileCertifiedOperatorsCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
-	return reconcileCatalogCronJob(cronJob, ownerRef, cliImage, certifiedCatalogRolloutCronJob)
-}
-func ReconcileCommunityOperatorsCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
-	return reconcileCatalogCronJob(cronJob, ownerRef, cliImage, communityCatalogRolloutCronJob)
-}
-func ReconcileRedHatMarketplaceOperatorsCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
-	return reconcileCatalogCronJob(cronJob, ownerRef, cliImage, redHatMarketplaceCatalogRolloutCronJob)
-}
-func ReconcileRedHatOperatorsCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, cliImage string) error {
-	return reconcileCatalogCronJob(cronJob, ownerRef, cliImage, redHatOperatorsCatalogRolloutCronJob)
+func findTagReference(tags []imagev1.TagReference, name string) *imagev1.TagReference {
+	for _, tag := range tags {
+		if tag.Name == name {
+			return &tag
+		}
+	}
+	return nil
 }
 
-func reconcileCatalogCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, cliImage string, sourceCronJob *batchv1.CronJob) error {
-	ownerRef.ApplyTo(cronJob)
-	cronJob.Spec = sourceCronJob.DeepCopy().Spec
-	cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Image = cliImage
-	cronJob.Spec.Schedule = generateModularDailyCronSchedule([]byte(cronJob.Namespace))
+var catalogToImage map[string]string = map[string]string{
+	"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.12",
+	"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.12",
+	"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.12",
+	"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.12",
+}
+
+func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef) error {
+	imageStream.Spec.LookupPolicy.Local = true
+	if imageStream.Spec.Tags == nil {
+		imageStream.Spec.Tags = []imagev1.TagReference{}
+	}
+	for name, image := range catalogToImage {
+		tagRef := findTagReference(imageStream.Spec.Tags, name)
+		if tagRef == nil {
+			imageStream.Spec.Tags = append(imageStream.Spec.Tags, imagev1.TagReference{
+				Name: name,
+				From: &corev1.ObjectReference{
+					Kind: "DockerImage",
+					Name: image,
+				},
+				ReferencePolicy: imagev1.TagReferencePolicy{
+					Type: imagev1.LocalTagReferencePolicy,
+				},
+				ImportPolicy: imagev1.TagImportPolicy{
+					Scheduled: true,
+				},
+			})
+		} else {
+			tagRef.From = &corev1.ObjectReference{
+				Kind: "DockerImage",
+				Name: image,
+			}
+			tagRef.ReferencePolicy.Type = imagev1.LocalTagReferencePolicy
+			tagRef.ImportPolicy.Scheduled = true
+		}
+	}
+	ownerRef.ApplyTo(imageStream)
 	return nil
 }
 

@@ -11,6 +11,8 @@ spec:
       app: catalog-operator
   template:
     metadata:
+      annotations:
+        alpha.image.policy.openshift.io/resolve-names: '*'
       labels:
         app: catalog-operator
         hypershift.openshift.io/control-plane-component: catalog-operator

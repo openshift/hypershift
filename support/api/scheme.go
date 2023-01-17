@@ -4,6 +4,7 @@ import (
 	"os"
 
 	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
 	oauthv1 "github.com/openshift/api/oauth/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -64,6 +65,7 @@ func init() {
 	oauthv1.AddToScheme(Scheme)
 	osinv1.AddToScheme(Scheme)
 	routev1.AddToScheme(Scheme)
+	imagev1.AddToScheme(Scheme)
 	rbacv1.AddToScheme(Scheme)
 	corev1.AddToScheme(Scheme)
 	apiextensionsv1.AddToScheme(Scheme)

@@ -2286,6 +2286,11 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			Verbs:     []string{"*"},
 		},
 		{
+			APIGroups: []string{"image.openshift.io"},
+			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		},
+		{
 			APIGroups: []string{""},
 			Resources: []string{
 				"events",
