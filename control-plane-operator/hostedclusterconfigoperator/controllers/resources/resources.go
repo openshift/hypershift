@@ -690,7 +690,6 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		manifestAndReconcile[*rbacv1.Role]{manifest: manifests.KCMLeaderElectionRole, reconcile: rbac.ReconcileKCMLeaderElectionRole},
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.KCMLeaderElectionRoleBinding, reconcile: rbac.ReconcileKCMLeaderElectionRoleBinding},
 	}
-
 	var errs []error
 	for _, m := range rbac {
 		if err := m.upsert(ctx, r.client, r.CreateOrUpdate); err != nil {
@@ -722,6 +721,51 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 			errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller cert: %w", err))
 		}
 	}
+
+	// Default Ingress is passed through as a subdomain of the infra/mgmt cluster
+	// for KubeVirt when the base domain passthrough feature is in use.
+	if hcp.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
+		hcp.Spec.Platform.Kubevirt != nil &&
+		hcp.Spec.Platform.Kubevirt.BaseDomainPassthrough != nil &&
+		*hcp.Spec.Platform.Kubevirt.BaseDomainPassthrough {
+
+		// Here we are creating a route and service in the hosted control plane namespace
+		// while in the HCCO (which typically only works on the guest client, not the mgmt client).
+		//
+		// This is being done in the HCCO because we have to get the NodePort's port used by the
+		// default ingress services in the guest cluster in order to create the service in the
+		// mgmt/infra cluster. basically, the mgmt cluster service has to point the backend
+		// "somewhere", and that somewhere is the nodeport's port of the routers in the guest cluster.
+		// The component that can get that information about the nodeport's port is the HCCO, so
+		// that's why we're reconciling a service and route within hosted control plane in the HCCO
+
+		defaultIngressNodePortService := manifests.IngressDefaultIngressNodePortService()
+		err := r.client.Get(ctx, client.ObjectKeyFromObject(defaultIngressNodePortService), defaultIngressNodePortService)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to retrieve guest cluster ingress NodePort: %w", err))
+		}
+
+		hcpNamespace := hcp.Namespace
+
+		// Manifests for infra/mgmt cluster passthrough service
+		cpService := manifests.IngressDefaultIngressPassthroughService(hcpNamespace)
+
+		// Manifests for infra/mgmt cluster passthrough routes
+		cpPassthroughRoute := manifests.IngressDefaultIngressPassthroughRoute(hcpNamespace)
+
+		if _, err := r.CreateOrUpdate(ctx, r.cpClient, cpService, func() error {
+			return ingress.ReconcileDefaultIngressPassthroughService(cpService, defaultIngressNodePortService, hcp)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile kubevirt ingress passthrough service: %w", err))
+		}
+
+		if _, err := r.CreateOrUpdate(ctx, r.cpClient, cpPassthroughRoute, func() error {
+			return ingress.ReconcileDefaultIngressPassthroughRoute(cpPassthroughRoute, cpService, hcp)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile kubevirt ingress passthrough route: %w", err))
+		}
+	}
+
 	return errors.NewAggregate(errs)
 }
 

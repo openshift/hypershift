@@ -112,7 +112,7 @@ func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClien
 
 		// Wait for the rollout to be complete
 		t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
-		e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedClusterClient, hostedCluster, globalOpts.LatestReleaseImage)
+		e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster, globalOpts.LatestReleaseImage)
 
 		// MachineConfig Actions
 		ignitionConfig := ignitionapi.Config{

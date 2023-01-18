@@ -28,7 +28,7 @@ func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef
 	return nil
 }
 
-func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
+func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, platform hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(role)
 	role.Rules = []rbacv1.PolicyRule{
 		{
@@ -150,6 +150,51 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 				"watch",
 			},
 		},
+	}
+
+	switch platform {
+	case hyperv1.KubevirtPlatform:
+		// By isolating these rules behind the KubevirtPlatform switch case,
+		// we know we can add/remove from this list in the future without
+		// impacting other platforms.
+		role.Rules = append(role.Rules, []rbacv1.PolicyRule{
+			// These are needed by the KubeVirt platform in order to
+			// use a subdomain route for the guest cluster's default
+			// ingress
+			{
+				APIGroups: []string{"route.openshift.io"},
+				Resources: []string{"routes"},
+				Verbs: []string{
+					"create",
+					"get",
+					"patch",
+					"update",
+					"list",
+					"watch",
+				},
+			},
+			{
+				APIGroups: []string{"route.openshift.io"},
+				Resources: []string{"routes/custom-host"},
+				Verbs: []string{
+					"create",
+				},
+			},
+			{
+				APIGroups: []string{corev1.SchemeGroupVersion.Group},
+				Resources: []string{
+					"services",
+				},
+				Verbs: []string{
+					"create",
+					"get",
+					"patch",
+					"update",
+					"list",
+					"watch",
+				},
+			},
+		}...)
 	}
 	return nil
 }
