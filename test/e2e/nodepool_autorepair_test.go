@@ -95,7 +95,7 @@ func testNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Clien
 
 		// Wait for the rollout to be reported complete
 		t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
-		e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedClusterClient, hostedCluster, globalOpts.LatestReleaseImage)
+		e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster, globalOpts.LatestReleaseImage)
 
 		// Terminate one of the machines belonging to the cluster
 		t.Log("Terminating AWS Instance with a autorepare NodePool")

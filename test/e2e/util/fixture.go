@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
 	. "github.com/onsi/gomega"
-	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
@@ -198,20 +197,6 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 		opts.InfraID = hc.Name
 	case hyperv1.KubevirtPlatform:
 		opts.KubevirtPlatform.RootVolumeSize = 16
-
-		// get base domain from default ingress of management cluster
-		defaultIngressOperator := &operatorv1.IngressController{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "default",
-				Namespace: "openshift-ingress-operator",
-			},
-		}
-		err := client.Get(ctx, crclient.ObjectKeyFromObject(defaultIngressOperator), defaultIngressOperator)
-		if err != nil {
-			return opts, err
-		}
-
-		opts.BaseDomain = defaultIngressOperator.Status.Domain
 	case hyperv1.PowerVSPlatform:
 		opts.InfraID = fmt.Sprintf("%s-infra", hc.Name)
 	}
