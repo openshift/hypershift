@@ -191,6 +191,10 @@ func OpenShiftOAuthServerCert(ns string) *corev1.Secret { return secretFor(ns, "
 
 func MachineConfigServerCert(ns string) *corev1.Secret { return secretFor(ns, "mcs-crt") }
 
+func ClusterNodeTuningOperatorServingCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "node-tuning-operator-tls")
+}
+
 func OLMPackageServerCertSecret(ns string) *corev1.Secret { return secretFor(ns, "packageserver-cert") }
 
 func OLMOperatorServingCertSecret(ns string) *corev1.Secret {
