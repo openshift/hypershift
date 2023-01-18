@@ -3,9 +3,11 @@ package nto
 import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
+
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -57,9 +59,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 
 func ReconcileClusterNodeTuningOperatorMetricsService(svc *corev1.Service, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(svc)
-	svc.Annotations = map[string]string{
-		"service.beta.openshift.io/serving-cert-secret-name": "node-tuning-operator-tls",
-	}
 
 	svc.Labels = map[string]string{
 		"name":                        metricsServiceName,
@@ -102,23 +101,23 @@ func ReconcileClusterNodeTuningOperatorServiceMonitor(sm *prometheusoperatorv1.S
 					Cert: prometheusoperatorv1.SecretOrConfigMap{
 						Secret: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: "node-tuning-operator-tls",
+								Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
 							},
 							Key: "tls.crt",
 						},
 					},
 					KeySecret: &corev1.SecretKeySelector{
 						LocalObjectReference: corev1.LocalObjectReference{
-							Name: "node-tuning-operator-tls",
+							Name: manifests.MetricsClientCertSecret(sm.Namespace).Name,
 						},
 						Key: "tls.key",
 					},
 					CA: prometheusoperatorv1.SecretOrConfigMap{
 						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: "openshift-service-ca.crt",
+								Name: manifests.RootCAConfigMap(sm.Namespace).Name,
 							},
-							Key: "service-ca.crt",
+							Key: certs.CASignerCertMapKey,
 						},
 					},
 				},
@@ -230,12 +229,14 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "node-tuning-operator-tls", MountPath: "/etc/secrets"},
+			{Name: "metrics-client-ca", MountPath: "/tmp/metrics-client-ca"},
 			{Name: "trusted-ca", MountPath: "/var/run/configmaps/trusted-ca/"},
 			{Name: "hosted-kubeconfig", MountPath: "/etc/kubernetes"},
 		},
 	}}
 	dep.Spec.Template.Spec.Volumes = []corev1.Volume{
 		{Name: "node-tuning-operator-tls", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "node-tuning-operator-tls"}}},
+		{Name: "metrics-client-ca", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "metrics-client"}}},
 		{Name: "trusted-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
 			Optional:             utilpointer.Bool(true),
 			LocalObjectReference: corev1.LocalObjectReference{Name: "trusted-ca"},
