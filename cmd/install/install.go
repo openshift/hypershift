@@ -196,18 +196,18 @@ func NewCommand() *cobra.Command {
 			return err
 		}
 
-		objects, err := hyperShiftOperatorManifests(opts)
+		objects, err := HyperShiftOperatorManifests(opts)
 		if err != nil {
 			return err
 		}
 
-		err = apply(cmd.Context(), objects)
+		err = Apply(cmd.Context(), objects)
 		if err != nil {
 			return err
 		}
 
 		if opts.WaitUntilAvailable {
-			if err := waitUntilAvailable(cmd.Context(), opts); err != nil {
+			if err := WaitUntilAvailable(cmd.Context(), opts); err != nil {
 				return err
 			}
 		}
@@ -220,7 +220,7 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func apply(ctx context.Context, objects []crclient.Object) error {
+func Apply(ctx context.Context, objects []crclient.Object) error {
 	client, err := util.GetClient()
 	if err != nil {
 		return err
@@ -255,7 +255,7 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 	return errors.NewAggregate(errs)
 }
 
-func waitUntilAvailable(ctx context.Context, opts Options) error {
+func WaitUntilAvailable(ctx context.Context, opts Options) error {
 	client, err := util.GetClient()
 	if err != nil {
 		return err
@@ -362,7 +362,7 @@ func fetchImageRefs(file string) (map[string]string, error) {
 	return result, nil
 }
 
-func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
+func HyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	var objects []crclient.Object
 
 	var images map[string]string

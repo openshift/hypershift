@@ -4,6 +4,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
+
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -34,12 +44,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"strings"
-	"testing"
-	"time"
 )
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -514,6 +520,62 @@ func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Con
 			}
 		}
 	})
+}
+
+func CreateS3Bucket(ctx context.Context, s3Details map[string]string) (string, error) {
+	bucket := fmt.Sprintf("%s-%s", s3Details["s3Region"], "test-migration")
+
+	sess, err := session.NewSession(&aws.Config{
+		Region:      aws.String(s3Details["s3Region"]),
+		Credentials: credentials.NewSharedCredentials(s3Details["s3Creds"], "default"),
+	})
+	if err != nil {
+		return "", fmt.Errorf("error creating s3 session: %v", err)
+	}
+
+	svc := s3.New(sess)
+
+	if _, err := svc.CreateBucket(&s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+		ACL:    aws.String("public-read"),
+	}); err != nil {
+		return "", fmt.Errorf("Unable to create bucket %q, %v", bucket, err)
+	}
+
+	if err = svc.WaitUntilBucketExists(&s3.HeadBucketInput{
+		Bucket: aws.String(bucket),
+	}); err != nil {
+		return "", fmt.Errorf("Error occurred while waiting for bucket to be created, %v", bucket)
+	}
+
+	fmt.Printf("Bucket %q successfully created\n", bucket)
+
+	return bucket, nil
+}
+
+func DeleteS3Bucket(ctx context.Context, awsConfig aws.Config, bucket string) error {
+	sess, err := session.NewSession(&awsConfig)
+	if err != nil {
+		return fmt.Errorf("error creating s3 session: %v", err)
+	}
+
+	svc := s3.New(sess)
+
+	if _, err := svc.DeleteBucket(&s3.DeleteBucketInput{
+		Bucket: aws.String(bucket),
+	}); err != nil {
+		return fmt.Errorf("Unable to delete bucket %q, %v", bucket, err)
+	}
+
+	if err = svc.WaitUntilBucketNotExists(&s3.HeadBucketInput{
+		Bucket: aws.String(bucket),
+	}); err != nil {
+		return fmt.Errorf("Error occurred while waiting for bucket to be deleted, %v", bucket)
+	}
+
+	fmt.Printf("Bucket %q successfully deleted\n", bucket)
+
+	return nil
 }
 
 func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, nodePoolNamespace string) {
