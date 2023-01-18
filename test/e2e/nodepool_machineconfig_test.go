@@ -163,13 +163,36 @@ func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClien
 			t.Fatalf("failed to update nodepool %s after adding machineconfig: %v", nodePool.Name, err)
 		}
 
+		// DS Customization
 		ds := machineConfigUpdatedVerificationDS.DeepCopy()
+		dsName := ds.Name + "-replace"
+
+		for _, c := range ds.Spec.Template.Spec.Containers {
+			if c.Name == ds.Name {
+				c.Name = dsName
+			}
+		}
+
+		ds.Name = dsName
+		ds.ObjectMeta.Labels = make(map[string]string)
+		ds.ObjectMeta.Labels["hypershift.openshift.io/nodePool"] = nodePool.Name
+
+		ds.Spec.Selector.MatchLabels["name"] = dsName
+		ds.Spec.Selector.MatchLabels["hypershift.openshift.io/nodePool"] = nodePool.Name
+
+		ds.Spec.Template.ObjectMeta.Labels["name"] = dsName
+		ds.Spec.Template.ObjectMeta.Labels["hypershift.openshift.io/nodePool"] = nodePool.Name
+
+		// Set NodeSelector for the DS
+		ds.Spec.Template.Spec.NodeSelector = make(map[string]string)
+		ds.Spec.Template.Spec.NodeSelector["hypershift.openshift.io/nodePool"] = nodePool.Name
+
 		if err := hostedClusterClient.Create(ctx, ds); err != nil {
 			t.Fatalf("failed to create %s DaemonSet in guestcluster: %v", ds.Name, err)
 		}
 
 		t.Logf("waiting for rollout of updated nodepools")
-		err = wait.PollImmediateWithContext(ctx, 5*time.Second, 15*time.Minute, func(ctx context.Context) (bool, error) {
+		err = wait.PollImmediateWithContext(ctx, 10*time.Second, 15*time.Minute, func(ctx context.Context) (bool, error) {
 			if ctx.Err() != nil {
 				return false, err
 			}
@@ -191,7 +214,7 @@ func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClien
 
 			return true, nil
 		})
-		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed waiting for all pods in the machine config update verification DS to be ready: %v", err))
+		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed waiting for all pods in the MachineConfig update verification DS to be ready: %v", err))
 		g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodes)))
 		e2eutil.EnsureNoCrashingPods(t, ctx, mgmtClient, hostedCluster)
 		e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, mgmtClient, hostedCluster)
