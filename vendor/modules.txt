@@ -512,6 +512,9 @@ github.com/openshift/api/security/v1
 github.com/openshift/api/user/v1
 # github.com/openshift/client-go v0.0.0-20220525160904-9e1acff93e4a
 ## explicit; go 1.16
+github.com/openshift/client-go/route/clientset/versioned
+github.com/openshift/client-go/route/clientset/versioned/scheme
+github.com/openshift/client-go/route/clientset/versioned/typed/route/v1
 github.com/openshift/client-go/user/clientset/versioned/scheme
 github.com/openshift/client-go/user/clientset/versioned/typed/user/v1
 # github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
@@ -533,6 +536,7 @@ github.com/openshift/custom-resource-status/conditions/v1
 # github.com/openshift/library-go v0.0.0-20220811164604-fef421ec24f4
 ## explicit; go 1.17
 github.com/openshift/library-go/pkg/operator/apiserver/audit
+github.com/openshift/library-go/test/library/metrics
 # github.com/opentracing/opentracing-go v1.2.0
 ## explicit; go 1.14
 github.com/opentracing/opentracing-go
