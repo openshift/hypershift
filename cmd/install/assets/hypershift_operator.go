@@ -1148,7 +1148,27 @@ func (r HypershiftRecordingRule) Build() *prometheusoperatorv1.PrometheusRule {
 		},
 	}
 
-	rule.Spec = recordingRuleSpec()
+	rule.Spec = prometheusRuleSpec()
+	return rule
+}
+
+type HypershiftAlertingRule struct {
+	Namespace *corev1.Namespace
+}
+
+func (r HypershiftAlertingRule) Build() *prometheusoperatorv1.PrometheusRule {
+	rule := &prometheusoperatorv1.PrometheusRule{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "PrometheusRule",
+			APIVersion: prometheusoperatorv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: r.Namespace.Name,
+			Name:      "alerts",
+		},
+	}
+
+	rule.Spec = prometheusRuleSpec()
 	return rule
 }
 

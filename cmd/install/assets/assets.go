@@ -112,9 +112,9 @@ func getCustomResourceDefinition(files embed.FS, file string) *apiextensionsv1.C
 	return &crd
 }
 
-// recordingRuleSpec is meant to return all prometheus rule groups in a PrometheusRuleSpec.
+// prometheusRuleSpec is meant to return all prometheus rule groups in a PrometheusRuleSpec.
 // At the moment we have only one.
-func recordingRuleSpec() prometheusoperatorv1.PrometheusRuleSpec {
+func prometheusRuleSpec() prometheusoperatorv1.PrometheusRuleSpec {
 	var spec prometheusoperatorv1.PrometheusRuleSpec
 	err := fs.WalkDir(recordingRules, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -123,7 +123,7 @@ func recordingRuleSpec() prometheusoperatorv1.PrometheusRuleSpec {
 		if filepath.Ext(path) != ".yaml" {
 			return nil
 		}
-		spec = getRecordingRuleSpec(recordingRules, path)
+		spec = getPrometheusRuleSpec(recordingRules, path)
 		return nil
 	})
 	if err != nil {
@@ -133,12 +133,12 @@ func recordingRuleSpec() prometheusoperatorv1.PrometheusRuleSpec {
 	return spec
 }
 
-// getRecordingRuleSpec unmarshals a prometheusoperatorv1.PrometheusRuleSpec from file.
-func getRecordingRuleSpec(files embed.FS, file string) prometheusoperatorv1.PrometheusRuleSpec {
-	var recordingRuleSpec prometheusoperatorv1.PrometheusRuleSpec
-	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(getContents(files, file)), 100).Decode(&recordingRuleSpec); err != nil {
+// getPrometheusRuleSpec unmarshals a prometheusoperatorv1.PrometheusRuleSpec from file.
+func getPrometheusRuleSpec(files embed.FS, file string) prometheusoperatorv1.PrometheusRuleSpec {
+	var prometheusRuleSpec prometheusoperatorv1.PrometheusRuleSpec
+	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(getContents(files, file)), 100).Decode(&prometheusRuleSpec); err != nil {
 		panic(err)
 	}
 
-	return recordingRuleSpec
+	return prometheusRuleSpec
 }
