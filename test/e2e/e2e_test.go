@@ -99,6 +99,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSProcessors, "e2e.powervs-processors", "0.5", "Number of processors allocated. Default is 0.5")
 	flag.IntVar(&globalOpts.configurableClusterOptions.PowerVSMemory, "e2e.powervs-memory", 32, "Amount of memory allocated (in GB). Default is 32")
 	flag.BoolVar(&globalOpts.SkipAPIBudgetVerification, "e2e.skip-api-budget", false, "Bool to avoid send metrics to E2E Server on local test execution.")
+	flag.StringVar(&globalOpts.configurableClusterOptions.CI_HyperShiftOperator, "e2e.ci-hypershift-operator", "", "The CI built HyperShift operator based on the contents of the PR")
 	flag.StringVar(&globalOpts.configurableClusterOptions.EtcdStorageClass, "e2e.etcd-storage-class", "", "The persistent volume storage class for etcd data volumes")
 	flag.BoolVar(&globalOpts.RequestServingIsolation, "e2e.test-request-serving-isolation", false, "If set, TestCreate creates a cluster with request serving isolation topology")
 
@@ -363,6 +364,7 @@ type configurableClusterOptions struct {
 	AWSCredentialsFile          string
 	AzureCredentialsFile        string
 	AzureLocation               string
+	CI_HyperShiftOperator       string
 	Region                      string
 	Zone                        stringSliceVar
 	PullSecretFile              string

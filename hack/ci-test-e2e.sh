@@ -9,7 +9,7 @@ set -o monitor
 set -x
 
 CI_TESTS_RUN=${1:-}
-if [ -z  ${CI_TESTS_RUN} ]
+if [ -z  "${CI_TESTS_RUN}" ]
 then
       echo "Running all tests"
 else
@@ -27,7 +27,7 @@ trap generate_junit EXIT
 bin/test-e2e \
   -test.v \
   -test.timeout=2h10m \
-  -test.run=${CI_TESTS_RUN} \
+  -test.run="${CI_TESTS_RUN}" \
   -test.parallel=20 \
   --e2e.aws-credentials-file=/etc/hypershift-pool-aws-credentials/credentials \
   --e2e.aws-zones=us-east-1a,us-east-1b,us-east-1c \
@@ -37,6 +37,7 @@ bin/test-e2e \
   --e2e.base-domain=ci.hypershift.devcluster.openshift.com \
   --e2e.latest-release-image="${OCP_IMAGE_LATEST}" \
   --e2e.previous-release-image="${OCP_IMAGE_PREVIOUS}" \
+  --e2e.ci-hypershift-operator="${CI_HYPERSHIFT_OPERATOR}" \
   --e2e.additional-tags="expirationDate=$(date -d '4 hours' --iso=minutes --utc)" \
   --e2e.aws-endpoint-access=PublicAndPrivate \
   --e2e.external-dns-domain=service.ci.hypershift.devcluster.openshift.com | tee /tmp/test_out
