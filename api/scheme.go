@@ -5,6 +5,7 @@ import (
 
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
@@ -69,4 +70,5 @@ func init() {
 	capikubevirt.AddToScheme(Scheme)
 	capiazure.AddToScheme(Scheme)
 	snapshotv1.AddToScheme(Scheme)
+	imagev1.AddToScheme(Scheme)
 }
