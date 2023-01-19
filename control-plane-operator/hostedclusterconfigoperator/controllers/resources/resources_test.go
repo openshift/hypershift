@@ -56,6 +56,7 @@ var initialObjects = []client.Object{
 		},
 	},
 	manifests.NodeTuningClusterOperator(),
+	manifests.NamespaceKubeSystem(),
 }
 
 func shouldNotError(key client.ObjectKey) bool {
