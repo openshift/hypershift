@@ -319,17 +319,17 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return fmt.Errorf("cloud API Key not set. Set it with IBMCLOUD_API_KEY env var or set file path containing API Key credential in IBMCLOUD_CREDENTIALS")
 	}
 
-	infra.AccountID, err = getAccount(getIAMAuth())
+	infra.AccountID, err = getAccount(ctx, getIAMAuth())
 	if err != nil {
 		return fmt.Errorf("error retrieving account ID %w", err)
 	}
 
-	infra.ResourceGroupID, err = getResourceGroupID(options.ResourceGroup, infra.AccountID)
+	infra.ResourceGroupID, err = getResourceGroupID(ctx, options.ResourceGroup, infra.AccountID)
 	if err != nil {
 		return fmt.Errorf("error getting id for resource group %s, %w", options.ResourceGroup, err)
 	}
 
-	if err = infra.setupBaseDomain(options); err != nil {
+	if err = infra.setupBaseDomain(ctx, options); err != nil {
 		return fmt.Errorf("error setup base domain: %w", err)
 	}
 
@@ -342,11 +342,11 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return fmt.Errorf("error creating vpc service: %w", err)
 	}
 
-	if err = infra.setupVpc(options, v1); err != nil {
+	if err = infra.setupVpc(ctx, options, v1); err != nil {
 		return fmt.Errorf("error setup vpc: %w", err)
 	}
 
-	if err = infra.setupVpcSubnet(options, v1); err != nil {
+	if err = infra.setupVpcSubnet(ctx, options, v1); err != nil {
 		return fmt.Errorf("error setup vpc subnet: %w", err)
 	}
 
@@ -356,7 +356,7 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return fmt.Errorf("error creating powervs session: %w", err)
 	}
 
-	if err = infra.setupPowerVSCloudInstance(options); err != nil {
+	if err = infra.setupPowerVSCloudInstance(ctx, options); err != nil {
 		return fmt.Errorf("error setup powervs cloud instance: %w", err)
 	}
 
@@ -425,7 +425,7 @@ func getIAMAuth() *core.IamAuthenticator {
 }
 
 // getCISDomainDetails getting CIS domain details like CRN and domainID
-func getCISDomainDetails(baseDomain string) (string, string, error) {
+func getCISDomainDetails(ctx context.Context, baseDomain string) (string, string, error) {
 	var CISCRN, CISDomainID string
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{
 		Authenticator: getIAMAuth(),
@@ -440,7 +440,7 @@ func getCISDomainDetails(baseDomain string) (string, string, error) {
 	}
 
 	// getting list of resource instance of type cis
-	serviceID, _, err := getServiceInfo(cisService, "")
+	serviceID, _, err := getServiceInfo(ctx, cisService, "")
 
 	if err != nil {
 		return "", "", fmt.Errorf("error retrieving cis service %w", err)
@@ -453,7 +453,7 @@ func getCISDomainDetails(baseDomain string) (string, string, error) {
 		if start != "" {
 			listResourceOpt.Start = &start
 		}
-		resourceList, _, err := rcv2.ListResourceInstances(&listResourceOpt)
+		resourceList, _, err := rcv2.ListResourceInstancesWithContext(ctx, &listResourceOpt)
 
 		if err != nil {
 			return false, "", err
@@ -476,7 +476,7 @@ func getCISDomainDetails(baseDomain string) (string, string, error) {
 				continue
 			}
 			var zoneList *zonesv1.ListZonesResp
-			zoneList, _, err = zv1.ListZones(&zonesv1.ListZonesOptions{})
+			zoneList, _, err = zv1.ListZonesWithContext(ctx, &zonesv1.ListZonesOptions{})
 			if err != nil {
 				continue
 			}
@@ -514,7 +514,7 @@ func getCISDomainDetails(baseDomain string) (string, string, error) {
 }
 
 // checkForExistingDNSRecord check for existing DNS record with the cluster name
-func checkForExistingDNSRecord(options *CreateInfraOptions, CISCRN string, CISDomainID string) error {
+func checkForExistingDNSRecord(ctx context.Context, options *CreateInfraOptions, CISCRN string, CISDomainID string) error {
 	dnsRecordsV1, err := dnsrecordsv1.NewDnsRecordsV1(&dnsrecordsv1.DnsRecordsV1Options{Crn: &CISCRN, ZoneIdentifier: &CISDomainID, Authenticator: getIAMAuth()})
 	if err != nil {
 		return fmt.Errorf("error creating dns record client: %w", err)
@@ -523,7 +523,7 @@ func checkForExistingDNSRecord(options *CreateInfraOptions, CISCRN string, CISDo
 	recordName := fmt.Sprintf("*.apps.%s.%s", options.Name, options.BaseDomain)
 	listDnsRecordsOpt := &dnsrecordsv1.ListAllDnsRecordsOptions{Name: &recordName}
 
-	dnsRecordsL, _, err := dnsRecordsV1.ListAllDnsRecords(listDnsRecordsOpt)
+	dnsRecordsL, _, err := dnsRecordsV1.ListAllDnsRecordsWithContext(ctx, listDnsRecordsOpt)
 	if err != nil {
 		return err
 	}
@@ -537,15 +537,15 @@ func checkForExistingDNSRecord(options *CreateInfraOptions, CISCRN string, CISDo
 
 // setupBaseDomain get domain id and crn of given base domain
 // TODO(dharaneeshvrd): Currently, resource group provided will be considered only for VPC and PowerVS. Need to look at utilising a common resource group in future for CIS service too and use it while filtering the list
-func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) error {
+func (infra *Infra) setupBaseDomain(ctx context.Context, options *CreateInfraOptions) error {
 	var err error
-	infra.CISCRN, infra.CISDomainID, err = getCISDomainDetails(options.BaseDomain)
+	infra.CISCRN, infra.CISDomainID, err = getCISDomainDetails(ctx, options.BaseDomain)
 
 	if err != nil {
 		return fmt.Errorf("error retrieving cis domain details %w", err)
 	}
 
-	if err = checkForExistingDNSRecord(options, infra.CISCRN, infra.CISDomainID); err != nil {
+	if err = checkForExistingDNSRecord(ctx, options, infra.CISCRN, infra.CISDomainID); err != nil {
 		return err
 	}
 
@@ -554,7 +554,7 @@ func (infra *Infra) setupBaseDomain(options *CreateInfraOptions) error {
 }
 
 // getServiceInfo retrieving id info of given service and service plan
-func getServiceInfo(service string, servicePlan string) (string, string, error) {
+func getServiceInfo(ctx context.Context, service string, servicePlan string) (string, string, error) {
 	var serviceID, servicePlanID string
 	gcv1, err := globalcatalogv1.NewGlobalCatalogV1(&globalcatalogv1.GlobalCatalogV1Options{
 		Authenticator: getIAMAuth(),
@@ -571,7 +571,7 @@ func getServiceInfo(service string, servicePlan string) (string, string, error) 
 	// TO-DO need to explore paging for catalog list since ListCatalogEntriesOptions does not take start
 	include := "*"
 	listCatalogEntriesOpt := globalcatalogv1.ListCatalogEntriesOptions{Include: &include, Q: &service}
-	catalogEntriesList, _, err := gcv1.ListCatalogEntries(&listCatalogEntriesOpt)
+	catalogEntriesList, _, err := gcv1.ListCatalogEntriesWithContext(ctx, &listCatalogEntriesOpt)
 	if err != nil {
 		return "", "", err
 	}
@@ -591,7 +591,7 @@ func getServiceInfo(service string, servicePlan string) (string, string, error) 
 		kind := "plan"
 		getChildOpt := globalcatalogv1.GetChildObjectsOptions{ID: &serviceID, Kind: &kind}
 		var childObjResult *globalcatalogv1.EntrySearchResult
-		childObjResult, _, err = gcv1.GetChildObjects(&getChildOpt)
+		childObjResult, _, err = gcv1.GetChildObjectsWithContext(ctx, &getChildOpt)
 		if err != nil {
 			return "", "", err
 		}
@@ -618,7 +618,7 @@ func getCustomEndpointUrl(serviceName string, defaultUrl string) string {
 }
 
 // getResourceGroupID retrieving id of resource group
-func getResourceGroupID(resourceGroup string, accountID string) (string, error) {
+func getResourceGroupID(ctx context.Context, resourceGroup string, accountID string) (string, error) {
 	rmv2, err := resourcemanagerv2.NewResourceManagerV2(&resourcemanagerv2.ResourceManagerV2Options{
 		Authenticator: getIAMAuth(),
 		URL:           getCustomEndpointUrl(platformService, resourcemanagerv2.DefaultServiceURL),
@@ -632,7 +632,7 @@ func getResourceGroupID(resourceGroup string, accountID string) (string, error) 
 	}
 
 	rmv2ListResourceGroupOpt := resourcemanagerv2.ListResourceGroupsOptions{Name: &resourceGroup, AccountID: &accountID}
-	resourceGroupListResult, _, err := rmv2.ListResourceGroups(&rmv2ListResourceGroupOpt)
+	resourceGroupListResult, _, err := rmv2.ListResourceGroupsWithContext(ctx, &rmv2ListResourceGroupOpt)
 	if err != nil {
 		return "", err
 	}
@@ -648,7 +648,7 @@ func getResourceGroupID(resourceGroup string, accountID string) (string, error) 
 }
 
 // createCloudInstance creating powervs cloud instance
-func (infra *Infra) createCloudInstance(options *CreateInfraOptions) (*resourcecontrollerv2.ResourceInstance, error) {
+func (infra *Infra) createCloudInstance(ctx context.Context, options *CreateInfraOptions) (*resourcecontrollerv2.ResourceInstance, error) {
 
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{
 		Authenticator: getIAMAuth(),
@@ -663,7 +663,7 @@ func (infra *Infra) createCloudInstance(options *CreateInfraOptions) (*resourcec
 		return nil, fmt.Errorf("unable to get resource controller")
 	}
 
-	serviceID, servicePlanID, err := getServiceInfo(powerVSService, powerVSServicePlan)
+	serviceID, servicePlanID, err := getServiceInfo(ctx, powerVSService, powerVSServicePlan)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving id info for powervs service %w", err)
 	}
@@ -672,7 +672,7 @@ func (infra *Infra) createCloudInstance(options *CreateInfraOptions) (*resourcec
 
 	// validate if already a cloud instance available with the infra provided
 	// if yes, make use of that instead of trying to create a new one
-	resourceInstance, err := validateCloudInstanceByName(cloudInstanceName, infra.ResourceGroupID, options.Zone, serviceID, servicePlanID)
+	resourceInstance, err := validateCloudInstanceByName(ctx, cloudInstanceName, infra.ResourceGroupID, options.Zone, serviceID, servicePlanID)
 
 	if resourceInstance != nil {
 		log(options.InfraID).Info("Using existing PowerVS Cloud Instance", "name", cloudInstanceName)
@@ -688,7 +688,7 @@ func (infra *Infra) createCloudInstance(options *CreateInfraOptions) (*resourcec
 		Target:         &target}
 
 	startTime := time.Now()
-	resourceInstance, _, err = rcv2.CreateResourceInstance(&resourceInstanceOpt)
+	resourceInstance, _, err = rcv2.CreateResourceInstanceWithContext(ctx, &resourceInstanceOpt)
 	if err != nil {
 		return nil, err
 	}
@@ -702,7 +702,7 @@ func (infra *Infra) createCloudInstance(options *CreateInfraOptions) (*resourcec
 	}
 
 	f := func() (bool, error) {
-		resourceInstance, _, err = rcv2.GetResourceInstance(&resourcecontrollerv2.GetResourceInstanceOptions{ID: resourceInstance.ID})
+		resourceInstance, _, err = rcv2.GetResourceInstanceWithContext(ctx, &resourcecontrollerv2.GetResourceInstanceOptions{ID: resourceInstance.ID})
 		log(options.InfraID).Info("Waiting for cloud instance to up", "id", resourceInstance.ID, "state", *resourceInstance.State)
 
 		if err != nil {
@@ -723,7 +723,7 @@ func (infra *Infra) createCloudInstance(options *CreateInfraOptions) (*resourcec
 }
 
 // getAccount getting the account id from core.Authenticator
-func getAccount(auth core.Authenticator) (string, error) {
+func getAccount(ctx context.Context, auth core.Authenticator) (string, error) {
 	iamv1, err := iamidentityv1.NewIamIdentityV1(&iamidentityv1.IamIdentityV1Options{
 		Authenticator: auth,
 		URL:           getCustomEndpointUrl(platformService, iamidentityv1.DefaultServiceURL),
@@ -733,7 +733,7 @@ func getAccount(auth core.Authenticator) (string, error) {
 	}
 
 	apiKeyDetailsOpt := iamidentityv1.GetAPIKeysDetailsOptions{IamAPIKey: &cloudApiKey}
-	apiKey, _, err := iamv1.GetAPIKeysDetails(&apiKeyDetailsOpt)
+	apiKey, _, err := iamv1.GetAPIKeysDetailsWithContext(ctx, &apiKeyDetailsOpt)
 	if err != nil {
 		return "", err
 	}
@@ -769,19 +769,19 @@ func createVpcService(region string, infraID string) (*vpcv1.VpcV1, error) {
 }
 
 // setupPowerVSCloudInstance takes care of setting up powervs cloud instance
-func (infra *Infra) setupPowerVSCloudInstance(options *CreateInfraOptions) error {
+func (infra *Infra) setupPowerVSCloudInstance(ctx context.Context, options *CreateInfraOptions) error {
 	log(options.InfraID).Info("Setting up PowerVS Cloud Instance ...")
 	var cloudInstance *resourcecontrollerv2.ResourceInstance
 	if options.CloudInstanceID != "" {
 		log(options.InfraID).Info("Validating PowerVS Cloud Instance", "id", options.CloudInstanceID)
 		var err error
-		cloudInstance, err = validateCloudInstanceByID(options.CloudInstanceID)
+		cloudInstance, err = validateCloudInstanceByID(ctx, options.CloudInstanceID)
 		if err != nil {
 			return fmt.Errorf("error validating cloud instance id %s, %w", options.CloudInstanceID, err)
 		}
 	} else {
 		var err error
-		cloudInstance, err = infra.createCloudInstance(options)
+		cloudInstance, err = infra.createCloudInstance(ctx, options)
 		if err != nil {
 			return fmt.Errorf("error creating cloud instance: %w", err)
 		}
@@ -801,19 +801,19 @@ func (infra *Infra) setupPowerVSCloudInstance(options *CreateInfraOptions) error
 }
 
 // setupVpc takes care of setting up vpc
-func (infra *Infra) setupVpc(options *CreateInfraOptions, v1 *vpcv1.VpcV1) error {
+func (infra *Infra) setupVpc(ctx context.Context, options *CreateInfraOptions, v1 *vpcv1.VpcV1) error {
 	log(options.InfraID).Info("Setting up VPC ...")
 	var vpc *vpcv1.VPC
 	if options.VPC != "" {
 		var err error
 		log(options.InfraID).Info("Validating VPC", "name", options.VPC)
-		vpc, err = validateVpc(options.VPC, infra.ResourceGroupID, v1)
+		vpc, err = validateVpc(ctx, options.VPC, infra.ResourceGroupID, v1)
 		if err != nil {
 			return err
 		}
 	} else {
 		var err error
-		vpc, err = infra.createVpc(options, infra.ResourceGroupID, v1)
+		vpc, err = infra.createVpc(ctx, options, infra.ResourceGroupID, v1)
 		if err != nil {
 			return err
 		}
@@ -836,10 +836,10 @@ func (infra *Infra) setupVpc(options *CreateInfraOptions, v1 *vpcv1.VpcV1) error
 }
 
 // createVpc creates a new vpc with the infra name or will return an existing vpc
-func (infra *Infra) createVpc(options *CreateInfraOptions, resourceGroupID string, v1 *vpcv1.VpcV1) (*vpcv1.VPC, error) {
+func (infra *Infra) createVpc(ctx context.Context, options *CreateInfraOptions, resourceGroupID string, v1 *vpcv1.VpcV1) (*vpcv1.VPC, error) {
 	var startTime time.Time
 	vpcName := fmt.Sprintf("%s-%s", options.InfraID, vpcNameSuffix)
-	vpc, err := validateVpc(vpcName, resourceGroupID, v1)
+	vpc, err := validateVpc(ctx, vpcName, resourceGroupID, v1)
 
 	// if vpc already exist use it or proceed with creating a new one, no need to validate err
 	if vpc != nil && *vpc.Name == vpcName {
@@ -857,14 +857,14 @@ func (infra *Infra) createVpc(options *CreateInfraOptions, resourceGroupID strin
 	}
 
 	startTime = time.Now()
-	vpc, _, err = v1.CreateVPC(vpcOption)
+	vpc, _, err = v1.CreateVPCWithContext(ctx, vpcOption)
 	if err != nil {
 		return nil, err
 	}
 
 	f := func() (bool, error) {
 
-		vpc, _, err = v1.GetVPC(&vpcv1.GetVPCOptions{ID: vpc.ID})
+		vpc, _, err = v1.GetVPCWithContext(ctx, &vpcv1.GetVPCOptions{ID: vpc.ID})
 		if err != nil {
 			return false, err
 		}
@@ -881,7 +881,7 @@ func (infra *Infra) createVpc(options *CreateInfraOptions, resourceGroupID strin
 
 	// Adding allow rules for VPC's default security group to allow http and https for ingress
 	for _, port := range []int64{80, 443} {
-		_, _, err = v1.CreateSecurityGroupRule(&vpcv1.CreateSecurityGroupRuleOptions{
+		_, _, err = v1.CreateSecurityGroupRuleWithContext(ctx, &vpcv1.CreateSecurityGroupRuleOptions{
 			SecurityGroupID: vpc.DefaultSecurityGroup.ID,
 
 			SecurityGroupRulePrototype: &vpcv1.SecurityGroupRulePrototype{
@@ -905,7 +905,7 @@ func (infra *Infra) createVpc(options *CreateInfraOptions, resourceGroupID strin
 }
 
 // setupVpcSubnet takes care of setting up subnet in the vpc
-func (infra *Infra) setupVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1) error {
+func (infra *Infra) setupVpcSubnet(ctx context.Context, options *CreateInfraOptions, v1 *vpcv1.VpcV1) error {
 	log(options.InfraID).Info("Setting up VPC Subnet ...")
 
 	log(options.InfraID).Info("Getting existing VPC Subnet info ...")
@@ -917,7 +917,7 @@ func (infra *Infra) setupVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1)
 			listSubnetOpt.Start = &start
 		}
 
-		vpcSubnetL, _, err := v1.ListSubnets(&listSubnetOpt)
+		vpcSubnetL, _, err := v1.ListSubnetsWithContext(ctx, &listSubnetOpt)
 		if err != nil {
 			return false, "", err
 		}
@@ -948,7 +948,7 @@ func (infra *Infra) setupVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1)
 
 	if infra.VPCSubnetID == "" {
 		var err error
-		subnet, err = infra.createVpcSubnet(options, v1)
+		subnet, err = infra.createVpcSubnet(ctx, options, v1)
 		if err != nil {
 			return err
 		}
@@ -965,7 +965,7 @@ func (infra *Infra) setupVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1)
 }
 
 // createVpcSubnet creates a new subnet in vpc with the infra name or will return an existing subnet in the vpc
-func (infra *Infra) createVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1) (*vpcv1.Subnet, error) {
+func (infra *Infra) createVpcSubnet(ctx context.Context, options *CreateInfraOptions, v1 *vpcv1.VpcV1) (*vpcv1.Subnet, error) {
 	log(options.InfraID).Info("Create VPC Subnet ...")
 	var subnet *vpcv1.Subnet
 	var startTime time.Time
@@ -973,12 +973,12 @@ func (infra *Infra) createVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1
 	resourceGroupIdent := &vpcv1.ResourceGroupIdentity{ID: &infra.ResourceGroupID}
 	subnetName := fmt.Sprintf("%s-%s", options.InfraID, vpcSubnetNameSuffix)
 	ipVersion := "ipv4"
-	zones, _, err := v1.ListRegionZones(&vpcv1.ListRegionZonesOptions{RegionName: &options.VPCRegion})
+	zones, _, err := v1.ListRegionZonesWithContext(ctx, &vpcv1.ListRegionZonesOptions{RegionName: &options.VPCRegion})
 	if err != nil {
 		return nil, err
 	}
 
-	addressPrefixL, _, err := v1.ListVPCAddressPrefixes(&vpcv1.ListVPCAddressPrefixesOptions{VPCID: &infra.VPCID})
+	addressPrefixL, _, err := v1.ListVPCAddressPrefixesWithContext(ctx, &vpcv1.ListVPCAddressPrefixesOptions{VPCID: &infra.VPCID})
 	if err != nil {
 		return nil, err
 	}
@@ -1006,7 +1006,7 @@ func (infra *Infra) createVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1
 		}
 
 		startTime = time.Now()
-		subnet, _, err = v1.CreateSubnet(&vpcv1.CreateSubnetOptions{SubnetPrototype: subnetProto})
+		subnet, _, err = v1.CreateSubnetWithContext(ctx, &vpcv1.CreateSubnetOptions{SubnetPrototype: subnetProto})
 		if err != nil {
 			continue
 		}
@@ -1019,7 +1019,7 @@ func (infra *Infra) createVpcSubnet(options *CreateInfraOptions, v1 *vpcv1.VpcV1
 
 	f := func() (bool, error) {
 
-		subnet, _, err = v1.GetSubnet(&vpcv1.GetSubnetOptions{ID: subnet.ID})
+		subnet, _, err = v1.GetSubnetWithContext(ctx, &vpcv1.GetSubnetOptions{ID: subnet.ID})
 		if err != nil {
 			return false, err
 		}
@@ -1342,7 +1342,7 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, options *CreateI
 			}
 		}
 
-		_, resp, err := directLinkV1.GetGatewayStatus(&directlinkv1.GetGatewayStatusOptions{ID: &infra.CloudConnectionID, Type: &gatewayStatusType})
+		_, resp, err := directLinkV1.GetGatewayStatusWithContext(ctx, &directlinkv1.GetGatewayStatusOptions{ID: &infra.CloudConnectionID, Type: &gatewayStatusType})
 		if err != nil {
 			return false, err
 		}
