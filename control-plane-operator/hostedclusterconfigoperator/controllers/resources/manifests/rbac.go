@@ -71,6 +71,22 @@ func NamespaceSecurityAllocationControllerClusterRoleBinding() *rbacv1.ClusterRo
 	}
 }
 
+func PodSecurityAdmissionLabelSyncerControllerClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:controller:podsecurity-admission-label-syncer-controller",
+		},
+	}
+}
+
+func PodSecurityAdmissionLabelSyncerControllerRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:controller:podsecurity-admission-label-syncer-controller",
+		},
+	}
+}
+
 func NodeBootstrapperClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
