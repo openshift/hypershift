@@ -422,6 +422,11 @@ func TestReconcileAPIServerService(t *testing.T) {
 // TestClusterAutoscalerArgs checks to make sure that fields specified in a ClusterAutoscaling spec
 // become arguments to the autoscaler.
 func TestClusterAutoscalerArgs(t *testing.T) {
+	IgnoreLabelArgs := make([]string, 0)
+	for _, v := range autoscaler.GetIgnoreLabels() {
+		IgnoreLabelArgs = append(IgnoreLabelArgs, fmt.Sprintf("%s=%v", autoscaler.BalancingIgnoreLabelArg, v))
+	}
+
 	tests := map[string]struct {
 		AutoscalerOptions   hyperv1.ClusterAutoscaling
 		ExpectedArgs        []string
@@ -466,6 +471,10 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 				"--expendable-pods-priority-cutoff=-5",
 			},
 			ExpectedMissingArgs: []string{},
+		},
+		"balancing ignore labels": {
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{},
+			ExpectedArgs:      IgnoreLabelArgs,
 		},
 	}
 	for name, test := range tests {
