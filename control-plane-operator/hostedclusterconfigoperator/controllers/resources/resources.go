@@ -39,6 +39,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
@@ -75,6 +76,7 @@ var (
 	// to delete any existing DNS operator deployment on the hosted cluster
 	// only once.
 	deleteDNSOperatorDeploymentOnce sync.Once
+	deleteCVORemovedResourcesOnce   sync.Once
 )
 
 type reconciler struct {
@@ -499,6 +501,16 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		log.Info("removing any existing DNS operator deployment")
 		if err := r.uncachedClient.Delete(ctx, dnsOperatorDeployment); err != nil && !apierrors.IsNotFound(err) {
 			errs = append(errs, err)
+		}
+	})
+
+	deleteCVORemovedResourcesOnce.Do(func() {
+		resources := cvo.ResourcesToRemove(hcp.Spec.Platform.Type)
+		for _, resource := range resources {
+			log.Info("removing existing resources", "resource", resource)
+			if err := r.uncachedClient.Delete(ctx, resource); err != nil && !apierrors.IsNotFound(err) {
+				errs = append(errs, err)
+			}
 		}
 	})
 
