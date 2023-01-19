@@ -772,6 +772,21 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
 	var errs []error
 
+	// Set pod security labels on kube-system to avoid API warnings
+	kubeSystemNamespace := manifests.NamespaceKubeSystem()
+	if _, err := r.CreateOrUpdate(ctx, r.client, kubeSystemNamespace, func() error {
+		if kubeSystemNamespace.Labels == nil {
+			kubeSystemNamespace.Labels = map[string]string{}
+		}
+		kubeSystemNamespace.Labels["security.openshift.io/scc.podSecurityLabelSync"] = "false"
+		kubeSystemNamespace.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
+		kubeSystemNamespace.Labels["pod-security.kubernetes.io/audit"] = "privileged"
+		kubeSystemNamespace.Labels["pod-security.kubernetes.io/warn"] = "privileged"
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kube-system namespace: %w", err)
+	}
+
 	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), r.konnectivityServerAddress, r.konnectivityServerPort)
 
 	controlPlaneAgentSecret := manifests.KonnectivityControlPlaneAgentSecret(hcp.Namespace)
