@@ -232,7 +232,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed")
 			}
 			if !done {
-				return ctrl.Result{}, nil
+				return ctrl.Result{RequeueAfter: time.Minute}, nil
 			}
 		}
 		if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
