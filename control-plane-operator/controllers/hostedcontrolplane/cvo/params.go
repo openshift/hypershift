@@ -39,7 +39,7 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, images map[string]string, set
 		},
 		cvoContainerMain().Name: {
 			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("50Mi"),
+				corev1.ResourceMemory: resource.MustParse("70Mi"),
 				corev1.ResourceCPU:    resource.MustParse("20m"),
 			},
 		},
