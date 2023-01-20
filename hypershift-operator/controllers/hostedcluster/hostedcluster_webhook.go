@@ -107,8 +107,32 @@ func validateSliceNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
 	return compareCIDREntries(cidrEntries)
 }
 
+func validateKubevirtBaseDomainPassthroughCreate(hc *hyperv1.HostedCluster) *field.Error {
+
+	// It is invalid for someone to enable the BaseDomainPassthrough feature
+	// and attempt to set their own custom BaseDomain during HC Creation.
+	//
+	// The BaseDomainPassthrough feature autocreates the BaseDomain for the user.
+	if hc.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
+		hc.Spec.Platform.Kubevirt != nil &&
+		hc.Spec.Platform.Kubevirt.BaseDomainPassthrough != nil &&
+		*hc.Spec.Platform.Kubevirt.BaseDomainPassthrough &&
+		hc.Spec.DNS.BaseDomain != "" {
+
+		return field.InternalError(
+			field.NewPath("HostedCluster.spec.platform.kubevirt.baseDomainPassthrough"),
+			errors.New("BaseDomain can not be set when KubeVirt's BaseDomainPassthrough feature is enabled"))
+	}
+
+	return nil
+}
+
 func validateHostedClusterCreate(hc *hyperv1.HostedCluster) error {
 	errs := validateSliceNetworkCIDRs(hc)
+
+	if err := validateKubevirtBaseDomainPassthroughCreate(hc); err != nil {
+		errs = append(errs, err)
+	}
 
 	return errs.ToAggregate()
 }
@@ -258,6 +282,18 @@ func validateHostedClusterUpdate(new *hyperv1.HostedCluster, old *hyperv1.Hosted
 			old.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
 		}
 		old.Spec.Networking.APIServer.Port = new.Spec.Networking.APIServer.Port
+	}
+
+	// We default the basedomain for KubeVirt clusters, so we allow the baseDomain
+	// to go from unset to set, but no updates after basedomain is set.
+	if new.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
+		new.Spec.Platform.Kubevirt != nil &&
+		new.Spec.Platform.Kubevirt.BaseDomainPassthrough != nil &&
+		*new.Spec.Platform.Kubevirt.BaseDomainPassthrough &&
+		new.Spec.DNS.BaseDomain != "" &&
+		old.Spec.DNS.BaseDomain == "" {
+
+		old.Spec.DNS.BaseDomain = new.Spec.DNS.BaseDomain
 	}
 
 	if err := validateEndpointAccess(&new.Spec.Platform, &old.Spec.Platform); err != nil {

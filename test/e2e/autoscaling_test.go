@@ -51,7 +51,7 @@ func TestAutoscaling(t *testing.T) {
 
 	// Wait for the rollout to be reported complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
-	e2eutil.WaitForImageRollout(t, ctx, client, guestClient, hostedCluster, globalOpts.LatestReleaseImage)
+	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, globalOpts.LatestReleaseImage)
 
 	// Enable autoscaling.
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool)
