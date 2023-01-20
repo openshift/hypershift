@@ -113,7 +113,7 @@ flag which sets up the deployment with zero replicas:
 go run . install \
   --oidc-storage-provider-s3-bucket-name=$BUCKET_NAME \
   --oidc-storage-provider-s3-region=$BUCKET_REGION \
-  --oidc-storage-provider-s3-credentials=$AWS_CREDS \ 
+  --oidc-storage-provider-s3-credentials=$AWS_CREDS \
   --development
 ```
 
@@ -124,7 +124,10 @@ in a single shot using `publish-ocp.sh` together with the `oc debug` command:
 oc debug --namespace hypershift deployments/operator --image $(hack/publish-ocp.sh ./hypershift-operator) -- \
   /ko-app/hypershift-operator run \
   --oidc-storage-provider-s3-region $BUCKET_REGION \
-  --oidc-storage-provider-s3-bucket-name $BUCKET_NAME
+  --oidc-storage-provider-s3-bucket-name $BUCKET_NAME \
+  --oidc-storage-provider-s3-credentials /etc/oidc-storage-provider-s3-creds/credentials \
+  --namespace hypershift \
+  --pod-name operator-debug
 ```
 
 !!! note
@@ -134,6 +137,10 @@ oc debug --namespace hypershift deployments/operator --image $(hack/publish-ocp.
 
 Your latest code should be deployed and logs should soon begin streaming. Just
 press `ctrl-c` to terminate and delete the pod.
+
+!!! note
+
+    See [Use custom operator images](./custom-images.md) to use your own registry.
 
 ## Configure a HostedCluster for iterative control plane development
 
