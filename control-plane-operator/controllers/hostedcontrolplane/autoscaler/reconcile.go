@@ -136,7 +136,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("35Mi"),
+								corev1.ResourceMemory: resource.MustParse("60Mi"),
 								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},

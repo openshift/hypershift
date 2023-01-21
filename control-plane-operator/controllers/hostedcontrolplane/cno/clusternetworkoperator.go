@@ -294,7 +294,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 			Image: params.Images.CLI,
 			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
-				corev1.ResourceMemory: resource.MustParse("100Mi"),
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
 			}},
 			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			VolumeMounts: []corev1.VolumeMount{
@@ -387,7 +387,7 @@ kubectl --kubeconfig $kc config use-context default`,
 		ImagePullPolicy: corev1.PullIfNotPresent,
 		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),
-			corev1.ResourceMemory: resource.MustParse("50Mi"),
+			corev1.ResourceMemory: resource.MustParse("100Mi"),
 		}},
 		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 		VolumeMounts: []corev1.VolumeMount{
