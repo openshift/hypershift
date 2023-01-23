@@ -137,6 +137,22 @@ func KCMLeaderElectionRoleBinding() *rbacv1.RoleBinding {
 	}
 }
 
+func DeployerClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:deployer",
+		},
+	}
+}
+
+func DeployerClusterRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:deployer",
+		},
+	}
+}
+
 func ImageTriggerControllerClusterRole() *rbacv1.ClusterRole {
 	return &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
