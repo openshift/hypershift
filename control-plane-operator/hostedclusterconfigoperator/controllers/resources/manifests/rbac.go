@@ -136,3 +136,19 @@ func KCMLeaderElectionRoleBinding() *rbacv1.RoleBinding {
 		},
 	}
 }
+
+func ImageTriggerControllerClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:openshift-controller-manager:image-trigger-controller",
+		},
+	}
+}
+
+func ImageTriggerControllerClusterRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:openshift-controller-manager:image-trigger-controller",
+		},
+	}
+}
