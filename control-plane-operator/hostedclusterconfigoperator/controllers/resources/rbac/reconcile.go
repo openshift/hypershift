@@ -472,7 +472,6 @@ func ReconcilePodSecurityAdmissionLabelSyncerControllerRoleBinding(r *rbacv1.Clu
 }
 
 func ReconcileImageTriggerControllerClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
-
 	r.RoleRef = rbacv1.RoleRef{
 		APIGroup: rbacv1.SchemeGroupVersion.Group,
 		Kind:     "ClusterRole",
@@ -483,6 +482,66 @@ func ReconcileImageTriggerControllerClusterRoleBinding(r *rbacv1.ClusterRoleBind
 			Kind:      "ServiceAccount",
 			Namespace: "openshift-infra",
 			Name:      "image-trigger-controller",
+		},
+	}
+	return nil
+}
+
+func ReconcileDeployerClusterRole(r *rbacv1.ClusterRole) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"replicationcontrollers"},
+			Verbs:     []string{"get", "list", "watch", "update", "delete"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"replicationcontrollers/scale"},
+			Verbs:     []string{"get", "update"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"pods"},
+			Verbs:     []string{"create", "get", "list", "watch"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"pods/log"},
+			Verbs:     []string{"get"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"events"},
+			Verbs:     []string{"create", "list"},
+		},
+		{
+			APIGroups: []string{"image.openshift.io"},
+			Resources: []string{"imagestreamtags", "imagetags"},
+			Verbs:     []string{"create", "update"},
+		},
+	}
+	return nil
+}
+
+func ReconcileDeployerClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:deployer",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      "default-rolebindings-controller",
+			Namespace: "openshift-infra",
 		},
 	}
 	return nil
