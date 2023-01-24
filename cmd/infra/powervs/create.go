@@ -50,6 +50,7 @@ const (
 	// Resource desired states
 	vpcAvailableState               = "available"
 	cloudInstanceActiveState        = "active"
+	cloudInstanceFailedState        = "failed"
 	dhcpServiceActiveState          = "ACTIVE"
 	cloudConnectionEstablishedState = "established"
 
@@ -675,6 +676,10 @@ func (infra *Infra) createCloudInstance(ctx context.Context, options *CreateInfr
 	resourceInstance, err := validateCloudInstanceByName(ctx, cloudInstanceName, infra.ResourceGroupID, options.Zone, serviceID, servicePlanID)
 
 	if resourceInstance != nil {
+		if err != nil && (err.Error() == cloudInstanceNotInActiveState(*resourceInstance.State).Error()) {
+			err = fmt.Errorf("already a PowerVS instance exist with the infraID but it is not in usable state: %v", err.Error())
+			return nil, err
+		}
 		log(options.InfraID).Info("Using existing PowerVS Cloud Instance", "name", cloudInstanceName)
 		return resourceInstance, nil
 	}
@@ -712,10 +717,16 @@ func (infra *Infra) createCloudInstance(ctx context.Context, options *CreateInfr
 		if *resourceInstance.State == cloudInstanceActiveState {
 			return true, nil
 		}
+		if *resourceInstance.State == cloudInstanceFailedState {
+			return false, fmt.Errorf("cloud instance is in failed state")
+		}
+
 		return false, nil
 	}
 
-	err = wait.PollImmediate(pollingInterval, cloudInstanceCreationTimeout, f)
+	if err = wait.PollImmediate(pollingInterval, cloudInstanceCreationTimeout, f); err != nil {
+		return nil, err
+	}
 
 	infra.Stats.CloudInstance.Duration.Duration = time.Since(startTime)
 

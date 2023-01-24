@@ -9,8 +9,11 @@ import (
 )
 
 var (
-	cloudConNotFound      = func(cloudConnName string) error { return fmt.Errorf("%s cloud connection not found", cloudConnName) }
-	cloudInstanceNotFound = func(cloudInstance string) error { return fmt.Errorf("%s cloud instance not found", cloudInstance) }
+	cloudConNotFound              = func(cloudConnName string) error { return fmt.Errorf("%s cloud connection not found", cloudConnName) }
+	cloudInstanceNotFound         = func(cloudInstance string) error { return fmt.Errorf("%s cloud instance not found", cloudInstance) }
+	cloudInstanceNotInActiveState = func(state string) error {
+		return fmt.Errorf("provided cloud instance id is not in active state, current state: %s", state)
+	}
 )
 
 // validateCloudInstanceByID
@@ -27,11 +30,11 @@ func validateCloudInstanceByID(ctx context.Context, cloudInstanceID string) (*re
 	}
 
 	if resourceInstance == nil {
-		return nil, fmt.Errorf("%s cloud instance not found", cloudInstanceID)
+		return nil, cloudInstanceNotFound(cloudInstanceID)
 	}
 
 	if *resourceInstance.State != "active" {
-		return nil, fmt.Errorf("provided cloud instance id is not in active state, current state: %s", *resourceInstance.State)
+		return resourceInstance, cloudInstanceNotInActiveState(*resourceInstance.State)
 	}
 
 	return resourceInstance, nil
@@ -87,7 +90,7 @@ func validateCloudInstanceByName(ctx context.Context, cloudInstance string, reso
 	}
 
 	if *resourceInstance.State != "active" {
-		return nil, fmt.Errorf("provided cloud instance id is not in active state, current state: %s", *resourceInstance.State)
+		return resourceInstance, cloudInstanceNotInActiveState(*resourceInstance.State)
 	}
 	return resourceInstance, nil
 }
