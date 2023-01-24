@@ -61,6 +61,7 @@ type Options struct {
 	ExcludeEtcdManifests                      bool
 	PlatformMonitoring                        metrics.PlatformMonitoring
 	EnableCIDebugOutput                       bool
+	OmitDeployment                            bool
 	PrivatePlatform                           string
 	AWSPrivateCreds                           string
 	AWSPrivateCredentialsSecret               string
@@ -163,6 +164,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
+	cmd.PersistentFlags().BoolVar(&opts.OmitDeployment, "omit-deployment", opts.OmitDeployment, "Omit the Hypershift operator deployment from the manifests")
 	cmd.PersistentFlags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCreds, "aws-private-creds", opts.AWSPrivateCreds, "Path to an AWS credentials file with privileges sufficient to manage private cluster resources")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecret, "aws-private-secret", "", "Name of an existing secret containing the AWS private link credentials.")
@@ -525,30 +527,32 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		objects = append(objects, externalDNSDeployment)
 	}
 
-	operatorDeployment := assets.HyperShiftOperatorDeployment{
-		AdditionalTrustBundle:          userCABundleCM,
-		Namespace:                      operatorNamespace,
-		OperatorImage:                  opts.HyperShiftImage,
-		ServiceAccount:                 operatorServiceAccount,
-		Replicas:                       opts.HyperShiftOperatorReplicas,
-		EnableOCPClusterMonitoring:     opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
-		EnableCIDebugOutput:            opts.EnableCIDebugOutput,
-		EnableWebhook:                  opts.EnableValidatingWebhook || opts.EnableConversionWebhook,
-		PrivatePlatform:                opts.PrivatePlatform,
-		AWSPrivateRegion:               opts.AWSPrivateRegion,
-		AWSPrivateSecret:               operatorCredentialsSecret,
-		AWSPrivateSecretKey:            opts.AWSPrivateCredentialsSecretKey,
-		OIDCBucketName:                 opts.OIDCStorageProviderS3BucketName,
-		OIDCBucketRegion:               opts.OIDCStorageProviderS3Region,
-		OIDCStorageProviderS3Secret:    oidcSecret,
-		OIDCStorageProviderS3SecretKey: opts.OIDCStorageProviderS3CredentialsSecretKey,
-		Images:                         images,
-		MetricsSet:                     opts.MetricsSet,
-		IncludeVersion:                 !opts.Template,
-		UWMTelemetry:                   opts.EnableUWMTelemetryRemoteWrite,
-		RHOBSMonitoring:                opts.RHOBSMonitoring,
-	}.Build()
-	objects = append(objects, operatorDeployment)
+	if !opts.OmitDeployment {
+		operatorDeployment := assets.HyperShiftOperatorDeployment{
+			AdditionalTrustBundle:          userCABundleCM,
+			Namespace:                      operatorNamespace,
+			OperatorImage:                  opts.HyperShiftImage,
+			ServiceAccount:                 operatorServiceAccount,
+			Replicas:                       opts.HyperShiftOperatorReplicas,
+			EnableOCPClusterMonitoring:     opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
+			EnableCIDebugOutput:            opts.EnableCIDebugOutput,
+			EnableWebhook:                  opts.EnableValidatingWebhook || opts.EnableConversionWebhook,
+			PrivatePlatform:                opts.PrivatePlatform,
+			AWSPrivateRegion:               opts.AWSPrivateRegion,
+			AWSPrivateSecret:               operatorCredentialsSecret,
+			AWSPrivateSecretKey:            opts.AWSPrivateCredentialsSecretKey,
+			OIDCBucketName:                 opts.OIDCStorageProviderS3BucketName,
+			OIDCBucketRegion:               opts.OIDCStorageProviderS3Region,
+			OIDCStorageProviderS3Secret:    oidcSecret,
+			OIDCStorageProviderS3SecretKey: opts.OIDCStorageProviderS3CredentialsSecretKey,
+			Images:                         images,
+			MetricsSet:                     opts.MetricsSet,
+			IncludeVersion:                 !opts.Template,
+			UWMTelemetry:                   opts.EnableUWMTelemetryRemoteWrite,
+			RHOBSMonitoring:                opts.RHOBSMonitoring,
+		}.Build()
+		objects = append(objects, operatorDeployment)
+	}
 
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
