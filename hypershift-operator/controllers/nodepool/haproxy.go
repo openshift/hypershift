@@ -353,7 +353,8 @@ func generateKubernetesDefaultProxyPod(image string, listenAddr string, proxyAdd
 						"--apiserver-addr=" + apiserverAddr,
 					},
 					SecurityContext: &corev1.SecurityContext{
-						RunAsUser: pointer.Int64Ptr(config.DefaultSecurityContextUser),
+						RunAsUser:  pointer.Int64Ptr(config.DefaultSecurityContextUser),
+						Privileged: pointer.Bool(true),
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
