@@ -2267,9 +2267,6 @@ spec:
                             description: Subnet is the subnet to use for control plane
                               cloud resources.
                             properties:
-                              arn:
-                                description: ARN of resource
-                                type: string
                               filters:
                                 description: 'Filters is a set of key/value pairs
                                   used to identify a resource They are applied according
@@ -5489,9 +5486,6 @@ spec:
                             description: Subnet is the subnet to use for control plane
                               cloud resources.
                             properties:
-                              arn:
-                                description: ARN of resource
-                                type: string
                               filters:
                                 description: 'Filters is a set of key/value pairs
                                   used to identify a resource They are applied according

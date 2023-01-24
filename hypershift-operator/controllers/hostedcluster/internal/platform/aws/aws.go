@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
-	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -48,7 +48,7 @@ func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOr
 	controlPlaneNamespace string,
 	apiEndpoint hyperv1.APIEndpoint,
 ) (client.Object, error) {
-	awsCluster := &capiawsv1.AWSCluster{
+	awsCluster := &capiaws.AWSCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      hcluster.Name,
@@ -288,7 +288,7 @@ func (AWS) ReconcileSecretEncryption(ctx context.Context, c client.Client, creat
 	return nil
 }
 
-func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint) error {
+func reconcileAWSCluster(awsCluster *capiaws.AWSCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint) error {
 	// We only create this resource once and then let CAPI own it
 	awsCluster.Annotations = map[string]string{
 		capiv1.ManagedByAnnotation: "external",
@@ -303,7 +303,7 @@ func reconcileAWSCluster(awsCluster *capiawsv1.AWSCluster, hcluster *hyperv1.Hos
 		}
 
 		if len(hcluster.Spec.Platform.AWS.ResourceTags) > 0 {
-			awsCluster.Spec.AdditionalTags = capiawsv1.Tags{}
+			awsCluster.Spec.AdditionalTags = capiaws.Tags{}
 		}
 		for _, entry := range hcluster.Spec.Platform.AWS.ResourceTags {
 			awsCluster.Spec.AdditionalTags[entry.Key] = entry.Value

@@ -95,6 +95,17 @@ spec:
                           If AcceleratedNetworking is set to true with a VMSize that
                           does not support it, Azure will return an error.
                         type: boolean
+                      additionalCapabilities:
+                        description: AdditionalCapabilities specifies additional capabilities
+                          enabled or disabled on the virtual machine.
+                        properties:
+                          ultraSSDEnabled:
+                            description: UltraSSDEnabled enables or disables Azure
+                              UltraSSD capability for the virtual machine. Defaults
+                              to true if Ultra SSD data disks are specified, otherwise
+                              it doesn't set the capability on the VM.
+                            type: boolean
+                        type: object
                       additionalTags:
                         additionalProperties:
                           type: string
@@ -161,6 +172,12 @@ spec:
                           - nameSuffix
                           type: object
                         type: array
+                      dnsServers:
+                        description: DNSServers adds a list of DNS Server IP addresses
+                          to the VM NICs.
+                        items:
+                          type: string
+                        type: array
                       enableIPForwarding:
                         description: EnableIPForwarding enables IP Forwarding in Azure
                           which is required for some CNI's to send traffic from a
@@ -193,6 +210,68 @@ spec:
                           the image will default the Azure Marketplace "capi" offer,
                           which is based on Ubuntu.
                         properties:
+                          computeGallery:
+                            description: ComputeGallery specifies an image to use
+                              from the Azure Compute Gallery
+                            properties:
+                              gallery:
+                                description: Gallery specifies the name of the compute
+                                  image gallery that contains the image
+                                minLength: 1
+                                type: string
+                              name:
+                                description: Name is the name of the image
+                                minLength: 1
+                                type: string
+                              plan:
+                                description: Plan contains plan information.
+                                properties:
+                                  offer:
+                                    description: Offer specifies the name of a group
+                                      of related images created by the publisher.
+                                      For example, UbuntuServer, WindowsServer
+                                    minLength: 1
+                                    type: string
+                                  publisher:
+                                    description: Publisher is the name of the organization
+                                      that created the image
+                                    minLength: 1
+                                    type: string
+                                  sku:
+                                    description: SKU specifies an instance of an offer,
+                                      such as a major release of a distribution. For
+                                      example, 18.04-LTS, 2019-Datacenter
+                                    minLength: 1
+                                    type: string
+                                required:
+                                - offer
+                                - publisher
+                                - sku
+                                type: object
+                              resourceGroup:
+                                description: ResourceGroup specifies the resource
+                                  group containing the private compute gallery.
+                                type: string
+                              subscriptionID:
+                                description: SubscriptionID is the identifier of the
+                                  subscription that contains the private compute gallery.
+                                type: string
+                              version:
+                                description: Version specifies the version of the
+                                  marketplace image. The allowed formats are Major.Minor.Build
+                                  or 'latest'. Major, Minor, and Build are decimal
+                                  numbers. Specify 'latest' to use the latest version
+                                  of an image available at deploy time. Even if you
+                                  use 'latest', the VM image will not automatically
+                                  update after deploy time even if a new version becomes
+                                  available.
+                                minLength: 1
+                                type: string
+                            required:
+                            - gallery
+                            - name
+                            - version
+                            type: object
                           id:
                             description: ID specifies an image to use by ID
                             type: string
@@ -241,8 +320,9 @@ spec:
                             - version
                             type: object
                           sharedGallery:
-                            description: SharedGallery specifies an image to use from
-                              an Azure Shared Image Gallery
+                            description: 'SharedGallery specifies an image to use
+                              from an Azure Shared Image Gallery Deprecated: use ComputeGallery
+                              instead.'
                             properties:
                               gallery:
                                 description: Gallery specifies the name of the shared
@@ -382,6 +462,14 @@ spec:
                         description: SpotVMOptions allows the ability to specify the
                           Machine should use a Spot VM
                         properties:
+                          evictionPolicy:
+                            description: EvictionPolicy defines the behavior of the
+                              virtual machine when it is evicted. It can be either
+                              Delete or Deallocate.
+                            enum:
+                            - Deallocate
+                            - Delete
+                            type: string
                           maxPrice:
                             anyOf:
                             - type: integer
@@ -414,6 +502,42 @@ spec:
                               type: string
                           required:
                           - providerID
+                          type: object
+                        type: array
+                      vmExtensions:
+                        description: VMExtensions specifies a list of extensions to
+                          be added to the virtual machine.
+                        items:
+                          description: VMExtension specifies the parameters for a
+                            custom VM extension.
+                          properties:
+                            name:
+                              description: Name is the name of the extension.
+                              type: string
+                            protectedSettings:
+                              additionalProperties:
+                                type: string
+                              description: ProtectedSettings is a JSON formatted protected
+                                settings for the extension.
+                              type: object
+                            publisher:
+                              description: Publisher is the name of the extension
+                                handler publisher.
+                              type: string
+                            settings:
+                              additionalProperties:
+                                type: string
+                              description: Settings is a JSON formatted public settings
+                                for the extension.
+                              type: object
+                            version:
+                              description: Version specifies the version of the script
+                                handler.
+                              type: string
+                          required:
+                          - name
+                          - publisher
+                          - version
                           type: object
                         type: array
                       vmSize:

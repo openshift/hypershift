@@ -97,8 +97,8 @@ cluster-api: $(CONTROLLER_GEN)
 .PHONY: cluster-api-provider-aws
 cluster-api-provider-aws: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-aws/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/api/v1beta1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-aws/exp/api/v1beta1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="{./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2, ./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta1}" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="{./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2, ./vendor/sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta1}" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-aws
 
 .PHONY: cluster-api-provider-ibmcloud
 cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
