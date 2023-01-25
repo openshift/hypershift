@@ -496,7 +496,7 @@ func ReconcileDeployerClusterRole(r *rbacv1.ClusterRole) error {
 		{
 			APIGroups: []string{""},
 			Resources: []string{"replicationcontrollers"},
-			Verbs:     []string{"get", "list", "watch", "update", "delete"},
+			Verbs:     []string{"get", "list", "watch", "update", "patch", "delete"},
 		},
 		{
 			APIGroups: []string{""},
