@@ -172,7 +172,8 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	return guestClient
 }
 
-func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
+// WaitForNReadyNodes waits for 'n' nodes to be ready and have the hyperv1.NodePoolLabel label applied
+func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) {
 	g := NewWithT(t)
 	start := time.Now()
 
@@ -215,7 +216,10 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 
 	t.Logf("All nodes for nodepool appear to be ready in %s. Count: %v", time.Since(start).Round(time.Second), n)
 
-	return nodes.Items
+	t.Logf("Validating all Nodes have the NodePool label")
+	for _, node := range nodes.Items {
+		g.Expect(node.Labels[hyperv1.NodePoolLabel]).NotTo(BeEmpty())
+	}
 }
 
 func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType, nodePoolName string) []corev1.Node {

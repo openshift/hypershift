@@ -47,7 +47,7 @@ func TestAutoscaling(t *testing.T) {
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 	// TODO (alberto): have ability to label and get Nodes by NodePool. NodePool.Status.Nodes?
 	numNodes := clusterOpts.NodePoolReplicas
-	nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the rollout to be reported complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
@@ -72,7 +72,11 @@ func TestAutoscaling(t *testing.T) {
 	// TODO (alberto): check autoscalingEnabled condition.
 
 	// Generate workload.
-	memCapacity := nodes[0].Status.Allocatable[corev1.ResourceMemory]
+	nodes := &corev1.NodeList{}
+	if err := guestClient.List(ctx, nodes); err != nil {
+		t.Fatalf("failed to list nodes in guest cluster: %v", err)
+	}
+	memCapacity := nodes.Items[0].Status.Allocatable[corev1.ResourceMemory]
 	g.Expect(memCapacity).ShouldNot(BeNil())
 	g.Expect(memCapacity.String()).ShouldNot(BeEmpty())
 	bytes, ok := memCapacity.AsInt64()
@@ -86,12 +90,12 @@ func TestAutoscaling(t *testing.T) {
 	workload := newWorkLoad(max, workloadMemRequest, "", globalOpts.LatestReleaseImage)
 	err = guestClient.Create(ctx, workload)
 	g.Expect(err).NotTo(HaveOccurred())
-	t.Logf("Created workload. Node: %s, memcapacity: %s", nodes[0].Name, memCapacity.String())
+	t.Logf("Created workload. Node: %s, memcapacity: %s", nodes.Items[0].Name, memCapacity.String())
 
 	// Wait for one more node.
 	// TODO (alberto): have ability for NodePool to label Nodes and let workload target specific Nodes.
 	numNodes = numNodes + 1
-	_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// Delete workload.
 	cascadeDelete := metav1.DeletePropagationForeground
@@ -103,7 +107,7 @@ func TestAutoscaling(t *testing.T) {
 
 	// Wait for one less node.
 	numNodes = numNodes - 1
-	_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 }
 
 func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, image string) *batchv1.Job {

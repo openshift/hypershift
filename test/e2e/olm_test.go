@@ -11,7 +11,6 @@ import (
 
 	. "github.com/onsi/gomega"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/test/e2e/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -56,7 +55,7 @@ func TestOLM(t *testing.T) {
 
 	// Wait for guest cluster nodes to become available
 	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
-	util.WaitForNReadyNodes(t, ctx, guestClient, numNodes, cluster.Spec.Platform.Type)
+	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, cluster.Spec.Platform.Type)
 
 	guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name).Name
 	t.Logf("Hosted control plane namespace is %s", guestNamespace)
