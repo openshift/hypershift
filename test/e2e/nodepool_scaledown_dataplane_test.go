@@ -95,7 +95,7 @@ func testNodepoolScaleDownDataPlane(parentCtx context.Context, mgmtClient crclie
 
 		// Wait for the rollout to be reported complete
 		t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
-		e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedClusterClient, hostedCluster, globalOpts.LatestReleaseImage)
+		e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster, globalOpts.LatestReleaseImage)
 
 		// Update NodePool images to the latest.
 		t.Logf("Scalling down NodePool %s to replicas %d", nodePool.Name, zeroReplicas)
