@@ -519,7 +519,10 @@ func ReconcileDeployerClusterRole(r *rbacv1.ClusterRole) error {
 			Verbs:     []string{"create", "list"},
 		},
 		{
-			APIGroups: []string{"image.openshift.io"},
+			// apiGroups needs to include "" because the conformance test
+			// does an explicit SubjectAccessReview against the wrong apiGroup
+			// https://github.com/openshift/origin/pull/27689
+			APIGroups: []string{"", "image.openshift.io"},
 			Resources: []string{"imagestreamtags", "imagetags"},
 			Verbs:     []string{"create", "update"},
 		},
