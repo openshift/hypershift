@@ -3203,6 +3203,16 @@ func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Cont
 }
 
 func shouldCleanupCloudResources(hcp *hyperv1.HostedControlPlane) bool {
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		oidcConfigValid := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidOIDCConfiguration))
+		if oidcConfigValid != nil && oidcConfigValid.Status == metav1.ConditionFalse {
+			return false
+		}
+		validIdentityProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+		if validIdentityProvider != nil && validIdentityProvider.Status == metav1.ConditionFalse {
+			return false
+		}
+	}
 	return hcp.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true"
 }
 
