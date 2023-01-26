@@ -21,7 +21,7 @@ import (
 
 const (
 	hostedClusterAnnotation = "hypershift.openshift.io/cluster"
-	imageCAPK               = "registry.ci.openshift.org/hypershift/cluster-api-kubevirt-controller:0.0.1-prerelease"
+	imageCAPK               = "registry.ci.openshift.org/ocp/4.13:cluster-api-provider-kubevirt"
 )
 
 type Kubevirt struct{}
