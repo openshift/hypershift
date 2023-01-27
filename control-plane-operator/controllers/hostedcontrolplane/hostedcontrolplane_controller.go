@@ -1992,7 +1992,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	serviceMonitor := manifests.KASServiceMonitor(hcp.Namespace)
 	if result, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
-		return kas.ReconcileServiceMonitor(serviceMonitor, int(p.APIServerPort), config.OwnerRefFrom(hcp), hcp.Spec.ClusterID, r.MetricsSet)
+		return kas.ReconcileServiceMonitor(serviceMonitor, config.OwnerRefFrom(hcp), hcp.Spec.ClusterID, r.MetricsSet)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kas service monitor: %w", err)
 	} else {
