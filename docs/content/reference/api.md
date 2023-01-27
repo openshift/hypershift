@@ -120,6 +120,20 @@ immutable.</p>
 </tr>
 <tr>
 <td>
+<code>channel</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>channel is an identifier for explicitly requesting that a non-default
+set of updates be applied to this cluster. The default channel will be
+contain stable updates that are appropriate for production clusters.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>infraID</code></br>
 <em>
 string
@@ -1446,8 +1460,8 @@ for more details around VPC Endpoint Service allowed principals.</p>
 <a href="#hypershift.openshift.io/v1alpha1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
 </p>
 <p>
-<p>AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
-Only one of ID, ARN or Filters may be specified. Specifying more than one will result in
+<p>AWSResourceReference is a reference to a specific AWS resource by ID or filters.
+Only one of ID or Filters may be specified. Specifying more than one will result in
 a validation error.</p>
 </p>
 <table>
@@ -1468,18 +1482,6 @@ string
 <td>
 <em>(Optional)</em>
 <p>ID of resource</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>arn</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>ARN of resource</p>
 </td>
 </tr>
 <tr>
@@ -2800,7 +2802,8 @@ how the APIServer is exposed inside a cluster node.</p>
 ###ClusterVersionStatus { #hypershift.openshift.io/v1alpha1.ClusterVersionStatus }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1alpha1.HostedClusterStatus">HostedClusterStatus</a>)
+<a href="#hypershift.openshift.io/v1alpha1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1alpha1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
 </p>
 <p>
 <p>ClusterVersionStatus reports the status of the cluster versioning,
@@ -2821,8 +2824,8 @@ progress, or is failing.</p>
 <td>
 <code>desired</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1alpha1.Release">
-Release
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.Release
 </a>
 </em>
 </td>
@@ -2863,6 +2866,43 @@ int64
 <p>observedGeneration reports which version of the spec is being synced.
 If this value is not equal to metadata.generation, then the desired
 and conditions fields may represent a previous version.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>availableUpdates</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+[]github.com/openshift/api/config/v1.Release
+</a>
+</em>
+</td>
+<td>
+<p>availableUpdates contains updates recommended for this
+cluster. Updates which appear in conditionalUpdates but not in
+availableUpdates may expose this cluster to known issues. This list
+may be empty if no updates are recommended, if the update service
+is unavailable, or if an invalid channel has been specified.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>conditionalUpdates</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+[]github.com/openshift/api/config/v1.ConditionalUpdate
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditionalUpdates contains the list of updates that may be
+recommended for this cluster if it meets specific required
+conditions. Consumers interested in the set of updates that are
+actually recommended for this cluster should use
+availableUpdates. This list may be empty if no updates are
+recommended, if the update service is unavailable, or if an empty
+or invalid channel has been specified.</p>
 </td>
 </tr>
 </tbody>
@@ -3256,6 +3296,20 @@ This value identifies the cluster in metrics pushed to telemetry and
 metrics produced by the control plane operators. If a value is not
 specified, an ID is generated. After initial creation, the value is
 immutable.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>channel</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>channel is an identifier for explicitly requesting that a non-default
+set of updates be applied to this cluster. The default channel will be
+contain stable updates that are appropriate for production clusters.</p>
 </td>
 </tr>
 <tr>
@@ -3749,6 +3803,20 @@ string
 </td>
 <td>
 <p>ReleaseImage is the release image applied to the hosted control plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>channel</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>channel is an identifier for explicitly requesting that a non-default
+set of updates be applied to this cluster. The default channel will be
+contain stable updates that are appropriate for production clusters.</p>
 </td>
 </tr>
 <tr>
@@ -4300,6 +4368,21 @@ This is populated after the infrastructure is ready.</p>
 </tr>
 <tr>
 <td>
+<code>versionStatus</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1alpha1.ClusterVersionStatus">
+ClusterVersionStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>versionStatus is the status of the release version applied by the
+hosted control plane operator.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>version</code></br>
 <em>
 string
@@ -4308,6 +4391,7 @@ string
 <td>
 <p>Version is the semantic version of the release applied by
 the hosted control plane operator</p>
+<p>Deprecated: Use versionStatus.desired.version instead.</p>
 </td>
 </tr>
 <tr>
@@ -4318,7 +4402,9 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>ReleaseImage is the release image applied to the hosted control plane.</p>
+<p>Deprecated: Use versionStatus.desired.image instead.</p>
 </td>
 </tr>
 <tr>
@@ -4333,6 +4419,7 @@ Kubernetes meta/v1.Time
 <td>
 <p>lastReleaseImageTransitionTime is the time of the last update to the current
 releaseImage property.</p>
+<p>Deprecated: Use versionStatus.history[0].startedTime instead.</p>
 </td>
 </tr>
 <tr>
@@ -6820,7 +6907,6 @@ This field is immutable. Once set, It can&rsquo;t be changed.</p>
 ###Release { #hypershift.openshift.io/v1alpha1.Release }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1alpha1.ClusterVersionStatus">ClusterVersionStatus</a>, 
 <a href="#hypershift.openshift.io/v1alpha1.HostedClusterSpec">HostedClusterSpec</a>, 
 <a href="#hypershift.openshift.io/v1alpha1.NodePoolSpec">NodePoolSpec</a>)
 </p>

@@ -74,3 +74,9 @@ func NamespaceRouteControllerManager() *corev1.Namespace {
 		ObjectMeta: metav1.ObjectMeta{Name: "openshift-route-controller-manager"},
 	}
 }
+
+func NamespaceKubeSystem() *corev1.Namespace {
+	return &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "kube-system"},
+	}
+}

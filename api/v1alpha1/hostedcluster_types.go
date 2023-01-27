@@ -149,6 +149,13 @@ type HostedClusterSpec struct {
 	// +optional
 	ClusterID string `json:"clusterID,omitempty"`
 
+	// channel is an identifier for explicitly requesting that a non-default
+	// set of updates be applied to this cluster. The default channel will be
+	// contain stable updates that are appropriate for production clusters.
+	//
+	// +optional
+	Channel string `json:"channel,omitempty"`
+
 	// InfraID is a globally unique identifier for the cluster. This identifier
 	// will be used to associate various cloud resources with the HostedCluster
 	// and its associated NodePools.
@@ -1785,7 +1792,7 @@ type ClusterVersionStatus struct {
 	// desired is the version that the cluster is reconciling towards.
 	// If the cluster is not yet fully initialized desired will be set
 	// with the information available, which may be an image or a tag.
-	Desired Release `json:"desired"`
+	Desired configv1.Release `json:"desired"`
 
 	// history contains a list of the most recent versions applied to the cluster.
 	// This value may be empty during cluster startup, and then will be updated
@@ -1802,6 +1809,27 @@ type ClusterVersionStatus struct {
 	// If this value is not equal to metadata.generation, then the desired
 	// and conditions fields may represent a previous version.
 	ObservedGeneration int64 `json:"observedGeneration"`
+
+	// availableUpdates contains updates recommended for this
+	// cluster. Updates which appear in conditionalUpdates but not in
+	// availableUpdates may expose this cluster to known issues. This list
+	// may be empty if no updates are recommended, if the update service
+	// is unavailable, or if an invalid channel has been specified.
+	// +nullable
+	// +kubebuilder:validation:Required
+	// +required
+	AvailableUpdates []configv1.Release `json:"availableUpdates"`
+
+	// conditionalUpdates contains the list of updates that may be
+	// recommended for this cluster if it meets specific required
+	// conditions. Consumers interested in the set of updates that are
+	// actually recommended for this cluster should use
+	// availableUpdates. This list may be empty if no updates are
+	// recommended, if the update service is unavailable, or if an empty
+	// or invalid channel has been specified.
+	// +listType=atomic
+	// +optional
+	ConditionalUpdates []configv1.ConditionalUpdate `json:"conditionalUpdates,omitempty"`
 }
 
 // ClusterConfiguration specifies configuration for individual OCP components in the

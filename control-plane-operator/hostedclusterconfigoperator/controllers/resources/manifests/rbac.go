@@ -71,6 +71,22 @@ func NamespaceSecurityAllocationControllerClusterRoleBinding() *rbacv1.ClusterRo
 	}
 }
 
+func PodSecurityAdmissionLabelSyncerControllerClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:controller:podsecurity-admission-label-syncer-controller",
+		},
+	}
+}
+
+func PodSecurityAdmissionLabelSyncerControllerRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:controller:podsecurity-admission-label-syncer-controller",
+		},
+	}
+}
+
 func NodeBootstrapperClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
@@ -117,6 +133,38 @@ func KCMLeaderElectionRoleBinding() *rbacv1.RoleBinding {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "system:openshift:leader-election-lock-kube-controller-manager",
 			Namespace: "kube-system",
+		},
+	}
+}
+
+func DeployerClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:deployer",
+		},
+	}
+}
+
+func DeployerClusterRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:deployer",
+		},
+	}
+}
+
+func ImageTriggerControllerClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:openshift-controller-manager:image-trigger-controller",
+		},
+	}
+}
+
+func ImageTriggerControllerClusterRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:openshift-controller-manager:image-trigger-controller",
 		},
 	}
 }

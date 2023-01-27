@@ -602,7 +602,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 							Path:      pointer.String("/convert"),
 						},
 					},
-					ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
+					ConversionReviewVersions: []string{"v1beta2", "v1beta1", "v1alpha1"},
 				},
 			}
 		}

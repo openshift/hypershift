@@ -22,6 +22,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
@@ -54,24 +55,38 @@ func (c *AzureCluster) ValidateUpdate(oldRaw runtime.Object) error {
 	var allErrs field.ErrorList
 	old := oldRaw.(*AzureCluster)
 
-	if !reflect.DeepEqual(c.Spec.ResourceGroup, old.Spec.ResourceGroup) {
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "ResourceGroup"),
+		old.Spec.ResourceGroup,
+		c.Spec.ResourceGroup); err != nil {
+		allErrs = append(allErrs, err)
+	}
+
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "SubscriptionID"),
+		old.Spec.SubscriptionID,
+		c.Spec.SubscriptionID); err != nil {
+		allErrs = append(allErrs, err)
+	}
+
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "Location"),
+		old.Spec.Location,
+		c.Spec.Location); err != nil {
+		allErrs = append(allErrs, err)
+	}
+
+	if old.Spec.ControlPlaneEndpoint.Host != "" && c.Spec.ControlPlaneEndpoint.Host != old.Spec.ControlPlaneEndpoint.Host {
 		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "ResourceGroup"),
-				c.Spec.ResourceGroup, "field is immutable"),
+			field.Invalid(field.NewPath("spec", "ControlPlaneEndpoint", "Host"),
+				c.Spec.ControlPlaneEndpoint.Host, "field is immutable"),
 		)
 	}
 
-	if !reflect.DeepEqual(c.Spec.SubscriptionID, old.Spec.SubscriptionID) {
+	if old.Spec.ControlPlaneEndpoint.Port != 0 && c.Spec.ControlPlaneEndpoint.Port != old.Spec.ControlPlaneEndpoint.Port {
 		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "SubscriptionID"),
-				c.Spec.SubscriptionID, "field is immutable"),
-		)
-	}
-
-	if !reflect.DeepEqual(c.Spec.Location, old.Spec.Location) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "Location"),
-				c.Spec.Location, "field is immutable"),
+			field.Invalid(field.NewPath("spec", "ControlPlaneEndpoint", "Port"),
+				c.Spec.ControlPlaneEndpoint.Port, "field is immutable"),
 		)
 	}
 
@@ -92,11 +107,11 @@ func (c *AzureCluster) ValidateUpdate(oldRaw runtime.Object) error {
 		}
 	}
 
-	if !reflect.DeepEqual(c.Spec.NetworkSpec.PrivateDNSZoneName, old.Spec.NetworkSpec.PrivateDNSZoneName) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "NetworkSpec", "PrivateDNSZoneName"),
-				c.Spec.NetworkSpec.PrivateDNSZoneName, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "NetworkSpec", "PrivateDNSZoneName"),
+		old.Spec.NetworkSpec.PrivateDNSZoneName,
+		c.Spec.NetworkSpec.PrivateDNSZoneName); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
 	// Allow enabling azure bastion but avoid disabling it.
@@ -107,18 +122,68 @@ func (c *AzureCluster) ValidateUpdate(oldRaw runtime.Object) error {
 		)
 	}
 
-	if !reflect.DeepEqual(c.Spec.NetworkSpec.ControlPlaneOutboundLB, old.Spec.NetworkSpec.ControlPlaneOutboundLB) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "networkSpec", "controlPlaneOutboundLB"),
-				c.Spec.NetworkSpec.ControlPlaneOutboundLB, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "NetworkSpec", "ControlPlaneOutboundLB"),
+		old.Spec.NetworkSpec.ControlPlaneOutboundLB,
+		c.Spec.NetworkSpec.ControlPlaneOutboundLB); err != nil {
+		allErrs = append(allErrs, err)
 	}
+
+	allErrs = append(allErrs, c.validateSubnetUpdate(old)...)
 
 	if len(allErrs) == 0 {
 		return c.validateCluster(old)
 	}
 
 	return apierrors.NewInvalid(GroupVersion.WithKind("AzureCluster").GroupKind(), c.Name, allErrs)
+}
+
+// validateSubnetUpdate validates a ClusterSpec.NetworkSpec.Subnets for immutability.
+func (c *AzureCluster) validateSubnetUpdate(old *AzureCluster) field.ErrorList {
+	var allErrs field.ErrorList
+
+	oldSubnetMap := make(map[string]SubnetSpec, len(old.Spec.NetworkSpec.Subnets))
+	oldSubnetIndex := make(map[string]int, len(old.Spec.NetworkSpec.Subnets))
+	for i, subnet := range old.Spec.NetworkSpec.Subnets {
+		oldSubnetMap[subnet.Name] = subnet
+		oldSubnetIndex[subnet.Name] = i
+	}
+	for i, subnet := range c.Spec.NetworkSpec.Subnets {
+		if oldSubnet, ok := oldSubnetMap[subnet.Name]; ok {
+			// Verify the CIDR blocks haven't changed for an owned Vnet.
+			// A non-owned Vnet's CIDR block can change based on what's
+			// defined in the spec vs what's been loaded from Azure directly.
+			// This technically allows the cidr block to be modified in the brief
+			// moments before the Vnet is created (because the tags haven't been
+			// set yet) but once the Vnet has been created it becomes immutable.
+			if old.Spec.NetworkSpec.Vnet.Tags.HasOwned(old.Name) && !reflect.DeepEqual(subnet.CIDRBlocks, oldSubnet.CIDRBlocks) {
+				allErrs = append(allErrs,
+					field.Invalid(field.NewPath("spec", "networkSpec", "subnets").Index(oldSubnetIndex[subnet.Name]).Child("CIDRBlocks"),
+						c.Spec.NetworkSpec.Subnets[i].CIDRBlocks, "field is immutable"),
+				)
+			}
+			if subnet.RouteTable.Name != oldSubnet.RouteTable.Name {
+				allErrs = append(allErrs,
+					field.Invalid(field.NewPath("spec", "networkSpec", "subnets").Index(oldSubnetIndex[subnet.Name]).Child("RouteTable").Child("Name"),
+						c.Spec.NetworkSpec.Subnets[i].RouteTable.Name, "field is immutable"),
+				)
+			}
+			if subnet.NatGateway.Name != oldSubnet.NatGateway.Name {
+				allErrs = append(allErrs,
+					field.Invalid(field.NewPath("spec", "networkSpec", "subnets").Index(oldSubnetIndex[subnet.Name]).Child("NatGateway").Child("Name"),
+						c.Spec.NetworkSpec.Subnets[i].NatGateway.Name, "field is immutable"),
+				)
+			}
+			if subnet.SecurityGroup.Name != oldSubnet.SecurityGroup.Name {
+				allErrs = append(allErrs,
+					field.Invalid(field.NewPath("spec", "networkSpec", "subnets").Index(oldSubnetIndex[subnet.Name]).Child("SecurityGroup").Child("Name"),
+						c.Spec.NetworkSpec.Subnets[i].SecurityGroup.Name, "field is immutable"),
+				)
+			}
+		}
+	}
+
+	return allErrs
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.

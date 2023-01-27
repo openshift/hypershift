@@ -4,14 +4,11 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -94,6 +91,20 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 	err := h.hostedClusterClient.Get(ctx, crclient.ObjectKey{Name: "version"}, &clusterVersion)
 	// We check err in loop below to build conditions with ConditionUnknown status for all types.
 
+	if err == nil {
+		hcp.Status.VersionStatus = &hyperv1.ClusterVersionStatus{
+			Desired:            clusterVersion.Status.Desired,
+			History:            clusterVersion.Status.History,
+			ObservedGeneration: clusterVersion.Status.ObservedGeneration,
+			AvailableUpdates:   clusterVersion.Status.AvailableUpdates,
+			ConditionalUpdates: clusterVersion.Status.ConditionalUpdates,
+		}
+		//lint:ignore SA1019 populate the deprecated property until we can drop it in a later API version
+		hcp.Status.Version = hcp.Status.VersionStatus.Desired.Version
+		//lint:ignore SA1019 populate the deprecated property until we can drop it in a later API version
+		hcp.Status.ReleaseImage = hcp.Status.VersionStatus.Desired.Image
+	}
+
 	cvoConditions := map[hyperv1.ConditionType]*configv1.ClusterOperatorStatusCondition{
 		hyperv1.ClusterVersionFailing:         findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, "Failing"),
 		hyperv1.ClusterVersionReleaseAccepted: findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, "ReleaseAccepted"),
@@ -142,45 +153,5 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 	}
 	log.Info("Finished reconciling hosted cluster version conditions")
 
-	// If a rollout is in progress, compute and record the rollout status. The
-	// image version will be considered rolled out if the hosted CVO reports
-	// having completed the rollout of the semantic version matching the release
-	// image specified on the HCP.
-	if hcp.Status.ReleaseImage != hcp.Spec.ReleaseImage {
-		releaseImage, err := h.lookupReleaseImage(ctx, hcp)
-		if err != nil {
-			return fmt.Errorf("failed to look up release image: %w", err)
-		}
-
-		timeout, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
-		var clusterVersion configv1.ClusterVersion
-		if err := h.hostedClusterClient.Get(timeout, crclient.ObjectKey{Name: "version"}, &clusterVersion); err != nil {
-			log.Info("failed to get clusterversion, can't determine image version rollout status", "error", err)
-		} else {
-			versionHistory := clusterVersion.Status.History
-			if len(versionHistory) > 0 &&
-				versionHistory[0].Version == releaseImage.Version() &&
-				versionHistory[0].State == configv1.CompletedUpdate {
-				// Rollout to the desired release image version is complete, so record
-				// that fact on the HCP status.
-				now := metav1.NewTime(time.Now())
-				hcp.Status.ReleaseImage = hcp.Spec.ReleaseImage
-				hcp.Status.Version = releaseImage.Version()
-				hcp.Status.LastReleaseImageTransitionTime = &now
-			}
-		}
-	}
-
 	return nil
-}
-
-func (h *hcpStatusReconciler) lookupReleaseImage(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*releaseinfo.ReleaseImage, error) {
-	pullSecret := common.PullSecret(hcp.Namespace)
-	if err := h.mgtClusterClient.Get(ctx, crclient.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-		return nil, err
-	}
-	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer lookupCancel()
-	return h.releaseProvider.Lookup(lookupCtx, hcp.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
 }

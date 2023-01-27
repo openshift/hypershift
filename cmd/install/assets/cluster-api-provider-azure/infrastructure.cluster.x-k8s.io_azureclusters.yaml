@@ -99,6 +99,24 @@ spec:
                         properties:
                           dnsName:
                             type: string
+                          ipTags:
+                            items:
+                              description: IPTag contains the IpTag associated with
+                                the object.
+                              properties:
+                                tag:
+                                  description: 'Tag specifies the value of the IP
+                                    tag associated with the public IP. Example: SQL.'
+                                  type: string
+                                type:
+                                  description: 'Type specifies the IP tag type. Example:
+                                    FirstPartyUsage.'
+                                  type: string
+                              required:
+                              - tag
+                              - type
+                              type: object
+                            type: array
                           name:
                             type: string
                         required:
@@ -133,6 +151,25 @@ spec:
                                 properties:
                                   dnsName:
                                     type: string
+                                  ipTags:
+                                    items:
+                                      description: IPTag contains the IpTag associated
+                                        with the object.
+                                      properties:
+                                        tag:
+                                          description: 'Tag specifies the value of
+                                            the IP tag associated with the public
+                                            IP. Example: SQL.'
+                                          type: string
+                                        type:
+                                          description: 'Type specifies the IP tag
+                                            type. Example: FirstPartyUsage.'
+                                          type: string
+                                      required:
+                                      - tag
+                                      - type
+                                      type: object
+                                    type: array
                                   name:
                                     type: string
                                 required:
@@ -145,6 +182,10 @@ spec:
                             type: object
                           role:
                             description: Role defines the subnet role (eg. Node, ControlPlane)
+                            enum:
+                            - node
+                            - control-plane
+                            - bastion
                             type: string
                           routeTable:
                             description: RouteTable defines the route table that should
@@ -246,6 +287,9 @@ spec:
                                   - protocol
                                   type: object
                                 type: array
+                                x-kubernetes-list-map-keys:
+                                - name
+                                x-kubernetes-list-type: map
                               tags:
                                 additionalProperties:
                                   type: string
@@ -254,6 +298,27 @@ spec:
                             required:
                             - name
                             type: object
+                          serviceEndpoints:
+                            description: ServiceEndpoints is a slice of Virtual Network
+                              service endpoints to enable for the subnets.
+                            items:
+                              description: ServiceEndpointSpec configures an Azure
+                                Service Endpoint.
+                              properties:
+                                locations:
+                                  items:
+                                    type: string
+                                  type: array
+                                service:
+                                  type: string
+                              required:
+                              - locations
+                              - service
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - service
+                            x-kubernetes-list-type: map
                         required:
                         - name
                         - role
@@ -353,7 +418,9 @@ spec:
                 type: object
               controlPlaneEndpoint:
                 description: ControlPlaneEndpoint represents the endpoint used to
-                  communicate with the control plane.
+                  communicate with the control plane. It is not recommended to set
+                  this when creating an AzureCluster as CAPZ will set this for you.
+                  However, if it is set, CAPZ will not change it.
                 properties:
                   host:
                     description: The hostname on which the API server is serving.
@@ -430,6 +497,25 @@ spec:
                               properties:
                                 dnsName:
                                   type: string
+                                ipTags:
+                                  items:
+                                    description: IPTag contains the IpTag associated
+                                      with the object.
+                                    properties:
+                                      tag:
+                                        description: 'Tag specifies the value of the
+                                          IP tag associated with the public IP. Example:
+                                          SQL.'
+                                        type: string
+                                      type:
+                                        description: 'Type specifies the IP tag type.
+                                          Example: FirstPartyUsage.'
+                                        type: string
+                                    required:
+                                    - tag
+                                    - type
+                                    type: object
+                                  type: array
                                 name:
                                   type: string
                               required:
@@ -484,6 +570,25 @@ spec:
                               properties:
                                 dnsName:
                                   type: string
+                                ipTags:
+                                  items:
+                                    description: IPTag contains the IpTag associated
+                                      with the object.
+                                    properties:
+                                      tag:
+                                        description: 'Tag specifies the value of the
+                                          IP tag associated with the public IP. Example:
+                                          SQL.'
+                                        type: string
+                                      type:
+                                        description: 'Type specifies the IP tag type.
+                                          Example: FirstPartyUsage.'
+                                        type: string
+                                    required:
+                                    - tag
+                                    - type
+                                    type: object
+                                  type: array
                                 name:
                                   type: string
                               required:
@@ -536,6 +641,25 @@ spec:
                               properties:
                                 dnsName:
                                   type: string
+                                ipTags:
+                                  items:
+                                    description: IPTag contains the IpTag associated
+                                      with the object.
+                                    properties:
+                                      tag:
+                                        description: 'Tag specifies the value of the
+                                          IP tag associated with the public IP. Example:
+                                          SQL.'
+                                        type: string
+                                      type:
+                                        description: 'Type specifies the IP tag type.
+                                          Example: FirstPartyUsage.'
+                                        type: string
+                                    required:
+                                    - tag
+                                    - type
+                                    type: object
+                                  type: array
                                 name:
                                   type: string
                               required:
@@ -604,6 +728,25 @@ spec:
                               properties:
                                 dnsName:
                                   type: string
+                                ipTags:
+                                  items:
+                                    description: IPTag contains the IpTag associated
+                                      with the object.
+                                    properties:
+                                      tag:
+                                        description: 'Tag specifies the value of the
+                                          IP tag associated with the public IP. Example:
+                                          SQL.'
+                                        type: string
+                                      type:
+                                        description: 'Type specifies the IP tag type.
+                                          Example: FirstPartyUsage.'
+                                        type: string
+                                    required:
+                                    - tag
+                                    - type
+                                    type: object
+                                  type: array
                                 name:
                                   type: string
                               required:
@@ -616,6 +759,10 @@ spec:
                           type: object
                         role:
                           description: Role defines the subnet role (eg. Node, ControlPlane)
+                          enum:
+                          - node
+                          - control-plane
+                          - bastion
                           type: string
                         routeTable:
                           description: RouteTable defines the route table that should
@@ -714,6 +861,9 @@ spec:
                                 - protocol
                                 type: object
                               type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
                             tags:
                               additionalProperties:
                                 type: string
@@ -722,11 +872,35 @@ spec:
                           required:
                           - name
                           type: object
+                        serviceEndpoints:
+                          description: ServiceEndpoints is a slice of Virtual Network
+                            service endpoints to enable for the subnets.
+                          items:
+                            description: ServiceEndpointSpec configures an Azure Service
+                              Endpoint.
+                            properties:
+                              locations:
+                                items:
+                                  type: string
+                                type: array
+                              service:
+                                type: string
+                            required:
+                            - locations
+                            - service
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - service
+                          x-kubernetes-list-type: map
                       required:
                       - name
                       - role
                       type: object
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                   vnet:
                     description: Vnet is the configuration for the Azure virtual network.
                     properties:

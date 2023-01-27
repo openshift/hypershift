@@ -93,6 +93,7 @@ nav:
 - 'Contribute':
   - contribute/index.md
   - contribute/develop-in-cluster.md
+  - contribute/custom-images.md
   - contribute/onboard-a-platform.md
   - contribute/run-tests.md
   - contribute/contribute-docs.md

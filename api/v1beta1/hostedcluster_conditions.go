@@ -155,6 +155,9 @@ const (
 	PlatformCredentialsNotFoundReason     = "PlatformCredentialsNotFound"
 	InvalidImageReason                    = "InvalidImage"
 	InvalidIdentityProvider               = "InvalidIdentityProvider"
+
+	ReconciliationPausedConditionReason             = "ReconciliationPaused"
+	ReconciliationInvalidPausedUntilConditionReason = "InvalidPausedUntilValue"
 )
 
 // Messages.

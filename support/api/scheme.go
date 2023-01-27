@@ -27,7 +27,7 @@ import (
 	apiserverconfigv1 "k8s.io/apiserver/pkg/apis/config/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )

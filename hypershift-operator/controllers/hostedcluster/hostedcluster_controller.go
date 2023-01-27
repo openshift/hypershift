@@ -86,7 +86,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
 	k8sutilspointer "k8s.io/utils/pointer"
-	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1" // Need this dep atm to satisfy IBM provider dep.
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2" // Need this dep atm to satisfy IBM provider dep.
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -186,15 +186,6 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		builder.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
 	}
 
-	// TODO (alberto): drop this once this is fixed upstream https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2864.
-	builder.Watches(&source.Kind{Type: &hyperv1.NodePool{}}, handler.EnqueueRequestsFromMapFunc(func(obj client.Object) []reconcile.Request {
-		nodePool, ok := obj.(*hyperv1.NodePool)
-		if !ok {
-			return []reconcile.Request{}
-		}
-		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: nodePool.GetNamespace(), Name: nodePool.Spec.ClusterName}}}
-	}))
-
 	// Set based on SCC capability
 	// When SCC is available (OpenShift), the container's security context and UID range is automatically set
 	// When SCC is not available (Kubernetes), we want to explicitly set a default (non-root) security context
@@ -206,7 +197,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 // managedResources are all the resources that are managed as childresources for a HostedCluster
 func (r *HostedClusterReconciler) managedResources() []client.Object {
 	managedResources := []client.Object{
-		&capiawsv1.AWSCluster{},
+		&capiaws.AWSCluster{},
 		&hyperv1.HostedControlPlane{},
 		&capiv1.Cluster{},
 		&appsv1.Deployment{},
@@ -461,9 +452,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Set version status
-	{
-		hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
-	}
+	hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
 
 	// Copy the CVO conditions from the HCP.
 	hcpCVOConditions := map[hyperv1.ConditionType]*metav1.Condition{
@@ -1544,6 +1533,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		}
 	}
 
+	hcp.Spec.Channel = hcluster.Spec.Channel
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
@@ -2591,7 +2581,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("20Mi"),
+								corev1.ResourceMemory: resource.MustParse("40Mi"),
 								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},
@@ -2789,10 +2779,16 @@ func reconcileCAPIProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.
 // computeClusterVersionStatus determines the ClusterVersionStatus of the
 // given HostedCluster and returns it.
 func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) *hyperv1.ClusterVersionStatus {
+	if hcp != nil && hcp.Status.VersionStatus != nil {
+		return hcp.Status.VersionStatus
+	}
+
 	// If there's no history, rebuild it from scratch.
 	if hcluster.Status.Version == nil || len(hcluster.Status.Version.History) == 0 {
 		return &hyperv1.ClusterVersionStatus{
-			Desired:            hcluster.Spec.Release,
+			Desired: configv1.Release{
+				Image: hcluster.Spec.Release.Image,
+			},
 			ObservedGeneration: hcluster.Generation,
 			History: []configv1.UpdateHistory{
 				{
@@ -2804,8 +2800,12 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 		}
 	}
 
-	// Reconcile the current version with the latest resource states.
+	// Assume the previous status is still current.
 	version := hcluster.Status.Version.DeepCopy()
+
+	// The following code is legacy support to preserve
+	// compatability with older HostedControlPlane controllers, which
+	// may not be populating hcp.Status.VersionStatus.
 
 	// If the hosted control plane doesn't exist, there's no way to assess the
 	// rollout so return early.
@@ -2818,6 +2818,7 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	// quite right because the intent here is to identify a terminal rollout
 	// state. For now it assumes when status.releaseImage matches, that rollout
 	// is definitely done.
+	//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 	hcpRolloutComplete := (hcp.Spec.ReleaseImage == hcp.Status.ReleaseImage) && (version.Desired.Image == hcp.Status.ReleaseImage)
 	if !hcpRolloutComplete {
 		return version
@@ -2825,8 +2826,11 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 
 	// The rollout is complete, so update the current history entry
 	version.History[0].State = configv1.CompletedUpdate
+	//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 	version.History[0].Version = hcp.Status.Version
+	//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 	if hcp.Status.LastReleaseImageTransitionTime != nil {
+		//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
 		version.History[0].CompletionTime = hcp.Status.LastReleaseImageTransitionTime.DeepCopy()
 	}
 
@@ -3259,6 +3263,13 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			return reconcilePrivateRouterNetworkPolicy(policy, hcluster)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
+		}
+	} else if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
+		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+			return reconcileVirtLauncherNetworkPolicy(policy, hcluster)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
 		}
 	}
 
@@ -3798,6 +3809,27 @@ func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolic
 	return nil
 }
 
+func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	protocolTCP := corev1.ProtocolTCP
+	protocolUDP := corev1.ProtocolUDP
+	protocolSCTP := corev1.ProtocolSCTP
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{Protocol: &protocolTCP},
+				{Protocol: &protocolUDP},
+				{Protocol: &protocolSCTP},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"kubevirt.io": "virt-launcher",
+		},
+	}
+	return nil
+}
+
 const (
 	oidcDocumentsFinalizer         = "hypershift.io/aws-oidc-discovery"
 	serviceAccountSigningKeySecret = "sa-signing-key"
@@ -4042,24 +4074,6 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 	}
 	// Sort for stable update detection (is this needed?)
 	sort.Strings(subnetIDs)
-
-	// Reconcile subnet IDs in AWSCluster
-	// TODO (alberto): drop this once this is fixed upstream https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2864.
-	awsInfraCR, ok := infraCR.(*capiawsv1.AWSCluster)
-	if !ok {
-		return nil
-	}
-	subnets := capiawsv1.Subnets{}
-	for _, subnetID := range subnetIDs {
-		subnets = append(subnets, capiawsv1.SubnetSpec{ID: subnetID})
-	}
-	_, err = createOrUpdate(ctx, r.Client, awsInfraCR, func() error {
-		awsInfraCR.Spec.NetworkSpec.Subnets = subnets
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile networks for CAPA Infra CR: %w", err)
-	}
 	return nil
 }
 

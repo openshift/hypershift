@@ -328,3 +328,224 @@ func ReconcileKCMLeaderElectionRoleBinding(r *rbacv1.RoleBinding) error {
 
 	return nil
 }
+
+func ReconcilePodSecurityAdmissionLabelSyncerControllerClusterRole(r *rbacv1.ClusterRole) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"namespaces"},
+			Verbs: []string{
+				"get",
+				"list",
+				"update",
+				"watch",
+				"patch",
+			},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"events"},
+			Verbs: []string{
+				"create",
+				"update",
+				"patch",
+			},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"serviceaccounts"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		},
+		{
+			APIGroups: []string{"security.openshift.io"},
+			Resources: []string{"securitycontextconstraints"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		},
+		{
+			APIGroups: []string{"rbac.authorization.k8s.io"},
+			Resources: []string{
+				"clusterroles",
+				"clusterrolebindings",
+				"roles",
+				"rolebindings",
+			},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		},
+	}
+	return nil
+}
+
+func ReconcileImageTriggerControllerClusterRole(r *rbacv1.ClusterRole) error {
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{
+				"apps.openshift.io",
+			},
+			Resources: []string{"deploymentconfigs"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+				"update",
+			},
+		},
+		{
+			APIGroups: []string{
+				"build.openshift.io",
+			},
+			Resources: []string{"buildconfigs"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+				"update",
+			},
+		},
+		{
+			APIGroups: []string{
+				"apps",
+			},
+			Resources: []string{
+				"deployments",
+				"daemonsets",
+				"statefulsets",
+			},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+				"update",
+			},
+		},
+		{
+			APIGroups: []string{
+				"batch",
+			},
+			Resources: []string{
+				"cronjobs",
+			},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+				"update",
+			},
+		},
+	}
+	return nil
+}
+
+func ReconcilePodSecurityAdmissionLabelSyncerControllerRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:openshift:controller:podsecurity-admission-label-syncer-controller",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      "podsecurity-admission-label-syncer-controller",
+			Namespace: "openshift-infra",
+		},
+	}
+	return nil
+}
+
+func ReconcileImageTriggerControllerClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:openshift:openshift-controller-manager:image-trigger-controller",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Namespace: "openshift-infra",
+			Name:      "image-trigger-controller",
+		},
+	}
+	return nil
+}
+
+func ReconcileDeployerClusterRole(r *rbacv1.ClusterRole) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"replicationcontrollers"},
+			Verbs:     []string{"get", "list", "watch", "update", "patch", "delete"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"replicationcontrollers/scale"},
+			Verbs:     []string{"get", "update"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"pods"},
+			Verbs:     []string{"create", "get", "list", "watch"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"pods/log"},
+			Verbs:     []string{"get"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"events"},
+			Verbs:     []string{"create", "list"},
+		},
+		{
+			// apiGroups needs to include "" because the conformance test
+			// does an explicit SubjectAccessReview against the wrong apiGroup
+			// https://github.com/openshift/origin/pull/27689
+			APIGroups: []string{"", "image.openshift.io"},
+			Resources: []string{"imagestreamtags", "imagetags"},
+			Verbs:     []string{"create", "update"},
+		},
+	}
+	return nil
+}
+
+func ReconcileDeployerClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:deployer",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      "default-rolebindings-controller",
+			Namespace: "openshift-infra",
+		},
+	}
+	return nil
+}

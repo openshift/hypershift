@@ -5,7 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	k8sutilspointer "k8s.io/utils/pointer"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 )
 
 const (
@@ -24,7 +24,6 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 	subnet := &capiaws.AWSResourceReference{}
 	if nodePool.Spec.Platform.AWS.Subnet != nil {
 		subnet.ID = nodePool.Spec.Platform.AWS.Subnet.ID
-		subnet.ARN = nodePool.Spec.Platform.AWS.Subnet.ARN
 		for k := range nodePool.Spec.Platform.AWS.Subnet.Filters {
 			filter := capiaws.Filter{
 				Name:   nodePool.Spec.Platform.AWS.Subnet.Filters[k].Name,
@@ -60,7 +59,6 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 			})
 		}
 		securityGroups = append(securityGroups, capiaws.AWSResourceReference{
-			ARN:     sg.ARN,
 			ID:      sg.ID,
 			Filters: filters,
 		})
