@@ -791,7 +791,7 @@ func kasVolumeKubeconfig() *corev1.Volume {
 
 func buildKASVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName:  manifests.KASServiceKubeconfigSecret("").Name,
+		SecretName:  manifests.KASLocalhostKubeconfigSecret("").Name,
 		DefaultMode: pointer.Int32Ptr(0640),
 	}
 }
