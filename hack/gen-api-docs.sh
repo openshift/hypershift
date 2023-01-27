@@ -24,5 +24,5 @@ export GO111MODULE="off"
 ${GEN_BIN} \
 --config "${FAKE_REPOPATH}/docs/api-doc-gen/config.json" \
 --template-dir "${FAKE_REPOPATH}/docs/api-doc-gen/templates" \
---api-dir ./api/v1alpha1 \
+--api-dir ./api/v1beta1 \
 --out-file "${FAKE_REPOPATH}/docs/content/reference/api.md"
