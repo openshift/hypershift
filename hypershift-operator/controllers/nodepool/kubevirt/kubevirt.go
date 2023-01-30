@@ -201,8 +201,9 @@ func virtualMachineTemplateBase(image string, kvPlatform *hyperv1.KubevirtNodePo
 	return template
 }
 
-func MachineTemplateSpec(image string, nodePool *hyperv1.NodePool) *capikubevirt.KubevirtMachineTemplateSpec {
-	nodePoolNameLabelKey := "hypershift.kubevirt.io/node-pool-name"
+func MachineTemplateSpec(image string, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) *capikubevirt.KubevirtMachineTemplateSpec {
+	nodePoolNameLabelKey := hyperv1.NodePoolNameLabel
+	infraIDLabelKey := hyperv1.InfraIDLabel
 
 	vmTemplate := virtualMachineTemplateBase(image, nodePool.Spec.Platform.Kubevirt)
 
@@ -236,7 +237,10 @@ func MachineTemplateSpec(image string, nodePool *hyperv1.NodePool) *capikubevirt
 	}
 
 	vmTemplate.Spec.Template.ObjectMeta.Labels[nodePoolNameLabelKey] = nodePool.Name
+	vmTemplate.Spec.Template.ObjectMeta.Labels[infraIDLabelKey] = hc.Spec.InfraID
+
 	vmTemplate.ObjectMeta.Labels[nodePoolNameLabelKey] = nodePool.Name
+	vmTemplate.ObjectMeta.Labels[infraIDLabelKey] = hc.Spec.InfraID
 
 	return &capikubevirt.KubevirtMachineTemplateSpec{
 		Template: capikubevirt.KubevirtMachineTemplateResource{

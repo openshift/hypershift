@@ -777,8 +777,16 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		// Manifests for infra/mgmt cluster passthrough service
 		cpService := manifests.IngressDefaultIngressPassthroughService(hcpNamespace)
 
+		cpService.Name = fmt.Sprintf("%s-%s",
+			manifests.IngressDefaultIngressPassthroughServiceName,
+			hcp.Spec.Platform.Kubevirt.GenerateID)
+
 		// Manifests for infra/mgmt cluster passthrough routes
 		cpPassthroughRoute := manifests.IngressDefaultIngressPassthroughRoute(hcpNamespace)
+
+		cpPassthroughRoute.Name = fmt.Sprintf("%s-%s",
+			manifests.IngressDefaultIngressPassthroughRouteName,
+			hcp.Spec.Platform.Kubevirt.GenerateID)
 
 		if _, err := r.CreateOrUpdate(ctx, r.cpClient, cpService, func() error {
 			return ingress.ReconcileDefaultIngressPassthroughService(cpService, defaultIngressNodePortService, hcp)

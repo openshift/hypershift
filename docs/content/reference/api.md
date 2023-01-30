@@ -4946,6 +4946,19 @@ Apps: *.apps.guest.apps.mgmt-cluster.example.com</p>
 <p>This is possible using OCP wildcard routes</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>generateID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>GenerateID is used to uniquely apply a name suffix to resources associated with
+kubevirt infrastructure resources</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubevirtRootVolume { #hypershift.openshift.io/v1beta1.KubevirtRootVolume }

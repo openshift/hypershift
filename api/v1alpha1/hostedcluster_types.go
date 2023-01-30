@@ -678,6 +678,7 @@ type PlatformSpec struct {
 }
 
 // KubevirtPlatformSpec specifies configuration for kubevirt guest cluster installations
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.generateID) || has(self.generateID)", message="Kubevirt GenerateID is required once set"
 type KubevirtPlatformSpec struct {
 	// BaseDomainPassthrough toggles whether or not an automatically
 	// generated base domain for the guest cluster should be used that
@@ -703,6 +704,14 @@ type KubevirtPlatformSpec struct {
 	// +optional
 	// +immutable
 	BaseDomainPassthrough *bool `json:"baseDomainPassthrough,omitempty"`
+
+	// GenerateID is used to uniquely apply a name suffix to resources associated with
+	// kubevirt infrastructure resources
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Kubevirt GenerateID is immutable once set"
+	// +kubebuilder:validation:MaxLength=11
+	// +optional
+	GenerateID string `json:"generateID,omitempty"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.

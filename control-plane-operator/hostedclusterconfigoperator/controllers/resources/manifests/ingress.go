@@ -35,19 +35,21 @@ func IngressDefaultIngressNodePortService() *corev1.Service {
 	}
 }
 
+const IngressDefaultIngressPassthroughServiceName = "default-ingress-passthrough-service"
+
 func IngressDefaultIngressPassthroughService(namespace string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default-ingress-passthrough-service",
 			Namespace: namespace,
 		},
 	}
 }
 
+const IngressDefaultIngressPassthroughRouteName = "default-ingress-passthrough-route"
+
 func IngressDefaultIngressPassthroughRoute(namespace string) *routev1.Route {
 	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default-ingress-passthrough-route",
 			Namespace: namespace,
 		},
 	}

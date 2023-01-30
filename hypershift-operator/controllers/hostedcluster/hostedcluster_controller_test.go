@@ -827,6 +827,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.KubevirtPlatform,
+					Kubevirt: &hyperv1.KubevirtPlatformSpec{
+						GenerateID: "123456789",
+					},
 				},
 				Release: hyperv1.Release{
 					Image: releaseImage.PullSpec,

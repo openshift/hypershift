@@ -19,6 +19,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 	testCases := []struct {
 		name     string
 		nodePool *hyperv1.NodePool
+		hc       *hyperv1.HostedCluster
 		expected *capikubevirt.KubevirtMachineTemplateSpec
 	}{
 		{
@@ -40,7 +41,11 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Release: hyperv1.Release{},
 				},
 			},
-
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
@@ -57,7 +62,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			err := PlatformValidation(tc.nodePool)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			result := MachineTemplateSpec("", tc.nodePool)
+			result := MachineTemplateSpec("", tc.nodePool, tc.hc)
 			if !equality.Semantic.DeepEqual(tc.expected, result) {
 				t.Errorf(cmp.Diff(tc.expected, result))
 			}
@@ -95,13 +100,15 @@ func generateNodeTemplate(memory string, cpu uint32, image string, volumeSize st
 	runAlways := kubevirtv1.RunStrategyAlways
 	guestQuantity := apiresource.MustParse(memory)
 	volumeSizeQuantity := apiresource.MustParse(volumeSize)
-	nodePoolNameLabelKey := "hypershift.kubevirt.io/node-pool-name"
+	nodePoolNameLabelKey := hyperv1.NodePoolNameLabel
+	infraIDLabelKey := hyperv1.InfraIDLabel
 	pullMethod := v1beta1.RegistryPullNode
 
 	return &capikubevirt.VirtualMachineTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
 				nodePoolNameLabelKey: "my-pool",
+				infraIDLabelKey:      "1234",
 			},
 		},
 		Spec: kubevirtv1.VirtualMachineSpec{
@@ -133,6 +140,7 @@ func generateNodeTemplate(memory string, cpu uint32, image string, volumeSize st
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
 						nodePoolNameLabelKey: "my-pool",
+						infraIDLabelKey:      "1234",
 					},
 				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{

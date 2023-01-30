@@ -112,6 +112,9 @@ func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultN
 		return fmt.Errorf("unable to detect default ingress NodePort https port")
 	}
 
+	if service.Labels == nil {
+		service.Labels = map[string]string{}
+	}
 	service.Spec.Ports = []corev1.ServicePort{
 		{
 			Name:       "https-443",
@@ -121,9 +124,12 @@ func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultN
 		},
 	}
 	service.Spec.Selector = map[string]string{
-		"kubevirt.io": "virt-launcher",
+		"kubevirt.io":        "virt-launcher",
+		hyperv1.InfraIDLabel: hcp.Spec.InfraID,
 	}
 	service.Spec.Type = corev1.ServiceTypeClusterIP
+
+	service.Labels[hyperv1.InfraIDLabel] = hcp.Spec.InfraID
 
 	ownerRef.ApplyTo(service)
 
@@ -133,6 +139,9 @@ func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultN
 func ReconcileDefaultIngressPassthroughRoute(route *routev1.Route, cpService *corev1.Service, hcp *hyperv1.HostedControlPlane) error {
 	ownerRef := config.OwnerRefFrom(hcp)
 
+	if route.Labels == nil {
+		route.Labels = map[string]string{}
+	}
 	route.Spec.WildcardPolicy = routev1.WildcardPolicySubdomain
 	route.Spec.Host = fmt.Sprintf("https.apps.%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain)
 	route.Spec.TLS = &routev1.TLSConfig{
@@ -142,6 +151,7 @@ func ReconcileDefaultIngressPassthroughRoute(route *routev1.Route, cpService *co
 		Kind: "Service",
 		Name: cpService.Name,
 	}
+	route.Labels[hyperv1.InfraIDLabel] = hcp.Spec.InfraID
 
 	ownerRef.ApplyTo(route)
 

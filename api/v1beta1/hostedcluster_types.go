@@ -133,6 +133,14 @@ const (
 	// SilenceClusterAlertsLabel  is a label that can be used by consumers to indicate
 	// alerts from a cluster can be silenced or ignored
 	SilenceClusterAlertsLabel = "hypershift.openshift.io/silence-cluster-alerts"
+
+	// InfraIDLabel is a label that indicates the hosted cluster's infra id
+	// that the resource is associated with.
+	InfraIDLabel = "hypershift.openshift.io/infra-id"
+
+	// NodePoolNameLabel is a label that indicates the name of the node pool
+	// a resource is associated with
+	NodePoolNameLabel = "hypershift.openshift.io/nodepool-name"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
@@ -656,6 +664,7 @@ type PlatformSpec struct {
 }
 
 // KubevirtPlatformSpec specifies configuration for kubevirt guest cluster installations
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.generateID) || has(self.generateID)", message="Kubevirt GenerateID is required once set"
 type KubevirtPlatformSpec struct {
 	// BaseDomainPassthrough toggles whether or not an automatically
 	// generated base domain for the guest cluster should be used that
@@ -681,6 +690,14 @@ type KubevirtPlatformSpec struct {
 	// +optional
 	// +immutable
 	BaseDomainPassthrough *bool `json:"baseDomainPassthrough,omitempty"`
+
+	// GenerateID is used to uniquely apply a name suffix to resources associated with
+	// kubevirt infrastructure resources
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Kubevirt GenerateID is immutable once set"
+	// +kubebuilder:validation:MaxLength=11
+	// +optional
+	GenerateID string `json:"generateID,omitempty"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.
