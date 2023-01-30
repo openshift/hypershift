@@ -30,6 +30,18 @@ func ReconcileRegistryConfig(cfg *imageregistryv1.Config, platform hyperv1.Platf
 
 		cfg.Spec.Storage = imageregistryv1.ImageRegistryConfigStorage{EmptyDir: &imageregistryv1.ImageRegistryConfigStorageEmptyDir{}}
 	}
+	// IBM Cloud platform allows to initialize the registry config and then afterwards the client is in full control of the updates
+	if platform == hyperv1.IBMCloudPlatform {
+		// Only initialize on creates and bad config
+		// TODO(IBM): Revisit after bug is addressed, https://github.com/openshift/cluster-image-registry-operator/issues/835
+		onCreate := cfg.ResourceVersion == "" && cfg.Generation < 1
+		badConfig := cfg.Spec.Storage.IBMCOS != nil && *cfg.Spec.Storage.IBMCOS == (imageregistryv1.ImageRegistryConfigStorageIBMCOS{})
+		if onCreate || badConfig {
+			cfg.Spec.Replicas = 1
+			cfg.Spec.ManagementState = operatorv1.Removed
+			cfg.Spec.Storage = imageregistryv1.ImageRegistryConfigStorage{EmptyDir: &imageregistryv1.ImageRegistryConfigStorageEmptyDir{}}
+		}
+	}
 }
 
 func generateImageRegistrySecret() string {
