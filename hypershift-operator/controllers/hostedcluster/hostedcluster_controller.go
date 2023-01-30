@@ -3231,7 +3231,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	// Reconcile KAS Network Policy
 	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileKASNetworkPolicy(policy, hcluster, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS))
+		return reconcileKASNetworkPolicy(policy, hcluster)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
 	}
@@ -3581,7 +3581,7 @@ func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) err
 	return nil
 }
 
-func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftMgmtCluster bool) error {
+func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
 	port := intstr.FromInt(kas.APIServerListenPort)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -3610,70 +3610,12 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 		})
 	}
 
-	// Allow traffic to same namespace
-	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
-		{
-			To: []networkingv1.NetworkPolicyPeer{
-				{
-					PodSelector: &metav1.LabelSelector{},
-				},
-			},
-		},
-	}
-
-	if isOpenShiftMgmtCluster {
-		// Allow traffic to openshift-dns namespace
-		dnsUDPPort := intstr.FromInt(5353)
-		dnsUDPProtocol := corev1.ProtocolUDP
-		dnsTCPPort := intstr.FromInt(5353)
-		dnsTCPProtocol := corev1.ProtocolTCP
-		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
-			To: []networkingv1.NetworkPolicyPeer{
-				{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"kubernetes.io/metadata.name": "openshift-dns",
-						},
-					},
-				},
-			},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{
-					Port:     &dnsUDPPort,
-					Protocol: &dnsUDPProtocol,
-				},
-				{
-					Port:     &dnsTCPPort,
-					Protocol: &dnsTCPProtocol,
-				},
-			},
-		})
-	} else {
-		// All traffic to any destination on port 53 for both TCP and UDP
-		dnsUDPPort := intstr.FromInt(53)
-		dnsUDPProtocol := corev1.ProtocolUDP
-		dnsTCPPort := intstr.FromInt(53)
-		dnsTCPProtocol := corev1.ProtocolTCP
-		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
-			Ports: []networkingv1.NetworkPolicyPort{
-				{
-					Port:     &dnsUDPPort,
-					Protocol: &dnsUDPProtocol,
-				},
-				{
-					Port:     &dnsTCPPort,
-					Protocol: &dnsTCPProtocol,
-				},
-			},
-		})
-	}
-
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"app": "kube-apiserver",
 		},
 	}
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 	return nil
 }
 
