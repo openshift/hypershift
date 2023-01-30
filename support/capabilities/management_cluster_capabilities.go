@@ -41,10 +41,6 @@ const (
 	// CapabilityDNS indicates if the cluster supports the
 	// dnses.config.openshift.io api
 	CapabilityDNS
-
-	// CapabilityNetworks indicates if the cluster supports the
-	// networks.config.openshift.io api
-	CapabilityNetworks
 )
 
 // ManagementClusterCapabilities holds all information about optional capabilities of
@@ -142,15 +138,6 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 	}
 	if hasDNSCap {
 		discoveredCapabilities[CapabilityDNS] = struct{}{}
-	}
-
-	// check for networks capability
-	hasNetworksCap, err := isAPIResourceRegistered(client, configv1.GroupVersion, "networks")
-	if err != nil {
-		return nil, err
-	}
-	if hasNetworksCap {
-		discoveredCapabilities[CapabilityNetworks] = struct{}{}
 	}
 
 	return &ManagementClusterCapabilities{capabilities: discoveredCapabilities}, nil

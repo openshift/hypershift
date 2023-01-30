@@ -844,14 +844,6 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				".dockerconfigjson": []byte("{}"),
 			},
 		},
-		&configv1.Network{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "cluster",
-			},
-			Spec: configv1.NetworkSpec{
-				NetworkType: "OVNKubernetes",
-			},
-		},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "agent-namespace"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "agent"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "aws"}},
