@@ -845,8 +845,8 @@ github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799 h1:rc3tiVYb5z54aKaDfakKn0dDjIyPpTtszkjuMzyt7ec=
 github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799/go.mod h1:BtxoFyWECRxE4U/7sNtV5W15zMzWCbyJoFRP3s7yZA0=
-github.com/openshift/api v0.0.0-20220831183848-09c070622e2c h1:7Ar64e7somcImBRqyOLJINqirHeNwB9QdBR2AUNrnPw=
-github.com/openshift/api v0.0.0-20220831183848-09c070622e2c/go.mod h1:9JWn+H7X8wEPPc9D63krigXl8r3F1Mt6/lC98brUyhQ=
+github.com/openshift/api v0.0.0-20230119154305-a7b1b9651014 h1:8TEOYuzFk9uSrgfp+HMCsTT+NnIFWmdcU16UW6y2AjQ=
+github.com/openshift/api v0.0.0-20230119154305-a7b1b9651014/go.mod h1:OW9hi5XDXOQWm/kRqUww6RVxZSf0nqrS4heerSmHBC4=
 github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6 h1:+hva5Mtz22jmpu9v7RlE1iVqHUZu72nRjmpV+eLNIGQ=
 github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6/go.mod h1:qTEqKytotRAu1/N5Grbfd0DGjD56EYk4zNsHg+4Hvlw=
 github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220227135922-dd6353f609dc h1:/CaKFCqrrle4NE8YLwcAavCQp37MPF2TliFenPWF8FM=
