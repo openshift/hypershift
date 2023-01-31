@@ -1805,6 +1805,25 @@ type HostedClusterStatus struct {
 	// plane's current state.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Platform contains platform-specific status of the HostedCluster
+	// +optional
+	Platform *PlatformStatus `json:"platform,omitempty"`
+}
+
+// PlatformStatus contains platform-specific status
+type PlatformStatus struct {
+	// +optional
+	AWS *AWSPlatformStatus `json:"aws,omitempty"`
+}
+
+// AWSPlatformStatus contains status specific to the AWS platform
+type AWSPlatformStatus struct {
+	// DefaultWorkerSecurityGroupID is the ID of a security group created by
+	// the control plane operator. It is used for NodePools that don't specify a
+	// security group.
+	// +optional
+	DefaultWorkerSecurityGroupID string `json:"defaultWorkerSecurityGroupID,omitempty"`
 }
 
 // ClusterVersionStatus reports the status of the cluster versioning,

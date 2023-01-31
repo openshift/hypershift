@@ -93,6 +93,8 @@ const (
 
 	controlPlaneOperatorManagesDecompressAndDecodeConfig = "io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config"
 
+	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
+
 	labelManagedPrefix = "managed.hypershift.openshift.io"
 )
 
@@ -104,6 +106,15 @@ type NodePoolReconciler struct {
 	upsert.CreateOrUpdateProvider
 	HypershiftOperatorImage string
 	ImageMetadataProvider   supportutil.ImageMetadataProvider
+}
+
+type NotReadyError struct {
+	error
+}
+
+type CPOCapabilities struct {
+	DecompressAndDecodeConfig     bool
+	CreateDefaultAWSSecurityGroup bool
 }
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -707,13 +718,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to compress and decode config: %w", err)
 	}
 
+	cpoCapabilities, err := r.detectCPOCapabilities(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to detect CPO capabilities: %w", err)
+	}
+
 	// TODO (alberto): Drop this after dropping < 4.12 support.
 	// So all CPOs ign server will know to decompress and decode.
-	cpoDecompressAndDecodeConfig, err := r.doesCPODecompressAndDecodeConfig(ctx, hcluster)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to check if CPO decompress and encode config: %w", err)
-	}
-	if !cpoDecompressAndDecodeConfig {
+	if !cpoCapabilities.DecompressAndDecodeConfig {
 		compressedConfig, err = supportutil.Compress([]byte(config))
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to compress config: %w", err)
@@ -807,8 +819,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Reconcile (Platform)MachineTemplate.
-	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, powervsBootImage, kubevirtBootImage)
+	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, powervsBootImage, kubevirtBootImage, cpoCapabilities.CreateDefaultAWSSecurityGroup)
 	if err != nil {
+		if _, isNotReady := err.(*NotReadyError); isNotReady {
+			log.Info("Waiting to create machine template", "message", err.Error())
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
 		return ctrl.Result{}, err
 	}
 	if result, err := r.CreateOrUpdate(ctx, r.Client, template, func() error {
@@ -2168,7 +2184,7 @@ func isPlatformNone(nodePool *hyperv1.NodePool) bool {
 // a func to mutate the (platform)MachineTemplate.spec, a json string representation for (platform)MachineTemplate.spec
 // and an error.
 func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool,
-	infraID, ami, powervsBootImage, kubevirtBootImage string) (client.Object, func(object client.Object) error, string, error) {
+	infraID, ami, powervsBootImage, kubevirtBootImage string, defaultSG bool) (client.Object, func(object client.Object) error, string, error) {
 	var mutateTemplate func(object client.Object) error
 	var template client.Object
 	var machineTemplateSpec interface{}
@@ -2177,7 +2193,11 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 	// Define the desired template type and mutateTemplate function.
 	case hyperv1.AWSPlatform:
 		template = &capiaws.AWSMachineTemplate{}
-		machineTemplateSpec = awsMachineTemplateSpec(infraID, ami, hcluster, nodePool)
+		var err error
+		machineTemplateSpec, err = awsMachineTemplateSpec(infraID, ami, hcluster, nodePool, defaultSG)
+		if err != nil {
+			return nil, nil, "", err
+		}
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capiaws.AWSMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capiaws.AWSMachineTemplateSpec)
@@ -2271,23 +2291,27 @@ func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSe
 	return c.Update(ctx, tokenSecret)
 }
 
-func (r *NodePoolReconciler) doesCPODecompressAndDecodeConfig(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (bool, error) {
+func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*CPOCapabilities, error) {
 	pullSecretBytes, err := r.getPullSecretBytes(ctx, hostedCluster)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	controlPlaneOperatorImage, err := hostedcluster.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
-		return false, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
+		return nil, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
 
 	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
 	if err != nil {
-		return false, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
+		return nil, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
 
-	_, managesDecompressAndDecodeConfig := supportutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesDecompressAndDecodeConfig]
-	return managesDecompressAndDecodeConfig, nil
+	imageLabels := supportutil.ImageLabels(controlPlaneOperatorImageMetadata)
+	result := &CPOCapabilities{}
+	_, result.DecompressAndDecodeConfig = imageLabels[controlPlaneOperatorManagesDecompressAndDecodeConfig]
+	_, result.CreateDefaultAWSSecurityGroup = imageLabels[controlPlaneOperatorCreatesDefaultAWSSecurityGroup]
+
+	return result, nil
 }
 
 // ensureMachineDeletion ensures all the machines belonging to the NodePool's MachineSet are fully deleted.

@@ -29730,6 +29730,21 @@ objects:
                     defined on the HostedCluster. This is populated after the infrastructure
                     is ready.
                   type: string
+                platform:
+                  description: Platform contains platform-specific status of the HostedCluster
+                  properties:
+                    aws:
+                      description: AWSPlatformStatus contains status specific to the
+                        AWS platform
+                      properties:
+                        defaultWorkerSecurityGroupID:
+                          description: DefaultWorkerSecurityGroupID is the ID of a
+                            security group created by the control plane operator.
+                            It is used for NodePools that don't specify a security
+                            group.
+                          type: string
+                      type: object
+                  type: object
                 version:
                   description: Version is the status of the release version applied
                     to the HostedCluster.
@@ -32458,10 +32473,14 @@ objects:
                                 \"Statement\": [ { \"Effect\": \"Allow\", \"Action\":
                                 [ \"ec2:CreateVpcEndpoint\", \"ec2:DescribeVpcEndpoints\",
                                 \"ec2:ModifyVpcEndpoint\", \"ec2:DeleteVpcEndpoints\",
-                                \"ec2:CreateTags\", \"route53:ListHostedZones\", ],
-                                \"Resource\": \"*\" }, { \"Effect\": \"Allow\", \"Action\":
-                                [ \"route53:ChangeResourceRecordSets\", \"route53:ListResourceRecordSets\"
-                                ], \"Resource\": \"arn:aws:route53:::%s\" } ] }"
+                                \"ec2:CreateTags\", \"route53:ListHostedZones\", \"ec2:CreateSecurityGroup\",
+                                \"ec2:AuthorizeSecurityGroupIngress\", \"ec2:AuthorizeSecurityGroupEgress\",
+                                \"ec2:DeleteSecurityGroup\", \"ec2:RevokeSecurityGroupIngress\",
+                                \"ec2:RevokeSecurityGroupEgress\", \"ec2:DescribeSecurityGroups\",
+                                \"ec2:DescribeVpcs\", ], \"Resource\": \"*\" }, {
+                                \"Effect\": \"Allow\", \"Action\": [ \"route53:ChangeResourceRecordSets\",
+                                \"route53:ListResourceRecordSets\" ], \"Resource\":
+                                \"arn:aws:route53:::%s\" } ] }"
                               type: string
                             imageRegistryARN:
                               description: "ImageRegistryARN is an ARN value referencing
@@ -33340,6 +33359,21 @@ objects:
                     defined on the HostedCluster. This is populated after the infrastructure
                     is ready.
                   type: string
+                platform:
+                  description: Platform contains platform-specific status of the HostedCluster
+                  properties:
+                    aws:
+                      description: AWSPlatformStatus contains status specific to the
+                        AWS platform
+                      properties:
+                        defaultWorkerSecurityGroupID:
+                          description: DefaultWorkerSecurityGroupID is the ID of a
+                            security group created by the control plane operator.
+                            It is used for NodePools that don't specify a security
+                            group.
+                          type: string
+                      type: object
+                  type: object
                 version:
                   description: Version is the status of the release version applied
                     to the HostedCluster.
@@ -37130,6 +37164,21 @@ objects:
                     defined on the HostedCluster. This is populated after the infrastructure
                     is ready.
                   type: string
+                platform:
+                  description: Platform contains platform-specific status of the HostedCluster
+                  properties:
+                    aws:
+                      description: AWSPlatformStatus contains status specific to the
+                        AWS platform
+                      properties:
+                        defaultWorkerSecurityGroupID:
+                          description: DefaultWorkerSecurityGroupID is the ID of a
+                            security group created by the control plane operator.
+                            It is used for NodePools that don't specify a security
+                            group.
+                          type: string
+                      type: object
+                  type: object
                 ready:
                   default: false
                   description: Ready denotes that the HostedControlPlane API Server
@@ -39840,10 +39889,14 @@ objects:
                                 \"Statement\": [ { \"Effect\": \"Allow\", \"Action\":
                                 [ \"ec2:CreateVpcEndpoint\", \"ec2:DescribeVpcEndpoints\",
                                 \"ec2:ModifyVpcEndpoint\", \"ec2:DeleteVpcEndpoints\",
-                                \"ec2:CreateTags\", \"route53:ListHostedZones\", ],
-                                \"Resource\": \"*\" }, { \"Effect\": \"Allow\", \"Action\":
-                                [ \"route53:ChangeResourceRecordSets\", \"route53:ListResourceRecordSets\"
-                                ], \"Resource\": \"arn:aws:route53:::%s\" } ] }"
+                                \"ec2:CreateTags\", \"route53:ListHostedZones\", \"ec2:CreateSecurityGroup\",
+                                \"ec2:AuthorizeSecurityGroupIngress\", \"ec2:AuthorizeSecurityGroupEgress\",
+                                \"ec2:DeleteSecurityGroup\", \"ec2:RevokeSecurityGroupIngress\",
+                                \"ec2:RevokeSecurityGroupEgress\", \"ec2:DescribeSecurityGroups\",
+                                \"ec2:DescribeVpcs\", ], \"Resource\": \"*\" }, {
+                                \"Effect\": \"Allow\", \"Action\": [ \"route53:ChangeResourceRecordSets\",
+                                \"route53:ListResourceRecordSets\" ], \"Resource\":
+                                \"arn:aws:route53:::%s\" } ] }"
                               type: string
                             imageRegistryARN:
                               description: "ImageRegistryARN is an ARN value referencing
@@ -40727,6 +40780,21 @@ objects:
                     defined on the HostedCluster. This is populated after the infrastructure
                     is ready.
                   type: string
+                platform:
+                  description: Platform contains platform-specific status of the HostedCluster
+                  properties:
+                    aws:
+                      description: AWSPlatformStatus contains status specific to the
+                        AWS platform
+                      properties:
+                        defaultWorkerSecurityGroupID:
+                          description: DefaultWorkerSecurityGroupID is the ID of a
+                            security group created by the control plane operator.
+                            It is used for NodePools that don't specify a security
+                            group.
+                          type: string
+                      type: object
+                  type: object
                 ready:
                   default: false
                   description: Ready denotes that the HostedControlPlane API Server
