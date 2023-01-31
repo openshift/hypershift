@@ -3312,6 +3312,20 @@ spec:
                   defined on the HostedCluster. This is populated after the infrastructure
                   is ready.
                 type: string
+              platform:
+                description: Platform contains platform-specific status of the HostedCluster
+                properties:
+                  aws:
+                    description: AWSPlatformStatus contains status specific to the
+                      AWS platform
+                    properties:
+                      defaultWorkerSecurityGroupID:
+                        description: DefaultWorkerSecurityGroupID is the ID of a security
+                          group created by the control plane operator. It is used
+                          for NodePools that don't specify a security group.
+                        type: string
+                    type: object
+                type: object
               ready:
                 default: false
                 description: Ready denotes that the HostedControlPlane API Server
@@ -5967,6 +5981,10 @@ spec:
                               [ { \"Effect\": \"Allow\", \"Action\": [ \"ec2:CreateVpcEndpoint\",
                               \"ec2:DescribeVpcEndpoints\", \"ec2:ModifyVpcEndpoint\",
                               \"ec2:DeleteVpcEndpoints\", \"ec2:CreateTags\", \"route53:ListHostedZones\",
+                              \"ec2:CreateSecurityGroup\", \"ec2:AuthorizeSecurityGroupIngress\",
+                              \"ec2:AuthorizeSecurityGroupEgress\", \"ec2:DeleteSecurityGroup\",
+                              \"ec2:RevokeSecurityGroupIngress\", \"ec2:RevokeSecurityGroupEgress\",
+                              \"ec2:DescribeSecurityGroups\", \"ec2:DescribeVpcs\",
                               ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\", \"Action\":
                               [ \"route53:ChangeResourceRecordSets\", \"route53:ListResourceRecordSets\"
                               ], \"Resource\": \"arn:aws:route53:::%s\" } ] }"
@@ -6832,6 +6850,20 @@ spec:
                   defined on the HostedCluster. This is populated after the infrastructure
                   is ready.
                 type: string
+              platform:
+                description: Platform contains platform-specific status of the HostedCluster
+                properties:
+                  aws:
+                    description: AWSPlatformStatus contains status specific to the
+                      AWS platform
+                    properties:
+                      defaultWorkerSecurityGroupID:
+                        description: DefaultWorkerSecurityGroupID is the ID of a security
+                          group created by the control plane operator. It is used
+                          for NodePools that don't specify a security group.
+                        type: string
+                    type: object
+                type: object
               ready:
                 default: false
                 description: Ready denotes that the HostedControlPlane API Server

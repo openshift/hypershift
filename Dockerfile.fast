@@ -7,6 +7,7 @@ LABEL io.openshift.hypershift.control-plane-operator-manages-ignition-server=tru
 LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver=true
 LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler=true
 LABEL io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config=true
+LABEL io.openshift.hypershift.control-plane-operator-creates-aws-sg=true
 
 RUN cd /usr/bin && \
     ln -s control-plane-operator ignition-server && \

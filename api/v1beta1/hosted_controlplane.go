@@ -262,6 +262,10 @@ type HostedControlPlaneStatus struct {
 	// Current condition types are: "Available"
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Platform contains platform-specific status of the HostedCluster
+	// +optional
+	Platform *PlatformStatus `json:"platform,omitempty"`
 }
 
 type APIEndpoint struct {

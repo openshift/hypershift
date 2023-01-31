@@ -113,6 +113,12 @@ const (
 	// A failure here may require external user intervention to resolve.
 	ValidAWSIdentityProvider ConditionType = "ValidAWSIdentityProvider"
 
+	// AWSDefaultSecurityGroupCreated indicates whether the default security group
+	// for AWS workers has been created.
+	// A failure here indicates that NodePools without a security group will be
+	// blocked from creating machines.
+	AWSDefaultSecurityGroupCreated ConditionType = "AWSDefaultSecurityGroupCreated"
+
 	// PlatformCredentialsFound indicates that credentials required for the
 	// desired platform are valid.
 	// A failure here is unlikely to resolve without the changing user input.

@@ -594,6 +594,22 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
 	}
 
+	// Copy the platform status from the hostedcontrolplane
+	if hcp != nil {
+		hcluster.Status.Platform = hcp.Status.Platform
+	}
+
+	// Copy the AWSDefaultSecurityGroupCreated condition from the hostedcontrolplane
+	{
+		if hcp != nil {
+			sgCreated := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupCreated))
+			if sgCreated != nil {
+				sgCreated.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *sgCreated)
+			}
+		}
+	}
+
 	// Reconcile unmanaged etcd client tls secret validation error status. Note only update status on validation error case to
 	// provide clear status to the user on the resource without having to look at operator logs.
 	{
