@@ -82,6 +82,7 @@ var cpObjects = []client.Object{
 	fakeHCP(),
 	fakeIngressCert(),
 	fakePullSecret(),
+	fakeControlPlaneKonnectivityCAConfigMap(),
 	fakeKonnectivityAgentSecret(),
 	fakeRootCASecret(),
 	fakeOpenShiftAPIServerService(),
@@ -185,6 +186,14 @@ func fakePullSecret() *corev1.Secret {
 		corev1.DockerConfigJsonKey: []byte("data"),
 	}
 	return s
+}
+
+func fakeControlPlaneKonnectivityCAConfigMap() *corev1.ConfigMap {
+	cm := manifests.KonnectivityControlPlaneCAConfigMap("bar")
+	cm.Data = map[string]string{
+		"ca.crt": "tehca",
+	}
+	return cm
 }
 
 func fakeKonnectivityAgentSecret() *corev1.Secret {

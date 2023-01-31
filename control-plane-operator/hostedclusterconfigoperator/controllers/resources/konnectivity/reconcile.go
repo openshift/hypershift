@@ -25,6 +25,7 @@ var (
 	volumeMounts = util.PodVolumeMounts{
 		konnectivityAgentContainer().Name: util.ContainerVolumeMounts{
 			konnectivityVolumeAgentCerts().Name: "/etc/konnectivity/agent",
+			konnectivityVolumeCACert().Name:     "/etc/konnectivity/ca",
 		},
 	}
 )
@@ -57,6 +58,7 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
+					util.BuildVolume(konnectivityVolumeCACert(), buildKonnectivityVolumeCACert),
 				},
 			},
 		},
@@ -81,6 +83,12 @@ func konnectivityVolumeAgentCerts() *corev1.Volume {
 	}
 }
 
+func konnectivityVolumeCACert() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "konnectivity-ca",
+	}
+}
+
 func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy configv1.ProxyStatus) func(c *corev1.Container) {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(konnectivityAgentContainer().Name, volume), file)
@@ -94,7 +102,7 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 		c.Args = []string{
 			"--logtostderr=true",
 			"--ca-cert",
-			cpath(konnectivityVolumeAgentCerts().Name, "ca.crt"),
+			cpath(konnectivityVolumeCACert().Name, "ca.crt"),
 			"--agent-cert",
 			cpath(konnectivityVolumeAgentCerts().Name, corev1.TLSCertKey),
 			"--agent-key",
@@ -140,6 +148,13 @@ func buildKonnectivityVolumeWorkerAgentCerts(v *corev1.Volume) {
 		SecretName:  manifests.KonnectivityAgentSecret("").Name,
 		DefaultMode: pointer.Int32Ptr(0640),
 	}
+}
+
+func buildKonnectivityVolumeCACert(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{
+		DefaultMode: pointer.Int32Ptr(0640),
+	}
+	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
 }
 
 func ReconcileKonnectivityAgentSecret(secret, source *corev1.Secret) {
