@@ -806,6 +806,19 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 
 	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), r.konnectivityServerAddress, r.konnectivityServerPort)
 
+	controlPlaneKonnectivityCA := manifests.KonnectivityControlPlaneCAConfigMap(hcp.Namespace)
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(controlPlaneKonnectivityCA), controlPlaneKonnectivityCA); err != nil {
+		errs = append(errs, fmt.Errorf("failed to get control plane konnectivity agent CA config map: %w", err))
+	} else {
+		hostedKonnectivityCA := manifests.KonnectivityHostedCAConfigMap()
+		if _, err := r.CreateOrUpdate(ctx, r.client, hostedKonnectivityCA, func() error {
+			util.CopyConfigMap(hostedKonnectivityCA, controlPlaneKonnectivityCA)
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile konnectivity CA config map: %w", err))
+		}
+	}
+
 	controlPlaneAgentSecret := manifests.KonnectivityControlPlaneAgentSecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(controlPlaneAgentSecret), controlPlaneAgentSecret); err != nil {
 		errs = append(errs, fmt.Errorf("failed to get control plane konnectivity agent secret: %w", err))
