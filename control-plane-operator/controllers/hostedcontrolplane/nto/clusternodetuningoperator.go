@@ -203,6 +203,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 		}}},
 		{Name: "hosted-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KASServiceKubeconfigSecret("").Name}}},
 	}
+	dep.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.BoolPtr(false)
 
 	params.DeploymentConfig.ApplyTo(dep)
 	return nil
