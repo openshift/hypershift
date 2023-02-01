@@ -47,7 +47,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
@@ -487,8 +487,19 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		ObservedGeneration: nodePool.Generation,
 	})
 
+	// Initialize NodePool annotations
+	if nodePool.Annotations == nil {
+		nodePool.Annotations = make(map[string]string)
+	}
+
+	// Retrieve pull secret name to check for changes when config is checked for updates
+	pullSecretName, err := r.getPullSecretName(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Check if config needs to be updated.
-	targetConfigHash := hashStruct(config)
+	targetConfigHash := hashStruct(config + pullSecretName)
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -505,7 +516,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingConfigConditionType)
 	}
 
-	// Check if version needs to be updated.
+	// Check if release image version needs to be updated.
 	targetVersion := releaseImage.Version()
 	isUpdatingVersion := isUpdatingVersion(nodePool, targetVersion)
 	if isUpdatingVersion {
@@ -523,8 +534,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Signal ignition payload generation
-	targetConfigVersionHash := hashStruct(config + targetVersion)
-	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetConfigVersionHash)
+	targetPayloadConfigHash := hashStruct(config + targetVersion + pullSecretName)
+	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
 	condition, err := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("error setting ValidGeneratedPayload condition: %w", err)
@@ -710,7 +721,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Token Secrets exist for each NodePool config/version and follow "prefixName-configVersionHash" naming convention.
-	// Ensure old configVersionHash resources are deleted, i.e token Secret and userdata Secret.
+	// Ensure old configVersionHash resources are deleted, i.e. token Secret and userdata Secret.
 	if isUpdatingVersion || isUpdatingConfig {
 		tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
 		err := r.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret)
@@ -728,7 +739,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// TODO (Alberto): enable back deletion when the PR above gets merged.
 	}
 
-	tokenSecret = TokenSecret(controlPlaneNamespace, nodePool.Name, targetConfigVersionHash)
+	tokenSecret = TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
 	if result, err := r.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
 		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes())
 	}); err != nil {
@@ -743,9 +754,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("token secret is missing token key")
 	}
 
-	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetConfigVersionHash)
+	userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), targetPayloadConfigHash)
 	if result, err := r.CreateOrUpdate(ctx, r.Client, userDataSecret, func() error {
-		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, targetConfigVersionHash, proxy)
+		return reconcileUserDataSecret(userDataSecret, nodePool, caCertBytes, tokenBytes, ignEndpoint, targetPayloadConfigHash, proxy)
 	}); err != nil {
 		return ctrl.Result{}, err
 	} else {
@@ -765,7 +776,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				"previous", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "new", targetConfigHash)
 			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
 		}
-		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
+		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetPayloadConfigHash
 		return ctrl.Result{}, nil
 	}
 
@@ -805,7 +816,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				userDataSecret,
 				template,
 				infraID,
-				targetVersion, targetConfigHash, targetConfigVersionHash, machineTemplateSpecJSON)
+				targetVersion, targetConfigHash, targetPayloadConfigHash, machineTemplateSpecJSON)
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineSet %q: %w",
 				client.ObjectKeyFromObject(ms).String(), err)
@@ -823,7 +834,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				userDataSecret,
 				template,
 				infraID,
-				targetVersion, targetConfigHash, targetConfigVersionHash, machineTemplateSpecJSON)
+				targetVersion, targetConfigHash, targetPayloadConfigHash, machineTemplateSpecJSON)
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
 				client.ObjectKeyFromObject(md).String(), err)
@@ -1337,7 +1348,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		return nil
 	}
 
-	// If the MachineDeployment is no processing we know
+	// If the MachineDeployment is now processing we know
 	// is at the expected version (spec.version) and config (userData Secret) so we reconcile status and annotation.
 	if MachineDeploymentComplete(machineDeployment) {
 		if nodePool.Status.Version != targetVersion {
@@ -1743,17 +1754,14 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 }
 
 func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, currentVersion string, releaseImage string) (*releaseinfo.ReleaseImage, error) {
-	pullSecret := &corev1.Secret{}
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
-		return nil, fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
-	}
-	if _, hasKey := pullSecret.Data[corev1.DockerConfigJsonKey]; !hasKey {
-		return nil, fmt.Errorf("pull secret %s/%s missing %q key", pullSecret.Namespace, pullSecret.Name, corev1.DockerConfigJsonKey)
+	pullSecretBytes, err := r.getPullSecretBytes(ctx, hostedCluster)
+	if err != nil {
+		return nil, err
 	}
 	ReleaseImage, err := func(ctx context.Context) (*releaseinfo.ReleaseImage, error) {
 		lookupCtx, lookupCancel := context.WithTimeout(ctx, 1*time.Minute)
 		defer lookupCancel()
-		img, err := r.ReleaseProvider.Lookup(lookupCtx, releaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+		img, err := r.ReleaseProvider.Lookup(lookupCtx, releaseImage, pullSecretBytes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
 		}
@@ -1782,7 +1790,7 @@ func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster 
 		minSupportedVersion = semver.MustParse("4.9.0")
 	}
 
-	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hostedCluster.Spec.Release.Image, pullSecret.Data[corev1.DockerConfigJsonKey])
+	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hostedCluster.Spec.Release.Image, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup release image: %w", err)
 	}
@@ -2248,16 +2256,12 @@ func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSe
 	return c.Update(ctx, tokenSecret)
 }
 
-func (r *NodePoolReconciler) doesCPODecompressAndDecodeConfig(ctx context.Context, hcluster *hyperv1.HostedCluster) (bool, error) {
-	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
-		return false, fmt.Errorf("failed to get pull secret: %w", err)
+func (r *NodePoolReconciler) doesCPODecompressAndDecodeConfig(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (bool, error) {
+	pullSecretBytes, err := r.getPullSecretBytes(ctx, hostedCluster)
+	if err != nil {
+		return false, err
 	}
-	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
-	if !ok {
-		return false, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
-	}
-	controlPlaneOperatorImage, err := hostedcluster.GetControlPlaneOperatorImage(ctx, hcluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImage, err := hostedcluster.GetControlPlaneOperatorImage(ctx, hostedCluster, r.ReleaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
 		return false, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
@@ -2307,4 +2311,28 @@ func (r *NodePoolReconciler) getMachinesForNodePool(nodePool *hyperv1.NodePool) 
 	}
 
 	return machinesForNodePool, nil
+}
+
+// getPullSecretBytes retrieves the pull secret bytes from the hosted cluster
+func (r *NodePoolReconciler) getPullSecretBytes(ctx context.Context, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {
+	pullSecret := &corev1.Secret{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
+		return nil, fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
+	}
+	if _, hasKey := pullSecret.Data[corev1.DockerConfigJsonKey]; !hasKey {
+		return nil, fmt.Errorf("pull secret %s/%s missing %q key", pullSecret.Namespace, pullSecret.Name, corev1.DockerConfigJsonKey)
+	}
+	return pullSecret.Data[corev1.DockerConfigJsonKey], nil
+}
+
+// getPullSecretName retrieves the name of the pull secret in the hosted cluster spec
+func (r *NodePoolReconciler) getPullSecretName(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (string, error) {
+	pullSecret := &corev1.Secret{}
+	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
+		return "", fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
+	}
+	if _, hasKey := pullSecret.Data[corev1.DockerConfigJsonKey]; !hasKey {
+		return "", fmt.Errorf("pull secret %s/%s missing %q key when retrieving pull secret name", pullSecret.Namespace, pullSecret.Name, corev1.DockerConfigJsonKey)
+	}
+	return pullSecret.Name, nil
 }

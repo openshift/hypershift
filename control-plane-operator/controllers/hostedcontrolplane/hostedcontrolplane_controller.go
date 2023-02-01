@@ -226,13 +226,13 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-		if shouldCleanupCloudResources(hostedControlPlane) {
+		if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
 			done, err := r.removeCloudResources(ctx, hostedControlPlane)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed")
 			}
 			if !done {
-				return ctrl.Result{}, nil
+				return ctrl.Result{RequeueAfter: time.Minute}, nil
 			}
 		}
 		if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
@@ -1992,7 +1992,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	serviceMonitor := manifests.KASServiceMonitor(hcp.Namespace)
 	if result, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
-		return kas.ReconcileServiceMonitor(serviceMonitor, int(p.APIServerPort), config.OwnerRefFrom(hcp), hcp.Spec.ClusterID, r.MetricsSet)
+		return kas.ReconcileServiceMonitor(serviceMonitor, config.OwnerRefFrom(hcp), hcp.Spec.ClusterID, r.MetricsSet)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kas service monitor: %w", err)
 	} else {
@@ -3202,7 +3202,21 @@ func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Cont
 	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, availabilityProberImage, createOrUpdate, r.SetDefaultSecurityContext, config.OwnerRefFrom(hcp))
 }
 
-func shouldCleanupCloudResources(hcp *hyperv1.HostedControlPlane) bool {
+func shouldCleanupCloudResources(log logr.Logger, hcp *hyperv1.HostedControlPlane) bool {
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		oidcConfigValid := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidOIDCConfiguration))
+		if oidcConfigValid != nil && oidcConfigValid.Status == metav1.ConditionFalse {
+			log.Info("Skipping hosted cluster cloud resources cleanup",
+				"condition", string(hyperv1.ValidOIDCConfiguration), "status", oidcConfigValid.Status)
+			return false
+		}
+		validIdentityProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+		if validIdentityProvider != nil && validIdentityProvider.Status == metav1.ConditionFalse {
+			log.Info("Skipping hosted cluster cloud resources cleanup",
+				"condition", string(hyperv1.ValidAWSIdentityProvider), "status", validIdentityProvider.Status)
+			return false
+		}
+	}
 	return hcp.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true"
 }
 

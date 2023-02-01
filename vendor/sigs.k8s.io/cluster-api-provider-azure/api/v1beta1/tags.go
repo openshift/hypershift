@@ -126,7 +126,7 @@ const (
 	ControlPlaneOutboundRole = "controlPlaneOutbound"
 
 	// BastionRole describes the value for the bastion role.
-	BastionRole = "bastion"
+	BastionRole = Bastion
 
 	// CommonRole describes the value for the common role.
 	CommonRole = "common"
@@ -135,12 +135,14 @@ const (
 	// which tracks the AdditionalTags in the Machine Provider Config.
 	// See https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
 	// for annotation formatting rules.
+	// Deprecated: use azure.VMTagsLastAppliedAnnotation instead. This constant will be removed in v1beta2.
 	VMTagsLastAppliedAnnotation = "sigs.k8s.io/cluster-api-provider-azure-last-applied-tags-vm"
 
 	// RGTagsLastAppliedAnnotation is the key for the Azure Cluster object annotation
 	// which tracks the AdditionalTags for Resource Group which is part in the Azure Cluster.
 	// See https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
 	// for annotation formatting rules.
+	// Deprecated: use azure.RGTagsLastAppliedAnnotation instead. This constant will be removed in v1beta2.
 	RGTagsLastAppliedAnnotation = "sigs.k8s.io/cluster-api-provider-azure-last-applied-tags-rg"
 )
 

@@ -18,14 +18,17 @@ package v1beta1
 
 import (
 	"fmt"
+	"strings"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	runtime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"sigs.k8s.io/cluster-api/util/version"
 )
 
 func (m *MachineSet) SetupWebhookWithManager(mgr ctrl.Manager) error {
@@ -64,6 +67,11 @@ func (m *MachineSet) Default() {
 		m.Spec.Selector.MatchLabels[MachineSetLabelName] = m.Name
 		m.Spec.Template.Labels[MachineSetLabelName] = m.Name
 	}
+
+	if m.Spec.Template.Spec.Version != nil && !strings.HasPrefix(*m.Spec.Template.Spec.Version, "v") {
+		normalizedVersion := "v" + *m.Spec.Template.Spec.Version
+		m.Spec.Template.Spec.Version = &normalizedVersion
+	}
 }
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
@@ -87,18 +95,23 @@ func (m *MachineSet) ValidateDelete() error {
 
 func (m *MachineSet) validate(old *MachineSet) error {
 	var allErrs field.ErrorList
+	specPath := field.NewPath("spec")
 	selector, err := metav1.LabelSelectorAsSelector(&m.Spec.Selector)
 	if err != nil {
 		allErrs = append(
 			allErrs,
-			field.Invalid(field.NewPath("spec", "selector"), m.Spec.Selector, err.Error()),
+			field.Invalid(
+				specPath.Child("selector"),
+				m.Spec.Selector,
+				err.Error(),
+			),
 		)
 	} else if !selector.Matches(labels.Set(m.Spec.Template.Labels)) {
 		allErrs = append(
 			allErrs,
 			field.Invalid(
-				field.NewPath("spec", "template", "labels"),
-				m.Spec.Template.Labels,
+				specPath.Child("template", "metadata", "labels"),
+				m.Spec.Template.ObjectMeta.Labels,
 				fmt.Sprintf("must match spec.selector %q", selector.String()),
 			),
 		)
@@ -107,8 +120,24 @@ func (m *MachineSet) validate(old *MachineSet) error {
 	if old != nil && old.Spec.ClusterName != m.Spec.ClusterName {
 		allErrs = append(
 			allErrs,
-			field.Invalid(field.NewPath("spec", "clusterName"), m.Spec.ClusterName, "field is immutable"),
+			field.Forbidden(
+				specPath.Child("clusterName"),
+				"field is immutable",
+			),
 		)
+	}
+
+	if m.Spec.Template.Spec.Version != nil {
+		if !version.KubeSemver.MatchString(*m.Spec.Template.Spec.Version) {
+			allErrs = append(
+				allErrs,
+				field.Invalid(
+					specPath.Child("template", "spec", "version"),
+					*m.Spec.Template.Spec.Version,
+					"must be a valid semantic version",
+				),
+			)
+		}
 	}
 
 	if len(allErrs) == 0 {

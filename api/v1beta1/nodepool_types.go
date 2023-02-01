@@ -622,17 +622,13 @@ type AWSNodePoolPlatform struct {
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 }
 
-// AWSResourceReference is a reference to a specific AWS resource by ID, ARN, or filters.
-// Only one of ID, ARN or Filters may be specified. Specifying more than one will result in
+// AWSResourceReference is a reference to a specific AWS resource by ID or filters.
+// Only one of ID or Filters may be specified. Specifying more than one will result in
 // a validation error.
 type AWSResourceReference struct {
 	// ID of resource
 	// +optional
 	ID *string `json:"id,omitempty"`
-
-	// ARN of resource
-	// +optional
-	ARN *string `json:"arn,omitempty"`
 
 	// Filters is a set of key/value pairs used to identify a resource
 	// They are applied according to the rules defined by the AWS API:
