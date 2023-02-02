@@ -134,7 +134,7 @@ func fixupHostedClusterAfterConversion(hc *HostedCluster) error {
 		hc.Spec.SecretEncryption.KMS.AWS.Auth.Credentials.Name = convertARNToSecretName(hc.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN)
 	}
 
-	return populateDeprecatedGlobalConfig(hc.Spec.Configuration)
+	return nil
 }
 
 func fixupHostedControlPlaneBeforeConversion(hcp *HostedControlPlane) error {

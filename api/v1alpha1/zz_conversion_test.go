@@ -266,6 +266,11 @@ func fixupHostedCluster(in conversion.Convertible) {
 	if !ok {
 		panic(fmt.Sprintf("unexpected convertible type: %T", in))
 	}
+	// NOTE: this is only done so we can compare it with the original
+	err := populateDeprecatedGlobalConfig(hc.Spec.Configuration)
+	if err != nil {
+		panic(fmt.Sprintf("unexpected error populating deprecated global config: %v", err))
+	}
 	if hc.Spec.Configuration != nil {
 		for i, item := range hc.Spec.Configuration.Items {
 			resource, _, err := serializer.Decode(item.Raw, nil, nil)
