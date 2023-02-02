@@ -73,6 +73,48 @@ func TestCreateCluster(t *testing.T) {
 	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
 }
 
+func TestCreateClusterKms(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+
+	// find kms key ARN using alias
+	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to retrieve kms key arn")
+	g.Expect(kmsKeyArn).NotTo(BeNil(), "failed to retrieve kms key arn")
+
+	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
+
+	g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
+	g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
+
+	// Sanity check the cluster by waiting for the nodes to report ready
+	t.Logf("Waiting for guest client to become available")
+	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
+
+	// Wait for Nodes to be Ready
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+
+	// Wait for the rollout to be complete
+	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
+	e2eutil.WaitForImageRollout(t, testContext, client, hostedCluster, globalOpts.LatestReleaseImage)
+
+	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+
+	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
+}
+
 func TestNoneCreateCluster(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
