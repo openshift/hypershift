@@ -9,6 +9,7 @@ import (
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -31,6 +32,7 @@ type Params struct {
 	HostedClusterName       string
 	Images                  Images
 	DeploymentConfig        config.DeploymentConfig
+	OwnerRef                config.OwnerRef
 }
 
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool) Params {
@@ -40,6 +42,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 			NodeTunedContainer: images[operatorName],
 		},
 		ReleaseVersion: version,
+		OwnerRef:       config.OwnerRefFrom(hcp),
 	}
 
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
@@ -52,7 +55,8 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 	return p
 }
 
-func ReconcileClusterNodeTuningOperatorMetricsService(svc *corev1.Service) error {
+func ReconcileClusterNodeTuningOperatorMetricsService(svc *corev1.Service, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(svc)
 	svc.Annotations = map[string]string{
 		"service.beta.openshift.io/serving-cert-secret-name": "node-tuning-operator-tls",
 	}
@@ -76,7 +80,8 @@ func ReconcileClusterNodeTuningOperatorMetricsService(svc *corev1.Service) error
 	return nil
 }
 
-func ReconcileClusterNodeTuningOperatorServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, clusterID string, metricsSet metrics.MetricsSet) error {
+func ReconcileClusterNodeTuningOperatorServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, clusterID string, metricsSet metrics.MetricsSet, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(sm)
 	sm.Spec.Selector.MatchLabels = map[string]string{
 		"name":                        metricsServiceName,
 		hyperv1.ControlPlaneComponent: operatorName,
@@ -127,7 +132,43 @@ func ReconcileClusterNodeTuningOperatorServiceMonitor(sm *prometheusoperatorv1.S
 	return nil
 }
 
+func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(role)
+	role.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{corev1.SchemeGroupVersion.Group},
+			Resources: []string{
+				"configmaps",
+			},
+			Verbs: []string{"*"},
+		},
+	}
+	return nil
+}
+
+func ReconcileRoleBinding(rb *rbacv1.RoleBinding, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(rb)
+	rb.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "Role",
+		Name:     manifests.ClusterNodeTuningOperatorRole("").Name,
+	}
+	rb.Subjects = []rbacv1.Subject{
+		{
+			Kind: "ServiceAccount",
+			Name: manifests.ClusterNodeTuningOperatorServiceAccount("").Name,
+		},
+	}
+	return nil
+}
+
+func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(sa)
+	return nil
+}
+
 func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
+	params.OwnerRef.ApplyTo(dep)
 	dep.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"name": operatorName,
@@ -171,6 +212,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 		{Name: "KUBECONFIG", Value: "/etc/kubernetes/kubeconfig"},
 	}...)
 
+	dep.Spec.Template.Spec.ServiceAccountName = manifests.ClusterNodeTuningOperatorServiceAccount("").Name
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{"cluster-node-tuning-operator"},
 		Args:    ntoArgs,
