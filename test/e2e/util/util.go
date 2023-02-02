@@ -352,8 +352,8 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
-			// TODO: Figure out why KAS becomes unavailable for renewing leader lease
-			if strings.HasPrefix(pod.Name, "capi-provider-") {
+			// TODO: Remove this when https://issues.redhat.com/browse/OCPBUGS-6953 is resolved
+			if strings.HasPrefix(pod.Name, "ovnkube-master-") {
 				continue
 			}
 
