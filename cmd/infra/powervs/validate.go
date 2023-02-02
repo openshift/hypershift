@@ -1,6 +1,7 @@
 package powervs
 
 import (
+	"context"
 	"fmt"
 	"github.com/IBM-Cloud/power-go-client/clients/instance"
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
@@ -14,13 +15,13 @@ var (
 
 // validateCloudInstanceByID
 // validates cloud instance's existence by id
-func validateCloudInstanceByID(cloudInstanceID string) (*resourcecontrollerv2.ResourceInstance, error) {
+func validateCloudInstanceByID(ctx context.Context, cloudInstanceID string) (*resourcecontrollerv2.ResourceInstance, error) {
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{Authenticator: getIAMAuth()})
 	if err != nil {
 		return nil, err
 	}
 
-	resourceInstance, _, err := rcv2.GetResourceInstance(&resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
+	resourceInstance, _, err := rcv2.GetResourceInstanceWithContext(ctx, &resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +39,7 @@ func validateCloudInstanceByID(cloudInstanceID string) (*resourcecontrollerv2.Re
 
 // validateCloudInstanceByName
 // validates cloud instance's existence by name
-func validateCloudInstanceByName(cloudInstance string, resourceGroupID string, powerVsZone string, serviceID string, servicePlanID string) (*resourcecontrollerv2.ResourceInstance, error) {
+func validateCloudInstanceByName(ctx context.Context, cloudInstance string, resourceGroupID string, powerVsZone string, serviceID string, servicePlanID string) (*resourcecontrollerv2.ResourceInstance, error) {
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{Authenticator: getIAMAuth()})
 	if err != nil {
 		return nil, err
@@ -56,7 +57,7 @@ func validateCloudInstanceByName(cloudInstance string, resourceGroupID string, p
 			listResourceInstOpt.Start = &start
 		}
 
-		resourceInstanceL, _, err := rcv2.ListResourceInstances(&listResourceInstOpt)
+		resourceInstanceL, _, err := rcv2.ListResourceInstancesWithContext(ctx, &listResourceInstOpt)
 
 		if err != nil {
 			return false, "", err
@@ -93,7 +94,7 @@ func validateCloudInstanceByName(cloudInstance string, resourceGroupID string, p
 
 // validateVpc
 // validates vpc's existence by name and validate its default security group's inbound rules to allow http & https
-func validateVpc(vpcName string, resourceGroupID string, v1 *vpcv1.VpcV1) (*vpcv1.VPC, error) {
+func validateVpc(ctx context.Context, vpcName string, resourceGroupID string, v1 *vpcv1.VpcV1) (*vpcv1.VPC, error) {
 	var vpc *vpcv1.VPC
 
 	f := func(start string) (bool, string, error) {
@@ -101,7 +102,7 @@ func validateVpc(vpcName string, resourceGroupID string, v1 *vpcv1.VpcV1) (*vpcv
 		if start != "" {
 			vpcListOpt.Start = &start
 		}
-		vpcList, _, err := v1.ListVpcs(&vpcListOpt)
+		vpcList, _, err := v1.ListVpcsWithContext(ctx, &vpcListOpt)
 		if err != nil {
 			return false, "", err
 		}
@@ -126,7 +127,7 @@ func validateVpc(vpcName string, resourceGroupID string, v1 *vpcv1.VpcV1) (*vpcv
 		return nil, fmt.Errorf("%s vpc not found", vpcName)
 	}
 
-	vpcSg, _, err := v1.GetSecurityGroup(&vpcv1.GetSecurityGroupOptions{ID: vpc.DefaultSecurityGroup.ID})
+	vpcSg, _, err := v1.GetSecurityGroupWithContext(ctx, &vpcv1.GetSecurityGroupOptions{ID: vpc.DefaultSecurityGroup.ID})
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving security group of vpc %w", err)
 	}

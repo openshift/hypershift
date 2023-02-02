@@ -142,24 +142,24 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 		return fmt.Errorf("cloud API Key not set. Set it with IBMCLOUD_API_KEY env var or set file path containing API Key credential in IBMCLOUD_CREDENTIALS")
 	}
 
-	accountID, err := getAccount(getIAMAuth())
+	accountID, err := getAccount(ctx, getIAMAuth())
 	if err != nil {
 		return fmt.Errorf("error retrieving account ID %w", err)
 	}
 
-	resourceGroupID, err := getResourceGroupID(options.ResourceGroup, accountID)
+	resourceGroupID, err := getResourceGroupID(ctx, options.ResourceGroup, accountID)
 	if err != nil {
 		return err
 	}
 
-	serviceID, servicePlanID, err := getServiceInfo(powerVSService, powerVSServicePlan)
+	serviceID, servicePlanID, err := getServiceInfo(ctx, powerVSService, powerVSServicePlan)
 	if err != nil {
 		return err
 	}
 
 	errL := make([]error, 0)
 
-	if err = deleteDNSRecords(options); err != nil {
+	if err = deleteDNSRecords(ctx, options); err != nil {
 		errL = append(errL, fmt.Errorf("error deleting dns record from cis domain: %w", err))
 		log(options.InfraID).Error(err, "error deleting dns record from cis domain")
 	}
@@ -176,7 +176,7 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 	if infra != nil && infra.CloudInstanceID != "" {
 		powerVsCloudInstanceID = infra.CloudInstanceID
 	} else if options.CloudInstanceID != "" {
-		if _, err = validateCloudInstanceByID(options.CloudInstanceID); err != nil {
+		if _, err = validateCloudInstanceByID(ctx, options.CloudInstanceID); err != nil {
 			errL = append(errL, err)
 			skipPowerVs = true
 		}
@@ -184,7 +184,7 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 	} else {
 		cloudInstanceName := fmt.Sprintf("%s-%s", options.InfraID, cloudInstanceNameSuffix)
 		var cloudInstance *resourcecontrollerv2.ResourceInstance
-		cloudInstance, err = validateCloudInstanceByName(cloudInstanceName, resourceGroupID, options.Zone, serviceID, servicePlanID)
+		cloudInstance, err = validateCloudInstanceByName(ctx, cloudInstanceName, resourceGroupID, options.Zone, serviceID, servicePlanID)
 		if err != nil {
 			if err.Error() == cloudInstanceNotFound(cloudInstanceName).Error() {
 				log(options.InfraID).Info("No PowerVS Service Instance available to delete")
@@ -216,12 +216,12 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 		return err
 	}
 
-	if err = destroyVpcSubnet(options, infra, resourceGroupID, v1, options.InfraID); err != nil {
+	if err = destroyVpcSubnet(ctx, options, infra, resourceGroupID, v1, options.InfraID); err != nil {
 		errL = append(errL, fmt.Errorf("error destroying vpc subnet: %w", err))
 		log(options.InfraID).Error(err, "error destroying vpc subnet")
 	}
 
-	if err = destroyVpc(options, infra, resourceGroupID, v1, options.InfraID); err != nil {
+	if err = destroyVpc(ctx, options, infra, resourceGroupID, v1, options.InfraID); err != nil {
 		errL = append(errL, fmt.Errorf("error destroying vpc: %w", err))
 		log(options.InfraID).Error(err, "error destroying vpc")
 	}
@@ -243,11 +243,11 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 }
 
 // deleteDNSRecords deletes DNS records from CIS domain
-func deleteDNSRecords(options *DestroyInfraOptions) error {
+func deleteDNSRecords(ctx context.Context, options *DestroyInfraOptions) error {
 
 	if options.CISCRN == "" || options.CISDomainID == "" {
 		var err error
-		options.CISCRN, options.CISDomainID, err = getCISDomainDetails(options.BaseDomain)
+		options.CISCRN, options.CISDomainID, err = getCISDomainDetails(ctx, options.BaseDomain)
 		if err != nil {
 			return fmt.Errorf("error retrieving cis domain details %w", err)
 		}
@@ -261,7 +261,7 @@ func deleteDNSRecords(options *DestroyInfraOptions) error {
 	recordName := fmt.Sprintf("*.apps.%s.%s", options.Name, options.BaseDomain)
 	listDnsRecordsOpt := &dnsrecordsv1.ListAllDnsRecordsOptions{Name: &recordName}
 
-	dnsRecordsL, _, err := dnsRecordsV1.ListAllDnsRecords(listDnsRecordsOpt)
+	dnsRecordsL, _, err := dnsRecordsV1.ListAllDnsRecordsWithContext(ctx, listDnsRecordsOpt)
 	if err != nil {
 		return err
 	}
@@ -274,7 +274,7 @@ func deleteDNSRecords(options *DestroyInfraOptions) error {
 	record := dnsRecordsL.Result[0]
 	log(options.InfraID).Info("Deleting DNS", "record", recordName)
 	deleteRecordOpt := &dnsrecordsv1.DeleteDnsRecordOptions{DnsrecordIdentifier: record.ID}
-	if _, _, err = dnsRecordsV1.DeleteDnsRecord(deleteRecordOpt); err != nil {
+	if _, _, err = dnsRecordsV1.DeleteDnsRecordWithContext(ctx, deleteRecordOpt); err != nil {
 		return err
 	}
 
@@ -383,13 +383,13 @@ func destroyPowerVsCloudInstance(ctx context.Context, options *DestroyInfraOptio
 	} else {
 		for retry := 0; retry < 5; retry++ {
 			log(options.InfraID).Info("Deleting PowerVS cloud instance", "id", cloudInstanceID)
-			if _, err = rcv2.DeleteResourceInstance(&resourcecontrollerv2.DeleteResourceInstanceOptions{ID: &cloudInstanceID}); err != nil {
+			if _, err = rcv2.DeleteResourceInstanceWithContext(ctx, &resourcecontrollerv2.DeleteResourceInstanceOptions{ID: &cloudInstanceID}); err != nil {
 				log(options.InfraID).Error(err, "error in deleting powervs cloud instance")
 				continue
 			}
 
 			f := func() (bool, error) {
-				resourceInst, resp, err := rcv2.GetResourceInstance(&resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
+				resourceInst, resp, err := rcv2.GetResourceInstanceWithContext(ctx, &resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
 				if err != nil {
 					log(options.InfraID).Error(err, "error in querying deleted cloud instance", "resp", resp.String())
 					return false, err
@@ -548,9 +548,9 @@ func deletePowerVsCloudConnection(options *DestroyInfraOptions, id string, clien
 }
 
 // destroyVpc destroying vpc
-func destroyVpc(options *DestroyInfraOptions, infra *Infra, resourceGroupID string, v1 *vpcv1.VpcV1, infraID string) error {
+func destroyVpc(ctx context.Context, options *DestroyInfraOptions, infra *Infra, resourceGroupID string, v1 *vpcv1.VpcV1, infraID string) error {
 	if infra != nil && infra.VPCID != "" {
-		return deleteVpc(infra.VPCID, v1, infraID)
+		return deleteVpc(ctx, infra.VPCID, v1, infraID)
 	}
 
 	f := func(start string) (bool, string, error) {
@@ -559,7 +559,7 @@ func destroyVpc(options *DestroyInfraOptions, infra *Infra, resourceGroupID stri
 			vpcListOpt.Start = &start
 		}
 
-		vpcL, _, err := v1.ListVpcs(&vpcListOpt)
+		vpcL, _, err := v1.ListVpcsWithContext(ctx, &vpcListOpt)
 		if err != nil {
 			return false, "", err
 		}
@@ -574,7 +574,7 @@ func destroyVpc(options *DestroyInfraOptions, infra *Infra, resourceGroupID stri
 
 		for _, vpc := range vpcL.Vpcs {
 			if *vpc.Name == vpcName && strings.Contains(*vpc.CRN, options.VPCRegion) {
-				if err = deleteVpc(*vpc.ID, v1, infraID); err != nil {
+				if err = deleteVpc(ctx, *vpc.ID, v1, infraID); err != nil {
 					return false, "", err
 				}
 				return true, "", nil
@@ -590,16 +590,16 @@ func destroyVpc(options *DestroyInfraOptions, infra *Infra, resourceGroupID stri
 }
 
 // deleteVpc deletes the vpc id passed
-func deleteVpc(id string, v1 *vpcv1.VpcV1, infraID string) error {
+func deleteVpc(ctx context.Context, id string, v1 *vpcv1.VpcV1, infraID string) error {
 	log(infraID).Info("Deleting VPC", "id", id)
-	_, err := v1.DeleteVPC(&vpcv1.DeleteVPCOptions{ID: &id})
+	_, err := v1.DeleteVPCWithContext(ctx, &vpcv1.DeleteVPCOptions{ID: &id})
 	return err
 }
 
 // destroyVpcSubnet destroying vpc subnet
-func destroyVpcSubnet(options *DestroyInfraOptions, infra *Infra, resourceGroupID string, v1 *vpcv1.VpcV1, infraID string) error {
+func destroyVpcSubnet(ctx context.Context, options *DestroyInfraOptions, infra *Infra, resourceGroupID string, v1 *vpcv1.VpcV1, infraID string) error {
 	if infra != nil && infra.VPCSubnetID != "" {
-		return deleteVpcSubnet(infra.VPCSubnetID, v1, options)
+		return deleteVpcSubnet(ctx, infra.VPCSubnetID, v1, options)
 	}
 
 	f := func(start string) (bool, string, error) {
@@ -608,7 +608,7 @@ func destroyVpcSubnet(options *DestroyInfraOptions, infra *Infra, resourceGroupI
 		if start != "" {
 			listSubnetOpt.Start = &start
 		}
-		subnetL, _, err := v1.ListSubnets(&listSubnetOpt)
+		subnetL, _, err := v1.ListSubnetsWithContext(ctx, &listSubnetOpt)
 		if err != nil {
 			return false, "", err
 		}
@@ -623,7 +623,7 @@ func destroyVpcSubnet(options *DestroyInfraOptions, infra *Infra, resourceGroupI
 
 		for _, subnet := range subnetL.Subnets {
 			if *subnet.VPC.Name == vpcName && strings.Contains(*subnet.Zone.Name, options.VPCRegion) {
-				if err = deleteVpcSubnet(*subnet.ID, v1, options); err != nil {
+				if err = deleteVpcSubnet(ctx, *subnet.ID, v1, options); err != nil {
 					return false, "", err
 				}
 				return true, "", nil
@@ -642,11 +642,11 @@ func destroyVpcSubnet(options *DestroyInfraOptions, infra *Infra, resourceGroupI
 }
 
 // deleteVpcSubnet deletes the subnet id passed and LB attached to it
-func deleteVpcSubnet(id string, v1 *vpcv1.VpcV1, options *DestroyInfraOptions) error {
+func deleteVpcSubnet(ctx context.Context, id string, v1 *vpcv1.VpcV1, options *DestroyInfraOptions) error {
 	// deleting the load balancer before proceeding to subnet deletion, since LB is an attached resource to the subnet
 	var err error
 	for retry := 0; retry < 5; retry++ {
-		if err = destroyVpcLB(options, id, v1); err == nil {
+		if err = destroyVpcLB(ctx, options, id, v1); err == nil {
 			break
 		}
 		log(options.InfraID).Info("retrying VPC Load Balancer deletion")
@@ -659,12 +659,12 @@ func deleteVpcSubnet(id string, v1 *vpcv1.VpcV1, options *DestroyInfraOptions) e
 
 	log(options.InfraID).Info("Deleting VPC subnet", "subnetId", id)
 
-	if _, err := v1.DeleteSubnet(&vpcv1.DeleteSubnetOptions{ID: &id}); err != nil {
+	if _, err := v1.DeleteSubnetWithContext(ctx, &vpcv1.DeleteSubnetOptions{ID: &id}); err != nil {
 		return err
 	}
 
 	f := func() (bool, error) {
-		if _, _, err := v1.GetSubnet(&vpcv1.GetSubnetOptions{ID: &id}); err != nil {
+		if _, _, err := v1.GetSubnetWithContext(ctx, &vpcv1.GetSubnetOptions{ID: &id}); err != nil {
 			if strings.Contains(err.Error(), "Subnet not found") {
 				return true, nil
 			} else {
@@ -678,16 +678,16 @@ func deleteVpcSubnet(id string, v1 *vpcv1.VpcV1, options *DestroyInfraOptions) e
 }
 
 // destroyVpcLB destroys VPC Load Balancer
-func destroyVpcLB(options *DestroyInfraOptions, subnetID string, v1 *vpcv1.VpcV1) error {
+func destroyVpcLB(ctx context.Context, options *DestroyInfraOptions, subnetID string, v1 *vpcv1.VpcV1) error {
 
 	deleteLB := func(id string) error {
 		log(options.InfraID).Info("Deleting VPC LoadBalancer:", "id", id)
-		if _, err := v1.DeleteLoadBalancer(&vpcv1.DeleteLoadBalancerOptions{ID: &id}); err != nil {
+		if _, err := v1.DeleteLoadBalancerWithContext(ctx, &vpcv1.DeleteLoadBalancerOptions{ID: &id}); err != nil {
 			return err
 		}
 
 		f := func() (bool, error) {
-			_, _, err := v1.GetLoadBalancer(&vpcv1.GetLoadBalancerOptions{ID: &id})
+			_, _, err := v1.GetLoadBalancerWithContext(ctx, &vpcv1.GetLoadBalancerOptions{ID: &id})
 			if err != nil && strings.Contains(err.Error(), "cannot be found") {
 				return true, nil
 			}
@@ -703,7 +703,7 @@ func destroyVpcLB(options *DestroyInfraOptions, subnetID string, v1 *vpcv1.VpcV1
 		if start != "" {
 			listLBOpt.Start = &start
 		}
-		loadBalancerL, _, err := v1.ListLoadBalancers(&listLBOpt)
+		loadBalancerL, _, err := v1.ListLoadBalancersWithContext(ctx, &listLBOpt)
 		if err != nil {
 			return false, "", err
 		}

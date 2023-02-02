@@ -86,6 +86,10 @@ type AzureMachineSpec struct {
 	// +optional
 	AdditionalTags Tags `json:"additionalTags,omitempty"`
 
+	// AdditionalCapabilities specifies additional capabilities enabled or disabled on the virtual machine.
+	// +optional
+	AdditionalCapabilities *AdditionalCapabilities `json:"additionalCapabilities,omitempty"`
+
 	// AllocatePublicIP allows the ability to create dynamic public ips for machines where this value is true.
 	// +optional
 	AllocatePublicIP bool `json:"allocatePublicIP,omitempty"`
@@ -114,6 +118,14 @@ type AzureMachineSpec struct {
 	// SubnetName selects the Subnet where the VM will be placed
 	// +optional
 	SubnetName string `json:"subnetName,omitempty"`
+
+	// DNSServers adds a list of DNS Server IP addresses to the VM NICs.
+	// +optional
+	DNSServers []string `json:"dnsServers,omitempty"`
+
+	// VMExtensions specifies a list of extensions to be added to the virtual machine.
+	// +optional
+	VMExtensions []VMExtension `json:"vmExtensions,omitempty"`
 }
 
 // SpotVMOptions defines the options relevant to running the Machine on Spot VMs.
@@ -121,6 +133,10 @@ type SpotVMOptions struct {
 	// MaxPrice defines the maximum price the user is willing to pay for Spot VM instances
 	// +optional
 	MaxPrice *resource.Quantity `json:"maxPrice,omitempty"`
+
+	// EvictionPolicy defines the behavior of the virtual machine when it is evicted. It can be either Delete or Deallocate.
+	// +optional
+	EvictionPolicy *SpotEvictionPolicy `json:"evictionPolicy,omitempty"`
 }
 
 // AzureMachineStatus defines the observed state of AzureMachine.
@@ -183,6 +199,15 @@ type AzureMachineStatus struct {
 	// next reconciliation loop.
 	// +optional
 	LongRunningOperationStates Futures `json:"longRunningOperationStates,omitempty"`
+}
+
+// AdditionalCapabilities enables or disables a capability on the virtual machine.
+type AdditionalCapabilities struct {
+	// UltraSSDEnabled enables or disables Azure UltraSSD capability for the virtual machine.
+	// Defaults to true if Ultra SSD data disks are specified,
+	// otherwise it doesn't set the capability on the VM.
+	// +optional
+	UltraSSDEnabled *bool `json:"ultraSSDEnabled,omitempty"`
 }
 
 // +kubebuilder:object:root=true

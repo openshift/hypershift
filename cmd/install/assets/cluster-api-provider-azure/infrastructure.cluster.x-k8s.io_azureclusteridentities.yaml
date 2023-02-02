@@ -109,7 +109,8 @@ spec:
                     x-kubernetes-map-type: atomic
                 type: object
               clientID:
-                description: Both User Assigned MSI and SP can use this field.
+                description: ClientID is the service principal client ID. Both User
+                  Assigned MSI and SP can use this field.
                 type: string
               clientSecret:
                 description: ClientSecret is a secret reference which should contain
@@ -126,17 +127,20 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               resourceID:
-                description: User assigned MSI resource id.
+                description: ResourceID is the Azure resource ID for the User Assigned
+                  MSI resource. Only applicable when type is UserAssignedMSI.
                 type: string
               tenantID:
-                description: Service principal primary tenant id.
+                description: TenantID is the service principal primary tenant id.
                 type: string
               type:
-                description: UserAssignedMSI or Service Principal
+                description: Type is the type of Azure Identity used. ServicePrincipal,
+                  ServicePrincipalCertificate, UserAssignedMSI or ManualServicePrincipal.
                 enum:
                 - ServicePrincipal
-                - ManualServicePrincipal
                 - UserAssignedMSI
+                - ManualServicePrincipal
+                - ServicePrincipalCertificate
                 type: string
             required:
             - clientID

@@ -229,6 +229,7 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	start := time.Now()
 	g := NewWithT(t)
 
+	var rolloutIncompleteReason string
 	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
 		latest := hostedCluster.DeepCopy()
@@ -238,22 +239,38 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 			return false, nil
 		}
 
-		isAvailable := meta.IsStatusConditionTrue(latest.Status.Conditions, string(hyperv1.HostedClusterAvailable))
-		isProgressing := meta.IsStatusConditionTrue(latest.Status.Conditions, string(hyperv1.HostedClusterProgressing))
-
-		rolloutComplete := latest.Status.Version != nil &&
-			latest.Status.Version.Desired.Image == image &&
-			len(latest.Status.Version.History) > 0 &&
-			latest.Status.Version.History[0].Image == latest.Status.Version.Desired.Image &&
-			latest.Status.Version.History[0].State == configv1.CompletedUpdate
-
-		if isAvailable && !isProgressing && rolloutComplete {
-			t.Logf("Waiting for hostedcluster rollout. Image: %s, isAvailable: %v, isProgressing: %v, rolloutComplete: %v", image, isAvailable, isProgressing, rolloutComplete)
-			return true, nil
+		available := meta.FindStatusCondition(latest.Status.Conditions, string(hyperv1.HostedClusterAvailable))
+		progressing := meta.FindStatusCondition(latest.Status.Conditions, string(hyperv1.HostedClusterProgressing))
+		switch {
+		case available == nil:
+			rolloutIncompleteReason = fmt.Sprintf("status.conditions[type==%s] does not exist", hyperv1.HostedClusterAvailable)
+		case available.Status != metav1.ConditionTrue:
+			rolloutIncompleteReason = fmt.Sprintf("status.conditions[type==%s] %q (expected %q): %s %s: %s", available.Type, available.Status, metav1.ConditionTrue, available.LastTransitionTime, available.Reason, available.Message)
+		case progressing == nil:
+			rolloutIncompleteReason = fmt.Sprintf("status.conditions[type==%s] does not exist", hyperv1.HostedClusterProgressing)
+		case progressing.Status != metav1.ConditionFalse:
+			rolloutIncompleteReason = fmt.Sprintf("status.conditions[type==%s] %q (expected %q): %s %s: %s", progressing.Type, progressing.Status, metav1.ConditionFalse, progressing.LastTransitionTime, progressing.Reason, progressing.Message)
+		case latest.Status.Version == nil:
+			rolloutIncompleteReason = "nil status.version"
+		case latest.Status.Version.Desired.Image != image:
+			rolloutIncompleteReason = fmt.Sprintf("status.version.desired.image is %q, but we want %q", latest.Status.Version.Desired.Image, image)
+		case len(latest.Status.Version.History) == 0:
+			rolloutIncompleteReason = "status.version.history has no entries"
+		case latest.Status.Version.History[0].Image != latest.Status.Version.Desired.Image:
+			rolloutIncompleteReason = fmt.Sprintf("status.version.history[0].image is %q, but we want %q", latest.Status.Version.History[0].Image, latest.Status.Version.Desired.Image)
+		case latest.Status.Version.History[0].State != configv1.CompletedUpdate:
+			rolloutIncompleteReason = fmt.Sprintf("status.version.history[0].state is %q, but we want %q", latest.Status.Version.History[0].State, configv1.CompletedUpdate)
+		default:
+			rolloutIncompleteReason = ""
 		}
-		return false, nil
+
+		if rolloutIncompleteReason != "" {
+			t.Logf("Waiting for hostedcluster rollout. Image: %s: %s", image, rolloutIncompleteReason)
+			return false, nil
+		}
+		return true, nil
 	})
-	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for image rollout")
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed waiting for hostedcluster image rollout: %s", rolloutIncompleteReason))
 
 	t.Logf("Observed hostedcluster to have successfully rolled out image in %s. Namespace: %s, name: %s, image: %s", time.Since(start).Round(time.Second), hostedCluster.Namespace, hostedCluster.Name, image)
 }
@@ -261,10 +278,18 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
 	g := NewWithT(t)
 	start := time.Now()
+	conditions := []hyperv1.ConditionType{
+		hyperv1.HostedControlPlaneAvailable,
+		hyperv1.EtcdAvailable,
+		hyperv1.KubeAPIServerAvailable,
+		hyperv1.InfrastructureReady,
+		hyperv1.ValidHostedControlPlaneConfiguration,
+	}
+	var rolloutIncompleteReasons []string
+	namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
 
-	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
+	t.Logf("Waiting for hostedcontrolplane to rollout image. Namespace: %s, name: %s, image: %s", namespace, hostedCluster.Name, image)
 	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
-		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
 		cp := &hyperv1.HostedControlPlane{}
 		err = client.Get(ctx, types.NamespacedName{Namespace: namespace, Name: hostedCluster.Name}, cp)
 		if err != nil {
@@ -272,32 +297,26 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 			return false, nil
 		}
 
-		conditions := map[hyperv1.ConditionType]bool{
-			hyperv1.HostedControlPlaneAvailable:          false,
-			hyperv1.EtcdAvailable:                        false,
-			hyperv1.KubeAPIServerAvailable:               false,
-			hyperv1.InfrastructureReady:                  false,
-			hyperv1.ValidHostedControlPlaneConfiguration: false,
-		}
-
-		isAvailable := true
-		for condition := range conditions {
-			conditionReady := meta.IsStatusConditionTrue(cp.Status.Conditions, string(condition))
-			conditions[condition] = conditionReady
-			if !conditionReady {
-				isAvailable = false
+		rolloutIncompleteReasons = make([]string, 0, len(conditions))
+		for _, conditionType := range conditions {
+			condition := meta.FindStatusCondition(cp.Status.Conditions, string(conditionType))
+			switch {
+			case condition == nil:
+				rolloutIncompleteReasons = append(rolloutIncompleteReasons, fmt.Sprintf("status.conditions[type==%s] does not exist", conditionType))
+			case condition.Status != metav1.ConditionTrue:
+				rolloutIncompleteReasons = append(rolloutIncompleteReasons, fmt.Sprintf("status.conditions[type==%s] %q (expected %q): %s %s: %s", condition.Type, condition.Status, metav1.ConditionTrue, condition.LastTransitionTime, condition.Reason, condition.Message))
 			}
 		}
 
-		if isAvailable {
-			return true, nil
+		if len(rolloutIncompleteReasons) > 0 {
+			t.Logf("Waiting for hostedcontrolplane rollout. Image: %s\n%s", image, strings.Join(rolloutIncompleteReasons, "\n"))
+			return false, nil
 		}
-		t.Logf("Waiting for all conditions to be ready: Image: %s, conditions: %v", image, conditions)
-		return false, nil
+		return true, nil
 	})
-	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for image rollout")
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed waiting for hostedcontrolplane image rollout\n%s", strings.Join(rolloutIncompleteReasons, "\n")))
 
-	t.Logf("Observed hostedcluster to have successfully rolled out image in %s. Namespace: %s, name: %s, image: %s", time.Since(start).Round(time.Second), hostedCluster.Namespace, hostedCluster.Name, image)
+	t.Logf("Observed hostedcontrolplane to have successfully rolled out image in %s. Namespace: %s, name: %s, image: %s", time.Since(start).Round(time.Second), namespace, hostedCluster.Name, image)
 }
 
 // WaitForNodePoolVersion blocks until the NodePool status indicates the given

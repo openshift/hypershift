@@ -40,6 +40,11 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		"--v=4",
 	}
 
+	ignoreLabels := GetIgnoreLabels()
+	for _, v := range ignoreLabels {
+		args = append(args, fmt.Sprintf("%s=%v", BalancingIgnoreLabelArg, v))
+	}
+
 	// TODO if the options for the cluster autoscaler continues to grow, we should take inspiration
 	// from the cluster-autoscaler-operator and create some utility functions for these assignments.
 	if options.MaxNodesTotal != nil {
@@ -131,7 +136,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("35Mi"),
+								corev1.ResourceMemory: resource.MustParse("60Mi"),
 								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},
@@ -283,4 +288,39 @@ func ReconcileAutoscaler(ctx context.Context, c client.Client, hcp *hyperv1.Host
 	}
 
 	return nil
+}
+
+const BalancingIgnoreLabelArg = "--balancing-ignore-label"
+
+// AWS cloud provider ignore labels for the autoscaler.
+const (
+	// AwsIgnoredLabelEbsCsiZone is a label used by the AWS EBS CSI driver as a target for Persistent Volume Node Affinity.
+	AwsIgnoredLabelEbsCsiZone = "topology.ebs.csi.aws.com/zone"
+)
+
+// IBM cloud provider ignore labels for the autoscaler.
+const (
+	// IbmcloudIgnoredLabelWorkerId is a label used by the IBM Cloud Cloud Controler Manager.
+	IbmcloudIgnoredLabelWorkerId = "ibm-cloud.kubernetes.io/worker-id"
+
+	// IbmcloudIgnoredLabelVpcBlockCsi is a label used by the IBM Cloud CSI driver as a target for Persistent Volume Node Affinity.
+	IbmcloudIgnoredLabelVpcBlockCsi = "vpc-block-csi-driver-labels"
+)
+
+// Azure cloud provider ignore labels for the autoscaler.
+const (
+	// AzureDiskTopologyKey is the topology key of Azure Disk CSI driver.
+	AzureDiskTopologyKey = "topology.disk.csi.azure.com/zone"
+)
+
+func GetIgnoreLabels() []string {
+	return []string{
+		// AWS
+		AwsIgnoredLabelEbsCsiZone,
+		// Azure
+		AzureDiskTopologyKey,
+		// IBM
+		IbmcloudIgnoredLabelWorkerId,
+		IbmcloudIgnoredLabelVpcBlockCsi,
+	}
 }

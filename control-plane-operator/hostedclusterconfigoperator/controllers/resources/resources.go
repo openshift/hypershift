@@ -39,6 +39,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
@@ -75,6 +76,7 @@ var (
 	// to delete any existing DNS operator deployment on the hosted cluster
 	// only once.
 	deleteDNSOperatorDeploymentOnce sync.Once
+	deleteCVORemovedResourcesOnce   sync.Once
 )
 
 type reconciler struct {
@@ -502,6 +504,16 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		}
 	})
 
+	deleteCVORemovedResourcesOnce.Do(func() {
+		resources := cvo.ResourcesToRemove(hcp.Spec.Platform.Type)
+		for _, resource := range resources {
+			log.Info("removing existing resources", "resource", resource)
+			if err := r.uncachedClient.Delete(ctx, resource); err != nil && !apierrors.IsNotFound(err) {
+				errs = append(errs, err)
+			}
+		}
+	})
+
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		errs = append(errs, r.reconcileAWSIdentityWebhook(ctx)...)
 	}
@@ -689,6 +701,15 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 
 		manifestAndReconcile[*rbacv1.Role]{manifest: manifests.KCMLeaderElectionRole, reconcile: rbac.ReconcileKCMLeaderElectionRole},
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.KCMLeaderElectionRoleBinding, reconcile: rbac.ReconcileKCMLeaderElectionRoleBinding},
+
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.ImageTriggerControllerClusterRole, reconcile: rbac.ReconcileImageTriggerControllerClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.ImageTriggerControllerClusterRoleBinding, reconcile: rbac.ReconcileImageTriggerControllerClusterRoleBinding},
+
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.PodSecurityAdmissionLabelSyncerControllerClusterRole, reconcile: rbac.ReconcilePodSecurityAdmissionLabelSyncerControllerClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.PodSecurityAdmissionLabelSyncerControllerRoleBinding, reconcile: rbac.ReconcilePodSecurityAdmissionLabelSyncerControllerRoleBinding},
+
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.DeployerClusterRole, reconcile: rbac.ReconcileDeployerClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.DeployerClusterRoleBinding, reconcile: rbac.ReconcileDeployerClusterRoleBinding},
 	}
 	var errs []error
 	for _, m := range rbac {
@@ -772,6 +793,21 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
 	var errs []error
 
+	// Set pod security labels on kube-system to avoid API warnings
+	kubeSystemNamespace := manifests.NamespaceKubeSystem()
+	if _, err := r.CreateOrUpdate(ctx, r.client, kubeSystemNamespace, func() error {
+		if kubeSystemNamespace.Labels == nil {
+			kubeSystemNamespace.Labels = map[string]string{}
+		}
+		kubeSystemNamespace.Labels["security.openshift.io/scc.podSecurityLabelSync"] = "false"
+		kubeSystemNamespace.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
+		kubeSystemNamespace.Labels["pod-security.kubernetes.io/audit"] = "privileged"
+		kubeSystemNamespace.Labels["pod-security.kubernetes.io/warn"] = "privileged"
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kube-system namespace: %w", err)
+	}
+
 	p := konnectivity.NewKonnectivityParams(hcp, releaseImage.ComponentImages(), r.konnectivityServerAddress, r.konnectivityServerPort)
 
 	controlPlaneAgentSecret := manifests.KonnectivityControlPlaneAgentSecret(hcp.Namespace)
@@ -810,7 +846,7 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
 		clusterVersion.Spec.Capabilities = nil
 		clusterVersion.Spec.Upstream = ""
-		clusterVersion.Spec.Channel = ""
+		clusterVersion.Spec.Channel = hcp.Spec.Channel
 		clusterVersion.Spec.DesiredUpdate = nil
 		return nil
 	}); err != nil {
