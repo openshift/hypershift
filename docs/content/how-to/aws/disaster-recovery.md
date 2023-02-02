@@ -1,16 +1,42 @@
 ---
-title: Migrating Hosted Cluster among the same AWS Region
+title: Disaster Recovery
 ---
 
-# Migrating Hosted Cluster among the same AWS Region
+# Disaster Recovery
 
-## Preface and Considerations
+## Migrating Hosted Cluster within the same AWS Region
+
+### Use cases for Disaster Recovery
+
+This procedure **is helpful** for:
+
+1. *The control-plane is down for your hosted cluster (api-server, etcd,...)*
+2. *Hypershift operator is not working, it’s down and it cannot be recovered*
+
+This procedure **is not helpful** for:
+
+1. *My compute nodes are frozen or not working fine*
+    - For this situation you will need to access the serial console of the node in order to see what is happening.
+
+2. *The management cluster API-server/etcd is down?*
+    - For this second situation it does not make sense to use this procedure, so you can use a backup/recovery tool like Velero in order to recover the Etcd.
+
+!!! note Important
+    Other situations should be carefully examined, to ensure the stability of the other deployed HostedClusters
+
+!!! warning
+    These are some examples where this procedure could be useful. We don't recommend following this procedure unless it is strictly necessary.
+
+### Preface and Considerations
 
 The behaviour of this implementation is focused on the transparency for the user. Hypershift will not disrupt any customer workloads at anytime, also have in mind that the service workloads will be up and running during the migration process. Maybe at some point the Cluster API will be down but this will not affect the services running on the worker nodes.
 
 In the storage side, It's mandatory to have under consideration that when we move a HostedControlPlane to another Management cluster we use some external services, which allows the migration to make it happen. We re-use the storage provisioned in AWS by the initial ControlPlane (PVs/PVCs) in the destination Management cluster.
 
 Regarding the Workers nodes assigned to the cluster, during the migration they will still point to the same DNS entry, and we, under the hood, change the DNS Records to point to the new Management Cluster API, that way the node migration is transparent for the user.
+
+!!! important
+    Keep in mind that this **"migration"** capability is only for **disaster recovery purposes**, please **DO NOT** use this to perform clusters migrations as a common task in your platform.
 
 !!! note
     One considerations we should have is, both Hypershift deployments Source Management cluster and Destination Management cluster, had to have the `--external-dns` flags, in order to maintain the API server URL with the same entry. If that's not the case, the HostedCluster could not be migrated.
@@ -31,7 +57,7 @@ The way that a Hosted Cluster migration follows, it's basically done in 3 phases
 
 Let's setup the environment to start the migration with our first cluster.
 
-## Environment and Context
+### Environment and Context
 
 Our scenario involves 3 Clusters, 2 Management ones and 1 HostedCluster, which will be migrated. Depending on the situation we would like to migrate just the ControlPlane or the Controlplane + nodes.
 
@@ -105,7 +131,7 @@ And this is how the Migration workflow will happen
 ![gif](../../images/hc-migration-workflow.gif)
 
 
-## Backup
+### Backup
 
 This section complains interaction among multiple components. We will need to backup all the relevant things to raise up this same cluster in our target management cluster.
 
@@ -343,7 +369,7 @@ clean_routes "${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}" "${AWS_ZONE_ID}"
 
 This was the last step on Backup stage, now we encourge you to validate all the OCP Objects and the S3 Bucket in order to ensure all is fine.
 
-## Restoration
+### Restoration
 
 This step it's basically catch all the objects which has been backuped up and restore them in the Destination Management Cluster.
 
@@ -520,7 +546,7 @@ done
 
 </details>
 
-## Teardown
+### Teardown
 
 In this section we will shutdown and delete the HostedCluster in the source Management Cluster.
 !!! note
@@ -666,7 +692,7 @@ oc delete pod -n openshift-ovn-kubernetes --all
 
 with that, all the ClusterOperators that were failling and all the new pods generated, will get executed without issues.
 
-## Migration Helper script
+### Migration Helper script
 
 In order to ensure the that whole migration works fine, you could use this helper script that should work out of the box.
 
