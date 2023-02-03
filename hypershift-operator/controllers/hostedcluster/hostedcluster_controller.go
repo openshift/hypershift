@@ -3020,6 +3020,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, err
 	}
 
+	p, err := platform.GetPlatform(ctx, hc, nil, "", nil)
+	if err != nil {
+		return false, err
+	}
 	if hc != nil && len(hc.Spec.InfraID) > 0 {
 		exists, err := hyperutil.DeleteIfNeeded(ctx, r.Client, &capiv1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -3030,6 +3034,13 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		if err != nil {
 			return false, err
 		}
+
+		if od, ok := p.(platform.OrphanDeleter); ok {
+			if err = od.DeleteOrphanedMachines(ctx, r.Client, hc, controlPlaneNamespace); err != nil {
+				return false, err
+			}
+		}
+
 		if exists {
 			log.Info("Waiting for cluster deletion", "clusterName", hc.Spec.InfraID, "controlPlaneNamespace", controlPlaneNamespace)
 			return false, nil
@@ -3037,10 +3048,6 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	}
 
 	// Cleanup Platform specifics.
-	p, err := platform.GetPlatform(ctx, hc, nil, "", nil)
-	if err != nil {
-		return false, err
-	}
 
 	if err = p.DeleteCredentials(ctx, r.Client, hc,
 		controlPlaneNamespace); err != nil {
