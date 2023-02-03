@@ -5143,6 +5143,7 @@ objects:
                             only "value". The requirements are ANDed.
                           type: object
                       type: object
+                      x-kubernetes-map-type: atomic
                   type: object
               type: object
           type: object
@@ -5351,6 +5352,7 @@ objects:
                             only "value". The requirements are ANDed.
                           type: object
                       type: object
+                      x-kubernetes-map-type: atomic
                   type: object
                 durationSeconds:
                   description: The duration, in seconds, of the role session before
@@ -7424,6 +7426,7 @@ objects:
                             only "value". The requirements are ANDed.
                           type: object
                       type: object
+                      x-kubernetes-map-type: atomic
                   type: object
                 secretRef:
                   description: 'Reference to a secret containing the credentials.
@@ -8943,6 +8946,9 @@ objects:
                         eksLookupType:
                           description: EKSOptimizedLookupType If specified, will look
                             up an EKS Optimized image in SSM Parameter store
+                          enum:
+                          - AmazonLinux
+                          - AmazonLinuxGPU
                           type: string
                         id:
                           description: ID of resource
@@ -9010,6 +9016,7 @@ objects:
                             device. Must be greater than the image snapshot size or
                             8 (whichever is greater).
                           format: int64
+                          minimum: 8
                           type: integer
                         throughput:
                           description: Throughput to provision in MiB/s supported
@@ -11874,6 +11881,9 @@ objects:
                         eksLookupType:
                           description: EKSOptimizedLookupType If specified, will look
                             up an EKS Optimized image in SSM Parameter store
+                          enum:
+                          - AmazonLinux
+                          - AmazonLinuxGPU
                           type: string
                         id:
                           description: ID of resource
@@ -11941,6 +11951,7 @@ objects:
                             device. Must be greater than the image snapshot size or
                             8 (whichever is greater).
                           format: int64
+                          minimum: 8
                           type: integer
                         throughput:
                           description: Throughput to provision in MiB/s supported
