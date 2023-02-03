@@ -2399,6 +2399,13 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := cno.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext, r.DefaultIngressDomain)
 
+	sa := manifests.ClusterNetworkOperatorServiceAccount(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
+		return cno.ReconcileServiceAccount(sa, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster network operator serviceaccount: %w", err)
+	}
+
 	role := manifests.ClusterNetworkOperatorRole(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, role, func() error {
 		return cno.ReconcileRole(role, p.OwnerRef)
@@ -2427,16 +2434,37 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx co
 
 	metricsService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, metricsService, func() error {
-		return nto.ReconcileClusterNodeTuningOperatorMetricsService(metricsService)
+		return nto.ReconcileClusterNodeTuningOperatorMetricsService(metricsService, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile node tuning operator metrics service: %w", err)
 	}
 
 	serviceMonitor := manifests.ClusterNodeTuningOperatorServiceMonitor(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
-		return nto.ReconcileClusterNodeTuningOperatorServiceMonitor(serviceMonitor, hcp.Spec.ClusterID, r.MetricsSet)
+		return nto.ReconcileClusterNodeTuningOperatorServiceMonitor(serviceMonitor, hcp.Spec.ClusterID, r.MetricsSet, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile node tuning operator service monitor: %w", err)
+	}
+
+	sa := manifests.ClusterNodeTuningOperatorServiceAccount(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
+		return nto.ReconcileServiceAccount(sa, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster node tuning operator serviceaccount: %w", err)
+	}
+
+	role := manifests.ClusterNodeTuningOperatorRole(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r.Client, role, func() error {
+		return nto.ReconcileRole(role, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster node tuning operator role: %w", err)
+	}
+
+	rb := manifests.ClusterNodeTuningOperatorRoleBinding(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r.Client, rb, func() error {
+		return nto.ReconcileRoleBinding(rb, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster node tuning operator rolebinding: %w", err)
 	}
 
 	deployment := manifests.ClusterNodeTuningOperatorDeployment(hcp.Namespace)

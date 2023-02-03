@@ -184,14 +184,19 @@ func ReconcileRoleBinding(rb *rbacv1.RoleBinding, ownerRef config.OwnerRef) erro
 	rb.RoleRef = rbacv1.RoleRef{
 		APIGroup: rbacv1.SchemeGroupVersion.Group,
 		Kind:     "Role",
-		Name:     manifests.ClusterNetworkOperatorRoleBinding("").Name,
+		Name:     manifests.ClusterNetworkOperatorRole("").Name,
 	}
 	rb.Subjects = []rbacv1.Subject{
 		{
 			Kind: "ServiceAccount",
-			Name: "default",
+			Name: manifests.ClusterNetworkOperatorServiceAccount("").Name,
 		},
 	}
+	return nil
+}
+
+func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(sa)
 	return nil
 }
 
@@ -333,6 +338,7 @@ kubectl --kubeconfig $kc config use-context default`,
 		},
 	}
 
+	dep.Spec.Template.Spec.ServiceAccountName = manifests.ClusterNetworkOperatorServiceAccount("").Name
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{"/usr/bin/cluster-network-operator"},
 		Args:    cnoArgs,
