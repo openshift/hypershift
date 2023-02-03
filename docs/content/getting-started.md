@@ -39,9 +39,10 @@ you should adjust to your own environment.
         aws route53 create-hosted-zone --name $BASE_DOMAIN --caller-reference $(whoami)-$(date --rfc-3339=date)
         ```
 
-    !!! important
+!!! important
 
-	To access applications in your guest clusters, the public zone must be routable. If the public zone exists, skip this step. Otherwise, the public zone will affect the existing functions.
+	To access applications in your guest clusters, the public zone must be routable. If the public zone exists, skip 
+    this step. Otherwise, the public zone will affect the existing functions.
 
 * An S3 bucket with public access to host OIDC discovery documents for your clusters.
 
