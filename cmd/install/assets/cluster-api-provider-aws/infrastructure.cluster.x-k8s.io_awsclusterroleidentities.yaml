@@ -103,6 +103,7 @@ spec:
                           "value". The requirements are ANDed.
                         type: object
                     type: object
+                    x-kubernetes-map-type: atomic
                 type: object
               durationSeconds:
                 description: The duration, in seconds, of the role session before

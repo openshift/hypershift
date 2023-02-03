@@ -104,6 +104,7 @@ spec:
                           "value". The requirements are ANDed.
                         type: object
                     type: object
+                    x-kubernetes-map-type: atomic
                 type: object
               secretRef:
                 description: 'Reference to a secret containing the credentials. The
