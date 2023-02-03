@@ -166,6 +166,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 			},
 		},
 	}
+	params.deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.deploymentConfig.SetDefaults(hcp, selectorLabels(), pointer.Int(1))
 	params.deploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
 	return params
