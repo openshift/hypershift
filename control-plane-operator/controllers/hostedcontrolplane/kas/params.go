@@ -375,6 +375,7 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		NodePortRange:                p.ServiceNodePortRange(),
 		AuditWebhookEnabled:          p.AuditWebhookRef != nil,
 		ConsolePublicURL:             p.ConsolePublicURL,
+		DisableProfiling:             p.DisableProfiling,
 	}
 }
 
