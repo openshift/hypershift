@@ -13,6 +13,8 @@ Hypershift separation between Control Plane and Data Plane enables two independe
 The input for the `hostedCluster.spec.dns` dictates the first one.
 The input for `hostedCluster.spec.services.routePublishingStrategy.hostname` dictates the second one, which we'll elaborate in this doc.
 
+Note: External DNS will only make a difference for setups with Public endpoints i.e. "Public" or "PublicAndPrivate". For a "Private" setup all endpoints will be accessible via `.hypershift.local`, which will contain CNAME records to the appropriate Private Link Endpoint Services.
+
 # Use Service-level DNS for Control Plane Services
 There are four service that are exposed by a Hosted Control Plane (HCP)
 
