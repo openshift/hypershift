@@ -196,18 +196,23 @@ func NewCommand() *cobra.Command {
 			return err
 		}
 
-		objects, err := hyperShiftOperatorManifests(opts)
+		objects, err := HyperShiftOperatorManifests(opts)
 		if err != nil {
 			return err
 		}
 
-		err = apply(cmd.Context(), objects)
+		client, err := util.GetClient()
+		if err != nil {
+			return err
+		}
+
+		err = Apply(cmd.Context(), objects, client)
 		if err != nil {
 			return err
 		}
 
 		if opts.WaitUntilAvailable {
-			if err := waitUntilAvailable(cmd.Context(), opts); err != nil {
+			if err := WaitUntilAvailable(cmd.Context(), opts, client); err != nil {
 				return err
 			}
 		}
@@ -220,12 +225,7 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func apply(ctx context.Context, objects []crclient.Object) error {
-	client, err := util.GetClient()
-	if err != nil {
-		return err
-	}
-
+func Apply(ctx context.Context, objects []crclient.Object, client crclient.Client) error {
 	var errs []error
 	for _, object := range objects {
 		var objectBytes bytes.Buffer
@@ -255,16 +255,12 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 	return errors.NewAggregate(errs)
 }
 
-func waitUntilAvailable(ctx context.Context, opts Options) error {
-	client, err := util.GetClient()
-	if err != nil {
-		return err
-	}
+func WaitUntilAvailable(ctx context.Context, opts Options, client crclient.Client) error {
 	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
 	fmt.Printf("Waiting for operator rollout...\n")
-	err = wait.PollImmediateUntilWithContext(waitCtx, 2*time.Second, func(ctx context.Context) (bool, error) {
+	err := wait.PollImmediateUntilWithContext(waitCtx, 2*time.Second, func(ctx context.Context) (bool, error) {
 		deployment := operatorDeployment(opts)
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
 			return false, err
@@ -362,7 +358,7 @@ func fetchImageRefs(file string) (map[string]string, error) {
 	return result, nil
 }
 
-func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
+func HyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	var objects []crclient.Object
 
 	var images map[string]string

@@ -4,11 +4,17 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io/ioutil"
+	"net"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -29,13 +35,25 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapiv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+const (
+	HcType                 = "hostedcluster"
+	HcpType                = "hostedcontrolplane"
+	AvoidClusterDeletetion = "hostedcluster-delete"
+)
+
+var (
+	zero int64 = 0
 )
 
 func PatchObject[T crclient.Object](ctx context.Context, client crclient.Client, obj T) error {
@@ -155,6 +173,66 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 
 	t.Logf("Successfully connected to the guest apiserver in %s", time.Since(start).Round(time.Second))
 	return guestClient
+}
+
+func WaitForFinishNodePoolUpdate(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool) {
+	g := NewWithT(t)
+	start := time.Now()
+	var nReady int
+
+	// waitTimeout for nodes to become Ready
+	waitTimeout := 30 * time.Minute
+
+	t.Logf("Waiting for nodePool to finish config update. NodePool: %s", nodePool.Name)
+	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
+		nReady = 0
+		np := &hyperv1.NodePool{}
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), np); err != nil {
+			return false, nil
+		}
+
+		for _, condition := range np.Status.Conditions {
+			if condition.Type == hyperv1.NodePoolUpdatingConfigConditionType && condition.Status == corev1.ConditionTrue {
+				return false, nil
+			}
+			nReady += 1
+		}
+
+		t.Logf("NodePool config update finished at %s in %s/%s", np.Name, np.Namespace, np.Name)
+
+		return true, nil
+	})
+
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure nodepool replicas reach the updated status, nodes updated: (%d/%d): %v", nReady, nodePool.Status.Replicas, err))
+	t.Logf("All nodepool replicas seems to be ready in %s. Count: %v", time.Since(start).Round(time.Second), nReady)
+}
+
+func WaitForXNodePoolReplicas(t *testing.T, ctx context.Context, client crclient.Client, n int32, nodePool *hyperv1.NodePool) {
+	g := NewWithT(t)
+	start := time.Now()
+
+	// waitTimeout for nodes to become Ready
+	waitTimeout := 30 * time.Minute
+
+	t.Logf("Waiting for nodePool replicas. Want: %v", n)
+	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
+		np := &hyperv1.NodePool{}
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), np); err != nil {
+			return false, nil
+		}
+
+		if np.Status.Replicas != n {
+			t.Logf("nodepool: %s, Current: %d, Desired: %d", np.Name, np.Status.Replicas, n)
+			return false, nil
+		}
+
+		t.Logf("NodePool replicas at %s are ready. Count: %v/%v", np.Name, np.Status.Replicas, n)
+
+		return true, nil
+	})
+
+	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed to ensure nodepool replicas match the desired status, ready: (%d/%d): ", nodePool.Status.Replicas, n))
+	t.Logf("All nodepool replicas seems to be ready in %s. Count: %v", time.Since(start).Round(time.Second), n)
 }
 
 func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
@@ -900,4 +978,252 @@ func CorrelateDaemonSet(ds *appsv1.DaemonSet, nodePool *hyperv1.NodePool, dsName
 	ds.Spec.Template.Spec.NodeSelector = make(map[string]string)
 	ds.Spec.Template.Spec.NodeSelector["hypershift.openshift.io/nodePool"] = nodePool.Name
 
+}
+
+// render builds the kubeconfig save it to a desired path.
+func RenderKubeconfig(ctx context.Context, hostedCluster hyperv1.HostedCluster, c crclient.Client, destPath string) (string, error) {
+	var kubeconfigLocation string
+
+	if strings.HasSuffix(destPath, "/") {
+		kubeconfigLocation = destPath + string(hostedCluster.Status.KubeConfig.Name)
+	} else {
+		kubeconfigLocation = destPath + "/" + string(hostedCluster.Status.KubeConfig.Name)
+	}
+
+	scheme := runtime.NewScheme()
+	if err := clientcmdapiv1.AddToScheme(scheme); err != nil {
+		return "", fmt.Errorf("failed to set up scheme: %w", err)
+	}
+
+	if hostedCluster.Status.KubeConfig == nil {
+		return "", fmt.Errorf("cluster doesn't report a kubeconfig")
+	}
+
+	kubeConfigSecret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hostedCluster.Namespace,
+			Name:      hostedCluster.Status.KubeConfig.Name,
+		},
+	}
+
+	if err := c.Get(ctx, crclient.ObjectKeyFromObject(&kubeConfigSecret), &kubeConfigSecret); err != nil {
+		return "", fmt.Errorf("failed to get kubeconfig secret %s: %s", crclient.ObjectKeyFromObject(&kubeConfigSecret), err)
+	}
+
+	data, hasData := kubeConfigSecret.Data["kubeconfig"]
+	if !hasData || len(data) == 0 {
+		return "", fmt.Errorf("kubeconfig secret has no kubeconfig")
+	}
+
+	if err := ioutil.WriteFile(kubeconfigLocation, data, 0644); err != nil {
+		return "", fmt.Errorf("failed to render kubeconfig secret %s into path %s: %s", hostedCluster.Status.KubeConfig.Name, kubeconfigLocation, err)
+	}
+
+	return kubeconfigLocation, nil
+}
+
+func CreateS3Bucket(ctx context.Context, awsConfig aws.Config, bucket string) error {
+	sess, err := session.NewSession(&awsConfig)
+	if err != nil {
+		return fmt.Errorf("error creating s3 session: %v", err)
+	}
+
+	svc := s3.New(sess)
+
+	if _, err := svc.CreateBucket(&s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+		ACL:    aws.String("public-read"),
+	}); err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			switch aerr.Code() {
+			case s3.ErrCodeBucketAlreadyExists:
+				return fmt.Errorf("Unable to create bucket %q, %v", bucket, err)
+			}
+		}
+	}
+
+	if err = svc.WaitUntilBucketExists(&s3.HeadBucketInput{
+		Bucket: aws.String(bucket),
+	}); err != nil {
+		return fmt.Errorf("Error occurred while waiting for bucket %v to be created:, %v", bucket, err.Error())
+	}
+
+	fmt.Printf("Bucket %q successfully created\n", bucket)
+
+	return nil
+}
+
+func DeleteS3Bucket(ctx context.Context, awsConfig aws.Config, bucket string) error {
+	sess, err := session.NewSession(&awsConfig)
+	if err != nil {
+		return fmt.Errorf("error creating s3 session: %v", err)
+	}
+
+	svc := s3.New(sess)
+
+	if _, err := svc.DeleteBucket(&s3.DeleteBucketInput{
+		Bucket: aws.String(bucket),
+	}); err != nil {
+		return fmt.Errorf("Unable to delete bucket %q, %v", bucket, err)
+	}
+
+	if err = svc.WaitUntilBucketNotExists(&s3.HeadBucketInput{
+		Bucket: aws.String(bucket),
+	}); err != nil {
+		return fmt.Errorf("Error occurred while waiting for bucket to be deleted, %v", bucket)
+	}
+
+	fmt.Printf("Bucket %q successfully deleted\n", bucket)
+
+	return nil
+}
+
+func DeleteS3Object(ctx context.Context, awsConfig *aws.Config, bucket, object string) error {
+	sess, err := session.NewSession(awsConfig)
+	if err != nil {
+		return fmt.Errorf("error creating s3 session: %v", err)
+	}
+
+	svc := s3.New(sess)
+
+	if _, err := svc.DeleteObject(&s3.DeleteObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(object),
+	}); err != nil {
+		return fmt.Errorf("Unable to delete %s in bucket %s, %v", object, bucket, err)
+	}
+
+	if err = svc.WaitUntilObjectNotExists(&s3.HeadObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(object),
+	}); err != nil {
+		return fmt.Errorf("Error occurred while waiting for object to be deleted %s - %s : %v", bucket, object, err)
+	}
+
+	fmt.Printf("Object %s successfully deleted from %s\n", object, bucket)
+	time.Sleep(time.Second * 5)
+
+	return nil
+}
+
+func WaitForDNS(t *testing.T, ctx context.Context, url string) (net.IP, error) {
+	var ips []net.IP
+	var err error
+	fmt.Println("Waiting for URL:", url)
+	err = wait.PollImmediateWithContext(ctx, 30*time.Second, 20*time.Minute, func(ctx context.Context) (done bool, err error) {
+		ips, err = net.LookupIP(url)
+		if err != nil {
+			t.Logf("Site unreachable %s, retrying...", url)
+			return false, nil
+		}
+
+		t.Log("IP:", ips[0])
+
+		return true, nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("error waiting for DNS resolution: %v", err)
+	}
+
+	return ips[0], nil
+}
+
+func ScaleResources(ctx context.Context, client crclient.Client, objectList crclient.ObjectList, replicas int32) error {
+
+	fmt.Printf("\nScaling resources to %d\n", replicas)
+	if err := meta.EachListItem(objectList, func(item runtime.Object) error {
+		switch obj := item.(type) {
+		case *appsv1.Deployment:
+			fmt.Println("Deployment -", obj.Name)
+			dpOrig := obj.DeepCopy()
+			obj.Spec.Replicas = &replicas
+			if err := client.Patch(ctx, obj, crclient.MergeFrom(dpOrig)); err != nil {
+				return fmt.Errorf("failed patching deployment replicas to %d in %s: %v", replicas, obj.Name, err)
+			}
+
+		case *appsv1.StatefulSet:
+			fmt.Println("Stateful Set -", obj.Name)
+			ssOrig := obj.DeepCopy()
+			obj.Spec.Replicas = &replicas
+			if err := client.Patch(ctx, obj, crclient.MergeFrom(ssOrig)); err != nil {
+				return fmt.Errorf("failed patching statefulSet replicas to %d in %s: %v", replicas, obj.Name, err)
+			}
+
+		default:
+			return fmt.Errorf("Object kind not supported. Object: %s", objectList.GetObjectKind().GroupVersionKind().Kind)
+		}
+
+		return nil
+	}); err != nil {
+		return fmt.Errorf("error scalling object: %v", err)
+	}
+
+	return nil
+}
+
+func PatchAndDeleteResource(ctx context.Context, client crclient.Client, objectList crclient.ObjectList, ns string, matchLabel map[string]string) error {
+	if err := client.List(ctx, objectList, crclient.InNamespace(ns), crclient.MatchingLabels(matchLabel)); err != nil {
+		return fmt.Errorf("failed getting objectList: %v", err)
+	}
+
+	if err := meta.EachListItem(objectList, func(item runtime.Object) error {
+		obj, _ := meta.Accessor(item)
+
+		kind := item.GetObjectKind().GroupVersionKind().Kind
+		name := obj.GetName()
+		obj.SetFinalizers([]string{})
+		fmt.Println("Patching and Deleting:", kind, name)
+
+		err := wait.PollImmediateWithContext(ctx, 10*time.Second, 5*time.Minute, func(ctx context.Context) (done bool, err error) {
+			if err := client.Update(ctx, item.(crclient.Object)); err != nil {
+				if !errors.IsNotFound(err) && !errors.IsInvalid(err) {
+					return false, nil
+				}
+			}
+			if err := client.Delete(ctx, item.(crclient.Object)); err != nil {
+				if !errors.IsNotFound(err) && !errors.IsInvalid(err) {
+					if err := client.Delete(ctx, item.(crclient.Object), &crclient.DeleteOptions{GracePeriodSeconds: &zero}); err != nil {
+						return false, nil
+					}
+				}
+			}
+			return true, nil
+		})
+		if err != nil {
+			return fmt.Errorf("error patching and deleting %s - %s: %v", kind, name, err)
+		}
+
+		return nil
+	}); err != nil {
+		return fmt.Errorf("error deleting up object: %v", err)
+	}
+
+	return nil
+}
+
+func DeleteResource(ctx context.Context, client crclient.Client, objectList crclient.ObjectList, ns string, matchLabel map[string]string) error {
+	if err := client.List(ctx, objectList, crclient.InNamespace(ns), crclient.MatchingLabels(matchLabel)); err != nil {
+		return fmt.Errorf("failed getting objectList: %v", err)
+	}
+
+	if err := meta.EachListItem(objectList, func(item runtime.Object) error {
+		obj, _ := meta.Accessor(item)
+		kind := item.GetObjectKind().GroupVersionKind().Kind
+		name := obj.GetName()
+		fmt.Println("Deleting:", kind, name)
+		if err := client.Delete(ctx, item.(crclient.Object)); err != nil {
+			if !errors.IsNotFound(err) && !errors.IsInvalid(err) {
+				if err := client.Delete(ctx, item.(crclient.Object), &crclient.DeleteOptions{GracePeriodSeconds: &zero}); err != nil {
+					return fmt.Errorf("error deleting %s - %s: %v", kind, name, err)
+				}
+			}
+		}
+
+		return nil
+	}); err != nil {
+		return fmt.Errorf("error deleting object: %v", err)
+	}
+
+	return nil
 }

@@ -23,6 +23,7 @@ import (
 	apiserverconfigv1 "k8s.io/apiserver/pkg/apis/config/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
@@ -64,4 +65,5 @@ func init() {
 	prometheusoperatorv1.AddToScheme(Scheme)
 	imageregistryv1.AddToScheme(Scheme)
 	operatorsv1alpha1.AddToScheme(Scheme)
+	capiaws.AddToScheme(Scheme)
 }

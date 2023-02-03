@@ -31,10 +31,10 @@ import (
 // CreateCluster creates a new namespace and a HostedCluster in that namespace
 // using the provided options.
 //
-// CreateCluster will install a teardown handler into the provided test T by
+// CreateCluster will install a Teardown handler into the provided test T by
 // calling T.Cleanup() with a function that destroys the cluster. This function
-// will block until teardown completes. No explicit cluster cleanup logic is
-// expected of the caller. Note that the teardown function explicitly ignores
+// will block until Teardown completes. No explicit cluster cleanup logic is
+// expected of the caller. Note that the Teardown function explicitly ignores
 // interruption and tries forever to do its work, the rationale being that we
 // should do everything with can to release external resources with whatever
 // time we have before being forcibly terminated.
@@ -108,7 +108,7 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 	t.Logf("Creating a new cluster. Options: %v", opts)
 	if err := createCluster(ctx, hc, opts); err != nil {
 		t.Logf("failed to create cluster, tearing down: %v", err)
-		teardown(context.Background(), t, client, hc, opts, artifactDir)
+		Teardown(context.Background(), t, client, hc, opts, artifactDir)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")
 	}
 
@@ -116,7 +116,7 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 	// fails, immediately try and clean up.
 	if err := client.Get(ctx, crclient.ObjectKeyFromObject(hc), hc); err != nil {
 		t.Logf("failed to get cluster that was created, tearing down: %v", err)
-		teardown(context.Background(), t, client, hc, opts, artifactDir)
+		Teardown(context.Background(), t, client, hc, opts, artifactDir)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 	}
 
@@ -124,25 +124,26 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 	// to proceed.
 	t.Logf("Successfully created hostedcluster %s/%s in %s", hc.Namespace, hc.Name, time.Since(start).Round(time.Second))
 
-	t.Cleanup(func() { teardown(context.Background(), t, client, hc, opts, artifactDir) })
-
-	t.Cleanup(func() { EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), client, hc) })
-	t.Cleanup(func() { EnsureHCPContainersHaveResourceRequests(t, context.Background(), client, hc) })
-	t.Cleanup(func() { EnsureNoPodsWithTooHighPriority(t, context.Background(), client, hc) })
-	t.Cleanup(func() { NoticePreemptionOrFailedScheduling(t, context.Background(), client, hc) })
-	t.Cleanup(func() { EnsureAllRoutesUseHCPRouter(t, context.Background(), client, hc) })
+	if hc.Labels[AvoidClusterDeletetion] != "false" {
+		t.Cleanup(func() { Teardown(context.Background(), t, client, hc, opts, artifactDir) })
+		t.Cleanup(func() { EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), client, hc) })
+		t.Cleanup(func() { EnsureHCPContainersHaveResourceRequests(t, context.Background(), client, hc) })
+		t.Cleanup(func() { EnsureNoPodsWithTooHighPriority(t, context.Background(), client, hc) })
+		t.Cleanup(func() { NoticePreemptionOrFailedScheduling(t, context.Background(), client, hc) })
+		t.Cleanup(func() { EnsureAllRoutesUseHCPRouter(t, context.Background(), client, hc) })
+	}
 
 	return hc
 }
 
-// teardown will destroy the provided HostedCluster. If an artifact directory is
-// provided, teardown will dump artifacts at various interesting points to aid
+// Teardown will destroy the provided HostedCluster. If an artifact directory is
+// provided, Teardown will dump artifacts at various interesting points to aid
 // in debugging.
 //
 // Note that most resource dumps are considered fatal to the tests. The reason
 // is that these dumps are critical to our ability to debug issues in CI, and so
 // we want to treat diagnostic dump failures as high priority bugs to resolve.
-func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyperv1.HostedCluster, opts *core.CreateOptions, artifactDir string) {
+func Teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyperv1.HostedCluster, opts *core.CreateOptions, artifactDir string) {
 	dumpCluster := newClusterDumper(hc, opts, artifactDir)
 
 	// First, do a dump of the cluster before tearing it down
@@ -154,7 +155,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 	})
 
 	// Try repeatedly to destroy the cluster gracefully. For each failure, dump
-	// the current cluster to help debug teardown lifecycle issues.
+	// the current cluster to help debug Teardown lifecycle issues.
 	destroyAttempt := 1
 	t.Run(fmt.Sprintf("DestroyCluster_%d", destroyAttempt), func(t *testing.T) {
 		t.Logf("Waiting for cluster to be destroyed. Namespace: %s, name: %s", hc.Namespace, hc.Name)
@@ -196,7 +197,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 	//
 	// If the cluster was successfully destroyed and finalized, any further delay
 	// in cleaning up the test namespace could be indicative of a resource
-	// finalization bug. Give this namespace teardown a reasonable time to
+	// finalization bug. Give this namespace Teardown a reasonable time to
 	// complete and then dump resources to help debug.
 	t.Run("DeleteTestNamespace", func(t *testing.T) {
 		deleteTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
@@ -256,6 +257,8 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.Cr
 // destroyCluster calls the correct cluster destroy CLI function based on the
 // cluster platform and the options used to create the cluster.
 func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, createOpts *core.CreateOptions) error {
+	validateAWSResourceDeletion := validateAWSGuestResourcesDeletedFunc(ctx, t, hc.Spec.InfraID, createOpts.AWSPlatform.AWSCredentialsFile, createOpts.AWSPlatform.Region)
+
 	opts := &core.DestroyOptions{
 		Namespace:          hc.Namespace,
 		Name:               hc.Name,
@@ -263,6 +266,11 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 		ClusterGracePeriod: 15 * time.Minute,
 		Log:                NewLogr(t),
 	}
+
+	if hc.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "false" {
+		validateAWSResourceDeletion = nil
+	}
+
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		opts.AWSPlatform = core.AWSPlatformDestroyOptions{
@@ -270,7 +278,7 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 			AWSCredentialsFile: createOpts.AWSPlatform.AWSCredentialsFile,
 			PreserveIAM:        false,
 			Region:             createOpts.AWSPlatform.Region,
-			PostDeleteAction:   validateAWSGuestResourcesDeletedFunc(ctx, t, hc.Spec.InfraID, createOpts.AWSPlatform.AWSCredentialsFile, createOpts.AWSPlatform.Region),
+			PostDeleteAction:   validateAWSResourceDeletion,
 		}
 		return aws.DestroyCluster(ctx, opts)
 	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:

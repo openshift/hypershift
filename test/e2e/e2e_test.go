@@ -74,6 +74,7 @@ func TestMain(m *testing.M) {
 	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.availability-zones", "Availability zones for clusters")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AWSOIDCBucketName, "e2e.aws-oidc-bucket-name", "hypershift-ci-oidc", "bucket name for OIDC storage")
 	flag.StringVar(&globalOpts.configurableClusterOptions.ExternalDNSDomain, "e2e.external-dns-domain", "", "domain that external-dns will use to create DNS records for HCP endpoints")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtContainerDiskImage, "e2e.kubevirt-container-disk-image", "", "DEPRECATED (ignored will be removed soon)")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtNodeMemory, "e2e.kubevirt-node-memory", "4Gi", "the amount of memory to provide to each workload node")
@@ -146,7 +147,7 @@ func main(m *testing.M) int {
 	defer alertSLOs(testContext)
 
 	if globalOpts.Platform == hyperv1.AWSPlatform {
-		oidcBucketName := "hypershift-ci-oidc"
+		oidcBucketName := globalOpts.configurableClusterOptions.AWSOIDCBucketName
 		iamClient := e2eutil.GetIAMClient(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
 		s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
 		if err := setupSharedOIDCProvider(oidcBucketName, iamClient, s3Client); err != nil {
@@ -392,6 +393,7 @@ type configurableClusterOptions struct {
 	AzureCredentialsFile        string
 	AzureLocation               string
 	Region                      string
+	AWSOIDCBucketName           string
 	Zone                        stringSliceVar
 	PullSecretFile              string
 	BaseDomain                  string

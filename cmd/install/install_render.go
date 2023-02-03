@@ -59,7 +59,7 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 			}
 			objects = []crclient.Object{templateObject}
 		} else {
-			objects, err = hyperShiftOperatorManifests(*opts)
+			objects, err = HyperShiftOperatorManifests(*opts)
 			if err != nil {
 				return err
 			}
@@ -154,7 +154,7 @@ func hyperShiftOperatorTemplateManifest(opts *Options) (crclient.Object, error) 
 	}
 
 	// create manifests
-	objects, err := hyperShiftOperatorManifests(*opts)
+	objects, err := HyperShiftOperatorManifests(*opts)
 	if err != nil {
 		return nil, err
 	}
