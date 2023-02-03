@@ -350,12 +350,20 @@ func convertProviderConfigToIDPData(
 				return nil, err
 			}
 			openIDProvider.URLs = *urls
+			var groups []string
+			if len(openIDConfig.Claims.Groups) > 0 {
+				groups = make([]string, len(openIDConfig.Claims.Groups))
+				for i, group := range openIDConfig.Claims.Groups {
+					groups[i] = string(group)
+				}
+			}
 			openIDProvider.Claims = osinv1.OpenIDClaims{
 				// There is no longer a user-facing setting for ID as it is considered unsafe
 				ID:                []string{configv1.UserIDClaim},
 				PreferredUsername: openIDConfig.Claims.PreferredUsername,
 				Name:              openIDConfig.Claims.Name,
 				Email:             openIDConfig.Claims.Email,
+				Groups:            groups,
 			}
 		}
 		if len(openIDConfig.CA.Name) > 0 {
