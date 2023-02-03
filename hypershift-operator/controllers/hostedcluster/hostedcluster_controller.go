@@ -2484,7 +2484,7 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	cluster.Spec = capiv1.ClusterSpec{
 		ControlPlaneEndpoint: capiv1.APIEndpoint{},
 		ControlPlaneRef: &corev1.ObjectReference{
-			APIVersion: "hypershift.openshift.io/v1alpha1",
+			APIVersion: "hypershift.openshift.io/v1beta1",
 			Kind:       "HostedControlPlane",
 			Namespace:  hcp.Namespace,
 			Name:       hcp.Name,
