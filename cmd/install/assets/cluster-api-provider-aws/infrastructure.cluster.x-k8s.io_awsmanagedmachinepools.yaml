@@ -129,6 +129,9 @@ spec:
                       eksLookupType:
                         description: EKSOptimizedLookupType If specified, will look
                           up an EKS Optimized image in SSM Parameter store
+                        enum:
+                        - AmazonLinux
+                        - AmazonLinuxGPU
                         type: string
                       id:
                         description: ID of resource
@@ -195,6 +198,7 @@ spec:
                           Must be greater than the image snapshot size or 8 (whichever
                           is greater).
                         format: int64
+                        minimum: 8
                         type: integer
                       throughput:
                         description: Throughput to provision in MiB/s supported for

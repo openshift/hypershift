@@ -104,6 +104,7 @@ spec:
                           "value". The requirements are ANDed.
                         type: object
                     type: object
+                    x-kubernetes-map-type: atomic
                 type: object
             type: object
         type: object
