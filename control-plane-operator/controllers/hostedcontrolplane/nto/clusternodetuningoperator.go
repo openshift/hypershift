@@ -140,7 +140,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 			Resources: []string{
 				"configmaps",
 			},
-			Verbs: []string{"*"},
+			Verbs: []string{"get", "list", "watch"},
 		},
 	}
 	return nil
