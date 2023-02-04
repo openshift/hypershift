@@ -1668,7 +1668,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	// Reconcile CAPI manager role
 	capiManagerRole := clusterapi.CAPIManagerRole(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, capiManagerRole, func() error {
-		return reconcileCAPIManagerRole(capiManagerRole)
+		return reconcileCAPIManagerRole(capiManagerRole, hcp.Spec.Platform.Type)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager role: %w", err)
@@ -2646,52 +2646,99 @@ func reconcileCAPIManagerClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, 
 	return nil
 }
 
-func reconcileCAPIManagerRole(role *rbacv1.Role) error {
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{
-				"bootstrap.cluster.x-k8s.io",
-				"controlplane.cluster.x-k8s.io",
-				"infrastructure.cluster.x-k8s.io",
-				"machines.cluster.x-k8s.io",
-				"exp.infrastructure.cluster.x-k8s.io",
-				"addons.cluster.x-k8s.io",
-				"exp.cluster.x-k8s.io",
-				"cluster.x-k8s.io",
+func reconcileCAPIManagerRole(role *rbacv1.Role, platformType hyperv1.PlatformType) error {
+	if platformType == hyperv1.IBMCloudPlatform {
+		role.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{
+					"bootstrap.cluster.x-k8s.io",
+					"controlplane.cluster.x-k8s.io",
+					"infrastructure.cluster.x-k8s.io",
+					"machines.cluster.x-k8s.io",
+					"exp.infrastructure.cluster.x-k8s.io",
+					"addons.cluster.x-k8s.io",
+					"exp.cluster.x-k8s.io",
+					"cluster.x-k8s.io",
+				},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
 			},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"hypershift.openshift.io"},
-			Resources: []string{
-				"hostedcontrolplanes",
-				"hostedcontrolplanes/status",
+			{
+				APIGroups: []string{"hypershift.openshift.io"},
+				Resources: []string{
+					"hostedcontrolplanes",
+					"hostedcontrolplanes/status",
+				},
+				Verbs: []string{"get", "list", "watch"},
 			},
-			Verbs: []string{"*"},
-		},
-		{
-			APIGroups: []string{""},
-			Resources: []string{
-				"configmaps",
-				"events",
-				"nodes",
-				"secrets",
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"configmaps",
+					"secrets",
+				},
+				Verbs: []string{"list", "watch"},
 			},
-			Verbs: []string{"*"},
-		},
-		{
-			APIGroups: []string{"coordination.k8s.io"},
-			Resources: []string{
-				"leases",
+			{
+				APIGroups: []string{"coordination.k8s.io"},
+				Resources: []string{
+					"leases",
+				},
+				Verbs: []string{"*"},
 			},
-			Verbs: []string{"*"},
-		},
-		{
-			APIGroups: []string{"capi-provider.agent-install.openshift.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
+			{
+				APIGroups: []string{"capi-provider.agent-install.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+		}
+	} else {
+		role.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{
+					"bootstrap.cluster.x-k8s.io",
+					"controlplane.cluster.x-k8s.io",
+					"infrastructure.cluster.x-k8s.io",
+					"machines.cluster.x-k8s.io",
+					"exp.infrastructure.cluster.x-k8s.io",
+					"addons.cluster.x-k8s.io",
+					"exp.cluster.x-k8s.io",
+					"cluster.x-k8s.io",
+				},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"hypershift.openshift.io"},
+				Resources: []string{
+					"hostedcontrolplanes",
+					"hostedcontrolplanes/status",
+				},
+				Verbs: []string{"*"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"configmaps",
+					"events",
+					"nodes",
+					"secrets",
+				},
+				Verbs: []string{"*"},
+			},
+			{
+				APIGroups: []string{"coordination.k8s.io"},
+				Resources: []string{
+					"leases",
+				},
+				Verbs: []string{"*"},
+			},
+			{
+				APIGroups: []string{"capi-provider.agent-install.openshift.io"},
+				Resources: []string{"*"},
+				Verbs:     []string{"*"},
+			},
+		}
 	}
 	return nil
 }
