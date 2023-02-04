@@ -2667,6 +2667,35 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		return fmt.Errorf("failed to reconcile packageserver deployment: %w", err)
 	}
 
+	// no need to run heap collection in IBM Cloud
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesConfigMap); err != nil {
+			return fmt.Errorf("failed to remove collect profiles config map: %w", err)
+		}
+		collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesCronJob); err != nil {
+			return fmt.Errorf("failed to remove collect profiles cronjob: %w", err)
+		}
+		collectProfilesRole := manifests.CollectProfilesRole(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesRole); err != nil {
+			return fmt.Errorf("failed to remove collect profiles role: %w", err)
+		}
+		collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesRoleBinding); err != nil {
+			return fmt.Errorf("failed to remove collect profiles role binding: %w", err)
+		}
+		collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesSecret); err != nil {
+			return fmt.Errorf("failed to remove collect profiles secret: %w", err)
+		}
+		collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesServiceAccount); err != nil {
+			return fmt.Errorf("failed to remove collect profiles serviceaccount: %w", err)
+		}
+		return nil
+	}
+
 	// Collect Profiles
 	collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, collectProfilesConfigMap, func() error {
