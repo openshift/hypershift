@@ -2667,53 +2667,81 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		return fmt.Errorf("failed to reconcile packageserver deployment: %w", err)
 	}
 
-	// Collect Profiles
-	collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, collectProfilesConfigMap, func() error {
-		olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles config map: %w", err)
-	}
+	// no need to run heap collection in IBM Cloud
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesConfigMap); err != nil {
+			return fmt.Errorf("failed to remove collect profiles config map: %w", err)
+		}
+		collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesCronJob); err != nil {
+			return fmt.Errorf("failed to remove collect profiles cronjob: %w", err)
+		}
+		collectProfilesRole := manifests.CollectProfilesRole(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesRole); err != nil {
+			return fmt.Errorf("failed to remove collect profiles role: %w", err)
+		}
+		collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesRoleBinding); err != nil {
+			return fmt.Errorf("failed to remove collect profiles role binding: %w", err)
+		}
+		collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesSecret); err != nil {
+			return fmt.Errorf("failed to remove collect profiles secret: %w", err)
+		}
+		collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesServiceAccount); err != nil {
+			return fmt.Errorf("failed to remove collect profiles serviceaccount: %w", err)
+		}
+	} else {
+		// Collect Profiles
+		collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, collectProfilesConfigMap, func() error {
+			olm.ReconcileCollectProfilesConfigMap(collectProfilesConfigMap, p.OwnerRef)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile collect profiles config map: %w", err)
+		}
 
-	collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, collectProfilesCronJob, func() error {
-		olm.ReconcileCollectProfilesCronJob(collectProfilesCronJob, p.OwnerRef, p.OLMImage, hcp.Namespace)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
-	}
+		collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, collectProfilesCronJob, func() error {
+			olm.ReconcileCollectProfilesCronJob(collectProfilesCronJob, p.OwnerRef, p.OLMImage, hcp.Namespace)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)
+		}
 
-	collectProfilesRole := manifests.CollectProfilesRole(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, collectProfilesRole, func() error {
-		olm.ReconcileCollectProfilesRole(collectProfilesRole, p.OwnerRef)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles role: %w", err)
-	}
+		collectProfilesRole := manifests.CollectProfilesRole(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, collectProfilesRole, func() error {
+			olm.ReconcileCollectProfilesRole(collectProfilesRole, p.OwnerRef)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile collect profiles role: %w", err)
+		}
 
-	collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, collectProfilesRoleBinding, func() error {
-		olm.ReconcileCollectProfilesRoleBinding(collectProfilesRoleBinding, p.OwnerRef)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles rolebinding: %w", err)
-	}
+		collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, collectProfilesRoleBinding, func() error {
+			olm.ReconcileCollectProfilesRoleBinding(collectProfilesRoleBinding, p.OwnerRef)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile collect profiles rolebinding: %w", err)
+		}
 
-	collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, collectProfilesSecret, func() error {
-		olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles secret: %w", err)
-	}
+		collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, collectProfilesSecret, func() error {
+			olm.ReconcileCollectProfilesSecret(collectProfilesSecret, p.OwnerRef)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile collect profiles secret: %w", err)
+		}
 
-	collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, collectProfilesServiceAccount, func() error {
-		olm.ReconcileCollectProfilesServiceAccount(collectProfilesServiceAccount, p.OwnerRef)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile collect profiles serviceaccount: %w", err)
+		collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, collectProfilesServiceAccount, func() error {
+			olm.ReconcileCollectProfilesServiceAccount(collectProfilesServiceAccount, p.OwnerRef)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile collect profiles serviceaccount: %w", err)
+		}
 	}
 	return nil
 }
