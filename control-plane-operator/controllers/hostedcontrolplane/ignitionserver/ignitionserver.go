@@ -159,7 +159,14 @@ func ReconcileIgnitionServer(ctx context.Context,
 				Resources: []string{
 					"secrets",
 				},
-				Verbs: []string{"get, list, watch, update, patch, delete"},
+				Verbs: []string{"get", "list", "watch", "update", "patch", "delete"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"configmaps",
+				},
+				Verbs: []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{""},
