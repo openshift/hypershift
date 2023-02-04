@@ -119,62 +119,112 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 	return p
 }
 
-func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
+func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, networkType hyperv1.NetworkType) error {
 	ownerRef.ApplyTo(role)
-	// Required by CNO to manage ovn-kubernetes and cloud-network-config-controller control plane components
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{corev1.SchemeGroupVersion.Group},
-			Resources: []string{
-				"events",
-				"configmaps",
-				"pods",
-				"secrets",
-				"services",
+	if networkType == hyperv1.Calico {
+		role.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{corev1.SchemeGroupVersion.Group},
+				Resources: []string{
+					"configmaps",
+				},
+				ResourceNames: []string{
+					"openshift-service-ca.crt",
+				},
+				Verbs: []string{
+					"get",
+					"list",
+					"watch",
+				},
 			},
-			Verbs: []string{"*"},
-		},
-		{
-			APIGroups: []string{"policy"},
-			Resources: []string{"poddisruptionbudgets"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{appsv1.SchemeGroupVersion.Group},
-			Resources: []string{"statefulsets", "deployments"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{routev1.SchemeGroupVersion.Group},
-			Resources: []string{"routes", "routes/custom-host"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
-			Resources: []string{
-				"servicemonitors",
-				"prometheusrules",
+			{
+				APIGroups: []string{appsv1.SchemeGroupVersion.Group},
+				Resources: []string{"statefulsets", "deployments"},
+				Verbs:     []string{"list", "watch"},
 			},
-			Verbs: []string{"*"},
-		},
-		{
-			APIGroups: []string{hyperv1.GroupVersion.Group},
-			Resources: []string{
-				"hostedcontrolplanes",
+			{
+				APIGroups: []string{appsv1.SchemeGroupVersion.Group},
+				Resources: []string{"deployments"},
+				ResourceNames: []string{
+					"multus-admission-controller",
+				},
+				Verbs: []string{"*"},
 			},
-			Verbs: []string{
-				"get",
-				"list",
-				"watch",
+			{
+				APIGroups: []string{hyperv1.GroupVersion.Group},
+				Resources: []string{
+					"hostedcontrolplanes",
+				},
+				Verbs: []string{
+					"get",
+					"list",
+					"watch",
+				},
 			},
-		},
-		{
-			APIGroups: []string{hyperv1.GroupVersion.Group},
-			Resources: []string{
-				"hostedcontrolplanes/status",
+			{
+				APIGroups: []string{hyperv1.GroupVersion.Group},
+				Resources: []string{
+					"hostedcontrolplanes/status",
+				},
+				Verbs: []string{"*"},
 			},
-			Verbs: []string{"*"},
-		},
+		}
+	} else {
+		// Required by CNO to manage ovn-kubernetes and cloud-network-config-controller control plane components
+		role.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{corev1.SchemeGroupVersion.Group},
+				Resources: []string{
+					"events",
+					"configmaps",
+					"pods",
+					"secrets",
+					"services",
+				},
+				Verbs: []string{"*"},
+			},
+			{
+				APIGroups: []string{"policy"},
+				Resources: []string{"poddisruptionbudgets"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{appsv1.SchemeGroupVersion.Group},
+				Resources: []string{"statefulsets", "deployments"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{routev1.SchemeGroupVersion.Group},
+				Resources: []string{"routes", "routes/custom-host"},
+				Verbs:     []string{"*"},
+			},
+			{
+				APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
+				Resources: []string{
+					"servicemonitors",
+					"prometheusrules",
+				},
+				Verbs: []string{"*"},
+			},
+			{
+				APIGroups: []string{hyperv1.GroupVersion.Group},
+				Resources: []string{
+					"hostedcontrolplanes",
+				},
+				Verbs: []string{
+					"get",
+					"list",
+					"watch",
+				},
+			},
+			{
+				APIGroups: []string{hyperv1.GroupVersion.Group},
+				Resources: []string{
+					"hostedcontrolplanes/status",
+				},
+				Verbs: []string{"*"},
+			},
+		}
 	}
 	return nil
 }

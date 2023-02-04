@@ -2408,7 +2408,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 
 	role := manifests.ClusterNetworkOperatorRole(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, role, func() error {
-		return cno.ReconcileRole(role, p.OwnerRef)
+		return cno.ReconcileRole(role, p.OwnerRef, hcp.Spec.Networking.NetworkType)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster network operator role: %w", err)
 	}
