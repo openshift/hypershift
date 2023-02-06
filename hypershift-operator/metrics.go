@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
-	configv1 "github.com/openshift/api/config/v1"
-
 	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -32,8 +32,7 @@ type hypershiftMetrics struct {
 	// repeatedly with the same value.
 	clusterAvailableTime *prometheus.GaugeVec
 
-	// clusterDeletionTime is the time it takes between the HostedCluster gests a deletion timestamp until
-	// it performs all its deletion tasks and so the finalizer is removed and it's removed from etcd.
+	// clusterDeletionTime is the time it takes between the initial cluster deletion to the resource being removed from etcd
 	clusterDeletionTime                    *prometheus.GaugeVec
 	clusterGuestCloudResourcesDeletionTime *prometheus.GaugeVec
 
@@ -138,7 +137,9 @@ func (m *hypershiftMetrics) collect(ctx context.Context) error {
 	if err := m.client.List(ctx, &nodePools); err != nil {
 		return fmt.Errorf("failed to list nodepools: %w", err)
 	}
-	m.observeNodePools(ctx, &nodePools)
+	if err := m.observeNodePools(ctx, &nodePools); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -330,8 +331,7 @@ func clusterCreationTime(hc *hyperv1.HostedCluster) *float64 {
 	if completionTime == nil {
 		return nil
 	}
-	creationTime := completionTime.Sub(hc.CreationTimestamp.Time).Seconds()
-	return &creationTime
+	return pointer.Float64(completionTime.Sub(hc.CreationTimestamp.Time).Seconds())
 }
 
 func clusterAvailableTime(hc *hyperv1.HostedCluster) *float64 {
@@ -343,8 +343,7 @@ func clusterAvailableTime(hc *hyperv1.HostedCluster) *float64 {
 		return nil
 	}
 	transitionTime := condition.LastTransitionTime
-	availableTime := transitionTime.Sub(hc.CreationTimestamp.Time).Seconds()
-	return &availableTime
+	return pointer.Float64(transitionTime.Sub(hc.CreationTimestamp.Time).Seconds())
 }
 
 func clusterGuestCloudResourcesDeletionTime(hc *hyperv1.HostedCluster) *float64 {
@@ -356,8 +355,10 @@ func clusterGuestCloudResourcesDeletionTime(hc *hyperv1.HostedCluster) *float64 
 		return nil
 	}
 	transitionTime := condition.LastTransitionTime
-	availableTime := transitionTime.Sub(hc.DeletionTimestamp.Time).Seconds()
-	return &availableTime
+	if !hc.DeletionTimestamp.IsZero() {
+		return pointer.Float64(transitionTime.Sub(hc.DeletionTimestamp.Time).Seconds())
+	}
+	return nil
 }
 
 var expectedNPConditionStates = map[string]bool{
