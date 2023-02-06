@@ -1669,7 +1669,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	// Reconcile CAPI manager cluster role
 	capiManagerClusterRole := clusterapi.CAPIManagerClusterRole(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, capiManagerClusterRole, func() error {
-		return reconcileCAPIManagerClusterRole(capiManagerClusterRole)
+		return reconcileCAPIManagerClusterRole(capiManagerClusterRole, hcp.Spec.Platform.Type)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager cluster role: %w", err)
