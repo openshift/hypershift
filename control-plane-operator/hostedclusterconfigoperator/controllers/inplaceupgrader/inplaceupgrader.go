@@ -211,7 +211,7 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 	// Signal in-place upgrade progress.
 	result, err := r.CreateOrUpdate(ctx, r.client, machineSet, func() error {
 		delete(machineSet.Annotations, nodePoolAnnotationUpgradeInProgressFalse)
-		machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue] = fmt.Sprintf("Updating version in progress. Target version: %q. Total Nodes: %d. Upgraded: %d", *machineSet.Spec.Template.Spec.Version, len(nodes), len(nodes)-nodeNeedUpgradeCount)
+		machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue] = fmt.Sprintf("Nodepool update in progress. Target Config version: %s. Total Nodes: %d. Upgraded: %d", targetConfigVersionHash, len(nodes), len(nodes)-nodeNeedUpgradeCount)
 		return nil
 	})
 	if err != nil {

@@ -17,11 +17,10 @@ limitations under the License.
 package v1beta1
 
 import (
-	"reflect"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
@@ -40,11 +39,19 @@ var _ webhook.Validator = &AzureMachine{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
 func (m *AzureMachine) ValidateCreate() error {
-	if allErrs := ValidateAzureMachineSpec(m.Spec); len(allErrs) > 0 {
-		return apierrors.NewInvalid(GroupVersion.WithKind("AzureMachine").GroupKind(), m.Name, allErrs)
+	spec := m.Spec
+
+	allErrs := ValidateAzureMachineSpec(spec)
+
+	if errs := ValidateSystemAssignedIdentity(spec.Identity, "", spec.RoleAssignmentName, field.NewPath("roleAssignmentName")); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
 	}
 
-	return nil
+	if len(allErrs) == 0 {
+		return nil
+	}
+
+	return apierrors.NewInvalid(GroupVersion.WithKind("AzureMachine").GroupKind(), m.Name, allErrs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
@@ -52,88 +59,88 @@ func (m *AzureMachine) ValidateUpdate(oldRaw runtime.Object) error {
 	var allErrs field.ErrorList
 	old := oldRaw.(*AzureMachine)
 
-	if !reflect.DeepEqual(m.Spec.Image, old.Spec.Image) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "image"),
-				m.Spec.Image, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "Image"),
+		old.Spec.Image,
+		m.Spec.Image); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
-	if !reflect.DeepEqual(m.Spec.Identity, old.Spec.Identity) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "identity"),
-				m.Spec.Identity, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "Identity"),
+		old.Spec.Identity,
+		m.Spec.Identity); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
-	if !reflect.DeepEqual(m.Spec.UserAssignedIdentities, old.Spec.UserAssignedIdentities) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "userAssignedIdentities"),
-				m.Spec.UserAssignedIdentities, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "UserAssignedIdentities"),
+		old.Spec.UserAssignedIdentities,
+		m.Spec.UserAssignedIdentities); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
-	if !reflect.DeepEqual(m.Spec.RoleAssignmentName, old.Spec.RoleAssignmentName) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "roleAssignmentName"),
-				m.Spec.RoleAssignmentName, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "RoleAssignmentName"),
+		old.Spec.RoleAssignmentName,
+		m.Spec.RoleAssignmentName); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
-	if !reflect.DeepEqual(m.Spec.OSDisk, old.Spec.OSDisk) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "osDisk"),
-				m.Spec.OSDisk, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "OSDisk"),
+		old.Spec.OSDisk,
+		m.Spec.OSDisk); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
-	if !reflect.DeepEqual(m.Spec.DataDisks, old.Spec.DataDisks) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "dataDisks"),
-				m.Spec.DataDisks, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "DataDisks"),
+		old.Spec.DataDisks,
+		m.Spec.DataDisks); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
-	if !reflect.DeepEqual(m.Spec.SSHPublicKey, old.Spec.SSHPublicKey) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "sshPublicKey"),
-				m.Spec.SSHPublicKey, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "SSHPublicKey"),
+		old.Spec.SSHPublicKey,
+		m.Spec.SSHPublicKey); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
-	if !reflect.DeepEqual(m.Spec.AllocatePublicIP, old.Spec.AllocatePublicIP) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "allocatePublicIP"),
-				m.Spec.AllocatePublicIP, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "AllocatePublicIP"),
+		old.Spec.AllocatePublicIP,
+		m.Spec.AllocatePublicIP); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
-	if !reflect.DeepEqual(m.Spec.EnableIPForwarding, old.Spec.EnableIPForwarding) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "enableIPForwarding"),
-				m.Spec.EnableIPForwarding, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "EnableIPForwarding"),
+		old.Spec.EnableIPForwarding,
+		m.Spec.EnableIPForwarding); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
-	if !reflect.DeepEqual(m.Spec.AcceleratedNetworking, old.Spec.AcceleratedNetworking) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "acceleratedNetworking"),
-				m.Spec.AcceleratedNetworking, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "AcceleratedNetworking"),
+		old.Spec.AcceleratedNetworking,
+		m.Spec.AcceleratedNetworking); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
-	if !reflect.DeepEqual(m.Spec.SpotVMOptions, old.Spec.SpotVMOptions) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "spotVMOptions"),
-				m.Spec.SpotVMOptions, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "SpotVMOptions"),
+		old.Spec.SpotVMOptions,
+		m.Spec.SpotVMOptions); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
-	if !reflect.DeepEqual(m.Spec.SecurityProfile, old.Spec.SecurityProfile) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec", "securityProfile"),
-				m.Spec.SecurityProfile, "field is immutable"),
-		)
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "SecurityProfile"),
+		old.Spec.SecurityProfile,
+		m.Spec.SecurityProfile); err != nil {
+		allErrs = append(allErrs, err)
 	}
 
 	if len(allErrs) == 0 {

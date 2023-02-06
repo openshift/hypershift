@@ -1,0 +1,158 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hypershift-ops
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: hypershift-ops
+  name: admin
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: "hypershift-ops:admin"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  namespace: hypershift-ops
+  name: admin
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cluster-bot
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: object-counts
+  namespace: cluster-bot
+spec:
+  hard:
+    count/hostedclusters.hypershift.openshift.io: "5"
+    count/nodepools.hypershift.openshift.io: "15"
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: object-counts
+  namespace: clusters
+spec:
+  hard:
+    count/hostedclusters.hypershift.openshift.io: "20"
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hypershift
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: hypershift-operator
+  namespace: hypershift
+spec:
+  lookupPolicy:
+    local: true
+  tags:
+  - name: latest
+    from:
+      kind: DockerImage
+      name: quay.io/hypershift/hypershift-operator:latest
+    referencePolicy:
+      type: Local
+    importPolicy:
+      scheduled: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: hypershift
+  name: installer
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: hypershift-installer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- apiGroup: ""
+  kind: ServiceAccount
+  namespace: hypershift
+  name: installer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"hypershift-operator:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"installer\")].image"}]'
+  name: installer
+  namespace: hypershift
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: installer
+  template:
+    metadata:
+      labels:
+        name: installer
+    spec:
+      initContainers:
+      - args:
+        - -c
+        - |
+          #!/bin/bash
+          set -euo pipefail
+
+          /usr/bin/oc get istag -n hypershift hypershift-operator:latest -ojsonpath='{.image.dockerImageReference}' > /installer-data/image-ref
+        command:
+        - /bin/bash
+        image: quay.io/openshift/origin-cli:latest
+        name: get-image
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+          - mountPath: /installer-data
+            name: data
+      containers:
+      - args:
+        - -c
+        - |
+          #!/bin/bash
+          set -euo pipefail
+
+          /usr/bin/hypershift install \
+          --oidc-storage-provider-s3-bucket-name=hypershift-ci-1-oidc \
+          --oidc-storage-provider-s3-region=us-east-1 \
+          --oidc-storage-provider-s3-secret=oidc-s3-creds \
+          --hypershift-image=$(cat /installer-data/image-ref)
+
+          /usr/bin/sleep infinity
+        command:
+        - /bin/bash
+        image: quay.io/hypershift/hypershift-operator:latest
+        name: installer
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+          - mountPath: /installer-data
+            name: data
+      serviceAccountName: installer
+      terminationGracePeriodSeconds: 3
+      volumes:
+        - name: data
+          emptyDir: {}

@@ -22,6 +22,7 @@ import (
 	"github.com/IBM/networking-go-sdk/dnsrecordsv1"
 	"github.com/IBM/networking-go-sdk/zonesv1"
 	"github.com/IBM/platform-services-go-sdk/globalcatalogv1"
+	"github.com/IBM/platform-services-go-sdk/globaltaggingv1"
 	"github.com/IBM/platform-services-go-sdk/iamidentityv1"
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/platform-services-go-sdk/resourcemanagerv2"
@@ -32,9 +33,9 @@ import (
 
 const (
 	// Resource name suffix for creation
-	cloudInstanceNameSuffix = "nodepool"
+	cloudInstanceNameSuffix = "pvs"
 	vpcNameSuffix           = "vpc"
-	vpcSubnetNameSuffix     = "vpc-subnet"
+	vpcSubnetNameSuffix     = "vpc-sn"
 	cloudConnNameSuffix     = "cc"
 
 	// Default cloud connection speed
@@ -130,6 +131,9 @@ func (d *TimeDuration) UnmarshalJSON(b []byte) error {
 	d.Duration, err = time.ParseDuration(strings.Trim(string(b), `"`))
 	return err
 }
+
+var clusterTag = func(infraID string) string { return fmt.Sprintf("kubernetes.io-cluster-%s:owned", infraID) }
+var currentDate = fmt.Sprintf("%d-%02d-%02d", time.Now().Year(), time.Now().Month(), time.Now().Day())
 
 type CreateStat struct {
 	Duration TimeDuration `json:"duration"`
@@ -337,12 +341,17 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return fmt.Errorf("error setup secrets: %w", err)
 	}
 
+	gtag, err := globaltaggingv1.NewGlobalTaggingV1(&globaltaggingv1.GlobalTaggingV1Options{Authenticator: getIAMAuth()})
+	if err != nil {
+		return err
+	}
+
 	v1, err := createVpcService(options.VPCRegion, options.InfraID)
 	if err != nil {
 		return fmt.Errorf("error creating vpc service: %w", err)
 	}
 
-	if err = infra.setupVpc(ctx, options, v1); err != nil {
+	if err = infra.setupVpc(ctx, options, v1, gtag); err != nil {
 		return fmt.Errorf("error setup vpc: %w", err)
 	}
 
@@ -356,11 +365,11 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return fmt.Errorf("error creating powervs session: %w", err)
 	}
 
-	if err = infra.setupPowerVSCloudInstance(ctx, options); err != nil {
+	if err = infra.setupPowerVSCloudInstance(ctx, options, gtag); err != nil {
 		return fmt.Errorf("error setup powervs cloud instance: %w", err)
 	}
 
-	if err = infra.setupPowerVSCloudConnection(ctx, options, session); err != nil {
+	if err = infra.setupPowerVSCloudConnection(ctx, options, session, gtag); err != nil {
 		return fmt.Errorf("error setup powervs cloud connection: %w", err)
 	}
 
@@ -769,7 +778,7 @@ func createVpcService(region string, infraID string) (*vpcv1.VpcV1, error) {
 }
 
 // setupPowerVSCloudInstance takes care of setting up powervs cloud instance
-func (infra *Infra) setupPowerVSCloudInstance(ctx context.Context, options *CreateInfraOptions) error {
+func (infra *Infra) setupPowerVSCloudInstance(ctx context.Context, options *CreateInfraOptions, gtag *globaltaggingv1.GlobalTaggingV1) error {
 	log(options.InfraID).Info("Setting up PowerVS Cloud Instance ...")
 	var cloudInstance *resourcecontrollerv2.ResourceInstance
 	if options.CloudInstanceID != "" {
@@ -796,12 +805,16 @@ func (infra *Infra) setupPowerVSCloudInstance(ctx context.Context, options *Crea
 		return fmt.Errorf("unable to setup powervs cloud instance")
 	}
 
+	if err := attachTag(gtag, options.InfraID, cloudInstance.CRN, fmt.Sprintf("%s-%s", infra.ID, cloudInstanceNameSuffix)); err != nil {
+		log(options.InfraID).Error(err, "error attaching tags to powervs cloud instance")
+	}
+
 	log(options.InfraID).Info("PowerVS Cloud Instance Ready", "id", infra.CloudInstanceID)
 	return nil
 }
 
 // setupVpc takes care of setting up vpc
-func (infra *Infra) setupVpc(ctx context.Context, options *CreateInfraOptions, v1 *vpcv1.VpcV1) error {
+func (infra *Infra) setupVpc(ctx context.Context, options *CreateInfraOptions, v1 *vpcv1.VpcV1, gtag *globaltaggingv1.GlobalTaggingV1) error {
 	log(options.InfraID).Info("Setting up VPC ...")
 	var vpc *vpcv1.VPC
 	if options.VPC != "" {
@@ -829,6 +842,10 @@ func (infra *Infra) setupVpc(ctx context.Context, options *CreateInfraOptions, v
 
 	if infra.VPCID == "" {
 		return fmt.Errorf("unable to setup vpc")
+	}
+
+	if err := attachTag(gtag, options.InfraID, &infra.VPCCRN, fmt.Sprintf("%s-%s", infra.ID, vpcNameSuffix)); err != nil {
+		log(options.InfraID).Error(err, "error attaching tags to vpc")
 	}
 
 	log(options.InfraID).Info("VPC Ready", "ID", infra.VPCID)
@@ -1042,7 +1059,7 @@ func (infra *Infra) createVpcSubnet(ctx context.Context, options *CreateInfraOpt
 }
 
 // setupPowerVSCloudConnection takes care of setting up cloud connection in powervs
-func (infra *Infra) setupPowerVSCloudConnection(ctx context.Context, options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
+func (infra *Infra) setupPowerVSCloudConnection(ctx context.Context, options *CreateInfraOptions, session *ibmpisession.IBMPISession, gtag *globaltaggingv1.GlobalTaggingV1) error {
 	log(options.InfraID).Info("Setting up PowerVS Cloud Connection ...")
 	var err error
 	client := instance.NewIBMPICloudConnectionClient(ctx, session, infra.CloudInstanceID)
@@ -1065,6 +1082,21 @@ func (infra *Infra) setupPowerVSCloudConnection(ctx context.Context, options *Cr
 
 	if infra.CloudConnectionID == "" {
 		return fmt.Errorf("unable to setup powervs cloud connection")
+	}
+
+	directLinkV1, err := directlinkv1.NewDirectLinkV1(&directlinkv1.DirectLinkV1Options{Authenticator: getIAMAuth(), Version: &currentDate})
+	if err != nil {
+		return err
+	}
+
+	gw, _, err := directLinkV1.GetGateway(&directlinkv1.GetGatewayOptions{ID: &infra.CloudConnectionID})
+	if err != nil {
+		return fmt.Errorf("error getting gateway: %w", err)
+	}
+	if gw != nil {
+		if err = attachTag(gtag, options.InfraID, gw.Crn, fmt.Sprintf("%s-%s", infra.ID, cloudConnNameSuffix)); err != nil {
+			return err
+		}
 	}
 
 	log(options.InfraID).Info("PowerVS Cloud Connection Ready", "id", infra.CloudConnectionID)
@@ -1317,8 +1349,6 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, options *CreateI
 		}
 	}
 
-	currentTime := time.Now()
-	currentDate := fmt.Sprintf("%d-%02d-%02d", currentTime.Year(), currentTime.Month(), currentTime.Day())
 	gatewayStatusType := "bgp"
 
 	directLinkV1, err := directlinkv1.NewDirectLinkV1(&directlinkv1.DirectLinkV1Options{Authenticator: getIAMAuth(), Version: &currentDate})
@@ -1364,5 +1394,20 @@ func (infra *Infra) isCloudConnectionReady(ctx context.Context, options *CreateI
 	}
 
 	log(infra.ID).Info("PowerVS Cloud Connection ready")
+	return nil
+}
+
+// attachTag would attach tags to cloud resources which can be used to filter resources with API as well as in IBM Cloud UI.
+// "kubernetes.io-cluster-<infraID>:owned" tag would be attached to the resources
+func attachTag(gtag *globaltaggingv1.GlobalTaggingV1, infraID string, resourceId *string, resourceName string) error {
+
+	if _, _, err := gtag.AttachTag(&globaltaggingv1.AttachTagOptions{Resources: []globaltaggingv1.Resource{
+		{ResourceID: resourceId},
+	},
+		TagNames: []string{clusterTag(infraID), fmt.Sprintf("Name:%s", resourceName)},
+	}); err != nil {
+		return err
+	}
+
 	return nil
 }

@@ -33,9 +33,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/clock"
-	clocktesting "k8s.io/utils/clock/testing"
 	"k8s.io/utils/pointer"
-	capiawsv1 "sigs.k8s.io/cluster-api-provider-aws/api/v1beta1"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	"sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -66,7 +65,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{Image: "a"},
+						Desired: configv1.Release{Image: "a"},
 						History: []configv1.UpdateHistory{
 							{Image: "a", State: configv1.PartialUpdate},
 						},
@@ -88,7 +87,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{Image: "a"},
+						Desired: configv1.Release{Image: "a"},
 						History: []configv1.UpdateHistory{
 							{Image: "a", State: configv1.CompletedUpdate},
 						},
@@ -98,7 +97,11 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 			ControlPlane: hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
 				Spec:       hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status:     hyperv1.HostedControlPlaneStatus{ReleaseImage: "a"},
+				Status: hyperv1.HostedControlPlaneStatus{
+					VersionStatus: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Image: "a"},
+					},
+				},
 			},
 			ExpectedImage: "b",
 		},
@@ -111,7 +114,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{Image: "b"},
+						Desired: configv1.Release{Image: "b"},
 						History: []configv1.UpdateHistory{
 							{Image: "b", State: configv1.PartialUpdate},
 							{Image: "a", State: configv1.CompletedUpdate},
@@ -122,7 +125,11 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 			ControlPlane: hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{CreationTimestamp: Now},
 				Spec:       hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status:     hyperv1.HostedControlPlaneStatus{ReleaseImage: "a"},
+				Status: hyperv1.HostedControlPlaneStatus{
+					VersionStatus: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Image: "a"},
+					},
+				},
 			},
 			ExpectedImage: "b",
 		},
@@ -138,135 +145,6 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 			actualImage := updated.Spec.ReleaseImage
 			if !equality.Semantic.DeepEqual(test.ExpectedImage, actualImage) {
 				t.Errorf(cmp.Diff(test.ExpectedImage, actualImage))
-			}
-		})
-	}
-}
-
-func TestComputeClusterVersionStatus(t *testing.T) {
-	tests := map[string]struct {
-		// TODO: incorporate conditions?
-		Cluster        hyperv1.HostedCluster
-		ControlPlane   hyperv1.HostedControlPlane
-		ExpectedStatus hyperv1.ClusterVersionStatus
-	}{
-		"missing history causes new rollout": {
-			Cluster: hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{Release: hyperv1.Release{Image: "a"}},
-			},
-			ControlPlane: hyperv1.HostedControlPlane{
-				Spec:   hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status: hyperv1.HostedControlPlaneStatus{},
-			},
-			ExpectedStatus: hyperv1.ClusterVersionStatus{
-				Desired: hyperv1.Release{Image: "a"},
-				History: []configv1.UpdateHistory{
-					{Image: "a", State: configv1.PartialUpdate, StartedTime: Now},
-				},
-			},
-		},
-		"hosted cluster spec is newer than completed control plane spec should not cause update to be completed": {
-			Cluster: hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{Release: hyperv1.Release{Image: "b"}},
-				Status: hyperv1.HostedClusterStatus{
-					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{Image: "b"},
-						History: []configv1.UpdateHistory{
-							{Image: "b", Version: "", State: configv1.PartialUpdate, StartedTime: Now},
-							{Image: "a", Version: "1.0.0", State: configv1.CompletedUpdate, StartedTime: Now, CompletionTime: &Later},
-						},
-					},
-				},
-			},
-			ControlPlane: hyperv1.HostedControlPlane{
-				Spec:   hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status: hyperv1.HostedControlPlaneStatus{ReleaseImage: "a", Version: "1.0.0", LastReleaseImageTransitionTime: &Now},
-			},
-			ExpectedStatus: hyperv1.ClusterVersionStatus{
-				Desired: hyperv1.Release{Image: "b"},
-				History: []configv1.UpdateHistory{
-					{Image: "b", Version: "", State: configv1.PartialUpdate, StartedTime: Now},
-					{Image: "a", Version: "1.0.0", State: configv1.CompletedUpdate, StartedTime: Now, CompletionTime: &Later},
-				},
-			},
-		},
-		"completed rollout updates history": {
-			Cluster: hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{Release: hyperv1.Release{Image: "a"}},
-				Status: hyperv1.HostedClusterStatus{
-					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{Image: "a"},
-						History: []configv1.UpdateHistory{
-							{Image: "a", State: configv1.PartialUpdate, StartedTime: Now},
-						},
-					},
-				},
-			},
-			ControlPlane: hyperv1.HostedControlPlane{
-				Spec:   hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status: hyperv1.HostedControlPlaneStatus{ReleaseImage: "a", Version: "1.0.0", LastReleaseImageTransitionTime: &Later},
-			},
-			ExpectedStatus: hyperv1.ClusterVersionStatus{
-				Desired: hyperv1.Release{Image: "a"},
-				History: []configv1.UpdateHistory{
-					{Image: "a", Version: "1.0.0", State: configv1.CompletedUpdate, StartedTime: Now, CompletionTime: &Later},
-				},
-			},
-		},
-		"new rollout happens after existing rollout completes": {
-			Cluster: hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{Release: hyperv1.Release{Image: "b"}},
-				Status: hyperv1.HostedClusterStatus{
-					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{Image: "a"},
-						History: []configv1.UpdateHistory{
-							{Image: "a", State: configv1.CompletedUpdate, StartedTime: Now, CompletionTime: &Later},
-						},
-					},
-				},
-			},
-			ControlPlane: hyperv1.HostedControlPlane{
-				Spec:   hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status: hyperv1.HostedControlPlaneStatus{ReleaseImage: "a", Version: "1.0.0", LastReleaseImageTransitionTime: &Later},
-			},
-			ExpectedStatus: hyperv1.ClusterVersionStatus{
-				Desired: hyperv1.Release{Image: "b"},
-				History: []configv1.UpdateHistory{
-					{Image: "b", State: configv1.PartialUpdate, StartedTime: Now},
-					{Image: "a", Version: "1.0.0", State: configv1.CompletedUpdate, StartedTime: Now, CompletionTime: &Later},
-				},
-			},
-		},
-		"new rollout is deferred until existing rollout completes": {
-			Cluster: hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{Release: hyperv1.Release{Image: "b"}},
-				Status: hyperv1.HostedClusterStatus{
-					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{Image: "a"},
-						History: []configv1.UpdateHistory{
-							{Image: "a", State: configv1.PartialUpdate, StartedTime: Now},
-						},
-					},
-				},
-			},
-			ControlPlane: hyperv1.HostedControlPlane{
-				Spec:   hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
-				Status: hyperv1.HostedControlPlaneStatus{},
-			},
-			ExpectedStatus: hyperv1.ClusterVersionStatus{
-				Desired: hyperv1.Release{Image: "a"},
-				History: []configv1.UpdateHistory{
-					{Image: "a", State: configv1.PartialUpdate, StartedTime: Now},
-				},
-			},
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			actualStatus := computeClusterVersionStatus(clocktesting.NewFakeClock(Now.Time), &test.Cluster, &test.ControlPlane)
-			if !equality.Semantic.DeepEqual(&test.ExpectedStatus, actualStatus) {
-				t.Errorf(cmp.Diff(&test.ExpectedStatus, actualStatus))
 			}
 		})
 	}
@@ -668,10 +546,10 @@ func TestReconcileCAPICluster(t *testing.T) {
 					Name:      "cluster1",
 				},
 			},
-			infraCR: &capiawsv1.AWSCluster{
+			infraCR: &capiaws.AWSCluster{
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "AWSCluster",
-					APIVersion: capiawsv1.GroupVersion.String(),
+					APIVersion: capiaws.GroupVersion.String(),
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "cluster1",
@@ -695,7 +573,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 						Name:       "cluster1",
 					},
 					InfrastructureRef: &corev1.ObjectReference{
-						APIVersion: capiawsv1.GroupVersion.String(),
+						APIVersion: capiaws.GroupVersion.String(),
 						Kind:       "AWSCluster",
 						Namespace:  "master-cluster1",
 						Name:       "cluster1",
@@ -966,14 +844,6 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				".dockerconfigjson": []byte("{}"),
 			},
 		},
-		&configv1.Network{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "cluster",
-			},
-			Spec: configv1.NetworkSpec{
-				NetworkType: "OVNKubernetes",
-			},
-		},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "agent-namespace"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "agent"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "aws"}},
@@ -1040,84 +910,6 @@ func (c *createTypeTrackingClient) Create(ctx context.Context, obj crclient.Obje
 	}
 	c.createdTypes.Insert(fmt.Sprintf("%T", obj))
 	return c.Client.Create(ctx, obj, opts...)
-}
-
-func TestReconcileAWSSubnets(t *testing.T) {
-	g := NewGomegaWithT(t)
-	hcNamespace := "test"
-	hcName := "test"
-	nodePool := &hyperv1.NodePool{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test",
-			Namespace: hcNamespace,
-		},
-		Spec: hyperv1.NodePoolSpec{
-			ClusterName: hcName,
-			Platform: hyperv1.NodePoolPlatform{
-				Type: hyperv1.AWSPlatform,
-				AWS: &hyperv1.AWSNodePoolPlatform{
-					Subnet: &hyperv1.AWSResourceReference{
-						ID: pointer.StringPtr("1"),
-					},
-				},
-			},
-		},
-	}
-
-	nodePool2 := &hyperv1.NodePool{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test2",
-			Namespace: hcNamespace,
-		},
-		Spec: hyperv1.NodePoolSpec{
-			ClusterName: hcName,
-			Platform: hyperv1.NodePoolPlatform{
-				Type: hyperv1.AWSPlatform,
-				AWS: &hyperv1.AWSNodePoolPlatform{
-					Subnet: &hyperv1.AWSResourceReference{
-						ID: pointer.StringPtr("2"),
-					},
-				},
-			},
-		},
-	}
-
-	infraCRName := "test"
-	hcpNamespace := "hcp"
-	infraCR := &capiawsv1.AWSCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      infraCRName,
-			Namespace: hcpNamespace,
-		},
-		Spec: capiawsv1.AWSClusterSpec{},
-	}
-
-	client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(infraCR, nodePool, nodePool2).Build()
-	r := &HostedClusterReconciler{
-		Client:         client,
-		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-	}
-	req := reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName}}
-	createOrUpdate := r.createOrUpdate(req)
-
-	err := r.reconcileAWSSubnets(context.Background(), createOrUpdate, infraCR, req.Namespace, req.Name, hcpNamespace)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	freshInfraCR := &capiawsv1.AWSCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      infraCRName,
-			Namespace: hcpNamespace,
-		}}
-	err = client.Get(context.Background(), crclient.ObjectKeyFromObject(freshInfraCR), freshInfraCR)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(freshInfraCR.Spec.NetworkSpec.Subnets).To(BeEquivalentTo([]capiawsv1.SubnetSpec{
-		{
-			ID: "1",
-		},
-		{
-			ID: "2",
-		},
-	}))
 }
 
 func TestValidateConfigAndClusterCapabilities(t *testing.T) {
@@ -1326,7 +1118,7 @@ func TestValidateReleaseImage(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: "image-4.12.0",
 						},
 					},
@@ -1358,7 +1150,7 @@ func TestValidateReleaseImage(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: "image-4.11.0",
 						},
 					},
@@ -1390,7 +1182,7 @@ func TestValidateReleaseImage(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: "image-4.11.0",
 						},
 					},
@@ -1447,7 +1239,7 @@ func TestValidateReleaseImage(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: "image-4.11.0",
 						},
 					},
@@ -1479,7 +1271,7 @@ func TestValidateReleaseImage(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: "image-4.11.1",
 						},
 					},
@@ -1511,7 +1303,7 @@ func TestValidateReleaseImage(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: "image-4.12.0",
 						},
 					},
@@ -1712,7 +1504,7 @@ func TestIsUpgradeable(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: releaseImageFrom,
 						},
 					},
@@ -1731,7 +1523,7 @@ func TestIsUpgradeable(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: releaseImageFrom,
 						},
 					},
@@ -1761,7 +1553,7 @@ func TestIsUpgradeable(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: releaseImageFrom,
 						},
 					},
@@ -1791,7 +1583,7 @@ func TestIsUpgradeable(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: releaseImageFrom,
 						},
 					},
@@ -1986,7 +1778,7 @@ func TestIsProgressing(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: "release-1.2",
 						},
 					},
@@ -2017,7 +1809,7 @@ func TestIsProgressing(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: "release-1.2",
 						},
 					},
@@ -2036,7 +1828,7 @@ func TestIsProgressing(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: "release-1.2",
 						},
 					},
@@ -2061,7 +1853,7 @@ func TestIsProgressing(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: "release-1.2",
 						},
 					},
@@ -2091,7 +1883,7 @@ func TestIsProgressing(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
-						Desired: hyperv1.Release{
+						Desired: configv1.Release{
 							Image: "release-1.2",
 						},
 					},

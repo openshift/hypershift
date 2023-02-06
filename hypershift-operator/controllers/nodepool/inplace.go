@@ -171,18 +171,17 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 	var status corev1.ConditionStatus
 	reason := ""
 	message := ""
+	status = "unknown"
 	removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
 
 	if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]; ok {
 		status = corev1.ConditionTrue
 		reason = hyperv1.AsExpectedReason
-		message = machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]
 	}
 
 	if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]; ok {
 		status = corev1.ConditionFalse
 		reason = hyperv1.NodePoolInplaceUpgradeFailedReason
-		message = machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]
 	}
 
 	// Check if config needs to be updated.
@@ -191,7 +190,8 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 	// Check if version needs to be updated.
 	isUpdatingVersion := isUpdatingVersion(nodePool, targetVersion)
 
-	if message != "" && isUpdatingVersion {
+	if isUpdatingVersion {
+		message = fmt.Sprintf("Updating Version, Target: %v", machineSet.Annotations[nodePoolAnnotationTargetConfigVersion])
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
 			Status:             status,
@@ -201,7 +201,8 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 		})
 	}
 
-	if message != "" && isUpdatingConfig {
+	if isUpdatingConfig {
+		message = fmt.Sprintf("Updating Config, Target: %v", machineSet.Annotations[nodePoolAnnotationTargetConfigVersion])
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
 			Status:             status,

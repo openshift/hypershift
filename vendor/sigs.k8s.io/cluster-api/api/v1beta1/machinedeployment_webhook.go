@@ -23,13 +23,14 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	runtime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/pointer"
-	"sigs.k8s.io/cluster-api/util/version"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"sigs.k8s.io/cluster-api/util/version"
 )
 
 func (m *MachineDeployment) SetupWebhookWithManager(mgr ctrl.Manager) error {
@@ -75,18 +76,18 @@ func (m *MachineDeployment) ValidateDelete() error {
 
 func (m *MachineDeployment) validate(old *MachineDeployment) error {
 	var allErrs field.ErrorList
+	specPath := field.NewPath("spec")
 	selector, err := metav1.LabelSelectorAsSelector(&m.Spec.Selector)
 	if err != nil {
 		allErrs = append(
 			allErrs,
-			field.Invalid(field.NewPath("spec", "selector"), m.Spec.Selector, err.Error()),
+			field.Invalid(specPath.Child("selector"), m.Spec.Selector, err.Error()),
 		)
 	} else if !selector.Matches(labels.Set(m.Spec.Template.Labels)) {
 		allErrs = append(
 			allErrs,
-			field.Invalid(
-				field.NewPath("spec", "template", "labels"),
-				m.Spec.Template.Labels,
+			field.Forbidden(
+				specPath.Child("template", "metadata", "labels"),
 				fmt.Sprintf("must match spec.selector %q", selector.String()),
 			),
 		)
@@ -95,7 +96,10 @@ func (m *MachineDeployment) validate(old *MachineDeployment) error {
 	if old != nil && old.Spec.ClusterName != m.Spec.ClusterName {
 		allErrs = append(
 			allErrs,
-			field.Invalid(field.NewPath("spec", "clusterName"), m.Spec.ClusterName, "field is immutable"),
+			field.Forbidden(
+				specPath.Child("clusterName"),
+				"field is immutable",
+			),
 		)
 	}
 
@@ -109,7 +113,7 @@ func (m *MachineDeployment) validate(old *MachineDeployment) error {
 			if _, err := intstr.GetScaledValueFromIntOrPercent(m.Spec.Strategy.RollingUpdate.MaxSurge, total, true); err != nil {
 				allErrs = append(
 					allErrs,
-					field.Invalid(field.NewPath("spec", "strategy", "rollingUpdate", "maxSurge"),
+					field.Invalid(specPath.Child("strategy", "rollingUpdate", "maxSurge"),
 						m.Spec.Strategy.RollingUpdate.MaxSurge, fmt.Sprintf("must be either an int or a percentage: %v", err.Error())),
 				)
 			}
@@ -119,7 +123,7 @@ func (m *MachineDeployment) validate(old *MachineDeployment) error {
 			if _, err := intstr.GetScaledValueFromIntOrPercent(m.Spec.Strategy.RollingUpdate.MaxUnavailable, total, true); err != nil {
 				allErrs = append(
 					allErrs,
-					field.Invalid(field.NewPath("spec", "strategy", "rollingUpdate", "maxUnavailable"),
+					field.Invalid(specPath.Child("strategy", "rollingUpdate", "maxUnavailable"),
 						m.Spec.Strategy.RollingUpdate.MaxUnavailable, fmt.Sprintf("must be either an int or a percentage: %v", err.Error())),
 				)
 			}
@@ -128,7 +132,7 @@ func (m *MachineDeployment) validate(old *MachineDeployment) error {
 
 	if m.Spec.Template.Spec.Version != nil {
 		if !version.KubeSemver.MatchString(*m.Spec.Template.Spec.Version) {
-			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "template", "spec", "version"), *m.Spec.Template.Spec.Version, "must be a valid semantic version"))
+			allErrs = append(allErrs, field.Invalid(specPath.Child("template", "spec", "version"), *m.Spec.Template.Spec.Version, "must be a valid semantic version"))
 		}
 	}
 

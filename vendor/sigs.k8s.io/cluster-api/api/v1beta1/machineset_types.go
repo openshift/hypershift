@@ -21,6 +21,7 @@ import (
 	metav1validation "k8s.io/apimachinery/pkg/apis/meta/v1/validation"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+
 	capierrors "sigs.k8s.io/cluster-api/errors"
 )
 
@@ -95,19 +96,22 @@ type MachineSetDeletePolicy string
 const (
 	// RandomMachineSetDeletePolicy prioritizes both Machines that have the annotation
 	// "cluster.x-k8s.io/delete-machine=yes" and Machines that are unhealthy
-	// (Status.FailureReason or Status.FailureMessage are set to a non-empty value).
+	// (Status.FailureReason or Status.FailureMessage are set to a non-empty value
+	// or NodeHealthy type of Status.Conditions is not true).
 	// Finally, it picks Machines at random to delete.
 	RandomMachineSetDeletePolicy MachineSetDeletePolicy = "Random"
 
 	// NewestMachineSetDeletePolicy prioritizes both Machines that have the annotation
 	// "cluster.x-k8s.io/delete-machine=yes" and Machines that are unhealthy
-	// (Status.FailureReason or Status.FailureMessage are set to a non-empty value).
+	// (Status.FailureReason or Status.FailureMessage are set to a non-empty value
+	// or NodeHealthy type of Status.Conditions is not true).
 	// It then prioritizes the newest Machines for deletion based on the Machine's CreationTimestamp.
 	NewestMachineSetDeletePolicy MachineSetDeletePolicy = "Newest"
 
 	// OldestMachineSetDeletePolicy prioritizes both Machines that have the annotation
 	// "cluster.x-k8s.io/delete-machine=yes" and Machines that are unhealthy
-	// (Status.FailureReason or Status.FailureMessage are set to a non-empty value).
+	// (Status.FailureReason or Status.FailureMessage are set to a non-empty value
+	// or NodeHealthy type of Status.Conditions is not true).
 	// It then prioritizes the oldest Machines for deletion based on the Machine's CreationTimestamp.
 	OldestMachineSetDeletePolicy MachineSetDeletePolicy = "Oldest"
 )
@@ -200,6 +204,7 @@ func (m *MachineSet) Validate() field.ErrorList {
 // +kubebuilder:subresource:status
 // +kubebuilder:subresource:scale:specpath=.spec.replicas,statuspath=.status.replicas,selectorpath=.status.selector
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".spec.clusterName",description="Cluster"
+// +kubebuilder:printcolumn:name="Desired",type=integer,JSONPath=".spec.replicas",description="Total number of machines desired by this machineset",priority=10
 // +kubebuilder:printcolumn:name="Replicas",type="integer",JSONPath=".status.replicas",description="Total number of non-terminated machines targeted by this machineset"
 // +kubebuilder:printcolumn:name="Ready",type="integer",JSONPath=".status.readyReplicas",description="Total number of ready machines targeted by this machineset."
 // +kubebuilder:printcolumn:name="Available",type="integer",JSONPath=".status.availableReplicas",description="Total number of available machines (ready for at least minReadySeconds)"

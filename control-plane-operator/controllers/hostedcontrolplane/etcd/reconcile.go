@@ -428,7 +428,7 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 					CA: prometheusoperatorv1.SecretOrConfigMap{
 						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.EtcdMetricsSignerCAConfigMap(sm.Namespace).Name,
+								Name: manifests.EtcdSignerCAConfigMap(sm.Namespace).Name,
 							},
 							Key: certs.CASignerCertMapKey,
 						},

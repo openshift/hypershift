@@ -43,17 +43,20 @@ type AllowedNamespaces struct {
 
 // AzureClusterIdentitySpec defines the parameters that are used to create an AzureIdentity.
 type AzureClusterIdentitySpec struct {
-	// UserAssignedMSI or Service Principal
+	// Type is the type of Azure Identity used.
+	// ServicePrincipal, ServicePrincipalCertificate, UserAssignedMSI or ManualServicePrincipal.
 	Type IdentityType `json:"type"`
-	// User assigned MSI resource id.
+	// ResourceID is the Azure resource ID for the User Assigned MSI resource.
+	// Only applicable when type is UserAssignedMSI.
 	// +optional
 	ResourceID string `json:"resourceID,omitempty"`
+	// ClientID is the service principal client ID.
 	// Both User Assigned MSI and SP can use this field.
 	ClientID string `json:"clientID"`
 	// ClientSecret is a secret reference which should contain either a Service Principal password or certificate secret.
 	// +optional
 	ClientSecret corev1.SecretReference `json:"clientSecret,omitempty"`
-	// Service principal primary tenant id.
+	// TenantID is the service principal primary tenant id.
 	TenantID string `json:"tenantID"`
 	// AllowedNamespaces is used to identify the namespaces the clusters are allowed to use the identity from.
 	// Namespaces can be selected either using an array of namespaces or with label selector.

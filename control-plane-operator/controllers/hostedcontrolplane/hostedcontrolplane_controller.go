@@ -226,7 +226,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-		if shouldCleanupCloudResources(hostedControlPlane) {
+		if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
 			done, err := r.removeCloudResources(ctx, hostedControlPlane)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed")
@@ -466,6 +466,39 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				r.Log.Info("Infrastructure is not yet ready")
 			}
 		}
+		newCondition.ObservedGeneration = hostedControlPlane.Generation
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+	}
+
+	// Reconcile external DNS status
+	{
+		newCondition := metav1.Condition{
+			Type:   string(hyperv1.ExternalDNSReachable),
+			Status: metav1.ConditionUnknown,
+			Reason: hyperv1.StatusUnknownReason,
+		}
+
+		kasExternalHostname := util.ServiceExternalDNSHostname(hostedControlPlane, hyperv1.APIServer)
+		if kasExternalHostname != "" {
+			if err := util.ResolveDNSHostname(ctx, kasExternalHostname); err != nil {
+				newCondition = metav1.Condition{
+					Type:    string(hyperv1.ExternalDNSReachable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.ExternalDNSHostNotReachableReason,
+					Message: err.Error(),
+				}
+			} else {
+				newCondition = metav1.Condition{
+					Type:    string(hyperv1.ExternalDNSReachable),
+					Status:  metav1.ConditionTrue,
+					Message: hyperv1.AllIsWellMessage,
+					Reason:  hyperv1.AsExpectedReason,
+				}
+			}
+		} else {
+			newCondition.Message = "External DNS is not configured"
+		}
+
 		newCondition.ObservedGeneration = hostedControlPlane.Generation
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
@@ -1992,7 +2025,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	serviceMonitor := manifests.KASServiceMonitor(hcp.Namespace)
 	if result, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
-		return kas.ReconcileServiceMonitor(serviceMonitor, int(p.APIServerPort), config.OwnerRefFrom(hcp), hcp.Spec.ClusterID, r.MetricsSet)
+		return kas.ReconcileServiceMonitor(serviceMonitor, config.OwnerRefFrom(hcp), hcp.Spec.ClusterID, r.MetricsSet)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kas service monitor: %w", err)
 	} else {
@@ -2399,6 +2432,13 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := cno.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext, r.DefaultIngressDomain)
 
+	sa := manifests.ClusterNetworkOperatorServiceAccount(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
+		return cno.ReconcileServiceAccount(sa, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster network operator serviceaccount: %w", err)
+	}
+
 	role := manifests.ClusterNetworkOperatorRole(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, role, func() error {
 		return cno.ReconcileRole(role, p.OwnerRef)
@@ -2427,16 +2467,37 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx co
 
 	metricsService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, metricsService, func() error {
-		return nto.ReconcileClusterNodeTuningOperatorMetricsService(metricsService)
+		return nto.ReconcileClusterNodeTuningOperatorMetricsService(metricsService, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile node tuning operator metrics service: %w", err)
 	}
 
 	serviceMonitor := manifests.ClusterNodeTuningOperatorServiceMonitor(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
-		return nto.ReconcileClusterNodeTuningOperatorServiceMonitor(serviceMonitor, hcp.Spec.ClusterID, r.MetricsSet)
+		return nto.ReconcileClusterNodeTuningOperatorServiceMonitor(serviceMonitor, hcp.Spec.ClusterID, r.MetricsSet, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile node tuning operator service monitor: %w", err)
+	}
+
+	sa := manifests.ClusterNodeTuningOperatorServiceAccount(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
+		return nto.ReconcileServiceAccount(sa, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster node tuning operator serviceaccount: %w", err)
+	}
+
+	role := manifests.ClusterNodeTuningOperatorRole(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r.Client, role, func() error {
+		return nto.ReconcileRole(role, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster node tuning operator role: %w", err)
+	}
+
+	rb := manifests.ClusterNodeTuningOperatorRoleBinding(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r.Client, rb, func() error {
+		return nto.ReconcileRoleBinding(rb, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cluster node tuning operator rolebinding: %w", err)
 	}
 
 	deployment := manifests.ClusterNodeTuningOperatorDeployment(hcp.Namespace)
@@ -3202,7 +3263,21 @@ func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Cont
 	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, availabilityProberImage, createOrUpdate, r.SetDefaultSecurityContext, config.OwnerRefFrom(hcp))
 }
 
-func shouldCleanupCloudResources(hcp *hyperv1.HostedControlPlane) bool {
+func shouldCleanupCloudResources(log logr.Logger, hcp *hyperv1.HostedControlPlane) bool {
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		oidcConfigValid := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidOIDCConfiguration))
+		if oidcConfigValid != nil && oidcConfigValid.Status == metav1.ConditionFalse {
+			log.Info("Skipping hosted cluster cloud resources cleanup",
+				"condition", string(hyperv1.ValidOIDCConfiguration), "status", oidcConfigValid.Status)
+			return false
+		}
+		validIdentityProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+		if validIdentityProvider != nil && validIdentityProvider.Status == metav1.ConditionFalse {
+			log.Info("Skipping hosted cluster cloud resources cleanup",
+				"condition", string(hyperv1.ValidAWSIdentityProvider), "status", validIdentityProvider.Status)
+			return false
+		}
+	}
 	return hcp.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true"
 }
 
