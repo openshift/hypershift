@@ -251,10 +251,13 @@ func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.Machin
 	}
 
 	if isAutoscalingEnabled(nodePool) {
+		// if the MachineSetReplicas is not in the spec will be set as 0, and here will be
+		// evaluated. If autoscaler is activated, the replicas will have the same number as
+		// minimum number of replicas set in the MachineSet spec.
 		if k8sutilspointer.Int32PtrDerefOr(machineSet.Spec.Replicas, 0) == 0 {
-			// if autoscaling is enabled and the MachineSet does not exist yet or it has 0 replicas
-			// we set it to 1 replica as the autoscaler does not support scaling from zero yet.
-			machineSet.Spec.Replicas = k8sutilspointer.Int32Ptr(int32(1))
+			// if autoscaling is enabled and the MachineSet does not exist yet or it has 0 replicas,
+			// we set the replicas to the Autoscaling minimum value, autoscaler does not support scaling from zero yet.
+			machineSet.Spec.Replicas = &nodePool.Spec.AutoScaling.Min
 		}
 		machineSet.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Max))
 		machineSet.Annotations[autoscalerMinAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Min))
