@@ -7,7 +7,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -149,4 +151,18 @@ func decompress(r io.Reader) (*bytes.Buffer, error) {
 	}
 
 	return bytes.NewBuffer(data), nil
+}
+
+// ResolveDNSHostname receives a hostname string and tries to resolve it.
+// Returns error if the host can't be resolved.
+func ResolveDNSHostname(ctx context.Context, hostName string) error {
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+
+	ips, err := net.DefaultResolver.LookupIPAddr(timeoutCtx, hostName)
+	if err == nil && len(ips) == 0 {
+		err = fmt.Errorf("couldn't resolve %s", hostName)
+	}
+
+	return err
 }

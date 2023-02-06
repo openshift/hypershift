@@ -487,6 +487,39 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
+	// Reconcile external DNS status
+	{
+		newCondition := metav1.Condition{
+			Type:   string(hyperv1.ExternalDNSReachable),
+			Status: metav1.ConditionUnknown,
+			Reason: hyperv1.StatusUnknownReason,
+		}
+
+		kasExternalHostname := util.ServiceExternalDNSHostname(hostedControlPlane, hyperv1.APIServer)
+		if kasExternalHostname != "" {
+			if err := util.ResolveDNSHostname(ctx, kasExternalHostname); err != nil {
+				newCondition = metav1.Condition{
+					Type:    string(hyperv1.ExternalDNSReachable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.ExternalDNSHostNotReachableReason,
+					Message: err.Error(),
+				}
+			} else {
+				newCondition = metav1.Condition{
+					Type:    string(hyperv1.ExternalDNSReachable),
+					Status:  metav1.ConditionTrue,
+					Message: hyperv1.AllIsWellMessage,
+					Reason:  hyperv1.AsExpectedReason,
+				}
+			}
+		} else {
+			newCondition.Message = "External DNS is not configured"
+		}
+
+		newCondition.ObservedGeneration = hostedControlPlane.Generation
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+	}
+
 	// Reconcile hostedcontrolplane availability and Ready flag
 	{
 		infrastructureCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.InfrastructureReady))
