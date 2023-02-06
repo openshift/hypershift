@@ -2687,17 +2687,15 @@ func reconcileCAPIManagerRole(role *rbacv1.Role) error {
 				"hostedcontrolplanes",
 				"hostedcontrolplanes/status",
 			},
-			Verbs: []string{"*"},
+			Verbs: []string{"get", "list", "watch"},
 		},
 		{
 			APIGroups: []string{""},
 			Resources: []string{
 				"configmaps",
-				"events",
-				"nodes",
 				"secrets",
 			},
-			Verbs: []string{"*"},
+			Verbs: []string{"list", "watch"},
 		},
 		{
 			APIGroups: []string{"coordination.k8s.io"},
