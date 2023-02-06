@@ -39,6 +39,10 @@ const (
 	// A failure here may require external user intervention to resolve. E.g. cloud provider perms were corrupted. E.g. the guest cluster was broken
 	// and kube resource deletion that affects cloud infra like service type load balancer can't succeed.
 	CloudResourcesDestroyed ConditionType = "CloudResourcesDestroyed"
+	// ExternalDNSReachable bubbles up the same condition from HCP. It signals if the configured external DNS is reachable.
+	// A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
+	// and registered correctly.
+	ExternalDNSReachable ConditionType = "ExternalDNSReachable"
 
 	// Bubble up from HCP which bubbles up from CVO.
 
@@ -161,6 +165,8 @@ const (
 	PlatformCredentialsNotFoundReason     = "PlatformCredentialsNotFound"
 	InvalidImageReason                    = "InvalidImage"
 	InvalidIdentityProvider               = "InvalidIdentityProvider"
+
+	ExternalDNSHostNotReachableReason = "ExternalDNSHostNotReachable"
 
 	ReconciliationPausedConditionReason             = "ReconciliationPaused"
 	ReconciliationInvalidPausedUntilConditionReason = "InvalidPausedUntilValue"
