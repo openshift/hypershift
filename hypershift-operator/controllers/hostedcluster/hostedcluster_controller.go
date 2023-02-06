@@ -594,6 +594,25 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
 	}
 
+	// Copy the ExternalDNSReachable condition on the hostedcontrolplane.
+	{
+		condition := &metav1.Condition{
+			Type:               string(hyperv1.ExternalDNSReachable),
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.StatusUnknownReason,
+			Message:            "The hosted control plane is not found",
+			ObservedGeneration: hcluster.Generation,
+		}
+		if hcp != nil {
+			externalDNSReachableCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ExternalDNSReachable))
+			if externalDNSReachableCondition != nil {
+				condition = externalDNSReachableCondition
+			}
+		}
+		condition.ObservedGeneration = hcluster.Generation
+		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
+	}
+
 	// Reconcile unmanaged etcd client tls secret validation error status. Note only update status on validation error case to
 	// provide clear status to the user on the resource without having to look at operator logs.
 	{
