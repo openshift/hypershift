@@ -8,8 +8,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -20,7 +22,9 @@ import (
 )
 
 const (
+	operatorName                 = "ingress-operator"
 	ingressOperatorContainerName = "ingress-operator"
+	metricsHostname              = "ingress-operator"
 	socks5ProxyContainerName     = "socks-proxy"
 	ingressOperatorMetricsPort   = 60000
 )
@@ -88,7 +92,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 }
 
 func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) {
-	operatorName := "ingress-operator"
 	dep.Spec.Replicas = utilpointer.Int32(1)
 	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": operatorName}}
 	dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
@@ -183,6 +186,12 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 				{Name: "serviceaccount-token", MountPath: "/var/run/secrets/openshift/serviceaccount"},
 				{Name: "admin-kubeconfig", MountPath: "/etc/kubernetes"},
 			},
+			Ports: []corev1.ContainerPort{
+				{
+					ContainerPort: ingressOperatorMetricsPort,
+					Name:          "metrics",
+				},
+			},
 		})
 		dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes,
 			corev1.Volume{Name: "serviceaccount-token", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}})
@@ -232,4 +241,24 @@ func ingressOperatorSocks5ProxyContainer(socks5ProxyImage string) corev1.Contain
 	}
 	proxy.SetEnvVars(&c.Env)
 	return c
+}
+
+func ReconcilePodMonitor(pm *prometheusoperatorv1.PodMonitor, clusterID string, metricsSet metrics.MetricsSet) {
+	pm.Spec.Selector.MatchLabels = map[string]string{
+		"name": operatorName,
+	}
+	pm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{
+		MatchNames: []string{pm.Namespace},
+	}
+	pm.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{
+		{
+			Interval:             "60s",
+			Port:                 "metrics",
+			Path:                 "/metrics",
+			Scheme:               "http",
+			MetricRelabelConfigs: metrics.RegistryOperatorRelabelConfigs(metricsSet),
+		},
+	}
+
+	util.ApplyClusterIDLabelToPodMonitor(&pm.Spec.PodMetricsEndpoints[0], clusterID)
 }
