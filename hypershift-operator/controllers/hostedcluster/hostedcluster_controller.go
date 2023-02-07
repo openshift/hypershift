@@ -2695,7 +2695,7 @@ func reconcileCAPIManagerRole(role *rbacv1.Role) error {
 				"configmaps",
 				"secrets",
 			},
-			Verbs: []string{"list", "get", "watch"},
+			Verbs: []string{"get", "list", "watch"},
 		},
 		{
 			APIGroups: []string{"coordination.k8s.io"},
