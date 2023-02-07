@@ -65,14 +65,6 @@ type Platform interface {
 	DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error
 }
 
-// OrphanDeleter is an interface implemented by providers for which it is possible to determine if machines have
-// been orphaned by a failure to communicate with the provider.
-type OrphanDeleter interface {
-	// DeleteOrphanedMachines removes the finalizer from provider machines if they have been deleted and it is no
-	// longer possible to delete them normally via the provider (ie. the OIDC provider is no longer valid)
-	DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error
-}
-
 // GetPlatform gets and initializes the cloud platform the hosted cluster was created on
 func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, utilitiesImage string, pullSecretBytes []byte) (Platform, error) {
 	var (
