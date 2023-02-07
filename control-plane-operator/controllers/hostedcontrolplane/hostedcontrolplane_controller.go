@@ -2569,6 +2569,14 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 		return fmt.Errorf("failed to reconcile ingressoperator deployment: %w", err)
 	}
 
+	pm := manifests.IngressOperatorPodMonitor(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, pm, func() error {
+		ingressoperator.ReconcilePodMonitor(pm, hcp.Spec.ClusterID, r.MetricsSet)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ingressoperator pod monitor: %w", err)
+	}
+
 	return nil
 }
 
