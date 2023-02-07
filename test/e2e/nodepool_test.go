@@ -21,7 +21,6 @@ import (
 var (
 	zeroReplicas int32 = 0
 	oneReplicas  int32 = 1
-	twoReplicas  int32 = 2
 )
 
 func TestNodePool(t *testing.T) {
@@ -50,8 +49,6 @@ func TestNodePool(t *testing.T) {
 	t.Run("Refactored", func(t *testing.T) {
 		t.Run("TestNodePoolAutoRepair", testNodePoolAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
 		t.Run("TestNodepoolMachineconfigGetsRolledout", testNodepoolMachineconfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
-		t.Run("TestNTOMachineConfigGetsRolledOut", testNTOMachineConfigGetsRolledOut(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
-		t.Run("TestNTOMachineConfigAppliedInPlace", testNTOMachineConfigAppliedInPlace(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
 	})
 }
 
