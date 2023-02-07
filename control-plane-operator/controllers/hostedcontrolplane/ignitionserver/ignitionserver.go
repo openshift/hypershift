@@ -157,16 +157,21 @@ func ReconcileIgnitionServer(ctx context.Context,
 			{
 				APIGroups: []string{""},
 				Resources: []string{
-					"events",
-					// This is needed by the tokeSecret controller to watch secrets.
 					"secrets",
-					// This is needed by the MCS ignitionProvider to lookup the release image and create the MCS.
-					"pods/log",
-					"serviceaccounts",
-					"pods",
-					// This is needed by the MCS ignitionProvider to create an ephemeral ConfigMap
-					// with the machine config to mount it into the MCS Pod that generates the final payload.
+				},
+				Verbs: []string{"get", "list", "watch", "update", "patch", "delete"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{
 					"configmaps",
+				},
+				Verbs: []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"events",
 				},
 				Verbs: []string{"*"},
 			},
