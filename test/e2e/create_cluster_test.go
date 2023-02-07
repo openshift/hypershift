@@ -113,6 +113,8 @@ func TestCreateClusterKms(t *testing.T) {
 
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
+
+	e2eutil.EnsureSecretEncryptedUsingKMS(t, ctx, hostedCluster, guestClient)
 }
 
 func TestNoneCreateCluster(t *testing.T) {
