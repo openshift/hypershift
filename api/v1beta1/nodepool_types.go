@@ -61,6 +61,7 @@ type NodePoolSpec struct {
 	// TODO(dan): Should this be a LocalObjectReference?
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="ClusterName is immutable"
 	ClusterName string `json:"clusterName"`
 
 	// Release specifies the OCP release used for the NodePool. This informs the
@@ -281,6 +282,7 @@ type NodePoolManagement struct {
 	// UpgradeType specifies the type of strategy for handling upgrades.
 	//
 	// +kubebuilder:validation:Enum=Replace;InPlace
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="UpgradeType is immutable"
 	UpgradeType UpgradeType `json:"upgradeType"`
 
 	// Replace is the configuration for rolling upgrades.
@@ -320,6 +322,7 @@ type NodePoolPlatform struct {
 	// Type specifies the platform name.
 	//
 	// +unionDiscriminator
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Type is immutable"
 	// +immutable
 	Type PlatformType `json:"type"`
 

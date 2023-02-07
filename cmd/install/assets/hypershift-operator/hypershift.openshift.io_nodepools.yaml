@@ -927,6 +927,9 @@ spec:
                 description: "ClusterName is the name of the HostedCluster this NodePool
                   belongs to. \n TODO(dan): Should this be a LocalObjectReference?"
                 type: string
+                x-kubernetes-validations:
+                - message: ClusterName is immutable
+                  rule: self == oldSelf
               config:
                 description: "Config is a list of references to ConfigMaps containing
                   serialized MachineConfig resources to be injected into the ignition
@@ -1036,6 +1039,9 @@ spec:
                     - Replace
                     - InPlace
                     type: string
+                    x-kubernetes-validations:
+                    - message: UpgradeType is immutable
+                      rule: self == oldSelf
                 required:
                 - upgradeType
                 type: object
@@ -1509,6 +1515,9 @@ spec:
                     - Azure
                     - PowerVS
                     type: string
+                    x-kubernetes-validations:
+                    - message: Type is immutable
+                      rule: self == oldSelf
                 required:
                 - type
                 type: object
