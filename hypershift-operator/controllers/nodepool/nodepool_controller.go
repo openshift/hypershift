@@ -734,9 +734,21 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			}
 		}
 
-		// We keep the old userdata Secret so old Machines during rolled out can be deleted.
+		// For AWS, we keep the old userdata Secret so old Machines during rolled out can be deleted.
 		// Otherwise, deletion fails because of https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805.
 		// TODO (Alberto): enable back deletion when the PR above gets merged.
+		if nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+			userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
+			err = r.Get(ctx, client.ObjectKeyFromObject(userDataSecret), userDataSecret)
+			if err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to get user data Secret: %w", err)
+			}
+			if err == nil {
+				if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
+					return ctrl.Result{}, fmt.Errorf("failed to delete user data Secret: %w", err)
+				}
+			}
+		}
 	}
 
 	tokenSecret = TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
