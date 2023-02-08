@@ -1,11 +1,13 @@
 package cno
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
 	routev1 "github.com/openshift/api/route/v1"
@@ -18,6 +20,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -430,4 +433,30 @@ func isOVNSBDBExposedThroughHCPRouter(hcp *hyperv1.HostedControlPlane) bool {
 	}
 
 	return util.IsPublicKASWithDNS(hcp) && publishingStrategy.Route.Hostname != ""
+}
+
+func SetRestartAnnotationAndPatch(ctx context.Context, crclient client.Client, dep *appsv1.Deployment, c config.DeploymentConfig) error {
+	if c.AdditionalAnnotations[hyperv1.RestartDateAnnotation] == "" {
+		return nil
+	}
+
+	if err := crclient.Get(ctx, client.ObjectKeyFromObject(dep), dep); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed retrieve deployment: %w", err)
+	}
+
+	patch := dep.DeepCopy()
+	podMeta := patch.Spec.Template.ObjectMeta
+	if podMeta.Annotations == nil {
+		podMeta.Annotations = map[string]string{}
+	}
+	podMeta.Annotations[hyperv1.RestartDateAnnotation] = c.AdditionalAnnotations[hyperv1.RestartDateAnnotation]
+
+	if err := crclient.Patch(ctx, patch, client.MergeFrom(dep)); err != nil {
+		return fmt.Errorf("failed to set restart annotation: %w", err)
+	}
+
+	return nil
 }
