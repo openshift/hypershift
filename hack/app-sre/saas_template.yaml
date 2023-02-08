@@ -42069,7 +42069,8 @@ objects:
                     configurations of nodes in the NodePool. The MachineConfig API
                     schema is defined here: \n https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185
                     \n Each ConfigMap must have a single key named \"config\" whose
-                    value is the JSON or YAML of a serialized MachineConfig."
+                    value is the JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
+                    KubeletConfig ContainerRuntimeConfig MachineConfig or ImageContentSourcePolicy"
                   items:
                     description: LocalObjectReference contains enough information
                       to let you locate the referenced object inside the same namespace.

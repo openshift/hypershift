@@ -97,7 +97,13 @@ type NodePoolSpec struct {
 	// https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185
 	//
 	// Each ConfigMap must have a single key named "config" whose value is the
-	// JSON or YAML of a serialized MachineConfig.
+	// JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
+	// KubeletConfig
+	// ContainerRuntimeConfig
+	// MachineConfig
+	// or
+	// ImageContentSourcePolicy
+	//
 	// +kubebuilder:validation:Optional
 	Config []corev1.LocalObjectReference `json:"config,omitempty"`
 
