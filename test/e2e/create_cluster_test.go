@@ -74,6 +74,9 @@ func TestCreateCluster(t *testing.T) {
 }
 
 func TestCreateClusterKms(t *testing.T) {
+	if globalOpts.Platform != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform AWS")
+	}
 	t.Parallel()
 	g := NewWithT(t)
 
