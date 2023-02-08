@@ -30234,6 +30234,9 @@ objects:
                     an ID is generated. After initial creation, the value is immutable.
                   pattern: '[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}'
                   type: string
+                  x-kubernetes-validations:
+                  - message: ClusterID is immutable
+                    rule: self == oldSelf
                 configuration:
                   description: Configuration specifies configuration for individual
                     OCP components in the cluster, represented as embedded resources
@@ -32017,6 +32020,9 @@ objects:
                     policy applied to critical control plane components. The default
                     value is SingleReplica.
                   type: string
+                  x-kubernetes-validations:
+                  - message: ControllerAvailabilityPolicy is immutable
+                    rule: self == oldSelf
                 dns:
                   description: DNS specifies DNS configuration for the cluster.
                   properties:
@@ -32035,6 +32041,9 @@ objects:
                   required:
                   - baseDomain
                   type: object
+                  x-kubernetes-validations:
+                  - message: DNS is immutable
+                    rule: self == oldSelf
                 etcd:
                   default:
                     managed:
@@ -32043,9 +32052,12 @@ objects:
                           size: 4Gi
                         type: PersistentVolume
                     managementType: Managed
-                  description: Etcd specifies configuration for the control plane
+                  description: "Etcd specifies configuration for the control plane
                     etcd cluster. The default ManagementType is Managed. Once set,
-                    the ManagementType cannot be changed.
+                    the ManagementType cannot be changed. \n TODO (alberto): This
+                    is mutable for now, secret names can potentially change in the
+                    unmanaged case. In future we'll want to add granular immutability.
+                    Networking"
                   properties:
                     managed:
                       description: Managed specifies the behavior of an etcd cluster
@@ -32151,6 +32163,9 @@ objects:
                     server will be configured to expect that nodes joining the cluster
                     will be FIPS-enabled.
                   type: boolean
+                  x-kubernetes-validations:
+                  - message: FIPS is immutable
+                    rule: self == oldSelf
                 imageContentSources:
                   description: ImageContentSources specifies image mirrors that can
                     be used by cluster nodes to pull content.
@@ -32180,12 +32195,18 @@ objects:
                     This identifier will be used to associate various cloud resources
                     with the HostedCluster and its associated NodePools.
                   type: string
+                  x-kubernetes-validations:
+                  - message: InfraID is immutable
+                    rule: self == oldSelf
                 infrastructureAvailabilityPolicy:
                   default: SingleReplica
                   description: InfrastructureAvailabilityPolicy specifies the availability
                     policy applied to infrastructure services which run on cluster
                     nodes. The default value is SingleReplica.
                   type: string
+                  x-kubernetes-validations:
+                  - message: InfrastructureAvailabilityPolicy is immutable
+                    rule: self == oldSelf
                 issuerURL:
                   default: https://kubernetes.default.svc
                   description: IssuerURL is an OIDC issuer URL which is used as the
@@ -32194,9 +32215,13 @@ objects:
                     only works for in-cluster validation.
                   format: uri
                   type: string
+                  x-kubernetes-validations:
+                  - message: IssuerURL is immutable
+                    rule: self == oldSelf
                 networking:
-                  description: Networking specifies network configuration for the
-                    cluster.
+                  description: "Networking specifies network configuration for the
+                    cluster. \n TODO (alberto): Enforce with CEL here. ATM it would
+                    fail because we are defaulting the apiserver port in the backend."
                   properties:
                     apiServer:
                       description: APIServer contains advanced network settings for
@@ -32308,6 +32333,9 @@ objects:
                   - management
                   - guest
                   type: string
+                  x-kubernetes-validations:
+                  - message: OLMCatalogPlacement is immutable
+                    rule: self == oldSelf
                 pausedUntil:
                   description: 'PausedUntil is a field that can be used to pause reconciliation
                     on a resource. Either a date can be provided in RFC3339 format
@@ -33202,6 +33230,11 @@ objects:
               - services
               - sshKey
               type: object
+              x-kubernetes-validations:
+              - message: ClusterID is required once set
+                rule: '!has(oldSelf.clusterID) || has(self.clusterID)'
+              - message: InfraID is required once set
+                rule: '!has(oldSelf.infraID) || has(self.infraID)'
             status:
               description: Status is the latest observed status of the HostedCluster.
               properties:

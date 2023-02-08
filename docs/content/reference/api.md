@@ -215,6 +215,7 @@ ClusterNetworking
 </td>
 <td>
 <p>Networking specifies network configuration for the cluster.</p>
+<p>TODO (alberto): Enforce with CEL here. ATM it would fail because we are defaulting the apiserver port in the backend.</p>
 </td>
 </tr>
 <tr>
@@ -245,6 +246,9 @@ EtcdSpec
 <p>Etcd specifies configuration for the control plane etcd cluster. The
 default ManagementType is Managed. Once set, the ManagementType cannot be
 changed.</p>
+<p>TODO (alberto): This is mutable for now, secret names can potentially change in the unmanaged case.
+In future we&rsquo;ll want to add granular immutability.
+Networking</p>
 </td>
 </tr>
 <tr>
@@ -3219,6 +3223,7 @@ ClusterNetworking
 </td>
 <td>
 <p>Networking specifies network configuration for the cluster.</p>
+<p>TODO (alberto): Enforce with CEL here. ATM it would fail because we are defaulting the apiserver port in the backend.</p>
 </td>
 </tr>
 <tr>
@@ -3249,6 +3254,9 @@ EtcdSpec
 <p>Etcd specifies configuration for the control plane etcd cluster. The
 default ManagementType is Managed. Once set, the ManagementType cannot be
 changed.</p>
+<p>TODO (alberto): This is mutable for now, secret names can potentially change in the unmanaged case.
+In future we&rsquo;ll want to add granular immutability.
+Networking</p>
 </td>
 </tr>
 <tr>

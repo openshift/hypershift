@@ -132,6 +132,8 @@ const (
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.clusterID) || has(self.clusterID)", message="ClusterID is required once set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.infraID) || has(self.infraID)", message="InfraID is required once set"
 type HostedClusterSpec struct {
 	// Release specifies the desired OCP release payload for the hosted cluster.
 	//
@@ -149,6 +151,7 @@ type HostedClusterSpec struct {
 	// metrics produced by the control plane operators. If a value is not
 	// specified, an ID is generated. After initial creation, the value is
 	// immutable.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="ClusterID is immutable"
 	// +kubebuilder:validation:Pattern:="[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}"
 	// +optional
 	ClusterID string `json:"clusterID,omitempty"`
@@ -165,6 +168,7 @@ type HostedClusterSpec struct {
 	// and its associated NodePools.
 	//
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="InfraID is immutable"
 	// +immutable
 	InfraID string `json:"infraID,omitempty"`
 
@@ -180,6 +184,7 @@ type HostedClusterSpec struct {
 	// +optional
 	// +kubebuilder:default:="SingleReplica"
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="ControllerAvailabilityPolicy is immutable"
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
 	// InfrastructureAvailabilityPolicy specifies the availability policy applied
@@ -189,16 +194,19 @@ type HostedClusterSpec struct {
 	// +optional
 	// +kubebuilder:default:="SingleReplica"
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="InfrastructureAvailabilityPolicy is immutable"
 	InfrastructureAvailabilityPolicy AvailabilityPolicy `json:"infrastructureAvailabilityPolicy,omitempty"`
 
 	// DNS specifies DNS configuration for the cluster.
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="DNS is immutable"
 	DNS DNSSpec `json:"dns,omitempty"`
 
 	// Networking specifies network configuration for the cluster.
 	//
 	// +immutable
+	// TODO (alberto): Enforce with CEL here. ATM it would fail because we are defaulting the apiserver port in the backend.
 	Networking ClusterNetworking `json:"networking"`
 
 	// Autoscaling specifies auto-scaling behavior that applies to all NodePools
@@ -213,7 +221,9 @@ type HostedClusterSpec struct {
 	//
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:default={managementType: "Managed", managed: {storage: {type: "PersistentVolume", persistentVolume: {size: "4Gi"}}}}
-	// +immutable
+	// TODO (alberto): This is mutable for now, secret names can potentially change in the unmanaged case.
+	// In future we'll want to add granular immutability.
+	// Networking
 	Etcd EtcdSpec `json:"etcd"`
 
 	// Services specifies how individual control plane services are published from
@@ -226,8 +236,6 @@ type HostedClusterSpec struct {
 	// PullSecret references a pull secret to be injected into the container
 	// runtime of all cluster nodes. The secret must have a key named
 	// ".dockerconfigjson" whose value is the pull secret JSON.
-	//
-	// +immutable
 	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
 
 	// SSHKey references an SSH key to be injected into all cluster node sshd
@@ -244,6 +252,7 @@ type HostedClusterSpec struct {
 	//
 	// +kubebuilder:default:="https://kubernetes.default.svc"
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="IssuerURL is immutable"
 	// +optional
 	// +kubebuilder:validation:Format=uri
 	IssuerURL string `json:"issuerURL,omitempty"`
@@ -305,6 +314,7 @@ type HostedClusterSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="FIPS is immutable"
 	FIPS bool `json:"fips"`
 
 	// PausedUntil is a field that can be used to pause reconciliation on a resource.
@@ -322,6 +332,7 @@ type HostedClusterSpec struct {
 	// +kubebuilder:default=management
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="OLMCatalogPlacement is immutable"
 	OLMCatalogPlacement OLMCatalogPlacement `json:"olmCatalogPlacement,omitempty"`
 
 	// NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.
