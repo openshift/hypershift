@@ -40,6 +40,7 @@ type hypershiftMetrics struct {
 	clusterProxy                       *prometheus.GaugeVec
 	clusterIdentityProviders           *prometheus.GaugeVec
 	clusterLimitedSupportEnabled       *prometheus.GaugeVec
+	clusterSilenceAlerts               *prometheus.GaugeVec
 	hostedClusters                     *prometheus.GaugeVec
 	hostedClustersWithFailureCondition *prometheus.GaugeVec
 	hostedClustersNodePools            *prometheus.GaugeVec
@@ -83,7 +84,11 @@ func newMetrics(client crclient.Client, log logr.Logger) *hypershiftMetrics {
 		clusterLimitedSupportEnabled: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Help: "Indicates if limited support is enabled for each cluster",
 			Name: "hypershift_cluster_limited_support_enabled",
-		}, []string{"namespace", "name"}),
+		}, []string{"namespace", "name", "_id"}),
+		clusterSilenceAlerts: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Help: "Indicates if alerts are silenced for each cluster",
+			Name: "hypershift_cluster_silence_alerts",
+		}, []string{"namespace", "name", "_id"}),
 		hostedClusters: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "hypershift_hostedclusters",
 			Help: "Number of HostedClusters by platform",
@@ -165,6 +170,9 @@ func setupMetrics(mgr manager.Manager) error {
 	if err := crmetrics.Registry.Register(metrics.clusterLimitedSupportEnabled); err != nil {
 		return fmt.Errorf("failed to to register clusterLimitedSupportEnabled metric: %w", err)
 	}
+	if err := crmetrics.Registry.Register(metrics.clusterSilenceAlerts); err != nil {
+		return fmt.Errorf("failed to to register clusterSilenceAlerts metric: %w", err)
+	}
 	if err := crmetrics.Registry.Register(metrics.hostedClusters); err != nil {
 		return fmt.Errorf("failed to to register hostedClusters metric: %w", err)
 	}
@@ -243,9 +251,16 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 
 		// Collect limited support metric.
 		if _, ok := hc.Labels[hyperv1.LimitedSupportLabel]; ok {
-			m.clusterLimitedSupportEnabled.WithLabelValues(hc.Namespace, hc.Name).Set(1)
+			m.clusterLimitedSupportEnabled.WithLabelValues(hc.Namespace, hc.Name, hc.Spec.ClusterID).Set(1)
 		} else {
-			m.clusterLimitedSupportEnabled.WithLabelValues(hc.Namespace, hc.Name).Set(0)
+			m.clusterLimitedSupportEnabled.WithLabelValues(hc.Namespace, hc.Name, hc.Spec.ClusterID).Set(0)
+		}
+
+		// Collect silence alerts metric
+		if _, ok := hc.Labels[hyperv1.SilenceClusterAlertsLabel]; ok {
+			m.clusterSilenceAlerts.WithLabelValues(hc.Namespace, hc.Name, hc.Spec.ClusterID).Set(1)
+		} else {
+			m.clusterSilenceAlerts.WithLabelValues(hc.Namespace, hc.Name, hc.Spec.ClusterID).Set(0)
 		}
 
 		creationTime := clusterCreationTime(&hc)
