@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,6 +33,14 @@ func ParseNamespacedName(name string) types.NamespacedName {
 		return types.NamespacedName{Namespace: parts[0], Name: parts[1]}
 	}
 	return types.NamespacedName{Name: parts[0]}
+}
+
+// CopyConfigMap copies the .Data field of configMap `source` into configmap `cm`
+func CopyConfigMap(cm, source *corev1.ConfigMap) {
+	cm.Data = map[string]string{}
+	for k, v := range source.Data {
+		cm.Data[k] = v
+	}
 }
 
 func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {

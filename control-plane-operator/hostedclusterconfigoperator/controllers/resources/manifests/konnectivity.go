@@ -32,3 +32,21 @@ func KonnectivityControlPlaneAgentSecret(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func KonnectivityHostedCAConfigMap() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "konnectivity-ca-bundle",
+			Namespace: "kube-system",
+		},
+	}
+}
+
+func KonnectivityControlPlaneCAConfigMap(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "konnectivity-ca-bundle",
+			Namespace: ns,
+		},
+	}
+}

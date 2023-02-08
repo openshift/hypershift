@@ -1564,10 +1564,24 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile cluster policy controller cert: %w", err)
 	}
 
+	konnectivitySigner := manifests.KonnectivitySignerSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, konnectivitySigner, func() error {
+		return pki.ReconcileKonnectivitySignerSecret(konnectivitySigner, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity signer secret: %v", err)
+	}
+
+	konnectivityCACM := manifests.KonnectivityCAConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, konnectivityCACM, func() error {
+		return pki.ReconcileConnectivityConfigMap(konnectivityCACM, p.OwnerRef, konnectivitySigner, rootCASecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile konnectivity CA config map: %v", err)
+	}
+
 	// Konnectivity Server Cert
 	konnectivityServerSecret := manifests.KonnectivityServerSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityServerSecret, func() error {
-		return pki.ReconcileKonnectivityServerSecret(konnectivityServerSecret, rootCASecret, p.OwnerRef)
+		return pki.ReconcileKonnectivityServerSecret(konnectivityServerSecret, konnectivitySigner, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity server cert: %w", err)
 	}
@@ -1575,7 +1589,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Konnectivity Cluster Cert
 	konnectivityClusterSecret := manifests.KonnectivityClusterSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityClusterSecret, func() error {
-		return pki.ReconcileKonnectivityClusterSecret(konnectivityClusterSecret, rootCASecret, p.OwnerRef, p.ExternalKconnectivityAddress)
+		return pki.ReconcileKonnectivityClusterSecret(konnectivityClusterSecret, konnectivitySigner, p.OwnerRef, p.ExternalKconnectivityAddress)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity cluster cert: %w", err)
 	}
@@ -1583,7 +1597,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Konnectivity Client Cert
 	konnectivityClientSecret := manifests.KonnectivityClientSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityClientSecret, func() error {
-		return pki.ReconcileKonnectivityClientSecret(konnectivityClientSecret, rootCASecret, p.OwnerRef)
+		return pki.ReconcileKonnectivityClientSecret(konnectivityClientSecret, konnectivitySigner, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity client cert: %w", err)
 	}
@@ -1591,7 +1605,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Konnectivity Agent Cert
 	konnectivityAgentSecret := manifests.KonnectivityAgentSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityAgentSecret, func() error {
-		return pki.ReconcileKonnectivityAgentSecret(konnectivityAgentSecret, rootCASecret, p.OwnerRef)
+		return pki.ReconcileKonnectivityAgentSecret(konnectivityAgentSecret, konnectivitySigner, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity agent cert: %w", err)
 	}

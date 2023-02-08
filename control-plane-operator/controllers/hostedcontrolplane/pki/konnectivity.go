@@ -7,6 +7,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+func ReconcileKonnectivitySignerSecret(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "konnectivity-signer", "kubernetes")
+}
+
 func ReconcileKonnectivityServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
 		"konnectivity-server-local",
