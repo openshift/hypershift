@@ -16,7 +16,10 @@ import (
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -31,6 +34,7 @@ type options struct {
 	target                        string
 	kubeconfig                    string
 	waitForInfrastructureResource bool
+	waitForLabeledPodsGone        string
 	requiredAPIs                  stringSetFlag
 	requiredAPIsParsed            []schema.GroupVersionKind
 }
@@ -44,6 +48,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.kubeconfig, "kubeconfig", "", "Path to a kubeconfig. Required when --required-api is set")
 	cmd.Flags().Var(&opts.requiredAPIs, "required-api", "An api that must be up before the program will be end. Can be passed multiple times, must be in group,version,kind format (e.G. operators.coreos.com,v1alpha1,CatalogSource)")
 	cmd.Flags().BoolVar(&opts.waitForInfrastructureResource, "wait-for-infrastructure-resource", false, "Waits until the cluster infrastructure.config.openshift.io resource is present")
+	cmd.Flags().StringVar(&opts.waitForLabeledPodsGone, "wait-for-labeled-pods-gone", "", "Waits until pods with the specified label is gone from the namespace. Must be in format: namespace/label=selector")
 
 	log := zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
@@ -91,13 +96,13 @@ func NewStartCommand() *cobra.Command {
 			}
 		}
 
-		check(log, url, time.Second, time.Second, opts.requiredAPIsParsed, opts.waitForInfrastructureResource, discoveryClient, kubeClient)
+		check(log, url, time.Second, time.Second, opts.requiredAPIsParsed, opts.waitForInfrastructureResource, opts.waitForLabeledPodsGone, discoveryClient, kubeClient)
 	}
 
 	return cmd
 }
 
-func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, waitForInfrastructureResource bool, discoveryClient discovery.DiscoveryInterface, kubeClient crclient.Client) {
+func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, waitForInfrastructureResource bool, waitForLabeledPodsGone string, discoveryClient discovery.DiscoveryInterface, kubeClient crclient.Client) {
 	log = log.WithValues("sleepTime", sleepTime.String())
 	client := &http.Client{
 		Timeout: requestTimeout,
@@ -143,6 +148,38 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 			if err != nil {
 				log.Info("cluster infrastructure resource not yet available", "err", err)
 				continue
+			}
+		}
+
+		if waitForLabeledPodsGone != "" {
+			namespace := strings.Split(waitForLabeledPodsGone, "/")[0]
+			labelSelectors := strings.TrimPrefix(waitForLabeledPodsGone, fmt.Sprintf("%s/", namespace))
+			pods := &corev1.PodList{}
+			labelSet, err := labels.ConvertSelectorToLabelsMap(labelSelectors)
+			if err != nil {
+				log.Error(err, fmt.Sprintf("invalid label selectors %s", labelSelectors))
+				continue
+			}
+			err = kubeClient.List(context.Background(), pods, &crclient.ListOptions{
+				Namespace:     namespace,
+				LabelSelector: labels.SelectorFromValidatedSet(labelSet),
+			})
+			if err != nil && !apierrors.IsNotFound(err) {
+				log.Error(err, fmt.Sprintf("failed to get pods with label %s in namespace %s, retrying...", labelSelectors, namespace))
+				continue
+			}
+			if pods != nil && len(pods.Items) > 0 {
+				var retry bool
+				for _, pod := range pods.Items {
+					if pod.DeletionTimestamp == nil || time.Since(pod.DeletionTimestamp.Time).Minutes() < float64(10) {
+						retry = true
+						break
+					}
+				}
+				if retry {
+					log.Info(fmt.Sprintf("pods %s in namespace %s still exist, retrying...", labelSelectors, namespace))
+					continue
+				}
 			}
 		}
 
