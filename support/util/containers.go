@@ -61,6 +61,9 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 	if opts.WaitForInfrastructureResource {
 		availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--wait-for-infrastructure-resource"))
 	}
+	if opts.WaitForLabeledPodsGone != "" {
+		availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--wait-for-labeled-pods-gone=%s", opts.WaitForLabeledPodsGone))
+	}
 	if len(spec.InitContainers) == 0 || spec.InitContainers[0].Name != "availability-prober" {
 		spec.InitContainers = append([]corev1.Container{{}}, spec.InitContainers...)
 	}
@@ -73,6 +76,7 @@ type AvailabilityProberOpts struct {
 	KubeconfigVolumeName          string
 	RequiredAPIs                  []schema.GroupVersionKind
 	WaitForInfrastructureResource bool
+	WaitForLabeledPodsGone        string
 }
 
 type AvailabilityProberOpt func(*AvailabilityProberOpts)
