@@ -2538,7 +2538,13 @@ spec:
                               \"Resource\": [ \"arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing\"
                               ], \"Effect\": \"Allow\" }, { \"Action\": [ \"iam:PassRole\"
                               ], \"Resource\": [ \"arn:*:iam::*:role/*-worker-role\"
-                              ], \"Effect\": \"Allow\" } ] }"
+                              ], \"Effect\": \"Allow\" }, { \"Effect\": \"Allow\",
+                              \"Action\": [ \"kms:Decrypt\", \"kms:Encrypt\", \"kms:GenerateDataKey\",
+                              \"kms:GenerateDataKeyWithoutPlainText\", \"kms:DescribeKey\"
+                              ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\", \"Action\":
+                              [ \"kms:RevokeGrant\", \"kms:CreateGrant\", \"kms:ListGrants\"
+                              ], \"Resource\": \"*\", \"Condition\": { \"Bool\": {
+                              \"kms:GrantIsForAWSResource\": true } } } ] }"
                             type: string
                           storageARN:
                             description: "StorageARN is an ARN value referencing a
@@ -6103,7 +6109,13 @@ spec:
                               \"Resource\": [ \"arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing\"
                               ], \"Effect\": \"Allow\" }, { \"Action\": [ \"iam:PassRole\"
                               ], \"Resource\": [ \"arn:*:iam::*:role/*-worker-role\"
-                              ], \"Effect\": \"Allow\" } ] }"
+                              ], \"Effect\": \"Allow\" }, { \"Effect\": \"Allow\",
+                              \"Action\": [ \"kms:Decrypt\", \"kms:Encrypt\", \"kms:GenerateDataKey\",
+                              \"kms:GenerateDataKeyWithoutPlainText\", \"kms:DescribeKey\"
+                              ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\", \"Action\":
+                              [ \"kms:RevokeGrant\", \"kms:CreateGrant\", \"kms:ListGrants\"
+                              ], \"Resource\": \"*\", \"Condition\": { \"Bool\": {
+                              \"kms:GrantIsForAWSResource\": true } } } ] }"
                             type: string
                           storageARN:
                             description: "StorageARN is an ARN value referencing a

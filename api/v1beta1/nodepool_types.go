@@ -663,6 +663,17 @@ type Volume struct {
 	//
 	// +optional
 	IOPS int64 `json:"iops,omitempty"`
+
+	// Encrypted is whether the volume should be encrypted or not.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Encrypted is immutable"
+	Encrypted *bool `json:"encrypted,omitempty"`
+
+	// EncryptionKey is the KMS key to use to encrypt the volume. Can be either a KMS key ID or ARN.
+	// If Encrypted is set and this is omitted, the default AWS key will be used.
+	// The key must already exist and be accessible by the controller.
+	// +optional
+	EncryptionKey string `json:"encryptionKey,omitempty"`
 }
 
 // AgentNodePoolPlatform specifies the configuration of a NodePool when operating
