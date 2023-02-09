@@ -185,8 +185,44 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) setup(createOrUpdate upsert.CreateOrUpdateFN) {
-	r.createOrUpdate = createOrUpdateWithOwnerRefFactory(createOrUpdate)
+func isScrapeConfig(obj client.Object) bool {
+	switch obj.(type) {
+	case *prometheusoperatorv1.ServiceMonitor:
+		return true
+	case *prometheusoperatorv1.PodMonitor:
+		return true
+	}
+
+	return false
+}
+
+func isClusterVersionAvailable(hcp *hyperv1.HostedControlPlane) bool {
+	condition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionAvailable))
+
+	return condition != nil && condition.Status == metav1.ConditionTrue
+}
+
+func createOrUpdateWithDelayForScrapeConfigs(hcp *hyperv1.HostedControlPlane, upstreamCreateOrUpdate upsert.CreateOrUpdateFN) upsert.CreateOrUpdateFN {
+	return func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+		// Skipping creation / update of scrape configs (servicemonitor and podmonitor resources) till condition ClusterVersionAvailable is met.
+		// Meeting this condition is equivalent to reach 'Complete' progress on the corresponding hosted cluster
+		if isScrapeConfig(obj) && !isClusterVersionAvailable(hcp) {
+			log := ctrl.LoggerFrom(ctx)
+			log.Info("Skipping creation/update of scrape config as "+string(hyperv1.ClusterVersionAvailable)+" condition is not yet met", "scrapeConfig", obj)
+
+			return controllerutil.OperationResultNone, nil
+		}
+
+		return upstreamCreateOrUpdate(ctx, c, obj, f)
+	}
+}
+
+func (r *HostedControlPlaneReconciler) setup(upstreamCreateOrUpdate upsert.CreateOrUpdateFN) {
+	createOrUpdateFactory := createOrUpdateWithOwnerRefFactory(upstreamCreateOrUpdate)
+
+	r.createOrUpdate = func(hcp *hyperv1.HostedControlPlane) upsert.CreateOrUpdateFN {
+		return createOrUpdateWithDelayForScrapeConfigs(hcp, createOrUpdateFactory(hcp))
+	}
 }
 
 type eventHandler struct {
