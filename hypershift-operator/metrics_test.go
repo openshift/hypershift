@@ -14,7 +14,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/zap/zaptest"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -29,15 +29,15 @@ func TestMetrics(t *testing.T) {
 		{
 			name: "Cluster rollout duration is reported",
 			updateHistory: []configv1.UpdateHistory{{
-				CompletionTime: &metav1.Time{Time: time.Time{}.Add(time.Hour)},
+				CompletionTime: &metav1.Time{Time: time.Time{}.Add(2 * time.Hour)},
 			}},
 			expected: []*dto.MetricFamily{{
-				Name: utilpointer.StringPtr("hypershift_cluster_initial_rollout_duration_seconds"),
-				Help: utilpointer.StringPtr("Time in seconds it took from initial cluster creation and rollout of initial version"),
+				Name: pointer.String("hypershift_cluster_initial_rollout_duration_seconds"),
+				Help: pointer.String("Time in seconds it took from initial cluster creation and rollout of initial version"),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
-					Label: []*dto.LabelPair{{Name: utilpointer.StringPtr("name"), Value: utilpointer.StringPtr("/hc")}},
-					Gauge: &dto.Gauge{Value: utilpointer.Float64Ptr(3600)},
+					Label: []*dto.LabelPair{{Name: pointer.String("name"), Value: pointer.String("/hc")}},
+					Gauge: &dto.Gauge{Value: pointer.Float64(3600)},
 				}},
 			}},
 		},
@@ -49,19 +49,19 @@ func TestMetrics(t *testing.T) {
 			name: "Multiple versions, the oldest one is used",
 			updateHistory: []configv1.UpdateHistory{
 				{
-					CompletionTime: &metav1.Time{Time: time.Time{}.Add(2 * time.Hour)},
+					CompletionTime: &metav1.Time{Time: time.Time{}.Add(3 * time.Hour)},
 				},
 				{
-					CompletionTime: &metav1.Time{Time: time.Time{}.Add(time.Hour)},
+					CompletionTime: &metav1.Time{Time: time.Time{}.Add(2 * time.Hour)},
 				},
 			},
 			expected: []*dto.MetricFamily{{
-				Name: utilpointer.StringPtr("hypershift_cluster_initial_rollout_duration_seconds"),
-				Help: utilpointer.StringPtr("Time in seconds it took from initial cluster creation and rollout of initial version"),
+				Name: pointer.String("hypershift_cluster_initial_rollout_duration_seconds"),
+				Help: pointer.String("Time in seconds it took from initial cluster creation and rollout of initial version"),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
-					Label: []*dto.LabelPair{{Name: utilpointer.StringPtr("name"), Value: utilpointer.StringPtr("/hc")}},
-					Gauge: &dto.Gauge{Value: utilpointer.Float64Ptr(3600)},
+					Label: []*dto.LabelPair{{Name: pointer.String("name"), Value: pointer.String("/hc")}},
+					Gauge: &dto.Gauge{Value: pointer.Float64(3600)},
 				}},
 			}},
 		},
@@ -81,16 +81,16 @@ func TestMetrics(t *testing.T) {
 				{
 					Type:               string(hyperv1.HostedClusterAvailable),
 					Status:             metav1.ConditionTrue,
-					LastTransitionTime: metav1.Time{Time: time.Time{}.Add(time.Hour)},
+					LastTransitionTime: metav1.Time{Time: time.Time{}.Add(2 * time.Hour)},
 				},
 			},
 			expected: []*dto.MetricFamily{{
-				Name: utilpointer.StringPtr("hypershift_cluster_available_duration_seconds"),
-				Help: utilpointer.StringPtr("Time in seconds it took from initial cluster creation to HostedClusterAvailable condition becoming true"),
+				Name: pointer.String("hypershift_cluster_available_duration_seconds"),
+				Help: pointer.String("Time in seconds it took from initial cluster creation to HostedClusterAvailable condition becoming true"),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
-					Label: []*dto.LabelPair{{Name: utilpointer.StringPtr("name"), Value: utilpointer.StringPtr("/hc")}},
-					Gauge: &dto.Gauge{Value: utilpointer.Float64Ptr(3600)},
+					Label: []*dto.LabelPair{{Name: pointer.String("name"), Value: pointer.String("/hc")}},
+					Gauge: &dto.Gauge{Value: pointer.Float64(3600)},
 				}},
 			}},
 		},
@@ -100,7 +100,8 @@ func TestMetrics(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cluster := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "hc",
+					Name:              "hc",
+					CreationTimestamp: metav1.Time{Time: time.Time{}.Add(time.Hour)},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
