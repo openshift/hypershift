@@ -119,8 +119,66 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 	return p
 }
 
-func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
+func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, networkType hyperv1.NetworkType) error {
 	ownerRef.ApplyTo(role)
+	if networkType == hyperv1.Calico {
+		role.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{corev1.SchemeGroupVersion.Group},
+				Resources: []string{
+					"configmaps",
+				},
+				ResourceNames: []string{
+					"openshift-service-ca.crt",
+				},
+				Verbs: []string{
+					"get",
+					"list",
+					"watch",
+				},
+			},
+			{
+				APIGroups: []string{appsv1.SchemeGroupVersion.Group},
+				Resources: []string{"statefulsets", "deployments"},
+				Verbs:     []string{"list", "watch"},
+			},
+			{
+				APIGroups: []string{appsv1.SchemeGroupVersion.Group},
+				Resources: []string{"deployments"},
+				ResourceNames: []string{
+					"multus-admission-controller",
+				},
+				Verbs: []string{"*"},
+			},
+			{
+				APIGroups: []string{corev1.SchemeGroupVersion.Group},
+				Resources: []string{"services"},
+				ResourceNames: []string{
+					"multus-admission-controller",
+				},
+				Verbs: []string{"*"},
+			},
+			{
+				APIGroups: []string{hyperv1.GroupVersion.Group},
+				Resources: []string{
+					"hostedcontrolplanes",
+				},
+				Verbs: []string{
+					"get",
+					"list",
+					"watch",
+				},
+			},
+			{
+				APIGroups: []string{hyperv1.GroupVersion.Group},
+				Resources: []string{
+					"hostedcontrolplanes/status",
+				},
+				Verbs: []string{"*"},
+			},
+		}
+		return nil
+	}
 	// Required by CNO to manage ovn-kubernetes and cloud-network-config-controller control plane components
 	role.Rules = []rbacv1.PolicyRule{
 		{
