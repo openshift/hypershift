@@ -245,7 +245,32 @@ const (
         "arn:*:iam::*:role/*-worker-role"
       ],
       "Effect": "Allow"
-    }
+    },
+	{
+		"Effect": "Allow",
+		"Action": [
+			"kms:Decrypt",
+			"kms:Encrypt",
+			"kms:GenerateDataKey",
+			"kms:GenerateDataKeyWithoutPlainText",
+			"kms:DescribeKey"
+		],
+		"Resource": "*"
+	},
+	{
+		"Effect": "Allow",
+		"Action": [
+			"kms:RevokeGrant",
+			"kms:CreateGrant",
+			"kms:ListGrants"
+		],
+		"Resource": "*",
+		"Condition": {
+			"Bool": {
+				"kms:GrantIsForAWSResource": true
+			}
+		}
+	}
   ]
 }`
 
