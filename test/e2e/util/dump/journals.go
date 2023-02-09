@@ -30,6 +30,7 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	if len(secretName) == 0 {
 		return fmt.Errorf("no SSH secret specified for cluster, cannot dump journals")
 	}
+
 	sshKeySecret := &corev1.Secret{}
 	sshKeySecret.Name = secretName
 	sshKeySecret.Namespace = hc.Namespace
@@ -120,8 +121,12 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 			if skip {
 				continue
 			}
-			machineIPs = append(machineIPs, aws.StringValue(instance.PrivateIpAddress))
-			machineInstances = append(machineInstances, instance)
+
+			if *instance.State.Name == "running" {
+				machineIPs = append(machineIPs, aws.StringValue(instance.PrivateIpAddress))
+				machineInstances = append(machineInstances, instance)
+			}
+
 		}
 	}
 
