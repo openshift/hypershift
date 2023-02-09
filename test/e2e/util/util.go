@@ -21,6 +21,7 @@ import (
 	promconfig "github.com/prometheus/common/config"
 	prommodel "github.com/prometheus/common/model"
 	"go.uber.org/zap/zaptest"
+	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -789,4 +790,28 @@ func createK8sClient() (*k8s.Clientset, error) {
 
 func NewLogr(t *testing.T) logr.Logger {
 	return zapr.NewLogger(zaptest.NewLogger(t))
+}
+
+func CorrelateDaemonSet(ds *appsv1.DaemonSet, nodePool *hyperv1.NodePool, dsName string) {
+
+	for _, c := range ds.Spec.Template.Spec.Containers {
+		if c.Name == ds.Name {
+			c.Name = dsName
+		}
+	}
+
+	ds.Name = dsName
+	ds.ObjectMeta.Labels = make(map[string]string)
+	ds.ObjectMeta.Labels["hypershift.openshift.io/nodePool"] = nodePool.Name
+
+	ds.Spec.Selector.MatchLabels["name"] = dsName
+	ds.Spec.Selector.MatchLabels["hypershift.openshift.io/nodePool"] = nodePool.Name
+
+	ds.Spec.Template.ObjectMeta.Labels["name"] = dsName
+	ds.Spec.Template.ObjectMeta.Labels["hypershift.openshift.io/nodePool"] = nodePool.Name
+
+	// Set NodeSelector for the DS
+	ds.Spec.Template.Spec.NodeSelector = make(map[string]string)
+	ds.Spec.Template.Spec.NodeSelector["hypershift.openshift.io/nodePool"] = nodePool.Name
+
 }
