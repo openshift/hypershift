@@ -1834,6 +1834,31 @@ string
 &ldquo;arn:</em>:iam::<em>:role/</em>-worker-role&rdquo;
 ],
 &ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;
+},
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;kms:Decrypt&rdquo;,
+&ldquo;kms:Encrypt&rdquo;,
+&ldquo;kms:GenerateDataKey&rdquo;,
+&ldquo;kms:GenerateDataKeyWithoutPlainText&rdquo;,
+&ldquo;kms:DescribeKey&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;
+},
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;kms:RevokeGrant&rdquo;,
+&ldquo;kms:CreateGrant&rdquo;,
+&ldquo;kms:ListGrants&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;Bool&rdquo;: {
+&ldquo;kms:GrantIsForAWSResource&rdquo;: true
+}
+}
 }
 ]
 }</p>
@@ -7148,6 +7173,32 @@ int64
 <em>(Optional)</em>
 <p>IOPS is the number of IOPS requested for the disk. This is only valid
 for type io1.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encrypted</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Encrypted is whether the volume should be encrypted or not.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encryptionKey</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>EncryptionKey is the KMS key to use to encrypt the volume. Can be either a KMS key ID or ARN.
+If Encrypted is set and this is omitted, the default AWS key will be used.
+The key must already exist and be accessible by the controller.</p>
 </td>
 </tr>
 </tbody>
