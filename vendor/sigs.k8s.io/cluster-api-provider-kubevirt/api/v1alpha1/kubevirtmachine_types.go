@@ -17,9 +17,11 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/errors"
 )
 
 const (
@@ -44,6 +46,11 @@ type KubevirtMachineSpec struct {
 	// ProviderID TBD what to use for Kubevirt
 	// +optional
 	ProviderID *string `json:"providerID,omitempty"`
+
+	// InfraClusterSecretRef is a reference to a secret with a kubeconfig for external cluster used for infra.
+	// When nil, this defaults to the value present in the KubevirtCluster object's spec associated with this machine.
+	// +optional
+	InfraClusterSecretRef *corev1.ObjectReference `json:"infraClusterSecretRef,omitempty"`
 }
 
 // KubevirtMachineStatus defines the observed state of KubevirtMachine.
@@ -68,6 +75,44 @@ type KubevirtMachineStatus struct {
 	// NodeUpdated denotes that the ProviderID is updated on Node of this KubevirtMachine
 	// +optional
 	NodeUpdated bool `json:"nodeupdated"`
+
+	// FailureReason will be set in the event that there is a terminal problem
+	// reconciling the Machine and will contain a succinct value suitable
+	// for machine interpretation.
+	//
+	// This field should not be set for transitive errors that a controller
+	// faces that are expected to be fixed automatically over
+	// time (like service outages), but instead indicate that something is
+	// fundamentally wrong with the Machine's spec or the configuration of
+	// the controller, and that manual intervention is required. Examples
+	// of terminal errors would be invalid combinations of settings in the
+	// spec, values that are unsupported by the controller, or the
+	// responsible controller itself being critically misconfigured.
+	//
+	// Any transient errors that occur during the reconciliation of Machines
+	// can be added as events to the Machine object and/or logged in the
+	// controller's output.
+	// +optional
+	FailureReason *errors.MachineStatusError `json:"failureReason,omitempty"`
+
+	// FailureMessage will be set in the event that there is a terminal problem
+	// reconciling the Machine and will contain a more verbose string suitable
+	// for logging and human consumption.
+	//
+	// This field should not be set for transitive errors that a controller
+	// faces that are expected to be fixed automatically over
+	// time (like service outages), but instead indicate that something is
+	// fundamentally wrong with the Machine's spec or the configuration of
+	// the controller, and that manual intervention is required. Examples
+	// of terminal errors would be invalid combinations of settings in the
+	// spec, values that are unsupported by the controller, or the
+	// responsible controller itself being critically misconfigured.
+	//
+	// Any transient errors that occur during the reconciliation of Machines
+	// can be added as events to the Machine object and/or logged in the
+	// controller's output.
+	// +optional
+	FailureMessage *string `json:"failureMessage,omitempty"`
 }
 
 // +kubebuilder:resource:path=kubevirtmachines,scope=Namespaced,categories=cluster-api
