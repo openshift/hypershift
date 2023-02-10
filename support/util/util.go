@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"net"
 	"strings"
@@ -165,4 +166,12 @@ func ResolveDNSHostname(ctx context.Context, hostName string) error {
 	}
 
 	return err
+}
+
+// HashStruct takes a value, typically a string, and returns a 32-bit FNV-1a hashed version of the value as a string
+func HashStruct(o interface{}) string {
+	hash := fnv.New32a()
+	hash.Write([]byte(fmt.Sprintf("%v", o)))
+	intHash := hash.Sum32()
+	return fmt.Sprintf("%08x", intHash)
 }

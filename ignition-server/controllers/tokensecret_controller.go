@@ -29,6 +29,7 @@ const (
 	TokenSecretOldTokenKey         = "old_token"
 	TokenSecretPayloadKey          = "payload"
 	TokenSecretMessageKey          = "message"
+	TokenSecretPullSecretHashKey   = "pull-secret-hash"
 	InvalidConfigReason            = "InvalidConfig"
 	TokenSecretReasonKey           = "reason"
 	TokenSecretAnnotation          = "hypershift.openshift.io/ignition-config"
@@ -77,7 +78,7 @@ func NewPayloadStore() *ExpiringCache {
 type IgnitionProvider interface {
 	// GetPayload returns the ignition payload content for
 	// the provided release image and a config string containing 0..N MachineConfig yaml definitions.
-	GetPayload(ctx context.Context, payloadImage, config string) ([]byte, error)
+	GetPayload(ctx context.Context, payloadImage, config string, pullSecretHash string) ([]byte, error)
 }
 
 // TokenSecretReconciler watches token Secrets
@@ -256,9 +257,10 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	PayloadCacheMissTotal.Inc()
+	pullSecretHash := string(tokenSecret.Data[TokenSecretPullSecretHashKey])
 	payload, err := func() ([]byte, error) {
 		start := time.Now()
-		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String())
+		payload, err := r.IgnitionProvider.GetPayload(ctx, releaseImage, config.String(), pullSecretHash)
 		if err != nil {
 			return nil, fmt.Errorf("error getting ignition payload: %v", err)
 		}
@@ -281,7 +283,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	r.PayloadStore.Set(token, CacheValue{Payload: payload, SecretName: tokenSecret.Name})
 	oldToken, ok = tokenSecret.Data[TokenSecretOldTokenKey]
 	if ok {
-		// If we got here and there's an old token e.g ignition server pod was restarted, then we set it as well
+		// If we got here and there's an old token e.g. ignition server pod was restarted, then we set it as well
 		// So Machines that were given that token right before the restart can succeed.
 		r.PayloadStore.Set(string(oldToken), CacheValue{Payload: payload, SecretName: tokenSecret.Name})
 	}
