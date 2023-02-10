@@ -44,7 +44,7 @@ type MCSIgnitionProvider struct {
 	Namespace       string
 }
 
-func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string) (payload []byte, err error) {
+func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, config string, pullSecretHash string) (payload []byte, err error) {
 	pullSecret := &corev1.Secret{}
 	if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: pullSecretName}, pullSecret); err != nil {
 		return nil, fmt.Errorf("failed to get pull secret: %w", err)
@@ -65,7 +65,7 @@ func (p *MCSIgnitionProvider) GetPayload(ctx context.Context, releaseImage strin
 
 	// The ConfigMap requires data stored to be a string.
 	// By base64ing the compressed data we ensure all bytes are decodable back.
-	// Otherwise if we'd just string() the bytes, some might not be a valid UTF-8 sequence
+	// Otherwise, if we'd just string() the bytes, some might not be a valid UTF-8 sequence,
 	// and we might lose data.
 	compressedAndEncodedConfig, err := util.CompressAndEncode([]byte(config))
 	if err != nil {
@@ -277,8 +277,8 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 			},
 		},
 		Spec: corev1.PodSpec{
-			TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
-			EnableServiceLinks:            k8sutilspointer.BoolPtr(true),
+			TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
+			EnableServiceLinks:            k8sutilspointer.Bool(true),
 			Subdomain:                     mcsPodSubdomain,
 			Hostname:                      podName,
 			Tolerations: []corev1.Toleration{
@@ -407,7 +407,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					Name: "kubeconfig",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							DefaultMode: k8sutilspointer.Int32Ptr(0640),
+							DefaultMode: k8sutilspointer.Int32(0640),
 							SecretName:  "bootstrap-kubeconfig",
 						},
 					},
@@ -416,7 +416,7 @@ cat /tmp/custom-config/base64CompressedConfig | base64 -d | gunzip --force --std
 					Name: "mcs-tls",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
-							DefaultMode: k8sutilspointer.Int32Ptr(0640),
+							DefaultMode: k8sutilspointer.Int32(0640),
 							SecretName:  "mcs-crt",
 						},
 					},
@@ -475,7 +475,7 @@ func machineConfigServerConfigConfigMap(namespace, config string) *corev1.Config
 			Namespace:    namespace,
 			GenerateName: resourceGenerateName,
 		},
-		Immutable: k8sutilspointer.BoolPtr(true),
+		Immutable: k8sutilspointer.Bool(true),
 		Data: map[string]string{
 			TokenSecretConfigKey: config,
 		},

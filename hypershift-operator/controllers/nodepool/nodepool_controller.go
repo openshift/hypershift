@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"hash/fnv"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,7 +19,7 @@ import (
 	"github.com/openshift/api/operator/v1alpha1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
-	api "github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -82,6 +81,7 @@ const (
 	TokenSecretTokenGenerationTime            = "hypershift.openshift.io/last-token-generation-time"
 	TokenSecretReleaseKey                     = "release"
 	TokenSecretTokenKey                       = "token"
+	TokenSecretPullSecretHashKey              = "pull-secret-hash"
 	TokenSecretConfigKey                      = "config"
 	TokenSecretAnnotation                     = "hypershift.openshift.io/ignition-config"
 	TokenSecretIgnitionReachedAnnotation      = "hypershift.openshift.io/ignition-reached"
@@ -461,7 +461,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Validate config input.
-	// 3 generic core config resoures: fips, ssh and haproxy.
+	// 3 generic core config resources: fips, ssh and haproxy.
 	// TODO (alberto): consider moving the expectedCoreConfigResources check
 	// into the token Secret controller so we don't block Machine infra creation on this.
 	expectedCoreConfigResources := 3
@@ -510,7 +510,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Check if config needs to be updated.
-	targetConfigHash := hashStruct(config + pullSecretName)
+	targetConfigHash := supportutil.HashStruct(config + pullSecretName)
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -545,7 +545,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	// Signal ignition payload generation
-	targetPayloadConfigHash := hashStruct(config + targetVersion + pullSecretName)
+	targetPayloadConfigHash := supportutil.HashStruct(config + targetVersion + pullSecretName)
 	tokenSecret := TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
 	condition, err := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
 	if err != nil {
@@ -752,8 +752,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 
 	tokenSecret = TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
+	pullSecretBytes, err := r.getPullSecretBytes(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get pull secret bytes: %w", err)
+	}
 	if result, err := r.CreateOrUpdate(ctx, r.Client, tokenSecret, func() error {
-		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes())
+		return reconcileTokenSecret(tokenSecret, nodePool, compressedConfig.Bytes(), pullSecretBytes)
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile token Secret: %w", err)
 	} else {
@@ -1163,8 +1167,8 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 	// The token secret controller deletes expired token Secrets.
 	// When that happens the NodePool controller reconciles and create a new one.
 	// Then it reconciles the userData Secret with the new generated token.
-	// Therefore this secret is mutable.
-	userDataSecret.Immutable = k8sutilspointer.BoolPtr(false)
+	// Therefore, this secret is mutable.
+	userDataSecret.Immutable = k8sutilspointer.Bool(false)
 
 	if userDataSecret.Annotations == nil {
 		userDataSecret.Annotations = make(map[string]string)
@@ -1189,7 +1193,7 @@ func reconcileUserDataSecret(userDataSecret *corev1.Secret, nodePool *hyperv1.No
 // This is used to mirror the Tuned object manifest into the control plane namespace, for the Node
 // Tuning Operator to mirror and reconcile in the hosted cluster.
 func reconcileTuningConfigMap(tuningConfigMap *corev1.ConfigMap, nodePool *hyperv1.NodePool, tuningConfig string) error {
-	tuningConfigMap.Immutable = k8sutilspointer.BoolPtr(false)
+	tuningConfigMap.Immutable = k8sutilspointer.Bool(false)
 	if tuningConfigMap.Annotations == nil {
 		tuningConfigMap.Annotations = make(map[string]string)
 	}
@@ -1209,11 +1213,11 @@ func reconcileTuningConfigMap(tuningConfigMap *corev1.ConfigMap, nodePool *hyper
 	return nil
 }
 
-func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte) error {
+func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool, compressedConfig []byte, pullSecret []byte) error {
 	// The token secret controller updates expired token IDs for token Secrets.
 	// When that happens the NodePool controller reconciles the userData Secret with the new token ID.
-	// Therefore this secret is mutable.
-	tokenSecret.Immutable = k8sutilspointer.BoolPtr(false)
+	// Therefore, this secret is mutable.
+	tokenSecret.Immutable = k8sutilspointer.Bool(false)
 	if tokenSecret.Annotations == nil {
 		tokenSecret.Annotations = make(map[string]string)
 	}
@@ -1230,6 +1234,7 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 		tokenSecret.Data[TokenSecretTokenKey] = []byte(uuid.New().String())
 		tokenSecret.Data[TokenSecretReleaseKey] = []byte(nodePool.Spec.Release.Image)
 		tokenSecret.Data[TokenSecretConfigKey] = compressedConfig
+		tokenSecret.Data[TokenSecretPullSecretHashKey] = []byte(supportutil.HashStruct(pullSecret))
 	}
 	return nil
 }
@@ -1256,7 +1261,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	machineDeployment.Labels[capiv1.ClusterLabelName] = CAPIClusterName
 
 	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
-	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32Ptr(int32(0))
+	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32(int32(0))
 
 	gvk, err := apiutil.GVKForObject(machineTemplateCR, api.Scheme)
 	if err != nil {
@@ -1266,9 +1271,9 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	// Set defaults. These are normally set by the CAPI machinedeployment webhook.
 	// However, since we don't run the webhook, CAPI updates the machinedeployment
 	// after it has been created with defaults.
-	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32Ptr(0)
-	machineDeployment.Spec.RevisionHistoryLimit = k8sutilspointer.Int32Ptr(1)
-	machineDeployment.Spec.ProgressDeadlineSeconds = k8sutilspointer.Int32Ptr(600)
+	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32(0)
+	machineDeployment.Spec.RevisionHistoryLimit = k8sutilspointer.Int32(1)
+	machineDeployment.Spec.ProgressDeadlineSeconds = k8sutilspointer.Int32(600)
 
 	// Set selector and template
 	machineDeployment.Spec.ClusterName = CAPIClusterName
@@ -1313,7 +1318,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	// Propagate labels.
 	for k, v := range nodePool.Spec.NodeLabels {
 		// Propagated managed labels down to Machines with a known hardcoded prefix
-		// so the CPO HCCO Node controller can recongnise them and apply them to Nodes.
+		// so the CPO HCCO Node controller can recognize them and apply them to Nodes.
 		labelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, k)
 		machineDeployment.Spec.Template.Labels[labelKey] = v
 	}
@@ -1336,12 +1341,12 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	}
 
 	// Propagate version and userData Secret to the machineDeployment.
-	if userDataSecret.Name != k8sutilspointer.StringPtrDerefOr(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
+	if userDataSecret.Name != k8sutilspointer.StringDeref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
 		log.Info("New user data Secret has been generated",
 			"current", machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName,
 			"target", userDataSecret.Name)
 
-		if targetVersion != k8sutilspointer.StringPtrDerefOr(machineDeployment.Spec.Template.Spec.Version, "") {
+		if targetVersion != k8sutilspointer.StringDeref(machineDeployment.Spec.Template.Spec.Version, "") {
 			log.Info("Starting version update: Propagating new version to the MachineDeployment",
 				"releaseImage", nodePool.Spec.Release.Image, "target", targetVersion)
 		}
@@ -1351,7 +1356,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 				"current", nodePool.Annotations[nodePoolAnnotationCurrentConfig], "target", targetConfigHash)
 		}
 		machineDeployment.Spec.Template.Spec.Version = &targetVersion
-		machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = k8sutilspointer.StringPtr(userDataSecret.Name)
+		machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = k8sutilspointer.String(userDataSecret.Name)
 
 		// We return early here during a version/config update to persist the resource with new user data Secret,
 		// so in the next reconciling loop we get a new MachineDeployment.Generation
@@ -1469,7 +1474,10 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 	}
 
 	if isAutoscalingEnabled(nodePool) {
-		if k8sutilspointer.Int32PtrDerefOr(machineDeployment.Spec.Replicas, 0) == 0 {
+		// if the MachineSetReplicas is not in the spec will be set as 0, and here will be
+		// evaluated. If autoscaler is activated, the replicas will have the same number as
+		// minimum number of replicas set in the MachineSet spec.
+		if k8sutilspointer.Int32Deref(machineDeployment.Spec.Replicas, 0) == 0 {
 			// if autoscaling is enabled and the machineDeployment does not exist yet or it has 0 replicas
 			// we set it to 1 replica as the autoscaler does not support scaling from zero yet.
 			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(int32(1))
@@ -1482,7 +1490,7 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 	if !isAutoscalingEnabled(nodePool) {
 		machineDeployment.Annotations[autoscalerMaxAnnotation] = "0"
 		machineDeployment.Annotations[autoscalerMinAnnotation] = "0"
-		machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.Replicas, 0))
+		machineDeployment.Spec.Replicas = k8sutilspointer.Int32(k8sutilspointer.Int32Deref(nodePool.Spec.Replicas, 0))
 	}
 }
 
@@ -1494,7 +1502,7 @@ func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash st
 				TLS: ignitionapi.TLS{
 					CertificateAuthorities: []ignitionapi.Resource{
 						{
-							Source: k8sutilspointer.StringPtr(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
+							Source: k8sutilspointer.String(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
 						},
 					},
 				},
@@ -1668,7 +1676,7 @@ func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
 		allConfigPlainText = append(allConfigPlainText, string(manifest))
 	}
 
-	// Keep output deterministic to avoid unnecesary no-op changes to Tuned ConfigMap
+	// Keep output deterministic to avoid unnecessary no-op changes to Tuned ConfigMap
 	sort.Strings(allConfigPlainText)
 	return strings.Join(allConfigPlainText, "\n---\n"), utilerrors.NewAggregate(errors)
 }
@@ -2095,13 +2103,6 @@ func (r *NodePoolReconciler) listMachineTemplates(nodePool *hyperv1.NodePool) ([
 	return filtered, nil
 }
 
-func hashStruct(o interface{}) string {
-	hash := fnv.New32a()
-	hash.Write([]byte(fmt.Sprintf("%v", o)))
-	intHash := hash.Sum32()
-	return fmt.Sprintf("%08x", intHash)
-}
-
 // TODO (alberto) drop this deterministic naming logic and get the name for child MachineDeployment from the status/annotation/label?
 func generateName(infraName, clusterName, suffix string) string {
 	return getName(fmt.Sprintf("%s-%s", infraName, clusterName), suffix, 43)
@@ -2128,13 +2129,13 @@ func getName(base, suffix string, maxLength int) string {
 	if baseLength < 1 {
 		prefix := base[0:min(len(base), max(0, maxLength-9))]
 		// Calculate hash on initial base-suffix string
-		shortName := fmt.Sprintf("%s-%s", prefix, hashStruct(name))
+		shortName := fmt.Sprintf("%s-%s", prefix, supportutil.HashStruct(name))
 		return shortName[:min(maxLength, len(shortName))]
 	}
 
 	prefix := base[0:baseLength]
 	// Calculate hash on initial base-suffix string
-	return fmt.Sprintf("%s-%s-%s", prefix, hashStruct(base), suffix)
+	return fmt.Sprintf("%s-%s-%s", prefix, supportutil.HashStruct(base), suffix)
 }
 
 // max returns the greater of its 2 inputs

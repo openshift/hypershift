@@ -103,7 +103,7 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 		ImageFileCache:  imageFileCache,
 	}
 
-	payload, err := p.GetPayload(ctx, o.Image, config.String())
+	payload, err := p.GetPayload(ctx, o.Image, config.String(), "")
 	if err != nil {
 		return err
 	}
