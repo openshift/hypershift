@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/openshift/release:golang-1.19 as builder
+FROM registry.ci.openshift.org/openshift/release:golang-1.18 as builder
 
 WORKDIR /hypershift
 
@@ -6,7 +6,7 @@ COPY . .
 
 RUN make build
 
-FROM quay.io/openshift/origin-base:4.13
+FROM quay.io/openshift/origin-base:4.12
 COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hypershift-operator \
                     /hypershift/bin/control-plane-operator \
