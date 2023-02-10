@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/openshift/release:golang-1.18 as builder
+FROM registry.ci.openshift.org/openshift/release:golang-1.19 as builder
 
 WORKDIR /hypershift
 
@@ -6,7 +6,7 @@ COPY . .
 
 RUN make build
 
-FROM quay.io/openshift/origin-base:4.12
+FROM quay.io/openshift/origin-base:4.13
 COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hypershift-operator \
                     /hypershift/bin/control-plane-operator \
@@ -27,3 +27,4 @@ LABEL io.openshift.hypershift.control-plane-operator-manages-ignition-server=tru
 LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver=true
 LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler=true
 LABEL io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config=true
+LABEL io.openshift.hypershift.control-plane-operator-creates-aws-sg=true

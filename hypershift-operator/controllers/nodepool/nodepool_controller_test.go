@@ -1153,6 +1153,32 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 				autoscalerMaxAnnotation: "5",
 			},
 		},
+		{
+			name: "it does not set current replicas but set annotations when autoscaling is enabled" +
+				" and the MachineDeployment has nil replicas",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: 2,
+						Max: 5,
+					},
+				},
+			},
+			machineDeployment: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
+				Spec: capiv1.MachineDeploymentSpec{
+					Replicas: nil,
+				},
+			},
+			expectReplicas: 2,
+			expectAutoscalerAnnotations: map[string]string{
+				autoscalerMinAnnotation: "2",
+				autoscalerMaxAnnotation: "5",
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1309,7 +1335,13 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 				},
 			},
 		},
-		Status: hyperv1.HostedClusterStatus{},
+		Status: hyperv1.HostedClusterStatus{
+			Platform: &hyperv1.PlatformStatus{
+				AWS: &hyperv1.AWSPlatformStatus{
+					DefaultWorkerSecurityGroupID: "default-sg",
+				},
+			},
+		},
 	}
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1381,6 +1413,11 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 					AdditionalTags: capiaws.Tags{
 						awsClusterCloudProviderTagKey(infraID): infraLifecycleOwned,
 					},
+					AdditionalSecurityGroups: []capiaws.AWSResourceReference{
+						{
+							ID: k8sutilspointer.String("default-sg"),
+						},
+					},
 					RootVolume: &capiaws.Volume{
 						Size: 16,
 						Type: "io1",
@@ -1393,7 +1430,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	expectedMachineTemplateSpecJSON, err := json.Marshal(expectedMachineTemplate.Spec)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, "", "")
+	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, "", "", true)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(machineTemplateSpecJSON).To(BeIdenticalTo(string(expectedMachineTemplateSpecJSON)))
 

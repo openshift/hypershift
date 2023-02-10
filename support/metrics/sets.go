@@ -291,7 +291,7 @@ func OpenShiftRouteControllerManagerRelabelConfigs(set MetricsSet) []*prometheus
 		return []*prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "drop",
-				Regex:        "*",
+				Regex:        "(.*)",
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}

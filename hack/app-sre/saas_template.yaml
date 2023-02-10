@@ -26824,11 +26824,14 @@ objects:
                           description: 'serviceAccountIssuer is the identifier of
                             the bound service account token issuer. The default is
                             https://kubernetes.default.svc WARNING: Updating this
-                            field will result in the invalidation of all bound tokens
-                            with the previous issuer value. Unless the holder of a
-                            bound token has explicit support for a change in issuer,
-                            they will not request a new bound token until pod restart
-                            or until their existing token exceeds 80% of its duration.'
+                            field will not result in immediate invalidation of all
+                            bound tokens with the previous issuer value. Instead,
+                            the tokens issued by previous service account issuer will
+                            continue to be trusted for a time period chosen by the
+                            platform (currently set to 24h). This time period is subject
+                            to change over time. This allows internal components to
+                            transition to use new service account issuer without service
+                            distruption.'
                           type: string
                         type:
                           description: type identifies the cluster managed, user facing
@@ -27140,7 +27143,7 @@ objects:
                             follow this pattern: \"*.<domain>\". \n Once set, changing
                             domain is not currently supported."
                           type: string
-                        loadbalancer:
+                        loadBalancer:
                           description: loadBalancer contains the load balancer details
                             in general which are not only specific to the underlying
                             infrastructure provider of the current cluster and are
@@ -27207,6 +27210,7 @@ objects:
                                   - PowerVS
                                   - AlibabaCloud
                                   - Nutanix
+                                  - External
                                   type: string
                               type: object
                           type: object
@@ -28946,7 +28950,14 @@ objects:
                                 [ \"arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing\"
                                 ], \"Effect\": \"Allow\" }, { \"Action\": [ \"iam:PassRole\"
                                 ], \"Resource\": [ \"arn:*:iam::*:role/*-worker-role\"
-                                ], \"Effect\": \"Allow\" } ] }"
+                                ], \"Effect\": \"Allow\" }, { \"Effect\": \"Allow\",
+                                \"Action\": [ \"kms:Decrypt\", \"kms:Encrypt\", \"kms:GenerateDataKey\",
+                                \"kms:GenerateDataKeyWithoutPlainText\", \"kms:DescribeKey\"
+                                ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\",
+                                \"Action\": [ \"kms:RevokeGrant\", \"kms:CreateGrant\",
+                                \"kms:ListGrants\" ], \"Resource\": \"*\", \"Condition\":
+                                { \"Bool\": { \"kms:GrantIsForAWSResource\": true
+                                } } } ] }"
                               type: string
                             storageARN:
                               description: "StorageARN is an ARN value referencing
@@ -29719,6 +29730,21 @@ objects:
                     defined on the HostedCluster. This is populated after the infrastructure
                     is ready.
                   type: string
+                platform:
+                  description: Platform contains platform-specific status of the HostedCluster
+                  properties:
+                    aws:
+                      description: AWSPlatformStatus contains status specific to the
+                        AWS platform
+                      properties:
+                        defaultWorkerSecurityGroupID:
+                          description: DefaultWorkerSecurityGroupID is the ID of a
+                            security group created by the control plane operator.
+                            It is used for NodePools that don't specify a security
+                            group.
+                          type: string
+                      type: object
+                  type: object
                 version:
                   description: Version is the status of the release version applied
                     to the HostedCluster.
@@ -29754,7 +29780,7 @@ objects:
                               URL field may not be set for test or nightly releases.
                             type: string
                           version:
-                            description: version is a semantic versioning identifying
+                            description: version is a semantic version identifying
                               the update version. When this field is part of spec,
                               version is optional if image is specified.
                             type: string
@@ -29887,7 +29913,7 @@ objects:
                                   releases.
                                 type: string
                               version:
-                                description: version is a semantic versioning identifying
+                                description: version is a semantic version identifying
                                   the update version. When this field is part of spec,
                                   version is optional if image is specified.
                                 type: string
@@ -30013,8 +30039,8 @@ objects:
                             may not be set for test or nightly releases.
                           type: string
                         version:
-                          description: version is a semantic versioning identifying
-                            the update version. When this field is part of spec, version
+                          description: version is a semantic version identifying the
+                            update version. When this field is part of spec, version
                             is optional if image is specified.
                           type: string
                       type: object
@@ -30073,7 +30099,7 @@ objects:
                               state at the time when the update target was accepted.
                             type: boolean
                           version:
-                            description: version is a semantic versioning identifying
+                            description: version is a semantic version identifying
                               the update version. If the requested image does not
                               define a version, or if a failure occurs retrieving
                               the image, this value may be empty.
@@ -30554,11 +30580,14 @@ objects:
                           description: 'serviceAccountIssuer is the identifier of
                             the bound service account token issuer. The default is
                             https://kubernetes.default.svc WARNING: Updating this
-                            field will result in the invalidation of all bound tokens
-                            with the previous issuer value. Unless the holder of a
-                            bound token has explicit support for a change in issuer,
-                            they will not request a new bound token until pod restart
-                            or until their existing token exceeds 80% of its duration.'
+                            field will not result in immediate invalidation of all
+                            bound tokens with the previous issuer value. Instead,
+                            the tokens issued by previous service account issuer will
+                            continue to be trusted for a time period chosen by the
+                            platform (currently set to 24h). This time period is subject
+                            to change over time. This allows internal components to
+                            transition to use new service account issuer without service
+                            distruption.'
                           type: string
                         type:
                           description: type identifies the cluster managed, user facing
@@ -30853,7 +30882,7 @@ objects:
                             follow this pattern: \"*.<domain>\". \n Once set, changing
                             domain is not currently supported."
                           type: string
-                        loadbalancer:
+                        loadBalancer:
                           description: loadBalancer contains the load balancer details
                             in general which are not only specific to the underlying
                             infrastructure provider of the current cluster and are
@@ -30920,6 +30949,7 @@ objects:
                                   - PowerVS
                                   - AlibabaCloud
                                   - Nutanix
+                                  - External
                                   type: string
                               type: object
                           type: object
@@ -32443,10 +32473,14 @@ objects:
                                 \"Statement\": [ { \"Effect\": \"Allow\", \"Action\":
                                 [ \"ec2:CreateVpcEndpoint\", \"ec2:DescribeVpcEndpoints\",
                                 \"ec2:ModifyVpcEndpoint\", \"ec2:DeleteVpcEndpoints\",
-                                \"ec2:CreateTags\", \"route53:ListHostedZones\", ],
-                                \"Resource\": \"*\" }, { \"Effect\": \"Allow\", \"Action\":
-                                [ \"route53:ChangeResourceRecordSets\", \"route53:ListResourceRecordSets\"
-                                ], \"Resource\": \"arn:aws:route53:::%s\" } ] }"
+                                \"ec2:CreateTags\", \"route53:ListHostedZones\", \"ec2:CreateSecurityGroup\",
+                                \"ec2:AuthorizeSecurityGroupIngress\", \"ec2:AuthorizeSecurityGroupEgress\",
+                                \"ec2:DeleteSecurityGroup\", \"ec2:RevokeSecurityGroupIngress\",
+                                \"ec2:RevokeSecurityGroupEgress\", \"ec2:DescribeSecurityGroups\",
+                                \"ec2:DescribeVpcs\", ], \"Resource\": \"*\" }, {
+                                \"Effect\": \"Allow\", \"Action\": [ \"route53:ChangeResourceRecordSets\",
+                                \"route53:ListResourceRecordSets\" ], \"Resource\":
+                                \"arn:aws:route53:::%s\" } ] }"
                               type: string
                             imageRegistryARN:
                               description: "ImageRegistryARN is an ARN value referencing
@@ -32567,7 +32601,14 @@ objects:
                                 [ \"arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing\"
                                 ], \"Effect\": \"Allow\" }, { \"Action\": [ \"iam:PassRole\"
                                 ], \"Resource\": [ \"arn:*:iam::*:role/*-worker-role\"
-                                ], \"Effect\": \"Allow\" } ] }"
+                                ], \"Effect\": \"Allow\" }, { \"Effect\": \"Allow\",
+                                \"Action\": [ \"kms:Decrypt\", \"kms:Encrypt\", \"kms:GenerateDataKey\",
+                                \"kms:GenerateDataKeyWithoutPlainText\", \"kms:DescribeKey\"
+                                ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\",
+                                \"Action\": [ \"kms:RevokeGrant\", \"kms:CreateGrant\",
+                                \"kms:ListGrants\" ], \"Resource\": \"*\", \"Condition\":
+                                { \"Bool\": { \"kms:GrantIsForAWSResource\": true
+                                } } } ] }"
                               type: string
                             storageARN:
                               description: "StorageARN is an ARN value referencing
@@ -33318,6 +33359,21 @@ objects:
                     defined on the HostedCluster. This is populated after the infrastructure
                     is ready.
                   type: string
+                platform:
+                  description: Platform contains platform-specific status of the HostedCluster
+                  properties:
+                    aws:
+                      description: AWSPlatformStatus contains status specific to the
+                        AWS platform
+                      properties:
+                        defaultWorkerSecurityGroupID:
+                          description: DefaultWorkerSecurityGroupID is the ID of a
+                            security group created by the control plane operator.
+                            It is used for NodePools that don't specify a security
+                            group.
+                          type: string
+                      type: object
+                  type: object
                 version:
                   description: Version is the status of the release version applied
                     to the HostedCluster.
@@ -33353,7 +33409,7 @@ objects:
                               URL field may not be set for test or nightly releases.
                             type: string
                           version:
-                            description: version is a semantic versioning identifying
+                            description: version is a semantic version identifying
                               the update version. When this field is part of spec,
                               version is optional if image is specified.
                             type: string
@@ -33486,7 +33542,7 @@ objects:
                                   releases.
                                 type: string
                               version:
-                                description: version is a semantic versioning identifying
+                                description: version is a semantic version identifying
                                   the update version. When this field is part of spec,
                                   version is optional if image is specified.
                                 type: string
@@ -33612,8 +33668,8 @@ objects:
                             may not be set for test or nightly releases.
                           type: string
                         version:
-                          description: version is a semantic versioning identifying
-                            the update version. When this field is part of spec, version
+                          description: version is a semantic version identifying the
+                            update version. When this field is part of spec, version
                             is optional if image is specified.
                           type: string
                       type: object
@@ -33672,7 +33728,7 @@ objects:
                               state at the time when the update target was accepted.
                             type: boolean
                           version:
-                            description: version is a semantic versioning identifying
+                            description: version is a semantic version identifying
                               the update version. If the requested image does not
                               define a version, or if a failure occurs retrieving
                               the image, this value may be empty.
@@ -34180,11 +34236,14 @@ objects:
                           description: 'serviceAccountIssuer is the identifier of
                             the bound service account token issuer. The default is
                             https://kubernetes.default.svc WARNING: Updating this
-                            field will result in the invalidation of all bound tokens
-                            with the previous issuer value. Unless the holder of a
-                            bound token has explicit support for a change in issuer,
-                            they will not request a new bound token until pod restart
-                            or until their existing token exceeds 80% of its duration.'
+                            field will not result in immediate invalidation of all
+                            bound tokens with the previous issuer value. Instead,
+                            the tokens issued by previous service account issuer will
+                            continue to be trusted for a time period chosen by the
+                            platform (currently set to 24h). This time period is subject
+                            to change over time. This allows internal components to
+                            transition to use new service account issuer without service
+                            distruption.'
                           type: string
                         type:
                           description: type identifies the cluster managed, user facing
@@ -34496,7 +34555,7 @@ objects:
                             follow this pattern: \"*.<domain>\". \n Once set, changing
                             domain is not currently supported."
                           type: string
-                        loadbalancer:
+                        loadBalancer:
                           description: loadBalancer contains the load balancer details
                             in general which are not only specific to the underlying
                             infrastructure provider of the current cluster and are
@@ -34563,6 +34622,7 @@ objects:
                                   - PowerVS
                                   - AlibabaCloud
                                   - Nutanix
+                                  - External
                                   type: string
                               type: object
                           type: object
@@ -36313,7 +36373,14 @@ objects:
                                 [ \"arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing\"
                                 ], \"Effect\": \"Allow\" }, { \"Action\": [ \"iam:PassRole\"
                                 ], \"Resource\": [ \"arn:*:iam::*:role/*-worker-role\"
-                                ], \"Effect\": \"Allow\" } ] }"
+                                ], \"Effect\": \"Allow\" }, { \"Effect\": \"Allow\",
+                                \"Action\": [ \"kms:Decrypt\", \"kms:Encrypt\", \"kms:GenerateDataKey\",
+                                \"kms:GenerateDataKeyWithoutPlainText\", \"kms:DescribeKey\"
+                                ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\",
+                                \"Action\": [ \"kms:RevokeGrant\", \"kms:CreateGrant\",
+                                \"kms:ListGrants\" ], \"Resource\": \"*\", \"Condition\":
+                                { \"Bool\": { \"kms:GrantIsForAWSResource\": true
+                                } } } ] }"
                               type: string
                             storageARN:
                               description: "StorageARN is an ARN value referencing
@@ -37097,6 +37164,21 @@ objects:
                     defined on the HostedCluster. This is populated after the infrastructure
                     is ready.
                   type: string
+                platform:
+                  description: Platform contains platform-specific status of the HostedCluster
+                  properties:
+                    aws:
+                      description: AWSPlatformStatus contains status specific to the
+                        AWS platform
+                      properties:
+                        defaultWorkerSecurityGroupID:
+                          description: DefaultWorkerSecurityGroupID is the ID of a
+                            security group created by the control plane operator.
+                            It is used for NodePools that don't specify a security
+                            group.
+                          type: string
+                      type: object
+                  type: object
                 ready:
                   default: false
                   description: Ready denotes that the HostedControlPlane API Server
@@ -37147,7 +37229,7 @@ objects:
                               URL field may not be set for test or nightly releases.
                             type: string
                           version:
-                            description: version is a semantic versioning identifying
+                            description: version is a semantic version identifying
                               the update version. When this field is part of spec,
                               version is optional if image is specified.
                             type: string
@@ -37280,7 +37362,7 @@ objects:
                                   releases.
                                 type: string
                               version:
-                                description: version is a semantic versioning identifying
+                                description: version is a semantic version identifying
                                   the update version. When this field is part of spec,
                                   version is optional if image is specified.
                                 type: string
@@ -37406,8 +37488,8 @@ objects:
                             may not be set for test or nightly releases.
                           type: string
                         version:
-                          description: version is a semantic versioning identifying
-                            the update version. When this field is part of spec, version
+                          description: version is a semantic version identifying the
+                            update version. When this field is part of spec, version
                             is optional if image is specified.
                           type: string
                       type: object
@@ -37466,7 +37548,7 @@ objects:
                               state at the time when the update target was accepted.
                             type: boolean
                           version:
-                            description: version is a semantic versioning identifying
+                            description: version is a semantic version identifying
                               the update version. If the requested image does not
                               define a version, or if a failure occurs retrieving
                               the image, this value may be empty.
@@ -37915,11 +37997,14 @@ objects:
                           description: 'serviceAccountIssuer is the identifier of
                             the bound service account token issuer. The default is
                             https://kubernetes.default.svc WARNING: Updating this
-                            field will result in the invalidation of all bound tokens
-                            with the previous issuer value. Unless the holder of a
-                            bound token has explicit support for a change in issuer,
-                            they will not request a new bound token until pod restart
-                            or until their existing token exceeds 80% of its duration.'
+                            field will not result in immediate invalidation of all
+                            bound tokens with the previous issuer value. Instead,
+                            the tokens issued by previous service account issuer will
+                            continue to be trusted for a time period chosen by the
+                            platform (currently set to 24h). This time period is subject
+                            to change over time. This allows internal components to
+                            transition to use new service account issuer without service
+                            distruption.'
                           type: string
                         type:
                           description: type identifies the cluster managed, user facing
@@ -38214,7 +38299,7 @@ objects:
                             follow this pattern: \"*.<domain>\". \n Once set, changing
                             domain is not currently supported."
                           type: string
-                        loadbalancer:
+                        loadBalancer:
                           description: loadBalancer contains the load balancer details
                             in general which are not only specific to the underlying
                             infrastructure provider of the current cluster and are
@@ -38281,6 +38366,7 @@ objects:
                                   - PowerVS
                                   - AlibabaCloud
                                   - Nutanix
+                                  - External
                                   type: string
                               type: object
                           type: object
@@ -39803,10 +39889,14 @@ objects:
                                 \"Statement\": [ { \"Effect\": \"Allow\", \"Action\":
                                 [ \"ec2:CreateVpcEndpoint\", \"ec2:DescribeVpcEndpoints\",
                                 \"ec2:ModifyVpcEndpoint\", \"ec2:DeleteVpcEndpoints\",
-                                \"ec2:CreateTags\", \"route53:ListHostedZones\", ],
-                                \"Resource\": \"*\" }, { \"Effect\": \"Allow\", \"Action\":
-                                [ \"route53:ChangeResourceRecordSets\", \"route53:ListResourceRecordSets\"
-                                ], \"Resource\": \"arn:aws:route53:::%s\" } ] }"
+                                \"ec2:CreateTags\", \"route53:ListHostedZones\", \"ec2:CreateSecurityGroup\",
+                                \"ec2:AuthorizeSecurityGroupIngress\", \"ec2:AuthorizeSecurityGroupEgress\",
+                                \"ec2:DeleteSecurityGroup\", \"ec2:RevokeSecurityGroupIngress\",
+                                \"ec2:RevokeSecurityGroupEgress\", \"ec2:DescribeSecurityGroups\",
+                                \"ec2:DescribeVpcs\", ], \"Resource\": \"*\" }, {
+                                \"Effect\": \"Allow\", \"Action\": [ \"route53:ChangeResourceRecordSets\",
+                                \"route53:ListResourceRecordSets\" ], \"Resource\":
+                                \"arn:aws:route53:::%s\" } ] }"
                               type: string
                             imageRegistryARN:
                               description: "ImageRegistryARN is an ARN value referencing
@@ -39927,7 +40017,14 @@ objects:
                                 [ \"arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing\"
                                 ], \"Effect\": \"Allow\" }, { \"Action\": [ \"iam:PassRole\"
                                 ], \"Resource\": [ \"arn:*:iam::*:role/*-worker-role\"
-                                ], \"Effect\": \"Allow\" } ] }"
+                                ], \"Effect\": \"Allow\" }, { \"Effect\": \"Allow\",
+                                \"Action\": [ \"kms:Decrypt\", \"kms:Encrypt\", \"kms:GenerateDataKey\",
+                                \"kms:GenerateDataKeyWithoutPlainText\", \"kms:DescribeKey\"
+                                ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\",
+                                \"Action\": [ \"kms:RevokeGrant\", \"kms:CreateGrant\",
+                                \"kms:ListGrants\" ], \"Resource\": \"*\", \"Condition\":
+                                { \"Bool\": { \"kms:GrantIsForAWSResource\": true
+                                } } } ] }"
                               type: string
                             storageARN:
                               description: "StorageARN is an ARN value referencing
@@ -40683,6 +40780,21 @@ objects:
                     defined on the HostedCluster. This is populated after the infrastructure
                     is ready.
                   type: string
+                platform:
+                  description: Platform contains platform-specific status of the HostedCluster
+                  properties:
+                    aws:
+                      description: AWSPlatformStatus contains status specific to the
+                        AWS platform
+                      properties:
+                        defaultWorkerSecurityGroupID:
+                          description: DefaultWorkerSecurityGroupID is the ID of a
+                            security group created by the control plane operator.
+                            It is used for NodePools that don't specify a security
+                            group.
+                          type: string
+                      type: object
+                  type: object
                 ready:
                   default: false
                   description: Ready denotes that the HostedControlPlane API Server
@@ -40733,7 +40845,7 @@ objects:
                               URL field may not be set for test or nightly releases.
                             type: string
                           version:
-                            description: version is a semantic versioning identifying
+                            description: version is a semantic version identifying
                               the update version. When this field is part of spec,
                               version is optional if image is specified.
                             type: string
@@ -40866,7 +40978,7 @@ objects:
                                   releases.
                                 type: string
                               version:
-                                description: version is a semantic versioning identifying
+                                description: version is a semantic version identifying
                                   the update version. When this field is part of spec,
                                   version is optional if image is specified.
                                 type: string
@@ -40992,8 +41104,8 @@ objects:
                             may not be set for test or nightly releases.
                           type: string
                         version:
-                          description: version is a semantic versioning identifying
-                            the update version. When this field is part of spec, version
+                          description: version is a semantic version identifying the
+                            update version. When this field is part of spec, version
                             is optional if image is specified.
                           type: string
                       type: object
@@ -41052,7 +41164,7 @@ objects:
                               state at the time when the update target was accepted.
                             type: boolean
                           version:
-                            description: version is a semantic versioning identifying
+                            description: version is a semantic version identifying
                               the update version. If the requested image does not
                               define a version, or if a failure occurs retrieving
                               the image, this value may be empty.
@@ -41474,6 +41586,20 @@ objects:
                           description: RootVolume specifies configuration for the
                             root volume of node instances.
                           properties:
+                            encrypted:
+                              description: Encrypted is whether the volume should
+                                be encrypted or not.
+                              type: boolean
+                              x-kubernetes-validations:
+                              - message: Encrypted is immutable
+                                rule: self == oldSelf
+                            encryptionKey:
+                              description: EncryptionKey is the KMS key to use to
+                                encrypt the volume. Can be either a KMS key ID or
+                                ARN. If Encrypted is set and this is omitted, the
+                                default AWS key will be used. The key must already
+                                exist and be accessible by the controller.
+                              type: string
                             iops:
                               description: IOPS is the number of IOPS requested for
                                 the disk. This is only valid for type io1.
@@ -42044,13 +42170,17 @@ objects:
                   description: "ClusterName is the name of the HostedCluster this
                     NodePool belongs to. \n TODO(dan): Should this be a LocalObjectReference?"
                   type: string
+                  x-kubernetes-validations:
+                  - message: ClusterName is immutable
+                    rule: self == oldSelf
                 config:
                   description: "Config is a list of references to ConfigMaps containing
                     serialized MachineConfig resources to be injected into the ignition
                     configurations of nodes in the NodePool. The MachineConfig API
                     schema is defined here: \n https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185
                     \n Each ConfigMap must have a single key named \"config\" whose
-                    value is the JSON or YAML of a serialized MachineConfig."
+                    value is the JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
+                    KubeletConfig ContainerRuntimeConfig MachineConfig or ImageContentSourcePolicy"
                   items:
                     description: LocalObjectReference contains enough information
                       to let you locate the referenced object inside the same namespace.
@@ -42156,6 +42286,9 @@ objects:
                       - Replace
                       - InPlace
                       type: string
+                      x-kubernetes-validations:
+                      - message: UpgradeType is immutable
+                        rule: self == oldSelf
                   required:
                   - upgradeType
                   type: object
@@ -42294,6 +42427,20 @@ objects:
                           description: RootVolume specifies configuration for the
                             root volume of node instances.
                           properties:
+                            encrypted:
+                              description: Encrypted is whether the volume should
+                                be encrypted or not.
+                              type: boolean
+                              x-kubernetes-validations:
+                              - message: Encrypted is immutable
+                                rule: self == oldSelf
+                            encryptionKey:
+                              description: EncryptionKey is the KMS key to use to
+                                encrypt the volume. Can be either a KMS key ID or
+                                ARN. If Encrypted is set and this is omitted, the
+                                default AWS key will be used. The key must already
+                                exist and be accessible by the controller.
+                              type: string
                             iops:
                               description: IOPS is the number of IOPS requested for
                                 the disk. This is only valid for type io1.
@@ -42632,6 +42779,9 @@ objects:
                       - Azure
                       - PowerVS
                       type: string
+                      x-kubernetes-validations:
+                      - message: Type is immutable
+                        rule: self == oldSelf
                   required:
                   - type
                   type: object

@@ -245,7 +245,32 @@ const (
         "arn:*:iam::*:role/*-worker-role"
       ],
       "Effect": "Allow"
-    }
+    },
+	{
+		"Effect": "Allow",
+		"Action": [
+			"kms:Decrypt",
+			"kms:Encrypt",
+			"kms:GenerateDataKey",
+			"kms:GenerateDataKeyWithoutPlainText",
+			"kms:DescribeKey"
+		],
+		"Resource": "*"
+	},
+	{
+		"Effect": "Allow",
+		"Action": [
+			"kms:RevokeGrant",
+			"kms:CreateGrant",
+			"kms:ListGrants"
+		],
+		"Resource": "*",
+		"Condition": {
+			"Bool": {
+				"kms:GrantIsForAWSResource": true
+			}
+		}
+	}
   ]
 }`
 
@@ -313,7 +338,15 @@ func controlPlaneOperatorPolicy(hostedZone string) string {
 				"ec2:ModifyVpcEndpoint",
 				"ec2:DeleteVpcEndpoints",
 				"ec2:CreateTags",
-				"route53:ListHostedZones"
+				"route53:ListHostedZones",
+				"ec2:CreateSecurityGroup",
+				"ec2:AuthorizeSecurityGroupIngress",
+				"ec2:AuthorizeSecurityGroupEgress",
+				"ec2:DeleteSecurityGroup",
+				"ec2:RevokeSecurityGroupIngress",
+				"ec2:RevokeSecurityGroupEgress",
+				"ec2:DescribeSecurityGroups",
+				"ec2:DescribeVpcs"
 			],
 			"Resource": "*"
 		},

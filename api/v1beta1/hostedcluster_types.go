@@ -129,6 +129,10 @@ const (
 	// a cluster is somehow out of regular support policy.
 	// https://docs.openshift.com/rosa/rosa_architecture/rosa_policy_service_definition/rosa-service-definition.html#rosa-limited-support_rosa-service-definition.
 	LimitedSupportLabel = "hypershift.openshift.io/limited-support"
+
+	// SilenceClusterAlertsLabel  is a label that can be used by consumers to indicate
+	// alerts from a cluster can be silenced or ignored
+	SilenceClusterAlertsLabel = "hypershift.openshift.io/silence-cluster-alerts"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
@@ -1250,7 +1254,32 @@ type AWSRolesRef struct {
 	//        "arn:*:iam::*:role/*-worker-role"
 	//      ],
 	//      "Effect": "Allow"
-	//    }
+	//    },
+	// 	  {
+	// 	  	"Effect": "Allow",
+	// 	  	"Action": [
+	// 	  		"kms:Decrypt",
+	// 	  		"kms:Encrypt",
+	// 	  		"kms:GenerateDataKey",
+	// 	  		"kms:GenerateDataKeyWithoutPlainText",
+	// 	  		"kms:DescribeKey"
+	// 	  	],
+	// 	  	"Resource": "*"
+	// 	  },
+	// 	  {
+	// 	  	"Effect": "Allow",
+	// 	  	"Action": [
+	// 	  		"kms:RevokeGrant",
+	// 	  		"kms:CreateGrant",
+	// 	  		"kms:ListGrants"
+	// 	  	],
+	// 	  	"Resource": "*",
+	// 	  	"Condition": {
+	// 	  		"Bool": {
+	// 	  			"kms:GrantIsForAWSResource": true
+	// 	  		}
+	// 	  	}
+	// 	  }
 	//  ]
 	// }
 	//
@@ -1273,6 +1302,14 @@ type AWSRolesRef struct {
 	//				"ec2:DeleteVpcEndpoints",
 	//				"ec2:CreateTags",
 	//				"route53:ListHostedZones",
+	//				"ec2:CreateSecurityGroup",
+	//				"ec2:AuthorizeSecurityGroupIngress",
+	//				"ec2:AuthorizeSecurityGroupEgress",
+	//				"ec2:DeleteSecurityGroup",
+	//				"ec2:RevokeSecurityGroupIngress",
+	//				"ec2:RevokeSecurityGroupEgress",
+	//				"ec2:DescribeSecurityGroups",
+	//				"ec2:DescribeVpcs",
 	//			],
 	//			"Resource": "*"
 	//		},
@@ -1718,6 +1755,25 @@ type HostedClusterStatus struct {
 	// plane's current state.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// Platform contains platform-specific status of the HostedCluster
+	// +optional
+	Platform *PlatformStatus `json:"platform,omitempty"`
+}
+
+// PlatformStatus contains platform-specific status
+type PlatformStatus struct {
+	// +optional
+	AWS *AWSPlatformStatus `json:"aws,omitempty"`
+}
+
+// AWSPlatformStatus contains status specific to the AWS platform
+type AWSPlatformStatus struct {
+	// DefaultWorkerSecurityGroupID is the ID of a security group created by
+	// the control plane operator. It is used for NodePools that don't specify a
+	// security group.
+	// +optional
+	DefaultWorkerSecurityGroupID string `json:"defaultWorkerSecurityGroupID,omitempty"`
 }
 
 // ClusterVersionStatus reports the status of the cluster versioning,

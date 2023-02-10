@@ -12,7 +12,7 @@ require (
 	github.com/IBM/platform-services-go-sdk v0.28.5
 	github.com/IBM/vpc-go-sdk v0.26.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
-	github.com/aws/aws-sdk-go v1.44.107
+	github.com/aws/aws-sdk-go v1.44.190
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.14.1
 	github.com/coreos/ignition/v2 v2.10.1
@@ -28,7 +28,7 @@ require (
 	github.com/onsi/gomega v1.24.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799
-	github.com/openshift/api v0.0.0-20220831183848-09c070622e2c
+	github.com/openshift/api v0.0.0-20230119154305-a7b1b9651014
 	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220227135922-dd6353f609dc
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20220614214129-2c76314fb3cc
@@ -53,6 +53,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.24.4
 	k8s.io/apimachinery v0.25.2
 	k8s.io/apiserver v0.24.4
+	k8s.io/cli-runtime v0.24.2
 	k8s.io/client-go v0.25.2
 	k8s.io/component-base v0.24.4
 	k8s.io/kube-aggregator v0.24.0
@@ -172,7 +173,6 @@ require (
 	gopkg.in/go-playground/validator.v9 v9.31.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/cli-runtime v0.24.2 // indirect
 	k8s.io/klog/v2 v2.80.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20220803162953-67bda5d908f1 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk v0.2.1 // indirect

@@ -171,18 +171,17 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 	var status corev1.ConditionStatus
 	reason := ""
 	message := ""
+	status = "unknown"
 	removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
 
 	if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]; ok {
 		status = corev1.ConditionTrue
 		reason = hyperv1.AsExpectedReason
-		message = machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]
 	}
 
 	if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]; ok {
 		status = corev1.ConditionFalse
 		reason = hyperv1.NodePoolInplaceUpgradeFailedReason
-		message = machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]
 	}
 
 	// Check if config needs to be updated.
@@ -191,7 +190,8 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 	// Check if version needs to be updated.
 	isUpdatingVersion := isUpdatingVersion(nodePool, targetVersion)
 
-	if message != "" && isUpdatingVersion {
+	if isUpdatingVersion {
+		message = fmt.Sprintf("Updating Version, Target: %v", machineSet.Annotations[nodePoolAnnotationTargetConfigVersion])
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
 			Status:             status,
@@ -201,7 +201,8 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 		})
 	}
 
-	if message != "" && isUpdatingConfig {
+	if isUpdatingConfig {
+		message = fmt.Sprintf("Updating Config, Target: %v", machineSet.Annotations[nodePoolAnnotationTargetConfigVersion])
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
 			Status:             status,
@@ -250,10 +251,13 @@ func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.Machin
 	}
 
 	if isAutoscalingEnabled(nodePool) {
+		// if the MachineSetReplicas is not in the spec will be set as 0, and here will be
+		// evaluated. If autoscaler is activated, the replicas will have the same number as
+		// minimum number of replicas set in the MachineSet spec.
 		if k8sutilspointer.Int32PtrDerefOr(machineSet.Spec.Replicas, 0) == 0 {
-			// if autoscaling is enabled and the MachineSet does not exist yet or it has 0 replicas
-			// we set it to 1 replica as the autoscaler does not support scaling from zero yet.
-			machineSet.Spec.Replicas = k8sutilspointer.Int32Ptr(int32(1))
+			// if autoscaling is enabled and the MachineSet does not exist yet or it has 0 replicas,
+			// we set the replicas to the Autoscaling minimum value, autoscaler does not support scaling from zero yet.
+			machineSet.Spec.Replicas = &nodePool.Spec.AutoScaling.Min
 		}
 		machineSet.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Max))
 		machineSet.Annotations[autoscalerMinAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Min))

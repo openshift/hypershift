@@ -639,7 +639,12 @@ MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
 <p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the
-JSON or YAML of a serialized MachineConfig.</p>
+JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
+KubeletConfig
+ContainerRuntimeConfig
+MachineConfig
+or
+ImageContentSourcePolicy</p>
 </td>
 </tr>
 <tr>
@@ -1342,6 +1347,38 @@ for more details around VPC Endpoint Service allowed principals.</p>
 </tr>
 </tbody>
 </table>
+###AWSPlatformStatus { #hypershift.openshift.io/v1beta1.AWSPlatformStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformStatus">PlatformStatus</a>)
+</p>
+<p>
+<p>AWSPlatformStatus contains status specific to the AWS platform</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>defaultWorkerSecurityGroupID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DefaultWorkerSecurityGroupID is the ID of a security group created by
+the control plane operator. It is used for NodePools that don&rsquo;t specify a
+security group.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AWSResourceReference { #hypershift.openshift.io/v1beta1.AWSResourceReference }
 <p>
 (<em>Appears on:</em>
@@ -1829,6 +1866,31 @@ string
 &ldquo;arn:</em>:iam::<em>:role/</em>-worker-role&rdquo;
 ],
 &ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;
+},
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;kms:Decrypt&rdquo;,
+&ldquo;kms:Encrypt&rdquo;,
+&ldquo;kms:GenerateDataKey&rdquo;,
+&ldquo;kms:GenerateDataKeyWithoutPlainText&rdquo;,
+&ldquo;kms:DescribeKey&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;
+},
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;kms:RevokeGrant&rdquo;,
+&ldquo;kms:CreateGrant&rdquo;,
+&ldquo;kms:ListGrants&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;Bool&rdquo;: {
+&ldquo;kms:GrantIsForAWSResource&rdquo;: true
+}
+}
 }
 ]
 }</p>
@@ -1856,6 +1918,14 @@ string
 &ldquo;ec2:DeleteVpcEndpoints&rdquo;,
 &ldquo;ec2:CreateTags&rdquo;,
 &ldquo;route53:ListHostedZones&rdquo;,
+&ldquo;ec2:CreateSecurityGroup&rdquo;,
+&ldquo;ec2:AuthorizeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:AuthorizeSecurityGroupEgress&rdquo;,
+&ldquo;ec2:DeleteSecurityGroup&rdquo;,
+&ldquo;ec2:RevokeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:RevokeSecurityGroupEgress&rdquo;,
+&ldquo;ec2:DescribeSecurityGroups&rdquo;,
+&ldquo;ec2:DescribeVpcs&rdquo;,
 ],
 &ldquo;Resource&rdquo;: &ldquo;*&rdquo;
 },
@@ -2697,7 +2767,13 @@ or invalid channel has been specified.</p>
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;EndpointAvailable&#34;</p></td>
+<tbody><tr><td><p>&#34;AWSDefaultSecurityGroupCreated&#34;</p></td>
+<td><p>AWSDefaultSecurityGroupCreated indicates whether the default security group
+for AWS workers has been created.
+A failure here indicates that NodePools without a security group will be
+blocked from creating machines.</p>
+</td>
+</tr><tr><td><p>&#34;EndpointAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint has been
 created in the guest VPC</p>
 </td>
@@ -2740,6 +2816,11 @@ A failure here often means a software bug or a non-stable cluster.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdSnapshotRestored&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;ExternalDNSReachable&#34;</p></td>
+<td><p>ExternalDNSReachable bubbles up the same condition from HCP. It signals if the configured external DNS is reachable.
+A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
+and registered correctly.</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>HostedClusterAvailable indicates whether the HostedCluster has a healthy
 control plane.
@@ -3579,6 +3660,20 @@ This is populated after the infrastructure is ready.</p>
 plane&rsquo;s current state.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformStatus">
+PlatformStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Platform contains platform-specific status of the HostedCluster</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedControlPlaneSpec { #hypershift.openshift.io/v1beta1.HostedControlPlaneSpec }
@@ -4139,6 +4234,20 @@ for the guest cluster.</p>
 <em>(Optional)</em>
 <p>Condition contains details for one aspect of the current state of the HostedControlPlane.
 Current condition types are: &ldquo;Available&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformStatus">
+PlatformStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Platform contains platform-specific status of the HostedCluster</p>
 </td>
 </tr>
 </tbody>
@@ -5595,7 +5704,12 @@ MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
 <p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the
-JSON or YAML of a serialized MachineConfig.</p>
+JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
+KubeletConfig
+ContainerRuntimeConfig
+MachineConfig
+or
+ImageContentSourcePolicy</p>
 </td>
 </tr>
 <tr>
@@ -5968,6 +6082,38 @@ KubevirtPlatformSpec
 <td>
 <em>(Optional)</em>
 <p>KubeVirt defines KubeVirt specific settings for cluster components.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###PlatformStatus { #hypershift.openshift.io/v1beta1.PlatformStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>PlatformStatus contains platform-specific status</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>aws</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformStatus">
+AWSPlatformStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
 </td>
 </tr>
 </tbody>
@@ -7133,6 +7279,32 @@ int64
 <em>(Optional)</em>
 <p>IOPS is the number of IOPS requested for the disk. This is only valid
 for type io1.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encrypted</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Encrypted is whether the volume should be encrypted or not.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encryptionKey</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>EncryptionKey is the KMS key to use to encrypt the volume. Can be either a KMS key ID or ARN.
+If Encrypted is set and this is omitted, the default AWS key will be used.
+The key must already exist and be accessible by the controller.</p>
 </td>
 </tr>
 </tbody>

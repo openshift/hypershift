@@ -1,10 +1,33 @@
 ---
-title: Migrating Hosted Cluster among the same AWS Region
+title: Disaster Recovery
 ---
 
-# Migrating Hosted Cluster among the same AWS Region
+# Disaster Recovery
 
-## Preface and Considerations
+## Migrating Hosted Cluster within the same AWS Region
+
+### Use cases for Disaster Recovery
+
+This procedure **is helpful** for:
+
+1. *The control-plane is down for your hosted cluster (api-server, etcd,...)*
+2. *Hypershift operator is not working, it’s down and it cannot be recovered*
+
+This procedure **is not helpful** for:
+
+1. *My compute nodes are frozen or not working fine*
+    - For this situation you will need to access the serial console of the node in order to see what is happening.
+
+2. *The management cluster API-server/etcd is down?*
+    - For this second situation it does not make sense to use this procedure, so you can use a backup/recovery tool like Velero in order to recover the Etcd.
+
+!!! note Important
+    Other situations should be carefully examined, to ensure the stability of the other deployed HostedClusters
+
+!!! warning
+    These are some examples where this procedure could be useful. We don't recommend following this procedure unless it is strictly necessary.
+
+### Preface and Considerations
 
 The behaviour of this implementation is focused on the transparency for the user. Hypershift will not disrupt any customer workloads at anytime, also have in mind that the service workloads will be up and running during the migration process. Maybe at some point the Cluster API will be down but this will not affect the services running on the worker nodes.
 
@@ -12,14 +35,51 @@ In the storage side, It's mandatory to have under consideration that when we mov
 
 Regarding the Workers nodes assigned to the cluster, during the migration they will still point to the same DNS entry, and we, under the hood, change the DNS Records to point to the new Management Cluster API, that way the node migration is transparent for the user.
 
-!!! note
-    One considerations we should have is, both Hypershift deployments Source Management cluster and Destination Management cluster, had to have the `--external-dns` flags, in order to maintain the API server URL with the same entry. If that's not the case, the HostedCluster could not be migrated.
+!!! important
+    Keep in mind that this **"migration"** capability is only for **disaster recovery purposes**, please **DO NOT** use this to perform clusters migrations as a common task in your platform.
 
-```bash
---external-dns-provider=aws \
---external-dns-credentials=<AWS Credentials location> \
---external-dns-domain-filter=<DNS Base Domain>
-```
+These next arguments depend on how the Hypershift Operator has been deployed and how a Hosted Cluster has been created. E.G If we want to go ahead with the procedure and our cluster is **private** we need to make sure that our **Hypershift Operator** has been deployed with the arguments set in the **Private** tab for **Hypershift Operator Deployment access endpoints arguments** and our **Hosted Cluster** has been created using the arguments following the **Private** tab in the **Arguments of the CLI when creating a HostedCluster** section down below.
+
+- Hypershift Operator Deployment endpoint access arguments
+
+=== "**Public** and **PublicAndPrivate**"
+
+    ```bash
+    --external-dns-provider=aws \
+    --external-dns-credentials=<AWS Credentials location> \
+    --external-dns-domain-filter=<External DNS for HostedCluster>
+    ```
+
+=== "**Private**"
+
+    ```bash
+    --private-platform aws \
+    --aws-private-creds <Path to AWS Credentials> \
+    --aws-private-region <AWS Region>
+    ```
+
+- Arguments of the CLI when creating a HostedCluster
+
+=== "**Public**"
+
+    ```bash
+    --external-dns-domain=<External DNS Domain> \
+    --endpoint-access=Public
+    ```
+
+=== "**PublicAndPrivate**"
+
+    ```bash
+    --external-dns-domain=<External DNS Domain> \
+    --endpoint-access=PublicAndPrivate
+    ```
+
+
+=== "**Private**"
+
+    ```bash
+    --endpoint-access=Private
+    ```
 
 This way, the server URL will end in something like this: "https://api-sample-hosted.sample-hosted.aws.openshift.com"
 
@@ -31,7 +91,7 @@ The way that a Hosted Cluster migration follows, it's basically done in 3 phases
 
 Let's setup the environment to start the migration with our first cluster.
 
-## Environment and Context
+### Environment and Context
 
 Our scenario involves 3 Clusters, 2 Management ones and 1 HostedCluster, which will be migrated. Depending on the situation we would like to migrate just the ControlPlane or the Controlplane + nodes.
 
@@ -105,7 +165,7 @@ And this is how the Migration workflow will happen
 ![gif](../../images/hc-migration-workflow.gif)
 
 
-## Backup
+### Backup
 
 This section complains interaction among multiple components. We will need to backup all the relevant things to raise up this same cluster in our target management cluster.
 
@@ -167,9 +227,16 @@ if [ "${CONTROL_PLANE_AVAILABILITY_POLICY}" = "HighlyAvailable" ]; then
   ETCD_PODS="etcd-0 etcd-1 etcd-2"
 fi
 
+## If you are in 4.12 or above, use this one
+ETCD_CA_LOCATION=/etc/etcd/tls/etcd-ca/ca.crt
+
+## If you are in 4.11 or below, use this other one
+#ETCD_CA_LOCATION=/etc/etcd/tls/client/etcd-client-ca.crt
+
 for POD in ${ETCD_PODS}; do
   # Create an etcd snapshot
-  oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl --cacert /etc/etcd/tls/client/etcd-client-ca.crt --cert /etc/etcd/tls/client/etcd-client.crt --key /etc/etcd/tls/client/etcd-client.key --endpoints=localhost:2379 snapshot save /var/lib/data/snapshot.db
+  oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl --cacert ${ETCD_CA_LOCATION} --cert /etc/etcd/tls/client/etcd-client.crt --key /etc/etcd/tls/client/etcd-client.key --endpoints=localhost:2379 snapshot save /var/lib/data/snapshot.db
+
   oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl -w table snapshot status /var/lib/data/snapshot.db
 
   FILEPATH="/${BUCKET_NAME}/${HC_CLUSTER_NAME}-${POD}-snapshot.db"
@@ -194,6 +261,10 @@ done
 ```
 
 </details>
+
+!!! warning Warning
+    The CA Certificate of ETCD has changed the location in 4.12, so take care about the command execution because it will fail. It's safe to reexecute this piece of code, it just will backup the ETCD in S3. In order to know which version you have installed, just execute this command `oc version -o json | jq -e .openshiftVersion`
+
 
 4. Backup Kubernetes/Openshift objects
 
@@ -285,7 +356,7 @@ done
 
 </details>
 
-5. Cleanup the ControlPlane Routes
+5. Cleanup the ControlPlane Routes (only in `PublicAndPrivate` and `Public` clusters)
 
     - This will allow the **ExternalDNS Operator** to delete the Route53 entries in AWS and they will not be recreated because of this HostedCluster it's paused.
 
@@ -298,7 +369,7 @@ done
 oc delete routes -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --all
 ```
 
-- (Alternative bash script) Cleanup OCP HC ControlPlane Routes and wait until Route53 it's clean
+- (Alternative bash script) Cleanup OCP HC ControlPlane Routes and wait until Route53 it's clean (only in `PublicAndPrivate` and `Public` clusters)
 ```bash
 function clean_routes() {
 
@@ -341,9 +412,12 @@ clean_routes "${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}" "${AWS_ZONE_ID}"
 
 </details>
 
+!!! warning Warning
+    This step is only relevant if you have a HostedCluster with a `--endpoint-access` argument as `PublicAndPrivate` or `Public`. If that's not the case, you will not have the need to execute this part.
+
 This was the last step on Backup stage, now we encourge you to validate all the OCP Objects and the S3 Bucket in order to ensure all is fine.
 
-## Restoration
+### Restoration
 
 This step it's basically catch all the objects which has been backuped up and restore them in the Destination Management Cluster.
 
@@ -520,7 +594,7 @@ done
 
 </details>
 
-## Teardown
+### Teardown
 
 In this section we will shutdown and delete the HostedCluster in the source Management Cluster.
 !!! note
@@ -656,6 +730,7 @@ oc get clusterversion
 oc get nodes
 ```
 
+8. (Optional) Restart OVN Pods in compute nodes (only in `PublicAndPrivate` and `Public` clusters)
 After the Teardown of the HostedCluster in the source Management Cluster **you will need to delete the OVN pods in the HostedCluster** in order to perform the connection with the new OVN Master running in the new Management Cluster.
 
 To do that you just need to load the proper KUBECONFIG env var with the Hosted Cluster Kubeconfig path and execute this command:
@@ -666,7 +741,10 @@ oc delete pod -n openshift-ovn-kubernetes --all
 
 with that, all the ClusterOperators that were failling and all the new pods generated, will get executed without issues.
 
-## Migration Helper script
+!!! warning Warning
+    This step is only relevant if you have a HostedCluster with a `--endpoint-access` argument as `PublicAndPrivate` or `Public`. If that's not the case, you will not have the need to execute this part.
+
+### Migration Helper script
 
 In order to ensure the that whole migration works fine, you could use this helper script that should work out of the box.
 
@@ -767,9 +845,16 @@ function backup_etcd {
       ETCD_PODS="etcd-0 etcd-1 etcd-2"
     fi
 
+    ## If you are in 4.12 or above, use this one
+    ETCD_CA_LOCATION=/etc/etcd/tls/etcd-ca/ca.crt
+
+    ## If you are in 4.11 or below, use this other one
+    #ETCD_CA_LOCATION=/etc/etcd/tls/client/etcd-client-ca.crt
+
     for POD in ${ETCD_PODS}; do
       # Create an etcd snapshot
-      oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl --cacert /etc/etcd/tls/client/etcd-client-ca.crt --cert /etc/etcd/tls/client/etcd-client.crt --key /etc/etcd/tls/client/etcd-client.key --endpoints=localhost:2379 snapshot save /var/lib/data/snapshot.db
+      oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl --cacert ${ETCD_CA_LOCATION} --cert /etc/etcd/tls/client/etcd-client.crt --key /etc/etcd/tls/client/etcd-client.key --endpoints=localhost:2379 snapshot save /var/lib/data/snapshot.db
+
       oc exec -it ${POD} -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} -- env ETCDCTL_API=3 /usr/bin/etcdctl -w table snapshot status /var/lib/data/snapshot.db
 
       FILEPATH="/${BUCKET_NAME}/${HC_CLUSTER_NAME}-${POD}-snapshot.db"
@@ -1036,20 +1121,37 @@ function restore_hc {
     timeout=40
     count=0
     NODE_STATUS=$(oc get nodes --kubeconfig=${HC_KUBECONFIG} | grep -v NotReady | grep -c "worker") || NODE_STATUS=0
+    if [[ ${?} == 1 ]];then
+        # This check will only work in `Public` and `PublicAndPrivate` clusters
+        while [ ${NODE_POOL_REPLICAS} != ${NODE_STATUS} ]
+        do
+            echo "Waiting for Nodes to be Ready in the destination MGMT Cluster: ${MGMT2_CLUSTER_NAME}"
+            echo "Try: (${count}/${timeout})"
+            sleep 30
+            if [[ $count -eq timeout ]];then
+                echo "Timeout waiting for Nodes in the destination MGMT Cluster"
+                exit 1
+            fi
+            count=$((count+1))
+            NODE_STATUS=$(oc get nodes --kubeconfig=${HC_KUBECONFIG} | grep -v NotReady | grep -c "worker") || NODE_STATUS=0
+        done
+    else
+        INFRA_ID=$(oc get hc -n ${HC_CLUSTER_NS} ${HC_CLUSTER_NAME} -o jsonpath={.spec.infraID})
+        NODE_STATUS=$(oc get machines -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --kubeconfig=${MGMT2_KUBECONFIG} | grep "${INFRA_ID}") | grep -c Running || NODE_STATUS=0
 
-    while [ ${NODE_POOL_REPLICAS} != ${NODE_STATUS} ]
-    do
-        echo "Waiting for Nodes to be Ready in the destination MGMT Cluster: ${MGMT2_CLUSTER_NAME}"
-        echo "Try: (${count}/${timeout})"
-        sleep 30
-        if [[ $count -eq timeout ]];then
-            echo "Timeout waiting for Nodes in the destination MGMT Cluster"
-            exit 1
-        fi
-        count=$((count+1))
-        NODE_STATUS=$(oc get nodes --kubeconfig=${HC_KUBECONFIG} | grep -v NotReady | grep -c "worker") || NODE_STATUS=0
-    done
-
+        while [ ${NODE_POOL_REPLICAS} != ${NODE_STATUS} ]
+        do
+            echo "Waiting for Nodes to be Ready in the destination MGMT Cluster: ${MGMT2_CLUSTER_NAME}"
+            echo "Try: (${count}/${timeout})"
+            sleep 30
+            if [[ $count -eq timeout ]];then
+                echo "Timeout waiting for Nodes in the destination MGMT Cluster"
+                exit 1
+            fi
+            count=$((count+1))
+            NODE_STATUS=$(oc get machines -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --kubeconfig=${MGMT2_KUBECONFIG} | grep "${INFRA_ID}") | grep -c Running || NODE_STATUS=0
+        done
+    fi
 
 }
 

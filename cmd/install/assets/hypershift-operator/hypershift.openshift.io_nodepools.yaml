@@ -362,6 +362,20 @@ spec:
                         description: RootVolume specifies configuration for the root
                           volume of node instances.
                         properties:
+                          encrypted:
+                            description: Encrypted is whether the volume should be
+                              encrypted or not.
+                            type: boolean
+                            x-kubernetes-validations:
+                            - message: Encrypted is immutable
+                              rule: self == oldSelf
+                          encryptionKey:
+                            description: EncryptionKey is the KMS key to use to encrypt
+                              the volume. Can be either a KMS key ID or ARN. If Encrypted
+                              is set and this is omitted, the default AWS key will
+                              be used. The key must already exist and be accessible
+                              by the controller.
+                            type: string
                           iops:
                             description: IOPS is the number of IOPS requested for
                               the disk. This is only valid for type io1.
@@ -927,13 +941,17 @@ spec:
                 description: "ClusterName is the name of the HostedCluster this NodePool
                   belongs to. \n TODO(dan): Should this be a LocalObjectReference?"
                 type: string
+                x-kubernetes-validations:
+                - message: ClusterName is immutable
+                  rule: self == oldSelf
               config:
                 description: "Config is a list of references to ConfigMaps containing
                   serialized MachineConfig resources to be injected into the ignition
                   configurations of nodes in the NodePool. The MachineConfig API schema
                   is defined here: \n https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185
                   \n Each ConfigMap must have a single key named \"config\" whose
-                  value is the JSON or YAML of a serialized MachineConfig."
+                  value is the JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
+                  KubeletConfig ContainerRuntimeConfig MachineConfig or ImageContentSourcePolicy"
                 items:
                   description: LocalObjectReference contains enough information to
                     let you locate the referenced object inside the same namespace.
@@ -1036,6 +1054,9 @@ spec:
                     - Replace
                     - InPlace
                     type: string
+                    x-kubernetes-validations:
+                    - message: UpgradeType is immutable
+                      rule: self == oldSelf
                 required:
                 - upgradeType
                 type: object
@@ -1173,6 +1194,20 @@ spec:
                         description: RootVolume specifies configuration for the root
                           volume of node instances.
                         properties:
+                          encrypted:
+                            description: Encrypted is whether the volume should be
+                              encrypted or not.
+                            type: boolean
+                            x-kubernetes-validations:
+                            - message: Encrypted is immutable
+                              rule: self == oldSelf
+                          encryptionKey:
+                            description: EncryptionKey is the KMS key to use to encrypt
+                              the volume. Can be either a KMS key ID or ARN. If Encrypted
+                              is set and this is omitted, the default AWS key will
+                              be used. The key must already exist and be accessible
+                              by the controller.
+                            type: string
                           iops:
                             description: IOPS is the number of IOPS requested for
                               the disk. This is only valid for type io1.
@@ -1509,6 +1544,9 @@ spec:
                     - Azure
                     - PowerVS
                     type: string
+                    x-kubernetes-validations:
+                    - message: Type is immutable
+                      rule: self == oldSelf
                 required:
                 - type
                 type: object

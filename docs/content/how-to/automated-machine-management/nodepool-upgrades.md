@@ -4,13 +4,16 @@ title: NodePool Upgrades
 
 # NodePool Upgrades
 
-NodePools enable the ability to express intent to configure the software running in the Nodes to a certain level by exposing spec.release and spec.config. Changing any of these fields will result in a new payload generation rolled out across all Nodes belonging to a NodePool, i.e. NodePool upgrade.
+NodePools enable the ability to express intent to configure the software running in the Nodes to a certain level by exposing `spec.release` and `spec.config`. Changing any of these fields will result in a new payload generation rolled out across all Nodes belonging to a NodePool, i.e. NodePool upgrade.
 
-Changes to any platform specific field e.g aws instance type will also cause a rolling upgrade which will result on a set of new instances with the new type. As well, some cluster config changes (e.g. proxy, certs) may also trigger a rolling upgrade if the change propagates to the node.
+Changes to any platform specific field, e.g. aws instance type, will also cause a rolling upgrade, which will result on a set of new instances with the new type. As well, some cluster config changes (e.g. proxy, certs) may also trigger a rolling upgrade if the change propagates to the node.
 
 NodePools support two types of upgrades: Replace and InPlace, specified via [UpgradeType](../../reference/api.md#hypershift.openshift.io/v1alpha1.UpgradeType).
 
-Note that you cannot switch the UpgradeType once the NodePool is created. You must specify UpgradeType during NodePool creation. Modifying the field after the fact may cause nodes to become unmanaged.
+!!! important
+
+    You cannot switch the UpgradeType once the NodePool is created. You must specify UpgradeType during NodePool 
+    creation. Modifying the field after the fact may cause nodes to become unmanaged.
 
 ### Replace Upgrades
 
@@ -18,7 +21,7 @@ This will create new instances in the new version while removing old nodes in a 
 
 ### InPlace Upgrades
 
-This will directly perform updates to the Operating System of the existing instances. This is usually a good choice for environments where the infrastructure constraints are higher e.g. baremetal.
+This will directly perform updates to the Operating System of the existing instances. This is usually a good choice for environments where the infrastructure constraints are higher e.g. bare metal.
 
 ### Triggering Upgrades
 

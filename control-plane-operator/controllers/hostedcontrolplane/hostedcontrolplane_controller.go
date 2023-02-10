@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	routev1 "github.com/openshift/api/route/v1"
@@ -52,6 +54,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/scheduler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
@@ -72,6 +75,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/duration"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -146,6 +150,7 @@ type HostedControlPlaneReconciler struct {
 	OperateOnReleaseImage         string
 	DefaultIngressDomain          string
 	MetricsSet                    metrics.MetricsSet
+	ec2Client                     ec2iface.EC2API
 	reconcileInfrastructureStatus func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error)
 }
 
@@ -170,11 +175,54 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	r.reconcileInfrastructureStatus = r.defaultReconcileInfrastructureStatus
 
+	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
+	// when reconciling an AWS hosted control plane
+	if os.Getenv("AWS_SHARED_CREDENTIALS_FILE") != "" {
+		awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
+		awsConfig := awssdk.NewConfig()
+		r.ec2Client = ec2.New(awsSession, awsConfig)
+	}
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) setup(createOrUpdate upsert.CreateOrUpdateFN) {
-	r.createOrUpdate = createOrUpdateWithOwnerRefFactory(createOrUpdate)
+func isScrapeConfig(obj client.Object) bool {
+	switch obj.(type) {
+	case *prometheusoperatorv1.ServiceMonitor:
+		return true
+	case *prometheusoperatorv1.PodMonitor:
+		return true
+	}
+
+	return false
+}
+
+func isClusterVersionAvailable(hcp *hyperv1.HostedControlPlane) bool {
+	condition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionAvailable))
+
+	return condition != nil && condition.Status == metav1.ConditionTrue
+}
+
+func createOrUpdateWithDelayForScrapeConfigs(hcp *hyperv1.HostedControlPlane, upstreamCreateOrUpdate upsert.CreateOrUpdateFN) upsert.CreateOrUpdateFN {
+	return func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+		// Skipping creation / update of scrape configs (servicemonitor and podmonitor resources) till condition ClusterVersionAvailable is met.
+		// Meeting this condition is equivalent to reach 'Complete' progress on the corresponding hosted cluster
+		if isScrapeConfig(obj) && !isClusterVersionAvailable(hcp) {
+			log := ctrl.LoggerFrom(ctx)
+			log.Info("Skipping creation/update of scrape config as "+string(hyperv1.ClusterVersionAvailable)+" condition is not yet met", "scrapeConfig", obj)
+
+			return controllerutil.OperationResultNone, nil
+		}
+
+		return upstreamCreateOrUpdate(ctx, c, obj, f)
+	}
+}
+
+func (r *HostedControlPlaneReconciler) setup(upstreamCreateOrUpdate upsert.CreateOrUpdateFN) {
+	createOrUpdateFactory := createOrUpdateWithOwnerRefFactory(upstreamCreateOrUpdate)
+
+	r.createOrUpdate = func(hcp *hyperv1.HostedControlPlane) upsert.CreateOrUpdateFN {
+		return createOrUpdateWithDelayForScrapeConfigs(hcp, createOrUpdateFactory(hcp))
+	}
 }
 
 type eventHandler struct {
@@ -222,19 +270,24 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 	// This is a best effort ping to the identity provider
 	// that enables access from the operator to the cloud provider resources.
-	healthCheckIdentityProvider(ctx, hostedControlPlane)
+	healthCheckIdentityProvider(ctx, hostedControlPlane, r.ec2Client)
 
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
+		if err := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to destroy default workeer security group: %w", err)
+		}
+
 		if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
 			done, err := r.removeCloudResources(ctx, hostedControlPlane)
 			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed")
+				return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed: %w", err)
 			}
 			if !done {
 				return ctrl.Result{RequeueAfter: time.Minute}, nil
 			}
 		}
+
 		if controllerutil.ContainsFinalizer(hostedControlPlane, finalizer) {
 			originalHCP := hostedControlPlane.DeepCopy()
 			controllerutil.RemoveFinalizer(hostedControlPlane, finalizer)
@@ -470,6 +523,39 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
 
+	// Reconcile external DNS status
+	{
+		newCondition := metav1.Condition{
+			Type:   string(hyperv1.ExternalDNSReachable),
+			Status: metav1.ConditionUnknown,
+			Reason: hyperv1.StatusUnknownReason,
+		}
+
+		kasExternalHostname := util.ServiceExternalDNSHostname(hostedControlPlane, hyperv1.APIServer)
+		if kasExternalHostname != "" {
+			if err := util.ResolveDNSHostname(ctx, kasExternalHostname); err != nil {
+				newCondition = metav1.Condition{
+					Type:    string(hyperv1.ExternalDNSReachable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.ExternalDNSHostNotReachableReason,
+					Message: err.Error(),
+				}
+			} else {
+				newCondition = metav1.Condition{
+					Type:    string(hyperv1.ExternalDNSReachable),
+					Status:  metav1.ConditionTrue,
+					Message: hyperv1.AllIsWellMessage,
+					Reason:  hyperv1.AsExpectedReason,
+				}
+			}
+		} else {
+			newCondition.Message = "External DNS is not configured"
+		}
+
+		newCondition.ObservedGeneration = hostedControlPlane.Generation
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+	}
+
 	// Reconcile hostedcontrolplane availability and Ready flag
 	{
 		infrastructureCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.InfrastructureReady))
@@ -612,20 +698,11 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		}
 	}
 
-	r.Log.Info("Reconciling autoscaler")
-	if err := r.reconcileAutoscaler(ctx, hostedControlPlane, releaseImage.ComponentImages(), createOrUpdate); err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
-	}
-
-	r.Log.Info("Reconciling machine approver")
-	if err := r.reconcileMachineApprover(ctx, hostedControlPlane, releaseImage.ComponentImages(), createOrUpdate); err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
-	}
-
 	r.Log.Info("Reconciling infrastructure services")
 	if err := r.reconcileInfrastructure(ctx, hostedControlPlane, createOrUpdate); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to ensure infrastructure: %w", err)
 	}
+
 	// Block here until infra status reports readiness
 	// TODO(dmace): This seems a bit heavy handed vs. making more granular bits no-op if
 	// they don't have the specific required inputs
@@ -638,7 +715,28 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
 	}
 
-	return reconcile.Result{}, r.reconcile(ctx, hostedControlPlane, createOrUpdate, releaseImage, infraStatus)
+	var errs []error
+
+	if err := r.reconcile(ctx, hostedControlPlane, createOrUpdate, releaseImage, infraStatus); err != nil {
+		errs = append(errs, err)
+	}
+
+	r.Log.Info("Reconciling autoscaler")
+	if err := r.reconcileAutoscaler(ctx, hostedControlPlane, releaseImage.ComponentImages(), createOrUpdate); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile autoscaler: %w", err))
+	}
+
+	r.Log.Info("Reconciling machine approver")
+	if err := r.reconcileMachineApprover(ctx, hostedControlPlane, releaseImage.ComponentImages(), createOrUpdate); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile machine approver: %w", err))
+	}
+
+	r.Log.Info("Reconciling default security group")
+	if err := r.reconcileDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile default security group"))
+	}
+
+	return ctrl.Result{}, utilerrors.NewAggregate(errs)
 }
 
 // useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.
@@ -1540,7 +1638,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 
 	konnectivityCACM := manifests.KonnectivityCAConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityCACM, func() error {
-		return pki.ReconcileConnectivityConfigMap(konnectivityCACM, p.OwnerRef, konnectivitySigner, rootCASecret)
+		return pki.ReconcileKonnectivityConfigMap(konnectivityCACM, p.OwnerRef, konnectivitySigner)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity CA config map: %v", err)
 	}
@@ -3245,19 +3343,9 @@ func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Cont
 }
 
 func shouldCleanupCloudResources(log logr.Logger, hcp *hyperv1.HostedControlPlane) bool {
-	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
-		oidcConfigValid := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidOIDCConfiguration))
-		if oidcConfigValid != nil && oidcConfigValid.Status == metav1.ConditionFalse {
-			log.Info("Skipping hosted cluster cloud resources cleanup",
-				"condition", string(hyperv1.ValidOIDCConfiguration), "status", oidcConfigValid.Status)
-			return false
-		}
-		validIdentityProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
-		if validIdentityProvider != nil && validIdentityProvider.Status == metav1.ConditionFalse {
-			log.Info("Skipping hosted cluster cloud resources cleanup",
-				"condition", string(hyperv1.ValidAWSIdentityProvider), "status", validIdentityProvider.Status)
-			return false
-		}
+	if msg, isValid := hasValidCloudCredentials(hcp); !isValid {
+		log.Info("Skipping hosted cluster cloud resources cleanup", "reason", msg)
+		return false
 	}
 	return hcp.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true"
 }
@@ -3398,17 +3486,12 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 	return nil
 }
 
-func healthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
+func healthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedControlPlane, ec2Client ec2iface.EC2API) {
 	if hcp.Spec.Platform.AWS == nil {
 		return
 	}
 
 	log := ctrl.LoggerFrom(ctx)
-
-	awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
-	awsConfig := awssdk.NewConfig()
-	awsConfig.Region = awssdk.String("us-east-1")
-	ec2Client := ec2.New(awsSession, awsConfig)
 
 	// We try to interact with cloud provider to see validate is operational.
 	if _, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{}); err != nil {
@@ -3460,4 +3543,234 @@ func healthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedControl
 		Reason:             hyperv1.AsExpectedReason,
 	}
 	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+}
+
+func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	logger := ctrl.LoggerFrom(ctx)
+	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
+		// Not AWS platform, skip
+		return nil
+	}
+	if hcp.Status.Platform != nil && hcp.Status.Platform.AWS != nil && hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID != "" {
+		// Security group has already been created, nothing to do
+		return nil
+	}
+	validProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+	if validProvider == nil || validProvider.Status != metav1.ConditionTrue {
+		logger.Info("Identity provider not ready. Skipping security group creation.")
+		return nil
+	}
+
+	originalHCP := hcp.DeepCopy()
+	var condition *metav1.Condition
+	sgID, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp.Spec.InfraID, hcp.Spec.Platform.AWS.CloudProviderConfig.VPC, hcp.Spec.Platform.AWS.ResourceTags)
+	if creationErr != nil {
+		condition = &metav1.Condition{
+			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
+			Status:  metav1.ConditionFalse,
+			Message: creationErr.Error(),
+			Reason:  hyperv1.AWSErrorReason,
+		}
+	} else {
+		condition = &metav1.Condition{
+			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
+			Status:  metav1.ConditionTrue,
+			Message: hyperv1.AllIsWellMessage,
+			Reason:  hyperv1.AsExpectedReason,
+		}
+		hcp.Status.Platform = &hyperv1.PlatformStatus{
+			AWS: &hyperv1.AWSPlatformStatus{
+				DefaultWorkerSecurityGroupID: sgID,
+			},
+		}
+	}
+	meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+
+	if err := r.Client.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+
+	return creationErr
+}
+
+func awsSecurityGroupFilters(infraID string) []*ec2.Filter {
+	return []*ec2.Filter{
+		{
+			Name:   awssdk.String(fmt.Sprintf("tag:kubernetes.io/cluster/%s", infraID)),
+			Values: []*string{awssdk.String("owned")},
+		},
+		{
+			Name:   awssdk.String("tag:Name"),
+			Values: []*string{awssdk.String(awsSecurityGroupName(infraID))},
+		},
+	}
+}
+
+func awsSecurityGroupName(infraID string) string {
+	return fmt.Sprintf("%s-default-sg", infraID)
+}
+
+func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, infraID, vpcID string, additionalTags []hyperv1.AWSResourceTag) (string, error) {
+	logger := ctrl.LoggerFrom(ctx)
+
+	// Determine VPC cidr
+	vpcResult, err := ec2Client.DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
+		VpcIds: []*string{awssdk.String(vpcID)},
+	})
+	if err != nil {
+		logger.Error(err, "Failed to describe vpc", "vpcID", vpcID)
+		return "", fmt.Errorf("failed to describe vpc %s, code %s", vpcID, awsErrorCode(err))
+	}
+	if len(vpcResult.Vpcs) == 0 {
+		return "", fmt.Errorf("vpc %s not found", vpcID)
+	}
+	vpcCIDR := awssdk.StringValue(vpcResult.Vpcs[0].CidrBlock)
+	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID)})
+	if err != nil {
+		logger.Error(err, "Failed to list security groups")
+		return "", fmt.Errorf("cannot list security groups, code: %s", awsErrorCode(err))
+	}
+	sgID := ""
+	var sg *ec2.SecurityGroup
+	if len(describeSGResult.SecurityGroups) > 0 {
+		sg = describeSGResult.SecurityGroups[0]
+		sgID = awssdk.StringValue(sg.GroupId)
+	}
+	if sgID == "" {
+		// Create a security group if one is not found
+
+		tagKeys := sets.NewString()
+		var tags []*ec2.Tag
+		for _, tag := range additionalTags {
+			tagKeys.Insert(tag.Key)
+			tags = append(tags, &ec2.Tag{
+				Key:   awssdk.String(tag.Key),
+				Value: awssdk.String(tag.Value),
+			})
+		}
+		clusterKey := fmt.Sprintf("kubernetes.io/cluster/%s", infraID)
+		if !tagKeys.Has(clusterKey) {
+			tags = append(tags, &ec2.Tag{
+				Key:   awssdk.String(clusterKey),
+				Value: awssdk.String("owned"),
+			})
+		}
+		if !tagKeys.Has("Name") {
+			tags = append(tags, &ec2.Tag{
+				Key:   awssdk.String("Name"),
+				Value: awssdk.String(awsSecurityGroupName(infraID)),
+			})
+		}
+		createSGResult, err := ec2Client.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
+			GroupName:   awssdk.String(awsSecurityGroupName(infraID)),
+			Description: awssdk.String("default worker security group"),
+			VpcId:       awssdk.String(vpcID),
+			TagSpecifications: []*ec2.TagSpecification{
+				{
+					ResourceType: awssdk.String("security-group"),
+					Tags:         tags,
+				},
+			},
+		})
+		if err != nil {
+			logger.Error(err, "Failed to create security group")
+			return "", fmt.Errorf("failed to create security group, code: %s", awsErrorCode(err))
+		}
+		sgID = awssdk.StringValue(createSGResult.GroupId)
+
+		// Fetch just-created SG
+		describeSGInput := &ec2.DescribeSecurityGroupsInput{
+			GroupIds: []*string{awssdk.String(sgID)},
+		}
+		if err = ec2Client.WaitUntilSecurityGroupExistsWithContext(ctx, describeSGInput); err != nil {
+			logger.Error(err, "Failed to wait for security group to exist")
+			return "", fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, awsErrorCode(err))
+		}
+
+		describeSGResult, err = ec2Client.DescribeSecurityGroups(describeSGInput)
+		if err != nil || len(describeSGResult.SecurityGroups) == 0 {
+			logger.Error(err, "Failed to fetch security group", "sgID", sgID)
+			return "", fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, awsErrorCode(err))
+		}
+
+		sg = describeSGResult.SecurityGroups[0]
+		logger.Info("Created security group", "id", sgID)
+	}
+	ingressPermissions := supportawsutil.DefaultWorkerSGIngressRules(vpcCIDR, sgID, awssdk.StringValue(sg.OwnerId))
+	_, err = ec2Client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
+		GroupId:       awssdk.String(sgID),
+		IpPermissions: ingressPermissions,
+	})
+	if err != nil {
+		if awsErrorCode(err) != "InvalidPermission.Duplicate" {
+			logger.Error(err, "Failed to set security group ingress rules")
+			return "", fmt.Errorf("failed to set security group ingress rules, code: %s", awsErrorCode(err))
+		}
+		logger.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)
+	}
+	return sgID, nil
+}
+
+func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	logger := ctrl.LoggerFrom(ctx)
+	if msg, isValid := hasValidCloudCredentials(hcp); !isValid {
+		logger.Info("Skipping default SecurityGroup cleanup", "reason", msg)
+		return nil
+	}
+	describeSGResult, err := r.ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(hcp.Spec.InfraID)})
+	if err != nil {
+		return fmt.Errorf("cannot list security groups: %w", err)
+	}
+	if len(describeSGResult.SecurityGroups) == 0 {
+		return nil
+	}
+	sg := describeSGResult.SecurityGroups[0]
+
+	if len(sg.IpPermissions) > 0 {
+		if _, err = r.ec2Client.RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
+			GroupId:       sg.GroupId,
+			IpPermissions: sg.IpPermissions,
+		}); err != nil {
+			return fmt.Errorf("failed to revoke security group ingress permissions for %s: %w", awssdk.StringValue(sg.GroupId), err)
+		}
+	}
+
+	if len(sg.IpPermissionsEgress) > 0 {
+		if _, err = r.ec2Client.RevokeSecurityGroupEgressWithContext(ctx, &ec2.RevokeSecurityGroupEgressInput{
+			GroupId:       sg.GroupId,
+			IpPermissions: sg.IpPermissionsEgress,
+		}); err != nil {
+			return fmt.Errorf("failed to revoke security group egress permissions for %s: %w", awssdk.StringValue(sg.GroupId), err)
+		}
+	}
+
+	if _, err = r.ec2Client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
+		GroupId: sg.GroupId,
+	}); err != nil {
+		return fmt.Errorf("failed to delete security group %s: %w", awssdk.StringValue(sg.GroupId), err)
+	}
+	return nil
+
+}
+
+func awsErrorCode(err error) string {
+	if awsErr, ok := err.(awserr.Error); ok {
+		return awsErr.Code()
+	}
+	return ""
+}
+
+func hasValidCloudCredentials(hcp *hyperv1.HostedControlPlane) (string, bool) {
+	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
+		return "", true
+	}
+	oidcConfigValid := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidOIDCConfiguration))
+	if oidcConfigValid != nil && oidcConfigValid.Status == metav1.ConditionFalse {
+		return "Invalid OIDC configuration", false
+	}
+	validIdentityProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+	if validIdentityProvider != nil && validIdentityProvider.Status == metav1.ConditionFalse {
+		return "Invalid AWS identity provider", false
+	}
+	return "", true
 }
