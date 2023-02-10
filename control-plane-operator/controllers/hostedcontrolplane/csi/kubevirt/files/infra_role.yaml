@@ -9,7 +9,7 @@ rules:
   verbs: ["get", "create", "delete"]
 - apiGroups: ["kubevirt.io"]
   resources: ["virtualmachineinstances"]
-  verbs: ["list"]
+  verbs: ["list", "get"]
 - apiGroups: ["subresources.kubevirt.io"]
   resources: ["virtualmachineinstances/addvolume", "virtualmachineinstances/removevolume"]
   verbs: ["update"]
