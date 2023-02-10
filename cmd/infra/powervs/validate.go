@@ -13,8 +13,7 @@ var (
 	cloudInstanceNotFound = func(cloudInstance string) error { return fmt.Errorf("%s cloud instance not found", cloudInstance) }
 )
 
-// validateCloudInstanceByID
-// validates cloud instance's existence by id
+// validateCloudInstanceByID validates cloud instance's existence by id
 func validateCloudInstanceByID(ctx context.Context, cloudInstanceID string) (*resourcecontrollerv2.ResourceInstance, error) {
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{Authenticator: getIAMAuth()})
 	if err != nil {
@@ -37,8 +36,7 @@ func validateCloudInstanceByID(ctx context.Context, cloudInstanceID string) (*re
 	return resourceInstance, nil
 }
 
-// validateCloudInstanceByName
-// validates cloud instance's existence by name
+// validateCloudInstanceByName validates cloud instance's existence by name
 func validateCloudInstanceByName(ctx context.Context, cloudInstance string, resourceGroupID string, powerVsZone string, serviceID string, servicePlanID string) (*resourcecontrollerv2.ResourceInstance, error) {
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{Authenticator: getIAMAuth()})
 	if err != nil {
@@ -92,9 +90,8 @@ func validateCloudInstanceByName(ctx context.Context, cloudInstance string, reso
 	return resourceInstance, nil
 }
 
-// validateVpc
-// validates vpc's existence by name and validate its default security group's inbound rules to allow http & https
-func validateVpc(ctx context.Context, vpcName string, resourceGroupID string, v1 *vpcv1.VpcV1) (*vpcv1.VPC, error) {
+// validateVPC validates vpc's existence by name and validate its default security group's inbound rules to allow http & https
+func validateVPC(ctx context.Context, vpcName string, resourceGroupID string, v1 *vpcv1.VpcV1) (*vpcv1.VPC, error) {
 	var vpc *vpcv1.VPC
 
 	f := func(start string) (bool, string, error) {
@@ -127,13 +124,13 @@ func validateVpc(ctx context.Context, vpcName string, resourceGroupID string, v1
 		return nil, fmt.Errorf("%s vpc not found", vpcName)
 	}
 
-	vpcSg, _, err := v1.GetSecurityGroupWithContext(ctx, &vpcv1.GetSecurityGroupOptions{ID: vpc.DefaultSecurityGroup.ID})
+	vpcSG, _, err := v1.GetSecurityGroupWithContext(ctx, &vpcv1.GetSecurityGroupOptions{ID: vpc.DefaultSecurityGroup.ID})
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving security group of vpc %w", err)
 	}
 
 	var httpOk, httpsOk bool
-	for _, ruleInf := range vpcSg.Rules {
+	for _, ruleInf := range vpcSG.Rules {
 		switch rule := ruleInf.(type) {
 		case *vpcv1.SecurityGroupRuleSecurityGroupRuleProtocolTcpudp:
 			if *rule.PortMin <= 80 && *rule.PortMax >= 80 {
@@ -152,8 +149,7 @@ func validateVpc(ctx context.Context, vpcName string, resourceGroupID string, v1
 	return vpc, nil
 }
 
-// listAndGetCloudConnection
-// helper func will list the cloud connection and return the matched cloud connection id and total cloud connection count
+// listAndGetCloudConnection helper func will list the cloud connection and return the matched cloud connection id and total cloud connection count
 func listAndGetCloudConnection(cloudConnName string, client *instance.IBMPICloudConnectionClient) (int, string, error) {
 	cloudConnL, err := client.GetAll()
 	if err != nil {
@@ -176,15 +172,13 @@ func listAndGetCloudConnection(cloudConnName string, client *instance.IBMPICloud
 	return 0, "", cloudConNotFound(cloudConnName)
 }
 
-// validateCloudConnectionByName
-// validates cloud connection's existence by name
+// validateCloudConnectionByName validates cloud connection's existence by name
 func validateCloudConnectionByName(name string, client *instance.IBMPICloudConnectionClient) (string, error) {
 	_, cloudConnID, err := listAndGetCloudConnection(name, client)
 	return cloudConnID, err
 }
 
-// validateCloudConnectionInPowerVSZone
-// while creating a new cloud connection this func validates whether to create a new cloud connection
+// validateCloudConnectionInPowerVSZone while creating a new cloud connection this func validates whether to create a new cloud connection
 // with respect to powervs zone's existing cloud connections
 func validateCloudConnectionInPowerVSZone(name string, client *instance.IBMPICloudConnectionClient) (string, error) {
 	cloudConnCount, cloudConnID, err := listAndGetCloudConnection(name, client)

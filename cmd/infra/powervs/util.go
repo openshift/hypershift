@@ -6,13 +6,13 @@ import (
 )
 
 // getStartToken parses the given url string and gets the 'start' query param
-func getStartToken(nextUrlS string) (string, error) {
-	nextUrl, err := url.Parse(nextUrlS)
-	if err != nil || nextUrl == nil {
-		return "", fmt.Errorf("could not parse next url for getting next resources %w", err)
+func getStartToken(nextURL string) (string, error) {
+	urlParsed, err := url.Parse(nextURL)
+	if err != nil || urlParsed == nil {
+		return "", fmt.Errorf("could not parse next urlParsed for getting next resources %w", err)
 	}
 
-	start := nextUrl.Query().Get("start")
+	start := urlParsed.Query().Get("start")
 	return start, nil
 }
 

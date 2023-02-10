@@ -128,7 +128,6 @@ func createServiceIDClient(name, APIKey, accountID, resourceGroupID, crYaml, sec
 
 // setupServiceID create serviceID and APIKey for credential request yaml passed
 func setupServiceID(name, APIKey, accountID, resourceGroupID, crYaml, secretRefName, secretRefNamespace string) (*corev1.Secret, error) {
-
 	serviceID, err := createServiceIDClient(name, APIKey, accountID, resourceGroupID, crYaml, secretRefName, secretRefNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("error creating serviceID client, err: %w", err)
