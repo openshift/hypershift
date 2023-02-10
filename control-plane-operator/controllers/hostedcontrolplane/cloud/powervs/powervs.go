@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"text/template"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/support/releaseinfo"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilpointer "k8s.io/utils/pointer"
+
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/releaseinfo"
 )
 
 const (
@@ -155,7 +156,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 						},
 						VolumeMounts: []corev1.VolumeMount{
 							{
-								Name:      hcp.Status.KubeConfig.Name,
+								Name:      manifests.KASServiceKubeconfigSecret("").Name,
 								MountPath: kubeConfigFileBasePath,
 							},
 							{
@@ -171,10 +172,10 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 				},
 				Volumes: []corev1.Volume{
 					{
-						Name: hcp.Status.KubeConfig.Name,
+						Name: manifests.KASServiceKubeconfigSecret("").Name,
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName:  hcp.Status.KubeConfig.Name,
+								SecretName:  manifests.KASServiceKubeconfigSecret("").Name,
 								DefaultMode: utilpointer.Int32Ptr(400),
 							},
 						},
