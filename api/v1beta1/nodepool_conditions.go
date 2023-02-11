@@ -55,6 +55,11 @@ const (
 	// NodePoolReachedIgnitionEndpoint signals if at least an instance was able to reach the ignition endpoint to get the payload.
 	// When this is false for too long it may require external user intervention to resolve. E.g. Enable AWS security groups to enable networking access.
 	NodePoolReachedIgnitionEndpoint = "ReachedIgnitionEndpoint"
+
+	// NodePoolAWSSecurityGroupAvailableConditionType signals whether the NodePool has an available security group to use.
+	// If the security group is specified for the NodePool, this condition is always true. If no security group is specified
+	// for the NodePool, the status of this condition depends on the availability of the default security group in the HostedCluster.
+	NodePoolAWSSecurityGroupAvailableConditionType = "AWSSecurityGroupAvailable"
 )
 
 // Reasons

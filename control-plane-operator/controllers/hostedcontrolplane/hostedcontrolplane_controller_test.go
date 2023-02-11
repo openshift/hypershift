@@ -6,6 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/request"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
@@ -45,6 +49,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/yaml"
 )
+
+type fakeEC2Client struct {
+	ec2iface.EC2API
+}
+
+func (*fakeEC2Client) DescribeVpcEndpointsWithContext(aws.Context, *ec2.DescribeVpcEndpointsInput, ...request.Option) (*ec2.DescribeVpcEndpointsOutput, error) {
+	return &ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")
+}
 
 func TestReconcileKubeadminPassword(t *testing.T) {
 	targetNamespace := "test"
@@ -867,6 +879,7 @@ func TestEventHandling(t *testing.T) {
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
 			return readyInfraStatus, nil
 		},
+		ec2Client: &fakeEC2Client{},
 	}
 	r.setup(controllerutil.CreateOrUpdate)
 	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
@@ -1218,6 +1231,7 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
 			return InfrastructureStatus{}, nil
 		},
+		ec2Client: &fakeEC2Client{},
 	}
 	r.setup(controllerutil.CreateOrUpdate)
 	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))

@@ -1309,7 +1309,13 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 				},
 			},
 		},
-		Status: hyperv1.HostedClusterStatus{},
+		Status: hyperv1.HostedClusterStatus{
+			Platform: &hyperv1.PlatformStatus{
+				AWS: &hyperv1.AWSPlatformStatus{
+					DefaultWorkerSecurityGroupID: "default-sg",
+				},
+			},
+		},
 	}
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1381,6 +1387,11 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 					AdditionalTags: capiaws.Tags{
 						awsClusterCloudProviderTagKey(infraID): infraLifecycleOwned,
 					},
+					AdditionalSecurityGroups: []capiaws.AWSResourceReference{
+						{
+							ID: k8sutilspointer.String("default-sg"),
+						},
+					},
 					RootVolume: &capiaws.Volume{
 						Size: 16,
 						Type: "io1",
@@ -1393,7 +1404,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	expectedMachineTemplateSpecJSON, err := json.Marshal(expectedMachineTemplate.Spec)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, "", "")
+	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, "", "", true)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(machineTemplateSpecJSON).To(BeIdenticalTo(string(expectedMachineTemplateSpecJSON)))
 

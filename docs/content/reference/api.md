@@ -1342,6 +1342,38 @@ for more details around VPC Endpoint Service allowed principals.</p>
 </tr>
 </tbody>
 </table>
+###AWSPlatformStatus { #hypershift.openshift.io/v1beta1.AWSPlatformStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformStatus">PlatformStatus</a>)
+</p>
+<p>
+<p>AWSPlatformStatus contains status specific to the AWS platform</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>defaultWorkerSecurityGroupID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DefaultWorkerSecurityGroupID is the ID of a security group created by
+the control plane operator. It is used for NodePools that don&rsquo;t specify a
+security group.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AWSResourceReference { #hypershift.openshift.io/v1beta1.AWSResourceReference }
 <p>
 (<em>Appears on:</em>
@@ -1856,6 +1888,14 @@ string
 &ldquo;ec2:DeleteVpcEndpoints&rdquo;,
 &ldquo;ec2:CreateTags&rdquo;,
 &ldquo;route53:ListHostedZones&rdquo;,
+&ldquo;ec2:CreateSecurityGroup&rdquo;,
+&ldquo;ec2:AuthorizeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:AuthorizeSecurityGroupEgress&rdquo;,
+&ldquo;ec2:DeleteSecurityGroup&rdquo;,
+&ldquo;ec2:RevokeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:RevokeSecurityGroupEgress&rdquo;,
+&ldquo;ec2:DescribeSecurityGroups&rdquo;,
+&ldquo;ec2:DescribeVpcs&rdquo;,
 ],
 &ldquo;Resource&rdquo;: &ldquo;*&rdquo;
 },
@@ -2697,7 +2737,13 @@ or invalid channel has been specified.</p>
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;EndpointAvailable&#34;</p></td>
+<tbody><tr><td><p>&#34;AWSDefaultSecurityGroupCreated&#34;</p></td>
+<td><p>AWSDefaultSecurityGroupCreated indicates whether the default security group
+for AWS workers has been created.
+A failure here indicates that NodePools without a security group will be
+blocked from creating machines.</p>
+</td>
+</tr><tr><td><p>&#34;EndpointAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint has been
 created in the guest VPC</p>
 </td>
@@ -3579,6 +3625,20 @@ This is populated after the infrastructure is ready.</p>
 plane&rsquo;s current state.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformStatus">
+PlatformStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Platform contains platform-specific status of the HostedCluster</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedControlPlaneSpec { #hypershift.openshift.io/v1beta1.HostedControlPlaneSpec }
@@ -4139,6 +4199,20 @@ for the guest cluster.</p>
 <em>(Optional)</em>
 <p>Condition contains details for one aspect of the current state of the HostedControlPlane.
 Current condition types are: &ldquo;Available&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformStatus">
+PlatformStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Platform contains platform-specific status of the HostedCluster</p>
 </td>
 </tr>
 </tbody>
@@ -5968,6 +6042,38 @@ KubevirtPlatformSpec
 <td>
 <em>(Optional)</em>
 <p>KubeVirt defines KubeVirt specific settings for cluster components.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###PlatformStatus { #hypershift.openshift.io/v1beta1.PlatformStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>PlatformStatus contains platform-specific status</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>aws</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformStatus">
+AWSPlatformStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
 </td>
 </tr>
 </tbody>

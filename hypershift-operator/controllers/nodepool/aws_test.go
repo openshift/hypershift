@@ -21,11 +21,18 @@ var volume = hyperv1.Volume{
 
 func TestAWSMachineTemplate(t *testing.T) {
 	infraName := "test"
+	defaultSG := []hyperv1.AWSResourceReference{
+		{
+			ID: k8sutilspointer.String("default"),
+		},
+	}
 	testCases := []struct {
-		name     string
-		cluster  hyperv1.HostedClusterSpec
-		nodePool hyperv1.NodePoolSpec
-		expected *capiaws.AWSMachineTemplate
+		name          string
+		cluster       hyperv1.HostedClusterSpec
+		clusterStatus hyperv1.HostedClusterStatus
+		nodePool      hyperv1.NodePoolSpec
+		expected      *capiaws.AWSMachineTemplate
+		checkError    func(*testing.T, error)
 	}{
 		{
 			name: "ebs size",
@@ -38,7 +45,8 @@ func TestAWSMachineTemplate(t *testing.T) {
 				Platform: hyperv1.NodePoolPlatform{
 					Type: hyperv1.AWSPlatform,
 					AWS: &hyperv1.AWSNodePoolPlatform{
-						RootVolume: &volume,
+						RootVolume:     &volume,
+						SecurityGroups: defaultSG,
 					},
 				},
 				Release: hyperv1.Release{},
@@ -49,6 +57,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 		{
 			name: "Tags from nodepool get copied",
 			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+				SecurityGroups: defaultSG,
 				ResourceTags: []hyperv1.AWSResourceTag{
 					{Key: "key", Value: "value"},
 				},
@@ -65,6 +74,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 					{Key: "key", Value: "value"},
 				},
 			}}},
+			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{SecurityGroups: defaultSG}}},
 
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
 				tmpl.Spec.Template.Spec.AdditionalTags["key"] = "value"
@@ -79,6 +89,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 				},
 			}}},
 			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+				SecurityGroups: defaultSG,
 				ResourceTags: []hyperv1.AWSResourceTag{
 					{Key: "nodepool-only", Value: "value"},
 					{Key: "cluster-and-nodepool", Value: "nodepool"},
@@ -91,6 +102,32 @@ func TestAWSMachineTemplate(t *testing.T) {
 				tmpl.Spec.Template.Spec.AdditionalTags["nodepool-only"] = "value"
 			}),
 		},
+		{
+			name:          "Cluster default sg is used when none specified",
+			clusterStatus: hyperv1.HostedClusterStatus{Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: "cluster-default"}}},
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.AdditionalSecurityGroups = []capiaws.AWSResourceReference{{ID: k8sutilspointer.String("cluster-default")}}
+			}),
+		},
+		{
+			name:          "NodePool sg is preferred to cluster default",
+			clusterStatus: hyperv1.HostedClusterStatus{Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: "cluster-default"}}},
+			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+				SecurityGroups: []hyperv1.AWSResourceReference{{ID: k8sutilspointer.String("nodepool-specific")}},
+			}}},
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.AdditionalSecurityGroups = []capiaws.AWSResourceReference{{ID: k8sutilspointer.String("nodepool-specific")}}
+			}),
+		},
+		{
+			name: "NotReady error is returned if no sg specified and no cluster sg is available",
+			checkError: func(t *testing.T, err error) {
+				_, isNotReady := err.(*NotReadyError)
+				if err == nil || !isNotReady {
+					t.Errorf("did not get expected NotReady error")
+				}
+			},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -100,7 +137,17 @@ func TestAWSMachineTemplate(t *testing.T) {
 			if tc.nodePool.Platform.AWS == nil {
 				tc.nodePool.Platform.AWS = &hyperv1.AWSNodePoolPlatform{}
 			}
-			result := awsMachineTemplateSpec(infraName, amiName, &hyperv1.HostedCluster{Spec: tc.cluster}, &hyperv1.NodePool{Spec: tc.nodePool})
+			result, err := awsMachineTemplateSpec(infraName, amiName, &hyperv1.HostedCluster{Spec: tc.cluster, Status: tc.clusterStatus}, &hyperv1.NodePool{Spec: tc.nodePool}, true)
+			if tc.checkError != nil {
+				tc.checkError(t, err)
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+			if tc.expected == nil {
+				return
+			}
 			if !equality.Semantic.DeepEqual(&tc.expected.Spec, result) {
 				t.Errorf(cmp.Diff(tc.expected.Spec, result))
 			}
@@ -130,7 +177,7 @@ func defaultAWSMachineTemplate(modify ...func(*capiaws.AWSMachineTemplate)) *cap
 						awsClusterCloudProviderTagKey(infraName): infraLifecycleOwned,
 					},
 					IAMInstanceProfile:       infraName + "-worker-profile",
-					AdditionalSecurityGroups: []capiaws.AWSResourceReference{},
+					AdditionalSecurityGroups: []capiaws.AWSResourceReference{{ID: k8sutilspointer.String("default")}},
 					Subnet:                   &capiaws.AWSResourceReference{},
 					UncompressedUserData:     k8sutilspointer.BoolPtr(true),
 					CloudInit: capiaws.CloudInit{
