@@ -51,7 +51,7 @@ import (
 )
 
 var (
-	setupLog = ctrl.Log.WithName("setup_like")
+	setupLog = ctrl.Log.WithName("setup")
 )
 
 func main() {
