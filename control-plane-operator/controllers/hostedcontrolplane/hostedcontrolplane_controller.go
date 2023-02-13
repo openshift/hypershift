@@ -2831,13 +2831,13 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 }
 
 func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
-	//params := registryoperator.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
-	//deployment := manifests.ImageRegistryOperatorDeployment(hcp.Namespace)
-	//if _, err := createOrUpdate(ctx, r, deployment, func() error {
-	//	return registryoperator.ReconcileDeployment(deployment, params)
-	//}); err != nil {
-	//	return fmt.Errorf("failed to reconcile image registry operator deployment: %w", err)
-	//}
+	params := registryoperator.NewParams(hcp, releaseImage.Version(), releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
+	deployment := manifests.ImageRegistryOperatorDeployment(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, deployment, func() error {
+		return registryoperator.ReconcileDeployment(deployment, params)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile image registry operator deployment: %w", err)
+	}
 
 	pm := manifests.ImageRegistryOperatorPodMonitor(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, pm, func() error {
