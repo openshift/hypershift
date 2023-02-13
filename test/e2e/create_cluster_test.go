@@ -190,3 +190,50 @@ func TestCreateClusterPrivate(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 }
+
+// TestCreateClusterProxy implements a test that creates a cluster behind a proxy with the code under test.
+func TestCreateClusterProxy(t *testing.T) {
+	t.Parallel()
+	g := NewWithT(t)
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts.AWSPlatform.EnableProxy = true
+	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
+
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
+
+	// Sanity check the cluster by waiting for the nodes to report ready
+	t.Logf("Waiting for guest client to become available")
+	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
+
+	// Wait for Nodes to be Ready
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	e2eutil.WaitForNReadyNodes(t, testContext, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+
+	// TODO (alberto): move into WaitForNReadyNodes after this PR github.com/openshift/hypershift/pull/1702 gets merged so it's validated by any call to the function in any test.
+	// It's has to wait for the PR to merged otherwise the control_plane_upgrade_test would fail.
+	t.Logf("Validating all Nodes have the NodePool label")
+	nodes := &corev1.NodeList{}
+	if err := guestClient.List(ctx, nodes); err != nil {
+		t.Fatalf("failed to list nodes in guest cluster: %v", err)
+	}
+	for _, node := range nodes.Items {
+		g.Expect(node.Labels[hyperv1.NodePoolLabel]).NotTo(BeEmpty())
+	}
+
+	// Wait for the rollout to be complete
+	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
+	e2eutil.WaitForImageRollout(t, testContext, client, hostedCluster, globalOpts.LatestReleaseImage)
+	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+
+	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
+	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
+}
