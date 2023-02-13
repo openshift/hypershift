@@ -36,7 +36,7 @@ import (
 
 func main() {
 	cmd := &cobra.Command{
-		Use:              "hypershift",
+		Use:              "hypershift"
 		SilenceUsage:     true,
 		TraverseChildren: true,
 
