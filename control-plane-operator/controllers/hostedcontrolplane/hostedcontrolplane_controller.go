@@ -3712,6 +3712,10 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 }
 
 func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
+		return nil
+	}
+
 	logger := ctrl.LoggerFrom(ctx)
 	if msg, isValid := hasValidCloudCredentials(hcp); !isValid {
 		logger.Info("Skipping default SecurityGroup cleanup", "reason", msg)
