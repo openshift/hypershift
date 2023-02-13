@@ -274,7 +274,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-		if err := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
+		if err := r.destroyDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to destroy default workeer security group: %w", err)
 		}
 
@@ -3711,8 +3711,12 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	return sgID, nil
 }
 
-func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedControlPlaneReconciler) destroyDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	logger := ctrl.LoggerFrom(ctx)
+	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
+		// Not AWS platform, skip
+		return nil
+	}
 	if msg, isValid := hasValidCloudCredentials(hcp); !isValid {
 		logger.Info("Skipping default SecurityGroup cleanup", "reason", msg)
 		return nil
