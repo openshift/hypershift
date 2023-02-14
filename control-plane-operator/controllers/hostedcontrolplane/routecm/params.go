@@ -39,6 +39,9 @@ func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, o
 			},
 		},
 	}
+	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+		params.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
+	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetDefaults(hcp, openShiftRouteControllerManagerLabels(), nil)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
