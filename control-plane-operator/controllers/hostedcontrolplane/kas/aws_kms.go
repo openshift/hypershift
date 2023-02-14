@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/api"
@@ -211,9 +212,9 @@ func buildKASContainerAWSKMSTokenMinter(image string) func(*corev1.Container) {
 		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{"/usr/bin/control-plane-operator", "token-minter"}
 		c.Args = []string{
-			"--service-account-namespace=kube-system",
-			"--service-account-name=kms-provider",
 			"--token-audience=openshift",
+			fmt.Sprintf("--service-account-namespace=%s", manifests.KASContainerAWSKMSProviderServiceAccount().Namespace),
+			fmt.Sprintf("--service-account-name=%s", manifests.KASContainerAWSKMSProviderServiceAccount().Name),
 			fmt.Sprintf("--token-file=%s", path.Join(awsKMSVolumeMounts.Path(c.Name, kasVolumeAWSKMSCloudProviderToken().Name), "token")),
 			fmt.Sprintf("--kubeconfig=%s", path.Join(awsKMSVolumeMounts.Path(c.Name, kasVolumeLocalhostKubeconfig().Name), KubeconfigKey)),
 		}
