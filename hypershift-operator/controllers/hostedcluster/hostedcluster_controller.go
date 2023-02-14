@@ -537,80 +537,36 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
 	}
 
-	// Copy the EtcdAvailable condition on the hostedcontrolplane.
+	// Copy conditions from hostedcontrolplane
 	{
-		condition := &metav1.Condition{
-			Type:               string(hyperv1.EtcdAvailable),
-			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.StatusUnknownReason,
-			Message:            "The hosted control plane is not found",
-			ObservedGeneration: hcluster.Generation,
+		hcpConditions := []hyperv1.ConditionType{
+			hyperv1.EtcdAvailable,
+			hyperv1.KubeAPIServerAvailable,
+			hyperv1.InfrastructureReady,
+			hyperv1.ExternalDNSReachable,
+			hyperv1.ValidHostedControlPlaneConfiguration,
+			hyperv1.ValidAWSKMSConfig,
 		}
-		if hcp != nil {
-			etcdCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.EtcdAvailable))
-			if etcdCondition != nil {
-				condition = etcdCondition
-			}
-		}
-		condition.ObservedGeneration = hcluster.Generation
-		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
-	}
 
-	// Copy the KubeAPIServerAvailable condition on the hostedcontrolplane.
-	{
-		condition := &metav1.Condition{
-			Type:               string(hyperv1.KubeAPIServerAvailable),
-			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.StatusUnknownReason,
-			Message:            "The hosted control plane is not found",
-			ObservedGeneration: hcluster.Generation,
-		}
-		if hcp != nil {
-			etcdCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.KubeAPIServerAvailable))
-			if etcdCondition != nil {
-				condition = etcdCondition
+		for _, conditionType := range hcpConditions {
+			condition := &metav1.Condition{
+				Type:               string(conditionType),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				Message:            "The hosted control plane is not found",
+				ObservedGeneration: hcluster.Generation,
 			}
-		}
-		condition.ObservedGeneration = hcluster.Generation
-		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
-	}
-
-	// Copy the InfrastructureReady condition on the hostedcontrolplane.
-	{
-		condition := &metav1.Condition{
-			Type:               string(hyperv1.InfrastructureReady),
-			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.StatusUnknownReason,
-			Message:            "The hosted control plane is not found",
-			ObservedGeneration: hcluster.Generation,
-		}
-		if hcp != nil {
-			infrastructureReady := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.InfrastructureReady))
-			if infrastructureReady != nil {
-				condition = infrastructureReady
+			if hcp != nil {
+				hcpCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(conditionType))
+				if hcpCondition != nil {
+					condition = hcpCondition
+				} else {
+					condition.Message = "Condition not found in the HCP"
+				}
 			}
+			condition.ObservedGeneration = hcluster.Generation
+			meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
 		}
-		condition.ObservedGeneration = hcluster.Generation
-		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
-	}
-
-	// Copy the ExternalDNSReachable condition on the hostedcontrolplane.
-	{
-		condition := &metav1.Condition{
-			Type:               string(hyperv1.ExternalDNSReachable),
-			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.StatusUnknownReason,
-			Message:            "The hosted control plane is not found",
-			ObservedGeneration: hcluster.Generation,
-		}
-		if hcp != nil {
-			externalDNSReachableCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ExternalDNSReachable))
-			if externalDNSReachableCondition != nil {
-				condition = externalDNSReachableCondition
-			}
-		}
-		condition.ObservedGeneration = hcluster.Generation
-		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
 	}
 
 	// Copy the platform status from the hostedcontrolplane
@@ -692,24 +648,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			condition.Status = metav1.ConditionTrue
 			condition.Message = "HostedCluster is supported by operator configuration"
 			condition.Reason = hyperv1.AsExpectedReason
-		}
-		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-	}
-
-	// Set ValidHostedControlPlaneConfiguration condition
-	{
-		condition := metav1.Condition{
-			Type:   string(hyperv1.ValidHostedControlPlaneConfiguration),
-			Status: metav1.ConditionUnknown,
-			Reason: hyperv1.StatusUnknownReason,
-		}
-		if hcp != nil {
-			validConfigHCPCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidHostedControlPlaneConfiguration))
-			if validConfigHCPCondition != nil {
-				condition.Status = validConfigHCPCondition.Status
-				condition.Message = validConfigHCPCondition.Message
-				condition.Reason = validConfigHCPCondition.Reason
-			}
 		}
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
