@@ -374,7 +374,7 @@ func RegistryOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.Rela
 		return []*prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "drop",
-				Regex:        "*",
+				Regex:        "(.*)",
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
