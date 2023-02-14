@@ -5571,15 +5571,24 @@ spec:
                   baseDomain:
                     description: BaseDomain is the base domain of the cluster.
                     type: string
+                    x-kubernetes-validations:
+                    - message: baseDomain is immutable
+                      rule: self == oldSelf
                   privateZoneID:
                     description: PrivateZoneID is the Hosted Zone ID where all the
                       DNS records that are only available internally to the cluster
                       exist.
                     type: string
+                    x-kubernetes-validations:
+                    - message: privateZoneID is immutable
+                      rule: self == oldSelf
                   publicZoneID:
                     description: PublicZoneID is the Hosted Zone ID where all the
                       DNS records that are publicly accessible to the internet exist.
                     type: string
+                    x-kubernetes-validations:
+                    - message: publicZoneID is immutable
+                      rule: self == oldSelf
                 required:
                 - baseDomain
                 type: object
@@ -5615,6 +5624,9 @@ spec:
                                   of the data volume for each etcd member. \n See
                                   https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1."
                                 type: string
+                                x-kubernetes-validations:
+                                - message: storageClassName is immutable
+                                  rule: self == oldSelf
                             type: object
                           restoreSnapshotURL:
                             description: RestoreSnapshotURL allows an optional list
@@ -5626,24 +5638,36 @@ spec:
                             items:
                               type: string
                             type: array
+                            x-kubernetes-validations:
+                            - message: restoreSnapshotURL is immutable
+                              rule: self == oldSelf
                           type:
                             description: Type is the kind of persistent storage implementation
                               to use for etcd.
                             enum:
                             - PersistentVolume
                             type: string
+                            x-kubernetes-validations:
+                            - message: type is immutable
+                              rule: self == oldSelf
                         required:
                         - type
                         type: object
                     required:
                     - storage
                     type: object
+                    x-kubernetes-validations:
+                    - message: managed is immutable
+                      rule: self == oldSelf
                   managementType:
                     description: ManagementType defines how the etcd cluster is managed.
                     enum:
                     - Managed
                     - Unmanaged
                     type: string
+                    x-kubernetes-validations:
+                    - message: managementType is immutable
+                      rule: self == oldSelf
                   unmanaged:
                     description: Unmanaged specifies configuration which enables the
                       control plane to integrate with an eternally managed etcd cluster.
@@ -5680,6 +5704,9 @@ spec:
                     - endpoint
                     - tls
                     type: object
+                    x-kubernetes-validations:
+                    - message: unmanaged is immutable
+                      rule: self == oldSelf
                 required:
                 - managementType
                 type: object
@@ -5769,6 +5796,9 @@ spec:
                         format: int32
                         type: integer
                     type: object
+                    x-kubernetes-validations:
+                    - message: apiServer is immutable
+                      rule: self == oldSelf
                   clusterNetwork:
                     description: ClusterNetwork is the list of IP address pools for
                       pods.
@@ -5790,6 +5820,9 @@ spec:
                       - cidr
                       type: object
                     type: array
+                    x-kubernetes-validations:
+                    - message: ClusterNetwork is immutable
+                      rule: self == oldSelf
                   machineNetwork:
                     description: MachineNetwork is the list of IP address pools for
                       machines.
@@ -5805,6 +5838,9 @@ spec:
                       - cidr
                       type: object
                     type: array
+                    x-kubernetes-validations:
+                    - message: machineNetwork is immutable
+                      rule: self == oldSelf
                   networkType:
                     default: OVNKubernetes
                     description: NetworkType specifies the SDN provider used for cluster
@@ -5815,6 +5851,9 @@ spec:
                     - OVNKubernetes
                     - Other
                     type: string
+                    x-kubernetes-validations:
+                    - message: networkType is immutable
+                      rule: self == oldSelf
                   serviceNetwork:
                     description: 'ServiceNetwork is the list of IP address pools for
                       services. NOTE: currently only one entry is supported.'
@@ -5872,6 +5911,9 @@ spec:
                     required:
                     - agentNamespace
                     type: object
+                    x-kubernetes-validations:
+                    - message: agent is immutable
+                      rule: self == oldSelf
                   aws:
                     description: AWS specifies configuration for clusters running
                       on Amazon Web Services.
@@ -5934,6 +5976,9 @@ spec:
                         required:
                         - vpc
                         type: object
+                        x-kubernetes-validations:
+                        - message: cloudProviderConfig is immutable
+                          rule: self == oldSelf
                       endpointAccess:
                         default: Public
                         description: EndpointAccess specifies the publishing scope
@@ -5949,6 +5994,9 @@ spec:
                           and is used by NodePool to resolve the correct boot AMI
                           for a given release.
                         type: string
+                        x-kubernetes-validations:
+                        - message: region is immutable
+                          rule: self == oldSelf
                       resourceTags:
                         description: ResourceTags is a list of additional tags to
                           apply to AWS resources created for the cluster. See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html
@@ -6070,6 +6118,9 @@ spec:
                               ], \"Resource\": [ \"*\" ], \"Effect\": \"Allow\" }
                               ] }"
                             type: string
+                            x-kubernetes-validations:
+                            - message: KubeCloudControllerARN is immutable
+                              rule: self == oldSelf
                           networkARN:
                             description: "NetworkARN is an ARN value referencing a
                               role appropriate for the Network Operator. \n The following
@@ -6123,6 +6174,9 @@ spec:
                               ], \"Resource\": \"*\", \"Condition\": { \"Bool\": {
                               \"kms:GrantIsForAWSResource\": true } } } ] }"
                             type: string
+                            x-kubernetes-validations:
+                            - message: NodePoolManagementARN is immutable
+                              rule: self == oldSelf
                           storageARN:
                             description: "StorageARN is an ARN value referencing a
                               role appropriate for the Storage Operator. \n The following
@@ -6144,6 +6198,9 @@ spec:
                         - nodePoolManagementARN
                         - storageARN
                         type: object
+                        x-kubernetes-validations:
+                        - message: rolesRef is immutable
+                          rule: self == oldSelf
                       serviceEndpoints:
                         description: "ServiceEndpoints specifies optional custom endpoints
                           which will override the default service endpoint of specific
@@ -6169,6 +6226,9 @@ spec:
                           - url
                           type: object
                         type: array
+                        x-kubernetes-validations:
+                        - message: serviceEndpoints is immutable
+                          rule: self == oldSelf
                     required:
                     - region
                     - rolesRef
@@ -6250,12 +6310,18 @@ spec:
                         description: AccountID is the IBMCloud account id. This field
                           is immutable. Once set, It can't be changed.
                         type: string
+                        x-kubernetes-validations:
+                        - message: accountID is immutable
+                          rule: self == oldSelf
                       cisInstanceCRN:
                         description: CISInstanceCRN is the IBMCloud CIS Service Instance's
                           Cloud Resource Name This field is immutable. Once set, It
                           can't be changed.
                         pattern: '^crn:'
                         type: string
+                        x-kubernetes-validations:
+                        - message: cisInstanceCRN is immutable
+                          rule: self == oldSelf
                       ingressOperatorCloudCreds:
                         description: IngressOperatorCloudCreds is a reference to a
                           secret containing ibm cloud credentials for ingress operator
@@ -6267,6 +6333,9 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                        x-kubernetes-validations:
+                        - message: ingressOperatorCloudCreds is immutable
+                          rule: self == oldSelf
                       kubeCloudControllerCreds:
                         description: "KubeCloudControllerCreds is a reference to a
                           secret containing cloud credentials with permissions matching
@@ -6280,6 +6349,9 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                        x-kubernetes-validations:
+                        - message: kubeCloudControllerCreds is immutable
+                          rule: self == oldSelf
                       nodePoolManagementCreds:
                         description: "NodePoolManagementCreds is a reference to a
                           secret containing cloud credentials with permissions matching
@@ -6293,6 +6365,9 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                        x-kubernetes-validations:
+                        - message: nodePoolManagementCreds is immutable
+                          rule: self == oldSelf
                       region:
                         description: Region is the IBMCloud region in which the cluster
                           resides. This configures the OCP control plane cloud integrations,
@@ -6300,11 +6375,17 @@ spec:
                           for a given release. This field is immutable. Once set,
                           It can't be changed.
                         type: string
+                        x-kubernetes-validations:
+                        - message: region is immutable
+                          rule: self == oldSelf
                       resourceGroup:
                         description: ResourceGroup is the IBMCloud Resource Group
                           in which the cluster resides. This field is immutable. Once
                           set, It can't be changed.
                         type: string
+                        x-kubernetes-validations:
+                        - message: resourceGroup is immutable
+                          rule: self == oldSelf
                       serviceInstanceID:
                         description: "ServiceInstance is the reference to the Power
                           VS service on which the server instance(VM) will be created.
@@ -6316,6 +6397,9 @@ spec:
                           instance. https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server
                           \n This field is immutable. Once set, It can't be changed."
                         type: string
+                        x-kubernetes-validations:
+                        - message: serviceInstanceID is immutable
+                          rule: self == oldSelf
                       storageOperatorCloudCreds:
                         description: StorageOperatorCloudCreds is a reference to a
                           secret containing ibm cloud credentials for storage operator
@@ -6327,6 +6411,9 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                        x-kubernetes-validations:
+                        - message: storageOperatorCloudCreds is immutable
+                          rule: self == oldSelf
                       subnet:
                         description: Subnet is the subnet to use for control plane
                           cloud resources. This field is immutable. Once set, It can't
@@ -6339,6 +6426,9 @@ spec:
                             description: Name of resource
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: subnet is immutable
+                          rule: self == oldSelf
                       vpc:
                         description: VPC specifies IBM Cloud PowerVS Load Balancing
                           configuration for the control plane. This field is immutable.
@@ -6349,21 +6439,33 @@ spec:
                               load balancer. This field is immutable. Once set, It
                               can't be changed.
                             type: string
+                            x-kubernetes-validations:
+                            - message: name is immutable
+                              rule: self == oldSelf
                           region:
                             description: Region is the IBMCloud region in which VPC
                               gets created, this VPC used for all the ingress traffic
                               into the OCP cluster. This field is immutable. Once
                               set, It can't be changed.
                             type: string
+                            x-kubernetes-validations:
+                            - message: region is immutable
+                              rule: self == oldSelf
                           subnet:
                             description: Subnet is the subnet to use for load balancer.
                               This field is immutable. Once set, It can't be changed.
                             type: string
+                            x-kubernetes-validations:
+                            - message: subnet is immutable
+                              rule: self == oldSelf
                           zone:
                             description: Zone is the availability zone where load
                               balancer cloud resources are created. This field is
                               immutable. Once set, It can't be changed.
                             type: string
+                            x-kubernetes-validations:
+                            - message: zone is immutable
+                              rule: self == oldSelf
                         required:
                         - name
                         - region
@@ -6373,6 +6475,9 @@ spec:
                           cloud resources are created. This field is immutable. Once
                           set, It can't be changed.
                         type: string
+                        x-kubernetes-validations:
+                        - message: zone is immutable
+                          rule: self == oldSelf
                     required:
                     - accountID
                     - cisInstanceCRN
@@ -6399,6 +6504,9 @@ spec:
                     - Azure
                     - PowerVS
                     type: string
+                    x-kubernetes-validations:
+                    - message: type is immutable
+                      rule: self == oldSelf
                 required:
                 - type
                 type: object
