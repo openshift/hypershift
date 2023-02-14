@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/session"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	routev1 "github.com/openshift/api/route/v1"
@@ -76,6 +78,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/duration"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -151,6 +155,7 @@ type HostedControlPlaneReconciler struct {
 	DefaultIngressDomain          string
 	MetricsSet                    metrics.MetricsSet
 	ec2Client                     ec2iface.EC2API
+	awsSession                    *session.Session
 	reconcileInfrastructureStatus func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error)
 }
 
@@ -181,6 +186,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 		awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
 		awsConfig := awssdk.NewConfig()
 		r.ec2Client = ec2.New(awsSession, awsConfig)
+		r.awsSession = awsSession
 	}
 	return nil
 }
@@ -393,6 +399,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			}
 		}
 	}
+
+	// Validate AWS KMS config
+	r.validateAWSKMSConfig(ctx, hostedControlPlane)
 
 	// Reconcile Kube APIServer status
 	{
@@ -3828,4 +3837,88 @@ func hasValidCloudCredentials(hcp *hyperv1.HostedControlPlane) (string, bool) {
 		return "Invalid AWS identity provider", false
 	}
 	return "", true
+}
+
+func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
+	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil || hcp.Spec.SecretEncryption.KMS.AWS == nil {
+		// AWS KMS not configured, skip
+		return
+	}
+	log := ctrl.LoggerFrom(ctx)
+
+	guestClient, err := r.GetGuestClusterClient(ctx, hcp)
+	if err != nil {
+		// guest cluster is not ready yet.
+		log.Error(err, "failed to create guest client")
+		return
+	}
+
+	token, err := util.CreateTokenForServiceAccount(ctx, manifests.KASContainerAWSKMSProviderServiceAccount(), guestClient)
+	if err != nil {
+		// service account might not be created in the guest cluster yet.
+		log.Error(err, "failed to create token for KMS provider service account")
+		return
+	}
+
+	roleArn := hcp.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN
+	kmsKeyArn := hcp.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN
+
+	creds, err := supportawsutil.AssumeRoleWithWebIdentity(r.awsSession, "control-plane-operator", roleArn, token)
+	if err != nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAWSKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            fmt.Sprintf("failed to assume role web identity (%s), code: %s", roleArn, awsErrorCode(err)),
+			Reason:             hyperv1.InvalidIAMRoleReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	condition := metav1.Condition{
+		Type:               string(hyperv1.ValidAWSKMSConfig),
+		ObservedGeneration: hcp.Generation,
+		Status:             metav1.ConditionTrue,
+		Message:            hyperv1.AllIsWellMessage,
+		Reason:             hyperv1.AsExpectedReason,
+	}
+
+	kmsService := kms.New(r.awsSession, awssdk.NewConfig().WithCredentials(creds))
+
+	input := &kms.EncryptInput{
+		KeyId:     awssdk.String(kmsKeyArn),
+		Plaintext: []byte("text"),
+	}
+	if _, err = kmsService.Encrypt(input); err != nil {
+		condition = metav1.Condition{
+			Type:               string(hyperv1.ValidAWSKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            fmt.Sprintf("failed to encrypt data using KMS (key: %s), code: %s", kmsKeyArn, awsErrorCode(err)),
+			Reason:             hyperv1.AWSErrorReason,
+		}
+	}
+
+	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+}
+
+func (r *HostedControlPlaneReconciler) GetGuestClusterClient(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*kubernetes.Clientset, error) {
+	kubeconfigSecret := manifests.KASExternalKubeconfigSecret(hcp.Namespace, hcp.Spec.KubeConfig)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret); err != nil {
+		return nil, err
+	}
+
+	kubeconfig := kubeconfigSecret.Data[DefaultAdminKubeconfigKey]
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+
+	clientset, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return clientset, nil
 }
