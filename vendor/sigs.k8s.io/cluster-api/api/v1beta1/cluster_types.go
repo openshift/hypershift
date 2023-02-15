@@ -116,11 +116,27 @@ type ControlPlaneTopology struct {
 	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
 
+	// MachineHealthCheck allows to enable, disable and override
+	// the MachineHealthCheck configuration in the ClusterClass for this control plane.
+	// +optional
+	MachineHealthCheck *MachineHealthCheckTopology `json:"machineHealthCheck,omitempty"`
+
 	// NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
 	// The default value is 0, meaning that the node can be drained without any time limitations.
 	// NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
 	// +optional
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
+
+	// NodeVolumeDetachTimeout is the total amount of time that the controller will spend on waiting for all volumes
+	// to be detached. The default value is 0, meaning that the volumes can be detached without any time limitations.
+	// +optional
+	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout,omitempty"`
+
+	// NodeDeletionTimeout defines how long the controller will attempt to delete the Node that the Machine
+	// hosts after the Machine is marked for deletion. A duration of 0 will retry deletion indefinitely.
+	// Defaults to 10 seconds.
+	// +optional
+	NodeDeletionTimeout *metav1.Duration `json:"nodeDeletionTimeout,omitempty"`
 }
 
 // WorkersTopology represents the different sets of worker nodes in the cluster.
@@ -161,15 +177,62 @@ type MachineDeploymentTopology struct {
 	// +optional
 	Replicas *int32 `json:"replicas,omitempty"`
 
+	// MachineHealthCheck allows to enable, disable and override
+	// the MachineHealthCheck configuration in the ClusterClass for this MachineDeployment.
+	// +optional
+	MachineHealthCheck *MachineHealthCheckTopology `json:"machineHealthCheck,omitempty"`
+
 	// NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
 	// The default value is 0, meaning that the node can be drained without any time limitations.
 	// NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
 	// +optional
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
 
+	// NodeVolumeDetachTimeout is the total amount of time that the controller will spend on waiting for all volumes
+	// to be detached. The default value is 0, meaning that the volumes can be detached without any time limitations.
+	// +optional
+	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout,omitempty"`
+
+	// NodeDeletionTimeout defines how long the controller will attempt to delete the Node that the Machine
+	// hosts after the Machine is marked for deletion. A duration of 0 will retry deletion indefinitely.
+	// Defaults to 10 seconds.
+	// +optional
+	NodeDeletionTimeout *metav1.Duration `json:"nodeDeletionTimeout,omitempty"`
+
+	// Minimum number of seconds for which a newly created machine should
+	// be ready.
+	// Defaults to 0 (machine will be considered available as soon as it
+	// is ready)
+	// +optional
+	MinReadySeconds *int32 `json:"minReadySeconds,omitempty"`
+
+	// The deployment strategy to use to replace existing machines with
+	// new ones.
+	// +optional
+	Strategy *MachineDeploymentStrategy `json:"strategy,omitempty"`
+
 	// Variables can be used to customize the MachineDeployment through patches.
 	// +optional
 	Variables *MachineDeploymentVariables `json:"variables,omitempty"`
+}
+
+// MachineHealthCheckTopology defines a MachineHealthCheck for a group of machines.
+type MachineHealthCheckTopology struct {
+	// Enable controls if a MachineHealthCheck should be created for the target machines.
+	//
+	// If false: No MachineHealthCheck will be created.
+	//
+	// If not set(default): A MachineHealthCheck will be created if it is defined here or
+	//  in the associated ClusterClass. If no MachineHealthCheck is defined then none will be created.
+	//
+	// If true: A MachineHealthCheck is guaranteed to be created. Cluster validation will
+	// block if `enable` is true and no MachineHealthCheck definition is available.
+	// +optional
+	Enable *bool `json:"enable,omitempty"`
+
+	// MachineHealthCheckClass defines a MachineHealthCheck for a group of machines.
+	// If specified (any field is set), it entirely overrides the MachineHealthCheckClass defined in ClusterClass.
+	MachineHealthCheckClass `json:",inline"`
 }
 
 // ClusterVariable can be used to customize the Cluster through
@@ -359,6 +422,8 @@ func (c *Cluster) SetConditions(conditions Conditions) {
 }
 
 // GetIPFamily returns a ClusterIPFamily from the configuration provided.
+// Note: IPFamily is not a concept in Kubernetes. It was originally introduced in CAPI for CAPD.
+// IPFamily may be dropped in a future release. More details at https://github.com/kubernetes-sigs/cluster-api/issues/7521
 func (c *Cluster) GetIPFamily() (ClusterIPFamily, error) {
 	var podCIDRs, serviceCIDRs []string
 	if c.Spec.ClusterNetwork != nil {
@@ -474,7 +539,7 @@ func (in FailureDomains) FilterControlPlane() FailureDomains {
 func (in FailureDomains) GetIDs() []*string {
 	ids := make([]*string, 0, len(in))
 	for id := range in {
-		ids = append(ids, pointer.StringPtr(id))
+		ids = append(ids, pointer.String(id))
 	}
 	return ids
 }

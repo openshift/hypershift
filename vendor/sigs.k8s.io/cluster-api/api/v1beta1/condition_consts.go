@@ -138,6 +138,7 @@ const (
 
 	// MachineHealthCheckSuccededCondition is set on machines that have passed a healthcheck by the MachineHealthCheck controller.
 	// In the event that the health check fails it will be set to False.
+	//
 	// Deprecated: This const is going to be removed in a next release. Use MachineHealthCheckSucceededCondition instead.
 	MachineHealthCheckSuccededCondition ConditionType = "HealthCheckSucceeded"
 
@@ -281,4 +282,17 @@ const (
 	// TopologyReconciledHookBlockingReason (Severity=Info) documents reconciliation of a Cluster topology
 	// not yet completed because at least one of the lifecycle hooks is blocking.
 	TopologyReconciledHookBlockingReason = "LifecycleHookBlocking"
+)
+
+// Conditions and condition reasons for ClusterClass.
+const (
+	// ClusterClassRefVersionsUpToDateCondition documents if the references in the ClusterClass are
+	// up-to-date (i.e. they are using the latest apiVersion of the current Cluster API contract from
+	// the corresponding CRD).
+	ClusterClassRefVersionsUpToDateCondition ConditionType = "RefVersionsUpToDate"
+
+	// ClusterClassOutdatedRefVersionsReason (Severity=Warning) that the references in the ClusterClass are not
+	// up-to-date (i.e. they are not using the latest apiVersion of the current Cluster API contract from
+	// the corresponding CRD).
+	ClusterClassOutdatedRefVersionsReason = "OutdatedRefVersions"
 )

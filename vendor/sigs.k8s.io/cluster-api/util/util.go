@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"github.com/blang/semver"
-	"github.com/gobuffalo/flect"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -48,6 +47,7 @@ import (
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util/annotations"
+	"sigs.k8s.io/cluster-api/util/contract"
 )
 
 const (
@@ -442,7 +442,7 @@ func HasOwner(refList []metav1.OwnerReference, apiVersion string, kinds []string
 // This function is greatly more efficient than GetCRDWithContract and should be preferred in most cases.
 func GetGVKMetadata(ctx context.Context, c client.Client, gvk schema.GroupVersionKind) (*metav1.PartialObjectMetadata, error) {
 	meta := &metav1.PartialObjectMetadata{}
-	meta.SetName(fmt.Sprintf("%s.%s", flect.Pluralize(strings.ToLower(gvk.Kind)), gvk.Group))
+	meta.SetName(contract.CalculateCRDName(gvk.Group, gvk.Kind))
 	meta.SetGroupVersionKind(apiextensionsv1.SchemeGroupVersion.WithKind("CustomResourceDefinition"))
 	if err := c.Get(ctx, client.ObjectKeyFromObject(meta), meta); err != nil {
 		return meta, errors.Wrap(err, "failed to retrieve metadata from GVK resource")
@@ -488,19 +488,6 @@ func (k KubeAwareAPIVersions) Len() int      { return len(k) }
 func (k KubeAwareAPIVersions) Swap(i, j int) { k[i], k[j] = k[j], k[i] }
 func (k KubeAwareAPIVersions) Less(i, j int) bool {
 	return k8sversion.CompareKubeAwareVersionStrings(k[i], k[j]) < 0
-}
-
-// MachinesByCreationTimestamp sorts a list of Machine by creation timestamp, using their names as a tie breaker.
-// Deprecated: This struct will be removed in a future release.
-type MachinesByCreationTimestamp []*clusterv1.Machine
-
-func (o MachinesByCreationTimestamp) Len() int      { return len(o) }
-func (o MachinesByCreationTimestamp) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
-func (o MachinesByCreationTimestamp) Less(i, j int) bool {
-	if o[i].CreationTimestamp.Equal(&o[j].CreationTimestamp) {
-		return o[i].Name < o[j].Name
-	}
-	return o[i].CreationTimestamp.Before(&o[j].CreationTimestamp)
 }
 
 // ClusterToObjectsMapper returns a mapper function that gets a cluster and lists all objects for the object passed in
