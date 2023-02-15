@@ -505,9 +505,10 @@ func (o ExampleOptions) Resources() *ExampleResources {
 					},
 				},
 				RootVolume: &hyperv1.Volume{
-					Size: o.AWS.RootVolumeSize,
-					Type: o.AWS.RootVolumeType,
-					IOPS: o.AWS.RootVolumeIOPS,
+					Size:          o.AWS.RootVolumeSize,
+					Type:          o.AWS.RootVolumeType,
+					IOPS:          o.AWS.RootVolumeIOPS,
+					EncryptionKey: o.AWS.RootVolumeEncryptionKey,
 				},
 			}
 			nodePools = append(nodePools, nodePool)

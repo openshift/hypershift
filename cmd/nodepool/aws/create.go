@@ -11,13 +11,14 @@ import (
 )
 
 type AWSPlatformCreateOptions struct {
-	InstanceProfile string
-	SubnetID        string
-	SecurityGroupID string
-	InstanceType    string
-	RootVolumeType  string
-	RootVolumeIOPS  int64
-	RootVolumeSize  int64
+	InstanceProfile         string
+	SubnetID                string
+	SecurityGroupID         string
+	InstanceType            string
+	RootVolumeType          string
+	RootVolumeIOPS          int64
+	RootVolumeSize          int64
+	RootVolumeEncryptionKey string
 }
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
@@ -40,6 +41,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().StringVar(&platformOpts.RootVolumeType, "root-volume-type", platformOpts.RootVolumeType, "The type of the root volume (e.g. gp3, io2) for machines in the NodePool")
 	cmd.Flags().Int64Var(&platformOpts.RootVolumeIOPS, "root-volume-iops", platformOpts.RootVolumeIOPS, "The iops of the root volume for machines in the NodePool")
 	cmd.Flags().Int64Var(&platformOpts.RootVolumeSize, "root-volume-size", platformOpts.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
+	cmd.Flags().StringVar(&platformOpts.RootVolumeEncryptionKey, "root-volume-kms-key", platformOpts.RootVolumeEncryptionKey, "The KMS key ID or ARN to use for root volume encryption for machines in the NodePool")
 
 	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
@@ -90,9 +92,10 @@ func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool 
 			},
 		},
 		RootVolume: &hyperv1.Volume{
-			Type: o.RootVolumeType,
-			Size: o.RootVolumeSize,
-			IOPS: o.RootVolumeIOPS,
+			Type:          o.RootVolumeType,
+			Size:          o.RootVolumeSize,
+			IOPS:          o.RootVolumeIOPS,
+			EncryptionKey: o.RootVolumeEncryptionKey,
 		},
 	}
 	return nil
