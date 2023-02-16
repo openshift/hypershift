@@ -314,6 +314,9 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 			fmt.Sprintf("--oauth-address=%s", oauthAddress),
 			fmt.Sprintf("--oauth-port=%d", oauthPort),
 		}
+		if platformType == hyperv1.IBMCloudPlatform {
+			c.Command = append(c.Command, "--controllers=controller-manager-ca,resources,inplaceupgrader,drainer,hcpstatus")
+		}
 		c.Ports = []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}}
 		c.Env = []corev1.EnvVar{
 			{
