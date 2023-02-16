@@ -5,6 +5,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+func ReconcileOpenShiftInfraNamespace(ns *corev1.Namespace) error {
+	if ns.Labels == nil {
+		ns.Labels = map[string]string{}
+	}
+	ns.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
+	ns.Labels["pod-security.kubernetes.io/audit"] = "privileged"
+	ns.Labels["pod-security.kubernetes.io/warn"] = "privileged"
+	return nil
+}
+
 func ReconcileKubeAPIServerNamespace(ns *corev1.Namespace) error {
 	ensureLabels(ns, map[string]string{"openshift.io/cluster-monitoring": "true"})
 	return nil
