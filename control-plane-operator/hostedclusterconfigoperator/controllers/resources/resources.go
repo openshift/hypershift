@@ -481,6 +481,13 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		}
 	}
 
+	recyclerServiceAccount := manifests.RecyclerServiceAccount()
+	if _, err := r.CreateOrUpdate(ctx, r.client, recyclerServiceAccount, func() error {
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile pv recycler service account: %w", err))
+	}
+
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
 

@@ -2183,6 +2183,13 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 		return fmt.Errorf("failed to reconcile kcm serving ca: %w", err)
 	}
 
+	recyclerConfig := manifests.RecyclerConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, recyclerConfig, func() error {
+		return kcm.ReconcileRecyclerConfig(recyclerConfig, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kcm recycler config: %w", err)
+	}
+
 	clientCertSecret := manifests.KubeControllerManagerClientCertSecret(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(clientCertSecret), clientCertSecret); err != nil {
 		return fmt.Errorf("failed to get KCM client cert secret: %w", err)

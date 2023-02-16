@@ -55,3 +55,12 @@ func KCMService(controlPlaneNamespace string) *corev1.Service {
 func KCMKubeconfigSecret(controlPlaneNamespace string) *corev1.Secret {
 	return secretFor(controlPlaneNamespace, "kube-controller-manager-kubeconfig")
 }
+
+func RecyclerConfigMap(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "recycler-config",
+			Namespace: ns,
+		},
+	}
+}
