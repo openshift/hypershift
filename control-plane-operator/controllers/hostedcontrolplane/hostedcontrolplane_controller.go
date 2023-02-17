@@ -2469,6 +2469,13 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster network operator deployment: %w", err)
 	}
+
+	// CNO manages overall multus-admission-controller deployment. CPO manages restarts.
+	multusDeployment := manifests.MultusAdmissionControllerDeployment(hcp.Namespace)
+	if err := cno.SetRestartAnnotationAndPatch(ctx, r.Client, multusDeployment, p.DeploymentConfig); err != nil {
+		return fmt.Errorf("failed to restart multus admission controller: %w", err)
+	}
+
 	return nil
 }
 
