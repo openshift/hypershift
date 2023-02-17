@@ -17,6 +17,7 @@ import (
 const (
 	KubeControllerManagerConfigKey = "config.json"
 	ServiceServingCAKey            = "service-ca.crt"
+	RecyclerPodTemplateKey         = "recycler-pod.yaml"
 )
 
 func ReconcileConfig(config, serviceServingCA *corev1.ConfigMap, ownerRef config.OwnerRef) error {
@@ -67,5 +68,46 @@ func ReconcileKCMServiceServingCA(cm, combinedCA *corev1.ConfigMap, ownerRef con
 
 func ReconcileServiceAccount(sa *corev1.ServiceAccount) error {
 	// nothing to reconcile
+	return nil
+}
+
+func ReconcileRecyclerConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(config)
+	if config.Data == nil {
+		config.Data = map[string]string{}
+	}
+	// https://github.com/openshift/cluster-kube-controller-manager-operator/blob/64b4c1ba/bindata/assets/kube-controller-manager/recycler-cm.yaml
+	config.Data[RecyclerPodTemplateKey] = `apiVersion: v1
+kind: Pod
+metadata:
+  name: recycler-pod
+  namespace: openshift-infra
+  annotations:
+  target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+spec:
+  activeDeadlineSeconds: 60
+  restartPolicy: Never
+  serviceAccountName: pv-recycler-controller
+  containers:
+  - name: recycler-container
+    image: quay.io/openshift/origin-tools:latest
+    command:
+    - "/bin/bash"
+    args:
+    - "-c"
+    - "test -e /scrub && rm -rf /scrub/..?* /scrub/.[!.]* /scrub/*  && test -z \"$(ls -A /scrub)\" || exit 1"
+    volumeMounts:
+    - mountPath: /scrub
+      name: vol
+    securityContext:
+    runAsUser: 0
+    priorityClassName: openshift-user-critical
+    resources:
+    requests:
+      memory: 50Mi
+      cpu: 10m
+  volumes:
+  - name: vol
+`
 	return nil
 }

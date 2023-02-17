@@ -30,14 +30,15 @@ const (
 var (
 	volumeMounts = util.PodVolumeMounts{
 		kcmContainerMain().Name: {
-			kcmVolumeConfig().Name:        "/etc/kubernetes/config",
-			kcmVolumeRootCA().Name:        "/etc/kubernetes/certs/root-ca",
-			kcmVolumeWorkLogs().Name:      "/var/log/kube-controller-manager",
-			kcmVolumeKubeconfig().Name:    "/etc/kubernetes/secrets/svc-kubeconfig",
-			kcmVolumeCertDir().Name:       "/var/run/kubernetes",
-			kcmVolumeClusterSigner().Name: "/etc/kubernetes/certs/cluster-signer",
-			kcmVolumeServiceSigner().Name: "/etc/kubernetes/certs/service-signer",
-			kcmVolumeServerCert().Name:    "/etc/kubernetes/certs/server",
+			kcmVolumeConfig().Name:         "/etc/kubernetes/config",
+			kcmVolumeRootCA().Name:         "/etc/kubernetes/certs/root-ca",
+			kcmVolumeWorkLogs().Name:       "/var/log/kube-controller-manager",
+			kcmVolumeKubeconfig().Name:     "/etc/kubernetes/secrets/svc-kubeconfig",
+			kcmVolumeCertDir().Name:        "/var/run/kubernetes",
+			kcmVolumeClusterSigner().Name:  "/etc/kubernetes/certs/cluster-signer",
+			kcmVolumeServiceSigner().Name:  "/etc/kubernetes/certs/service-signer",
+			kcmVolumeServerCert().Name:     "/etc/kubernetes/certs/server",
+			kcmVolumeRecyclerConfig().Name: "/etc/kubernetes/recycler-config",
 		},
 	}
 	serviceServingCAMount = util.PodVolumeMounts{
@@ -109,6 +110,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 			util.BuildVolume(kcmVolumeCertDir(), buildKCMVolumeCertDir),
 			util.BuildVolume(kcmVolumeServiceSigner(), buildKCMVolumeServiceSigner),
 			util.BuildVolume(kcmVolumeServerCert(), buildKCMVolumeServerCert),
+			util.BuildVolume(kcmVolumeRecyclerConfig(), buildKCMVolumeRecyclerConfigMap),
 		},
 	}
 	p.DeploymentConfig.ApplyTo(deployment)
@@ -269,6 +271,16 @@ func buildKCMVolumeServerCert(v *corev1.Volume) {
 	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
 }
 
+func kcmVolumeRecyclerConfig() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "recycler-config",
+	}
+}
+func buildKCMVolumeRecyclerConfigMap(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.RecyclerConfigMap("").Name
+}
+
 type serviceCAVolumeBuilder string
 
 func (name serviceCAVolumeBuilder) buildKCMVolumeServiceServingCA(v *corev1.Volume) {
@@ -331,6 +343,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		"--controllers=-tokencleaner",
 		"--enable-dynamic-provisioning=true",
 		"--flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec",
+		fmt.Sprintf("--pv-recycler-pod-template-filepath-nfs=%s", cpath(kcmVolumeRecyclerConfig().Name, RecyclerPodTemplateKey)),
 		"--kube-api-burst=300",
 		"--kube-api-qps=150",
 		"--leader-elect-resource-lock=configmapsleases",
