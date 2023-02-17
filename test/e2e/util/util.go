@@ -1,8 +1,10 @@
 package util
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -352,8 +355,8 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
-			// TODO: Figure out why KAS becomes unavailable for renewing leader lease
-			if strings.HasPrefix(pod.Name, "capi-provider-") {
+			// TODO: Remove this when https://issues.redhat.com/browse/OCPBUGS-6953 is resolved
+			if strings.HasPrefix(pod.Name, "ovnkube-master-") {
 				continue
 			}
 
@@ -736,6 +739,66 @@ func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, 
 					t.Errorf("container %s in pod %s has no memory resource request", container.Name, pod.Name)
 				}
 			}
+		}
+	})
+}
+
+func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
+	t.Run("EnsureSecretEncryptedUsingKMS", func(t *testing.T) {
+		// create secret in guest cluster
+		testSecret := corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-secret",
+				Namespace: "default",
+			},
+			Type: corev1.SecretTypeOpaque,
+			Data: map[string][]byte{
+				"myKey": []byte("myData"),
+			},
+		}
+		if err := guestClient.Create(ctx, &testSecret); err != nil {
+			t.Errorf("failed to create a secret in guest cluster; %v", err)
+		}
+
+		restConfig, err := GetConfig()
+		if err != nil {
+			t.Errorf("failed to get restConfig; %v", err)
+		}
+
+		secretEtcdKey := fmt.Sprintf("/kubernetes.io/secrets/%s/%s", testSecret.Namespace, testSecret.Name)
+		command := []string{
+			"/usr/bin/etcdctl",
+			"--endpoints=localhost:2379",
+			"--cacert=/etc/etcd/tls/etcd-ca/ca.crt",
+			"--cert=/etc/etcd/tls/client/etcd-client.crt",
+			"--key=/etc/etcd/tls/client/etcd-client.key",
+			"get",
+			secretEtcdKey,
+		}
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		out := new(bytes.Buffer)
+
+		podExecuter := PodExecOptions{
+			StreamOptions: StreamOptions{
+				IOStreams: genericclioptions.IOStreams{
+					Out:    out,
+					ErrOut: os.Stderr,
+				},
+			},
+			Command:       command,
+			Namespace:     hcpNamespace,
+			PodName:       "etcd-0",
+			ContainerName: "etcd",
+			Config:        restConfig,
+		}
+
+		if err := podExecuter.Run(); err != nil {
+			t.Errorf("failed to execute etcdctl command; %v", err)
+		}
+
+		if !strings.Contains(out.String(), "k8s:enc:kms:") {
+			t.Errorf("secret is not encrypted using kms")
 		}
 	})
 }

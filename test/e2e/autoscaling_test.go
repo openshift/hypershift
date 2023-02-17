@@ -107,6 +107,8 @@ func TestAutoscaling(t *testing.T) {
 }
 
 func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, image string) *batchv1.Job {
+	allowPrivilegeEscalation := false
+	runAsNonRoot := true
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "autoscaling-workload",
@@ -131,6 +133,18 @@ func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, ima
 								Requests: corev1.ResourceList{
 									"memory": memoryRequest,
 									"cpu":    resource.MustParse("500m"),
+								},
+							},
+							SecurityContext: &corev1.SecurityContext{
+								AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+								Capabilities: &corev1.Capabilities{
+									Drop: []corev1.Capability{
+										"ALL",
+									},
+								},
+								RunAsNonRoot: &runAsNonRoot,
+								SeccompProfile: &corev1.SeccompProfile{
+									Type: corev1.SeccompProfileTypeRuntimeDefault,
 								},
 							},
 						},

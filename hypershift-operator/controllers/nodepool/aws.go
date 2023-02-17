@@ -48,6 +48,9 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 		if nodePool.Spec.Platform.AWS.RootVolume.IOPS > 0 {
 			rootVolume.IOPS = nodePool.Spec.Platform.AWS.RootVolume.IOPS
 		}
+
+		rootVolume.Encrypted = nodePool.Spec.Platform.AWS.RootVolume.Encrypted
+		rootVolume.EncryptionKey = nodePool.Spec.Platform.AWS.RootVolume.EncryptionKey
 	}
 
 	securityGroups := []capiaws.AWSResourceReference{}

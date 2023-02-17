@@ -185,8 +185,44 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) setup(createOrUpdate upsert.CreateOrUpdateFN) {
-	r.createOrUpdate = createOrUpdateWithOwnerRefFactory(createOrUpdate)
+func isScrapeConfig(obj client.Object) bool {
+	switch obj.(type) {
+	case *prometheusoperatorv1.ServiceMonitor:
+		return true
+	case *prometheusoperatorv1.PodMonitor:
+		return true
+	}
+
+	return false
+}
+
+func isClusterVersionAvailable(hcp *hyperv1.HostedControlPlane) bool {
+	condition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionAvailable))
+
+	return condition != nil && condition.Status == metav1.ConditionTrue
+}
+
+func createOrUpdateWithDelayForScrapeConfigs(hcp *hyperv1.HostedControlPlane, upstreamCreateOrUpdate upsert.CreateOrUpdateFN) upsert.CreateOrUpdateFN {
+	return func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+		// Skipping creation / update of scrape configs (servicemonitor and podmonitor resources) till condition ClusterVersionAvailable is met.
+		// Meeting this condition is equivalent to reach 'Complete' progress on the corresponding hosted cluster
+		if isScrapeConfig(obj) && !isClusterVersionAvailable(hcp) {
+			log := ctrl.LoggerFrom(ctx)
+			log.Info("Skipping creation/update of scrape config as "+string(hyperv1.ClusterVersionAvailable)+" condition is not yet met", "scrapeConfig", obj)
+
+			return controllerutil.OperationResultNone, nil
+		}
+
+		return upstreamCreateOrUpdate(ctx, c, obj, f)
+	}
+}
+
+func (r *HostedControlPlaneReconciler) setup(upstreamCreateOrUpdate upsert.CreateOrUpdateFN) {
+	createOrUpdateFactory := createOrUpdateWithOwnerRefFactory(upstreamCreateOrUpdate)
+
+	r.createOrUpdate = func(hcp *hyperv1.HostedControlPlane) upsert.CreateOrUpdateFN {
+		return createOrUpdateWithDelayForScrapeConfigs(hcp, createOrUpdateFactory(hcp))
+	}
 }
 
 type eventHandler struct {
@@ -483,6 +519,39 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				r.Log.Info("Infrastructure is not yet ready")
 			}
 		}
+		newCondition.ObservedGeneration = hostedControlPlane.Generation
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
+	}
+
+	// Reconcile external DNS status
+	{
+		newCondition := metav1.Condition{
+			Type:   string(hyperv1.ExternalDNSReachable),
+			Status: metav1.ConditionUnknown,
+			Reason: hyperv1.StatusUnknownReason,
+		}
+
+		kasExternalHostname := util.ServiceExternalDNSHostname(hostedControlPlane, hyperv1.APIServer)
+		if kasExternalHostname != "" {
+			if err := util.ResolveDNSHostname(ctx, kasExternalHostname); err != nil {
+				newCondition = metav1.Condition{
+					Type:    string(hyperv1.ExternalDNSReachable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.ExternalDNSHostNotReachableReason,
+					Message: err.Error(),
+				}
+			} else {
+				newCondition = metav1.Condition{
+					Type:    string(hyperv1.ExternalDNSReachable),
+					Status:  metav1.ConditionTrue,
+					Message: hyperv1.AllIsWellMessage,
+					Reason:  hyperv1.AsExpectedReason,
+				}
+			}
+		} else {
+			newCondition.Message = "External DNS is not configured"
+		}
+
 		newCondition.ObservedGeneration = hostedControlPlane.Generation
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, newCondition)
 	}
@@ -1569,7 +1638,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 
 	konnectivityCACM := manifests.KonnectivityCAConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, konnectivityCACM, func() error {
-		return pki.ReconcileConnectivityConfigMap(konnectivityCACM, p.OwnerRef, konnectivitySigner, rootCASecret)
+		return pki.ReconcileKonnectivityConfigMap(konnectivityCACM, p.OwnerRef, konnectivitySigner)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity CA config map: %v", err)
 	}
@@ -2469,6 +2538,13 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster network operator deployment: %w", err)
 	}
+
+	// CNO manages overall multus-admission-controller deployment. CPO manages restarts.
+	multusDeployment := manifests.MultusAdmissionControllerDeployment(hcp.Namespace)
+	if err := cno.SetRestartAnnotationAndPatch(ctx, r.Client, multusDeployment, p.DeploymentConfig); err != nil {
+		return fmt.Errorf("failed to restart multus admission controller: %w", err)
+	}
+
 	return nil
 }
 
@@ -2577,6 +2653,14 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingressoperator deployment: %w", err)
+	}
+
+	pm := manifests.IngressOperatorPodMonitor(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, pm, func() error {
+		ingressoperator.ReconcilePodMonitor(pm, hcp.Spec.ClusterID, r.MetricsSet)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ingressoperator pod monitor: %w", err)
 	}
 
 	return nil
@@ -2708,6 +2792,35 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		return olm.ReconcilePackageServerDeployment(packageServerDeployment, p.OwnerRef, p.OLMImage, p.ProxyImage, p.ReleaseVersion, p.PackageServerConfig, p.AvailabilityProberImage, util.APIPort(hcp), p.NoProxy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile packageserver deployment: %w", err)
+	}
+
+	// no need to run heap collection in IBM Cloud
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesConfigMap); err != nil {
+			return fmt.Errorf("failed to remove collect profiles config map: %w", err)
+		}
+		collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesCronJob); err != nil {
+			return fmt.Errorf("failed to remove collect profiles cronjob: %w", err)
+		}
+		collectProfilesRole := manifests.CollectProfilesRole(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesRole); err != nil {
+			return fmt.Errorf("failed to remove collect profiles role: %w", err)
+		}
+		collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesRoleBinding); err != nil {
+			return fmt.Errorf("failed to remove collect profiles role binding: %w", err)
+		}
+		collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesSecret); err != nil {
+			return fmt.Errorf("failed to remove collect profiles secret: %w", err)
+		}
+		collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
+		if err := deleteIfExists(ctx, r, collectProfilesServiceAccount); err != nil {
+			return fmt.Errorf("failed to remove collect profiles serviceaccount: %w", err)
+		}
+		return nil
 	}
 
 	// Collect Profiles

@@ -61,6 +61,7 @@ type NodePoolSpec struct {
 	// TODO(dan): Should this be a LocalObjectReference?
 	//
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="ClusterName is immutable"
 	ClusterName string `json:"clusterName"`
 
 	// Release specifies the OCP release used for the NodePool. This informs the
@@ -96,7 +97,13 @@ type NodePoolSpec struct {
 	// https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185
 	//
 	// Each ConfigMap must have a single key named "config" whose value is the
-	// JSON or YAML of a serialized MachineConfig.
+	// JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
+	// KubeletConfig
+	// ContainerRuntimeConfig
+	// MachineConfig
+	// or
+	// ImageContentSourcePolicy
+	//
 	// +kubebuilder:validation:Optional
 	Config []corev1.LocalObjectReference `json:"config,omitempty"`
 
@@ -281,6 +288,7 @@ type NodePoolManagement struct {
 	// UpgradeType specifies the type of strategy for handling upgrades.
 	//
 	// +kubebuilder:validation:Enum=Replace;InPlace
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="UpgradeType is immutable"
 	UpgradeType UpgradeType `json:"upgradeType"`
 
 	// Replace is the configuration for rolling upgrades.
@@ -320,6 +328,7 @@ type NodePoolPlatform struct {
 	// Type specifies the platform name.
 	//
 	// +unionDiscriminator
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Type is immutable"
 	// +immutable
 	Type PlatformType `json:"type"`
 
@@ -663,6 +672,17 @@ type Volume struct {
 	//
 	// +optional
 	IOPS int64 `json:"iops,omitempty"`
+
+	// Encrypted is whether the volume should be encrypted or not.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Encrypted is immutable"
+	Encrypted *bool `json:"encrypted,omitempty"`
+
+	// EncryptionKey is the KMS key to use to encrypt the volume. Can be either a KMS key ID or ARN.
+	// If Encrypted is set and this is omitted, the default AWS key will be used.
+	// The key must already exist and be accessible by the controller.
+	// +optional
+	EncryptionKey string `json:"encryptionKey,omitempty"`
 }
 
 // AgentNodePoolPlatform specifies the configuration of a NodePool when operating

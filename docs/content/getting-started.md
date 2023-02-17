@@ -39,9 +39,10 @@ you should adjust to your own environment.
         aws route53 create-hosted-zone --name $BASE_DOMAIN --caller-reference $(whoami)-$(date --rfc-3339=date)
         ```
 
-    !!! important
+!!! important
 
-	To access applications in your guest clusters, the public zone must be routable. If the public zone exists, skip this step. Otherwise, the public zone will affect the existing functions.
+	To access applications in your guest clusters, the public zone must be routable. If the public zone exists, skip 
+    this step. Otherwise, the public zone will affect the existing functions.
 
 * An S3 bucket with public access to host OIDC discovery documents for your clusters.
 
@@ -106,7 +107,13 @@ hypershift create cluster aws \
 !!! note
 
     A default NodePool will be created for the cluster with 3 replicas per the
-    `--node-pool-replicas` flag.
+    `--node-pool-replicas` flag. 
+
+!!! note 
+
+    The default NodePool name will be a combination of your cluster name and zone name for 
+    AWS (example, `example-us-east-1a`). For other providers, the default NodePool 
+    name will be the same as the cluster name.
 
 !!! note
 
@@ -118,8 +125,12 @@ namespace and when ready it will look similar to the following:
 
 ```
 oc get --namespace clusters hostedclusters
-NAME      VERSION   KUBECONFIG                 AVAILABLE
-example   4.8.0     example-admin-kubeconfig   True
+NAME      VERSION   KUBECONFIG                 PROGRESS    AVAILABLE   PROGRESSING   MESSAGE
+example   4.12.0    example-admin-kubeconfig   Completed   True        False         The hosted control plane is available
+
+oc get nodepools --namespace clusters
+NAME                 CLUSTER   DESIRED NODES   CURRENT NODES   AUTOSCALING   AUTOREPAIR   VERSION   UPDATINGVERSION   UPDATINGCONFIG   MESSAGE
+example-us-east-1a   example   2               2               False         False        4.12.0
 ```
 
 Eventually the cluster's kubeconfig will become available and can be printed to

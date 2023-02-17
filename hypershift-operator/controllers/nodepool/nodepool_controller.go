@@ -746,9 +746,21 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			}
 		}
 
-		// We keep the old userdata Secret so old Machines during rolled out can be deleted.
+		// For AWS, we keep the old userdata Secret so old Machines during rolled out can be deleted.
 		// Otherwise, deletion fails because of https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805.
 		// TODO (Alberto): enable back deletion when the PR above gets merged.
+		if nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+			userDataSecret := IgnitionUserDataSecret(controlPlaneNamespace, nodePool.GetName(), nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion])
+			err = r.Get(ctx, client.ObjectKeyFromObject(userDataSecret), userDataSecret)
+			if err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to get user data Secret: %w", err)
+			}
+			if err == nil {
+				if err := r.Delete(ctx, userDataSecret); err != nil && !apierrors.IsNotFound(err) {
+					return ctrl.Result{}, fmt.Errorf("failed to delete user data Secret: %w", err)
+				}
+			}
+		}
 	}
 
 	tokenSecret = TokenSecret(controlPlaneNamespace, nodePool.Name, targetPayloadConfigHash)
@@ -1469,10 +1481,13 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 	}
 
 	if isAutoscalingEnabled(nodePool) {
+		// if the MachineSetReplicas is not in the spec will be set as 0, and here will be
+		// evaluated. If autoscaler is activated, the replicas will have the same number as
+		// minimum number of replicas set in the MachineSet spec.
 		if k8sutilspointer.Int32PtrDerefOr(machineDeployment.Spec.Replicas, 0) == 0 {
 			// if autoscaling is enabled and the machineDeployment does not exist yet or it has 0 replicas
-			// we set it to 1 replica as the autoscaler does not support scaling from zero yet.
-			machineDeployment.Spec.Replicas = k8sutilspointer.Int32Ptr(int32(1))
+			// we set the replicas to the Autoscaling minimum value, autoscaler does not support scaling from zero yet.
+			machineDeployment.Spec.Replicas = &nodePool.Spec.AutoScaling.Min
 		}
 		machineDeployment.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Max))
 		machineDeployment.Annotations[autoscalerMinAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Min))

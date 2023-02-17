@@ -594,6 +594,25 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
 	}
 
+	// Copy the ExternalDNSReachable condition on the hostedcontrolplane.
+	{
+		condition := &metav1.Condition{
+			Type:               string(hyperv1.ExternalDNSReachable),
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.StatusUnknownReason,
+			Message:            "The hosted control plane is not found",
+			ObservedGeneration: hcluster.Generation,
+		}
+		if hcp != nil {
+			externalDNSReachableCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ExternalDNSReachable))
+			if externalDNSReachableCondition != nil {
+				condition = externalDNSReachableCondition
+			}
+		}
+		condition.ObservedGeneration = hcluster.Generation
+		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
+	}
+
 	// Copy the platform status from the hostedcontrolplane
 	if hcp != nil {
 		hcluster.Status.Platform = hcp.Status.Platform
@@ -3036,6 +3055,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, err
 	}
 
+	p, err := platform.GetPlatform(ctx, hc, nil, "", nil)
+	if err != nil {
+		return false, err
+	}
 	if hc != nil && len(hc.Spec.InfraID) > 0 {
 		exists, err := hyperutil.DeleteIfNeeded(ctx, r.Client, &capiv1.Cluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -3046,6 +3069,13 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		if err != nil {
 			return false, err
 		}
+
+		if od, ok := p.(platform.OrphanDeleter); ok {
+			if err = od.DeleteOrphanedMachines(ctx, r.Client, hc, controlPlaneNamespace); err != nil {
+				return false, err
+			}
+		}
+
 		if exists {
 			log.Info("Waiting for cluster deletion", "clusterName", hc.Spec.InfraID, "controlPlaneNamespace", controlPlaneNamespace)
 			return false, nil
@@ -3053,10 +3083,6 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	}
 
 	// Cleanup Platform specifics.
-	p, err := platform.GetPlatform(ctx, hc, nil, "", nil)
-	if err != nil {
-		return false, err
-	}
 
 	if err = p.DeleteCredentials(ctx, r.Client, hc,
 		controlPlaneNamespace); err != nil {

@@ -639,7 +639,12 @@ MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
 <p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the
-JSON or YAML of a serialized MachineConfig.</p>
+JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
+KubeletConfig
+ContainerRuntimeConfig
+MachineConfig
+or
+ImageContentSourcePolicy</p>
 </td>
 </tr>
 <tr>
@@ -1861,6 +1866,31 @@ string
 &ldquo;arn:</em>:iam::<em>:role/</em>-worker-role&rdquo;
 ],
 &ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;
+},
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;kms:Decrypt&rdquo;,
+&ldquo;kms:Encrypt&rdquo;,
+&ldquo;kms:GenerateDataKey&rdquo;,
+&ldquo;kms:GenerateDataKeyWithoutPlainText&rdquo;,
+&ldquo;kms:DescribeKey&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;
+},
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;kms:RevokeGrant&rdquo;,
+&ldquo;kms:CreateGrant&rdquo;,
+&ldquo;kms:ListGrants&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;Bool&rdquo;: {
+&ldquo;kms:GrantIsForAWSResource&rdquo;: true
+}
+}
 }
 ]
 }</p>
@@ -2786,6 +2816,11 @@ A failure here often means a software bug or a non-stable cluster.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdSnapshotRestored&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;ExternalDNSReachable&#34;</p></td>
+<td><p>ExternalDNSReachable bubbles up the same condition from HCP. It signals if the configured external DNS is reachable.
+A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
+and registered correctly.</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>HostedClusterAvailable indicates whether the HostedCluster has a healthy
 control plane.
@@ -5669,7 +5704,12 @@ MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
 <p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the
-JSON or YAML of a serialized MachineConfig.</p>
+JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
+KubeletConfig
+ContainerRuntimeConfig
+MachineConfig
+or
+ImageContentSourcePolicy</p>
 </td>
 </tr>
 <tr>
@@ -7239,6 +7279,32 @@ int64
 <em>(Optional)</em>
 <p>IOPS is the number of IOPS requested for the disk. This is only valid
 for type io1.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encrypted</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Encrypted is whether the volume should be encrypted or not.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encryptionKey</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>EncryptionKey is the KMS key to use to encrypt the volume. Can be either a KMS key ID or ARN.
+If Encrypted is set and this is omitted, the default AWS key will be used.
+The key must already exist and be accessible by the controller.</p>
 </td>
 </tr>
 </tbody>

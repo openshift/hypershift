@@ -14,7 +14,7 @@ spec:
     interval: 60s
     metricRelabelings:
     - action: drop
-      regex: '*'
+      regex: (.*)
       sourceLabels:
       - __name__
     - action: replace

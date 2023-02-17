@@ -166,7 +166,21 @@ func serializeResource(obj runtime.Object) []byte {
 	if err != nil {
 		panic(err.Error())
 	}
-	return b.Bytes()
+
+	// Remove the status part of the serialized resource. We only have
+	// spec to begin with and status causes incompatibilities with previous
+	// versions of the CPO
+	unstructuredObject := &unstructured.Unstructured{}
+	if _, _, err := unstructured.UnstructuredJSONScheme.Decode(b.Bytes(), nil, unstructuredObject); err != nil {
+		return nil
+	}
+	unstructured.RemoveNestedField(unstructuredObject.Object, "status")
+	b = &bytes.Buffer{}
+	if err := unstructured.UnstructuredJSONScheme.Encode(unstructuredObject, b); err != nil {
+		return nil
+	}
+
+	return bytes.TrimSuffix(b.Bytes(), []byte("\n"))
 }
 
 func randomBool() bool {
@@ -267,26 +281,19 @@ func fixupHostedCluster(in conversion.Convertible) {
 		panic(fmt.Sprintf("unexpected convertible type: %T", in))
 	}
 	if hc.Spec.Configuration != nil {
-		for i, item := range hc.Spec.Configuration.Items {
-			resource, _, err := serializer.Decode(item.Raw, nil, nil)
-			if err != nil {
-				panic(err.Error())
-			}
-			hc.Spec.Configuration.Items[i].Raw = serializeResource(resource)
+		err := populateDeprecatedGlobalConfig(hc.Spec.Configuration)
+		if err != nil {
+			panic(err.Error())
 		}
 	}
 	if hc.Spec.Platform.AWS != nil {
+		populateDeprecatedAWSRoles(hc.Spec.Platform.AWS)
 		hc.Spec.Platform.AWS.RolesRef = AWSRolesRef{}
-		roles := hc.Spec.Platform.AWS.Roles
-		sort.SliceStable(roles, func(i, j int) bool {
-			return roles[i].Namespace < roles[j].Namespace
-		})
-		hc.Spec.Platform.AWS.Roles = roles
 	}
-
 	if hc.Spec.SecretEncryption.KMS != nil && hc.Spec.SecretEncryption.KMS.AWS != nil {
 		hc.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN = ""
 	}
+	populateDeprecatedNetworkingFields(&hc.Spec.Networking)
 }
 
 func fixupHostedControlPlane(in conversion.Convertible) {
