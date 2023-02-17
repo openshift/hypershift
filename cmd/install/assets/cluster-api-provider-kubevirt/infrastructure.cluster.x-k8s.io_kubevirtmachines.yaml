@@ -37,6 +37,46 @@ spec:
           spec:
             description: KubevirtMachineSpec defines the desired state of KubevirtMachine.
             properties:
+              infraClusterSecretRef:
+                description: InfraClusterSecretRef is a reference to a secret with
+                  a kubeconfig for external cluster used for infra. When nil, this
+                  defaults to the value present in the KubevirtCluster object's spec
+                  associated with this machine.
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: 'If referring to a piece of an object instead of
+                      an entire object, this string should contain a valid JSON/Go
+                      field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within
+                      a pod, this would take on a value like: "spec.containers{name}"
+                      (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]"
+                      (container with index 2 in this pod). This syntax is chosen
+                      only to have some well-defined way of referencing a part of
+                      an object. TODO: this design is not final and this field is
+                      subject to change in the future.'
+                    type: string
+                  kind:
+                    description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                    type: string
+                  name:
+                    description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                    type: string
+                  namespace:
+                    description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                    type: string
+                  resourceVersion:
+                    description: 'Specific resourceVersion to which this reference
+                      is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                    type: string
+                  uid:
+                    description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               providerID:
                 description: ProviderID TBD what to use for Kubevirt
                 type: string
@@ -659,23 +699,50 @@ spec:
                           - spec
                           type: object
                         type: array
-                      flavor:
-                        description: FlavorMatcher references a flavor that is used
-                          to fill fields in Template
+                      instancetype:
+                        description: InstancetypeMatcher references a instancetype
+                          that is used to fill fields in Template
                         properties:
                           kind:
-                            description: 'Kind specifies which flavor resource is
-                              referenced. Allowed values are: "VirtualMachineFlavor"
-                              and "VirtualMachineClusterFlavor". If not specified,
-                              "VirtualMachineClusterFlavor" is used by default.'
+                            description: 'Kind specifies which instancetype resource
+                              is referenced. Allowed values are: "VirtualMachineInstancetype"
+                              and "VirtualMachineClusterInstancetype". If not specified,
+                              "VirtualMachineClusterInstancetype" is used by default.'
                             type: string
                           name:
-                            description: Name is the name of the VirtualMachineFlavor
-                              or VirtualMachineClusterFlavor
+                            description: Name is the name of the VirtualMachineInstancetype
+                              or VirtualMachineClusterInstancetype
                             type: string
-                          profile:
-                            description: Profile is the name of a custom profile in
-                              the flavor. If left empty, the default profile is used.
+                          revisionName:
+                            description: RevisionName specifies a ControllerRevision
+                              containing a specific copy of the VirtualMachineInstancetype
+                              or VirtualMachineClusterInstancetype to be used. This
+                              is initially captured the first time the instancetype
+                              is applied to the VirtualMachineInstance.
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      preference:
+                        description: PreferenceMatcher references a set of preference
+                          that is used to fill fields in Template
+                        properties:
+                          kind:
+                            description: 'Kind specifies which preference resource
+                              is referenced. Allowed values are: "VirtualMachinePreference"
+                              and "VirtualMachineClusterPreference". If not specified,
+                              "VirtualMachineClusterPreference" is used by default.'
+                            type: string
+                          name:
+                            description: Name is the name of the VirtualMachinePreference
+                              or VirtualMachineClusterPreference
+                            type: string
+                          revisionName:
+                            description: RevisionName specifies a ControllerRevision
+                              containing a specific copy of the VirtualMachinePreference
+                              or VirtualMachineClusterPreference to be used. This
+                              is initially captured the first time the instancetype
+                              is applied to the VirtualMachineInstance.
                             type: string
                         required:
                         - name
@@ -2139,6 +2206,10 @@ spec:
                                           graphics device or not. VNC will not be
                                           available if set to false. Defaults to true.
                                         type: boolean
+                                      autoattachInputDevice:
+                                        description: Whether to attach an Input Device.
+                                          Defaults to false.
+                                        type: boolean
                                       autoattachMemBalloon:
                                         description: Whether to attach the Memory
                                           balloon device with default period. Period
@@ -2169,9 +2240,8 @@ spec:
                                           to hotplug disks.
                                         type: boolean
                                       disks:
-                                        description: Disks describes disks, cdroms,
-                                          floppy and luns which are connected to the
-                                          vmi.
+                                        description: Disks describes disks, cdroms
+                                          and luns which are connected to the vmi.
                                         items:
                                           properties:
                                             blockSize:
@@ -2254,7 +2324,7 @@ spec:
                                                   description: 'Bus indicates the
                                                     type of disk device to emulate.
                                                     supported values: virtio, sata,
-                                                    scsi.'
+                                                    scsi, usb.'
                                                   type: string
                                                 pciAddress:
                                                   description: 'If specified, the
@@ -2267,21 +2337,6 @@ spec:
                                                   description: ReadOnly. Defaults
                                                     to false.
                                                   type: boolean
-                                              type: object
-                                            floppy:
-                                              description: Attach a volume as a floppy
-                                                to the vmi.
-                                              properties:
-                                                readonly:
-                                                  description: ReadOnly. Defaults
-                                                    to false.
-                                                  type: boolean
-                                                tray:
-                                                  description: Tray indicates if the
-                                                    tray of the device is open or
-                                                    closed. Allowed values are "open"
-                                                    and "closed". Defaults to closed.
-                                                  type: string
                                               type: object
                                             io:
                                               description: 'IO specifies which QEMU
@@ -2311,6 +2366,11 @@ spec:
                                                 to specify a serial number for the
                                                 disk device.
                                               type: string
+                                            shareable:
+                                              description: If specified the disk is
+                                                made sharable and multiple write from
+                                                different VMs are permitted
+                                              type: boolean
                                             tag:
                                               description: If specified, disk address
                                                 and its tag will be provided to the
@@ -2347,6 +2407,12 @@ spec:
                                             name:
                                               description: Name of the GPU device
                                                 as exposed by a device plugin
+                                              type: string
+                                            tag:
+                                              description: If specified, the virtual
+                                                network interface address and its
+                                                tag will be provided to the guest
+                                                via config drive
                                               type: string
                                             virtualGPUOptions:
                                               properties:
@@ -2393,6 +2459,12 @@ spec:
                                               type: string
                                             name:
                                               type: string
+                                            tag:
+                                              description: If specified, the virtual
+                                                network interface address and its
+                                                tag will be provided to the guest
+                                                via config drive
+                                              type: string
                                           required:
                                           - deviceName
                                           - name
@@ -2436,6 +2508,8 @@ spec:
                                                 boot order are not tried.
                                               type: integer
                                             bridge:
+                                              description: InterfaceBridge connects
+                                                to a given network via a linux bridge.
                                               type: object
                                             dhcpOptions:
                                               description: If specified the network
@@ -2490,8 +2564,15 @@ spec:
                                                 DE-AD-00-00-BE-AF.'
                                               type: string
                                             macvtap:
+                                              description: InterfaceMacvtap connects
+                                                to a given network by extending the
+                                                Kubernetes node's L2 networks via
+                                                a macvtap interface.
                                               type: object
                                             masquerade:
+                                              description: InterfaceMasquerade connects
+                                                to a given network using netfilter
+                                                rules to nat the traffic.
                                               type: object
                                             model:
                                               description: 'Interface model. One of:
@@ -2506,6 +2587,10 @@ spec:
                                                 networks. Must match the Name of a
                                                 Network.
                                               type: string
+                                            passt:
+                                              description: InterfacePasst connects
+                                                to a given network.
+                                              type: object
                                             pciAddress:
                                               description: 'If specified, the virtual
                                                 network interface will be placed on
@@ -2516,7 +2601,7 @@ spec:
                                               description: List of ports to be forwarded
                                                 to the virtual machine.
                                               items:
-                                                description: Port repesents a port
+                                                description: Port represents a port
                                                   to expose from the virtual machine.
                                                   Default protocol TCP. The port field
                                                   is mandatory
@@ -2547,8 +2632,14 @@ spec:
                                                 type: object
                                               type: array
                                             slirp:
+                                              description: InterfaceSlirp connects
+                                                to a given network using QEMU user
+                                                networking mode.
                                               type: object
                                             sriov:
+                                              description: InterfaceSRIOV connects
+                                                to a given network by passing-through
+                                                an SR-IOV PCI device via vfio.
                                               type: object
                                             tag:
                                               description: If specified, the virtual
@@ -2572,6 +2663,25 @@ spec:
                                       rng:
                                         description: Whether to have random number
                                           generator from host
+                                        type: object
+                                      sound:
+                                        description: Whether to emulate a sound device.
+                                        properties:
+                                          model:
+                                            description: 'We only support ich9 or
+                                              ac97. If SoundDevice is not set: No
+                                              sound card is emulated. If SoundDevice
+                                              is set but Model is not: ich9'
+                                            type: string
+                                          name:
+                                            description: User's defined name for this
+                                              sound device
+                                            type: string
+                                        required:
+                                        - name
+                                        type: object
+                                      tpm:
+                                        description: Whether to emulate a TPM device.
                                         type: object
                                       useVirtioTransitional:
                                         description: Fall back to legacy virtio 0.9
@@ -2898,8 +3008,8 @@ spec:
                                               that containes kernel artifacts
                                             properties:
                                               image:
-                                                description: Image that container
-                                                  initrd / kernel files.
+                                                description: Image that contains initrd
+                                                  / kernel files.
                                                 type: string
                                               imagePullPolicy:
                                                 description: 'Image pull policy. One
@@ -2945,6 +3055,14 @@ spec:
                                       share IOThreads. Omitting IOThreadsPolicy disables
                                       use of IOThreads. One of: shared, auto'
                                     type: string
+                                  launchSecurity:
+                                    description: Launch Security setting of the vmi.
+                                    properties:
+                                      sev:
+                                        description: AMD Secure Encrypted Virtualization
+                                          (SEV).
+                                        type: object
+                                    type: object
                                   machine:
                                     description: Machine type.
                                     properties:
@@ -3435,6 +3553,219 @@ spec:
                                       type: string
                                   type: object
                                 type: array
+                              topologySpreadConstraints:
+                                description: TopologySpreadConstraints describes how
+                                  a group of VMIs will be spread across a given topology
+                                  domains. K8s scheduler will schedule VMI pods in
+                                  a way which abides by the constraints.
+                                items:
+                                  description: TopologySpreadConstraint specifies
+                                    how to spread matching pods among the given topology.
+                                  properties:
+                                    labelSelector:
+                                      description: LabelSelector is used to find matching
+                                        pods. Pods that match this label selector
+                                        are counted to determine the number of pods
+                                        in their corresponding topology domain.
+                                      properties:
+                                        matchExpressions:
+                                          description: matchExpressions is a list
+                                            of label selector requirements. The requirements
+                                            are ANDed.
+                                          items:
+                                            description: A label selector requirement
+                                              is a selector that contains values,
+                                              a key, and an operator that relates
+                                              the key and values.
+                                            properties:
+                                              key:
+                                                description: key is the label key
+                                                  that the selector applies to.
+                                                type: string
+                                              operator:
+                                                description: operator represents a
+                                                  key's relationship to a set of values.
+                                                  Valid operators are In, NotIn, Exists
+                                                  and DoesNotExist.
+                                                type: string
+                                              values:
+                                                description: values is an array of
+                                                  string values. If the operator is
+                                                  In or NotIn, the values array must
+                                                  be non-empty. If the operator is
+                                                  Exists or DoesNotExist, the values
+                                                  array must be empty. This array
+                                                  is replaced during a strategic merge
+                                                  patch.
+                                                items:
+                                                  type: string
+                                                type: array
+                                            required:
+                                            - key
+                                            - operator
+                                            type: object
+                                          type: array
+                                        matchLabels:
+                                          additionalProperties:
+                                            type: string
+                                          description: matchLabels is a map of {key,value}
+                                            pairs. A single {key,value} in the matchLabels
+                                            map is equivalent to an element of matchExpressions,
+                                            whose key field is "key", the operator
+                                            is "In", and the values array contains
+                                            only "value". The requirements are ANDed.
+                                          type: object
+                                      type: object
+                                      x-kubernetes-map-type: atomic
+                                    matchLabelKeys:
+                                      description: MatchLabelKeys is a set of pod
+                                        label keys to select the pods over which spreading
+                                        will be calculated. The keys are used to lookup
+                                        values from the incoming pod labels, those
+                                        key-value labels are ANDed with labelSelector
+                                        to select the group of existing pods over
+                                        which spreading will be calculated for the
+                                        incoming pod. Keys that don't exist in the
+                                        incoming pod labels will be ignored. A null
+                                        or empty list means only match against labelSelector.
+                                      items:
+                                        type: string
+                                      type: array
+                                      x-kubernetes-list-type: atomic
+                                    maxSkew:
+                                      description: 'MaxSkew describes the degree to
+                                        which pods may be unevenly distributed. When
+                                        `whenUnsatisfiable=DoNotSchedule`, it is the
+                                        maximum permitted difference between the number
+                                        of matching pods in the target topology and
+                                        the global minimum. The global minimum is
+                                        the minimum number of matching pods in an
+                                        eligible domain or zero if the number of eligible
+                                        domains is less than MinDomains. For example,
+                                        in a 3-zone cluster, MaxSkew is set to 1,
+                                        and pods with the same labelSelector spread
+                                        as 2/2/1: In this case, the global minimum
+                                        is 1. | zone1 | zone2 | zone3 | |  P P  |  P
+                                        P  |   P   | - if MaxSkew is 1, incoming pod
+                                        can only be scheduled to zone3 to become 2/2/2;
+                                        scheduling it onto zone1(zone2) would make
+                                        the ActualSkew(3-1) on zone1(zone2) violate
+                                        MaxSkew(1). - if MaxSkew is 2, incoming pod
+                                        can be scheduled onto any zone. When `whenUnsatisfiable=ScheduleAnyway`,
+                                        it is used to give higher precedence to topologies
+                                        that satisfy it. It''s a required field. Default
+                                        value is 1 and 0 is not allowed.'
+                                      format: int32
+                                      type: integer
+                                    minDomains:
+                                      description: "MinDomains indicates a minimum
+                                        number of eligible domains. When the number
+                                        of eligible domains with matching topology
+                                        keys is less than minDomains, Pod Topology
+                                        Spread treats \"global minimum\" as 0, and
+                                        then the calculation of Skew is performed.
+                                        And when the number of eligible domains with
+                                        matching topology keys equals or greater than
+                                        minDomains, this value has no effect on scheduling.
+                                        As a result, when the number of eligible domains
+                                        is less than minDomains, scheduler won't schedule
+                                        more than maxSkew Pods to those domains. If
+                                        value is nil, the constraint behaves as if
+                                        MinDomains is equal to 1. Valid values are
+                                        integers greater than 0. When value is not
+                                        nil, WhenUnsatisfiable must be DoNotSchedule.
+                                        \n For example, in a 3-zone cluster, MaxSkew
+                                        is set to 2, MinDomains is set to 5 and pods
+                                        with the same labelSelector spread as 2/2/2:
+                                        | zone1 | zone2 | zone3 | |  P P  |  P P  |
+                                        \ P P  | The number of domains is less than
+                                        5(MinDomains), so \"global minimum\" is treated
+                                        as 0. In this situation, new pod with the
+                                        same labelSelector cannot be scheduled, because
+                                        computed skew will be 3(3 - 0) if new Pod
+                                        is scheduled to any of the three zones, it
+                                        will violate MaxSkew. \n This is a beta field
+                                        and requires the MinDomainsInPodTopologySpread
+                                        feature gate to be enabled (enabled by default)."
+                                      format: int32
+                                      type: integer
+                                    nodeAffinityPolicy:
+                                      description: "NodeAffinityPolicy indicates how
+                                        we will treat Pod's nodeAffinity/nodeSelector
+                                        when calculating pod topology spread skew.
+                                        Options are: - Honor: only nodes matching
+                                        nodeAffinity/nodeSelector are included in
+                                        the calculations. - Ignore: nodeAffinity/nodeSelector
+                                        are ignored. All nodes are included in the
+                                        calculations. \n If this value is nil, the
+                                        behavior is equivalent to the Honor policy.
+                                        This is a alpha-level feature enabled by the
+                                        NodeInclusionPolicyInPodTopologySpread feature
+                                        flag."
+                                      type: string
+                                    nodeTaintsPolicy:
+                                      description: "NodeTaintsPolicy indicates how
+                                        we will treat node taints when calculating
+                                        pod topology spread skew. Options are: - Honor:
+                                        nodes without taints, along with tainted nodes
+                                        for which the incoming pod has a toleration,
+                                        are included. - Ignore: node taints are ignored.
+                                        All nodes are included. \n If this value is
+                                        nil, the behavior is equivalent to the Ignore
+                                        policy. This is a alpha-level feature enabled
+                                        by the NodeInclusionPolicyInPodTopologySpread
+                                        feature flag."
+                                      type: string
+                                    topologyKey:
+                                      description: TopologyKey is the key of node
+                                        labels. Nodes that have a label with this
+                                        key and identical values are considered to
+                                        be in the same topology. We consider each
+                                        <key, value> as a "bucket", and try to put
+                                        balanced number of pods into each bucket.
+                                        We define a domain as a particular instance
+                                        of a topology. Also, we define an eligible
+                                        domain as a domain whose nodes meet the requirements
+                                        of nodeAffinityPolicy and nodeTaintsPolicy.
+                                        e.g. If TopologyKey is "kubernetes.io/hostname",
+                                        each Node is a domain of that topology. And,
+                                        if TopologyKey is "topology.kubernetes.io/zone",
+                                        each zone is a domain of that topology. It's
+                                        a required field.
+                                      type: string
+                                    whenUnsatisfiable:
+                                      description: 'WhenUnsatisfiable indicates how
+                                        to deal with a pod if it doesn''t satisfy
+                                        the spread constraint. - DoNotSchedule (default)
+                                        tells the scheduler not to schedule it. -
+                                        ScheduleAnyway tells the scheduler to schedule
+                                        the pod in any location, but giving higher
+                                        precedence to topologies that would help reduce
+                                        the skew. A constraint is considered "Unsatisfiable"
+                                        for an incoming pod if and only if every possible
+                                        node assignment for that pod would violate
+                                        "MaxSkew" on some topology. For example, in
+                                        a 3-zone cluster, MaxSkew is set to 1, and
+                                        pods with the same labelSelector spread as
+                                        3/1/1: | zone1 | zone2 | zone3 | | P P P |   P   |   P   |
+                                        If WhenUnsatisfiable is set to DoNotSchedule,
+                                        incoming pod can only be scheduled to zone2(zone3)
+                                        to become 3/2/1(3/1/2) as ActualSkew(2-1)
+                                        on zone2(zone3) satisfies MaxSkew(1). In other
+                                        words, the cluster can still be imbalanced,
+                                        but scheduler won''t make it *more* imbalanced.
+                                        It''s a required field.'
+                                      type: string
+                                  required:
+                                  - maxSkew
+                                  - topologyKey
+                                  - whenUnsatisfiable
+                                  type: object
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                - topologyKey
+                                - whenUnsatisfiable
+                                x-kubernetes-list-type: map
                               volumes:
                                 description: List of volumes that can be mounted by
                                   disks belonging to the vmi.
@@ -3788,6 +4119,28 @@ spec:
                                       - path
                                       - type
                                       type: object
+                                    memoryDump:
+                                      description: MemoryDump is attached to the virt
+                                        launcher and is populated with a memory dump
+                                        of the vmi
+                                      properties:
+                                        claimName:
+                                          description: 'claimName is the name of a
+                                            PersistentVolumeClaim in the same namespace
+                                            as the pod using this volume. More info:
+                                            https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims'
+                                          type: string
+                                        hotpluggable:
+                                          description: Hotpluggable indicates whether
+                                            the volume can be hotplugged and hotunplugged.
+                                          type: boolean
+                                        readOnly:
+                                          description: readOnly Will force the ReadOnly
+                                            setting in VolumeMounts. Default false.
+                                          type: boolean
+                                      required:
+                                      - claimName
+                                      type: object
                                     name:
                                       description: 'Volume''s name. Must be a DNS_LABEL
                                         and unique within the vmi. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
@@ -3959,6 +4312,36 @@ spec:
                   - type
                   type: object
                 type: array
+              failureMessage:
+                description: "FailureMessage will be set in the event that there is
+                  a terminal problem reconciling the Machine and will contain a more
+                  verbose string suitable for logging and human consumption. \n This
+                  field should not be set for transitive errors that a controller
+                  faces that are expected to be fixed automatically over time (like
+                  service outages), but instead indicate that something is fundamentally
+                  wrong with the Machine's spec or the configuration of the controller,
+                  and that manual intervention is required. Examples of terminal errors
+                  would be invalid combinations of settings in the spec, values that
+                  are unsupported by the controller, or the responsible controller
+                  itself being critically misconfigured. \n Any transient errors that
+                  occur during the reconciliation of Machines can be added as events
+                  to the Machine object and/or logged in the controller's output."
+                type: string
+              failureReason:
+                description: "FailureReason will be set in the event that there is
+                  a terminal problem reconciling the Machine and will contain a succinct
+                  value suitable for machine interpretation. \n This field should
+                  not be set for transitive errors that a controller faces that are
+                  expected to be fixed automatically over time (like service outages),
+                  but instead indicate that something is fundamentally wrong with
+                  the Machine's spec or the configuration of the controller, and that
+                  manual intervention is required. Examples of terminal errors would
+                  be invalid combinations of settings in the spec, values that are
+                  unsupported by the controller, or the responsible controller itself
+                  being critically misconfigured. \n Any transient errors that occur
+                  during the reconciliation of Machines can be added as events to
+                  the Machine object and/or logged in the controller's output."
+                type: string
               loadBalancerConfigured:
                 description: LoadBalancerConfigured denotes that the machine has been
                   added to the load balancer
