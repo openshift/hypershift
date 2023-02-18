@@ -15,14 +15,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
-func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string, metricsSet metrics.MetricsSet) error {
+func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, apiServerPort int, ownerRef config.OwnerRef, clusterID string, metricsSet metrics.MetricsSet) error {
 	ownerRef.ApplyTo(sm)
 
 	sm.Spec.Selector.MatchLabels = kasLabels()
 	sm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{
 		MatchNames: []string{sm.Namespace},
 	}
-	targetPort := intstr.FromInt(APIServerListenPort)
+	targetPort := intstr.FromInt(apiServerPort)
 	sm.Spec.Endpoints = []prometheusoperatorv1.Endpoint{
 		{
 			Interval:   "15s",

@@ -113,7 +113,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	if util.IsPrivateHCP(hcp) {
 		p.APIServerAddress = fmt.Sprintf("api.%s.hypershift.local", hcp.Name)
-		p.APIServerPort = util.APIPortWithDefault(hcp, config.DefaultAPIServerPort)
+		p.APIServerPort = util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	} else {
 		p.APIServerAddress = hcp.Status.ControlPlaneEndpoint.Host
 		p.APIServerPort = hcp.Status.ControlPlaneEndpoint.Port

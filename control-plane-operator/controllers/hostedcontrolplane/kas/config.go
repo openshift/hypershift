@@ -114,7 +114,7 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 						KeyFile:  path.Join(volumeMounts.Path(kasContainerMain().Name, kasVolumeServerCert().Name), corev1.TLSPrivateKeyKey),
 					},
 					NamedCertificates: globalconfig.GetConfigNamedCertificates(p.NamedCertificates, kasNamedCertificateMountPathPrefix),
-					BindAddress:       fmt.Sprintf("0.0.0.0:%d", APIServerListenPort),
+					BindAddress:       fmt.Sprintf("0.0.0.0:%d", p.APIServerPort),
 					BindNetwork:       "tcp4",
 					CipherSuites:      hcpconfig.CipherSuites(p.TLSSecurityProfile),
 					MinTLSVersion:     hcpconfig.MinTLSVersion(p.TLSSecurityProfile),
