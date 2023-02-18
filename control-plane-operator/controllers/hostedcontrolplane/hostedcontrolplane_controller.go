@@ -949,7 +949,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, apiServerService, func() error {
-		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, p.AllowedCIDRBlocks, util.IsPublicHCP(hcp), util.IsPrivateHCP(hcp))
+		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, p.APIServerListenPort, p.AllowedCIDRBlocks, util.IsPublicHCP(hcp), util.IsPrivateHCP(hcp))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
@@ -1127,7 +1127,7 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	if util.IsPrivateHCP(hcp) {
 		svc := manifests.PrivateRouterService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, svc, func() error {
-			return ingress.ReconcileRouterService(svc, util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), true, true)
+			return ingress.ReconcileRouterService(svc, util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort), true, true)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router service: %w", err)
 		}
@@ -1149,7 +1149,7 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	// When Public access endpoint we need to create a Service type LB external for the KAS.
 	if util.IsPublicHCP(hcp) && exposeKASThroughRouter {
 		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
-			return ingress.ReconcileRouterService(pubSvc, util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), false, util.IsPrivateHCP(hcp))
+			return ingress.ReconcileRouterService(pubSvc, util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort), false, util.IsPrivateHCP(hcp))
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router service: %w", err)
 		}
@@ -1878,7 +1878,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	serviceKubeconfigSecret := manifests.KASServiceKubeconfigSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, serviceKubeconfigSecret, func() error {
-		return kas.ReconcileServiceKubeconfigSecret(serviceKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.APIServerPort)
+		return kas.ReconcileServiceKubeconfigSecret(serviceKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile service admin kubeconfig secret: %w", err)
 	}
@@ -1889,7 +1889,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	if _, err := createOrUpdate(ctx, r, capiKubeconfigSecret, func() error {
 		// TODO(alberto): This secret is currently using the cluster-admin kubeconfig for the guest cluster.
 		// We should create a separate kubeconfig with a tight set of permissions for it to use.
-		return kas.ReconcileServiceCAPIKubeconfigSecret(capiKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.APIServerPort)
+		return kas.ReconcileServiceCAPIKubeconfigSecret(capiKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile CAPI service admin kubeconfig secret: %w", err)
 	}
@@ -2035,7 +2035,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	serviceMonitor := manifests.KASServiceMonitor(hcp.Namespace)
 	if result, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
-		return kas.ReconcileServiceMonitor(serviceMonitor, config.OwnerRefFrom(hcp), hcp.Spec.ClusterID, r.MetricsSet)
+		return kas.ReconcileServiceMonitor(serviceMonitor, int(p.APIServerPort), config.OwnerRefFrom(hcp), hcp.Spec.ClusterID, r.MetricsSet)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kas service monitor: %w", err)
 	} else {
@@ -2126,7 +2126,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 			clientCertSecret,
 			rootCAConfigMap,
 			p.OwnerRef,
-			util.APIPortWithDefault(hcp, config.DefaultAPIServerPort),
+			util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort),
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile secret '%s/%s': %v", kcmKubeconfigSecret.Namespace, kcmKubeconfigSecret.Name, err)
@@ -2178,7 +2178,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 			clientCertSecret,
 			rootCA,
 			p.OwnerRef,
-			util.APIPortWithDefault(hcp, config.DefaultAPIServerPort),
+			util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort),
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile secret '%s/%s': %v", schedulerKubeconfigSecret.Namespace, schedulerKubeconfigSecret.Name, err)
