@@ -46,7 +46,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	ignitionserverreconciliation "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
@@ -3631,7 +3630,10 @@ func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) err
 }
 
 func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
-	port := intstr.FromInt(kas.APIServerListenPort)
+	port := intstr.FromInt(6443)
+	if hcluster.Spec.Networking.APIServer != nil && hcluster.Spec.Networking.APIServer.Port != nil {
+		port = intstr.FromInt(int(*hcluster.Spec.Networking.APIServer.Port))
+	}
 	protocol := corev1.ProtocolTCP
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{

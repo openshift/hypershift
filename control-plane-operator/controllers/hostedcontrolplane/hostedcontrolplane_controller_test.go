@@ -145,7 +145,7 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 
 func TestReconcileAPIServerService(t *testing.T) {
 	targetNamespace := "test"
-	apiPort := int32(1234)
+	apiPort := int32(6443)
 	hostname := "test.example.com"
 	allowCIDR := []hyperv1.CIDRBlock{"1.2.3.4/24"}
 	allowCIDRString := []string{"1.2.3.4/24"}
