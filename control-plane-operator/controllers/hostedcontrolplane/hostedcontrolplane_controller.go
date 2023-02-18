@@ -1018,7 +1018,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, apiServerService, func() error {
-		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, p.AllowedCIDRBlocks, util.IsPublicHCP(hcp), util.IsPrivateHCP(hcp))
+		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, p.APIServerListenPort, p.AllowedCIDRBlocks, util.IsPublicHCP(hcp), util.IsPrivateHCP(hcp))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
@@ -1947,7 +1947,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	serviceKubeconfigSecret := manifests.KASServiceKubeconfigSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, serviceKubeconfigSecret, func() error {
-		return kas.ReconcileServiceKubeconfigSecret(serviceKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.APIServerPort)
+		return kas.ReconcileServiceKubeconfigSecret(serviceKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile service admin kubeconfig secret: %w", err)
 	}
@@ -1958,7 +1958,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	if _, err := createOrUpdate(ctx, r, capiKubeconfigSecret, func() error {
 		// TODO(alberto): This secret is currently using the cluster-admin kubeconfig for the guest cluster.
 		// We should create a separate kubeconfig with a tight set of permissions for it to use.
-		return kas.ReconcileServiceCAPIKubeconfigSecret(capiKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.APIServerPort)
+		return kas.ReconcileServiceCAPIKubeconfigSecret(capiKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile CAPI service admin kubeconfig secret: %w", err)
 	}

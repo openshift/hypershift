@@ -61,12 +61,34 @@ func APIPort(hcp *hyperv1.HostedControlPlane) *int32 {
 
 func APIPortWithDefault(hcp *hyperv1.HostedControlPlane, defaultValue int32) int32 {
 	if port := APIPort(hcp); port != nil {
-		return *port
+		for _, svc := range hcp.Spec.Services {
+			if svc.Service == hyperv1.APIServer && svc.Type == hyperv1.NodePort {
+				return *port
+			}
+		}
 	}
 	return defaultValue
 }
 
 func APIPortWithDefaultFromHostedCluster(hc *hyperv1.HostedCluster, defaultValue int32) int32 {
+	for _, svc := range hc.Spec.Services {
+		if svc.Service == hyperv1.APIServer {
+			if svc.Type == hyperv1.NodePort && hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.Port != nil {
+				return *hc.Spec.Networking.APIServer.Port
+			}
+		}
+	}
+	return defaultValue
+}
+
+func InternalAPIPortWithDefault(hcp *hyperv1.HostedControlPlane, defaultValue int32) int32 {
+	if port := APIPort(hcp); port != nil {
+		return *port
+	}
+	return defaultValue
+}
+
+func InternalAPIPortFromHostedClusterWithDefault(hc *hyperv1.HostedCluster, defaultValue int32) int32 {
 	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.Port != nil {
 		return *hc.Spec.Networking.APIServer.Port
 	}

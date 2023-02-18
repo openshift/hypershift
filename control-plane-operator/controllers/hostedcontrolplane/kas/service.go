@@ -15,7 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
-func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerPort int, apiAllowedCIDRBlocks []string, isPublic, isPrivate bool) error {
+func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerServicePort int, apiServerListenPort int, apiAllowedCIDRBlocks []string, isPublic, isPrivate bool) error {
 	util.EnsureOwnerRef(svc, owner)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = kasLabels()
@@ -35,9 +35,9 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	} else {
 		svc.Spec.Ports = []corev1.ServicePort{portSpec}
 	}
-	portSpec.Port = int32(apiServerPort)
+	portSpec.Port = int32(apiServerServicePort)
 	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(apiServerPort)
+	portSpec.TargetPort = intstr.FromInt(apiServerListenPort)
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
 	}

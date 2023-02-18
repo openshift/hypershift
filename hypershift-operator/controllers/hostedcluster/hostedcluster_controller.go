@@ -3630,10 +3630,7 @@ func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) err
 }
 
 func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
-	port := intstr.FromInt(6443)
-	if hcluster.Spec.Networking.APIServer != nil && hcluster.Spec.Networking.APIServer.Port != nil {
-		port = intstr.FromInt(int(*hcluster.Spec.Networking.APIServer.Port))
-	}
+	port := intstr.FromInt(int(hyperutil.APIPortWithDefaultFromHostedCluster(hcluster, config.DefaultAPIServerPort)))
 	protocol := corev1.ProtocolTCP
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -3651,15 +3648,17 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 	// We have to keep this in order to support 4.11 clusters where the KAS listen port == the external port
 	if hcluster.Spec.Networking.APIServer != nil && hcluster.Spec.Networking.APIServer.Port != nil {
 		externalPort := intstr.FromInt(int(*hcluster.Spec.Networking.APIServer.Port))
-		policy.Spec.Ingress = append(policy.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
-			From: []networkingv1.NetworkPolicyPeer{},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{
-					Port:     &externalPort,
-					Protocol: &protocol,
+		if externalPort != port {
+			policy.Spec.Ingress = append(policy.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
+				From: []networkingv1.NetworkPolicyPeer{},
+				Ports: []networkingv1.NetworkPolicyPort{
+					{
+						Port:     &externalPort,
+						Protocol: &protocol,
+					},
 				},
-			},
-		})
+			})
+		}
 	}
 
 	// NetworkPolicy egress is broken for 4.11 on OpenShiftSDN, this is a workaround
