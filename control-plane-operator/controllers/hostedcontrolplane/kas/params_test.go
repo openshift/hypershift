@@ -15,11 +15,12 @@ import (
 // TODO (cewong): Add tests for other params
 func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 	tests := []struct {
-		name             string
-		advertiseAddress *string
-		port             *int32
-		expectedAddress  string
-		expectedPort     int32
+		apiServiceMapping hyperv1.ServicePublishingStrategyMapping
+		name              string
+		advertiseAddress  *string
+		port              *int32
+		expectedAddress   string
+		expectedPort      int32
 	}{
 		{
 			name:            "not specified",
@@ -33,16 +34,28 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 			expectedPort:     config.DefaultAPIServerPort,
 		},
 		{
-			name:            "port set",
+			name:            "port set for default service publishing strategies",
+			port:            pointer.Int32Ptr(6789),
+			expectedAddress: config.DefaultAdvertiseAddress,
+			expectedPort:    config.DefaultAPIServerPort,
+		},
+		{
+			name: "port set for NodePort service Publishing Strategy",
+			apiServiceMapping: hyperv1.ServicePublishingStrategyMapping{
+				Service: hyperv1.APIServer,
+				ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+					Type: hyperv1.NodePort,
+				},
+			},
 			port:            pointer.Int32Ptr(6789),
 			expectedAddress: config.DefaultAdvertiseAddress,
 			expectedPort:    6789,
 		},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{test.apiServiceMapping}
 			hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: test.port, AdvertiseAddress: test.advertiseAddress}
 			p := NewKubeAPIServerParams(context.Background(), hcp, map[string]string{}, "", 0, "", 0, false)
 			g := NewGomegaWithT(t)

@@ -818,7 +818,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, apiServerService, func() error {
-		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, p.AllowedCIDRBlocks, util.IsPublicHCP(hcp))
+		return kas.ReconcileService(apiServerService, serviceStrategy, p.OwnerReference, p.APIServerPort, p.APIServerListenPort, p.AllowedCIDRBlocks, util.IsPublicHCP(hcp))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
@@ -1561,7 +1561,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	serviceKubeconfigSecret := manifests.KASServiceKubeconfigSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, serviceKubeconfigSecret, func() error {
-		return kas.ReconcileServiceKubeconfigSecret(serviceKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.APIServerPort)
+		return kas.ReconcileServiceKubeconfigSecret(serviceKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile service admin kubeconfig secret: %w", err)
 	}
@@ -1572,7 +1572,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	if _, err := createOrUpdate(ctx, r, capiKubeconfigSecret, func() error {
 		// TODO(alberto): This secret is currently using the cluster-admin kubeconfig for the guest cluster.
 		// We should create a separate kubeconfig with a tight set of permissions for it to use.
-		return kas.ReconcileServiceCAPIKubeconfigSecret(capiKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.APIServerPort)
+		return kas.ReconcileServiceCAPIKubeconfigSecret(capiKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalPort)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile CAPI service admin kubeconfig secret: %w", err)
 	}
@@ -2084,7 +2084,7 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperatorKubeconfig(ctx co
 		return err
 	}
 
-	apiServerPort := util.APIPortWithDefault(hcp, config.DefaultAPIServerPort)
+	apiServerPort := util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	return kas.ReconcileIngressOperatorKubeconfigSecret(s, rootCASecret, config.OwnerRefFrom(hcp), apiServerPort)
 }
 
@@ -2415,7 +2415,7 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 	if util.IsPrivateHCP(hcp) {
 		svc := manifests.PrivateRouterService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, svc, func() error {
-			return ingress.ReconcileRouterService(svc, config.OwnerRefFrom(hcp), util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), true)
+			return ingress.ReconcileRouterService(svc, config.OwnerRefFrom(hcp), util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort), true)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router service: %w", err)
 		}
@@ -2427,7 +2427,7 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 	if util.IsPublicHCP(hcp) {
 		pubSvc := manifests.RouterPublicService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
-			return ingress.ReconcileRouterService(pubSvc, config.OwnerRefFrom(hcp), util.APIPortWithDefault(hcp, config.DefaultAPIServerPort), false)
+			return ingress.ReconcileRouterService(pubSvc, config.OwnerRefFrom(hcp), util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort), false)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router service: %w", err)
 		}
@@ -2689,7 +2689,7 @@ func (r *HostedControlPlaneReconciler) reconcileAWSPodIdentityWebhookKubeconfig(
 		return err
 	}
 
-	apiServerPort := util.APIPortWithDefault(hcp, config.DefaultAPIServerPort)
+	apiServerPort := util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	return kas.ReconcileAWSPodIdentityWebhookKubeconfigSecret(s, rootCASecret, config.OwnerRefFrom(hcp), apiServerPort)
 }
 
