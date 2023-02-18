@@ -176,6 +176,7 @@ deps:
 	$(GO) mod tidy
 	$(GO) mod vendor
 	$(GO) mod verify
+	$(GO) list -m -mod=readonly -json all > /dev/null
 
 # Run staticcheck
 # How to ignore failures https://staticcheck.io/docs/configuration#line-based-linter-directives
