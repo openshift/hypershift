@@ -103,7 +103,6 @@ func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClien
 			err = nodePoolRecreate(t, ctx, nodePool, mgmtClient)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to Create the NodePool")
 		}
-		defer nodePoolScaleDownToZero(ctx, mgmtClient, *nodePool, t)
 
 		numNodes := oneReplicas
 		t.Logf("Waiting for Nodes %d\n", numNodes)
@@ -163,13 +162,17 @@ func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClien
 			t.Fatalf("failed to update nodepool %s after adding machineconfig: %v", nodePool.Name, err)
 		}
 
+		// DS Customization
 		ds := machineConfigUpdatedVerificationDS.DeepCopy()
+		dsName := ds.Name + "-replace"
+		e2eutil.CorrelateDaemonSet(ds, nodePool, dsName)
+
 		if err := hostedClusterClient.Create(ctx, ds); err != nil {
 			t.Fatalf("failed to create %s DaemonSet in guestcluster: %v", ds.Name, err)
 		}
 
 		t.Logf("waiting for rollout of updated nodepools")
-		err = wait.PollImmediateWithContext(ctx, 5*time.Second, 15*time.Minute, func(ctx context.Context) (bool, error) {
+		err = wait.PollImmediateWithContext(ctx, 10*time.Second, 15*time.Minute, func(ctx context.Context) (bool, error) {
 			if ctx.Err() != nil {
 				return false, err
 			}
@@ -191,7 +194,7 @@ func testNodepoolMachineconfigGetsRolledout(parentCtx context.Context, mgmtClien
 
 			return true, nil
 		})
-		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed waiting for all pods in the machine config update verification DS to be ready: %v", err))
+		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed waiting for all pods in the MachineConfig update verification DS to be ready: %v", err))
 		g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodes)))
 		e2eutil.EnsureNoCrashingPods(t, ctx, mgmtClient, hostedCluster)
 		e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, mgmtClient, hostedCluster)

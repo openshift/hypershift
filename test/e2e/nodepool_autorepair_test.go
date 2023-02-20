@@ -85,7 +85,6 @@ func testNodePoolAutoRepair(parentCtx context.Context, mgmtClient crclient.Clien
 			err = nodePoolRecreate(t, ctx, nodePool, mgmtClient)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to Create the NodePool")
 		}
-		defer nodePoolScaleDownToZero(ctx, mgmtClient, *nodePool, t)
 
 		numNodes := int32(1)
 
