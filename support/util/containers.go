@@ -64,6 +64,9 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 	if opts.WaitForLabeledPodsGone != "" {
 		availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--wait-for-labeled-pods-gone=%s", opts.WaitForLabeledPodsGone))
 	}
+	if opts.WaitForClusterVersionUpdated != "" {
+		availabilityProberContainer.Command = append(availabilityProberContainer.Command, fmt.Sprintf("--wait-for-cluster-version-updated=%s", opts.WaitForClusterVersionUpdated))
+	}
 	if len(spec.InitContainers) == 0 || spec.InitContainers[0].Name != "availability-prober" {
 		spec.InitContainers = append([]corev1.Container{{}}, spec.InitContainers...)
 	}
@@ -77,6 +80,7 @@ type AvailabilityProberOpts struct {
 	RequiredAPIs                  []schema.GroupVersionKind
 	WaitForInfrastructureResource bool
 	WaitForLabeledPodsGone        string
+	WaitForClusterVersionUpdated  string
 }
 
 type AvailabilityProberOpt func(*AvailabilityProberOpts)

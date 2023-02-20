@@ -35,6 +35,7 @@ type options struct {
 	kubeconfig                    string
 	waitForInfrastructureResource bool
 	waitForLabeledPodsGone        string
+	waitForClusterVersionUpdated  string
 	requiredAPIs                  stringSetFlag
 	requiredAPIsParsed            []schema.GroupVersionKind
 }
@@ -49,6 +50,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().Var(&opts.requiredAPIs, "required-api", "An api that must be up before the program will be end. Can be passed multiple times, must be in group,version,kind format (e.G. operators.coreos.com,v1alpha1,CatalogSource)")
 	cmd.Flags().BoolVar(&opts.waitForInfrastructureResource, "wait-for-infrastructure-resource", false, "Waits until the cluster infrastructure.config.openshift.io resource is present")
 	cmd.Flags().StringVar(&opts.waitForLabeledPodsGone, "wait-for-labeled-pods-gone", "", "Waits until pods with the specified label is gone from the namespace. Must be in format: namespace/label=selector")
+	cmd.Flags().StringVar(&opts.waitForClusterVersionUpdated, "wait-for-cluster-version-updated", "", "Waits until the ClusterVersion resource's desired image has been updated. Must be set to release image value.")
 
 	log := zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
@@ -96,13 +98,13 @@ func NewStartCommand() *cobra.Command {
 			}
 		}
 
-		check(log, url, time.Second, time.Second, opts.requiredAPIsParsed, opts.waitForInfrastructureResource, opts.waitForLabeledPodsGone, discoveryClient, kubeClient)
+		check(log, url, time.Second, time.Second, opts.requiredAPIsParsed, opts.waitForInfrastructureResource, opts.waitForLabeledPodsGone, opts.waitForClusterVersionUpdated, discoveryClient, kubeClient)
 	}
 
 	return cmd
 }
 
-func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, waitForInfrastructureResource bool, waitForLabeledPodsGone string, discoveryClient discovery.DiscoveryInterface, kubeClient crclient.Client) {
+func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, waitForInfrastructureResource bool, waitForLabeledPodsGone string, waitForClusterVersionUpdated string, discoveryClient discovery.DiscoveryInterface, kubeClient crclient.Client) {
 	log = log.WithValues("sleepTime", sleepTime.String())
 	client := &http.Client{
 		Timeout: requestTimeout,
@@ -183,6 +185,18 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 			}
 		}
 
+		if waitForClusterVersionUpdated != "" {
+			var clusterVersion configv1.ClusterVersion
+			err := kubeClient.Get(context.Background(), types.NamespacedName{Name: "version"}, &clusterVersion)
+			if err != nil {
+				log.Error(err, "cluster version resource not yet available")
+				continue
+			}
+			if clusterVersion.Status.Desired.Image != waitForClusterVersionUpdated {
+				log.Info(fmt.Sprintf("cluster version resource not yet updated to %s", waitForClusterVersionUpdated))
+				continue
+			}
+		}
 		return
 	}
 }

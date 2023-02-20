@@ -267,6 +267,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 			{Group: "config.openshift.io", Version: "v1", Kind: "ClusterOperator"},
 			{Group: "config.openshift.io", Version: "v1", Kind: "ClusterVersion"},
 		}
+		o.WaitForClusterVersionUpdated = releaseImage
 	})
 	return nil
 }
