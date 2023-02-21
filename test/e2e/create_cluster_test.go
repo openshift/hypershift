@@ -73,7 +73,7 @@ func TestCreateCluster(t *testing.T) {
 	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
 }
 
-func TestCreateClusterKms(t *testing.T) {
+func TestCreateClusterCustomConfig(t *testing.T) {
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
@@ -118,6 +118,9 @@ func TestCreateClusterKms(t *testing.T) {
 	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
 
 	e2eutil.EnsureSecretEncryptedUsingKMS(t, ctx, hostedCluster, guestClient)
+
+	// test oauth with identity provider
+	e2eutil.EnsureOAuthWithIdentityProvider(t, ctx, client, hostedCluster)
 }
 
 func TestNoneCreateCluster(t *testing.T) {
