@@ -238,11 +238,15 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-		if err := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to destroy default workeer security group: %w", err)
-		}
 
 		if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
+			if err := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
+				if awsErrorCode(err) == "UnauthorizedOperation" {
+					r.Log.Info("Skipping AWS default security group deletion because the operator is not authorized to delete it.")
+				} else {
+					return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", err)
+				}
+			}
 			done, err := r.removeCloudResources(ctx, hostedControlPlane)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed: %w", err)
@@ -3683,11 +3687,6 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 		return nil
 	}
 
-	logger := ctrl.LoggerFrom(ctx)
-	if msg, isValid := hasValidCloudCredentials(hcp); !isValid {
-		logger.Info("Skipping default SecurityGroup cleanup", "reason", msg)
-		return nil
-	}
 	describeSGResult, err := r.ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(hcp.Spec.InfraID)})
 	if err != nil {
 		return fmt.Errorf("cannot list security groups: %w", err)
@@ -3725,7 +3724,8 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 }
 
 func awsErrorCode(err error) string {
-	if awsErr, ok := err.(awserr.Error); ok {
+	var awsErr awserr.Error
+	if errors.As(err, &awsErr) {
 		return awsErr.Code()
 	}
 	return ""
