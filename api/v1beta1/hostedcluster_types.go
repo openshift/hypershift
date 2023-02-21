@@ -468,6 +468,13 @@ type DNSSpec struct {
 	// +immutable
 	BaseDomain string `json:"baseDomain"`
 
+	// BaseDomainPrefix is the base domain prefix of the cluster.
+	// defaults to clusterName if not set
+	//
+	// +optional
+	// +immutable
+	BaseDomainPrefix *string `json:"baseDomainPrefix,omitempty"`
+
 	// PublicZoneID is the Hosted Zone ID where all the DNS records that are
 	// publicly accessible to the internet exist.
 	//

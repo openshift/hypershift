@@ -1938,6 +1938,10 @@ spec:
                   baseDomain:
                     description: BaseDomain is the base domain of the cluster.
                     type: string
+                  baseDomainPrefix:
+                    description: BaseDomainPrefix is the base domain prefix of the
+                      cluster. defaults to clusterName if not set
+                    type: string
                   privateZoneID:
                     description: PrivateZoneID is the Hosted Zone ID where all the
                       DNS records that are only available internally to the cluster
@@ -5581,6 +5585,10 @@ spec:
                 properties:
                   baseDomain:
                     description: BaseDomain is the base domain of the cluster.
+                    type: string
+                  baseDomainPrefix:
+                    description: BaseDomainPrefix is the base domain prefix of the
+                      cluster. defaults to clusterName if not set
                     type: string
                   privateZoneID:
                     description: PrivateZoneID is the Hosted Zone ID where all the
