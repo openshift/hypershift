@@ -87,7 +87,7 @@ func ReconcileServiceAccountKubeconfig(secret, csrSigner *corev1.Secret, ca *cor
 	if err := reconcileSignedCert(secret, csrSigner, config.OwnerRef{}, cn, serviceaccount.MakeGroupNames(serviceAccountNamespace), X509UsageClientAuth); err != nil {
 		return fmt.Errorf("failed to reconcile serviceaccount client cert: %w", err)
 	}
-	svcURL := inClusterKASURL(hcp.Namespace, util.APIPortWithDefault(hcp, config.DefaultAPIServerPort))
+	svcURL := inClusterKASURL(hcp.Namespace, util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort))
 
 	return ReconcileKubeConfig(secret, secret, ca, svcURL, "", manifests.KubeconfigScopeLocal, config.OwnerRef{})
 }
