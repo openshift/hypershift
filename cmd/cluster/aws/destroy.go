@@ -30,6 +30,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.AWSPlatform.PreserveIAM, "preserve-iam", opts.AWSPlatform.PreserveIAM, "If true, skip deleting IAM. Otherwise destroy any default generated IAM along with other infra.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Cluster's region; inferred from the hosted cluster by default")
 	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomain, "base-domain", opts.AWSPlatform.BaseDomain, "Cluster's base domain; inferred from the hosted cluster by default")
+	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomainPrefix, "base-domain-prefix", opts.AWSPlatform.BaseDomainPrefix, "Cluster's base domain prefix; inferred from the hosted cluster by default")
 	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A kubernete's secret with a platform credential, pull-secret and base-domain. The secret must exist in the supplied \"--namespace\"")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -62,6 +63,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	}
 	infraID := o.InfraID
 	baseDomain := o.AWSPlatform.BaseDomain
+	baseDomainPrefix := o.AWSPlatform.BaseDomainPrefix
 	region := o.AWSPlatform.Region
 
 	//Override the credentialSecret with credentialFile
@@ -82,6 +84,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		AWSSecretKey:       awsSecretKey,
 		Name:               o.Name,
 		BaseDomain:         baseDomain,
+		BaseDomainPrefix:   baseDomainPrefix,
 		Log:                o.Log,
 	}
 	if err := destroyInfraOpts.Run(ctx); err != nil {
@@ -115,6 +118,14 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 		o.InfraID = hostedCluster.Spec.InfraID
 		o.AWSPlatform.Region = hostedCluster.Spec.Platform.AWS.Region
 		o.AWSPlatform.BaseDomain = hostedCluster.Spec.DNS.BaseDomain
+
+		if hostedCluster.Spec.DNS.BaseDomainPrefix != nil {
+			if *hostedCluster.Spec.DNS.BaseDomainPrefix == "" {
+				o.AWSPlatform.BaseDomainPrefix = "none"
+			} else {
+				o.AWSPlatform.BaseDomainPrefix = *hostedCluster.Spec.DNS.BaseDomainPrefix
+			}
+		}
 	}
 
 	var inputErrors []error
