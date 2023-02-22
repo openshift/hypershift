@@ -41,7 +41,7 @@ func InClusterKASReadyURL(namespace string, securePort *int32) string {
 }
 
 func ReconcileLocalhostKubeconfigSecret(secret, cert *corev1.Secret, ca *corev1.ConfigMap, ownerRef config.OwnerRef, apiServerPort int32) error {
-	localhostURL := fmt.Sprintf("https://localhost:%d", APIServerListenPort)
+	localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
 	return pki.ReconcileKubeConfig(secret, cert, ca, localhostURL, "", manifests.KubeconfigScopeLocal, ownerRef)
 }
 
