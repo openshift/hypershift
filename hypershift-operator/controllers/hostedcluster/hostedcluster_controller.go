@@ -3376,6 +3376,10 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err)
 	}
 
+	if err := r.validateNetworks(hc); err != nil {
+		errs = append(errs, err)
+	}
+
 	return utilerrors.NewAggregate(errs)
 }
 
@@ -3587,6 +3591,12 @@ func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.Hoste
 		}
 	}
 	return nil
+}
+
+func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) error {
+	errs := validateSliceNetworkCIDRs(hc)
+
+	return errs.ToAggregate()
 }
 
 type ClusterMachineApproverConfig struct {
@@ -4247,7 +4257,6 @@ func validateClusterID(hc *hyperv1.HostedCluster) error {
 	}
 	return nil
 }
-
 func (r *HostedClusterReconciler) reconcileServiceAccountSigningKey(ctx context.Context, hc *hyperv1.HostedCluster, targetNamespace string, createOrUpdate upsert.CreateOrUpdateFN) error {
 	privateBytes, publicBytes, err := r.serviceAccountSigningKeyBytes(ctx, hc)
 	if err != nil {
