@@ -50,6 +50,7 @@ type CreateOptions struct {
 	Name                             string
 	Namespace                        string
 	BaseDomain                       string
+	BaseDomainPrefix                 string
 	NetworkType                      string
 	NodePoolReplicas                 int32
 	NodeDrainTimeout                 time.Duration
