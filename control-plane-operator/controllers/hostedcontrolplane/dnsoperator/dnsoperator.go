@@ -1,6 +1,8 @@
 package dnsoperator
 
 import (
+	"fmt"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -104,6 +106,12 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	}
 	dep.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.BoolPtr(false)
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
+		Args: []string{
+			"--leader-elect=true",
+			fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
+			fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
+			fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
+		},
 		Command: []string{"dns-operator"},
 		Env: []corev1.EnvVar{
 			{
@@ -157,6 +165,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 			o.RequiredAPIs = []schema.GroupVersionKind{
 				{Group: "operator.openshift.io", Version: "v1", Kind: "DNS"},
 			}
+			o.WaitForLabeledPodsGone = "openshift-dns-operator/name=dns-operator"
 		},
 	)
 	params.DeploymentConfig.ApplyTo(dep)
