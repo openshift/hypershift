@@ -57,6 +57,7 @@ var initialObjects = []client.Object{
 	},
 	manifests.NodeTuningClusterOperator(),
 	manifests.NamespaceKubeSystem(),
+	&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
 }
 
 func shouldNotError(key client.ObjectKey) bool {
