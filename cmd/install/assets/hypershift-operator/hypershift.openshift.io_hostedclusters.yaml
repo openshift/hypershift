@@ -2692,6 +2692,17 @@ spec:
                           can't be changed.
                         pattern: '^crn:'
                         type: string
+                      imageRegistryOperatorCloudCreds:
+                        description: ImageRegistryOperatorCloudCreds is a reference
+                          to a secret containing ibm cloud credentials for image registry
+                          operator to get authenticated with ibm cloud.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
                       ingressOperatorCloudCreds:
                         description: IngressOperatorCloudCreds is a reference to a
                           secret containing ibm cloud credentials for ingress operator
@@ -2812,6 +2823,7 @@ spec:
                     required:
                     - accountID
                     - cisInstanceCRN
+                    - imageRegistryOperatorCloudCreds
                     - ingressOperatorCloudCreds
                     - kubeCloudControllerCreds
                     - nodePoolManagementCreds
@@ -6276,6 +6288,17 @@ spec:
                           can't be changed.
                         pattern: '^crn:'
                         type: string
+                      imageRegistryOperatorCloudCreds:
+                        description: ImageRegistryOperatorCloudCreds is a reference
+                          to a secret containing ibm cloud credentials for image registry
+                          operator to get authenticated with ibm cloud.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
                       ingressOperatorCloudCreds:
                         description: IngressOperatorCloudCreds is a reference to a
                           secret containing ibm cloud credentials for ingress operator
@@ -6396,6 +6419,7 @@ spec:
                     required:
                     - accountID
                     - cisInstanceCRN
+                    - imageRegistryOperatorCloudCreds
                     - ingressOperatorCloudCreds
                     - kubeCloudControllerCreds
                     - nodePoolManagementCreds

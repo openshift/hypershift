@@ -4,21 +4,34 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/IBM-Cloud/power-go-client/power/models"
-	"github.com/IBM/networking-go-sdk/dnsrecordsv1"
-	"k8s.io/apimachinery/pkg/util/errors"
+	"golang.org/x/net/http/httpproxy"
 
 	"github.com/spf13/cobra"
+
+	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
+	utilpointer "k8s.io/utils/pointer"
 
 	"github.com/IBM-Cloud/power-go-client/clients/instance"
 	"github.com/IBM-Cloud/power-go-client/ibmpisession"
+	"github.com/IBM-Cloud/power-go-client/power/models"
+	"github.com/IBM/ibm-cos-sdk-go/aws"
+	"github.com/IBM/ibm-cos-sdk-go/aws/awserr"
+	"github.com/IBM/ibm-cos-sdk-go/aws/credentials/ibmiam"
+	cosSession "github.com/IBM/ibm-cos-sdk-go/aws/session"
+	"github.com/IBM/ibm-cos-sdk-go/service/s3"
+	"github.com/IBM/ibm-cos-sdk-go/service/s3/s3manager"
+	"github.com/IBM/networking-go-sdk/dnsrecordsv1"
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
+	regionutils "github.com/ppc64le-cloud/powervs-utils"
 )
 
 const (
@@ -36,6 +49,9 @@ const (
 
 	// Resource name prefix
 	vpcLbNamePrefix = "kube"
+
+	// IAM endpoint for creating COS session
+	iamEndpoint = "https://iam.cloud.ibm.com/identity/token"
 )
 
 // DestroyInfraOptions command line options to destroy infra created in IBMCloud for Hypershift
@@ -167,6 +183,11 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 	if err = deleteSecrets(options.Name, options.Namespace, accountID, resourceGroupID); err != nil {
 		errL = append(errL, fmt.Errorf("error deleting secrets: %w", err))
 		log(options.InfraID).Error(err, "error deleting secrets")
+	}
+
+	if err = deleteCOS(ctx, options, resourceGroupID); err != nil {
+		errL = append(errL, fmt.Errorf("error deleting cos buckets: %w", err))
+		log(options.InfraID).Error(err, "error deleting cos buckets")
 	}
 
 	var powerVsCloudInstanceID string
@@ -306,6 +327,11 @@ func deleteSecrets(name, namespace, accountID string, resourceGroupID string) er
 		storageOperatorCR, storageOperatorCreds, namespace)
 	if err != nil {
 		return fmt.Errorf("error deleting ingress operator secret: %w", err)
+	}
+
+	if err = deleteServiceID(name, cloudApiKey, accountID, resourceGroupID,
+		imageRegistryOperatorCR, imageRegistryOperatorCreds, namespace); err != nil {
+		return fmt.Errorf("error deleting image registry operator secret: %w", err)
 	}
 
 	return nil
@@ -740,4 +766,193 @@ func destroyVpcLB(ctx context.Context, options *DestroyInfraOptions, subnetID st
 	}
 
 	return pagingHelper(f)
+}
+
+// createCOSClient creates COS client to interact with the COS for clean up
+func createCOSClient(serviceInstanceCRN string, location string) (*s3.S3, error) {
+	// if IBMCLOUD_COS_API_ENDPOINT is set, will use custom endpoint with the default cosEndpoint
+	serviceEndpoint := getCustomEndpointUrl(cosService, fmt.Sprintf("s3.%s.cloud-object-storage.appdomain.cloud", location))
+
+	awsOptions := cosSession.Options{
+		Config: aws.Config{
+			Endpoint: &serviceEndpoint,
+			Region:   &location,
+			HTTPClient: &http.Client{
+				Transport: &http.Transport{
+					Proxy: func(req *http.Request) (*url.URL, error) {
+						return httpproxy.FromEnvironment().ProxyFunc()(req.URL)
+					},
+					DialContext: (&net.Dialer{
+						Timeout:   30 * time.Second,
+						KeepAlive: 30 * time.Second,
+						DualStack: true,
+					}).DialContext,
+					ForceAttemptHTTP2:     true,
+					MaxIdleConns:          100,
+					IdleConnTimeout:       90 * time.Second,
+					TLSHandshakeTimeout:   10 * time.Second,
+					ExpectContinueTimeout: 1 * time.Second,
+				},
+			},
+			S3ForcePathStyle: aws.Bool(true),
+		},
+	}
+
+	awsOptions.Config.Credentials = ibmiam.NewStaticCredentials(aws.NewConfig(), getCustomEndpointUrl(platformService, iamEndpoint), cloudApiKey, serviceInstanceCRN)
+
+	sess, err := cosSession.NewSessionWithOptions(awsOptions)
+	if err != nil {
+		return nil, err
+	}
+	return s3.New(sess), nil
+}
+
+// findCOSInstance find COS resource instance by name
+func findCOSInstance(rcv2 *resourcecontrollerv2.ResourceControllerV2, cosInstanceName string, resourceGroupID string) (*resourcecontrollerv2.ResourceInstance, error) {
+	// cosResourcePlanID is a UID of cloud object storage service from ibm cloud catalog, need this for resource filtering
+	// https://cloud.ibm.com/docs/cloud-object-storage?topic=cloud-object-storage-faq-provision resource plan id of cloud object storage service specified
+	cosResourcePlanID := "744bfc56-d12c-4866-88d5-dac9139e0e5d"
+	instances, resp, err := rcv2.ListResourceInstances(
+		&resourcecontrollerv2.ListResourceInstancesOptions{
+			Name:            &cosInstanceName,
+			ResourceGroupID: &resourceGroupID,
+			ResourcePlanID:  utilpointer.String(cosResourcePlanID),
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get resource instances: %s with resp code: %d", err.Error(), resp.StatusCode)
+	}
+
+	if len(instances.Resources) < 1 {
+		return nil, fmt.Errorf("COS instance unavailable")
+	}
+
+	return &instances.Resources[0], nil
+}
+
+// isBucketNotFound determines if a set of S3 errors are indicative
+// of if a bucket is truly not found.
+func isBucketNotFound(err interface{}) bool {
+	switch s3Err := err.(type) {
+	case awserr.Error:
+		if s3Err.Code() == "NoSuchBucket" {
+			return true
+		}
+		origErr := s3Err.OrigErr()
+		if origErr != nil {
+			return isBucketNotFound(origErr)
+		}
+	case s3manager.Error:
+		if s3Err.OrigErr != nil {
+			return isBucketNotFound(s3Err.OrigErr)
+		}
+	case s3manager.Errors:
+		if len(s3Err) > 0 {
+			return isBucketNotFound(s3Err[0])
+		}
+	}
+	return false
+}
+
+// deleteCOSBucket deletes COS bucket and the objects in it
+func deleteCOSBucket(ctx context.Context, bucketName string, cosClient *s3.S3) error {
+	iter := s3manager.NewDeleteListIterator(cosClient, &s3.ListObjectsInput{
+		Bucket: aws.String(bucketName),
+	})
+
+	// Deleting objects under the bucket
+	if err := s3manager.NewBatchDeleteWithClient(cosClient).Delete(ctx, iter); err != nil && !isBucketNotFound(err) {
+		return err
+	}
+
+	// Deleting the bucket
+	if _, err := cosClient.DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
+		Bucket: aws.String(bucketName),
+	}); err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() != s3.ErrCodeNoSuchBucket {
+				return err
+			}
+		} else {
+			return err
+		}
+	}
+
+	return cosClient.WaitUntilBucketNotExistsWithContext(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+}
+
+// deleteCOS deletes the COS instance and associated resources like objects, buckets and resource keys
+func deleteCOS(ctx context.Context, options *DestroyInfraOptions, resourceGroupID string) error {
+	// cosInstanceName is generated by following the notation used to generate `serviceInstanceName` var here https://github.com/openshift/cluster-image-registry-operator/blob/86635851e94d656cddecabf4c13ef31b90d3e994/pkg/storage/ibmcos/ibmcos.go#L246
+	cosInstanceName := fmt.Sprintf("%s-%s", options.InfraID, "image-registry")
+
+	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(
+		&resourcecontrollerv2.ResourceControllerV2Options{
+			Authenticator: getIAMAuth(),
+			URL:           getCustomEndpointUrl(platformService, resourcecontrollerv2.DefaultServiceURL),
+		})
+	if err != nil {
+		return err
+	}
+
+	// Checking COS instance available to delete, if not skip COS deletion
+	cosInstance, err := findCOSInstance(rcv2, cosInstanceName, resourceGroupID)
+	if err != nil {
+		if err.Error() == "COS instance unavailable" {
+			log(options.InfraID).Info("No COS Instance available to delete")
+			return nil
+		}
+		return err
+	}
+
+	// Deciding cosRegion based on Power VS region with region mapping
+	cosRegion, err := regionutils.COSRegionForPowerVSRegion(options.Region)
+	if err != nil {
+		return err
+	}
+	cosClient, err := createCOSClient(*cosInstance.CRN, cosRegion)
+	if err != nil {
+		return err
+	}
+
+	bucketNamePrefix := fmt.Sprintf("%s-%s", cosInstanceName, cosRegion)
+
+	// Deleting COS buckets before proceeding to COS instance deletion
+	bucketList, err := cosClient.ListBuckets(&s3.ListBucketsInput{IBMServiceInstanceId: cosInstance.ID})
+	if err != nil {
+		return err
+	}
+	for _, bucket := range bucketList.Buckets {
+		if strings.HasPrefix(*bucket.Name, bucketNamePrefix) {
+			if err := deleteCOSBucket(ctx, *bucket.Name, cosClient); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Deleting resource keys associated with the COS instance before proceeding to COS instance deletion
+	keysL, _, err := rcv2.ListResourceKeysForInstance(&resourcecontrollerv2.ListResourceKeysForInstanceOptions{ID: cosInstance.ID})
+	if err != nil {
+		return err
+	}
+	if len(keysL.Resources) > 0 {
+		for _, key := range keysL.Resources {
+			// Deleting resource keys(service id) associated with COS
+			err = deleteServiceIDByCRN(options.Name, cloudApiKey, *key.Credentials.IamServiceidCRN)
+			if err != nil {
+				return err
+			}
+			_, err = rcv2.DeleteResourceKeyWithContext(ctx, &resourcecontrollerv2.DeleteResourceKeyOptions{ID: key.ID})
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	log(options.InfraID).Info("Deleting COS Instance", "name", cosInstanceName)
+	_, err = rcv2.DeleteResourceInstance(&resourcecontrollerv2.DeleteResourceInstanceOptions{ID: cosInstance.ID})
+
+	return err
 }

@@ -804,6 +804,12 @@ type PowerVSPlatformSpec struct {
 	//
 	// +immutable
 	StorageOperatorCloudCreds corev1.LocalObjectReference `json:"storageOperatorCloudCreds"`
+
+	// ImageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
+	// credentials for image registry operator to get authenticated with ibm cloud.
+	//
+	// +immutable
+	ImageRegistryOperatorCloudCreds corev1.LocalObjectReference `json:"imageRegistryOperatorCloudCreds"`
 }
 
 // PowerVSVPC specifies IBM Cloud PowerVS LoadBalancer configuration for the control
