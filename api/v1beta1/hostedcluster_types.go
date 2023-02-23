@@ -469,7 +469,7 @@ type DNSSpec struct {
 	BaseDomain string `json:"baseDomain"`
 
 	// BaseDomainPrefix is the base domain prefix of the cluster.
-	// defaults to clusterName if not set
+	// defaults to clusterName if not set. Set it to "" if you don't want a prefix to be prepended to BaseDomain.
 	//
 	// +optional
 	// +immutable

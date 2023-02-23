@@ -32884,7 +32884,8 @@ objects:
                       type: string
                     baseDomainPrefix:
                       description: BaseDomainPrefix is the base domain prefix of the
-                        cluster. defaults to clusterName if not set
+                        cluster. defaults to clusterName if not set. Set it to ""
+                        if you don't want a prefix to be prepended to BaseDomain.
                       type: string
                     privateZoneID:
                       description: PrivateZoneID is the Hosted Zone ID where all the
@@ -40309,7 +40310,8 @@ objects:
                       type: string
                     baseDomainPrefix:
                       description: BaseDomainPrefix is the base domain prefix of the
-                        cluster. defaults to clusterName if not set
+                        cluster. defaults to clusterName if not set. Set it to ""
+                        if you don't want a prefix to be prepended to BaseDomain.
                       type: string
                     privateZoneID:
                       description: PrivateZoneID is the Hosted Zone ID where all the
