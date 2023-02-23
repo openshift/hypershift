@@ -2961,7 +2961,7 @@ string
 <td>
 <em>(Optional)</em>
 <p>BaseDomainPrefix is the base domain prefix of the cluster.
-defaults to clusterName if not set</p>
+defaults to clusterName if not set. Set it to &ldquo;&rdquo; if you don&rsquo;t want a prefix to be prepended to BaseDomain.</p>
 </td>
 </tr>
 <tr>
