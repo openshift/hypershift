@@ -6,6 +6,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"strings"
 
+	"github.com/IBM/platform-services-go-sdk/iamidentityv1"
+
 	credreqv1 "github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1"
 	cco "github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud"
 	ccoibmcloud "github.com/openshift/cloud-credential-operator/pkg/ibmcloud"
@@ -108,6 +110,28 @@ spec:
       roles:
       - crn:v1:bluemix:public:iam::::role:Viewer
 `
+var imageRegistryOperatorCR = `
+ apiVersion: cloudcredential.openshift.io/v1
+ kind: CredentialsRequest
+ metadata:
+   name: openshift-image-registry-powervs
+   namespace: openshift-image-registry
+ spec:
+   providerSpec:
+     apiVersion: cloudcredential.openshift.io/v1
+     kind: IBMCloudPowerVSProviderSpec
+     policies:
+     - attributes:
+       - name: serviceName
+         value: cloud-object-storage
+       roles:
+       - crn:v1:bluemix:public:iam::::role:Administrator
+       - crn:v1:bluemix:public:iam::::serviceRole:Manager
+     - attributes:
+       - name: resourceType
+         value: resource-group
+       roles:
+       - crn:v1:bluemix:public:iam::::role:Viewer`
 
 // createServiceIDClient creates cloud credential operator's serviceID client
 func createServiceIDClient(name, APIKey, accountID, resourceGroupID, crYaml, secretRefName, secretRefNamespace string) (*cco.ServiceID, error) {
@@ -162,4 +186,21 @@ func deleteServiceID(name, APIKey, accountID, resourceGroupID, crYaml, secretRef
 	}
 
 	return nil
+}
+
+func extractServiceIDFromCRN(crn string) string {
+	crnL := strings.Split(crn, ":")
+	return crnL[len(crnL)-1]
+}
+
+// deleteServiceIDByCRN deletes serviceID passed via crn
+func deleteServiceIDByCRN(name string, apiKey string, crn string) error {
+	serviceID := extractServiceIDFromCRN(crn)
+	ccoIBMClient, err := ccoibmcloud.NewClient(apiKey, &ccoibmcloud.ClientParams{InfraName: name})
+	if err != nil {
+		return err
+	}
+
+	_, err = ccoIBMClient.DeleteServiceID(&iamidentityv1.DeleteServiceIDOptions{ID: &serviceID})
+	return err
 }

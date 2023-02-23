@@ -360,10 +360,11 @@ func (o ExampleOptions) Resources() *ExampleResources {
 					Region: o.PowerVS.VPCRegion,
 					Subnet: o.PowerVS.VPCSubnet,
 				},
-				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: o.PowerVS.Resources.KubeCloudControllerCreds.Name},
-				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: o.PowerVS.Resources.NodePoolManagementCreds.Name},
-				IngressOperatorCloudCreds: corev1.LocalObjectReference{Name: o.PowerVS.Resources.IngressOperatorCloudCreds.Name},
-				StorageOperatorCloudCreds: corev1.LocalObjectReference{Name: o.PowerVS.Resources.StorageOperatorCloudCreds.Name},
+				KubeCloudControllerCreds:        corev1.LocalObjectReference{Name: o.PowerVS.Resources.KubeCloudControllerCreds.Name},
+				NodePoolManagementCreds:         corev1.LocalObjectReference{Name: o.PowerVS.Resources.NodePoolManagementCreds.Name},
+				IngressOperatorCloudCreds:       corev1.LocalObjectReference{Name: o.PowerVS.Resources.IngressOperatorCloudCreds.Name},
+				StorageOperatorCloudCreds:       corev1.LocalObjectReference{Name: o.PowerVS.Resources.StorageOperatorCloudCreds.Name},
+				ImageRegistryOperatorCloudCreds: corev1.LocalObjectReference{Name: o.PowerVS.Resources.ImageRegistryOperatorCloudCreds.Name},
 			},
 		}
 		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")

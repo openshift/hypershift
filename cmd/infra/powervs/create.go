@@ -72,12 +72,14 @@ const (
 	powerVsService  = "powervs"
 	vpcService      = "vpc"
 	platformService = "platform"
+	cosService      = "cos"
 
 	// Secret suffix
 	kubeCloudControllerManagerCreds = "cloud-controller-creds"
 	nodePoolManagementCreds         = "node-management-creds"
 	ingressOperatorCreds            = "ingress-creds"
 	storageOperatorCreds            = "storage-creds"
+	imageRegistryOperatorCreds      = "image-registry-creds"
 )
 
 // CreateInfraOptions command line options for setting up infra in IBM PowerVS cloud
@@ -115,7 +117,9 @@ var (
 	customEpEnvNameMapping = map[string]string{
 		powerVsService:  "IBMCLOUD_POWER_API_ENDPOINT",
 		vpcService:      "IBMCLOUD_VPC_API_ENDPOINT",
-		platformService: "IBMCLOUD_PLATFORM_API_ENDPOINT"}
+		platformService: "IBMCLOUD_PLATFORM_API_ENDPOINT",
+		cosService:      "IBMCLOUD_COS_API_ENDPOINT",
+	}
 
 	dhcpServerLimitExceeds = func(dhcpServerCount int) error {
 		return fmt.Errorf("more than one DHCP server is not allowed in a service instance, found %d dhcp servers", dhcpServerCount)
@@ -155,6 +159,7 @@ type Secrets struct {
 	NodePoolManagement         *corev1.Secret
 	IngressOperator            *corev1.Secret
 	StorageOperator            *corev1.Secret
+	ImageRegistryOperator      *corev1.Secret
 }
 
 // Infra resource info in IBM Cloud for setting up hypershift nodepool
@@ -423,6 +428,12 @@ func (infra *Infra) setupSecrets(options *CreateInfraOptions) error {
 		return fmt.Errorf("error setup storage operator secret: %w", err)
 	}
 
+	infra.Secrets.ImageRegistryOperator, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, infra.ResourceGroupID,
+		imageRegistryOperatorCR, imageRegistryOperatorCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error setup image registry operator secret: %w", err)
+	}
+
 	log(infra.ID).Info("Secrets Ready")
 
 	return nil
@@ -622,7 +633,11 @@ func getCustomEndpointUrl(serviceName string, defaultUrl string) string {
 	apiEP := os.Getenv(customEpEnvNameMapping[serviceName])
 	url := defaultUrl
 	if apiEP != "" {
-		url = strings.Replace(defaultUrl, "https://", fmt.Sprintf("https://%s.", apiEP), 1)
+		if serviceName == cosService {
+			url = strings.Replace(defaultUrl, "s3.", fmt.Sprintf("s3.%s.", apiEP), 1)
+		} else {
+			url = strings.Replace(defaultUrl, "https://", fmt.Sprintf("https://%s.", apiEP), 1)
+		}
 	}
 
 	return url

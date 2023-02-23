@@ -6636,6 +6636,20 @@ Kubernetes core/v1.LocalObjectReference
 credentials for storage operator to get authenticated with ibm cloud.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>imageRegistryOperatorCloudCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>ImageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
+credentials for image registry operator to get authenticated with ibm cloud.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###PowerVSResourceReference { #hypershift.openshift.io/v1beta1.PowerVSResourceReference }

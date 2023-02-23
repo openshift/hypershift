@@ -326,6 +326,40 @@ func (p PowerVS) ReconcileCredentials(ctx context.Context, c client.Client, crea
 	if err != nil {
 		return fmt.Errorf("failed to reconcile storage operator provider creds: %w", err)
 	}
+
+	// Reconcile the platform provider image registry operator credentials secret by
+	// resolving  the reference from the HostedCluster and syncing the secret in
+	// the control plane namespace.
+	if err = c.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.Platform.PowerVS.ImageRegistryOperatorCloudCreds.Name}, &src); err != nil {
+		return fmt.Errorf("failed to get image registry operator provider creds %s: %w", hcluster.Spec.Platform.PowerVS.ImageRegistryOperatorCloudCreds.Name, err)
+	}
+	dest = &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      src.Name,
+		},
+	}
+	if _, err = createOrUpdate(ctx, c, dest, func() error {
+		apiKeySrcData, apiKeySrcHasData := src.Data["ibmcloud_api_key"]
+		if !apiKeySrcHasData {
+			return fmt.Errorf("hostedcluster image registry operator credentials secret %q must have a credentials key ibmcloud_api_key", src.Name)
+		}
+		dest.Type = corev1.SecretTypeOpaque
+		if dest.Data == nil {
+			dest.Data = map[string][]byte{}
+		}
+		dest.Data["ibmcloud_api_key"] = apiKeySrcData
+
+		envSrcData, envSrcHasData := src.Data["ibm-credentials.env"]
+		if !envSrcHasData {
+			return fmt.Errorf("hostedcluster image registry operator credentials secret %q must have a credentials key ibm-credentials.env", src.Name)
+		}
+		dest.Data["ibm-credentials.env"] = envSrcData
+
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile image registry operator provider creds: %w", err)
+	}
 	return nil
 }
 
