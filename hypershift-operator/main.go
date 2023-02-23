@@ -23,6 +23,9 @@ import (
 	"strings"
 	"time"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -254,6 +257,25 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	if opts.CertDir != "" {
 		if err := hostedcluster.SetupWebhookWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to create webhook: %w", err)
+		}
+	}
+
+	// Since we dropped the validation webhook server we need to ensure this resource doesn't exist
+	// otherwise it will intercept kas requests and fail.
+	// TODO (alberto): dropped in 4.14.
+	validatingWebhookConfiguration := &admissionregistrationv1.ValidatingWebhookConfiguration{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ValidatingWebhookConfiguration",
+			APIVersion: admissionregistrationv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: opts.Namespace,
+			Name:      hyperv1.GroupVersion.Group,
+		},
+	}
+	if err := mgr.GetClient().Delete(ctx, validatingWebhookConfiguration); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
 		}
 	}
 
