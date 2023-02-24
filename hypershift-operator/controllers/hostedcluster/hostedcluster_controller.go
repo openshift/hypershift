@@ -3373,8 +3373,11 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err)
 	}
 
-	if err := r.validateNetworks(hc); err != nil {
-		errs = append(errs, err)
+	// TODO(IBM): Revisit after fleets no longer use conflicting network CIDRs
+	if hc.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+		if err := r.validateNetworks(hc); err != nil {
+			errs = append(errs, err)
+		}
 	}
 
 	return utilerrors.NewAggregate(errs)
