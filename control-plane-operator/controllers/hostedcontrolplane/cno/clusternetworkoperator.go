@@ -84,7 +84,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[strin
 			WhereaboutsCNI:               images["multus-whereabouts-ipam-cni"],
 			RouteOverrideCNI:             images["multus-route-override-cni"],
 			MultusNetworkPolicy:          images["multus-networkpolicy"],
-			OVN:                          images["ovn-kubernetes"],
+			OVN:                          images["ovn-kubernetes-rhel-9"],
 			EgressRouterCNI:              images["egress-router-cni"],
 			KuryrDaemon:                  images["kuryr-cni"],
 			KuryrController:              images["kuryr-controller"],
