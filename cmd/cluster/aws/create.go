@@ -143,6 +143,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			AWSKey:             AWSKey,
 			Name:               opts.Name,
 			BaseDomain:         opts.BaseDomain,
+			BaseDomainPrefix:   opts.BaseDomainPrefix,
 			AdditionalTags:     opts.AWSPlatform.AdditionalTags,
 			Zones:              opts.AWSPlatform.Zones,
 			EnableProxy:        opts.AWSPlatform.EnableProxy,
@@ -194,6 +195,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	exampleOptions.BaseDomain = infra.BaseDomain
+	exampleOptions.BaseDomainPrefix = infra.BaseDomainPrefix
 	exampleOptions.MachineCIDR = infra.MachineCIDR
 	exampleOptions.IssuerURL = iamInfo.IssuerURL
 	exampleOptions.PrivateZoneID = infra.PrivateZoneID

@@ -36,5 +36,14 @@ func ReconcileDNSConfig(dns *configv1.DNS, hcp *hyperv1.HostedControlPlane) {
 }
 
 func BaseDomain(hcp *hyperv1.HostedControlPlane) string {
-	return fmt.Sprintf("%s.%s", hcp.Name, hcp.Spec.DNS.BaseDomain)
+	prefix := hcp.Name
+	if hcp.Spec.DNS.BaseDomainPrefix != nil {
+		prefix = *hcp.Spec.DNS.BaseDomainPrefix
+	}
+
+	if prefix == "" {
+		return hcp.Spec.DNS.BaseDomain
+	}
+
+	return fmt.Sprintf("%s.%s", prefix, hcp.Spec.DNS.BaseDomain)
 }

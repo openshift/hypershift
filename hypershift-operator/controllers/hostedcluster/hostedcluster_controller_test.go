@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	version "github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -921,6 +922,19 @@ func (c *createTypeTrackingClient) Create(ctx context.Context, obj crclient.Obje
 }
 
 func TestValidateConfigAndClusterCapabilities(t *testing.T) {
+
+	// For network test below.
+	machineNet := make([]hyperv1.MachineNetworkEntry, 2)
+	cidr, _ := ipnet.ParseCIDR("172.16.0.0/24")
+	machineNet[0].CIDR = *cidr
+	cidr, _ = ipnet.ParseCIDR("172.16.1.0/24")
+	machineNet[1].CIDR = *cidr
+	serviceNet := make([]hyperv1.ServiceNetworkEntry, 2)
+	cidr, _ = ipnet.ParseCIDR("172.16.1.252/32")
+	serviceNet[0].CIDR = *cidr
+	cidr, _ = ipnet.ParseCIDR("172.16.3.0/24")
+	serviceNet[1].CIDR = *cidr
+
 	testCases := []struct {
 		name                          string
 		hostedCluster                 *hyperv1.HostedCluster
@@ -990,6 +1004,18 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 				ClusterID: "foobar",
 			}},
 			expectedResult: errors.New(`cannot parse cluster ID "foobar": invalid UUID length: 6`),
+		},
+		{
+			name: "Setting network CIDRs overlapped, not allowed",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: serviceNet,
+						MachineNetwork: machineNet,
+					},
+				},
+			},
+			expectedResult: errors.New(`spec.networking.MachineNetwork: Invalid value: "172.16.1.0/24": spec.networking.MachineNetwork and spec.networking.ServiceNetwork overlap: 172.16.1.0/24 and 172.16.1.252/32`),
 		},
 	}
 

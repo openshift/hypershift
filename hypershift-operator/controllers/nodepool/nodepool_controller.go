@@ -397,6 +397,25 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				ObservedGeneration: nodePool.Generation,
 			})
 		}
+
+		if len(nodePool.Spec.Platform.AWS.SecurityGroups) == 0 &&
+			(hcluster.Status.Platform == nil || hcluster.Status.Platform.AWS == nil || hcluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "") {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolAWSSecurityGroupAvailableConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.DefaultAWSSecurityGroupNotReadyReason,
+				Message:            "Waiting for AWS default security group to be created for hosted cluster",
+				ObservedGeneration: nodePool.Generation,
+			})
+		} else {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolAWSSecurityGroupAvailableConditionType,
+				Status:             corev1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            "NodePool has a security group",
+				ObservedGeneration: nodePool.Generation,
+			})
+		}
 	}
 
 	// Validate PowerVS platform specific input

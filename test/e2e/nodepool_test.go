@@ -11,6 +11,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,6 +25,12 @@ var (
 	twoReplicas  int32 = 2
 )
 
+type NodePoolTestCase struct {
+	name            string
+	test            NodePoolTest
+	manifestBuilder NodePoolManifestBuilder
+}
+
 func TestNodePool(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
@@ -34,8 +41,6 @@ func TestNodePool(t *testing.T) {
 		cancel()
 	}()
 
-	// Set of tests
-	// Each test should have their own NodePool
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
 	mgmtClient, err := e2eutil.GetClient()
@@ -44,14 +49,45 @@ func TestNodePool(t *testing.T) {
 	// We set replicas to 0 in order to allow the inner tests to
 	// create their own NodePools with the proper replicas
 	clusterOpts.NodePoolReplicas = 0
-	guestCluster := e2eutil.CreateCluster(t, ctx, mgmtClient, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
-	guestClient := e2eutil.WaitForGuestClient(t, ctx, mgmtClient, guestCluster)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, mgmtClient, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
+	guestClient := e2eutil.WaitForGuestClient(t, ctx, mgmtClient, hostedCluster)
+
+	// Get the newly created defautlt NodePool
+	nodepools := &hyperv1.NodePoolList{}
+	if err := mgmtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
+		t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
+	}
+	if len(nodepools.Items) != 1 {
+		t.Fatalf("expected exactly one nodepool, got %d", len(nodepools.Items))
+	}
+	defaultNodepool := &nodepools.Items[0]
+
+	// Set of tests
+	// Each test should have their own NodePool
+	nodePoolTests := []NodePoolTestCase{
+		{
+			name: "TestKMSRootVolumeEncryption",
+			test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
+		},
+		// reuse same test with different input
+		// {
+		// 	name: "TestKMSRootVolumeEncryption Custom NodePool",
+		// 	test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
+		// 	manifestBuilder: myCustomeNodePoolBuilder,
+		// },
+	}
 
 	t.Run("Refactored", func(t *testing.T) {
-		t.Run("TestNodePoolAutoRepair", testNodePoolAutoRepair(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
-		t.Run("TestNodepoolMachineconfigGetsRolledout", testNodepoolMachineconfigGetsRolledout(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
-		t.Run("TestNTOMachineConfigGetsRolledOut", testNTOMachineConfigGetsRolledOut(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
-		t.Run("TestNTOMachineConfigAppliedInPlace", testNTOMachineConfigAppliedInPlace(ctx, mgmtClient, guestCluster, guestClient, clusterOpts))
+		t.Run("TestNodePoolAutoRepair", testNodePoolAutoRepair(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
+		t.Run("TestNodepoolMachineconfigGetsRolledout", testNodepoolMachineconfigGetsRolledout(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
+		t.Run("TestNTOMachineConfigGetsRolledOut", testNTOMachineConfigGetsRolledOut(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
+		t.Run("TestNTOMachineConfigAppliedInPlace", testNTOMachineConfigAppliedInPlace(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
+
+		for _, testCase := range nodePoolTests {
+			t.Run(testCase.name, func(t *testing.T) {
+				executeNodePoolTest(t, ctx, mgmtClient, hostedCluster, guestClient, *defaultNodepool, testCase.test, testCase.manifestBuilder)
+			})
+		}
 	})
 }
 
@@ -94,4 +130,53 @@ func nodePoolRecreate(t *testing.T, ctx context.Context, nodePool *hyperv1.NodeP
 	t.Logf("Nodepool Recreated")
 
 	return nil
+}
+
+type NodePoolTest interface {
+	Setup(t *testing.T)
+	Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node)
+
+	NodePoolManifestBuilder
+}
+
+type NodePoolManifestBuilder interface {
+	BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error)
+}
+
+func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hcClient crclient.Client,
+	defaultNodepool hyperv1.NodePool, nodePoolTest NodePoolTest, manifestBuilder NodePoolManifestBuilder) {
+	t.Parallel()
+
+	nodePoolTest.Setup(t)
+	g := NewWithT(t)
+
+	// create nodePool manifest for the test
+	if manifestBuilder == nil {
+		manifestBuilder = nodePoolTest
+	}
+	nodePool, err := manifestBuilder.BuildNodePoolManifest(defaultNodepool)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Create NodePool for current test
+	err = mgmtClient.Create(ctx, nodePool)
+	if err != nil {
+		if !errors.IsAlreadyExists(err) {
+			t.Fatalf("failed to create nodePool %s: %v", nodePool.Name, err)
+		}
+		err = nodePoolRecreate(t, ctx, nodePool, mgmtClient)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to Create the NodePool")
+	}
+	defer nodePoolScaleDownToZero(ctx, mgmtClient, *nodePool, t)
+
+	numNodes := *nodePool.Spec.Replicas
+	t.Logf("Waiting for Nodes %d\n", numNodes)
+	nodes := e2eutil.WaitForNReadyNodesByNodePool(t, ctx, hcClient, numNodes, hostedCluster.Spec.Platform.Type, nodePool.Name)
+	t.Logf("Desired replicas available for nodePool: %v", nodePool.Name)
+
+	// Wait for the rollout to be complete
+	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
+	e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster, globalOpts.LatestReleaseImage)
+
+	// run test validations
+	nodePoolTest.Run(t, *nodePool, nodes)
 }

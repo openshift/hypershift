@@ -64,11 +64,12 @@ const (
 
 // Reasons
 const (
-	NodePoolValidationFailedReason     = "ValidationFailed"
-	NodePoolInplaceUpgradeFailedReason = "InplaceUpgradeFailed"
-	NodePoolNotFoundReason             = "NotFound"
-	NodePoolFailedToGetReason          = "FailedToGet"
-	IgnitionEndpointMissingReason      = "IgnitionEndpointMissing"
-	IgnitionCACertMissingReason        = "IgnitionCACertMissing"
-	IgnitionNotReached                 = "ignitionNotReached"
+	NodePoolValidationFailedReason        = "ValidationFailed"
+	NodePoolInplaceUpgradeFailedReason    = "InplaceUpgradeFailed"
+	NodePoolNotFoundReason                = "NotFound"
+	NodePoolFailedToGetReason             = "FailedToGet"
+	IgnitionEndpointMissingReason         = "IgnitionEndpointMissing"
+	IgnitionCACertMissingReason           = "IgnitionCACertMissing"
+	IgnitionNotReached                    = "ignitionNotReached"
+	DefaultAWSSecurityGroupNotReadyReason = "DefaultSGNotReady"
 )
