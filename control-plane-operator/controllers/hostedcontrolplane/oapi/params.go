@@ -29,6 +29,7 @@ type OpenShiftAPIServerParams struct {
 	Ingress                                 *configv1.IngressSpec
 	Image                                   *configv1.Image
 	Project                                 *configv1.Project
+	AuditWebhookRef                         *corev1.LocalObjectReference
 }
 
 type OAuthDeploymentParams struct {
@@ -41,6 +42,7 @@ type OAuthDeploymentParams struct {
 	AvailabilityProberImage string
 	Availability            hyperv1.AvailabilityPolicy
 	OwnerRef                config.OwnerRef
+	AuditWebhookRef         *corev1.LocalObjectReference
 }
 
 func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, images map[string]string, setDefaultSecurityContext bool) *OpenShiftAPIServerParams {
@@ -59,6 +61,10 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 	if hcp.Spec.Configuration != nil {
 		params.Ingress = hcp.Spec.Configuration.Ingress
 		params.APIServer = hcp.Spec.Configuration.APIServer
+	}
+
+	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
+		params.AuditWebhookRef = hcp.Spec.AuditWebhook
 	}
 
 	params.OpenShiftAPIServerDeploymentConfig = config.DeploymentConfig{
@@ -189,8 +195,18 @@ func (p *OpenShiftAPIServerParams) IngressDomain() string {
 	return p.IngressSubDomain
 }
 
-func (p *OpenShiftAPIServerParams) OAuthAPIServerDeploymentParams() *OAuthDeploymentParams {
-	return &OAuthDeploymentParams{
+func (p *OpenShiftAPIServerParams) AuditPolicyConfig() configv1.Audit {
+	if p.APIServer != nil && p.APIServer.Audit.Profile != "" {
+		return p.APIServer.Audit
+	} else {
+		return configv1.Audit{
+			Profile: configv1.DefaultAuditProfileType,
+		}
+	}
+}
+
+func (p *OpenShiftAPIServerParams) OAuthAPIServerDeploymentParams(hcp *hyperv1.HostedControlPlane) *OAuthDeploymentParams {
+	params := &OAuthDeploymentParams{
 		Image:                   p.OAuthAPIServerImage,
 		EtcdURL:                 p.EtcdURL,
 		ServiceAccountIssuerURL: p.ServiceAccountIssuerURL,
@@ -201,6 +217,12 @@ func (p *OpenShiftAPIServerParams) OAuthAPIServerDeploymentParams() *OAuthDeploy
 		Availability:            p.Availability,
 		OwnerRef:                p.OwnerRef,
 	}
+
+	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
+		params.AuditWebhookRef = hcp.Spec.AuditWebhook
+	}
+
+	return params
 }
 
 type OpenShiftAPIServerServiceParams struct {

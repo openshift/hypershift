@@ -55,6 +55,12 @@ var (
 			oasVolumeKonnectivityProxyCA().Name:   "/etc/konnectivity/proxy-ca",
 		},
 	}
+
+	oasAuditWebhookConfigFileVolumeMount = util.PodVolumeMounts{
+		oasContainerMain().Name: {
+			oasAuditWebhookConfigFileVolume().Name: "/etc/kubernetes/auditwebhook",
+		},
+	}
 )
 
 func openShiftAPIServerLabels() map[string]string {
@@ -64,7 +70,7 @@ func openShiftAPIServerLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, apiPort *int32) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main OAS container
@@ -109,6 +115,27 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		InitContainers:               []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))},
 		Containers: []corev1.Container{
 			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort)),
+			{
+				Name:            "audit-logs",
+				Image:           image,
+				ImagePullPolicy: corev1.PullIfNotPresent,
+				Command: []string{
+					"/usr/bin/tail",
+					"-c+1",
+					"-F",
+					fmt.Sprintf("%s/%s", volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name), "audit.log"),
+				},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("5m"),
+						corev1.ResourceMemory: resource.MustParse("10Mi"),
+					},
+				},
+				VolumeMounts: []corev1.VolumeMount{{
+					Name:      oasVolumeWorkLogs().Name,
+					MountPath: volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name),
+				}},
+			},
 			util.BuildContainer(oasSocks5ProxyContainer(), buildOASSocks5ProxyContainer(socks5ProxyImage)),
 		},
 		Volumes: []corev1.Volume{
@@ -135,6 +162,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 				}
 			}),
 		},
+	}
+
+	if auditWebhookRef != nil {
+		applyOASAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, auditWebhookRef)
 	}
 
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec)
@@ -270,6 +301,35 @@ func oasVolumeAuditConfig() *corev1.Volume {
 func buildOASVolumeAuditConfig(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	v.ConfigMap.Name = manifests.OpenShiftAPIServerAuditConfig("").Name
+}
+
+func oasAuditWebhookConfigFileVolume() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "oas-audit-webhook",
+	}
+}
+
+func buildOASAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectReference) func(v *corev1.Volume) {
+	return func(v *corev1.Volume) {
+		v.Secret = &corev1.SecretVolumeSource{}
+		v.Secret.SecretName = auditWebhookRef.Name
+	}
+}
+
+func applyOASAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookRef *corev1.LocalObjectReference) {
+	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(oasAuditWebhookConfigFileVolume(), buildOASAuditWebhookConfigFileVolume(auditWebhookRef)))
+	var container *corev1.Container
+	for i, c := range podSpec.Containers {
+		if c.Name == oasContainerMain().Name {
+			container = &podSpec.Containers[i]
+			break
+		}
+	}
+	if container == nil {
+		panic("main openshift apiserver container not found in spec")
+	}
+	container.VolumeMounts = append(container.VolumeMounts,
+		oasAuditWebhookConfigFileVolumeMount.ContainerMounts(oasContainerMain().Name)...)
 }
 
 func oasVolumeKubeconfig() *corev1.Volume {
