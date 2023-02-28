@@ -172,12 +172,16 @@ func defaultServiceSpec(original, mutated *corev1.ServiceSpec) {
 	if mutated.IPFamilyPolicy == nil {
 		mutated.IPFamilyPolicy = original.IPFamilyPolicy
 	}
-	for i := range original.Ports {
-		if i >= len(mutated.Ports) {
-			break
-		}
-		if mutated.Ports[i].Protocol == "" {
-			mutated.Ports[i].Protocol = original.Ports[i].Protocol
+
+	origPortIndex := make(map[string]int, len(original.Ports))
+	for i, port := range original.Ports {
+		origPortIndex[port.Name] = i
+	}
+	for i := range mutated.Ports {
+		if oIndex, ok := origPortIndex[mutated.Ports[i].Name]; ok {
+			if mutated.Ports[i].Protocol == "" {
+				mutated.Ports[i].Protocol = original.Ports[oIndex].Protocol
+			}
 		}
 		if mutated.Ports[i].TargetPort.String() == "0" {
 			mutated.Ports[i].TargetPort = intstr.FromInt(int(mutated.Ports[i].Port))
@@ -279,30 +283,44 @@ func defaultStatefulSetSpec(original, mutated *appsv1.StatefulSetSpec) {
 
 	defaultPodSpec(&original.Template.Spec, &mutated.Template.Spec)
 
-	for i := range original.VolumeClaimTemplates {
-		if i >= len(mutated.VolumeClaimTemplates) {
-			break
+	origVolClaimTemplateIndex := make(map[string]int, len(original.VolumeClaimTemplates))
+	for i, volumeClaimTemp := range original.VolumeClaimTemplates {
+		origVolClaimTemplateIndex[volumeClaimTemp.Name] = i
+	}
+
+	for i := range mutated.VolumeClaimTemplates {
+		if oIndex, ok := origVolClaimTemplateIndex[mutated.VolumeClaimTemplates[i].Name]; ok {
+			defaultVolumeClaim(&original.VolumeClaimTemplates[oIndex].Spec, &mutated.VolumeClaimTemplates[i].Spec)
+			// k8s seems to update status within the volume claim template embedded in
+			// the spec of the statefulset...
+			mutated.VolumeClaimTemplates[i].Status = original.VolumeClaimTemplates[oIndex].Status
 		}
-		defaultVolumeClaim(&original.VolumeClaimTemplates[i].Spec, &mutated.VolumeClaimTemplates[i].Spec)
-		// k8s seems to update status within the volume claim template embedded in
-		// the spec of the statefulset...
-		mutated.VolumeClaimTemplates[i].Status = original.VolumeClaimTemplates[i].Status
 	}
 }
 
 func defaultPodSpec(original, mutated *corev1.PodSpec) {
-	for i := range original.InitContainers {
-		if i >= len(mutated.InitContainers) {
-			break
-		}
-		defaultContainer(&original.InitContainers[i], &mutated.InitContainers[i])
+	originalInitContainerIndex := make(map[string]int, len(original.InitContainers))
+	for i, c := range original.InitContainers {
+		originalInitContainerIndex[c.Name] = i
 	}
-	for i := range original.Containers {
-		if i >= len(mutated.Containers) {
-			break
+
+	for i := range mutated.InitContainers {
+		if oIndex, ok := originalInitContainerIndex[mutated.InitContainers[i].Name]; ok {
+			defaultContainer(&original.InitContainers[oIndex], &mutated.InitContainers[i])
 		}
-		defaultContainer(&original.Containers[i], &mutated.Containers[i])
 	}
+
+	originalContainerIndex := make(map[string]int, len(original.Containers))
+	for i, c := range original.Containers {
+		originalContainerIndex[c.Name] = i
+	}
+
+	for i := range mutated.Containers {
+		if oIndex, ok := originalContainerIndex[mutated.Containers[i].Name]; ok {
+			defaultContainer(&original.Containers[oIndex], &mutated.Containers[i])
+		}
+	}
+
 	if mutated.DNSPolicy == "" {
 		mutated.DNSPolicy = original.DNSPolicy
 	}
@@ -322,11 +340,15 @@ func defaultPodSpec(original, mutated *corev1.PodSpec) {
 		mutated.TerminationGracePeriodSeconds = original.TerminationGracePeriodSeconds
 	}
 
-	for i := range original.Volumes {
-		if i >= len(mutated.Volumes) {
-			break
+	originalVolumeIndex := make(map[string]int, len(original.Volumes))
+	for i, v := range original.Volumes {
+		originalInitContainerIndex[v.Name] = i
+	}
+
+	for i := range mutated.Volumes {
+		if oIndex, ok := originalVolumeIndex[mutated.Volumes[i].Name]; ok {
+			defaultVolume(&original.Volumes[oIndex], &mutated.Volumes[i])
 		}
-		defaultVolume(&original.Volumes[i], &mutated.Volumes[i])
 	}
 
 	if mutated.SecurityContext == nil {
@@ -353,18 +375,24 @@ func defaultContainer(original, mutated *corev1.Container) {
 		defaultProbe(original.ReadinessProbe, mutated.ReadinessProbe)
 	}
 
-	for i := range original.Env {
-		if i >= len(mutated.Env) {
-			break
+	originalEnvIndex := make(map[string]int, len(original.Env))
+	for i, e := range original.Env {
+		originalEnvIndex[e.Name] = i
+	}
+	for i := range mutated.Env {
+		if oIndex, ok := originalEnvIndex[mutated.Env[i].Name]; ok {
+			defaultEnv(&original.Env[oIndex], &mutated.Env[i])
 		}
-		defaultEnv(&original.Env[i], &mutated.Env[i])
 	}
 
-	for i := range original.Ports {
-		if i >= len(mutated.Ports) {
-			break
+	originalPortIndex := make(map[string]int, len(original.Ports))
+	for i, p := range original.Ports {
+		originalPortIndex[p.Name] = i
+	}
+	for i := range mutated.Ports {
+		if oIndex, ok := originalPortIndex[mutated.Ports[i].Name]; ok {
+			defaultContainerPort(&original.Ports[oIndex], &mutated.Ports[i])
 		}
-		defaultContainerPort(&original.Ports[i], &mutated.Ports[i])
 	}
 
 	if original.SecurityContext != nil && mutated.SecurityContext == nil {
