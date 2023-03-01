@@ -1,0 +1,15 @@
+# This file should tell the prow labeler plugin to automatically label PRs
+# that include changes to matching files
+# See: https://github.com/actions/labeler/blob/main/README.md
+area/hypershift-operator:
+- api/**/*
+- hypershift-operator/**/*
+
+area/control-plane-operator:
+- control-plane-operator/**/*
+- availability-prober/**/*
+- dnsresolver/**/*
+- ignition-server/**/*
+- konnectivity-socks5-proxy/**/*
+- kubernetes-default-proxy/**/*
+- token-minter/**/*
