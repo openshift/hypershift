@@ -92,6 +92,7 @@ nav:
   - reference/SLOs.md
 - 'Contribute':
   - contribute/index.md
+  - contribute/release-process.md
   - contribute/develop-in-cluster.md
   - contribute/custom-images.md
   - contribute/onboard-a-platform.md
