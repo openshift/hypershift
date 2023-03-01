@@ -8,6 +8,7 @@ import (
 	"time"
 
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
+	"github.com/openshift/hypershift/awslogforwarder"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
@@ -128,6 +129,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(ignitionserver.NewStartCommand())
 	cmd.AddCommand(kubernetesdefaultproxy.NewStartCommand())
 	cmd.AddCommand(dnsresolver.NewCommand())
+	cmd.AddCommand(awslogforwarder.NewCommand())
 
 	return cmd
 
