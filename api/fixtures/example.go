@@ -66,6 +66,7 @@ type ExampleOptions struct {
 	ClusterCIDR                      string
 	NodeSelector                     map[string]string
 	BaseDomain                       string
+	BaseDomainPrefix                 string
 	PublicZoneID                     string
 	PrivateZoneID                    string
 	Annotations                      map[string]string
@@ -406,6 +407,13 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			InfrastructureAvailabilityPolicy: o.InfrastructureAvailabilityPolicy,
 			Platform:                         platformSpec,
 		},
+	}
+
+	if o.BaseDomainPrefix == "none" {
+		// set empty prefix explicitly
+		cluster.Spec.DNS.BaseDomainPrefix = pointer.String("")
+	} else if o.BaseDomainPrefix != "" {
+		cluster.Spec.DNS.BaseDomainPrefix = pointer.String(o.BaseDomainPrefix)
 	}
 
 	if o.ClusterCIDR != "" {

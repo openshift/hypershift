@@ -2918,6 +2918,19 @@ string
 </tr>
 <tr>
 <td>
+<code>baseDomainPrefix</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>BaseDomainPrefix is the base domain prefix of the cluster.
+defaults to clusterName if not set</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>publicZoneID</code></br>
 <em>
 string
