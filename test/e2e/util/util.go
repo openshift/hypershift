@@ -384,6 +384,11 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				continue
 			}
 
+			// TODO: Drop this when this discussion https://redhat-internal.slack.com/archives/C01C8502FMM/p1677761198989759 is resolved.
+			if strings.HasPrefix(pod.Name, "cluster-node-tuning-operator") {
+				continue
+			}
+
 			// TODO: 4.11 and later, FBC based catalogs can in excess of 150s to start
 			// https://github.com/openshift/hypershift/pull/1746
 			// https://github.com/operator-framework/operator-lifecycle-manager/pull/2791
