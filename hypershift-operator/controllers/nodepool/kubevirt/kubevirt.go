@@ -155,6 +155,12 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		Spec: kubevirtv1.VirtualMachineSpec{
 			RunStrategy: &runAlways,
 			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"kubevirt.io/allow-pod-bridge-network-live-migration": "",
+						"k8s.ovn.org/pod-networks":                            `{"default": {"skip_ip_config": true}}`,
+					},
+				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
 					Domain: kubevirtv1.DomainSpec{
 						CPU:    &kubevirtv1.CPU{Cores: cores},
