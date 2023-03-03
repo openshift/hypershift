@@ -63,6 +63,7 @@ $(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
 $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor go build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
 
+
 # Build hypershift-operator binary
 .PHONY: hypershift-operator
 hypershift-operator:
@@ -123,6 +124,11 @@ cluster-api-provider-azure: $(CONTROLLER_GEN)
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)
 	hack/gen-api-docs.sh $(GENAPIDOCS) $(DIR)
+
+
+.PHONY: release
+release:
+	go run ./hack/tools/release/notes.go --from=${FROM} --to=${TO}
 
 .PHONY: app-sre-saas-template
 app-sre-saas-template: hypershift
