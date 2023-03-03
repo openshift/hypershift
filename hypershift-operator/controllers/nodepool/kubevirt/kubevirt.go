@@ -97,6 +97,11 @@ func virtualMachineTemplateBase(image string, kvPlatform *hyperv1.KubevirtNodePo
 		Spec: kubevirtv1.VirtualMachineSpec{
 			RunStrategy: &runAlways,
 			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"kubevirt.io/allow-pod-bridge-network-live-migration": "",
+					},
+				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
 					Domain: kubevirtv1.DomainSpec{
 						CPU:    &kubevirtv1.CPU{Cores: cores},
