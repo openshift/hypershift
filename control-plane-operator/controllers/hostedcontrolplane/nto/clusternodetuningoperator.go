@@ -2,6 +2,7 @@ package nto
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -164,6 +165,7 @@ func ReconcileRoleBinding(rb *rbacv1.RoleBinding, ownerRef config.OwnerRef) erro
 
 func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(sa)
+	util.EnsurePullSecret(sa, common.PullSecret("").Name)
 	return nil
 }
 

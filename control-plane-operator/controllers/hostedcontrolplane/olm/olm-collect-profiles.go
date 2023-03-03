@@ -1,8 +1,10 @@
 package olm
 
 import (
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -52,4 +54,5 @@ func ReconcileCollectProfilesSecret(secret *corev1.Secret, ownerRef config.Owner
 
 func ReconcileCollectProfilesServiceAccount(serviceAccount *corev1.ServiceAccount, ownerRef config.OwnerRef) {
 	ownerRef.ApplyTo(serviceAccount)
+	util.EnsurePullSecret(serviceAccount, common.PullSecret("").Name)
 }
