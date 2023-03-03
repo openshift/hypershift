@@ -20,8 +20,11 @@ func reconcileAggregateCA(configMap *corev1.ConfigMap, ownerRef config.OwnerRef,
 	ownerRef.ApplyTo(configMap)
 	combined := &bytes.Buffer{}
 	for _, src := range sources {
-		ca_bytes := src.Data[certs.CASignerCertMapKey]
-		fmt.Fprintf(combined, "%s", string(ca_bytes))
+		caBytes := src.Data[certs.CASignerCertMapKey]
+		_, err := fmt.Fprintf(combined, "%s", string(caBytes))
+		if err != nil {
+			return err
+		}
 	}
 	if configMap.Data == nil {
 		configMap.Data = map[string]string{}
@@ -80,10 +83,6 @@ func ReconcileEtcdMetricsSignerSecret(secret *corev1.Secret, ownerref config.Own
 
 func ReconcileEtcdMetricsSignerConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, etcdMetricsSigner *corev1.Secret) error {
 	return reconcileAggregateCA(cm, ownerRef, etcdMetricsSigner)
-}
-
-func ReconcileClusterSignerCA(secret *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSelfSignedCA(secret, ownerRef, "cluster-signer", "openshift")
 }
 
 func ReconcileRootCAConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, rootCA *corev1.Secret) error {
