@@ -264,6 +264,10 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 				Name:  "QUOTA_BACKEND_BYTES",
 				Value: strconv.FormatInt(p.StorageSpec.PersistentVolume.Size.Value(), 10),
 			},
+			{
+				Name:  "ETCD_ENABLE_PPROF",
+				Value: "true",
+			},
 		}
 		c.Ports = []corev1.ContainerPort{
 			{
