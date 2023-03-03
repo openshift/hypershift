@@ -107,7 +107,7 @@ func PrivateKey() (*rsa.PrivateKey, error) {
 	return rsaKey, nil
 }
 
-// SelfSignedCertificate creates a self signed certificate
+// SelfSignedCertificate creates a self-signed certificate
 func SelfSignedCertificate(cfg *CertCfg, key *rsa.PrivateKey) (*x509.Certificate, error) {
 	serial, err := rand.Int(rand.Reader, new(big.Int).SetInt64(math.MaxInt64))
 	if err != nil {
@@ -186,7 +186,7 @@ func rsaPubKeySHA1Hash(pub *rsa.PublicKey) ([]byte, error) {
 	return hash.Sum(nil), nil
 }
 
-// PrivateKeyToPem converts an rsa.PrivateKey object to pem string
+// PrivateKeyToPem converts a rsa.PrivateKey object to pem string
 func PrivateKeyToPem(key *rsa.PrivateKey) []byte {
 	keyInBytes := x509.MarshalPKCS1PrivateKey(key)
 	keyinPem := pem.EncodeToMemory(
@@ -209,18 +209,7 @@ func CertToPem(cert *x509.Certificate) []byte {
 	return certInPem
 }
 
-// CSRToPem converts an x509.CertificateRequest to a pem string
-func CSRToPem(cert *x509.CertificateRequest) []byte {
-	certInPem := pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "CERTIFICATE REQUEST",
-			Bytes: cert.Raw,
-		},
-	)
-	return certInPem
-}
-
-// PublicKeyToPem converts an rsa.PublicKey object to pem string
+// PublicKeyToPem converts a rsa.PublicKey object to pem string
 func PublicKeyToPem(key *rsa.PublicKey) ([]byte, error) {
 	keyInBytes, err := x509.MarshalPKIXPublicKey(key)
 	if err != nil {
