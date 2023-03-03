@@ -312,7 +312,8 @@ func generateNodeTemplate(memory string, cpu uint32, volumeSize string) *capikub
 						hyperv1.InfraIDLabel:      "1234",
 					},
 					Annotations: map[string]string{
-						suppconfig.PodSafeToEvictLocalVolumesKey: strings.Join(LocalStorageVolumes, ","),
+						suppconfig.PodSafeToEvictLocalVolumesKey:              strings.Join(LocalStorageVolumes, ","),
+						"kubevirt.io/allow-pod-bridge-network-live-migration": "",
 					},
 				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
