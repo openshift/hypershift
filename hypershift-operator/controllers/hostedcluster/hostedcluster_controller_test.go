@@ -1147,13 +1147,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.11.0",
+						Image: "image-4.12.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.12.0",
+							Image: "image-4.13.0",
 						},
 					},
 				},
@@ -1179,7 +1179,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.12.0",
+						Image: "image-4.13.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
@@ -1243,7 +1243,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.11.0",
+						Image: "image-4.12.0",
 					},
 				},
 			},
@@ -1268,13 +1268,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.11.0",
+						Image: "image-4.12.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.11.0",
+							Image: "image-4.12.0",
 						},
 					},
 				},
@@ -1300,7 +1300,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.11.0",
+						Image: "image-4.12.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
