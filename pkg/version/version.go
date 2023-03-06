@@ -3,6 +3,8 @@ package version
 import (
 	"fmt"
 	"runtime/debug"
+
+	"github.com/openshift/hypershift/support/supportedversion"
 )
 
 // GetRevision returns the overall codebase version. It's for detecting
@@ -22,5 +24,5 @@ func GetRevision() string {
 }
 
 func String() string {
-	return fmt.Sprintf("openshift/hypershift %s", GetRevision())
+	return fmt.Sprintf("openshift/hypershift: %s. Latest supported OCP: %s", GetRevision(), supportedversion.LatestSupportedVersion)
 }
