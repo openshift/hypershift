@@ -85,10 +85,11 @@ func NewCreateCommands() *cobra.Command {
 func NewDestroyCommands() *cobra.Command {
 
 	opts := &core.DestroyOptions{
-		Namespace:          "clusters",
-		Name:               "",
-		ClusterGracePeriod: 10 * time.Minute,
-		Log:                log.Log,
+		Namespace:             "clusters",
+		Name:                  "",
+		ClusterGracePeriod:    10 * time.Minute,
+		Log:                   log.Log,
+		DestroyCloudResources: true,
 	}
 
 	cmd := &cobra.Command{
