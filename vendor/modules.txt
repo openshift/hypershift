@@ -508,6 +508,11 @@ github.com/openshift/api/operator/v1alpha1
 github.com/openshift/api/osin/v1
 github.com/openshift/api/route/v1
 github.com/openshift/api/security/v1
+github.com/openshift/api/user/v1
+# github.com/openshift/client-go v0.0.0-20220525160904-9e1acff93e4a
+## explicit; go 1.16
+github.com/openshift/client-go/user/clientset/versioned/scheme
+github.com/openshift/client-go/user/clientset/versioned/typed/user/v1
 # github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
 ## explicit; go 1.18
 github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1

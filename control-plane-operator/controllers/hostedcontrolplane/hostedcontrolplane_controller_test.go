@@ -208,15 +208,34 @@ func TestReconcileAPIServerService(t *testing.T) {
 	withCrossZoneAnnotation := func(svc *corev1.Service) {
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
 	}
-	kasExternalRoute := routev1.Route{
+	kasExternalPublicRoute := routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: targetNamespace,
 			Name:      "kube-apiserver",
 			Labels: map[string]string{
 				"hypershift.openshift.io/hosted-control-plane": targetNamespace,
 			},
-			Annotations: map[string]string{
-				"external-dns.alpha.kubernetes.io/hostname": hostname,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
+		},
+		Spec: routev1.RouteSpec{
+			Host: hostname,
+			To: routev1.RouteTargetReference{
+				Kind: "Service",
+				Name: manifests.KubeAPIServerService("").Name,
+			},
+			TLS: &routev1.TLSConfig{
+				Termination:                   routev1.TLSTerminationPassthrough,
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
+			},
+		},
+	}
+	kasExternalPrivateRoute := routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: targetNamespace,
+			Name:      "kube-apiserver-private",
+			Labels: map[string]string{
+				"hypershift.openshift.io/hosted-control-plane": targetNamespace,
+				hyperv1.RouteVisibilityLabel:                   string(hyperv1.RouteVisibilityPrivate),
 			},
 			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
@@ -326,7 +345,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 				}),
 			},
 			expectedRoutes: []routev1.Route{
-				kasExternalRoute,
+				kasExternalPublicRoute,
 				kasInternalRoute,
 			},
 		},
@@ -347,7 +366,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 				}),
 			},
 			expectedRoutes: []routev1.Route{
-				kasExternalRoute,
+				kasExternalPublicRoute,
 				kasInternalRoute,
 			},
 		},
@@ -369,6 +388,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 			},
 			expectedRoutes: []routev1.Route{
 				kasInternalRoute,
+				kasExternalPrivateRoute,
 			},
 		},
 	}
