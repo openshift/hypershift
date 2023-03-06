@@ -24,14 +24,16 @@ var (
 			kasVolumeKMSSocket().Name: "/tmp",
 		},
 		kasContainerIBMCloudKMS().Name: {
-			kasVolumeKMSSocket().Name:     "/tmp",
-			kasVolumeIBMCloudKMSKP().Name: "/tmp/kp",
+			kasVolumeKMSSocket().Name:                 "/tmp",
+			kasVolumeIBMCloudKMSKP().Name:             "/tmp/kp",
+			kasVolumeIBMCloudKMSProjectedToken().Name: "/etc/pod-identity-token",
 		},
 	}
 	ibmCloudKMSUnixSocket = fmt.Sprintf("unix://%s/%s", ibmCloudKMSVolumeMounts.Path(kasContainerMain().Name, kasVolumeKMSSocket().Name), ibmCloudKMSUnixSocketFileName)
 )
 
 const (
+	podIdentityTokenIdentifier    = "pod-identity-token"
 	ibmCloudKMSUnixSocketFileName = "keyprotectprovider.sock"
 	ibmCloudKMSWDEKSecretKeyName  = "wdek"
 	ibmCloudKMSWDEKStateKeyName   = "state"
@@ -138,6 +140,12 @@ func kasVolumeIBMCloudKMSCustomerCredentials() *corev1.Volume {
 	}
 }
 
+func kasVolumeIBMCloudKMSProjectedToken() *corev1.Volume {
+	return &corev1.Volume{
+		Name: podIdentityTokenIdentifier,
+	}
+}
+
 func buildVolumeIBMCloudKMSCustomerCredentials(secretName string) func(*corev1.Volume) {
 	return func(v *corev1.Volume) {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -150,6 +158,19 @@ func buildVolumeIBMCloudKMSKP(v *corev1.Volume) {
 	v.Secret.SecretName = manifests.IBMCloudKASKMSWDEKSecret("").Name
 	optionalMount := true
 	v.Secret.Optional = &optionalMount
+}
+
+func buildVolumeIBMCloudKMSProjectedToken(v *corev1.Volume) {
+	v.Projected = &corev1.ProjectedVolumeSource{
+		Sources: []corev1.VolumeProjection{
+			{
+				ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
+					Path:              podIdentityTokenIdentifier,
+					ExpirationSeconds: pointer.Int64(900),
+				},
+			},
+		},
+	}
 }
 
 func buildKASContainerIBMCloudKMS(image string, region string, kmsInfo string, customerAPIKeyReference *corev1.EnvVarSource) func(c *corev1.Container) {
@@ -231,7 +252,7 @@ func applyIBMCloudKMSConfig(podSpec *corev1.PodSpec, ibmCloud *hyperv1.IBMCloudK
 	if err != nil {
 		return fmt.Errorf("failed to generate kmsKPInfo env var: %w", err)
 	}
-	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket), util.BuildVolume(kasVolumeIBMCloudKMSKP(), buildVolumeIBMCloudKMSKP))
+	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket), util.BuildVolume(kasVolumeIBMCloudKMSKP(), buildVolumeIBMCloudKMSKP), util.BuildVolume(kasVolumeIBMCloudKMSProjectedToken(), buildVolumeIBMCloudKMSProjectedToken))
 	var customerAPIKeyReference *corev1.EnvVarSource
 	switch ibmCloud.Auth.Type {
 	case hyperv1.IBMCloudKMSUnmanagedAuth:
