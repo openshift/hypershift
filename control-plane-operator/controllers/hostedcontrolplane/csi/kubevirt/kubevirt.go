@@ -303,7 +303,7 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 		return err
 	}
 
-	tenantNodeClusterRole := manifests.KubevirtCSIDriverTenantNodeClusterRole(tenantNamespace)
+	tenantNodeClusterRole := manifests.KubevirtCSIDriverTenantNodeClusterRole()
 	_, err = createOrUpdate(ctx, client, tenantNodeClusterRole, func() error {
 		return reconcileTenantNodeClusterRole(tenantNodeClusterRole)
 	})
@@ -311,7 +311,7 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 		return err
 	}
 
-	tenantNodeClusterRoleBinding := manifests.KubevirtCSIDriverTenantNodeClusterRoleBinding(tenantNamespace)
+	tenantNodeClusterRoleBinding := manifests.KubevirtCSIDriverTenantNodeClusterRoleBinding()
 	_, err = createOrUpdate(ctx, client, tenantNodeClusterRoleBinding, func() error {
 		return reconcileTenantNodeClusterRoleBinding(tenantNodeClusterRoleBinding, tenantNamespace)
 	})
@@ -319,7 +319,7 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 		return err
 	}
 
-	tenantControllerClusterRoleBinding := manifests.KubevirtCSIDriverTenantControllerClusterRoleBinding(tenantNamespace)
+	tenantControllerClusterRoleBinding := manifests.KubevirtCSIDriverTenantControllerClusterRoleBinding()
 	_, err = createOrUpdate(ctx, client, tenantControllerClusterRoleBinding, func() error {
 		return reconcileTenantControllerClusterRoleBinding(tenantControllerClusterRoleBinding, tenantNamespace)
 	})
@@ -327,7 +327,7 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 		return err
 	}
 
-	tenantControllerClusterRole := manifests.KubevirtCSIDriverTenantControllerClusterRole(tenantNamespace)
+	tenantControllerClusterRole := manifests.KubevirtCSIDriverTenantControllerClusterRole()
 	_, err = createOrUpdate(ctx, client, tenantControllerClusterRole, func() error {
 		return reconcileTenantControllerClusterRole(tenantControllerClusterRole)
 	})

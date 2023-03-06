@@ -73,20 +73,18 @@ func KubevirtCSIDriverTenantControllerSA(ns string) *corev1.ServiceAccount {
 	}
 }
 
-func KubevirtCSIDriverTenantControllerClusterRole(ns string) *rbacv1.ClusterRole {
+func KubevirtCSIDriverTenantControllerClusterRole() *rbacv1.ClusterRole {
 	return &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kubevirt-csi-controller-cr",
-			Namespace: ns,
+			Name: "kubevirt-csi-controller-cr",
 		},
 	}
 }
 
-func KubevirtCSIDriverTenantControllerClusterRoleBinding(ns string) *rbacv1.ClusterRoleBinding {
+func KubevirtCSIDriverTenantControllerClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kubevirt-csi-controller-binding",
-			Namespace: ns,
+			Name: "kubevirt-csi-controller-binding",
 		},
 	}
 }
@@ -100,20 +98,18 @@ func KubevirtCSIDriverTenantNodeSA(ns string) *corev1.ServiceAccount {
 	}
 }
 
-func KubevirtCSIDriverTenantNodeClusterRole(ns string) *rbacv1.ClusterRole {
+func KubevirtCSIDriverTenantNodeClusterRole() *rbacv1.ClusterRole {
 	return &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kubevirt-csi-node-cr",
-			Namespace: ns,
+			Name: "kubevirt-csi-node-cr",
 		},
 	}
 }
 
-func KubevirtCSIDriverTenantNodeClusterRoleBinding(ns string) *rbacv1.ClusterRoleBinding {
+func KubevirtCSIDriverTenantNodeClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kubevirt-csi-node-binding",
-			Namespace: ns,
+			Name: "kubevirt-csi-node-binding",
 		},
 	}
 }
