@@ -89,7 +89,7 @@ var cpObjects = []client.Object{
 	fakeOpenShiftAPIServerService(),
 	fakeOpenShiftOAuthAPIServerService(),
 	fakeKubeadminPasswordSecret(),
-	fakeOAuthServingCert(),
+	fakeOAuthMasterCABundle(),
 	fakePackageServerService(),
 }
 
@@ -233,9 +233,9 @@ func fakeKubeadminPasswordSecret() *corev1.Secret {
 	return s
 }
 
-func fakeOAuthServingCert() *corev1.Secret {
-	s := cpomanifests.OpenShiftOAuthServerCert("bar")
-	s.Data = map[string][]byte{"tls.crt": []byte("test")}
+func fakeOAuthMasterCABundle() *corev1.ConfigMap {
+	s := cpomanifests.OpenShiftOAuthMasterCABundle("bar")
+	s.Data = map[string]string{"ca.crt": "test"}
 	return s
 }
 

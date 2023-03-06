@@ -409,7 +409,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling oauth serving cert ca bundle")
-	if err := r.reconcileOAuthServingCertCABundle(ctx, hcp); err != nil {
+	if err := r.reconcileOAuthServingCertCABundle(ctx, hcp, r.oauthAddress); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert CA bundle: %w", err))
 	}
 
@@ -975,14 +975,14 @@ func secretHash(data []byte) string {
 	return fmt.Sprintf("%x", md5.Sum(data))
 }
 
-func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	oauthServingCert := cpomanifests.OpenShiftOAuthServerCert(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(oauthServingCert), oauthServingCert); err != nil {
-		return fmt.Errorf("cannot get oauth serving cert: %w", err)
+func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane, oauthHost string) error {
+	sourceBundle := cpomanifests.OpenShiftOAuthMasterCABundle(hcp.Namespace)
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(sourceBundle), sourceBundle); err != nil {
+		return fmt.Errorf("cannot get oauth master ca bundle: %w", err)
 	}
 	caBundle := manifests.OAuthCABundle()
 	if _, err := r.CreateOrUpdate(ctx, r.client, caBundle, func() error {
-		return oauth.ReconcileOAuthServerCertCABundle(caBundle, oauthServingCert)
+		return oauth.ReconcileOAuthServerCertCABundle(caBundle, sourceBundle)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth server cert ca bundle: %w", err)
 	}
