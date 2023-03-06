@@ -399,6 +399,30 @@ kubectl --kubeconfig $kc config use-context default`,
 		},
 	}
 
+	if semver.MustParse(params.ReleaseVersion).Minor == uint64(12) {
+		dep.Spec.Template.Spec.InitContainers = append(dep.Spec.Template.Spec.InitContainers, corev1.Container{
+			Command: []string{"/bin/bash"},
+			Args: []string{
+				"-c",
+				`
+set -xeuo pipefail
+kc=/etc/hosted-kubernetes/kubeconfig
+sc=$(kubectl --kubeconfig $kc get --ignore-not-found validatingwebhookconfiguration multus.openshift.io -o jsonpath='{.webhooks[?(@.name == "multus-validating-config.k8s.io")].clientConfig.service}')
+if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validatingwebhookconfiguration multus.openshift.io; fi`,
+			},
+			Name:  "remove-old-multus-validating-webhook-configuration",
+			Image: params.Images.CLI,
+			Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+			}},
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "hosted-etc-kube", MountPath: "/etc/hosted-kubernetes"},
+			},
+		})
+	}
+
 	dep.Spec.Template.Spec.ServiceAccountName = manifests.ClusterNetworkOperatorServiceAccount("").Name
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{"/usr/bin/cluster-network-operator"},
