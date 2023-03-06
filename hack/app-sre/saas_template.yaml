@@ -27269,14 +27269,13 @@ objects:
                   type: object
                   x-kubernetes-map-type: atomic
                 auditWebhook:
-                  description: "AuditWebhook contains metadata for configuring an
-                    audit webhook endpoint for a cluster to process cluster audit
-                    events. It references a secret that contains the webhook information
-                    for the audit webhook endpoint. It is a secret because if the
-                    endpoint has mTLS the kubeconfig will contain client keys. The
-                    kubeconfig needs to be stored in the secret with a secret key
-                    name that corresponds to the constant AuditWebhookKubeconfigKey.
-                    \n This field is currently only supported on the IBMCloud platform."
+                  description: AuditWebhook contains metadata for configuring an audit
+                    webhook endpoint for a cluster to process cluster audit events.
+                    It references a secret that contains the webhook information for
+                    the audit webhook endpoint. It is a secret because if the endpoint
+                    has mTLS the kubeconfig will contain client keys. The kubeconfig
+                    needs to be stored in the secret with a secret key name that corresponds
+                    to the constant AuditWebhookKubeconfigKey.
                   properties:
                     name:
                       description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
@@ -31029,14 +31028,13 @@ objects:
                   type: object
                   x-kubernetes-map-type: atomic
                 auditWebhook:
-                  description: "AuditWebhook contains metadata for configuring an
-                    audit webhook endpoint for a cluster to process cluster audit
-                    events. It references a secret that contains the webhook information
-                    for the audit webhook endpoint. It is a secret because if the
-                    endpoint has mTLS the kubeconfig will contain client keys. The
-                    kubeconfig needs to be stored in the secret with a secret key
-                    name that corresponds to the constant AuditWebhookKubeconfigKey.
-                    \n This field is currently only supported on the IBMCloud platform."
+                  description: AuditWebhook contains metadata for configuring an audit
+                    webhook endpoint for a cluster to process cluster audit events.
+                    It references a secret that contains the webhook information for
+                    the audit webhook endpoint. It is a secret because if the endpoint
+                    has mTLS the kubeconfig will contain client keys. The kubeconfig
+                    needs to be stored in the secret with a secret key name that corresponds
+                    to the constant AuditWebhookKubeconfigKey.
                   properties:
                     name:
                       description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
