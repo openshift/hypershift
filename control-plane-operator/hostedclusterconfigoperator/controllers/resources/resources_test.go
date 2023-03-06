@@ -398,12 +398,23 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 var _ manifestReconciler = manifestAndReconcile[*rbacv1.ClusterRole]{}
 
 func TestDestroyCloudResources(t *testing.T) {
-
+	originalConditionTime := time.Now().Add(-1 * time.Hour)
 	fakeHostedControlPlane := func() *hyperv1.HostedControlPlane {
 		return &hyperv1.HostedControlPlane{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-hcp",
 				Namespace: "test-namespace",
+			},
+			Status: hyperv1.HostedControlPlaneStatus{
+				Conditions: []metav1.Condition{
+					{
+						Type:               string(hyperv1.CloudResourcesDestroyed),
+						Status:             metav1.ConditionFalse,
+						LastTransitionTime: metav1.Time{Time: originalConditionTime},
+						Message:            "Not Done",
+						Reason:             "NotDone",
+					},
+				},
 			},
 		}
 	}
@@ -546,6 +557,16 @@ func TestDestroyCloudResources(t *testing.T) {
 		g.Expect(cond).ToNot(BeNil())
 	}
 
+	verifyNotDoneCond := func(g *WithT, c client.Client) {
+		hcp := fakeHostedControlPlane()
+		err := c.Get(context.Background(), client.ObjectKeyFromObject(hcp), hcp)
+		g.Expect(err).ToNot(HaveOccurred())
+		cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(cond.LastTransitionTime.Time.After(originalConditionTime)).To(BeTrue())
+	}
+
 	tests := []struct {
 		name             string
 		existing         []client.Object
@@ -644,6 +665,8 @@ func TestDestroyCloudResources(t *testing.T) {
 			}
 			if test.verifyDoneCond {
 				verifyDoneCond(g, cpClient)
+			} else {
+				verifyNotDoneCond(g, cpClient)
 			}
 		})
 	}
