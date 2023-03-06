@@ -9,7 +9,7 @@ Manage node-level tuning with the Node Tuning Operator.
 ## Creating a simple TuneD profile for setting sysctl settings
 If you would like to set some node-level tuning on the nodes in your hosted cluster, you can use the [Node Tuning Operator](https://docs.openshift.com/container-platform/latest/scalability_and_performance/using-node-tuning-operator.html). In HyperShift, node tuning can be configured by creating ConfigMaps which contain Tuned objects, and referencing these ConfigMaps in your NodePools.
 
-1. Create a ConfigMap which contains a valid Tuned manifest and reference it in a NodePool. The example Tuned manifest below defines a profile which sets `vm.dirty_ratio` to 55, on Nodes which contain the Node label  `tuned-1-node-label` with any value. 
+1. Create a ConfigMap which contains a valid Tuned manifest and reference it in a NodePool. The example Tuned manifest below defines a profile which sets `vm.dirty_ratio` to 55, on Nodes which contain the Node label `tuned-1-node-label` with any value.
 
     Save the ConfigMap manifest in a file called `tuned-1.yaml`:
     ```
@@ -225,3 +225,35 @@ As an example, the following steps can be followed to create a NodePool with hug
     ```
     BOOT_IMAGE=(hd0,gpt3)/ostree/rhcos-... hugepagesz=2M hugepages=50
     ```
+
+## How to debug Node Tuning issues
+If you face issues with Node Tuning, first check the Condition `ValidTuningConfig` in the NodePool that references your Tuned config. This reports any issue that may prevent the configuration load.
+```
+- lastTransitionTime: "2023-03-06T14:30:35Z"
+  message: ConfigMap "tuned" not found
+  observedGeneration: 2
+  reason: ValidationFailed
+  status: "False"
+  type: ValidTuningConfig
+```
+
+If the NodePool condition shows no issues, it means that the configuration has been loaded and propagated to the NodePool. You can then check the status of the relevant `Profile` Custom Resource in your HostedCluster. In the conditions you should see if the configuration has been applied succesfully and whether there are any outstanding Warning or Errors. An example can be seen below.
+```
+status:
+  bootcmdline: ""
+  conditions:
+  - lastTransitionTime: "2023-03-06T14:22:14Z"
+    message: The TuneD daemon profile not yet applied, or application failed.
+    reason: Failed
+    status: "False"
+    type: Applied
+  - lastTransitionTime: "2023-03-06T14:22:14Z"
+    message: 'TuneD daemon issued one or more error message(s) during profile application.
+      TuneD stderr:  ERROR    tuned.daemon.controller: Failed to reload TuneD: Cannot
+      load profile(s) ''tuned-1-profile'': Cannot find profile ''openshift-node-notexistin''
+      in ''[''/etc/tuned'', ''/usr/lib/tuned'']''.'
+    reason: TunedError
+    status: "True"
+    type: Degraded
+  tunedProfile: tuned-1-profile
+```
