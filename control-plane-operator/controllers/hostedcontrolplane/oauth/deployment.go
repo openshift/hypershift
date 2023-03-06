@@ -41,6 +41,7 @@ var (
 			oauthVolumeLoginTemplate().Name:     "/etc/kubernetes/secrets/templates/login",
 			oauthVolumeProvidersTemplate().Name: "/etc/kubernetes/secrets/templates/providers",
 			oauthVolumeWorkLogs().Name:          "/var/run/kubernetes",
+			oauthVolumeMasterCABundle().Name:    "/etc/kubernetes/certs/master-ca",
 		},
 	}
 )
@@ -101,6 +102,7 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 			util.BuildVolume(oauthVolumeLoginTemplate(), buildOAuthVolumeLoginTemplate),
 			util.BuildVolume(oauthVolumeProvidersTemplate(), buildOAuthVolumeProvidersTemplate),
 			util.BuildVolume(oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs),
+			util.BuildVolume(oauthVolumeMasterCABundle(), buildOAuthVolumeMasterCABundle),
 			{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32Ptr(0640)}}},
 			{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32Ptr(0640)}}},
 			{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32Ptr(0640)}}},
@@ -252,6 +254,17 @@ func buildOAuthVolumeProvidersTemplate(v *corev1.Volume) {
 		DefaultMode: utilpointer.Int32Ptr(0640),
 		SecretName:  manifests.OAuthServerDefaultProviderSelectionTemplateSecret("").Name,
 	}
+}
+
+func oauthVolumeMasterCABundle() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "master-ca-bundle",
+	}
+}
+
+func buildOAuthVolumeMasterCABundle(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.OpenShiftOAuthMasterCABundle("").Name
 }
 
 func socks5ProxyContainer(socks5ProxyImage string) corev1.Container {
