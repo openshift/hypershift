@@ -142,16 +142,27 @@ func ReconcilePrivateServiceStatus(hcp *hyperv1.HostedControlPlane) (host string
 	return fmt.Sprintf("api.%s.hypershift.local", hcp.Name), util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort), nil
 }
 
-func ReconcileExternalRoute(route *routev1.Route, owner *metav1.OwnerReference, hostname string) error {
+func ReconcileExternalPublicRoute(route *routev1.Route, owner *metav1.OwnerReference, hostname string) error {
+	return reconcileExternalRoute(route, owner, hostname)
+}
+
+func ReconcileExternalPrivateRoute(route *routev1.Route, owner *metav1.OwnerReference, hostname string) error {
+	if err := reconcileExternalRoute(route, owner, hostname); err != nil {
+		return err
+	}
+	if route.Labels == nil {
+		route.Labels = map[string]string{}
+	}
+	route.Labels[hyperv1.RouteVisibilityLabel] = hyperv1.RouteVisibilityPrivate
+	return nil
+}
+
+func reconcileExternalRoute(route *routev1.Route, owner *metav1.OwnerReference, hostname string) error {
 	if hostname == "" {
 		return fmt.Errorf("route hostname is required for service APIServer")
 	}
 	util.EnsureOwnerRef(route, owner)
 	util.AddHCPRouteLabel(route)
-	if route.Annotations == nil {
-		route.Annotations = map[string]string{}
-	}
-	route.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = hostname
 	route.Spec.Host = hostname
 	route.Spec.To = routev1.RouteTargetReference{
 		Kind: "Service",
@@ -161,6 +172,8 @@ func ReconcileExternalRoute(route *routev1.Route, owner *metav1.OwnerReference, 
 		Termination:                   routev1.TLSTerminationPassthrough,
 		InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
 	}
+	// remove annotation as external-dns will register the name if host is within the zone
+	delete(route.Annotations, hyperv1.ExternalDNSHostnameAnnotation)
 	return nil
 }
 

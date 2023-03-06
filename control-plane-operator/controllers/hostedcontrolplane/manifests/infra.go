@@ -7,17 +7,19 @@ import (
 )
 
 const (
-	KubeAPIServerServiceName        = "kube-apiserver"
-	KubeAPIServerPrivateServiceName = "kube-apiserver-private"
-	kubeAPIServerExternalRouteName  = "kube-apiserver"
-	kubeAPIServerInternalRouteName  = "kube-apiserver-internal"
-	oauthServiceName                = "oauth-openshift"
-	oauthExternalRouteName          = "oauth"
-	oauthInternalRouteName          = "oauth-internal"
-	konnectivityServerServiceName   = "konnectivity-server"
-	openshiftAPIServerServiceName   = "openshift-apiserver"
-	oauthAPIServerName              = "openshift-oauth-apiserver"
-	packageServerServiceName        = "packageserver"
+	KubeAPIServerServiceName              = "kube-apiserver"
+	KubeAPIServerPrivateServiceName       = "kube-apiserver-private"
+	kubeAPIServerExternalPublicRouteName  = "kube-apiserver"
+	kubeAPIServerExternalPrivateRouteName = "kube-apiserver-private"
+	kubeAPIServerInternalRouteName        = "kube-apiserver-internal"
+	oauthServiceName                      = "oauth-openshift"
+	oauthExternalRoutePublicName          = "oauth"
+	oauthExternalRoutePrivateName         = "oauth-private"
+	oauthInternalRouteName                = "oauth-internal"
+	konnectivityServerServiceName         = "konnectivity-server"
+	openshiftAPIServerServiceName         = "openshift-apiserver"
+	oauthAPIServerName                    = "openshift-oauth-apiserver"
+	packageServerServiceName              = "packageserver"
 )
 
 func KubeAPIServerService(hostedClusterNamespace string) *corev1.Service {
@@ -38,10 +40,19 @@ func KubeAPIServerPrivateService(hostedClusterNamespace string) *corev1.Service 
 	}
 }
 
-func KubeAPIServerExternalRoute(hostedClusterNamespace string) *routev1.Route {
+func KubeAPIServerExternalPublicRoute(hostedClusterNamespace string) *routev1.Route {
 	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      kubeAPIServerExternalRouteName,
+			Name:      kubeAPIServerExternalPublicRouteName,
+			Namespace: hostedClusterNamespace,
+		},
+	}
+}
+
+func KubeAPIServerExternalPrivateRoute(hostedClusterNamespace string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      kubeAPIServerExternalPrivateRouteName,
 			Namespace: hostedClusterNamespace,
 		},
 	}
@@ -65,11 +76,20 @@ func OauthServerService(hostedClusterNamespace string) *corev1.Service {
 	}
 }
 
-func OauthServerExternalRoute(hostedClusterNamespace string) *routev1.Route {
+func OauthServerExternalPublicRoute(hostedClusterNamespace string) *routev1.Route {
 	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: hostedClusterNamespace,
-			Name:      oauthExternalRouteName,
+			Name:      oauthExternalRoutePublicName,
+		},
+	}
+}
+
+func OauthServerExternalPrivateRoute(hostedClusterNamespace string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hostedClusterNamespace,
+			Name:      oauthExternalRoutePrivateName,
 		},
 	}
 }

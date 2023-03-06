@@ -138,7 +138,7 @@ func WaitForOAuthRouteReady(t *testing.T, ctx context.Context, client crclient.C
 	g := NewWithT(t)
 
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
-	route := hcpmanifests.OauthServerExternalRoute(hcpNamespace)
+	route := hcpmanifests.OauthServerExternalPublicRoute(hcpNamespace)
 
 	err := wait.PollImmediateWithContext(ctx, time.Second, time.Minute, func(ctx context.Context) (done bool, err error) {
 		err = client.Get(context.Background(), crclient.ObjectKeyFromObject(route), route)
