@@ -141,6 +141,14 @@ const (
 	// NodePoolNameLabel is a label that indicates the name of the node pool
 	// a resource is associated with
 	NodePoolNameLabel = "hypershift.openshift.io/nodepool-name"
+
+	// RouteVisibilityLabel is a label that can be used by external-dns to filter routes
+	// it should not consider for name registration
+	RouteVisibilityLabel = "hypershift.openshift.io/route-visibility"
+
+	// RouteVisibilityPrivate is a value for RouteVisibilityLabel that will result
+	// in the labeled route being ignored by external-dns
+	RouteVisibilityPrivate = "private"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

@@ -187,17 +187,13 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			for i, svc := range services {
 				switch svc.Service {
 				case hyperv1.APIServer:
-					if endpointAccess != hyperv1.Private {
-						services[i].Route = &hyperv1.RoutePublishingStrategy{
-							Hostname: fmt.Sprintf("api-%s.%s", o.Name, o.ExternalDNSDomain),
-						}
+					services[i].Route = &hyperv1.RoutePublishingStrategy{
+						Hostname: fmt.Sprintf("api-%s.%s", o.Name, o.ExternalDNSDomain),
 					}
 
 				case hyperv1.OAuthServer:
-					if endpointAccess != hyperv1.Private {
-						services[i].Route = &hyperv1.RoutePublishingStrategy{
-							Hostname: fmt.Sprintf("oauth-%s.%s", o.Name, o.ExternalDNSDomain),
-						}
+					services[i].Route = &hyperv1.RoutePublishingStrategy{
+						Hostname: fmt.Sprintf("oauth-%s.%s", o.Name, o.ExternalDNSDomain),
 					}
 
 				case hyperv1.Konnectivity:
