@@ -92,6 +92,15 @@ func KonnectivityCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
+func OpenShiftOAuthMasterCABundle(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "oauth-master-ca-bundle",
+			Namespace: ns,
+		},
+	}
+}
+
 func EtcdSignerSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "etcd-signer")
 }
