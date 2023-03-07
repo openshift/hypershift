@@ -117,6 +117,10 @@ const (
 	// A failure here may require external user intervention to resolve.
 	ValidAWSIdentityProvider ConditionType = "ValidAWSIdentityProvider"
 
+	// ValidAWSKMSConfig indicates whether the AWS KMS role and encryption key are valid and operational
+	// A failure here indicates that the role or the key are invalid, or the role doesn't have access to use the key.
+	ValidAWSKMSConfig ConditionType = "ValidAWSKMSConfig"
+
 	// AWSDefaultSecurityGroupCreated indicates whether the default security group
 	// for AWS workers has been created.
 	// A failure here indicates that NodePools without a security group will be
@@ -165,6 +169,8 @@ const (
 	PlatformCredentialsNotFoundReason     = "PlatformCredentialsNotFound"
 	InvalidImageReason                    = "InvalidImage"
 	InvalidIdentityProvider               = "InvalidIdentityProvider"
+
+	InvalidIAMRoleReason = "InvalidIAMRole"
 
 	ExternalDNSHostNotReachableReason = "ExternalDNSHostNotReachable"
 
