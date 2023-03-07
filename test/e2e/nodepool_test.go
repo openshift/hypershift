@@ -50,16 +50,14 @@ func TestNodePool(t *testing.T) {
 	// create their own NodePools with the proper replicas
 	clusterOpts.NodePoolReplicas = 0
 	hostedCluster := e2eutil.CreateCluster(t, ctx, mgmtClient, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
-	guestClient := e2eutil.WaitForGuestClient(t, ctx, mgmtClient, hostedCluster)
+	hostedClusterClient := e2eutil.WaitForGuestClient(t, ctx, mgmtClient, hostedCluster)
 
 	// Get the newly created defautlt NodePool
 	nodepools := &hyperv1.NodePoolList{}
 	if err := mgmtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
 		t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
 	}
-	if len(nodepools.Items) != 1 {
-		t.Fatalf("expected exactly one nodepool, got %d", len(nodepools.Items))
-	}
+	g.Expect(nodepools.Items).ToNot(BeEmpty())
 	defaultNodepool := &nodepools.Items[0]
 
 	// Set of tests
@@ -69,23 +67,29 @@ func TestNodePool(t *testing.T) {
 			name: "TestKMSRootVolumeEncryption",
 			test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
 		},
-		// reuse same test with different input
-		// {
-		// 	name: "TestKMSRootVolumeEncryption Custom NodePool",
-		// 	test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
-		// 	manifestBuilder: myCustomeNodePoolBuilder,
-		// },
+		{
+			name: "TestNodePoolAutoRepair",
+			test: NewNodePoolAutoRepairTest(ctx, hostedCluster, hostedClusterClient, clusterOpts),
+		},
+		{
+			name: "TestNodepoolMachineconfigGetsRolledout",
+			test: NewNodePoolMachineconfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts),
+		},
+		{
+			name: "TestNTOMachineConfigGetsRolledOut",
+			test: NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
+		},
+		{
+			name:            "TestNTOMachineConfigAppliedInPlace",
+			test:            NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
+			manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
+		},
 	}
 
-	t.Run("Refactored", func(t *testing.T) {
-		t.Run("TestNodePoolAutoRepair", testNodePoolAutoRepair(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
-		t.Run("TestNodepoolMachineconfigGetsRolledout", testNodepoolMachineconfigGetsRolledout(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
-		t.Run("TestNTOMachineConfigGetsRolledOut", testNTOMachineConfigGetsRolledOut(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
-		t.Run("TestNTOMachineConfigAppliedInPlace", testNTOMachineConfigAppliedInPlace(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
-
+	t.Run("NodePool Tests Group", func(t *testing.T) {
 		for _, testCase := range nodePoolTests {
 			t.Run(testCase.name, func(t *testing.T) {
-				executeNodePoolTest(t, ctx, mgmtClient, hostedCluster, guestClient, *defaultNodepool, testCase.test, testCase.manifestBuilder)
+				executeNodePoolTest(t, ctx, mgmtClient, hostedCluster, hostedClusterClient, *defaultNodepool, testCase.test, testCase.manifestBuilder)
 			})
 		}
 	})
@@ -166,7 +170,6 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 		err = nodePoolRecreate(t, ctx, nodePool, mgmtClient)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to Create the NodePool")
 	}
-	defer nodePoolScaleDownToZero(ctx, mgmtClient, *nodePool, t)
 
 	numNodes := *nodePool.Spec.Replicas
 	t.Logf("Waiting for Nodes %d\n", numNodes)
