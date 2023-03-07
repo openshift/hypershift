@@ -278,8 +278,6 @@ type HostedClusterSpec struct {
 	// keys. The kubeconfig needs to be stored in the secret with a secret key
 	// name that corresponds to the constant AuditWebhookKubeconfigKey.
 	//
-	// This field is currently only supported on the IBMCloud platform.
-	//
 	// +optional
 	// +immutable
 	AuditWebhook *corev1.LocalObjectReference `json:"auditWebhook,omitempty"`

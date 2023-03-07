@@ -359,7 +359,6 @@ contains the webhook information for the audit webhook endpoint. It is a
 secret because if the endpoint has mTLS the kubeconfig will contain client
 keys. The kubeconfig needs to be stored in the secret with a secret key
 name that corresponds to the constant AuditWebhookKubeconfigKey.</p>
-<p>This field is currently only supported on the IBMCloud platform.</p>
 </td>
 </tr>
 <tr>
@@ -3447,7 +3446,6 @@ contains the webhook information for the audit webhook endpoint. It is a
 secret because if the endpoint has mTLS the kubeconfig will contain client
 keys. The kubeconfig needs to be stored in the secret with a secret key
 name that corresponds to the constant AuditWebhookKubeconfigKey.</p>
-<p>This field is currently only supported on the IBMCloud platform.</p>
 </td>
 </tr>
 <tr>
