@@ -510,7 +510,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 				Spec: v1beta1.ClusterSpec{
 					ControlPlaneEndpoint: v1beta1.APIEndpoint{},
 					ControlPlaneRef: &corev1.ObjectReference{
-						APIVersion: "hypershift.openshift.io/v1alpha1",
+						APIVersion: "hypershift.openshift.io/v1beta1",
 						Kind:       "HostedControlPlane",
 						Namespace:  "master-cluster1",
 						Name:       "cluster1",
@@ -568,7 +568,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 				Spec: v1beta1.ClusterSpec{
 					ControlPlaneEndpoint: v1beta1.APIEndpoint{},
 					ControlPlaneRef: &corev1.ObjectReference{
-						APIVersion: "hypershift.openshift.io/v1alpha1",
+						APIVersion: "hypershift.openshift.io/v1beta1",
 						Kind:       "HostedControlPlane",
 						Namespace:  "master-cluster1",
 						Name:       "cluster1",
