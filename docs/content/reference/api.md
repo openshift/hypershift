@@ -2786,6 +2786,11 @@ A failure here often means a software bug or a non-stable cluster.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdSnapshotRestored&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;ExternalDNSReachable&#34;</p></td>
+<td><p>ExternalDNSReachable bubbles up the same condition from HCP. It signals if the configured external DNS is reachable.
+A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
+and registered correctly.</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>HostedClusterAvailable indicates whether the HostedCluster has a healthy
 control plane.

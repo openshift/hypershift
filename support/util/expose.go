@@ -42,3 +42,23 @@ func UseDedicatedDNSForKASByHC(hc *hyperv1.HostedCluster) bool {
 		// and later is used to annotate the route so the external DNS controller can watch it.
 		apiServerService.Route != nil && apiServerService.Route.Hostname != ""
 }
+
+func ServiceExternalDNSHostname(hcp *hyperv1.HostedControlPlane, serviceType hyperv1.ServiceType) string {
+	// external DNS hostname can only be set when HCP is Public
+	if !IsPublicHCP(hcp) {
+		return ""
+	}
+
+	service := ServicePublishingStrategyByTypeForHCP(hcp, serviceType)
+	if service == nil {
+		return ""
+	}
+
+	if service.Type == hyperv1.LoadBalancer && service.LoadBalancer != nil {
+		return service.LoadBalancer.Hostname
+	}
+	if service.Type == hyperv1.Route && service.Route != nil {
+		return service.Route.Hostname
+	}
+	return ""
+}
