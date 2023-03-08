@@ -11,7 +11,6 @@ import (
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -883,6 +882,12 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"endpointslices"},
 				Verbs:     []string{"list", "watch"},
 			},
+			{
+				APIGroups:     []string{"admissionregistration.k8s.io"},
+				Resources:     []string{"validatingwebhookconfigurations"},
+				Verbs:         []string{"delete"},
+				ResourceNames: []string{hyperv1.GroupVersion.Group},
+			},
 		},
 	}
 	return role
@@ -1361,59 +1366,4 @@ func (o HyperShiftReaderClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 		},
 	}
 	return binding
-}
-
-type HyperShiftValidatingWebhookConfiguration struct {
-	Namespace *corev1.Namespace
-}
-
-func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistrationv1.ValidatingWebhookConfiguration {
-	scope := admissionregistrationv1.NamespacedScope
-	path := "/validate-hypershift-openshift-io-v1beta1-hostedcluster"
-	sideEffects := admissionregistrationv1.SideEffectClassNone
-	timeout := int32(10)
-	validatingWebhookConfiguration := &admissionregistrationv1.ValidatingWebhookConfiguration{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ValidatingWebhookConfiguration",
-			APIVersion: admissionregistrationv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: o.Namespace.Name,
-			Name:      hyperv1.GroupVersion.Group,
-			Annotations: map[string]string{
-				"service.beta.openshift.io/inject-cabundle": "true",
-			},
-		},
-		Webhooks: []admissionregistrationv1.ValidatingWebhook{
-			{
-				Name: "hostedclusters.hypershift.openshift.io",
-				Rules: []admissionregistrationv1.RuleWithOperations{
-					{
-						Operations: []admissionregistrationv1.OperationType{
-							// NOTE: uncomment if we want to do create time validation
-							//admissionregistrationv1.Create,
-							admissionregistrationv1.Update,
-						},
-						Rule: admissionregistrationv1.Rule{
-							APIGroups:   []string{"hypershift.openshift.io"},
-							APIVersions: []string{"v1beta1"},
-							Resources:   []string{"hostedclusters"},
-							Scope:       &scope,
-						},
-					},
-				},
-				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					Service: &admissionregistrationv1.ServiceReference{
-						Namespace: "hypershift",
-						Name:      "operator",
-						Path:      &path,
-					},
-				},
-				SideEffects:             &sideEffects,
-				AdmissionReviewVersions: []string{"v1"},
-				TimeoutSeconds:          &timeout,
-			},
-		},
-	}
-	return validatingWebhookConfiguration
 }

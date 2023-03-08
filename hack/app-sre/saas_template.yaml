@@ -252,6 +252,14 @@ objects:
     verbs:
     - list
     - watch
+  - apiGroups:
+    - admissionregistration.k8s.io
+    resourceNames:
+    - hypershift.openshift.io
+    resources:
+    - validatingwebhookconfigurations
+    verbs:
+    - delete
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: ClusterRoleBinding
   metadata:

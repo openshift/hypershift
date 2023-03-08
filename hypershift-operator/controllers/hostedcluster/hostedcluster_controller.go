@@ -25,11 +25,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"reflect"
 	"sort"
 	"strings"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -3535,6 +3538,50 @@ func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) er
 	errs := validateSliceNetworkCIDRs(hc)
 
 	return errs.ToAggregate()
+}
+
+func validateSliceNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
+	var cidrEntries []cidrEntry
+
+	for _, cidr := range hc.Spec.Networking.MachineNetwork {
+		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("spec.networking.MachineNetwork")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+	for _, cidr := range hc.Spec.Networking.ServiceNetwork {
+		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("spec.networking.ServiceNetwork")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+	for _, cidr := range hc.Spec.Networking.ClusterNetwork {
+		ce := cidrEntry{(net.IPNet)(cidr.CIDR), *field.NewPath("spec.networking.ClusterNetwork")}
+		cidrEntries = append(cidrEntries, ce)
+	}
+
+	return compareCIDREntries(cidrEntries)
+}
+
+type cidrEntry struct {
+	net  net.IPNet
+	path field.Path
+}
+
+func cidrsOverlap(net1 *net.IPNet, net2 *net.IPNet) error {
+	if net1.Contains(net2.IP) || net2.Contains(net1.IP) {
+		return fmt.Errorf("%s and %s", net1.String(), net2.String())
+	}
+	return nil
+}
+
+func compareCIDREntries(ce []cidrEntry) field.ErrorList {
+	var errs field.ErrorList
+
+	for o := range ce {
+		for i := o + 1; i < len(ce); i++ {
+			if err := cidrsOverlap(&ce[o].net, &ce[i].net); err != nil {
+				errs = append(errs, field.Invalid(&ce[o].path, ce[o].net.String(), fmt.Sprintf("%s and %s overlap: %s", ce[o].path.String(), ce[i].path.String(), err)))
+			}
+		}
+	}
+	return errs
 }
 
 type ClusterMachineApproverConfig struct {
