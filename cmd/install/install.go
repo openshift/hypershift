@@ -33,7 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/utils/pointer"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
@@ -132,8 +131,6 @@ func (o *Options) ApplyDefaults() {
 	switch {
 	case o.Development:
 		o.HyperShiftOperatorReplicas = 0
-	case o.EnableConversionWebhook:
-		o.HyperShiftOperatorReplicas = 2
 	default:
 		o.HyperShiftOperatorReplicas = 1
 	}
@@ -153,14 +150,14 @@ func NewCommand() *cobra.Command {
 	}
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
 	opts.MetricsSet = metrics.DefaultMetricsSet
-	opts.EnableConversionWebhook = true // default to enabling the conversion webhook
 
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
 	cmd.PersistentFlags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
 	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.PersistentFlags().MarkDeprecated("enable-validating-webhook", "This field is deprecated and has no effect")
-	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", true, "Enable webhook for converting hypershift API types")
+	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", false, "Enable webhook for converting hypershift API types")
+	cmd.PersistentFlags().MarkDeprecated("enable-conversion-webhook", "This field is deprecated and has no effect")
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
@@ -529,7 +526,6 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		Replicas:                       opts.HyperShiftOperatorReplicas,
 		EnableOCPClusterMonitoring:     opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
 		EnableCIDebugOutput:            opts.EnableCIDebugOutput,
-		EnableWebhook:                  opts.EnableConversionWebhook,
 		PrivatePlatform:                opts.PrivatePlatform,
 		AWSPrivateRegion:               opts.AWSPrivateRegion,
 		AWSPrivateSecret:               operatorCredentialsSecret,
@@ -578,31 +574,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 			return false
 		}
 		return true
-	}, func(crd *apiextensionsv1.CustomResourceDefinition) {
-		if crd.Spec.Group == "hypershift.openshift.io" {
-			if !opts.EnableConversionWebhook {
-				return
-			}
-			if crd.Annotations != nil {
-				crd.Annotations = map[string]string{}
-			}
-			crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
-			crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
-				Strategy: apiextensionsv1.WebhookConverter,
-				Webhook: &apiextensionsv1.WebhookConversion{
-					ClientConfig: &apiextensionsv1.WebhookClientConfig{
-						Service: &apiextensionsv1.ServiceReference{
-							Namespace: operatorNamespace.Name,
-							Name:      operatorService.Name,
-							Port:      pointer.Int32(443),
-							Path:      pointer.String("/convert"),
-						},
-					},
-					ConversionReviewVersions: []string{"v1beta2", "v1beta1", "v1alpha1"},
-				},
-			}
-		}
-	})...)
+	}, func(crd *apiextensionsv1.CustomResourceDefinition) {})...)
 
 	if opts.EnableAdminRBACGeneration {
 		// hypershift-client admin persona for hostedclusters and nodepools creation

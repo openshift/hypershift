@@ -254,11 +254,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	if err := hostedClusterReconciler.SetupWithManager(mgr, createOrUpdate); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
-	if opts.CertDir != "" {
-		if err := hostedcluster.SetupWebhookWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to create webhook: %w", err)
-		}
-	}
 
 	// Since we dropped the validation webhook server we need to ensure this resource doesn't exist
 	// otherwise it will intercept kas requests and fail.
