@@ -1711,6 +1711,10 @@ string
 &ldquo;Statement&rdquo;: [
 {
 &ldquo;Action&rdquo;: [
+&ldquo;autoscaling:DescribeAutoScalingGroups&rdquo;,
+&ldquo;autoscaling:DescribeLaunchConfigurations&rdquo;,
+&ldquo;autoscaling:DescribeTags&rdquo;,
+&ldquo;ec2:DescribeAvailabilityZones&rdquo;,
 &ldquo;ec2:DescribeInstances&rdquo;,
 &ldquo;ec2:DescribeImages&rdquo;,
 &ldquo;ec2:DescribeRegions&rdquo;,
@@ -1753,6 +1757,7 @@ string
 &ldquo;elasticloadbalancing:CreateTargetGroup&rdquo;,
 &ldquo;elasticloadbalancing:DeleteListener&rdquo;,
 &ldquo;elasticloadbalancing:DeleteTargetGroup&rdquo;,
+&ldquo;elasticloadbalancing:DeregisterTargets&rdquo;,
 &ldquo;elasticloadbalancing:DescribeListeners&rdquo;,
 &ldquo;elasticloadbalancing:DescribeLoadBalancerPolicies&rdquo;,
 &ldquo;elasticloadbalancing:DescribeTargetGroups&rdquo;,
