@@ -619,6 +619,8 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile network config: %w", err))
 	}
 
+	// Copy proxy trustedCA to guest cluster.
+	r.reconcileProxyTrustedCAConfigMap(ctx, hcp)
 	proxy := globalconfig.ProxyConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, proxy, func() error {
 		globalconfig.ReconcileInClusterProxyConfig(proxy, hcp.Spec.Configuration)
@@ -645,6 +647,63 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 	}
 
 	return errors.NewAggregate(errs)
+}
+
+func (r *reconciler) reconcileProxyTrustedCAConfigMap(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	configMapRef := ""
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil {
+		configMapRef = hcp.Spec.Configuration.Proxy.TrustedCA.Name
+	}
+
+	proxy := globalconfig.ProxyConfig()
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(proxy), proxy); err != nil {
+		return err
+	}
+
+	currentConfigMapRef := proxy.Spec.TrustedCA.Name
+	if currentConfigMapRef != "" && currentConfigMapRef != configMapRef {
+		// cleanup old configMaps
+		cm := &corev1.ConfigMap{}
+		cm.Name = currentConfigMapRef
+
+		// log and ignore deletion errors, should not disrupt normal workflow
+		cm.Namespace = hcp.Namespace
+		if err := r.cpClient.Delete(ctx, cm); err != nil {
+			log.Error(err, "failed to delete configmap", "name", cm.Name, "namespace", cm.Namespace)
+		}
+
+		cm.Namespace = "openshift-config"
+		if err := r.client.Delete(ctx, cm); err != nil {
+			log.Error(err, "failed to delete configmap in hosted cluster", "name", cm.Name, "namespace", cm.Namespace)
+		}
+	}
+
+	if configMapRef == "" {
+		return nil
+	}
+
+	sourceCM := &corev1.ConfigMap{}
+	if err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: configMapRef}, sourceCM); err != nil {
+		return fmt.Errorf("failed to get referenced TrustedCA configmap %s/%s: %w", hcp.Namespace, configMapRef, err)
+	}
+
+	destCM := &corev1.ConfigMap{}
+	destCM.Name = sourceCM.Name
+	destCM.Namespace = "openshift-config"
+	if _, err := r.CreateOrUpdate(ctx, r.client, destCM, func() error {
+		destCM.Annotations = sourceCM.Annotations
+		destCM.Labels = sourceCM.Labels
+		destCM.Data = sourceCM.Data
+		destCM.BinaryData = sourceCM.BinaryData
+		destCM.Immutable = sourceCM.Immutable
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile referenced TrustedCA config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
+	}
+
+	return nil
 }
 
 func (r *reconciler) reconcileNamespaces(ctx context.Context) error {
