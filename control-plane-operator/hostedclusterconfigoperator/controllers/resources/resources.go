@@ -640,6 +640,7 @@ func (r *reconciler) reconcileNamespaces(ctx context.Context) error {
 	}{
 		{manifest: manifests.NamespaceOpenShiftAPIServer},
 		{manifest: manifests.NamespaceOpenShiftInfra, reconcile: namespaces.ReconcileOpenShiftInfraNamespace},
+		{manifest: manifests.NamespaceOpenshiftCloudControllerManager},
 		{manifest: manifests.NamespaceOpenShiftControllerManager},
 		{manifest: manifests.NamespaceKubeAPIServer, reconcile: namespaces.ReconcileKubeAPIServerNamespace},
 		{manifest: manifests.NamespaceKubeControllerManager},

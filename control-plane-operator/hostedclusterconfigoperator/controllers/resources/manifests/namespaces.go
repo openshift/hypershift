@@ -13,6 +13,14 @@ func NamespaceOpenShiftInfra() *corev1.Namespace {
 	}
 }
 
+func NamespaceOpenshiftCloudControllerManager() *corev1.Namespace {
+	return &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "openshift-cloud-controller-manager",
+		},
+	}
+}
+
 func NamespaceOpenShiftAPIServer() *corev1.Namespace {
 	return &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{

@@ -3321,6 +3321,20 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 
 func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
 	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		ownerRef := config.OwnerRefFrom(hcp)
+		sa := aws.CCMServiceAccount(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, sa, func() error {
+			return aws.ReconcileCCMServiceAccount(sa, ownerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Kubevirt cloud provider service account: %w", err)
+		}
+		deployment := aws.CCMDeployment(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, deployment, func() error {
+			return aws.ReconcileDeployment(deployment, hcp, sa.Name, releaseImage)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ccm deployment: %w", err)
+		}
 	case hyperv1.PowerVSPlatform:
 		ccmConfig := manifests.PowerVSCCMConfigMap(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, ccmConfig, func() error {

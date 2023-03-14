@@ -63,6 +63,7 @@ func TestNodePool(t *testing.T) {
 	// Set of tests
 	// Each test should have their own NodePool
 	nodePoolTests := []NodePoolTestCase{
+
 		{
 			name: "TestKMSRootVolumeEncryption",
 			test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
@@ -79,11 +80,14 @@ func TestNodePool(t *testing.T) {
 			name: "TestNTOMachineConfigGetsRolledOut",
 			test: NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
 		},
-		{
-			name:            "TestNTOMachineConfigAppliedInPlace",
-			test:            NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
-			manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
-		},
+		/*
+			// TODO: (csrwng) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
+			{
+				name:            "TestNTOMachineConfigAppliedInPlace",
+				test:            NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
+				manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
+			},
+		*/
 	}
 
 	t.Run("NodePool Tests Group", func(t *testing.T) {

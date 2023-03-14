@@ -6047,7 +6047,9 @@ spec:
                             description: "KubeCloudControllerARN is an ARN value referencing
                               a role appropriate for the KCM/KCC. \n The following
                               is an example of a valid policy document: \n { \"Version\":
-                              \"2012-10-17\", \"Statement\": [ { \"Action\": [ \"ec2:DescribeInstances\",
+                              \"2012-10-17\", \"Statement\": [ { \"Action\": [ \"autoscaling:DescribeAutoScalingGroups\",
+                              \"autoscaling:DescribeLaunchConfigurations\", \"autoscaling:DescribeTags\",
+                              \"ec2:DescribeAvailabilityZones\", \"ec2:DescribeInstances\",
                               \"ec2:DescribeImages\", \"ec2:DescribeRegions\", \"ec2:DescribeRouteTables\",
                               \"ec2:DescribeSecurityGroups\", \"ec2:DescribeSubnets\",
                               \"ec2:DescribeVolumes\", \"ec2:CreateSecurityGroup\",
@@ -6070,8 +6072,8 @@ spec:
                               \"elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer\",
                               \"elasticloadbalancing:AddTags\", \"elasticloadbalancing:CreateListener\",
                               \"elasticloadbalancing:CreateTargetGroup\", \"elasticloadbalancing:DeleteListener\",
-                              \"elasticloadbalancing:DeleteTargetGroup\", \"elasticloadbalancing:DescribeListeners\",
-                              \"elasticloadbalancing:DescribeLoadBalancerPolicies\",
+                              \"elasticloadbalancing:DeleteTargetGroup\", \"elasticloadbalancing:DeregisterTargets\",
+                              \"elasticloadbalancing:DescribeListeners\", \"elasticloadbalancing:DescribeLoadBalancerPolicies\",
                               \"elasticloadbalancing:DescribeTargetGroups\", \"elasticloadbalancing:DescribeTargetHealth\",
                               \"elasticloadbalancing:ModifyListener\", \"elasticloadbalancing:ModifyTargetGroup\",
                               \"elasticloadbalancing:RegisterTargets\", \"elasticloadbalancing:SetLoadBalancerPoliciesOfListener\",

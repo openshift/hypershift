@@ -33370,8 +33370,10 @@ objects:
                                 referencing a role appropriate for the KCM/KCC. \n
                                 The following is an example of a valid policy document:
                                 \n { \"Version\": \"2012-10-17\", \"Statement\": [
-                                { \"Action\": [ \"ec2:DescribeInstances\", \"ec2:DescribeImages\",
-                                \"ec2:DescribeRegions\", \"ec2:DescribeRouteTables\",
+                                { \"Action\": [ \"autoscaling:DescribeAutoScalingGroups\",
+                                \"autoscaling:DescribeLaunchConfigurations\", \"autoscaling:DescribeTags\",
+                                \"ec2:DescribeAvailabilityZones\", \"ec2:DescribeInstances\",
+                                \"ec2:DescribeImages\", \"ec2:DescribeRegions\", \"ec2:DescribeRouteTables\",
                                 \"ec2:DescribeSecurityGroups\", \"ec2:DescribeSubnets\",
                                 \"ec2:DescribeVolumes\", \"ec2:CreateSecurityGroup\",
                                 \"ec2:CreateTags\", \"ec2:CreateVolume\", \"ec2:ModifyInstanceAttribute\",
@@ -33393,8 +33395,8 @@ objects:
                                 \"elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer\",
                                 \"elasticloadbalancing:AddTags\", \"elasticloadbalancing:CreateListener\",
                                 \"elasticloadbalancing:CreateTargetGroup\", \"elasticloadbalancing:DeleteListener\",
-                                \"elasticloadbalancing:DeleteTargetGroup\", \"elasticloadbalancing:DescribeListeners\",
-                                \"elasticloadbalancing:DescribeLoadBalancerPolicies\",
+                                \"elasticloadbalancing:DeleteTargetGroup\", \"elasticloadbalancing:DeregisterTargets\",
+                                \"elasticloadbalancing:DescribeListeners\", \"elasticloadbalancing:DescribeLoadBalancerPolicies\",
                                 \"elasticloadbalancing:DescribeTargetGroups\", \"elasticloadbalancing:DescribeTargetHealth\",
                                 \"elasticloadbalancing:ModifyListener\", \"elasticloadbalancing:ModifyTargetGroup\",
                                 \"elasticloadbalancing:RegisterTargets\", \"elasticloadbalancing:SetLoadBalancerPoliciesOfListener\",
@@ -40795,8 +40797,10 @@ objects:
                                 referencing a role appropriate for the KCM/KCC. \n
                                 The following is an example of a valid policy document:
                                 \n { \"Version\": \"2012-10-17\", \"Statement\": [
-                                { \"Action\": [ \"ec2:DescribeInstances\", \"ec2:DescribeImages\",
-                                \"ec2:DescribeRegions\", \"ec2:DescribeRouteTables\",
+                                { \"Action\": [ \"autoscaling:DescribeAutoScalingGroups\",
+                                \"autoscaling:DescribeLaunchConfigurations\", \"autoscaling:DescribeTags\",
+                                \"ec2:DescribeAvailabilityZones\", \"ec2:DescribeInstances\",
+                                \"ec2:DescribeImages\", \"ec2:DescribeRegions\", \"ec2:DescribeRouteTables\",
                                 \"ec2:DescribeSecurityGroups\", \"ec2:DescribeSubnets\",
                                 \"ec2:DescribeVolumes\", \"ec2:CreateSecurityGroup\",
                                 \"ec2:CreateTags\", \"ec2:CreateVolume\", \"ec2:ModifyInstanceAttribute\",
@@ -40818,8 +40822,8 @@ objects:
                                 \"elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer\",
                                 \"elasticloadbalancing:AddTags\", \"elasticloadbalancing:CreateListener\",
                                 \"elasticloadbalancing:CreateTargetGroup\", \"elasticloadbalancing:DeleteListener\",
-                                \"elasticloadbalancing:DeleteTargetGroup\", \"elasticloadbalancing:DescribeListeners\",
-                                \"elasticloadbalancing:DescribeLoadBalancerPolicies\",
+                                \"elasticloadbalancing:DeleteTargetGroup\", \"elasticloadbalancing:DeregisterTargets\",
+                                \"elasticloadbalancing:DescribeListeners\", \"elasticloadbalancing:DescribeLoadBalancerPolicies\",
                                 \"elasticloadbalancing:DescribeTargetGroups\", \"elasticloadbalancing:DescribeTargetHealth\",
                                 \"elasticloadbalancing:ModifyListener\", \"elasticloadbalancing:ModifyTargetGroup\",
                                 \"elasticloadbalancing:RegisterTargets\", \"elasticloadbalancing:SetLoadBalancerPoliciesOfListener\",

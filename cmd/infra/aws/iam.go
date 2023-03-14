@@ -102,6 +102,10 @@ const (
   "Statement": [
     {
       "Action": [
+        "autoscaling:DescribeAutoScalingGroups",
+        "autoscaling:DescribeLaunchConfigurations",
+        "autoscaling:DescribeTags",
+        "ec2:DescribeAvailabilityZones",
         "ec2:DescribeInstances",
         "ec2:DescribeImages",
         "ec2:DescribeRegions",
@@ -144,6 +148,7 @@ const (
         "elasticloadbalancing:CreateTargetGroup",
         "elasticloadbalancing:DeleteListener",
         "elasticloadbalancing:DeleteTargetGroup",
+        "elasticloadbalancing:DeregisterTargets",
         "elasticloadbalancing:DescribeListeners",
         "elasticloadbalancing:DescribeLoadBalancerPolicies",
         "elasticloadbalancing:DescribeTargetGroups",
