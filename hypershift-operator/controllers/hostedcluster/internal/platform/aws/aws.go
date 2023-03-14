@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	ctrl "sigs.k8s.io/controller-runtime"
+
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	"github.com/blang/semver"
