@@ -1102,6 +1102,7 @@ type AWSRolesRef struct {
 	NetworkARN string `json:"networkARN"`
 
 	// KubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.
+	// Source: https://cloud-provider-aws.sigs.k8s.io/prerequisites/#iam-policies
 	//
 	// The following is an example of a valid policy document:
 	//

@@ -1704,7 +1704,8 @@ string
 </em>
 </td>
 <td>
-<p>KubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.</p>
+<p>KubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.
+Source: <a href="https://cloud-provider-aws.sigs.k8s.io/prerequisites/#iam-policies">https://cloud-provider-aws.sigs.k8s.io/prerequisites/#iam-policies</a></p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,

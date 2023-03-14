@@ -6054,9 +6054,10 @@ spec:
                             type: string
                           kubeCloudControllerARN:
                             description: "KubeCloudControllerARN is an ARN value referencing
-                              a role appropriate for the KCM/KCC. \n The following
-                              is an example of a valid policy document: \n { \"Version\":
-                              \"2012-10-17\", \"Statement\": [ { \"Action\": [ \"autoscaling:DescribeAutoScalingGroups\",
+                              a role appropriate for the KCM/KCC. Source: https://cloud-provider-aws.sigs.k8s.io/prerequisites/#iam-policies
+                              \n The following is an example of a valid policy document:
+                              \n { \"Version\": \"2012-10-17\", \"Statement\": [ {
+                              \"Action\": [ \"autoscaling:DescribeAutoScalingGroups\",
                               \"autoscaling:DescribeLaunchConfigurations\", \"autoscaling:DescribeTags\",
                               \"ec2:DescribeAvailabilityZones\", \"ec2:DescribeInstances\",
                               \"ec2:DescribeImages\", \"ec2:DescribeRegions\", \"ec2:DescribeRouteTables\",
