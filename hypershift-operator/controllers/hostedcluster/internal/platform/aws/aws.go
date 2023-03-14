@@ -290,7 +290,7 @@ func (AWS) ReconcileSecretEncryption(ctx context.Context, c client.Client, creat
 	return nil
 }
 
-func validCredentials(hc *hyperv1.HostedCluster) bool {
+func ValidCredentials(hc *hyperv1.HostedCluster) bool {
 	oidcConfigValid := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidOIDCConfiguration))
 	if oidcConfigValid != nil && oidcConfigValid.Status == metav1.ConditionFalse {
 		return false
@@ -303,7 +303,7 @@ func validCredentials(hc *hyperv1.HostedCluster) bool {
 }
 
 func (AWS) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	if validCredentials(hc) {
+	if ValidCredentials(hc) {
 		return nil
 	}
 	awsMachineList := capiaws.AWSMachineList{}

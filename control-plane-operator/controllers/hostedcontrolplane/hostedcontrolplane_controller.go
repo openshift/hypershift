@@ -271,6 +271,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// This is a best effort ping to the identity provider
 	// that enables access from the operator to the cloud provider resources.
 	healthCheckIdentityProvider(ctx, hostedControlPlane, r.ec2Client)
+	// We want to ensure the healthCheckIdentityProvider condition is in status before we go through the deletion timestamp path.
+	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+	}
+	originalHostedControlPlane = hostedControlPlane.DeepCopy()
 
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
