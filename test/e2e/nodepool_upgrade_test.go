@@ -5,6 +5,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 
 	"io"
 	"os"
@@ -12,31 +13,55 @@ import (
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestReplaceUpgradeNodePool(t *testing.T) {
-	t.Parallel()
-	g := NewWithT(t)
+const (
+	syncedLabelsKey   = "e2e.propagate.validation"
+	syncedLabelsValue = "true"
+)
 
-	ctx, cancel := context.WithCancel(testContext)
-	defer cancel()
+type NodePoolUpgradeTest struct {
+	ctx        context.Context
+	mgmtClient crclient.Client
 
-	t.Logf("Starting NodePool replace upgrade test from %s to %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
+	hostedCluster        *hyperv1.HostedCluster
+	hostedClusterClient  crclient.Client
+	clusterOpts          core.CreateOptions
+	upgradeType          hyperv1.UpgradeType
+	previousReleaseImage string
+	latestReleaseImage   string
+}
+type NodePoolInPlaceUpgradeTestManifest struct {
+	hostedCluster        *hyperv1.HostedCluster
+	previousReleaseImage string
+	latestReleaseImage   string
+}
 
-	client, err := e2eutil.GetClient()
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
+func NewNodePoolInPlaceUpgradeTestManifest(hostedCluster *hyperv1.HostedCluster, previousReleaseImage, latestReleaseImage string) *NodePoolInPlaceUpgradeTestManifest {
+	return &NodePoolInPlaceUpgradeTestManifest{
+		hostedCluster:        hostedCluster,
+		previousReleaseImage: previousReleaseImage,
+		latestReleaseImage:   latestReleaseImage,
+	}
+}
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	clusterOpts.ReleaseImage = globalOpts.LatestReleaseImage
-	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
+func (ipu *NodePoolInPlaceUpgradeTestManifest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ipu.hostedCluster.Name + "-" + "test-inplaceupgrade",
+			Namespace: ipu.hostedCluster.Namespace,
+		},
+	}
+	defaultNodepool.Spec.DeepCopyInto(&nodePool.Spec)
 
-	syncedLabelsKey := "e2e.propagate.validation"
-	syncedLabelsValue := "true"
+	// Propagate Labels and Taints
 	syncedLabels := map[string]string{
 		syncedLabelsKey: syncedLabelsValue,
 	}
@@ -47,201 +72,110 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 			Effect: corev1.TaintEffectPreferNoSchedule,
 		},
 	}
-	wantedTaint := corev1.Taint{
-		Key:    syncedTaints[0].Key,
-		Value:  syncedTaints[0].Value,
-		Effect: syncedTaints[0].Effect,
+
+	nodePool.Spec.Replicas = &oneReplicas
+	nodePool.Spec.NodeLabels = syncedLabels
+	nodePool.Spec.Taints = syncedTaints
+	nodePool.Spec.Release.Image = ipu.previousReleaseImage
+	nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace
+
+	return nodePool, nil
+}
+
+func NewNodePoolUpgradeTest(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster,
+	hcClient crclient.Client, clusterOpts core.CreateOptions, previousReleaseImage, latestReleaseImage string) *NodePoolUpgradeTest {
+	return &NodePoolUpgradeTest{
+		ctx:                  ctx,
+		hostedCluster:        hostedCluster,
+		hostedClusterClient:  hcClient,
+		clusterOpts:          clusterOpts,
+		mgmtClient:           mgmtClient,
+		upgradeType:          hyperv1.UpgradeTypeReplace,
+		previousReleaseImage: previousReleaseImage,
+		latestReleaseImage:   latestReleaseImage,
 	}
-	clusterOpts.BeforeApply = func(o crclient.Object) {
-		switch v := o.(type) {
-		case *hyperv1.NodePool:
-			v.Spec.Release.Image = globalOpts.PreviousReleaseImage
-			v.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
-				Strategy: hyperv1.UpgradeStrategyRollingUpdate,
-				RollingUpdate: &hyperv1.RollingUpdate{
-					MaxUnavailable: func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(0)),
-					MaxSurge:       func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(3)),
-				},
-			}
-			v.Spec.NodeLabels = syncedLabels
-			// TODO (alberto): move this into a dedicated NodePool.
-			v.Spec.Taints = syncedTaints
-		}
+}
+
+func (ru *NodePoolUpgradeTest) Setup(t *testing.T) {}
+
+func (ru *NodePoolUpgradeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      ru.hostedCluster.Name + "-" + "test-replaceupgrade",
+			Namespace: ru.hostedCluster.Namespace,
+		},
+	}
+	defaultNodepool.Spec.DeepCopyInto(&nodePool.Spec)
+
+	// One replica and Replace Upgrade
+	nodePool.Spec.Replicas = &oneReplicas
+	nodePool.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{
+		Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+		RollingUpdate: &hyperv1.RollingUpdate{
+			MaxUnavailable: func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(0)),
+			MaxSurge:       func(v intstr.IntOrString) *intstr.IntOrString { return &v }(intstr.FromInt(int(oneReplicas))),
+		},
 	}
 
-	// Look up metadata about the release images so that we can extract the version
-	// information for later assertions.
+	// Propagate Labels and Taints
+	syncedLabels := map[string]string{
+		syncedLabelsKey: syncedLabelsValue,
+	}
+	syncedTaints := []hyperv1.Taint{
+		{
+			Key:    "foo",
+			Value:  "bar",
+			Effect: corev1.TaintEffectPreferNoSchedule,
+		},
+	}
+
+	nodePool.Spec.NodeLabels = syncedLabels
+	nodePool.Spec.Taints = syncedTaints
+
+	// Setting initial release image
+	nodePool.Spec.Release.Image = ru.previousReleaseImage
+
+	return nodePool, nil
+}
+
+func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
+	g := NewWithT(t)
+
+	ctx := ru.ctx
+
+	// Grab release info
 	releaseInfoProvider := &releaseinfo.RegistryClientProvider{}
-	pullSecretFile, err := os.Open(clusterOpts.PullSecretFile)
+	pullSecretFile, err := os.Open(ru.clusterOpts.PullSecretFile)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to open pull secret file")
 	defer pullSecretFile.Close()
 	pullSecret, err := io.ReadAll(pullSecretFile)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to read pull secret file")
-	previousReleaseInfo, err := releaseInfoProvider.Lookup(ctx, globalOpts.PreviousReleaseImage, pullSecret)
+	previousReleaseInfo, err := releaseInfoProvider.Lookup(ctx, ru.previousReleaseImage, pullSecret)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for previous image")
-	latestReleaseInfo, err := releaseInfoProvider.Lookup(ctx, globalOpts.LatestReleaseImage, pullSecret)
+	latestReleaseInfo, err := releaseInfoProvider.Lookup(ctx, ru.latestReleaseImage, pullSecret)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for latest image")
 
-	// Create the test cluster.
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
-
-	// Wait for connectivity to the cluster.
-	t.Logf("Waiting for guest client to become available")
-	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
-
-	// Wait for Nodes to be Ready.
-	numNodes := clusterOpts.NodePoolReplicas
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
-
-	// Wait for the first rollout to be complete and refresh the HostedCluster.
-	t.Logf("Waiting for initial cluster rollout. Image: %s", hostedCluster.Spec.Release.Image)
-	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, hostedCluster.Spec.Release.Image)
-	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
-
-	// Find NodePools.
-	var nodePools hyperv1.NodePoolList
-	err = client.List(ctx, &nodePools, &crclient.ListOptions{Namespace: hostedCluster.Namespace})
-	g.Expect(err).NotTo(HaveOccurred(), "failed to list NodePools")
-
-	// Wait for NodePools to roll out the initial version.
-	// TODO: Consider doing this in parallel
-	for _, nodePool := range nodePools.Items {
-		e2eutil.WaitForNodePoolVersion(t, ctx, client, &nodePool, previousReleaseInfo.Version())
-	}
-
-	// TODO (alberto): move into WaitForNReadyNodes after this PR gets merged so it's validated by any call to the function in any test.
-	// It's has to wait for the PR to merged otherwise the control_plane_upgrade_test would fail.
 	t.Logf("Validating all Nodes have the synced labels and taints")
-	nodes := &corev1.NodeList{}
-	if err := guestClient.List(ctx, nodes); err != nil {
-		t.Fatalf("failed to list nodes in guest cluster: %v", err)
-	}
-	for _, node := range nodes.Items {
+	for _, node := range nodes {
 		g.Expect(node.Labels).To(HaveKeyWithValue(syncedLabelsKey, syncedLabelsValue))
-		g.Expect(node.Spec.Taints).To(ContainElement(wantedTaint))
+		g.Expect(node.Spec.Taints[0].Key).To(Equal(nodePool.Spec.Taints[0].Key))
+		g.Expect(node.Spec.Taints[0].Value).To(Equal(nodePool.Spec.Taints[0].Value))
+		g.Expect(node.Spec.Taints[0].Effect).To(Equal(nodePool.Spec.Taints[0].Effect))
 	}
 
 	// Update NodePool images to the latest.
-	for _, nodePool := range nodePools.Items {
-		err = client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-		t.Logf("Updating NodePool image. Image: %s", globalOpts.LatestReleaseImage)
-		original := nodePool.DeepCopy()
-		nodePool.Spec.Release.Image = globalOpts.LatestReleaseImage
-		err = client.Patch(ctx, &nodePool, crclient.MergeFrom(original))
-		g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool image")
-	}
+	err = ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
+	g.Expect(nodePool.Status.Version).To(Equal(previousReleaseInfo.ObjectMeta.Name), fmt.Sprintf("wrong previous release version: Previous: %s Nodepool current: %s", previousReleaseInfo.Version(), nodePool.Spec.Release.Image))
+	t.Logf("Updating NodePool image. Image: %s", ru.latestReleaseImage)
+	original := nodePool.DeepCopy()
+	nodePool.Spec.Release.Image = ru.latestReleaseImage
+	err = ru.mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(original))
+	g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool image")
 
-	// Wait for NodePools to roll out the latest version
-	// TODO: Consider doing this in parallel
-	for _, nodePool := range nodePools.Items {
-		e2eutil.WaitForNodePoolVersion(t, ctx, client, &nodePool, latestReleaseInfo.Version())
-		e2eutil.WaitForNodePoolConditionsNotToBePresent(t, ctx, client, &nodePool, hyperv1.NodePoolUpdatingVersionConditionType)
-	}
-
-	// Verify all nodes are ready after the upgrade
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
-
-	// TODO (alberto): move into WaitForNReadyNodes after this PR gets merged so it's validated by any call to the function in any test.
-	// It's has to wait for the PR to merged otherwise the control_plane_upgrade_test would fail.
-	t.Logf("Validating all Nodes have the synced labels and taints")
-	nodes = &corev1.NodeList{}
-	if err := guestClient.List(ctx, nodes); err != nil {
-		t.Fatalf("failed to list nodes in guest cluster: %v", err)
-	}
-	for _, node := range nodes.Items {
-		g.Expect(node.Labels).To(HaveKeyWithValue(syncedLabelsKey, syncedLabelsValue))
-		g.Expect(node.Spec.Taints).To(ContainElement(wantedTaint))
-	}
-
-	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
-}
-
-func TestInPlaceUpgradeNodePool(t *testing.T) {
-	// TODO: (csrwng) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
-	t.Skip("Skipping due to https://issues.redhat.com/browse/OCPBUGS-10218")
-	t.Parallel()
-	g := NewWithT(t)
-
-	ctx, cancel := context.WithCancel(testContext)
-	defer cancel()
-
-	t.Logf("Starting NodePool in place upgrade test from %s to %s", globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage)
-
-	client, err := e2eutil.GetClient()
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
-
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	clusterOpts.ReleaseImage = globalOpts.LatestReleaseImage
-	clusterOpts.BeforeApply = func(o crclient.Object) {
-		switch v := o.(type) {
-		case *hyperv1.NodePool:
-			v.Spec.Release.Image = globalOpts.PreviousReleaseImage
-			v.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace
-		}
-	}
-
-	// Look up metadata about the release images so that we can extract the version
-	// information for later assertions
-	releaseInfoProvider := &releaseinfo.RegistryClientProvider{}
-	pullSecretFile, err := os.Open(clusterOpts.PullSecretFile)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to open pull secret file")
-	defer pullSecretFile.Close()
-	pullSecret, err := io.ReadAll(pullSecretFile)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to read pull secret file")
-	previousReleaseInfo, err := releaseInfoProvider.Lookup(ctx, globalOpts.PreviousReleaseImage, pullSecret)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for previous image")
-	latestReleaseInfo, err := releaseInfoProvider.Lookup(ctx, globalOpts.LatestReleaseImage, pullSecret)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for latest image")
-
-	// Create the test cluster
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
-
-	// Wait for connectivity to the cluster
-	t.Logf("Waiting for guest client to become available")
-	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
-
-	// Wait for Nodes to be Ready
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, clusterOpts.NodePoolReplicas, hostedCluster.Spec.Platform.Type)
-
-	// Wait for the first rollout to be complete and refresh the hostedcluster
-	t.Logf("Waiting for initial cluster rollout. Image: %s", hostedCluster.Spec.Release.Image)
-	e2eutil.WaitForImageRollout(t, ctx, client, hostedCluster, hostedCluster.Spec.Release.Image)
-	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
-
-	// Find nodepools
-	var nodePools hyperv1.NodePoolList
-	err = client.List(ctx, &nodePools, &crclient.ListOptions{Namespace: hostedCluster.Namespace})
-	g.Expect(err).NotTo(HaveOccurred(), "failed to list NodePools")
-
-	// Wait for nodepools to roll out the initial version
-	// TODO: Consider doing this in parallel
-	for _, nodePool := range nodePools.Items {
-		e2eutil.WaitForNodePoolVersion(t, ctx, client, &nodePool, previousReleaseInfo.Version())
-	}
-
-	// Update NodePool images to the latest
-	for _, nodePool := range nodePools.Items {
-		err = client.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-		t.Logf("Updating NodePool image. Image: %s", globalOpts.LatestReleaseImage)
-		original := nodePool.DeepCopy()
-		nodePool.Spec.Release.Image = globalOpts.LatestReleaseImage
-		err = client.Patch(ctx, &nodePool, crclient.MergeFrom(original))
-		g.Expect(err).NotTo(HaveOccurred(), "failed update nodePool image")
-	}
-
-	// Wait for NodePools to roll out the latest version.
-	// TODO: Consider doing this in parallel
-	for _, nodePool := range nodePools.Items {
-		e2eutil.WaitForNodePoolVersion(t, ctx, client, &nodePool, latestReleaseInfo.Version())
-		e2eutil.WaitForNodePoolConditionsNotToBePresent(t, ctx, client, &nodePool, hyperv1.NodePoolUpdatingVersionConditionType)
-	}
-
-	// Verify all nodes are ready after the upgrade
-	e2eutil.WaitForNReadyNodes(t, ctx, guestClient, clusterOpts.NodePoolReplicas, hostedCluster.Spec.Platform.Type)
-
-	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
+	// final checks
+	e2eutil.WaitForNodePoolVersion(t, ctx, ru.mgmtClient, &nodePool, latestReleaseInfo.Version())
+	e2eutil.WaitForNodePoolConditionsNotToBePresent(t, ctx, ru.mgmtClient, &nodePool, hyperv1.NodePoolUpdatingVersionConditionType)
+	nodesFromNodePool := e2eutil.WaitForNReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, *nodePool.Spec.Replicas, ru.hostedCluster.Spec.Platform.Type, nodePool.Name)
+	g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodesFromNodePool)))
 }
