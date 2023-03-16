@@ -36,7 +36,6 @@ func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.Own
 		"kubernetes.default",
 		"kubernetes.default.svc",
 		"kubernetes.default.svc.cluster.local",
-		// TODO: add private KAS endpoint name
 		svc.Name,
 		fmt.Sprintf("%s.%s.svc", svc.Name, svc.Namespace),
 		fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, svc.Namespace),
