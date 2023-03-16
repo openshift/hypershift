@@ -403,7 +403,9 @@ func NewStartCommand() *cobra.Command {
 				os.Exit(1)
 			}
 
-			if err := (&awsprivatelink.AWSEndpointServiceReconciler{}).SetupWithManager(mgr); err != nil {
+			if err := (&awsprivatelink.AWSEndpointServiceReconciler{
+				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+			}).SetupWithManager(mgr); err != nil {
 				setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
 				os.Exit(1)
 			}

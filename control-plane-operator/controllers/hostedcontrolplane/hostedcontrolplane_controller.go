@@ -1418,27 +1418,30 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 		return "", 0, "", errors.New("APIServer service strategy not specified")
 	}
 
-	if util.IsPublicHCP(hcp) {
-		var svc *corev1.Service
-		if serviceStrategy.Type == hyperv1.Route {
+	var svc *corev1.Service
+	if serviceStrategy.Type == hyperv1.Route {
+		if util.IsPrivateHCP(hcp) {
+			svc = manifests.PrivateRouterService(hcp.Namespace)
+		} else {
 			svc = manifests.RouterPublicService(hcp.Namespace)
+		}
+	} else {
+		if util.IsPrivateHCP(hcp) {
+			svc = manifests.KubeAPIServerPrivateService(hcp.Namespace)
 		} else {
 			svc = manifests.KubeAPIServerService(hcp.Namespace)
 		}
-		if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
-			if apierrors.IsNotFound(err) {
-				err = nil
-				return
-			}
-			err = fmt.Errorf("failed to get kube apiserver service: %w", err)
+	}
+	if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+		if apierrors.IsNotFound(err) {
+			err = nil
 			return
 		}
-		p := kas.NewKubeAPIServerServiceParams(hcp)
-		return kas.ReconcileServiceStatus(svc, serviceStrategy, p.APIServerPort, events.NewMessageCollector(ctx, r.Client))
+		err = fmt.Errorf("failed to get kube apiserver service: %w", err)
+		return
 	}
-
-	host, port, err = kas.ReconcilePrivateServiceStatus(hcp)
-	return
+	p := kas.NewKubeAPIServerServiceParams(hcp)
+	return kas.ReconcileServiceStatus(svc, serviceStrategy, p.APIServerPort, events.NewMessageCollector(ctx, r.Client))
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, message string, err error) {
@@ -1499,9 +1502,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServiceStatus(ctx context.C
 				return
 			}
 		} else {
-			// TODO: sjenning: This should be switched to OauthServerExternalPrivateRoute
-			// once end-to-end DNS connectivity is added over PrivateLink
-			route = manifests.OauthServerInternalRoute(hcp.Namespace)
+			route = manifests.OauthServerExternalPrivateRoute(hcp.Namespace)
 			if err = r.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
 				if apierrors.IsNotFound(err) {
 					err = nil
@@ -2068,10 +2069,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	externalKubeconfigSecret := manifests.KASExternalKubeconfigSecret(hcp.Namespace, hcp.Spec.KubeConfig)
 	if _, err := createOrUpdate(ctx, r, externalKubeconfigSecret, func() error {
-		if util.IsPublicHCP(hcp) {
-			return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.ExternalURL(), p.ExternalKubeconfigKey())
-		}
-		return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalURL(), p.ExternalKubeconfigKey())
+		return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.ExternalURL(), p.ExternalKubeconfigKey())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile external kubeconfig secret: %w", err)
 	}

@@ -154,6 +154,7 @@ func ReconcileExternalPrivateRoute(route *routev1.Route, owner *metav1.OwnerRefe
 		route.Labels = map[string]string{}
 	}
 	route.Labels[hyperv1.RouteVisibilityLabel] = hyperv1.RouteVisibilityPrivate
+	util.AddInternalRouteLabel(route)
 	return nil
 }
 
