@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/util"
 	"go.uber.org/zap/zaptest"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -236,6 +237,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 			Labels: map[string]string{
 				"hypershift.openshift.io/hosted-control-plane": targetNamespace,
 				hyperv1.RouteVisibilityLabel:                   string(hyperv1.RouteVisibilityPrivate),
+				util.InternalRouteLabel:                        "true",
 			},
 			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
