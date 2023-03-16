@@ -1704,6 +1704,26 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
 	}
 
+	// OAuth master CA Bundle
+	bundleSources := []*corev1.Secret{oauthServerCert}
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.APIServer != nil {
+		for _, namedCert := range hcp.Spec.Configuration.APIServer.ServingCerts.NamedCertificates {
+			if namedCert.ServingCertificate.Name == "" {
+				continue
+			}
+			certSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: namedCert.ServingCertificate.Name, Namespace: hcp.Namespace}}
+			if err := r.Get(ctx, client.ObjectKeyFromObject(certSecret), certSecret); err != nil {
+				return fmt.Errorf("failed to get named certificate %s: %w", certSecret.Name, err)
+			}
+			bundleSources = append(bundleSources, certSecret)
+		}
+	}
+	oauthMasterCABundle := manifests.OpenShiftOAuthMasterCABundle(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, oauthMasterCABundle, func() error {
+		return pki.ReconcileOAuthMasterCABundle(oauthMasterCABundle, p.OwnerRef, bundleSources)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile oauth cert secret: %w", err)
+	}
 	// MCS Cert
 	machineConfigServerCert := manifests.MachineConfigServerCert(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, machineConfigServerCert, func() error {
