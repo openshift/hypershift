@@ -40,6 +40,9 @@ Regarding the Workers nodes assigned to the cluster, during the migration they w
 
 These next arguments depend on how the Hypershift Operator has been deployed and how a Hosted Cluster has been created. E.G If we want to go ahead with the procedure and our cluster is **private** we need to make sure that our **Hypershift Operator** has been deployed with the arguments set in the **Private** tab for **Hypershift Operator Deployment access endpoints arguments** and our **Hosted Cluster** has been created using the arguments following the **Private** tab in the **Arguments of the CLI when creating a HostedCluster** section down below.
 
+!!! warning
+    Since this is a disaster recovery procedure, unexpected things could happen because of all the moving components involved. To assist, [troubleshooting section](./troubleshooting.md#disaster-recovery---hostedcluster-migration) with the most common issues identified is provided.
+
 - Hypershift Operator Deployment endpoint access arguments
 
 === "**Public** and **PublicAndPrivate**"
