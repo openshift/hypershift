@@ -51,6 +51,10 @@ func TestUpgradeControlPlane(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 	original := hostedCluster.DeepCopy()
 	hostedCluster.Spec.Release.Image = globalOpts.LatestReleaseImage
+	if hostedCluster.Annotations == nil {
+		hostedCluster.Annotations = make(map[string]string)
+	}
+	hostedCluster.Annotations[hyperv1.ForceUpgradeToAnnotation] = globalOpts.LatestReleaseImage
 	err = client.Patch(ctx, hostedCluster, crclient.MergeFrom(original))
 	g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
 
