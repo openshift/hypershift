@@ -2673,7 +2673,18 @@ spec:
                           Cluster: guest.apps.mgmt-cluster.example.com Apps: *.apps.guest.apps.mgmt-cluster.example.com
                           \n This is possible using OCP wildcard routes"
                         type: boolean
+                      generateID:
+                        description: GenerateID is used to uniquely apply a name suffix
+                          to resources associated with kubevirt infrastructure resources
+                        maxLength: 11
+                        type: string
+                        x-kubernetes-validations:
+                        - message: Kubevirt GenerateID is immutable once set
+                          rule: self == oldSelf
                     type: object
+                    x-kubernetes-validations:
+                    - message: Kubevirt GenerateID is required once set
+                      rule: '!has(oldSelf.generateID) || has(self.generateID)'
                   powervs:
                     description: PowerVS specifies configuration for clusters running
                       on IBMCloud Power VS Service. This field is immutable. Once
@@ -6252,7 +6263,18 @@ spec:
                           Cluster: guest.apps.mgmt-cluster.example.com Apps: *.apps.guest.apps.mgmt-cluster.example.com
                           \n This is possible using OCP wildcard routes"
                         type: boolean
+                      generateID:
+                        description: GenerateID is used to uniquely apply a name suffix
+                          to resources associated with kubevirt infrastructure resources
+                        maxLength: 11
+                        type: string
+                        x-kubernetes-validations:
+                        - message: Kubevirt GenerateID is immutable once set
+                          rule: self == oldSelf
                     type: object
+                    x-kubernetes-validations:
+                    - message: Kubevirt GenerateID is required once set
+                      rule: '!has(oldSelf.generateID) || has(self.generateID)'
                   powervs:
                     description: PowerVS specifies configuration for clusters running
                       on IBMCloud Power VS Service. This field is immutable. Once

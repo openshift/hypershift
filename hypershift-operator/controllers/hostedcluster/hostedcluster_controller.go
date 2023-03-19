@@ -84,6 +84,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
@@ -4339,7 +4340,11 @@ func (r *HostedClusterReconciler) serviceAccountSigningKeyBytes(ctx context.Cont
 
 func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx context.Context, hc *hyperv1.HostedCluster) error {
 	if hc.Spec.Platform.Kubevirt == nil {
-		return nil
+		hc.Spec.Platform.Kubevirt = &hyperv1.KubevirtPlatformSpec{}
+	}
+
+	if hc.Spec.Platform.Kubevirt.GenerateID == "" {
+		hc.Spec.Platform.Kubevirt.GenerateID = utilrand.String(10)
 	}
 
 	// auto generate the basedomain by retrieving the default ingress *.apps dns.

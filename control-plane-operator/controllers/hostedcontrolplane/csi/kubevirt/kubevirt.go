@@ -121,10 +121,10 @@ func getContentsOrDie(file string) []byte {
 	return b
 }
 
-func reconcileInfraConfigMap(cm *corev1.ConfigMap) error {
+func reconcileInfraConfigMap(cm *corev1.ConfigMap, infraID string) error {
 	cm.Data = map[string]string{
 		"infraClusterNamespace": cm.Namespace,
-		"infraClusterLabels":    "",
+		"infraClusterLabels":    fmt.Sprintf("%s=%s", hyperv1.InfraIDLabel, infraID),
 	}
 	return nil
 }
@@ -420,7 +420,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 
 	infraConfigMap := manifests.KubevirtCSIDriverInfraConfigMap(infraNamespace)
 	_, err = createOrUpdate(ctx, client, infraConfigMap, func() error {
-		return reconcileInfraConfigMap(infraConfigMap)
+		return reconcileInfraConfigMap(infraConfigMap, hcp.Spec.InfraID)
 	})
 	if err != nil {
 		return err

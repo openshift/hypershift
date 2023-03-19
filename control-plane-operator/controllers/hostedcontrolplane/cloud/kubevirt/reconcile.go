@@ -16,7 +16,7 @@ import (
 )
 
 func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane) error {
-	cfg := cloudConfig(hcp.Namespace)
+	cfg := cloudConfig(hcp)
 	serializedCfg, err := cfg.serialize()
 	if err != nil {
 		return fmt.Errorf("failed to serialize cloudconfig: %w", err)

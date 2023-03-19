@@ -1,6 +1,7 @@
 package kubevirt
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"gopkg.in/yaml.v2"
 )
 
@@ -15,6 +16,7 @@ type CloudConfig struct {
 	LoadBalancer LoadBalancerConfig `yaml:"loadBalancer"`
 	InstancesV2  InstancesV2Config  `yaml:"instancesV2"`
 	Namespace    string             `yaml:"namespace"`
+	InfraLabels  map[string]string  `yaml:"infraLabels"`
 }
 
 type LoadBalancerConfig struct {
@@ -39,7 +41,7 @@ func (c *CloudConfig) serialize() (string, error) {
 	return string(out), nil
 }
 
-func cloudConfig(namespace string) CloudConfig {
+func cloudConfig(hcp *hyperv1.HostedControlPlane) CloudConfig {
 	return CloudConfig{
 		LoadBalancer: LoadBalancerConfig{
 			Enabled: true,
@@ -48,6 +50,9 @@ func cloudConfig(namespace string) CloudConfig {
 			Enabled:              true,
 			ZoneAndRegionEnabled: false,
 		},
-		Namespace: namespace,
+		Namespace: hcp.Namespace,
+		InfraLabels: map[string]string{
+			hyperv1.InfraIDLabel: hcp.Spec.InfraID,
+		},
 	}
 }
