@@ -227,7 +227,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		} else {
 			condition.Status = metav1.ConditionTrue
 			condition.Message = "Configuration passes validation"
-			condition.Reason = hyperv1.HostedClusterAsExpectedReason
+			condition.Reason = hyperv1.AsExpectedReason
 		}
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, condition)
 	}
@@ -237,7 +237,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		newCondition := metav1.Condition{
 			Type:   string(hyperv1.EtcdAvailable),
 			Status: metav1.ConditionUnknown,
-			Reason: hyperv1.EtcdStatusUnknownReason,
+			Reason: hyperv1.StatusUnknownReason,
 		}
 		switch hostedControlPlane.Spec.Etcd.ManagementType {
 		case hyperv1.Managed:
@@ -305,7 +305,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				newCondition = metav1.Condition{
 					Type:    string(hyperv1.KubeAPIServerAvailable),
 					Status:  metav1.ConditionFalse,
-					Reason:  hyperv1.DeploymentNotFoundReason,
+					Reason:  hyperv1.NotFoundReason,
 					Message: "Kube APIServer deployment not found",
 				}
 			} else {
@@ -316,7 +316,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			newCondition = metav1.Condition{
 				Type:   string(hyperv1.KubeAPIServerAvailable),
 				Status: metav1.ConditionFalse,
-				Reason: hyperv1.DeploymentStatusUnknownReason,
+				Reason: hyperv1.StatusUnknownReason,
 			}
 			for _, cond := range deployment.Status.Conditions {
 				if cond.Type == appsv1.DeploymentAvailable {
@@ -331,7 +331,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 						newCondition = metav1.Condition{
 							Type:    string(hyperv1.KubeAPIServerAvailable),
 							Status:  metav1.ConditionFalse,
-							Reason:  hyperv1.DeploymentWaitingForAvailableReason,
+							Reason:  hyperv1.WaitingForAvailableReason,
 							Message: "Waiting for Kube APIServer deployment to become available",
 						}
 					}

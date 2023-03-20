@@ -45,7 +45,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.VpcRegion, "vpc-region", opts.PowerVSPlatform.VpcRegion, "IBM Cloud VPC Region for VPC resources. Default is us-south")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.Vpc, "vpc", "", "IBM Cloud VPC Name")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.SysType, "sys-type", opts.PowerVSPlatform.SysType, "System type used to host the instance(e.g: s922, e980, e880). Default is s922")
-	cmd.Flags().StringVar(&opts.PowerVSPlatform.ProcType, "proc-type", opts.PowerVSPlatform.ProcType, "Processor type (dedicated, shared, capped). Default is shared")
+	cmd.Flags().Var(&opts.PowerVSPlatform.ProcType, "proc-type", "Processor type (dedicated, shared, capped). Default is shared")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.Processors, "processors", opts.PowerVSPlatform.Processors, "Number of processors allocated. Default is 0.5")
 	cmd.Flags().Int32Var(&opts.PowerVSPlatform.Memory, "memory", opts.PowerVSPlatform.Memory, "Amount of memory allocated (in GB). Default is 32")
 

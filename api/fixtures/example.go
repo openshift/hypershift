@@ -383,7 +383,6 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 				},
 				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: powerVSResources.KubeCloudControllerCreds.Name},
 				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: powerVSResources.NodePoolManagementCreds.Name},
-				ControlPlaneOperatorCreds: corev1.LocalObjectReference{Name: powerVSResources.ControlPlaneOperatorCreds.Name},
 				IngressOperatorCloudCreds: corev1.LocalObjectReference{Name: powerVSResources.IngressOperatorCloudCreds.Name},
 			},
 		}

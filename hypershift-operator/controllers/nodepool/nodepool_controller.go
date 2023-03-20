@@ -338,7 +338,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		ObservedGeneration: nodePool.Generation,
 	})
 
-	// Validate platform specific input.
+	// Validate AWS platform specific input.
 	var ami string
 	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if hcluster.Spec.Platform.AWS == nil {
@@ -347,13 +347,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		if nodePool.Spec.Platform.AWS.AMI != "" {
 			ami = nodePool.Spec.Platform.AWS.AMI
 			// User-defined AMIs cannot be validated
-			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidAMIConditionType)
+			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
 		} else {
 			// TODO: Should the region be included in the NodePool platform information?
 			ami, err = defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, releaseImage)
 			if err != nil {
 				setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-					Type:               hyperv1.NodePoolValidAMIConditionType,
+					Type:               hyperv1.NodePoolValidPlatformImageType,
 					Status:             corev1.ConditionFalse,
 					Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 					Message:            fmt.Sprintf("Couldn't discover an AMI for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
@@ -362,7 +362,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				return ctrl.Result{}, fmt.Errorf("couldn't discover an AMI for release image: %w", err)
 			}
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidAMIConditionType,
+				Type:               hyperv1.NodePoolValidPlatformImageType,
 				Status:             corev1.ConditionTrue,
 				Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 				Message:            fmt.Sprintf("Bootstrap AMI is %q", ami),
@@ -379,7 +379,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		coreOSPowerVSImage, powervsImageRegion, err = getPowerVSImage(hcluster.Spec.Platform.PowerVS.Region, releaseImage)
 		if err != nil {
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidPowerVSImageConditionType,
+				Type:               hyperv1.NodePoolValidPlatformImageType,
 				Status:             corev1.ConditionFalse,
 				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 				Message:            fmt.Sprintf("Couldn't discover an PowerVS Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
@@ -389,7 +389,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 		powervsBootImage = coreOSPowerVSImage.Release
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidPowerVSImageConditionType,
+			Type:               hyperv1.NodePoolValidPlatformImageType,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 			Message:            fmt.Sprintf("Bootstrap PowerVS Image is %q", powervsBootImage),
@@ -402,7 +402,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 		if err := kubevirtPlatformValidation(nodePool); err != nil {
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidKubevirtConfigConditionType,
+				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
 				Status:             corev1.ConditionFalse,
 				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 				Message:            fmt.Sprintf("validation of NodePool KubeVirt platform failed: %s", err.Error()),
@@ -410,12 +410,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			})
 			return ctrl.Result{}, fmt.Errorf("validation of NodePool KubeVirt platform failed: %w", err)
 		}
-		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidKubevirtConfigConditionType)
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
 
 		kubevirtBootImage, err = getKubeVirtImage(nodePool, releaseImage)
 		if err != nil {
 			setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidKubeVirtImageConditionType,
+				Type:               hyperv1.NodePoolValidPlatformImageType,
 				Status:             corev1.ConditionFalse,
 				Reason:             hyperv1.NodePoolValidationFailedConditionReason,
 				Message:            fmt.Sprintf("Couldn't discover an KubeVirt Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
@@ -424,7 +424,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			return ctrl.Result{}, fmt.Errorf("couldn't discover an KubeVirt disk image in release payload image: %w", err)
 		}
 		setStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidKubeVirtImageConditionType,
+			Type:               hyperv1.NodePoolValidPlatformImageType,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.NodePoolAsExpectedConditionReason,
 			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %q", kubevirtBootImage),

@@ -538,27 +538,26 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		log.Info("endpoint deleted", "endpointID", endpointID)
 	}
 
-	fqdn := awsEndpointService.Status.DNSName
 	zoneID := awsEndpointService.Status.DNSZoneID
 	if err != nil {
 		return false, err
 	}
-	if fqdn != "" && zoneID != "" {
-		record, err := findRecord(ctx, route53Client, zoneID, fqdn)
-		if err != nil {
-			return false, err
-		}
-		if record != nil {
-			err = deleteRecord(ctx, route53Client, zoneID, record)
+	for _, fqdn := range awsEndpointService.Status.DNSNames {
+		if fqdn != "" && zoneID != "" {
+			record, err := findRecord(ctx, route53Client, zoneID, fqdn)
 			if err != nil {
 				return false, err
 			}
-			log.Info("DNS record deleted", "fqdn", fqdn)
-		} else {
-			log.Info("no DNS record found", "fqdn", fqdn)
+			if record != nil {
+				err = deleteRecord(ctx, route53Client, zoneID, record)
+				if err != nil {
+					return false, err
+				}
+				log.Info("DNS record deleted", "fqdn", fqdn)
+			} else {
+				log.Info("no DNS record found", "fqdn", fqdn)
+			}
 		}
-	} else {
-		log.Info("no DNS status set in AWSEndpointService", "name", awsEndpointService.Name)
 	}
 
 	return true, nil

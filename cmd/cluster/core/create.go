@@ -89,7 +89,7 @@ type PowerVSPlatformOptions struct {
 
 	// nodepool related options
 	SysType    string
-	ProcType   string
+	ProcType   hyperv1.PowerVSNodePoolProcType
 	Processors string
 	Memory     int32
 }

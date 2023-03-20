@@ -8,7 +8,6 @@ import (
 	"github.com/go-logr/zapr"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
@@ -130,6 +129,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 	hostname := "test.example.com"
 	allowCIDR := []hyperv1.CIDRBlock{"1.2.3.4/24"}
 	allowCIDRString := []string{"1.2.3.4/24"}
+
 	testsCases := []struct {
 		name             string
 		hcp              *hyperv1.HostedControlPlane
