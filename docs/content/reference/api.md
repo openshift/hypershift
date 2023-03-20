@@ -2743,11 +2743,11 @@ for AWS workers has been created.
 A failure here indicates that NodePools without a security group will be
 blocked from creating machines.</p>
 </td>
-</tr><tr><td><p>&#34;EndpointAvailable&#34;</p></td>
+</tr><tr><td><p>&#34;AWSEndpointAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint has been
 created in the guest VPC</p>
 </td>
-</tr><tr><td><p>&#34;EndpointServiceAvailable&#34;</p></td>
+</tr><tr><td><p>&#34;AWSEndpointServiceAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
 </td>
