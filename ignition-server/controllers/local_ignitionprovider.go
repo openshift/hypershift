@@ -18,10 +18,13 @@ import (
 
 	"github.com/docker/distribution/manifest/manifestlist"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -66,7 +69,7 @@ type LocalIgnitionProvider struct {
 
 var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
 
-func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, customConfig string) ([]byte, error) {
+func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, customConfig string, pullSecretHash string) ([]byte, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 
@@ -86,6 +89,11 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	}()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pull secret: %w", err)
+	}
+
+	// Verify the pullSecret hash matches the passed-in parameter pullSecretHash to ensure the correct pull secret gets loaded into the payload
+	if pullSecretHash != "" && util.HashStruct(pullSecret) != pullSecretHash {
+		return nil, fmt.Errorf("pull secret does not match hash")
 	}
 
 	// Fetch the bootstrap kubeconfig contents
@@ -168,7 +176,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			return nil, fmt.Errorf("failed to write MCS config file %q: %w", name, err)
 		}
 	}
-	// Extract ImageRefereces from release image to config directory
+	// Extract ImageReferences from release image to config directory
 	err = func() error {
 		start := time.Now()
 		if err := registryclient.ExtractImageFilesToDir(ctx, releaseImage, pullSecret, "release-manifests/image-references", configDir); err != nil {
@@ -255,6 +263,21 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		destDir := filepath.Join(workDir, "mco")
 		if err := os.MkdirAll(destDir, 0755); err != nil {
 			return fmt.Errorf("failed to make dir: %w", err)
+		}
+
+		// Write out pull secret to config directory
+		// NOTE: This overwrites the one in the machine-config-server configmap to ensure it's the one that matches the hash used in the token secret.
+		pullSecretObject := common.PullSecret("default")
+		pullSecretObject.Data = map[string][]byte{
+			corev1.DockerConfigJsonKey: pullSecret,
+		}
+		pullSecretObject.Type = corev1.SecretTypeDockerConfigJson
+		serializedPullSecret, err := util.SerializeResource(pullSecretObject, api.Scheme)
+		if err != nil {
+			return fmt.Errorf("failed to serialize pull-secret.yaml: %w", err)
+		}
+		if err = os.WriteFile(fmt.Sprintf("%s/pull-secret.yaml", configDir), []byte(serializedPullSecret), 0644); err != nil {
+			return fmt.Errorf("failed to write pull secret to config dir: %w", err)
 		}
 
 		args := []string{
