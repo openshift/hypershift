@@ -86,7 +86,7 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 			return metav1.Condition{
 				Type:    string(hyperv1.ClusterVersionFailing),
 				Status:  metav1.ConditionUnknown,
-				Reason:  hyperv1.ClusterVersionStatusUnknownReason,
+				Reason:  hyperv1.StatusUnknownReason,
 				Message: fmt.Sprintf("failed to get clusterversion: %v", err),
 			}
 		}
@@ -118,7 +118,7 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 			return metav1.Condition{
 				Type:    string(hyperv1.ClusterVersionUpgradeable),
 				Status:  metav1.ConditionUnknown,
-				Reason:  hyperv1.ClusterVersionStatusUnknownReason,
+				Reason:  hyperv1.StatusUnknownReason,
 				Message: fmt.Sprintf("failed to get clusterversion: %v", err),
 			}
 		}

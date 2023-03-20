@@ -192,8 +192,7 @@ func clusterCreationTime(hc *hyperv1.HostedCluster) *float64 {
 var expectedNPConditionStates = map[string]bool{
 	hyperv1.NodePoolValidHostedClusterConditionType: true,
 	hyperv1.NodePoolValidReleaseImageConditionType:  true,
-	hyperv1.NodePoolValidAMIConditionType:           true,
-	hyperv1.NodePoolValidPowerVSImageConditionType:  true,
+	hyperv1.NodePoolValidPlatformImageType:          true,
 	hyperv1.NodePoolValidMachineConfigConditionType: true,
 	hyperv1.NodePoolReadyConditionType:              true,
 	hyperv1.NodePoolUpdatingVersionConditionType:    false,

@@ -1,10 +1,9 @@
 package fixtures
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
 
 type ExamplePowerVSOptions struct {
@@ -24,7 +23,7 @@ type ExamplePowerVSOptions struct {
 
 	// nodepool related options
 	SysType    string
-	ProcType   string
+	ProcType   hyperv1.PowerVSNodePoolProcType
 	Processors string
 	Memory     int32
 }

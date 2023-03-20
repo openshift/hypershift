@@ -561,7 +561,6 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	if err != nil {
 		return false, err
 	}
-
 	for _, fqdn := range awsEndpointService.Status.DNSNames {
 		if fqdn != "" && zoneID != "" {
 			record, err := findRecord(ctx, route53Client, zoneID, fqdn)

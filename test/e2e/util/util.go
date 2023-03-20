@@ -14,6 +14,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	promapi "github.com/prometheus/client_golang/api"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	promconfig "github.com/prometheus/common/config"
@@ -32,8 +33,6 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 )
 
