@@ -67,3 +67,11 @@ rules:
   - create
   - patch
   - update
+- apiGroups:
+  - hypershift.openshift.io
+  resources:
+  - hostedcontrolplanes
+  verbs:
+  - watch
+  - list
+  - get
