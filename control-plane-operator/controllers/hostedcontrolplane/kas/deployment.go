@@ -155,7 +155,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 						"/usr/bin/tail",
 						"-c+1",
 						"-F",
-						"/var/log/kube-apiserver/audit.log",
+						fmt.Sprintf("%s/%s", volumeMounts.Path(kasContainerMain().Name, kasVolumeWorkLogs().Name), "audit.log"),
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
@@ -165,7 +165,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 					},
 					VolumeMounts: []corev1.VolumeMount{{
 						Name:      kasVolumeWorkLogs().Name,
-						MountPath: "/var/log/kube-apiserver",
+						MountPath: volumeMounts.Path(kasContainerMain().Name, kasVolumeWorkLogs().Name),
 					}},
 				},
 			},
