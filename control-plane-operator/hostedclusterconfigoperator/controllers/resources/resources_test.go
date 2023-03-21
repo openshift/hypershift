@@ -48,6 +48,7 @@ var initialObjects = []client.Object{
 	globalconfig.ImageConfig(),
 	globalconfig.ProjectConfig(),
 	globalconfig.BuildConfig(),
+	globalconfig.ProxyConfig(),
 	// Not running bcrypt hashing for the kubeadmin secret massively speeds up the tests, 4s vs 0.1s (and for -race its ~10x that)
 	&corev1.Secret{
 		ObjectMeta: manifests.KubeadminPasswordHashSecret().ObjectMeta,
