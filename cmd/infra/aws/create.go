@@ -254,7 +254,14 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 				return nil, fmt.Errorf("failed to read ssh-key-file from %s: %w", o.SSHKeyFile, err)
 			}
 		}
-		result.ProxyAddr, err = o.createProxyHost(ctx, l, ec2Client, result.Zones[0].SubnetID, result.VPCID, string(sshKeyFile))
+
+		sgGroupId, err := o.CreateProxySecurityGroup(ctx, l, ec2Client, result.VPCID)
+		if err != nil {
+			return nil, err
+		}
+
+		userData := []byte(fmt.Sprintf(proxyConfigurationScript, string(sshKeyFile)))
+		result.ProxyAddr, err = o.CreateProxyHost(ctx, l, ec2Client, result.Zones[0].SubnetID, sgGroupId, userData)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create proxy host: %w", err)
 		}
@@ -263,16 +270,18 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	return result, nil
 }
 
-func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger, client ec2iface.EC2API, subnetID, vpcID string, sshKeys string) (string, error) {
-	const securityGroupName = "proxy-sg"
+const ProxySecurityGroupName = "proxy-sg"
+
+func (o *CreateInfraOptions) CreateProxySecurityGroup(ctx context.Context, l logr.Logger, client ec2iface.EC2API, vpcID string) (string, error) {
+
 	sgCreateResult, err := client.CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
-		GroupName:         aws.String(securityGroupName),
+		GroupName:         aws.String(ProxySecurityGroupName),
 		Description:       aws.String("proxy security group"),
 		VpcId:             aws.String(vpcID),
-		TagSpecifications: o.ec2TagSpecifications("security-group", securityGroupName),
+		TagSpecifications: o.ec2TagSpecifications("security-group", ProxySecurityGroupName),
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to create bastion security group: %w", err)
+		return "", fmt.Errorf("failed to create proxy security group: %w", err)
 	}
 
 	var sgResult *ec2.DescribeSecurityGroupsOutput
@@ -290,7 +299,7 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 		return "", fmt.Errorf("cannot find security group that was just created (%s)", aws.StringValue(sgCreateResult.GroupId))
 	}
 	sg := sgResult.SecurityGroups[0]
-	l.Info("Created security group", "name", securityGroupName, "id", aws.StringValue(sg.GroupId))
+	l.Info("Created security group", "name", ProxySecurityGroupName, "id", aws.StringValue(sg.GroupId))
 
 	permissions := []*ec2.IpPermission{
 		{
@@ -319,18 +328,22 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 	}
 	l.Info("Authorized security group for proxy")
 
+	return *sg.GroupId, nil
+}
+
+func (o *CreateInfraOptions) CreateProxyHost(ctx context.Context, l logr.Logger, client ec2iface.EC2API, subnetID, sgGroupId string, userData []byte) (string, error) {
 	result, err := client.RunInstancesWithContext(ctx, &ec2.RunInstancesInput{
 		ImageId:      aws.String("resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"),
 		MaxCount:     aws.Int64(1),
 		MinCount:     aws.Int64(1),
 		InstanceType: aws.String("t2.micro"),
-		UserData:     aws.String(base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(proxyConfigurationScript, sshKeys)))),
+		UserData:     aws.String(base64.StdEncoding.EncodeToString(userData)),
 		NetworkInterfaces: []*ec2.InstanceNetworkInterfaceSpecification{
 			{
 				DeviceIndex:              aws.Int64(0),
 				AssociatePublicIpAddress: aws.Bool(true),
 				SubnetId:                 aws.String(subnetID),
-				Groups:                   []*string{sg.GroupId},
+				Groups:                   aws.StringSlice([]string{sgGroupId}),
 			},
 		},
 		TagSpecifications: o.ec2TagSpecifications("instance", o.Name+"-"+o.InfraID+"-http-proxy"),

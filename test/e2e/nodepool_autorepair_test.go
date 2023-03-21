@@ -14,7 +14,6 @@ import (
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -70,7 +69,7 @@ func (ar *NodePoolAutoRepairTest) Run(t *testing.T, nodePool hyperv1.NodePool, n
 	g.Expect(len(awsSpec)).NotTo(BeZero())
 	instanceID := awsSpec[strings.LastIndex(awsSpec, "/")+1:]
 	t.Logf("Terminating AWS instance: %s", instanceID)
-	ec2client := ec2Client(ar.clusterOpts.AWSPlatform.AWSCredentialsFile, ar.clusterOpts.AWSPlatform.Region)
+	ec2client := e2eutil.Ec2Client(ar.clusterOpts.AWSPlatform.AWSCredentialsFile, ar.clusterOpts.AWSPlatform.Region)
 	_, err := ec2client.TerminateInstances(&ec2.TerminateInstancesInput{
 		InstanceIds: []*string{aws.String(instanceID)},
 	})
@@ -91,10 +90,4 @@ func (ar *NodePoolAutoRepairTest) Run(t *testing.T, nodePool hyperv1.NodePool, n
 	}, ar.ctx.Done())
 	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for new node to become available")
 
-}
-
-func ec2Client(awsCredsFile, region string) *ec2.EC2 {
-	awsSession := awsutil.NewSession("e2e-autorepair", awsCredsFile, "", "", region)
-	awsConfig := awsutil.NewConfig()
-	return ec2.New(awsSession, awsConfig)
 }

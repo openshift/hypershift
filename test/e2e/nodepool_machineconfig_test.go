@@ -164,7 +164,7 @@ func (mc *NodePoolMachineconfigRolloutTest) Run(t *testing.T, nodePool hyperv1.N
 	g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("failed waiting for all pods in the MachineConfig update verification DS to be ready: %v", err))
 	g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodes)))
 
-	e2eutil.EnsureNoCrashingPods(t, ctx, mc.mgmtClient, mc.hostedCluster)
+	e2eutil.EnsureNoCrashingPodsInHCP(t, ctx, mc.mgmtClient, mc.hostedCluster)
 	e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, mc.mgmtClient, mc.hostedCluster)
 	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, mc.mgmtClient, mc.hostedCluster)
 	e2eutil.EnsureNoPodsWithTooHighPriority(t, ctx, mc.mgmtClient, mc.hostedCluster)

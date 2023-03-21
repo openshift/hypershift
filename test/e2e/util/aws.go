@@ -7,6 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/kms"
@@ -37,6 +38,12 @@ func GetKMSKeyArn(awsCreds, awsRegion string) (*string, error) {
 	}
 
 	return out.KeyMetadata.Arn, nil
+}
+
+func Ec2Client(awsCredsFile, region string) *ec2.EC2 {
+	awsSession := awsutil.NewSession("e2e-hypershift", awsCredsFile, "", "", region)
+	awsConfig := awsutil.NewConfig()
+	return ec2.New(awsSession, awsConfig)
 }
 
 func GetS3Client(awsCreds, awsRegion string) *s3.S3 {

@@ -67,7 +67,7 @@ func TestCreateCluster(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
-	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureNoCrashingPodsInHCP(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
 }
 
@@ -112,7 +112,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
-	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureNoCrashingPodsInHCP(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
 
 	e2eutil.EnsureSecretEncryptedUsingKMS(t, ctx, hostedCluster, guestClient)
@@ -189,7 +189,7 @@ func TestCreateClusterPrivate(t *testing.T) {
 
 	err = client.Get(testContext, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
-	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureNoCrashingPodsInHCP(t, ctx, client, hostedCluster)
 }
 
 // TestCreateClusterProxy implements a test that creates a cluster behind a proxy with the code under test.
@@ -206,6 +206,16 @@ func TestCreateClusterProxy(t *testing.T) {
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.AWSPlatform.EnableProxy = true
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
+
+	clusterOpts.BeforeApply = func(o crclient.Object) {
+		switch v := o.(type) {
+		case *hyperv1.HostedCluster:
+			if v.Spec.Configuration == nil {
+				v.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+			}
+			v.Spec.Configuration.Proxy = e2eutil.CreateProxyInstance(t, ctx, client, clusterOpts, v)
+		}
+	}
 
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
@@ -235,6 +245,9 @@ func TestCreateClusterProxy(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
-	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	e2eutil.EnsureNoCrashingPodsInHCP(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
+
+	// console pods will crash if trusted-CA is not correctly configured
+	e2eutil.EnsureNoCrashingPods(t, ctx, guestClient, "openshift-console", nil)
 }

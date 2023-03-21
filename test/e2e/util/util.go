@@ -347,53 +347,65 @@ func WaitForNodePoolVersion(t *testing.T, ctx context.Context, client crclient.C
 	t.Logf("Observed nodepool %s/%s to report version %s in %s", nodePool.Namespace, nodePool.Name, version, time.Since(start).Round(time.Second))
 }
 
-func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	t.Run("EnsureNoCrashingPods", func(t *testing.T) {
-		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+func EnsureNoCrashingPodsInHCP(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+	skipPodFunc := func(pod corev1.Pod) bool {
+		// TODO: Remove this when https://issues.redhat.com/browse/OCPBUGS-6953 is resolved
+		if strings.HasPrefix(pod.Name, "ovnkube-master-") {
+			return true
+		}
 
+		// TODO: Figure out why Route kind does not exist when ingress-operator first starts
+		if strings.HasPrefix(pod.Name, "ingress-operator-") {
+			return true
+		}
+
+		// TODO: Figure out why default-http backend health check is failing and triggering liveness probe to restart
+		if strings.HasPrefix(pod.Name, "router-") {
+			return true
+		}
+
+		// TODO: Autoscaler is restarting because it times out accessing the kube apiserver for leader election.
+		// Investigate a fix.
+		if strings.HasPrefix(pod.Name, "cluster-autoscaler") {
+			return true
+		}
+
+		// TODO: Machine approver started restarting in the UpgradeControlPlane test with the following error:
+		// F1122 15:17:01.880727       1 main.go:144] Can't create clients: failed to create client: Unauthorized
+		// Investigate a fix.
+		if strings.HasPrefix(pod.Name, "machine-approver") {
+			return true
+		}
+
+		// TODO: Drop this when this discussion https://redhat-internal.slack.com/archives/C01C8502FMM/p1677761198989759 is resolved.
+		if strings.HasPrefix(pod.Name, "cluster-node-tuning-operator") {
+			return true
+		}
+
+		// TODO: 4.11 and later, FBC based catalogs can in excess of 150s to start
+		// https://github.com/openshift/hypershift/pull/1746
+		// https://github.com/operator-framework/operator-lifecycle-manager/pull/2791
+		// Investigate a fix.
+		if strings.Contains(pod.Name, "-catalog") {
+			return true
+		}
+
+		return false
+	}
+
+	EnsureNoCrashingPods(t, ctx, client, namespace, skipPodFunc)
+}
+
+func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, namespace string, skipPod func(corev1.Pod) bool) {
+	t.Run(fmt.Sprintf("EnsureNoCrashingPods in %s", namespace), func(t *testing.T) {
 		var podList corev1.PodList
 		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
-			// TODO: Remove this when https://issues.redhat.com/browse/OCPBUGS-6953 is resolved
-			if strings.HasPrefix(pod.Name, "ovnkube-master-") {
-				continue
-			}
-
-			// TODO: Figure out why Route kind does not exist when ingress-operator first starts
-			if strings.HasPrefix(pod.Name, "ingress-operator-") {
-				continue
-			}
-
-			// TODO: Figure out why default-http backend health check is failing and triggering liveness probe to restart
-			if strings.HasPrefix(pod.Name, "router-") {
-				continue
-			}
-
-			// TODO: Autoscaler is restarting because it times out accessing the kube apiserver for leader election.
-			// Investigate a fix.
-			if strings.HasPrefix(pod.Name, "cluster-autoscaler") {
-				continue
-			}
-
-			// TODO: Machine approver started restarting in the UpgradeControlPlane test with the following error:
-			// F1122 15:17:01.880727       1 main.go:144] Can't create clients: failed to create client: Unauthorized
-			// Investigate a fix.
-			if strings.HasPrefix(pod.Name, "machine-approver") {
-				continue
-			}
-
-			// TODO: Drop this when this discussion https://redhat-internal.slack.com/archives/C01C8502FMM/p1677761198989759 is resolved.
-			if strings.HasPrefix(pod.Name, "cluster-node-tuning-operator") {
-				continue
-			}
-
-			// TODO: 4.11 and later, FBC based catalogs can in excess of 150s to start
-			// https://github.com/openshift/hypershift/pull/1746
-			// https://github.com/operator-framework/operator-lifecycle-manager/pull/2791
-			// Investigate a fix.
-			if strings.Contains(pod.Name, "-catalog") {
+			if skipPod != nil && skipPod(pod) {
+				t.Logf("skipping pod %s", pod.Name)
 				continue
 			}
 

@@ -77,7 +77,7 @@ func (k *KMSRootVolumeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes [
 	instanceID := providerID[strings.LastIndex(providerID, "/")+1:]
 	t.Logf("instanceID: %s", instanceID)
 
-	ec2client := ec2Client(k.clusterOpts.AWSPlatform.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region)
+	ec2client := e2eutil.Ec2Client(k.clusterOpts.AWSPlatform.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region)
 	output, err := ec2client.DescribeVolumes(&ec2.DescribeVolumesInput{
 		Filters: []*ec2.Filter{
 			{

@@ -620,7 +620,10 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 	}
 
 	// Copy proxy trustedCA to guest cluster.
-	r.reconcileProxyTrustedCAConfigMap(ctx, hcp)
+	if err := r.reconcileProxyTrustedCAConfigMap(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile proxy TrustedCA configmap: %w", err))
+	}
+
 	proxy := globalconfig.ProxyConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, proxy, func() error {
 		globalconfig.ReconcileInClusterProxyConfig(proxy, hcp.Spec.Configuration)
