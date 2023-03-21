@@ -61,6 +61,9 @@ const (
 	ClusterVersionAvailable ConditionType = "ClusterVersionAvailable"
 	// ClusterVersionReleaseAccepted bubbles up Failing ReleaseAccepted from the CVO.
 	ClusterVersionReleaseAccepted ConditionType = "ClusterVersionReleaseAccepted"
+	// LastCompletedClusterVersion exposes the last HostedCluster completed version as a condition.
+	// It's mostly the same as .status.version.history but consumable from outside.
+	LastCompletedClusterVersion ConditionType = "LastCompletedClusterVersion"
 
 	// UnmanagedEtcdAvailable indicates whether a user-managed etcd cluster is
 	// healthy.

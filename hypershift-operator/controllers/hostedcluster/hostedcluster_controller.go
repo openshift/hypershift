@@ -811,6 +811,24 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
 
+	// Set LastCompletedClusterVersion condition
+	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.LastCompletedClusterVersion),
+			ObservedGeneration: hcluster.Generation,
+			Message:            hcluster.Status.Version.History[0].Version,
+		}
+
+		if hcluster.Status.Version.History[0].State == configv1.CompletedUpdate {
+			condition.Status = metav1.ConditionTrue
+			condition.Reason = hyperv1.AsExpectedReason
+		} else {
+			condition.Status = metav1.ConditionFalse
+			condition.Reason = hyperv1.StatusUnknownReason
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
 	// Persist status updates
 	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 		if apierrors.IsConflict(err) {
