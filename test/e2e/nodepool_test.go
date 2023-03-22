@@ -81,7 +81,10 @@ func TestNodePool(t *testing.T) {
 		t.Run("TestNodePoolAutoRepair", testNodePoolAutoRepair(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
 		t.Run("TestNodepoolMachineconfigGetsRolledout", testNodepoolMachineconfigGetsRolledout(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
 		t.Run("TestNTOMachineConfigGetsRolledOut", testNTOMachineConfigGetsRolledOut(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
-		t.Run("TestNTOMachineConfigAppliedInPlace", testNTOMachineConfigAppliedInPlace(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
+		/*
+			 		// TODO: (csrwng) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
+					t.Run("TestNTOMachineConfigAppliedInPlace", testNTOMachineConfigAppliedInPlace(ctx, mgmtClient, hostedCluster, guestClient, clusterOpts))
+		*/
 
 		for _, testCase := range nodePoolTests {
 			t.Run(testCase.name, func(t *testing.T) {

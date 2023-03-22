@@ -159,6 +159,8 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 }
 
 func TestInPlaceUpgradeNodePool(t *testing.T) {
+	// TODO: (csrwng) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
+	t.Skip("Skipping due to https://issues.redhat.com/browse/OCPBUGS-10218")
 	t.Parallel()
 	g := NewWithT(t)
 
