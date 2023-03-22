@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/certs"
 	rbacv1 "k8s.io/api/rbac/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -12,12 +14,9 @@ import (
 	oauthv1 "github.com/openshift/api/oauth/v1"
 )
 
-func ReconcileOAuthServerCertCABundle(cm *corev1.ConfigMap, sourceSecret *corev1.Secret) error {
-	if _, hasCertKey := sourceSecret.Data[corev1.TLSCertKey]; !hasCertKey {
-		return fmt.Errorf("source secret %s/%s does not have a cert key", sourceSecret.Namespace, sourceSecret.Name)
-	}
+func ReconcileOAuthServerCertCABundle(cm *corev1.ConfigMap, sourceBundle *corev1.ConfigMap) error {
 	cm.Data = map[string]string{}
-	cm.Data["ca-bundle.crt"] = string(sourceSecret.Data[corev1.TLSCertKey])
+	cm.Data["ca-bundle.crt"] = string(sourceBundle.Data[certs.CASignerCertMapKey])
 	return nil
 }
 

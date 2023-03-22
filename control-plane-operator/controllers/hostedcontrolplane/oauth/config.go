@@ -62,11 +62,7 @@ func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace 
 		return path.Join(dir, file)
 	}
 
-	caCertPath := ""
-	if _, hasCA := params.ServingCert.Data[certs.CASignerCertMapKey]; hasCA {
-		caCertPath = cpath(oauthVolumeServingCert().Name, certs.CASignerCertMapKey)
-	}
-
+	caCertPath := cpath(oauthVolumeMasterCABundle().Name, certs.CASignerCertMapKey)
 	serverConfig := &osinv1.OsinServerConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "OsinServerConfig",
