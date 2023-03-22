@@ -89,10 +89,6 @@ func hash(s string) string {
 func ReconcileExternalRoute(route *routev1.Route, hostname string, defaultIngressDomain string, serviceName string) error {
 	if hostname != "" {
 		AddHCPRouteLabel(route)
-		if route.Annotations == nil {
-			route.Annotations = map[string]string{}
-		}
-		route.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = hostname
 		route.Spec.Host = hostname
 	} else {
 		if route.Spec.Host == "" {
@@ -108,6 +104,8 @@ func ReconcileExternalRoute(route *routev1.Route, hostname string, defaultIngres
 		Termination:                   routev1.TLSTerminationPassthrough,
 		InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
 	}
+	// remove annotation as external-dns will register the name if host is within the zone
+	delete(route.Annotations, hyperv1.ExternalDNSHostnameAnnotation)
 	return nil
 }
 
