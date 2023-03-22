@@ -646,11 +646,11 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	}
 
 	for idx := range objects {
-		gvk, err := apiutil.GVKForObject(objects[idx], hyperapi.Scheme)
+		gvk, err := apiutil.GVKForObject(objects[idx], hyperapi.InstallScheme)
 		if err != nil {
 			return nil, fmt.Errorf("failed to look up gvk for %T: %w", objects[idx], err)
 		}
-		// Everything that embedds metav1.TypeMeta implements this
+		// Everything that embeds metav1.TypeMeta implements this
 		objects[idx].(interface {
 			SetGroupVersionKind(gvk schema.GroupVersionKind)
 		}).SetGroupVersionKind(gvk)
