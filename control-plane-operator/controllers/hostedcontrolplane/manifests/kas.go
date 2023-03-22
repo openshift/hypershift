@@ -165,3 +165,12 @@ func ControlPlaneRecordingRules(ns string) *prometheusoperatorv1.PrometheusRule 
 		},
 	}
 }
+
+func KASContainerAWSKMSProviderServiceAccount() *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kms-provider",
+			Namespace: "kube-system",
+		},
+	}
+}

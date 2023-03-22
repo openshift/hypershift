@@ -2899,6 +2899,10 @@ in the cloud credentials is healthy. E.g. for AWS the idp ARN is referenced in t
 ]</p>
 <p>A failure here may require external user intervention to resolve.</p>
 </td>
+</tr><tr><td><p>&#34;ValidAWSKMSConfig&#34;</p></td>
+<td><p>ValidAWSKMSConfig indicates whether the AWS KMS role and encryption key are valid and operational
+A failure here indicates that the role or the key are invalid, or the role doesn&rsquo;t have access to use the key.</p>
+</td>
 </tr><tr><td><p>&#34;ValidConfiguration&#34;</p></td>
 <td><p>ValidHostedClusterConfiguration signals if the hostedCluster input is valid and
 supported by the underlying management cluster.
