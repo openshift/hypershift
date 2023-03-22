@@ -153,9 +153,10 @@ sed -E 's/(^http_access deny CONNECT.*)/#\1/' -i /etc/squid/squid.conf
 sed -E '/^http_port 3128.*/c\
 sslcrtd_children 50 startup=5 idle=1\
 acl step1 at_step SslBump1\
-acl quayServer ssl::server_name .quay.io\
+acl registryServer ssl::server_name .quay.io\
+acl registryServer ssl::server_name_regex \\.registry.*\
 ssl_bump peek step1\
-ssl_bump bump all !quayServer\
+ssl_bump bump all !registryServer\
 ssl_bump splice all\
 \
 http_port 3128 ssl-bump generate-host-certificates=on dynamic_cert_mem_cache_size=4MB cert=/etc/squid/ssl_cert/myCA.pem  options=NO_SSLv3\
