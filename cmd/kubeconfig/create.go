@@ -54,7 +54,7 @@ func NewCreateCommand() *cobra.Command {
 
 	opts := Options{}
 
-	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A hostedcluster namespace. Will defalt to 'clusters' if a --name is supplied")
+	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A hostedcluster namespace. Will default to 'clusters' if a --name is supplied")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A hostedcluster name")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

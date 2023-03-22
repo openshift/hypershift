@@ -16,7 +16,18 @@ import (
 )
 
 func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane) error {
-	cfg := cloudConfig(hcp)
+	var infraNamespace string
+	var infraKubeconfigPath string
+	if hcp.Spec.Platform.Kubevirt.Credentials != nil {
+		infraNamespace = hcp.Spec.Platform.Kubevirt.Credentials.InfraNamespace
+		infraKubeconfigPath = "/etc/kubernetes/infra-kubeconfig/kubeconfig"
+	}
+
+	if infraNamespace == "" {
+		// mgmt cluster is used as infra cluster
+		infraNamespace = hcp.Namespace
+	}
+	cfg := cloudConfig(hcp, infraNamespace, infraKubeconfigPath)
 	serializedCfg, err := cfg.serialize()
 	if err != nil {
 		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
@@ -25,7 +36,7 @@ func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane)
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	cm.Data[CloudConfigKey] = string(serializedCfg)
+	cm.Data[CloudConfigKey] = serializedCfg
 
 	return nil
 }
@@ -88,6 +99,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 	if !ok {
 		return fmt.Errorf("\"cluster.x-k8s.io/cluster-name\" label doesn't exist in HostedControlPlane")
 	}
+	isExternalInfra := false
+	if hcp.Spec.Platform.Kubevirt.Credentials != nil {
+		isExternalInfra = true
+	}
 	deploymentConfig := newDeploymentConfig()
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -102,7 +117,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(CCMContainer(), buildCCMContainer(clusterName, releaseImage)),
+					util.BuildContainer(CCMContainer(), buildCCMContainer(clusterName, releaseImage, isExternalInfra)),
 				},
 				Volumes:            []corev1.Volume{},
 				ServiceAccountName: serviceAccountName,
@@ -110,14 +125,14 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 		},
 	}
 
-	addVolumes(deployment)
+	addVolumes(deployment, hcp)
 
 	config.OwnerRefFrom(hcp).ApplyTo(deployment)
 	deploymentConfig.ApplyTo(deployment)
 	return nil
 }
 
-func addVolumes(deployment *appsv1.Deployment) {
+func addVolumes(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane) {
 
 	deployment.Spec.Template.Spec.Volumes = append(
 		deployment.Spec.Template.Spec.Volumes,
@@ -127,18 +142,32 @@ func addVolumes(deployment *appsv1.Deployment) {
 		deployment.Spec.Template.Spec.Volumes,
 		util.BuildVolume(ccmCloudConfig(), buildCCMCloudConfig),
 	)
-}
-
-func podVolumeMounts() util.PodVolumeMounts {
-	return util.PodVolumeMounts{
-		CCMContainer().Name: util.ContainerVolumeMounts{
-			ccmVolumeKubeconfig().Name: "/etc/kubernetes/kubeconfig",
-			ccmCloudConfig().Name:      "/etc/cloud",
-		},
+	if hcp.Spec.Platform.Kubevirt.Credentials != nil {
+		infraKubeconfigVolumePtr := ccmInfraKubeconfig()
+		infraKubeconfigVolume := buildCCMInfraKubeconfig(infraKubeconfigVolumePtr)
+		deployment.Spec.Template.Spec.Volumes = append(
+			deployment.Spec.Template.Spec.Volumes,
+			infraKubeconfigVolume,
+		)
 	}
 }
 
-func buildCCMContainer(clusterName string, releaseImage *releaseinfo.ReleaseImage) func(c *corev1.Container) {
+func podVolumeMounts(isExternalInfra bool) util.PodVolumeMounts {
+	cvm := util.ContainerVolumeMounts{
+		ccmVolumeKubeconfig().Name: "/etc/kubernetes/kubeconfig",
+		ccmCloudConfig().Name:      "/etc/cloud",
+	}
+
+	if isExternalInfra {
+		cvm[ccmInfraKubeconfig().Name] = "/etc/kubernetes/infra-kubeconfig"
+	}
+
+	return util.PodVolumeMounts{
+		CCMContainer().Name: cvm,
+	}
+}
+
+func buildCCMContainer(clusterName string, releaseImage *releaseinfo.ReleaseImage, isExternalInfra bool) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = releaseImage.ComponentImages()["kubevirt-cloud-controller-manager"]
 		c.ImagePullPolicy = corev1.PullIfNotPresent
@@ -150,7 +179,7 @@ func buildCCMContainer(clusterName string, releaseImage *releaseinfo.ReleaseImag
 			"--authentication-skip-lookup",
 			"--cluster-name", clusterName,
 		}
-		c.VolumeMounts = podVolumeMounts().ContainerMounts(c.Name)
+		c.VolumeMounts = podVolumeMounts(isExternalInfra).ContainerMounts(c.Name)
 	}
 }
 
@@ -166,6 +195,13 @@ func buildCCMCloudConfig(v *corev1.Volume) {
 			Name: CCMConfigMap("").Name,
 		},
 	}
+}
+
+func buildCCMInfraKubeconfig(v *corev1.Volume) corev1.Volume {
+	v.Secret = &corev1.SecretVolumeSource{
+		SecretName: hyperv1.KubeVirtInfraCredentialsSecretName,
+	}
+	return *v
 }
 
 func newDeploymentConfig() config.DeploymentConfig {

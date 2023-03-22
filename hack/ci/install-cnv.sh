@@ -26,12 +26,12 @@ if [ -n "${CNV_PRERELEASE_VERSION}" ]
   # Add pullsecret for cnv nightly channel from quay.io/openshift-cnv
   QUAY_USERNAME=openshift-cnv+openshift_ci
   QUAY_PASSWORD=$(</etc/cnv-nightly-pull-credentials/openshift_cnv_pullsecret)
-  oc get secret pull-secret -n openshift-config -o json | jq -r '.data.".dockerconfigjson"' | base64 -d > global-pull-secret.json
+  oc get secret pull-secret -n openshift-config -o json | jq -r '.data.".dockerconfigjson"' | base64 -d > /tmp/global-pull-secret.json
   QUAY_AUTH=$(echo -n "${QUAY_USERNAME}:${QUAY_PASSWORD}" | base64 -w 0)
-  jq --arg QUAY_AUTH "$QUAY_AUTH" '.auths += {"quay.io/openshift-cnv": {"auth":$QUAY_AUTH,"email":""}}' global-pull-secret.json > global-pull-secret.json.tmp
-  mv global-pull-secret.json.tmp global-pull-secret.json
-  oc set data secret/pull-secret -n openshift-config --from-file=.dockerconfigjson=global-pull-secret.json
-  rm global-pull-secret.json
+  jq --arg QUAY_AUTH "$QUAY_AUTH" '.auths += {"quay.io/openshift-cnv": {"auth":$QUAY_AUTH,"email":""}}' /tmp/global-pull-secret.json > /tmp/global-pull-secret.json.tmp
+  mv /tmp/global-pull-secret.json.tmp /tmp/global-pull-secret.json
+  oc set data secret/pull-secret -n openshift-config --from-file=.dockerconfigjson=/tmp/global-pull-secret.json
+  rm /tmp/global-pull-secret.json
 
   sleep 5
 

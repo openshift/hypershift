@@ -677,6 +677,26 @@ type PlatformSpec struct {
 	Kubevirt *KubevirtPlatformSpec `json:"kubevirt,omitempty"`
 }
 
+type KubevirtPlatformCredentials struct {
+	// InfraKubeConfigSecret is a reference to a secret that contains the kubeconfig for the external infra cluster
+	// that will be used to host the KubeVirt virtual machines for this cluster.
+	//
+	// +immutable
+	// +kubebuilder:validation:Required
+	// +required
+	InfraKubeConfigSecret *KubeconfigSecretRef `json:"infraKubeConfigSecret,omitempty"`
+
+	// InfraNamespace defines the namespace on the external infra cluster that is used to host the KubeVirt
+	// virtual machines. This namespace must already exist before creating the HostedCluster and the kubeconfig
+	// referenced in the InfraKubeConfigSecret must have access to manage the required resources within this
+	// namespace.
+	//
+	// +immutable
+	// +kubebuilder:validation:Required
+	// +required
+	InfraNamespace string `json:"infraNamespace"`
+}
+
 // KubevirtPlatformSpec specifies configuration for kubevirt guest cluster installations
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.generateID) || has(self.generateID)", message="Kubevirt GenerateID is required once set"
 type KubevirtPlatformSpec struct {
@@ -712,6 +732,14 @@ type KubevirtPlatformSpec struct {
 	// +kubebuilder:validation:MaxLength=11
 	// +optional
 	GenerateID string `json:"generateID,omitempty"`
+	// Credentials defines the client credentials used when creating KubeVirt virtual machines.
+	// Defining credentials is only necessary when the KubeVirt virtual machines are being placed
+	// on a cluster separate from the one hosting the Hosted Control Plane components.
+	//
+	// The default behavior when Credentials is not defined is for the KubeVirt VMs to be placed on
+	// the same cluster and namespace as the Hosted Control Plane.
+	// +optional
+	Credentials *KubevirtPlatformCredentials `json:"credentials,omitempty"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.

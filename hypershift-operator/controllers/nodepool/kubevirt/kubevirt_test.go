@@ -19,7 +19,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 	testCases := []struct {
 		name     string
 		nodePool *hyperv1.NodePool
-		hc       *hyperv1.HostedCluster
+		hcluster *hyperv1.HostedCluster
 		expected *capikubevirt.KubevirtMachineTemplateSpec
 	}{
 		{
@@ -41,11 +41,16 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Release: hyperv1.Release{},
 				},
 			},
-			hc: &hyperv1.HostedCluster{
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
 				Spec: hyperv1.HostedClusterSpec{
 					InfraID: "1234",
 				},
 			},
+
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
@@ -62,7 +67,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			err := PlatformValidation(tc.nodePool)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			result := MachineTemplateSpec("", tc.nodePool, tc.hc)
+			result := MachineTemplateSpec("", tc.nodePool, tc.hcluster)
 			if !equality.Semantic.DeepEqual(tc.expected, result) {
 				t.Errorf(cmp.Diff(tc.expected, result))
 			}

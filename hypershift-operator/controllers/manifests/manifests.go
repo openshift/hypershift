@@ -2,9 +2,10 @@ package manifests
 
 import (
 	"fmt"
+	routev1 "github.com/openshift/api/route/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"strings"
 
-	operatorv1 "github.com/openshift/api/operator/v1"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -54,11 +55,25 @@ func OperatorDeployment(ns string) *appsv1.Deployment {
 	}
 }
 
-func IngressDefaultIngressController() *operatorv1.IngressController {
-	return &operatorv1.IngressController{
+func KubevirtInfraTempRoute(namespace string) *routev1.Route {
+	return &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default",
-			Namespace: "openshift-ingress-operator",
+			Name:      "kubevirt-infra-temp-route",
+			Namespace: namespace,
 		},
 	}
+}
+
+func ReconcileKubevirtInfraTempRoute(route *routev1.Route) error {
+	route.Spec = routev1.RouteSpec{
+		To: routev1.RouteTargetReference{
+			Kind: "Service",
+			Name: "kubevirt-infra-fake-service",
+		},
+		Path: "/",
+		Port: &routev1.RoutePort{
+			TargetPort: intstr.FromInt(80),
+		},
+	}
+	return nil
 }

@@ -3250,7 +3250,7 @@ func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx 
 
 	deployment := manifests.ConfigOperatorDeployment(hcp.Namespace)
 	if _, err = createOrUpdate(ctx, r.Client, deployment, func() error {
-		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, util.APIPort(hcp), infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage, hcp.Spec.AdditionalTrustBundle)
+		return configoperator.ReconcileDeployment(deployment, p.Image, hcp.Name, p.OpenShiftVersion, p.KubernetesVersion, p.OwnerRef, &p.DeploymentConfig, p.AvailabilityProberImage, r.EnableCIDebugOutput, hcp.Spec.Platform.Type, util.APIPort(hcp), infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, infraStatus.OAuthHost, infraStatus.OAuthPort, hcp.Spec.ReleaseImage, hcp.Spec.AdditionalTrustBundle, hcp)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile config operator deployment: %w", err)
 	}
@@ -3467,14 +3467,19 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 	case hyperv1.KubevirtPlatform:
 		// Create the cloud-config file used by Kubevirt CCM
 		ccmConfig := kubevirt.CCMConfigMap(hcp.Namespace)
+
+		r.Log.Info("creating kubevirt cloud-config ConfigMap")
 		if _, err := createOrUpdate(ctx, r, ccmConfig, func() error {
+
+			r.Log.Info("reconciling kubevirt CCM ConfigMap")
 			return kubevirt.ReconcileCloudConfig(ccmConfig, hcp)
+
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Kubevirt cloud config: %w", err)
 		}
 
 		// Create the ServiceAccount used by Kubevirt CCM to access
-		// the InfraCluster (which is the ManagementCluster)
+		// the KubevirtInfraCluster (which is the ManagementCluster)
 		ownerRef := config.OwnerRefFrom(hcp)
 		sa := kubevirt.CCMServiceAccount(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, sa, func() error {

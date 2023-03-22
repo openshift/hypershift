@@ -40,7 +40,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 			}
 		} else {
 			//Check the secret exists now, otherwise stop
-			opts.Log.Info("Retreiving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
+			opts.Log.Info("Retrieving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
 			if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
 				return err
 			}

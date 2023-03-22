@@ -48,6 +48,7 @@ type HostedClusterConfigOperatorConfig struct {
 	Manager                      ctrl.Manager
 	Config                       *rest.Config
 	TargetConfig                 *rest.Config
+	KubevirtInfraConfig          *rest.Config
 	TargetCreateOrUpdateProvider upsert.CreateOrUpdateProvider
 	CPCluster                    cluster.Cluster
 	Logger                       logr.Logger

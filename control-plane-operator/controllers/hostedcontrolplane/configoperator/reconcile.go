@@ -229,7 +229,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference, hcp *hyperv1.HostedControlPlane) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -257,6 +257,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 	}
 	if additionalTrustBundle != nil {
 		util.DeploymentAddTrustBundleVolume(additionalTrustBundle, deployment)
+	}
+	if isExternalInfraKv(hcp) {
+		// injects the kubevirt credentials secret volume, volume mount path, and appends cli arg.
+		util.DeploymentAddKubevirtInfraCredentials(deployment)
 	}
 
 	config.ApplyTo(deployment)
@@ -362,5 +366,16 @@ func buildHCCClusterSignerCA(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.CSRSignerCASecret("").Name,
 		DefaultMode: pointer.Int32Ptr(0640),
+	}
+}
+
+func isExternalInfraKv(hcp *hyperv1.HostedControlPlane) bool {
+	if hcp.Spec.Platform.Kubevirt != nil &&
+		hcp.Spec.Platform.Kubevirt.Credentials != nil &&
+		hcp.Spec.Platform.Kubevirt.Credentials.InfraKubeConfigSecret != nil &&
+		hcp.Spec.Platform.Kubevirt.Credentials.InfraNamespace != "" {
+		return true
+	} else {
+		return false
 	}
 }
