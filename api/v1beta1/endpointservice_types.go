@@ -12,11 +12,11 @@ func init() {
 const (
 	// AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 	// has been created for the specified NLB in the management VPC
-	AWSEndpointServiceAvailable ConditionType = "EndpointServiceAvailable"
+	AWSEndpointServiceAvailable ConditionType = "AWSEndpointServiceAvailable"
 
 	// AWSEndpointServiceAvailable indicates whether the AWS Endpoint has been
 	// created in the guest VPC
-	AWSEndpointAvailable ConditionType = "EndpointAvailable"
+	AWSEndpointAvailable ConditionType = "AWSEndpointAvailable"
 
 	AWSSuccessReason string = "AWSSuccess"
 	AWSErrorReason   string = "AWSError"

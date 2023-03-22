@@ -1949,3 +1949,142 @@ func TestIsProgressing(t *testing.T) {
 		})
 	}
 }
+
+func TestComputeAWSEndpointServiceCondition(t *testing.T) {
+	tests := []struct {
+		name                string
+		endpointAConditions []metav1.Condition
+		endpointBConditions []metav1.Condition
+		expected            metav1.Condition
+	}{
+		{
+			name: "Both endpoints condition is true",
+			endpointAConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AWSEndpointAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.AWSSuccessReason,
+					Message: hyperv1.AllIsWellMessage,
+				},
+			},
+			endpointBConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AWSEndpointAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.AWSSuccessReason,
+					Message: hyperv1.AllIsWellMessage,
+				},
+			},
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AWSEndpointAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.AWSSuccessReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+		},
+		{
+			name: "endpointA condition true, endpointB condition false",
+			endpointAConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AWSEndpointAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.AWSSuccessReason,
+					Message: hyperv1.AllIsWellMessage,
+				},
+			},
+			endpointBConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AWSEndpointAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.AWSErrorReason,
+					Message: "error message B",
+				},
+			},
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AWSEndpointAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.AWSErrorReason,
+				Message: "error message B",
+			},
+		},
+		{
+			name: "endpointA condition false, endpointB condition true",
+			endpointAConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AWSEndpointAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.AWSErrorReason,
+					Message: "error message A",
+				},
+			},
+			endpointBConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AWSEndpointAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.AWSSuccessReason,
+					Message: hyperv1.AllIsWellMessage,
+				},
+			},
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AWSEndpointAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.AWSErrorReason,
+				Message: "error message A",
+			},
+		},
+		{
+			name: "Both endpoints condition is false",
+			endpointAConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AWSEndpointAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.AWSErrorReason,
+					Message: "error message A",
+				},
+			},
+			endpointBConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AWSEndpointAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.AWSErrorReason,
+					Message: "error message B",
+				},
+			},
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AWSEndpointAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.AWSErrorReason,
+				Message: "error message A; error message B",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			awsEndpointServiceList := hyperv1.AWSEndpointServiceList{
+				Items: []hyperv1.AWSEndpointService{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "endpointA",
+						},
+						Status: hyperv1.AWSEndpointServiceStatus{
+							Conditions: tc.endpointAConditions,
+						},
+					},
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "endpointB",
+						},
+						Status: hyperv1.AWSEndpointServiceStatus{
+							Conditions: tc.endpointBConditions,
+						},
+					},
+				},
+			}
+			condition := computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointAvailable)
+			if condition != tc.expected {
+				t.Errorf("error, expected %v\nbut got %v", tc.expected, condition)
+			}
+		})
+	}
+}
