@@ -1028,28 +1028,51 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	}
 
 	if serviceStrategy.Type == hyperv1.Route {
-		externalRoute := manifests.KubeAPIServerExternalRoute(hcp.Namespace)
+		externalPublicRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
+		externalPrivateRoute := manifests.KubeAPIServerExternalPrivateRoute(hcp.Namespace)
 		if util.IsPublicHCP(hcp) {
-			if _, err := createOrUpdate(ctx, r.Client, externalRoute, func() error {
+			// Remove the external private route if it exists
+			err := r.Get(ctx, client.ObjectKeyFromObject(externalPrivateRoute), externalPrivateRoute)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to check whether apiserver external private route exists: %w", err)
+				}
+			} else {
+				if err := r.Delete(ctx, externalPrivateRoute); err != nil {
+					return fmt.Errorf("failed to delete apiserver external private route: %w", err)
+				}
+			}
+			// Reconcile the external public route
+			if _, err := createOrUpdate(ctx, r.Client, externalPublicRoute, func() error {
 				hostname := ""
 				if serviceStrategy.Route != nil {
 					hostname = serviceStrategy.Route.Hostname
 				}
-				return kas.ReconcileExternalRoute(externalRoute, p.OwnerReference, hostname)
+				return kas.ReconcileExternalPublicRoute(externalPublicRoute, p.OwnerReference, hostname)
 			}); err != nil {
-				return fmt.Errorf("failed to reconcile apiserver external route %s: %w", externalRoute.Name, err)
+				return fmt.Errorf("failed to reconcile apiserver external public route %s: %w", externalPublicRoute.Name, err)
 			}
 		} else {
-			// Remove the external route if it exists
-			err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute)
+			// Remove the external public route if it exists
+			err := r.Get(ctx, client.ObjectKeyFromObject(externalPublicRoute), externalPublicRoute)
 			if err != nil {
 				if !apierrors.IsNotFound(err) {
-					return fmt.Errorf("failed to check whether apiserver external route exists: %w", err)
+					return fmt.Errorf("failed to check whether apiserver external public route exists: %w", err)
 				}
 			} else {
-				if err := r.Delete(ctx, externalRoute); err != nil {
-					return fmt.Errorf("failed to delete apiserver external route: %w", err)
+				if err := r.Delete(ctx, externalPublicRoute); err != nil {
+					return fmt.Errorf("failed to delete apiserver external public route: %w", err)
 				}
+			}
+			// Reconcile the external private route
+			if _, err := createOrUpdate(ctx, r.Client, externalPrivateRoute, func() error {
+				hostname := ""
+				if serviceStrategy.Route != nil {
+					hostname = serviceStrategy.Route.Hostname
+				}
+				return kas.ReconcileExternalPrivateRoute(externalPrivateRoute, p.OwnerReference, hostname)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile apiserver external private route %s: %w", externalPrivateRoute.Name, err)
 			}
 		}
 		// The private KAS route is always present as it is the default
@@ -1124,28 +1147,51 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	if serviceStrategy.Type != hyperv1.Route {
 		return nil
 	}
-	oauthExternalRoute := manifests.OauthServerExternalRoute(hcp.Namespace)
+	oauthExternalPublicRoute := manifests.OauthServerExternalPublicRoute(hcp.Namespace)
+	oauthExternalPrivateRoute := manifests.OauthServerExternalPrivateRoute(hcp.Namespace)
 	if util.IsPublicHCP(hcp) {
-		if _, err := createOrUpdate(ctx, r.Client, oauthExternalRoute, func() error {
+		// Remove the external private route if it exists
+		err := r.Get(ctx, client.ObjectKeyFromObject(oauthExternalPrivateRoute), oauthExternalPrivateRoute)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to check whether OAuth external private route exists: %w", err)
+			}
+		} else {
+			if err := r.Delete(ctx, oauthExternalPrivateRoute); err != nil {
+				return fmt.Errorf("failed to delete OAuth external private route: %w", err)
+			}
+		}
+		// Reconcile the external public route
+		if _, err := createOrUpdate(ctx, r.Client, oauthExternalPublicRoute, func() error {
 			hostname := ""
 			if serviceStrategy.Route != nil {
 				hostname = serviceStrategy.Route.Hostname
 			}
-			return oauth.ReconcileExternalRoute(oauthExternalRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
+			return oauth.ReconcileExternalPublicRoute(oauthExternalPublicRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile OAuth external route: %w", err)
+			return fmt.Errorf("failed to reconcile OAuth external public route: %w", err)
 		}
 	} else {
 		// Remove the external route if it exists
-		err := r.Get(ctx, client.ObjectKeyFromObject(oauthExternalRoute), oauthExternalRoute)
+		err := r.Get(ctx, client.ObjectKeyFromObject(oauthExternalPublicRoute), oauthExternalPublicRoute)
 		if err != nil {
 			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to check whether OAuth external route exists: %w", err)
+				return fmt.Errorf("failed to check whether OAuth external public route exists: %w", err)
 			}
 		} else {
-			if err := r.Delete(ctx, oauthExternalRoute); err != nil {
-				return fmt.Errorf("failed to delete OAuth external route: %w", err)
+			if err := r.Delete(ctx, oauthExternalPublicRoute); err != nil {
+				return fmt.Errorf("failed to delete OAuth external public route: %w", err)
 			}
+		}
+		// Reconcile the external private route
+		if _, err := createOrUpdate(ctx, r.Client, oauthExternalPrivateRoute, func() error {
+			hostname := ""
+			if serviceStrategy.Route != nil {
+				hostname = serviceStrategy.Route.Hostname
+			}
+			return oauth.ReconcileExternalPrivateRoute(oauthExternalPrivateRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile OAuth external private route: %w", err)
 		}
 	}
 	if util.IsPrivateHCP(hcp) {
@@ -1358,27 +1404,30 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 		return "", 0, "", errors.New("APIServer service strategy not specified")
 	}
 
-	if util.IsPublicHCP(hcp) {
-		var svc *corev1.Service
-		if serviceStrategy.Type == hyperv1.Route {
+	var svc *corev1.Service
+	if serviceStrategy.Type == hyperv1.Route {
+		if util.IsPrivateHCP(hcp) {
+			svc = manifests.PrivateRouterService(hcp.Namespace)
+		} else {
 			svc = manifests.RouterPublicService(hcp.Namespace)
+		}
+	} else {
+		if util.IsPrivateHCP(hcp) {
+			svc = manifests.KubeAPIServerPrivateService(hcp.Namespace)
 		} else {
 			svc = manifests.KubeAPIServerService(hcp.Namespace)
 		}
-		if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
-			if apierrors.IsNotFound(err) {
-				err = nil
-				return
-			}
-			err = fmt.Errorf("failed to get kube apiserver service: %w", err)
+	}
+	if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+		if apierrors.IsNotFound(err) {
+			err = nil
 			return
 		}
-		p := kas.NewKubeAPIServerServiceParams(hcp)
-		return kas.ReconcileServiceStatus(svc, serviceStrategy, p.APIServerPort, events.NewMessageCollector(ctx, r.Client))
+		err = fmt.Errorf("failed to get kube apiserver service: %w", err)
+		return
 	}
-
-	host, port, err = kas.ReconcilePrivateServiceStatus(hcp)
-	return
+	p := kas.NewKubeAPIServerServiceParams(hcp)
+	return kas.ReconcileServiceStatus(svc, serviceStrategy, p.APIServerPort, events.NewMessageCollector(ctx, r.Client))
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, message string, err error) {
@@ -1429,7 +1478,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServiceStatus(ctx context.C
 	}
 	if serviceStrategy.Type == hyperv1.Route {
 		if util.IsPublicHCP(hcp) {
-			route = manifests.OauthServerExternalRoute(hcp.Namespace)
+			route = manifests.OauthServerExternalPublicRoute(hcp.Namespace)
 			if err = r.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
 				if apierrors.IsNotFound(err) {
 					err = nil
@@ -1439,7 +1488,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServiceStatus(ctx context.C
 				return
 			}
 		} else {
-			route = manifests.OauthServerInternalRoute(hcp.Namespace)
+			route = manifests.OauthServerExternalPrivateRoute(hcp.Namespace)
 			if err = r.Get(ctx, client.ObjectKeyFromObject(route), route); err != nil {
 				if apierrors.IsNotFound(err) {
 					err = nil
@@ -1996,10 +2045,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 
 	externalKubeconfigSecret := manifests.KASExternalKubeconfigSecret(hcp.Namespace, hcp.Spec.KubeConfig)
 	if _, err := createOrUpdate(ctx, r, externalKubeconfigSecret, func() error {
-		if util.IsPublicHCP(hcp) {
-			return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.ExternalURL(), p.ExternalKubeconfigKey())
-		}
-		return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalURL(), p.ExternalKubeconfigKey())
+		return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.ExternalURL(), p.ExternalKubeconfigKey())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile external kubeconfig secret: %w", err)
 	}

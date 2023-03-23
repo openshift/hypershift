@@ -365,6 +365,8 @@ objects:
           - --registry=txt
           - --txt-suffix=-external-dns
           - --txt-owner-id=${EXTERNAL_DNS_TXT_OWNER_ID}
+          - --label-filter=hypershift.openshift.io/route-visibility!=private
+          - --events
           - --aws-zone-type=public
           - --aws-batch-change-interval=10s
           command:

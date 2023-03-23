@@ -16,11 +16,13 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	kubeclient "k8s.io/client-go/kubernetes"
@@ -30,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -38,12 +41,14 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 )
 
 const (
-	defaultResync = 10 * time.Hour
+	defaultResync               = 10 * time.Hour
+	externalPrivateServiceLabel = "hypershift.openshift.io/external-private-service"
 )
 
 // PrivateServiceObserver watches a given Service type LB and reconciles
@@ -179,6 +184,7 @@ type AWSEndpointServiceReconciler struct {
 	client.Client
 	ec2Client     ec2iface.EC2API
 	route53Client route53iface.Route53API
+	upsert.CreateOrUpdateProvider
 }
 
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -188,11 +194,11 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(3*time.Second, 30*time.Second),
 			MaxConcurrentReconciles: 10,
 		}).
+		Watches(&source.Kind{Type: &hyperv1.HostedControlPlane{}}, handler.Funcs{UpdateFunc: r.enqueueOnAccessChange(mgr)}).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager: %w", err)
 	}
-
 	r.Client = mgr.GetClient()
 
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
@@ -205,6 +211,33 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	r.route53Client = route53.New(awsSession, route53Config)
 
 	return nil
+}
+
+func (r *AWSEndpointServiceReconciler) enqueueOnAccessChange(mgr ctrl.Manager) func(event.UpdateEvent, workqueue.RateLimitingInterface) {
+	return func(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+		logger := mgr.GetLogger()
+		newHCP, isOk := e.ObjectNew.(*hyperv1.HostedControlPlane)
+		if !isOk {
+			logger.Info("WARNING: enqueueOnAccessChange: new resource is not of type HostedControlPlane")
+			return
+		}
+		oldHCP, isOk := e.ObjectOld.(*hyperv1.HostedControlPlane)
+		if !isOk {
+			logger.Info("WARNING: enqueueOnAccessChange: old resource is not of type HostedControlPlane")
+			return
+		}
+		// Only enqueue awsendpointservices when there is a change in the endpointaccess value, otherwise ignore changes
+		if newHCP.Spec.Platform.AWS != nil && oldHCP.Spec.Platform.AWS != nil && newHCP.Spec.Platform.AWS.EndpointAccess != oldHCP.Spec.Platform.AWS.EndpointAccess {
+			awsEndpointServiceList := &hyperv1.AWSEndpointServiceList{}
+			if err := r.List(context.Background(), awsEndpointServiceList, client.InNamespace(newHCP.Namespace)); err != nil {
+				logger.Error(err, "enqueueOnAccessChange: cannot list awsendpointservices")
+				return
+			}
+			for i := range awsEndpointServiceList.Items {
+				q.Add(reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&awsEndpointServiceList.Items[i])})
+			}
+		}
+	}
 }
 
 func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -288,7 +321,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Reconcile the AWSEndpointService
 	oldStatus := awsEndpointService.Status.DeepCopy()
-	if err := reconcileAWSEndpointService(ctx, awsEndpointService, hcp, r.ec2Client, r.route53Client); err != nil {
+	if err := r.reconcileAWSEndpointService(ctx, awsEndpointService, hcp, r.ec2Client, r.route53Client); err != nil {
 		meta.SetStatusCondition(&awsEndpointService.Status.Conditions, metav1.Condition{
 			Type:    string(hyperv1.AWSEndpointAvailable),
 			Status:  metav1.ConditionFalse,
@@ -354,7 +387,7 @@ func diffSubnetIDs(desired []string, existing []*string) (added, removed []*stri
 	return
 }
 
-func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) error {
+func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) error {
 	log, err := logr.FromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("logger not found: %w", err)
@@ -505,7 +538,80 @@ func reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv
 	awsEndpointService.Status.DNSNames = fqdns
 	awsEndpointService.Status.DNSZoneID = zoneID
 
+	if isPublic, externalNames := util.IsPublicHCP(hcp), hcpExternalNames(hcp); !isPublic && len(externalNames) > 0 {
+		// only if not public and external names are configured, create services of type ExternalName so external-dns
+		// can create records for them
+		var errs []error
+		for svcType, externalName := range externalNames {
+			var svc *corev1.Service
+			switch svcType {
+			case "api":
+				svc = manifests.KubeAPIServerExternalPrivateService(hcp.Namespace)
+			case "oauth":
+				svc = manifests.OauthServerExternalPrivateService(hcp.Namespace)
+			}
+			if _, err := r.CreateOrUpdate(ctx, r, svc, func() error {
+				log.Info("Reconciling external name service", "service", svc.Name, "externalName", externalName)
+				return reconcileExternalService(svc, hcp, externalName, aws.StringValue(endpointDNSEntries[0].DnsName))
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile %s external service: %w", svcType, err))
+			}
+		}
+		if len(errs) > 0 {
+			return fmt.Errorf("failed to create external services for private endpoints: %w", utilerrors.NewAggregate(errs))
+		}
+	} else {
+		// if the cluster is public, ensure that any ExternalName services are removed
+		privateExternalServices := &corev1.ServiceList{}
+		if err := r.List(ctx, privateExternalServices, client.HasLabels{externalPrivateServiceLabel}); err != nil {
+			return fmt.Errorf("cannot list private external services: %w", err)
+		}
+		if len(privateExternalServices.Items) > 0 {
+			log.Info("Removing private external services", "count", len(privateExternalServices.Items))
+			var errs []error
+			for i := range privateExternalServices.Items {
+				svc := &privateExternalServices.Items[i]
+				if err := r.Delete(ctx, svc); err != nil {
+					errs = append(errs, fmt.Errorf("failed to delete private external service %s: %w", svc.Name, err))
+				}
+			}
+			if len(errs) > 0 {
+				return utilerrors.NewAggregate(errs)
+			}
+		}
+	}
+
 	return nil
+}
+
+func reconcileExternalService(svc *corev1.Service, hcp *hyperv1.HostedControlPlane, hostName, targetCName string) error {
+	ownerRef := config.OwnerRefFrom(hcp)
+	ownerRef.ApplyTo(svc)
+	if svc.Labels == nil {
+		svc.Labels = map[string]string{}
+	}
+	if svc.Annotations == nil {
+		svc.Annotations = map[string]string{}
+	}
+	svc.Labels[externalPrivateServiceLabel] = "true"
+	svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = hostName
+	svc.Spec.Type = corev1.ServiceTypeExternalName
+	svc.Spec.ExternalName = targetCName
+	return nil
+}
+
+func hcpExternalNames(hcp *hyperv1.HostedControlPlane) map[string]string {
+	result := map[string]string{}
+	apiStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
+	if apiStrategy != nil && apiStrategy.Type == hyperv1.Route && apiStrategy.Route != nil && apiStrategy.Route.Hostname != "" {
+		result["api"] = apiStrategy.Route.Hostname
+	}
+
+	oauthStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OAuthServer)
+	if oauthStrategy != nil && oauthStrategy.Type == hyperv1.Route && oauthStrategy.Route != nil && oauthStrategy.Route.Hostname != "" {
+		result["oauth"] = oauthStrategy.Route.Hostname
+	}
+	return result
 }
 
 func zoneName(hcpName string) string {
