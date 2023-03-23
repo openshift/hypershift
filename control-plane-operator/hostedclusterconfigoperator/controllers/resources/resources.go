@@ -677,7 +677,7 @@ func (r *reconciler) reconcileProxyTrustedCAConfigMap(ctx context.Context, hcp *
 			log.Error(err, "failed to delete configmap", "name", cm.Name, "namespace", cm.Namespace)
 		}
 
-		cm.Namespace = "openshift-config"
+		cm.Namespace = manifests.ProxyTrustedCAConfigMap("").Namespace
 		if err := r.client.Delete(ctx, cm); err != nil {
 			log.Error(err, "failed to delete configmap in hosted cluster", "name", cm.Name, "namespace", cm.Namespace)
 		}
@@ -692,9 +692,7 @@ func (r *reconciler) reconcileProxyTrustedCAConfigMap(ctx context.Context, hcp *
 		return fmt.Errorf("failed to get referenced TrustedCA configmap %s/%s: %w", hcp.Namespace, configMapRef, err)
 	}
 
-	destCM := &corev1.ConfigMap{}
-	destCM.Name = sourceCM.Name
-	destCM.Namespace = "openshift-config"
+	destCM := manifests.ProxyTrustedCAConfigMap(sourceCM.Name)
 	if _, err := r.CreateOrUpdate(ctx, r.client, destCM, func() error {
 		destCM.Annotations = sourceCM.Annotations
 		destCM.Labels = sourceCM.Labels
@@ -966,7 +964,7 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 }
 
 func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	rootCA := manifests.RootCASecret(hcp.Namespace)
+	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return fmt.Errorf("failed to get root ca from control plane: %w", err)
 	}
@@ -984,7 +982,7 @@ func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context,
 }
 
 func (r *reconciler) reconcileOpenshiftOAuthAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	rootCA := manifests.RootCASecret(hcp.Namespace)
+	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return fmt.Errorf("failed to get root ca from control plane: %w", err)
 	}
@@ -1081,7 +1079,7 @@ func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp 
 
 func (r *reconciler) reconcileUserCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	if hcp.Spec.AdditionalTrustBundle != nil {
-		cpUserCAConfigMap := manifests.ControlPlaneUserCABundle(hcp.Namespace)
+		cpUserCAConfigMap := cpomanifests.UserCAConfigMap(hcp.Namespace)
 		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpUserCAConfigMap), cpUserCAConfigMap); err != nil {
 			return fmt.Errorf("cannot get AdditionalTrustBundle ConfigMap: %w", err)
 		}
@@ -1279,7 +1277,7 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 		errs = append(errs, fmt.Errorf("failed to reconcile olm alert rules: %w", err))
 	}
 
-	rootCA := manifests.RootCASecret(hcp.Namespace)
+	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		errs = append(errs, fmt.Errorf("failed to get root ca cert from control plane namespace: %w", err))
 	} else {

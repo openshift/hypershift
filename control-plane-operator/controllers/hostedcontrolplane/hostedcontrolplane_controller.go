@@ -3082,12 +3082,19 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 		return fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
-	var userCA *corev1.ConfigMap
+	var caBundles []client.ObjectKey
 	if hcp.Spec.AdditionalTrustBundle != nil {
-		userCA = manifests.UserCAConfigMap(hcp.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(userCA), userCA); err != nil {
-			return fmt.Errorf("failed to get user ca: %w", err)
-		}
+		caBundles = append(caBundles, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.AdditionalTrustBundle.Name})
+	}
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil && hcp.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+		caBundles = append(caBundles, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Configuration.Proxy.TrustedCA.Name})
+	}
+
+	trustedCABundle := manifests.TrustedCABundleConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, trustedCABundle, func() error {
+		return r.reconcileManagedTrustedCABundle(ctx, trustedCABundle, caBundles)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile managed UserCA configMap: %w", err)
 	}
 
 	kubeletClientCA := manifests.KubeletClientCABundle(hcp.Namespace)
@@ -3095,7 +3102,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 		return fmt.Errorf("failed to get root kubelet client CA: %w", err)
 	}
 
-	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, userCA, kubeletClientCA)
+	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, trustedCABundle, kubeletClientCA)
 
 	cm := manifests.MachineConfigServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, cm, func() error {
@@ -3103,6 +3110,27 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine config server config: %w", err)
 	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileManagedTrustedCABundle(ctx context.Context, trustedCABundle *corev1.ConfigMap, caBundleConfigMaps []client.ObjectKey) error {
+	caBundles := make([]string, len(caBundleConfigMaps))
+	for _, key := range caBundleConfigMaps {
+		cm := &corev1.ConfigMap{}
+		if err := r.Get(ctx, key, cm); err != nil {
+			return fmt.Errorf("failed to get configMap %s: %w", key.Name, err)
+		}
+		data, hasData := cm.Data["ca-bundle.crt"]
+		if !hasData {
+			return fmt.Errorf("configMap %s must have a ca-bundle.crt key", cm.Name)
+		}
+
+		caBundles = append(caBundles, data)
+	}
+
+	trustedCABundle.Data = make(map[string]string)
+	trustedCABundle.Data["ca-bundle.crt"] = strings.Join(caBundles, "")
+
 	return nil
 }
 

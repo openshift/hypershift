@@ -142,6 +142,10 @@ mkdir /etc/squid/ssl_cert/
 echo '%s' > /etc/squid/ssl_cert/myCA.pem
 chown -R squid:squid /etc/squid/ssl_cert/
 
+openssl dhparam -outform PEM -out /etc/squid/bump_dhparam.pem 2048
+chown squid:squid /etc/squid/bump*
+chmod 400 /etc/squid/bump*
+
 # Create SSL db
 /usr/lib64/squid/ssl_crtd -c -s /var/lib/ssl_db
 chown -R squid:squid /var/lib/ssl_db
@@ -151,18 +155,12 @@ sed -E 's/(^http_access deny CONNECT.*)/#\1/' -i /etc/squid/squid.conf
 
 # Setup intermediate CA and ssl bump
 sed -E '/^http_port 3128.*/c\
-sslcrtd_children 50 startup=5 idle=1\
-acl step1 at_step SslBump1\
-acl registryServer ssl::server_name .quay.io\
-acl registryServer ssl::server_name_regex \\.registry.*\
-ssl_bump peek step1\
-ssl_bump bump all !registryServer\
-ssl_bump splice all\
+http_port 3128 ssl-bump generate-host-certificates=on dynamic_cert_mem_cache_size=20MB cert=/etc/squid/ssl_cert/myCA.pem cipher=HIGH:MEDIUM:!LOW:!RC4:!SEED:!IDEA:!3DES:!MD5:!EXP:!PSK:!DSS options=NO_TLSv1,NO_SSLv3,NO_SSLv2,SINGLE_DH_USE,SINGLE_ECDH_USE tls-dh=prime256v1:/etc/squid/bump_dhparam.pem\
+https_port 3129 intercept ssl-bump generate-host-certificates=on dynamic_cert_mem_cache_size=4MB cert=/etc/squid/ssl_cert/myCA.pem cipher=HIGH:MEDIUM:!LOW:!RC4:!SEED:!IDEA:!3DES:!MD5:!EXP:!PSK:!DSS options=NO_TLSv1,NO_SSLv3,NO_SSLv2,SINGLE_DH_USE,SINGLE_ECDH_USE tls-dh=prime256v1:/etc/squid/bump_dhparam.pem\
 \
-http_port 3128 ssl-bump generate-host-certificates=on dynamic_cert_mem_cache_size=4MB cert=/etc/squid/ssl_cert/myCA.pem  options=NO_SSLv3\
+sslcrtd_program /usr/lib64/squid/ssl_crtd -s /var/lib/ssl_db -M 20MB\
 sslproxy_cert_error allow all\
-sslproxy_flags DONT_VERIFY_PEER\
-https_port 3129 intercept ssl-bump generate-host-certificates=on dynamic_cert_mem_cache_size=4MB cert=/etc/squid/ssl_cert/myCA.pem  options=NO_SSLv3' -i /etc/squid/squid.conf
+ssl_bump stare all' -i /etc/squid/squid.conf
 
 systemctl enable --now squid
 `

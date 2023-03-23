@@ -208,7 +208,7 @@ func fakeKonnectivityAgentSecret() *corev1.Secret {
 }
 
 func fakeRootCASecret() *corev1.Secret {
-	s := manifests.RootCASecret("bar")
+	s := cpomanifests.RootCASecret("bar")
 	s.Data = map[string][]byte{
 		"ca.crt": []byte("12345"),
 		"ca.key": []byte("12345"),
@@ -356,13 +356,13 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					AdditionalTrustBundle: &corev1.LocalObjectReference{
-						Name: manifests.ControlPlaneUserCABundle(testNamespace).Name,
+						Name: cpomanifests.UserCAConfigMap(testNamespace).Name,
 					},
 				},
 			},
 			inputObjects: []client.Object{
 				&corev1.ConfigMap{
-					ObjectMeta: manifests.ControlPlaneUserCABundle(testNamespace).ObjectMeta,
+					ObjectMeta: cpomanifests.UserCAConfigMap(testNamespace).ObjectMeta,
 					Data: map[string]string{
 						"ca-bundle.crt": "acertxyz",
 					},

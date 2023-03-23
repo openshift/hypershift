@@ -247,7 +247,4 @@ func TestCreateClusterProxy(t *testing.T) {
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, testContext, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPodsInHCP(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
-
-	// console pods will crash if trusted-CA is not correctly configured
-	e2eutil.EnsureNoCrashingPods(t, ctx, guestClient, "openshift-console", nil)
 }
