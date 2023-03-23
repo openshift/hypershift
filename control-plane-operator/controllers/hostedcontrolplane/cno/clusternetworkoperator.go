@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -342,6 +343,13 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	// but it should not use the proxy itself, hence the prefix
 	for _, v := range proxyVars {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{Name: fmt.Sprintf("MGMT_%s", v.Name), Value: v.Value})
+	}
+
+	// If CP is running on kube cluster, pass user ID for CNO to run its managed services with
+	if params.DeploymentConfig.SetDefaultSecurityContext {
+		cnoEnv = append(cnoEnv, corev1.EnvVar{
+			Name: "RUN_AS_USER", Value: strconv.Itoa(config.DefaultSecurityContextUser),
+		})
 	}
 
 	dep.Spec.Template.Spec.InitContainers = []corev1.Container{
