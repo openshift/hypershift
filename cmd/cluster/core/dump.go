@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -311,9 +312,32 @@ func DumpGuestCluster(ctx context.Context, log logr.Logger, kubeconfig string, d
 		&snapshotv1.VolumeSnapshotClass{},
 		&snapshotv1.VolumeSnapshotContent{},
 	}
+
+	var out []byte
 	resourceList := strings.Join(resourceTypes(resources), ",")
-	cmd.Run(ctx, resourceList)
-	return nil
+	// Limit retry collecting dump to max 10 times
+	for i := 0; i < 10; i++ {
+		out, err = cmd.Run(ctx, resourceList)
+		if err != nil {
+			cmdOut := string(out)
+
+			// Match command output with below regex to find the resource that is not exist
+			nonExistentResourceRex := regexp.MustCompile(`^error: the server doesn't have a resource type "(\w+)"\n$`)
+			result := nonExistentResourceRex.FindStringSubmatch(cmdOut)
+			if len(result) > 1 {
+				resourceName := result[1]
+				replaceNonExistentResourceRex := regexp.MustCompile(fmt.Sprintf("%s.*?(,|$)", resourceName))
+
+				// Remove non-existent resource from the list
+				resourceList = strings.TrimSuffix(replaceNonExistentResourceRex.ReplaceAllString(resourceList, ""), ",")
+				log.Info("Retry collecting guest cluster dump without", "resource", resourceName)
+			} else {
+				break
+			}
+		}
+	}
+
+	return err
 }
 
 type OCAdmInspect struct {
@@ -331,7 +355,7 @@ func (i *OCAdmInspect) WithNamespace(namespace string) *OCAdmInspect {
 	return &withNS
 }
 
-func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
+func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) ([]byte, error) {
 	allArgs := []string{"adm", "inspect", "--dest-dir", i.artifactDir}
 	if len(i.namespace) > 0 {
 		allArgs = append(allArgs, "-n", i.namespace)
@@ -345,6 +369,7 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	if err != nil {
 		i.log.Info("oc adm inspect returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
 	}
+	return out, err
 }
 
 func objectType(obj client.Object) string {
