@@ -25,7 +25,6 @@ func ReconcileKubeAPIServerServiceMonitor(serviceMonitor *prometheusoperatorv1.S
 				},
 				CAFile: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
 			},
-			Interval:             "30s",
 			Scheme:               "https",
 			Port:                 "https",
 			Path:                 "/metrics",

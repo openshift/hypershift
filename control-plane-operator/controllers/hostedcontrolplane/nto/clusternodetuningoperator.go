@@ -92,7 +92,6 @@ func ReconcileClusterNodeTuningOperatorServiceMonitor(sm *prometheusoperatorv1.S
 	targetPort := intstr.FromInt(60000)
 	sm.Spec.Endpoints = []prometheusoperatorv1.Endpoint{
 		{
-			Interval:   "15s",
 			TargetPort: &targetPort,
 			Scheme:     "https",
 			Path:       "/metrics",
