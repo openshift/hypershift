@@ -116,3 +116,11 @@ func (p *KubeSchedulerParams) SchedulerPolicy() configv1.ConfigMapNameReference 
 		return configv1.ConfigMapNameReference{}
 	}
 }
+
+func (p *KubeSchedulerParams) SchedulerProfile() configv1.SchedulerProfile {
+	if p.Scheduler != nil && p.Scheduler.Profile != "" {
+		return p.Scheduler.Profile
+	} else {
+		return configv1.LowNodeUtilization
+	}
+}
