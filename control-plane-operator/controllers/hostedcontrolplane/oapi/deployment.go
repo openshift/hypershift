@@ -245,6 +245,8 @@ func buildOASContainerMain(image string, etcdHostname string, port int32) func(c
 			"--requestheader-extra-headers-prefix=X-Remote-Extra-",
 			fmt.Sprintf("--client-ca-file=%s", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey)),
 		}
+		// this list can be gathered from firewall docs: https://docs.openshift.com/container-platform/4.12/installing/install_config/configuring-firewall.html
+		defaultSampleImportContainerRegistries := "quay.io,cdn03.quay.io,cdn02.quay.io,cdn01.quay.io,cdn.quay.io,registry.redhat.io,registry.access.redhat.com,access.redhat.com,sso.redhat.com"
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "HTTP_PROXY",
@@ -256,7 +258,7 @@ func buildOASContainerMain(image string, etcdHostname string, port int32) func(c
 			},
 			{
 				Name:  "NO_PROXY",
-				Value: fmt.Sprintf("%s,%s", manifests.KubeAPIServerService("").Name, etcdHostname),
+				Value: fmt.Sprintf("%s,%s,%s", manifests.KubeAPIServerService("").Name, etcdHostname, defaultSampleImportContainerRegistries),
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
