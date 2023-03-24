@@ -21,7 +21,7 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 	targetPort := intstr.FromString("client")
 	sm.Spec.Endpoints = []prometheusoperatorv1.Endpoint{
 		{
-			Interval:   "15s",
+			Interval:   "30s",
 			TargetPort: &targetPort,
 			Scheme:     "https",
 			TLSConfig: &prometheusoperatorv1.TLSConfig{

@@ -1886,7 +1886,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	if _, err := createOrUpdate(ctx, r.Client, podMonitor, func() error {
 		podMonitor.Spec.Selector = *controlPlaneOperatorDeployment.Spec.Selector
 		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{
-			Interval:             "15s",
+			Interval:             "30s",
 			Port:                 "metrics",
 			MetricRelabelConfigs: metrics.ControlPlaneOperatorRelabelConfigs(r.MetricsSet),
 		}}
