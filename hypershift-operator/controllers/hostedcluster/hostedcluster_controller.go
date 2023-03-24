@@ -615,6 +615,24 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, computeHostedClusterAvailability(hcluster, hcp))
 	}
 
+	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
+	{
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
+		var awsEndpointServiceList hyperv1.AWSEndpointServiceList
+		if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
+			condition := metav1.Condition{
+				Type:    string(hyperv1.AWSEndpointAvailable),
+				Status:  metav1.ConditionUnknown,
+				Reason:  hyperv1.NotFoundReason,
+				Message: fmt.Sprintf("error listing awsendpointservices in namespace %s: %v", hcpNamespace, err),
+			}
+			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+		} else {
+			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointAvailable))
+			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointServiceAvailable))
+		}
+	}
+
 	// Set ValidConfiguration condition
 	{
 		condition := metav1.Condition{
@@ -2897,6 +2915,47 @@ func computeUnmanagedEtcdAvailability(hcluster *hyperv1.HostedCluster, unmanaged
 		Type:   string(hyperv1.UnmanagedEtcdAvailable),
 		Status: metav1.ConditionTrue,
 		Reason: hyperv1.UnmanagedEtcdAsExpected,
+	}
+}
+
+func computeAWSEndpointServiceCondition(awsEndpointServiceList hyperv1.AWSEndpointServiceList, conditionType hyperv1.ConditionType) metav1.Condition {
+	var messages []string
+	var conditions []metav1.Condition
+
+	for _, awsEndpoint := range awsEndpointServiceList.Items {
+		condition := meta.FindStatusCondition(awsEndpoint.Status.Conditions, string(conditionType))
+		if condition != nil {
+			conditions = append(conditions, *condition)
+
+			if condition.Status == metav1.ConditionFalse {
+				messages = append(messages, condition.Message)
+			}
+		}
+	}
+
+	if len(conditions) == 0 {
+		return metav1.Condition{
+			Type:    string(conditionType),
+			Status:  metav1.ConditionUnknown,
+			Reason:  hyperv1.StatusUnknownReason,
+			Message: "AWSEndpointService conditions not found",
+		}
+	}
+
+	if len(messages) > 0 {
+		return metav1.Condition{
+			Type:    string(conditionType),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.AWSErrorReason,
+			Message: strings.Join(messages, "; "),
+		}
+	}
+
+	return metav1.Condition{
+		Type:    string(conditionType),
+		Status:  metav1.ConditionTrue,
+		Reason:  hyperv1.AWSSuccessReason,
+		Message: hyperv1.AllIsWellMessage,
 	}
 }
 
