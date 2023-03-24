@@ -1415,16 +1415,16 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 
 	var svc *corev1.Service
 	if serviceStrategy.Type == hyperv1.Route {
-		if util.IsPrivateHCP(hcp) {
-			svc = manifests.PrivateRouterService(hcp.Namespace)
-		} else {
+		if util.IsPublicHCP(hcp) {
 			svc = manifests.RouterPublicService(hcp.Namespace)
+		} else {
+			svc = manifests.PrivateRouterService(hcp.Namespace)
 		}
 	} else {
-		if util.IsPrivateHCP(hcp) {
-			svc = manifests.KubeAPIServerPrivateService(hcp.Namespace)
-		} else {
+		if util.IsPublicHCP(hcp) {
 			svc = manifests.KubeAPIServerService(hcp.Namespace)
+		} else {
+			svc = manifests.KubeAPIServerPrivateService(hcp.Namespace)
 		}
 	}
 	if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
