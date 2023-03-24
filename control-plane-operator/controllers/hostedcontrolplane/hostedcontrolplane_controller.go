@@ -100,6 +100,7 @@ const (
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 
 	resourceDeletionTimeout = 2 * time.Minute
+	hcpCleanupTimeout       = 3 * time.Hour // Last resort timeout to abandon HCP cleanup after deletion.
 )
 
 var NoopReconcile controllerutil.MutateFn = func() error { return nil }
@@ -3541,6 +3542,10 @@ func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Cont
 }
 
 func shouldCleanupCloudResources(log logr.Logger, hcp *hyperv1.HostedControlPlane) bool {
+	if time.Since(hcp.DeletionTimestamp.Time) > hcpCleanupTimeout {
+		log.Info("Abandoning cluster cleanup after cleanup timeout", "timeout", hcpCleanupTimeout)
+		return false
+	}
 	if msg, isValid := hasValidCloudCredentials(hcp); !isValid {
 		log.Info("Skipping hosted cluster cloud resources cleanup", "reason", msg)
 		return false
