@@ -510,7 +510,13 @@ objects:
               cpu: 10m
               memory: 150Mi
           securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
             runAsUser: 1000
+            seccompProfile:
+              type: RuntimeDefault
           volumeMounts:
           - mountPath: /var/run/secrets/serving-cert
             name: serving-cert
