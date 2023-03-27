@@ -1129,7 +1129,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: errors.New("releases before 4.8 are not supported"),
+			expectedResult: errors.New(`releases before 4.8 are not supported. Attempting to use: "4.7.0"`),
 		},
 		{
 			name: "unsupported y-stream downgrade, error",
@@ -1161,7 +1161,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: errors.New("y-stream downgrade is not supported"),
+			expectedResult: errors.New(`y-stream downgrade from "4.13.0" to "4.12.0" is not supported`),
 		},
 		{
 			name: "unsupported y-stream upgrade, error",
@@ -1193,7 +1193,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: errors.New("y-stream upgrade is not for OpenShiftSDN"),
+			expectedResult: errors.New(`y-stream upgrade from "4.11.0" to "4.13.0" is not for OpenShiftSDN`),
 		},
 		{
 			name: "supported y-stream upgrade, success",

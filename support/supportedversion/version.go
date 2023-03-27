@@ -46,24 +46,24 @@ func maxInt64(a, b uint64) uint64 {
 
 func IsValidReleaseVersion(version, currentVersion, latestVersionSupported, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
 	if version.LT(semver.MustParse("4.8.0")) {
-		return fmt.Errorf("releases before 4.8 are not supported")
+		return fmt.Errorf("releases before 4.8 are not supported. Attempting to use: %q", version)
 	}
 
 	if currentVersion != nil && currentVersion.Minor > version.Minor {
-		return fmt.Errorf("y-stream downgrade is not supported")
+		return fmt.Errorf("y-stream downgrade from %q to %q is not supported", currentVersion, version)
 	}
 
 	if networkType == hyperv1.OpenShiftSDN && currentVersion != nil && currentVersion.Minor < version.Minor {
-		return fmt.Errorf("y-stream upgrade is not for OpenShiftSDN")
+		return fmt.Errorf("y-stream upgrade from %q to %q is not for OpenShiftSDN", currentVersion, version)
 	}
 
 	versionMinorOnly := &semver.Version{Major: version.Major, Minor: version.Minor}
 	if networkType == hyperv1.OpenShiftSDN && currentVersion == nil && versionMinorOnly.GT(semver.MustParse("4.10.0")) && platformType != hyperv1.PowerVSPlatform {
-		return fmt.Errorf("cannot use OpenShiftSDN with OCP version > 4.10")
+		return fmt.Errorf("cannot use OpenShiftSDN with OCP version %q > 4.10", version)
 	}
 
 	if networkType == hyperv1.OVNKubernetes && currentVersion == nil && versionMinorOnly.LTE(semver.MustParse("4.10.0")) {
-		return fmt.Errorf("cannot use OVNKubernetes with OCP version < 4.11")
+		return fmt.Errorf("cannot use OVNKubernetes with OCP version %q < 4.11", version)
 	}
 
 	if (version.Major == latestVersionSupported.Major && version.Minor > latestVersionSupported.Minor) || version.Major > latestVersionSupported.Major {
