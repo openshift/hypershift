@@ -319,6 +319,11 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	hcp := &hcpList.Items[0]
 
+	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
+		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
+		return ctrl.Result{RequeueAfter: duration}, nil
+	}
+
 	// Reconcile the AWSEndpointService
 	oldStatus := awsEndpointService.Status.DeepCopy()
 	if err := r.reconcileAWSEndpointService(ctx, awsEndpointService, hcp, r.ec2Client, r.route53Client); err != nil {
