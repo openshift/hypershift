@@ -38,6 +38,12 @@ const (
 	DefaultPriorityClass = "hypershift-control-plane"
 )
 
+var (
+	// allowPrivilegeEscalation is used to set the status of the
+	// privilegeEscalation on SeccompProfile
+	allowPrivilegeEscalation = false
+)
+
 type HyperShiftNamespace struct {
 	Name                       string
 	EnableOCPClusterMonitoring bool
@@ -487,7 +493,16 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							Name: "operator",
 							// needed since hypershift operator runs with anyuuid scc
 							SecurityContext: &corev1.SecurityContext{
+								AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+								Capabilities: &corev1.Capabilities{
+									Drop: []corev1.Capability{
+										"ALL",
+									},
+								},
 								RunAsUser: k8sutilspointer.Int64Ptr(1000),
+								SeccompProfile: &corev1.SeccompProfile{
+									Type: corev1.SeccompProfileTypeRuntimeDefault,
+								},
 							},
 							Image:           image,
 							ImagePullPolicy: corev1.PullIfNotPresent,
