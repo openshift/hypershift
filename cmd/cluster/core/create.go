@@ -178,7 +178,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 	var pullSecret []byte
 	var err error
 	if len(opts.CredentialSecretName) > 0 {
-		pullSecret, err = util.GetDockerConfigJSON(opts.CredentialSecretName, opts.Namespace)
+		pullSecret, err = util.GetPullSecret(opts.CredentialSecretName, opts.Namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -449,7 +449,7 @@ func getReleaseSemanticVersion(ctx context.Context, opts *CreateOptions, provide
 	var pullSecretBytes []byte
 	var err error
 	if len(opts.CredentialSecretName) > 0 {
-		pullSecretBytes, err = util.GetDockerConfigJSON(opts.CredentialSecretName, opts.Namespace)
+		pullSecretBytes, err = util.GetPullSecret(opts.CredentialSecretName, opts.Namespace)
 		if err != nil {
 			return nil, err
 		}
