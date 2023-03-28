@@ -417,6 +417,19 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 			}
 			return err
 		}
+
+		if aws.StringValue(output.VpcEndpoints[0].ServiceName) != awsEndpointService.Status.EndpointServiceName {
+			log.Info("endpoint links to wrong endpointservice, deleting...", "LinkedVPCEndpointServiceName", aws.StringValue(output.VpcEndpoints[0].ServiceName), "WantedVPCEndpointService", awsEndpointService.Status.EndpointServiceName)
+			if _, err := ec2Client.DeleteVpcEndpointsWithContext(ctx, &ec2.DeleteVpcEndpointsInput{
+				VpcEndpointIds: []*string{output.VpcEndpoints[0].VpcEndpointId},
+			}); err != nil {
+				return fmt.Errorf("error deleting AWSEndpoint: %w", err)
+			}
+
+			// Once the VPC Endpoint is deleted, we need to send an error in order to reexecute the reconcilliation
+			return fmt.Errorf("current endpoint %s is not pointing to the existing .Status.EndpointServiceName, reconciling by deleting endpoint", aws.StringValue(output.VpcEndpoints[0].ServiceName))
+		}
+
 		if len(output.VpcEndpoints) == 0 {
 			// This should not happen but just in case
 			// clear the EndpointID so a new Endpoint is created on the requeue
@@ -467,6 +480,17 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 			return fmt.Errorf("failed to describe vpc endpoints: %s", msg)
 		}
 		if len(output.VpcEndpoints) != 0 {
+			if aws.StringValue(output.VpcEndpoints[0].ServiceName) != awsEndpointService.Status.EndpointServiceName {
+				log.Info("endpoint links to wrong endpointservice, deleting...", "LinkedVPCEndpointServiceName", aws.StringValue(output.VpcEndpoints[0].ServiceName), "WantedVPCEndpointService", awsEndpointService.Status.EndpointServiceName)
+				if _, err := ec2Client.DeleteVpcEndpointsWithContext(ctx, &ec2.DeleteVpcEndpointsInput{
+					VpcEndpointIds: []*string{output.VpcEndpoints[0].VpcEndpointId},
+				}); err != nil {
+					return fmt.Errorf("error deleting AWSEndpoint: %w", err)
+				}
+
+				// Once the VPC Endpoint is deleted, we need to send an error in order to reexecute the reconcilliation
+				return fmt.Errorf("current endpoint %s is not pointing to the existing .Status.EndpointServiceName, reconciling by deleting endpoint", aws.StringValue(output.VpcEndpoints[0].ServiceName))
+			}
 			endpointID = *output.VpcEndpoints[0].VpcEndpointId
 			log.Info("endpoint already exists, adopting", "endpointID", endpointID)
 			awsEndpointService.Status.EndpointID = endpointID
