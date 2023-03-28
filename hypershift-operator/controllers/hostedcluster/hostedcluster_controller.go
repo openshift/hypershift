@@ -4214,10 +4214,40 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 	return nil
 }
 
+func releaseImageToVersion(hcluster *hyperv1.HostedCluster, image string) (semver.Version, error) {
+	for _, update := range hcluster.Status.Version.AvailableUpdates {
+		if update.Image == image { // TODO: all we care about is matching digests
+			return semver.Parse(update.Version)
+		}
+	}
+	for _, update := range hcluster.Status.Version.ConditionalUpdates {
+		if update.Release.Image == image { // TODO: all we care about is matching digests
+			return semver.Parse(update.Release.Version)
+		}
+	}
+	var version semver.Version
+	return version, fmt.Errorf("unable to determine a version string for %s", image)
+}
+
 func isUpgradeable(hcluster *hyperv1.HostedCluster) (bool, string, error) {
 	if hcluster.Status.Version != nil && hcluster.Status.Version.Desired.Image != hcluster.Spec.Release.Image {
 		upgradeable := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable))
 		if upgradeable != nil && upgradeable.Status == metav1.ConditionFalse {
+			currentTargetVersion, err := semver.Parse(hcluster.Status.Version.Desired.Version)
+			if err != nil {
+				return true, "", fmt.Errorf("cluster is %s=%s (%s: %s), and failed to parse the current target %s as a Semantic Version: %w", upgradeable.Type, upgradeable.Status, upgradeable.Reason, upgradeable.Message, hcluster.Status.Version.Desired.Version, err)
+			}
+
+			requestedVersion, err := releaseImageToVersion(hcluster, hcluster.Spec.Release.Image)
+			if err != nil {
+				return true, "", fmt.Errorf("cluster is %s=%s (%s: %s), and failed determine a version for %s to see if it is a minor update from %s: %w", upgradeable.Type, upgradeable.Status, upgradeable.Reason, upgradeable.Message, hcluster.Spec.Release.Image, hcluster.Status.Version.Desired.Version, err)
+			}
+
+			if requestedVersion.Major == currentTargetVersion.Major && requestedVersion.Minor == currentTargetVersion.Minor {
+				// ClusterVersion's Upgradeable condition is mostly about minor bumps from x.y to x.(y+1) and larger.  It is not intended to block patch updates from x.y.z to x.y.z' except under very limited circumstances which we can ignore for now.
+				return true, "", nil
+			}
+
 			releaseImage, exists := hcluster.Annotations[hyperv1.ForceUpgradeToAnnotation]
 			if !exists {
 				return true, "", fmt.Errorf("cluster version is not upgradeable")
