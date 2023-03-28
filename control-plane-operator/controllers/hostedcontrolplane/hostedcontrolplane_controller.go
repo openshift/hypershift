@@ -2356,7 +2356,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 
 	schedulerConfig := manifests.SchedulerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, schedulerConfig, func() error {
-		return scheduler.ReconcileConfig(schedulerConfig, p.OwnerRef)
+		return scheduler.ReconcileConfig(schedulerConfig, p.OwnerRef, p.SchedulerProfile())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile scheduler config: %w", err)
 	}
