@@ -6,6 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/utils/pointer"
+
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -17,6 +20,10 @@ import (
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
+const (
+	tickerTime = 30
+)
+
 type hypershiftMetrics struct {
 	clusterIdentityProviders           *prometheus.GaugeVec
 	hostedClusters                     *prometheus.GaugeVec
@@ -25,6 +32,7 @@ type hypershiftMetrics struct {
 	nodePools                          *prometheus.GaugeVec
 	nodePoolsWithFailureCondition      *prometheus.GaugeVec
 	nodePoolSize                       *prometheus.GaugeVec
+	hostedClusterTransitionSeconds     *prometheus.HistogramVec
 
 	client crclient.Client
 
@@ -61,13 +69,19 @@ func newMetrics(client crclient.Client, log logr.Logger) *hypershiftMetrics {
 			Name: "hypershift_nodepools_size",
 			Help: "Number of replicas associated with a given NodePool",
 		}, []string{"name", "platform"}),
+		// hostedClusterTransitionSeconds is a metric to capture the time between a HostedCluster being created and entering a particular condition.
+		hostedClusterTransitionSeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "hypershift_hosted_cluster_transition_seconds",
+			Help:    "Number of seconds between HostedCluster creation and HostedCluster transition to a condition.",
+			Buckets: []float64{5, 10, 20, 30, 60, 90, 120, 180, 240, 300, 360, 480, 600},
+		}, []string{"condition"}),
 		client: client,
 		log:    log,
 	}
 }
 
 func (m *hypershiftMetrics) Start(ctx context.Context) error {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(tickerTime * time.Second)
 
 	for {
 		select {
@@ -117,6 +131,9 @@ func setupMetrics(mgr manager.Manager) error {
 	if err := crmetrics.Registry.Register(metrics.nodePoolSize); err != nil {
 		return fmt.Errorf("failed to to register nodePoolSize metric: %w", err)
 	}
+	if err := crmetrics.Registry.Register(metrics.hostedClusterTransitionSeconds); err != nil {
+		return fmt.Errorf("failed to to register hostedClusterTransitionSeconds metric: %w", err)
+	}
 	if err := mgr.Add(metrics); err != nil {
 		return fmt.Errorf("failed to add metrics runnable to manager: %w", err)
 	}
@@ -153,7 +170,29 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 		configv1.IdentityProviderTypeRequestHeader: 0,
 	}
 
+	now := time.Now()
 	for _, hc := range hostedClusters.Items {
+		// Collect transition metrics.
+		// Every time a condition has a transition from false -> true, that would increase observation in the "time from creation to last transition" bucket.
+		if transitionTime := transitionTime(&hc, hyperv1.EtcdAvailable); transitionTime != nil {
+			if now.Sub(transitionTime.Time).Seconds() <= tickerTime {
+				conditionTimeToTrueSinceCreation := pointer.Float64(transitionTime.Sub(hc.CreationTimestamp.Time).Seconds())
+				m.hostedClusterTransitionSeconds.With(map[string]string{"condition": string(hyperv1.EtcdAvailable)}).Observe(*conditionTimeToTrueSinceCreation)
+			}
+		}
+		if transitionTime := transitionTime(&hc, hyperv1.InfrastructureReady); transitionTime != nil {
+			if now.Sub(transitionTime.Time).Seconds() <= tickerTime {
+				conditionTimeToTrueSinceCreation := pointer.Float64(transitionTime.Sub(hc.CreationTimestamp.Time).Seconds())
+				m.hostedClusterTransitionSeconds.With(map[string]string{"condition": string(hyperv1.InfrastructureReady)}).Observe(*conditionTimeToTrueSinceCreation)
+			}
+		}
+		if transitionTime := transitionTime(&hc, hyperv1.ExternalDNSReachable); transitionTime != nil {
+			if now.Sub(transitionTime.Time).Seconds() <= tickerTime {
+				conditionTimeToTrueSinceCreation := pointer.Float64(transitionTime.Sub(hc.CreationTimestamp.Time).Seconds())
+				m.hostedClusterTransitionSeconds.With(map[string]string{"condition": string(hyperv1.ExternalDNSReachable)}).Observe(*conditionTimeToTrueSinceCreation)
+			}
+		}
+
 		// Group identityProviders by type.
 		if hc.Spec.Configuration != nil && hc.Spec.Configuration.OAuth != nil {
 			for _, identityProvider := range hc.Spec.Configuration.OAuth.IdentityProviders {
@@ -194,6 +233,17 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 		labels := counterKeyToLabels(key)
 		m.hostedClustersWithFailureCondition.WithLabelValues(labels...).Set(float64(count))
 	}
+}
+
+func transitionTime(hc *hyperv1.HostedCluster, conditionType hyperv1.ConditionType) *metav1.Time {
+	condition := meta.FindStatusCondition(hc.Status.Conditions, string(conditionType))
+	if condition == nil {
+		return nil
+	}
+	if condition.Status == metav1.ConditionFalse {
+		return nil
+	}
+	return &condition.LastTransitionTime
 }
 
 var expectedNPConditionStates = map[string]bool{
