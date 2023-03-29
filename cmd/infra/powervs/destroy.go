@@ -171,29 +171,28 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 
 	var powerVsCloudInstanceID string
 	var skipPowerVs bool
+	var cloudInstance *resourcecontrollerv2.ResourceInstance
 
 	// getting the powervs cloud instance id
 	if infra != nil && infra.CloudInstanceID != "" {
 		powerVsCloudInstanceID = infra.CloudInstanceID
 	} else if options.CloudInstanceID != "" {
-		if _, err = validateCloudInstanceByID(ctx, options.CloudInstanceID); err != nil {
-			errL = append(errL, err)
-			skipPowerVs = true
-		}
-		powerVsCloudInstanceID = options.CloudInstanceID
-	} else {
-		cloudInstanceName := fmt.Sprintf("%s-%s", options.InfraID, cloudInstanceNameSuffix)
-		var cloudInstance *resourcecontrollerv2.ResourceInstance
-		cloudInstance, err = validateCloudInstanceByName(ctx, cloudInstanceName, resourceGroupID, options.Zone, serviceID, servicePlanID)
-		if err != nil {
-			if err.Error() == cloudInstanceNotFound(cloudInstanceName).Error() {
-				log(options.InfraID).Info("No PowerVS Service Instance available to delete")
-			} else {
+		if cloudInstance, err = validateCloudInstanceByID(ctx, options.CloudInstanceID); cloudInstance == nil {
+			if err != nil && err.Error() != cloudInstanceNotFound(options.CloudInstanceID).Error() {
 				errL = append(errL, err)
 			}
 			skipPowerVs = true
+		} else {
+			powerVsCloudInstanceID = options.CloudInstanceID
 		}
-		if cloudInstance != nil {
+	} else {
+		cloudInstanceName := fmt.Sprintf("%s-%s", options.InfraID, cloudInstanceNameSuffix)
+		if cloudInstance, err = validateCloudInstanceByName(ctx, cloudInstanceName, resourceGroupID, options.Zone, serviceID, servicePlanID); cloudInstance == nil {
+			if err != nil && err.Error() != cloudInstanceNotFound(cloudInstanceName).Error() {
+				errL = append(errL, err)
+			}
+			skipPowerVs = true
+		} else {
 			powerVsCloudInstanceID = *cloudInstance.GUID
 		}
 	}
