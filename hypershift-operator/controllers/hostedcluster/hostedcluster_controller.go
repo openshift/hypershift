@@ -325,6 +325,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 
 		oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+
+		// Preserve previous false status if we can no longer determine the status (for example when the hostedcontrolplane has been deleted)
+		if oldCondition != nil && oldCondition.Status == metav1.ConditionFalse && freshCondition.Status == metav1.ConditionUnknown {
+			freshCondition.Status = metav1.ConditionFalse
+		}
 		if oldCondition == nil || oldCondition.Status != freshCondition.Status {
 			freshCondition.ObservedGeneration = hcluster.Generation
 			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
