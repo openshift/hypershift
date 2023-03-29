@@ -6,7 +6,6 @@ package e2e
 import (
 	"context"
 	"fmt"
-
 	"io"
 	"os"
 	"testing"
@@ -14,9 +13,11 @@ import (
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -128,9 +129,11 @@ func (ru *NodePoolUpgradeTest) BuildNodePoolManifest(defaultNodepool hyperv1.Nod
 			Effect: corev1.TaintEffectPreferNoSchedule,
 		},
 	}
-
 	nodePool.Spec.NodeLabels = syncedLabels
 	nodePool.Spec.Taints = syncedTaints
+
+	// Using default security group is main use case for OCM.
+	nodePool.Spec.Platform.AWS.SecurityGroups = nil
 
 	// Setting initial release image
 	nodePool.Spec.Release.Image = ru.previousReleaseImage
@@ -158,19 +161,35 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 	t.Logf("Validating all Nodes have the synced labels and taints")
 	e2eutil.EnsureNodesLabelsAndTaints(t, nodePool, nodes)
 
-	// Update NodePool images to the latest.
-	err = ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
+	// Get fresh NodePool.
+	freshNodePool := &hyperv1.NodePool{}
+	err = ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), freshNodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-	g.Expect(nodePool.Status.Version).To(Equal(previousReleaseInfo.ObjectMeta.Name), fmt.Sprintf("wrong previous release version: Previous: %s Nodepool current: %s", previousReleaseInfo.Version(), nodePool.Spec.Release.Image))
+	g.Expect(freshNodePool.Status.Version).To(Equal(previousReleaseInfo.ObjectMeta.Name), fmt.Sprintf("wrong previous release version: Previous: %s Nodepool current: %s", previousReleaseInfo.Version(), freshNodePool.Spec.Release.Image))
+
+	// Get fresh HostedCluster.
+	freshHC := &hyperv1.HostedCluster{}
+	err = ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(ru.hostedCluster), freshHC)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+
+	t.Logf("Validating default security group conditions")
+	// Validate default security group conditions
+	hcCondition := meta.FindStatusCondition(freshHC.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupCreated))
+	g.Expect(hcCondition.Status).To(BeEquivalentTo(metav1.ConditionTrue))
+
+	nodePoolCondition := nodepool.FindStatusCondition(freshNodePool.Status.Conditions, hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
+	g.Expect(nodePoolCondition.Status).To(BeEquivalentTo(metav1.ConditionTrue))
+
+	// Update NodePool images to the latest.
 	t.Logf("Updating NodePool image. Image: %s", ru.latestReleaseImage)
-	original := nodePool.DeepCopy()
-	nodePool.Spec.Release.Image = ru.latestReleaseImage
-	err = ru.mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(original))
+	original := freshNodePool.DeepCopy()
+	freshNodePool.Spec.Release.Image = ru.latestReleaseImage
+	err = ru.mgmtClient.Patch(ctx, freshNodePool, crclient.MergeFrom(original))
 	g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool image")
 
 	// final checks
-	e2eutil.WaitForNodePoolVersion(t, ctx, ru.mgmtClient, &nodePool, latestReleaseInfo.Version())
-	e2eutil.WaitForNodePoolConditionsNotToBePresent(t, ctx, ru.mgmtClient, &nodePool, hyperv1.NodePoolUpdatingVersionConditionType)
-	nodesFromNodePool := e2eutil.WaitForNReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, *nodePool.Spec.Replicas, ru.hostedCluster.Spec.Platform.Type, nodePool.Name)
-	g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodesFromNodePool)))
+	e2eutil.WaitForNodePoolVersion(t, ctx, ru.mgmtClient, freshNodePool, latestReleaseInfo.Version())
+	e2eutil.WaitForNodePoolConditionsNotToBePresent(t, ctx, ru.mgmtClient, freshNodePool, hyperv1.NodePoolUpdatingVersionConditionType)
+	nodesFromNodePool := e2eutil.WaitForNReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, *freshNodePool.Spec.Replicas, ru.hostedCluster.Spec.Platform.Type, freshNodePool.Name)
+	g.Expect(freshNodePool.Status.Replicas).To(BeEquivalentTo(len(nodesFromNodePool)))
 }
