@@ -180,15 +180,21 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	r.reconcileInfrastructureStatus = r.defaultReconcileInfrastructureStatus
 
+	r.ec2Client, r.awsSession = getEC2Client()
+
+	return nil
+}
+
+func getEC2Client() (ec2iface.EC2API, *session.Session) {
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
 	// when reconciling an AWS hosted control plane
 	if os.Getenv("AWS_SHARED_CREDENTIALS_FILE") != "" {
 		awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
 		awsConfig := awssdk.NewConfig()
-		r.ec2Client = ec2.New(awsSession, awsConfig)
-		r.awsSession = awsSession
+		ec2Client := ec2.New(awsSession, awsConfig)
+		return ec2Client, awsSession
 	}
-	return nil
+	return nil, nil
 }
 
 func isScrapeConfig(obj client.Object) bool {
@@ -276,7 +282,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 	// This is a best effort ping to the identity provider
 	// that enables access from the operator to the cloud provider resources.
-	healthCheckIdentityProvider(ctx, hostedControlPlane, r.ec2Client)
+	healthCheckIdentityProvider(ctx, hostedControlPlane)
 	// We want to ensure the healthCheckIdentityProvider condition is in status before we go through the deletion timestamp path.
 	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
@@ -3684,12 +3690,17 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 	return nil
 }
 
-func healthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedControlPlane, ec2Client ec2iface.EC2API) {
+func healthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
 	if hcp.Spec.Platform.AWS == nil {
 		return
 	}
 
 	log := ctrl.LoggerFrom(ctx)
+
+	ec2Client, _ := getEC2Client()
+	if ec2Client == nil {
+		return
+	}
 
 	// We try to interact with cloud provider to see validate is operational.
 	if _, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{}); err != nil {
