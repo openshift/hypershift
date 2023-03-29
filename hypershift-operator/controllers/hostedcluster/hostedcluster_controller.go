@@ -3370,6 +3370,10 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err)
 	}
 
+	if err := r.validatePublishingStrategyMapping(hc); err != nil {
+		errs = append(errs, err)
+	}
+
 	// TODO(IBM): Revisit after fleets no longer use conflicting network CIDRs
 	if hc.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
 		if err := r.validateNetworks(hc); err != nil {
@@ -3504,16 +3508,43 @@ func (r *HostedClusterReconciler) validateAWSConfig(hc *hyperv1.HostedCluster) e
 
 	if hc.Spec.Platform.AWS.EndpointAccess == hyperv1.Private {
 		if servicePublishingStrategy != nil && servicePublishingStrategy.Type != hyperv1.Route && servicePublishingStrategy.Type != hyperv1.LoadBalancer {
-			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v", hyperv1.APIServer, servicePublishingStrategy.Type))
+			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported, use Route", hyperv1.APIServer, servicePublishingStrategy.Type))
 		}
 
 	} else {
 		if !hyperutil.UseDedicatedDNSForKASByHC(hc) && servicePublishingStrategy.Type != hyperv1.LoadBalancer {
-			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported, use Route", hyperv1.APIServer, servicePublishingStrategy.Type))
+			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported, use Route or Loadbalancer", hyperv1.APIServer, servicePublishingStrategy.Type))
 		}
 	}
 
 	return utilerrors.NewAggregate(errs)
+}
+
+// validatePublishingStrategyMapping validates that each published serviceType has a unique hostname.
+func (r *HostedClusterReconciler) validatePublishingStrategyMapping(hc *hyperv1.HostedCluster) error {
+	hostnameServiceMap := make(map[string]string, len(hc.Spec.Services))
+	for _, svc := range hc.Spec.Services {
+		hostname := ""
+		if svc.Type == hyperv1.LoadBalancer && svc.LoadBalancer != nil {
+			hostname = svc.LoadBalancer.Hostname
+		}
+		if svc.Type == hyperv1.Route && svc.Route != nil {
+			hostname = svc.Route.Hostname
+		}
+
+		if hostname == "" {
+			continue
+		}
+
+		serviceType, exists := hostnameServiceMap[hostname]
+		if exists {
+			return fmt.Errorf("service type %s can't be published with the same hostname %s as service type %s", svc.Service, hostname, serviceType)
+		}
+
+		hostnameServiceMap[hostname] = string(svc.Service)
+	}
+
+	return nil
 }
 
 func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {

@@ -1017,6 +1017,29 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 			},
 			expectedResult: errors.New(`spec.networking.MachineNetwork: Invalid value: "172.16.1.0/24": spec.networking.MachineNetwork and spec.networking.ServiceNetwork overlap: 172.16.1.0/24 and 172.16.1.252/32`),
 		},
+		{
+			name: "multiple published services use the same hostname, error",
+			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
+				Services: []hyperv1.ServicePublishingStrategyMapping{
+					{
+						Service: hyperv1.APIServer,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type:  hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+						},
+					},
+					{
+						Service: hyperv1.OAuthServer,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type:  hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+						},
+					},
+				},
+			}},
+			expectedResult:                errors.New(`service type OAuthServer can't be published with the same hostname api.example.com as service type APIServer`),
+			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		},
 	}
 
 	for _, tc := range testCases {
