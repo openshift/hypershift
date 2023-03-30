@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
@@ -26,9 +27,13 @@ import (
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	"github.com/openshift/hypershift/test/e2e/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	"github.com/openshift/library-go/test/library/metrics"
+	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/common/model"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -130,10 +135,84 @@ func main(m *testing.M) int {
 		go e2eObserverControllers(testContext, log, globalOpts.ArtifactDir)
 		defer dumpTestMetrics(log, globalOpts.ArtifactDir)
 	}
+	defer alertSLOs(testContext)
 
 	// Everything's okay to run tests
 	log.Info("executing e2e tests", "options", globalOpts)
 	return m.Run()
+}
+
+// alertSLOs creates alert for our SLO/SLIs and log when firing.
+// TODO(alberto): have a global t.Run which runs all tests first then TestAlertSLOs.
+func alertSLOs(ctx context.Context) error {
+	// Query fairing for SLOs.
+	firingAlertQuery := `
+sort_desc(
+count_over_time(ALERTS{alertstate="firing",severity="slo",alertname!~"HypershiftSLO"}[10000s:1s])
+) > 0
+`
+	prometheusClient, err := NewPrometheusClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	result, err := RunQueryAtTime(ctx, prometheusClient, firingAlertQuery, time.Now())
+	if err != nil {
+		return err
+	}
+	for _, series := range result.Data.Result {
+		log.Info(fmt.Sprintf("alert %s fired for %s second", series.Metric["alertname"], series.Value))
+	}
+
+	return nil
+}
+
+func NewPrometheusClient(ctx context.Context) (prometheusv1.API, error) {
+	config, err := e2eutil.GetConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	kubeClient, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err)
+	}
+	routeClient, err := routev1client.NewForConfig(config)
+	if err != nil {
+		panic(err)
+	}
+	prometheusClient, err := metrics.NewPrometheusClient(ctx, kubeClient, routeClient)
+	if err != nil {
+		panic(err)
+	}
+	return prometheusClient, nil
+}
+
+// PrometheusResponse is used to contain prometheus query results
+type PrometheusResponse struct {
+	Data prometheusResponseData `json:"data"`
+}
+
+type prometheusResponseData struct {
+	Result model.Vector `json:"result"`
+}
+
+func RunQueryAtTime(ctx context.Context, prometheusClient prometheusv1.API, query string, evaluationTime time.Time) (*PrometheusResponse, error) {
+	result, warnings, err := prometheusClient.Query(ctx, query, evaluationTime)
+	if err != nil {
+		return nil, err
+	}
+	if len(warnings) > 0 {
+		log.Info(fmt.Sprintf("#### warnings \n\t%v\n", strings.Join(warnings, "\n\t")))
+	}
+	if result.Type() != model.ValVector {
+		return nil, fmt.Errorf("result type is not the vector: %v", result.Type())
+	}
+	return &PrometheusResponse{
+		Data: prometheusResponseData{
+			Result: result.(model.Vector),
+		},
+	}, nil
 }
 
 func e2eObserverControllers(ctx context.Context, log logr.Logger, artifactDir string) {

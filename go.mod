@@ -29,6 +29,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799
 	github.com/openshift/api v0.0.0-20230119154305-a7b1b9651014
+	github.com/openshift/client-go v0.0.0-20220525160904-9e1acff93e4a
 	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220227135922-dd6353f609dc
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20220614214129-2c76314fb3cc
@@ -149,7 +150,6 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
-	github.com/openshift/client-go v0.0.0-20220525160904-9e1acff93e4a
 	github.com/openshift/custom-resource-status v1.1.2 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pborman/uuid v1.2.0 // indirect

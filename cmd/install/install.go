@@ -81,6 +81,7 @@ type Options struct {
 	MetricsSet                                metrics.MetricsSet
 	WaitUntilAvailable                        bool
 	RHOBSMonitoring                           bool
+	SLOsAlerts                                bool
 }
 
 func (o *Options) Validate() error {
@@ -186,6 +187,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, HyperShift operator ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.Flags().BoolVar(&opts.WaitUntilAvailable, "wait-until-available", opts.WaitUntilAvailable, "If true, pauses installation until hypershift operator has been rolled out and its webhook service is available (if installing the webhook)")
 	cmd.PersistentFlags().BoolVar(&opts.RHOBSMonitoring, "rhobs-monitoring", opts.RHOBSMonitoring, "If true, HyperShift will generate and use the RHOBS version of monitoring resources (ServiceMonitors, PodMonitors, etc)")
+	cmd.PersistentFlags().BoolVar(&opts.SLOsAlerts, "slos-alerts", opts.SLOsAlerts, "If true, HyperShift will generate and use the prometheus alerts for monitoring HostedCluster and NodePools")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -572,6 +574,13 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		Namespace: operatorNamespace,
 	}.Build()
 	objects = append(objects, recordingRule)
+
+	if opts.SLOsAlerts {
+		alertingRule := assets.HypershiftAlertingRule{
+			Namespace: &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-monitoring"}},
+		}.Build()
+		objects = append(objects, alertingRule)
+	}
 
 	objects = append(objects, assets.CustomResourceDefinitions(func(path string) bool {
 		if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
