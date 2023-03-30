@@ -207,6 +207,9 @@ var expectedHCConditionStates = map[hyperv1.ConditionType]bool{
 	hyperv1.ClusterVersionUpgradeable:       true,
 	hyperv1.ReconciliationActive:            true,
 	hyperv1.ValidOIDCConfiguration:          true,
+	hyperv1.ValidAWSIdentityProvider:        true,
+	hyperv1.ValidAWSKMSConfig:               true,
+	hyperv1.AWSDefaultSecurityGroupCreated:  true,
 }
 
 func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.HostedClusterList) {
