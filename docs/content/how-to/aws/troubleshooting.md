@@ -109,3 +109,16 @@ done
 Eventually, the namespace will be successfully terminated and also the Hosted Cluster.
 
 **Cause:** This is pretty common issue in the Kubernetes/Openshift world. You are trying to delete a resource that has other dependedent objects. The finalizer is still trying to delete them but it cannot progress.
+
+### The Storage ClusterOperator keeps reporting "Waiting for Deployment"
+
+To solve this issue you need to check that all the pods from the **HostedCluster** and the **HostedControlPlane** are running, not blocked and there are no issues in the `cluster-storage-operator` pod. After that you need to delete the **AWS EBS CSI Drivers** from the HCP namespace in the destination management cluster:
+
+- Delete the AWS EBS CSI Drivers deployments
+```
+oc delete aws-ebs-csi-driver-controller aws-ebs-csi-driver-operator
+```
+
+The operator will take a while to raise up again and eventually the driver controller will be deployed by the `aws-ebs-csi-driver-operator`.
+
+**Cause:** This issue probably come from objects that are deployed by the Operator, in this case the storage one, but the controller or the operator does not reconcile over them. If you delete the deployments you ensure that the operator recreates them from scratch.
