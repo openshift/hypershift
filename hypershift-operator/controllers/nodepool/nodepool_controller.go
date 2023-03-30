@@ -1505,14 +1505,18 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 	}
 
 	if isAutoscalingEnabled(nodePool) {
-		// if the MachineSetReplicas is not in the spec will be set as 0, and here will be
-		// evaluated. If autoscaler is activated, the replicas will have the same number as
-		// minimum number of replicas set in the MachineSet spec.
-		if k8sutilspointer.Int32Deref(machineDeployment.Spec.Replicas, 0) == 0 {
-			// if autoscaling is enabled and the machineDeployment does not exist yet or it has 0 replicas
-			// we set the replicas to the Autoscaling minimum value, autoscaler does not support scaling from zero yet.
+		// The MachineDeployment replicas field should default to a value inside the (min size, max size) range based on the autoscaler annotations
+		// so the autoscaler can take control of the replicas field.
+		//
+		// 1. if it’s a new MachineDeployment, or the replicas field of the old MachineDeployment is < min size, use min size
+		// 2. if the replicas field of the old MachineDeployment is > max size, use max size
+		mdReplicas := k8sutilspointer.Int32Deref(machineDeployment.Spec.Replicas, 0)
+		if mdReplicas < nodePool.Spec.AutoScaling.Min {
 			machineDeployment.Spec.Replicas = &nodePool.Spec.AutoScaling.Min
+		} else if mdReplicas > nodePool.Spec.AutoScaling.Max {
+			machineDeployment.Spec.Replicas = &nodePool.Spec.AutoScaling.Max
 		}
+
 		machineDeployment.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Max))
 		machineDeployment.Annotations[autoscalerMinAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Min))
 	}

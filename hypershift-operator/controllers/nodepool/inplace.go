@@ -251,14 +251,18 @@ func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.Machin
 	}
 
 	if isAutoscalingEnabled(nodePool) {
-		// if the MachineSetReplicas is not in the spec will be set as 0, and here will be
-		// evaluated. If autoscaler is activated, the replicas will have the same number as
-		// minimum number of replicas set in the MachineSet spec.
-		if k8sutilspointer.Int32PtrDerefOr(machineSet.Spec.Replicas, 0) == 0 {
-			// if autoscaling is enabled and the MachineSet does not exist yet or it has 0 replicas,
-			// we set the replicas to the Autoscaling minimum value, autoscaler does not support scaling from zero yet.
+		// The MachineSet replicas field should default to a value inside the (min size, max size) range based on the autoscaler annotations
+		// so the autoscaler can take control of the replicas field.
+		//
+		// 1. if it’s a new MachineSet, or the replicas field of the old MachineSet is < min size, use min size
+		// 2. if the replicas field of the old MachineSet is > max size, use max size
+		msReplicas := k8sutilspointer.Int32Deref(machineSet.Spec.Replicas, 0)
+		if msReplicas < nodePool.Spec.AutoScaling.Min {
 			machineSet.Spec.Replicas = &nodePool.Spec.AutoScaling.Min
+		} else if msReplicas > nodePool.Spec.AutoScaling.Max {
+			machineSet.Spec.Replicas = &nodePool.Spec.AutoScaling.Max
 		}
+
 		machineSet.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Max))
 		machineSet.Annotations[autoscalerMinAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Min))
 	}
@@ -267,7 +271,7 @@ func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.Machin
 	if !isAutoscalingEnabled(nodePool) {
 		machineSet.Annotations[autoscalerMaxAnnotation] = "0"
 		machineSet.Annotations[autoscalerMinAnnotation] = "0"
-		machineSet.Spec.Replicas = k8sutilspointer.Int32Ptr(k8sutilspointer.Int32PtrDerefOr(nodePool.Spec.Replicas, 0))
+		machineSet.Spec.Replicas = k8sutilspointer.Int32(k8sutilspointer.Int32Deref(nodePool.Spec.Replicas, 0))
 	}
 }
 
