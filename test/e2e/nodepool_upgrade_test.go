@@ -156,12 +156,7 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for latest image")
 
 	t.Logf("Validating all Nodes have the synced labels and taints")
-	for _, node := range nodes {
-		g.Expect(node.Labels).To(HaveKeyWithValue(syncedLabelsKey, syncedLabelsValue))
-		g.Expect(node.Spec.Taints[0].Key).To(Equal(nodePool.Spec.Taints[0].Key))
-		g.Expect(node.Spec.Taints[0].Value).To(Equal(nodePool.Spec.Taints[0].Value))
-		g.Expect(node.Spec.Taints[0].Effect).To(Equal(nodePool.Spec.Taints[0].Effect))
-	}
+	e2eutil.EnsureNodesLabelsAndTaints(t, nodePool, nodes)
 
 	// Update NodePool images to the latest.
 	err = ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
