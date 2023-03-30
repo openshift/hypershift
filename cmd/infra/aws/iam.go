@@ -404,51 +404,44 @@ func DefaultProfileName(infraID string) string {
 // inputs: none
 // outputs rsa keypair
 func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*CreateIAMOutput, error) {
+	var providerName string
+	var providerARN string
+	if o.IssuerURL == "" {
+		o.IssuerURL = oidcDiscoveryURL(o.OIDCStorageProviderS3BucketName, o.OIDCStorageProviderS3Region, o.InfraID)
+		log.Log.Info("Detected Issuer URL", "issuer", o.IssuerURL)
+
+		providerName = strings.TrimPrefix(o.IssuerURL, "https://")
+
+		// Create the OIDC provider
+		arn, err := o.CreateOIDCProvider(iamClient)
+		if err != nil {
+			return nil, err
+		}
+		providerARN = arn
+	} else {
+		providerName = strings.TrimPrefix(o.IssuerURL, "https://")
+		oidcProviderList, err := iamClient.ListOpenIDConnectProviders(&iam.ListOpenIDConnectProvidersInput{})
+		if err != nil {
+			return nil, err
+		}
+
+		for _, provider := range oidcProviderList.OpenIDConnectProviderList {
+			if strings.Contains(*provider.Arn, providerName) {
+				providerARN = *provider.Arn
+				break
+			}
+		}
+
+		if providerARN == "" {
+			return nil, fmt.Errorf("OIDC provider with issuer URL %s was not found", o.IssuerURL)
+		}
+	}
+
 	output := &CreateIAMOutput{
 		Region:    o.Region,
 		InfraID:   o.InfraID,
 		IssuerURL: o.IssuerURL,
 	}
-
-	// Create the OIDC provider
-	oidcProviderList, err := iamClient.ListOpenIDConnectProviders(&iam.ListOpenIDConnectProvidersInput{})
-	if err != nil {
-		return nil, err
-	}
-
-	providerName := strings.TrimPrefix(o.IssuerURL, "https://")
-	for _, provider := range oidcProviderList.OpenIDConnectProviderList {
-		if strings.Contains(*provider.Arn, providerName) {
-			_, err := iamClient.DeleteOpenIDConnectProvider(&iam.DeleteOpenIDConnectProviderInput{
-				OpenIDConnectProviderArn: provider.Arn,
-			})
-			if err != nil {
-				log.Log.Error(err, "Failed to remove existing OIDC provider", "provider", *provider.Arn)
-				return nil, err
-			}
-			log.Log.Info("Removing existing OIDC provider", "provider", *provider.Arn)
-			break
-		}
-	}
-
-	oidcOutput, err := iamClient.CreateOpenIDConnectProvider(&iam.CreateOpenIDConnectProviderInput{
-		ClientIDList: []*string{
-			aws.String("openshift"),
-		},
-		// The AWS console mentions that this will be ignored for S3 buckets but creation fails if we don't
-		// pass a thumbprint.
-		ThumbprintList: []*string{
-			aws.String("A9D53002E97E00E043244F3D170D6F4C414104FD"), // root CA thumbprint for s3 (DigiCert)
-		},
-		Url:  aws.String(o.IssuerURL),
-		Tags: o.additionalIAMTags,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	providerARN := *oidcOutput.OpenIDConnectProviderArn
-	log.Log.Info("Created OIDC provider", "provider", providerARN)
 
 	// TODO: The policies and secrets for these roles can be extracted from the
 	// release payload, avoiding this current hardcoding.
@@ -513,6 +506,49 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI) (*Crea
 	output.Roles.NetworkARN = arn
 
 	return output, nil
+}
+
+func (o *CreateIAMOptions) CreateOIDCProvider(iamClient iamiface.IAMAPI) (string, error) {
+	oidcProviderList, err := iamClient.ListOpenIDConnectProviders(&iam.ListOpenIDConnectProvidersInput{})
+	if err != nil {
+		return "", err
+	}
+
+	providerName := strings.TrimPrefix(o.IssuerURL, "https://")
+	for _, provider := range oidcProviderList.OpenIDConnectProviderList {
+		if strings.Contains(*provider.Arn, providerName) {
+			_, err := iamClient.DeleteOpenIDConnectProvider(&iam.DeleteOpenIDConnectProviderInput{
+				OpenIDConnectProviderArn: provider.Arn,
+			})
+			if err != nil {
+				log.Log.Error(err, "Failed to remove existing OIDC provider", "provider", *provider.Arn)
+				return "", err
+			}
+			log.Log.Info("Removing existing OIDC provider", "provider", *provider.Arn)
+			break
+		}
+	}
+
+	oidcOutput, err := iamClient.CreateOpenIDConnectProvider(&iam.CreateOpenIDConnectProviderInput{
+		ClientIDList: []*string{
+			aws.String("openshift"),
+		},
+		// The AWS console mentions that this will be ignored for S3 buckets but creation fails if we don't
+		// pass a thumbprint.
+		ThumbprintList: []*string{
+			aws.String("A9D53002E97E00E043244F3D170D6F4C414104FD"), // root CA thumbprint for s3 (DigiCert)
+		},
+		Url:  aws.String(o.IssuerURL),
+		Tags: o.additionalIAMTags,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	providerARN := *oidcOutput.OpenIDConnectProviderArn
+	log.Log.Info("Created OIDC provider", "provider", providerARN)
+
+	return providerARN, nil
 }
 
 // CreateOIDCRole create an IAM Role with a trust policy for the OIDC provider
