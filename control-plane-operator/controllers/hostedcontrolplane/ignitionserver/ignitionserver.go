@@ -375,8 +375,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 	if result, err := createOrUpdate(ctx, c, podMonitor, func() error {
 		podMonitor.Spec.Selector = *ignitionServerDeployment.Spec.Selector
 		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{
-			Interval: "15s",
-			Port:     "metrics",
+			Port: "metrics",
 		}}
 		podMonitor.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{MatchNames: []string{controlPlaneNamespace}}
 		if podMonitor.Annotations == nil {

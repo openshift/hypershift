@@ -147,7 +147,6 @@ func ReconcileOLMOperatorServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor,
 	targetPort := intstr.FromString("metrics")
 	sm.Spec.Endpoints = []prometheusoperatorv1.Endpoint{
 		{
-			Interval:   "15s",
 			TargetPort: &targetPort,
 			Scheme:     "https",
 			TLSConfig: &prometheusoperatorv1.TLSConfig{
