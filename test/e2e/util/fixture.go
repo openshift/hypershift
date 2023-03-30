@@ -58,29 +58,31 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create namespace")
 
 	// create serviceAccount signing key secret
-	serviceAccountSigningKeySecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "e2e-sa-signing-key",
-			Namespace: namespace.Name,
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{
-			hyperv1.ServiceAccountSigningKeySecretKey: serviceAccountSigningKey,
-		},
-	}
-	err = client.Create(ctx, serviceAccountSigningKeySecret)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to create serviceAccountSigningKeySecret")
-
-	originalBeforeApply := opts.BeforeApply
-	opts.BeforeApply = func(o crclient.Object) {
-		if originalBeforeApply != nil {
-			originalBeforeApply(o)
+	if len(serviceAccountSigningKey) > 0 {
+		serviceAccountSigningKeySecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "e2e-sa-signing-key",
+				Namespace: namespace.Name,
+			},
+			Type: corev1.SecretTypeOpaque,
+			Data: map[string][]byte{
+				hyperv1.ServiceAccountSigningKeySecretKey: serviceAccountSigningKey,
+			},
 		}
+		err = client.Create(ctx, serviceAccountSigningKeySecret)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create serviceAccountSigningKeySecret")
 
-		switch v := o.(type) {
-		case *hyperv1.HostedCluster:
-			v.Spec.ServiceAccountSigningKey = &corev1.LocalObjectReference{
-				Name: serviceAccountSigningKeySecret.Name,
+		originalBeforeApply := opts.BeforeApply
+		opts.BeforeApply = func(o crclient.Object) {
+			if originalBeforeApply != nil {
+				originalBeforeApply(o)
+			}
+
+			switch v := o.(type) {
+			case *hyperv1.HostedCluster:
+				v.Spec.ServiceAccountSigningKey = &corev1.LocalObjectReference{
+					Name: serviceAccountSigningKeySecret.Name,
+				}
 			}
 		}
 	}
