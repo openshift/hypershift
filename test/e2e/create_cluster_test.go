@@ -41,7 +41,7 @@ func TestCreateCluster(t *testing.T) {
 		clusterOpts.NodePoolReplicas = 1
 	}
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
 	// Sanity check the cluster by waiting for the nodes to report ready
 	t.Logf("Waiting for guest client to become available")
@@ -94,7 +94,7 @@ func TestCreateClusterKms(t *testing.T) {
 	g.Expect(kmsKeyArn).NotTo(BeNil(), "failed to retrieve kms key arn")
 
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
 	g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
 	g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
@@ -131,7 +131,7 @@ func TestNoneCreateCluster(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
 	// Wait for the rollout to be reported complete
 	t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
@@ -161,7 +161,7 @@ func TestCreateClusterPrivate(t *testing.T) {
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.Private)
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
 	_, err = e2eutil.WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
@@ -206,7 +206,7 @@ func TestCreateClusterProxy(t *testing.T) {
 	clusterOpts.AWSPlatform.EnableProxy = true
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
 	// Sanity check the cluster by waiting for the nodes to report ready
 	t.Logf("Waiting for guest client to become available")

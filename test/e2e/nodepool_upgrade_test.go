@@ -83,7 +83,7 @@ func TestReplaceUpgradeNodePool(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for latest image")
 
 	// Create the test cluster.
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.AWSPlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
 	// Wait for connectivity to the cluster.
 	t.Logf("Waiting for guest client to become available")
@@ -196,7 +196,7 @@ func TestInPlaceUpgradeNodePool(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get release info for latest image")
 
 	// Create the test cluster
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
 	// Wait for connectivity to the cluster
 	t.Logf("Waiting for guest client to become available")

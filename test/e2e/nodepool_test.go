@@ -49,7 +49,7 @@ func TestNodePool(t *testing.T) {
 	// We set replicas to 0 in order to allow the inner tests to
 	// create their own NodePools with the proper replicas
 	clusterOpts.NodePoolReplicas = 0
-	hostedCluster := e2eutil.CreateCluster(t, ctx, mgmtClient, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir)
+	hostedCluster := e2eutil.CreateCluster(t, ctx, mgmtClient, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 	guestClient := e2eutil.WaitForGuestClient(t, ctx, mgmtClient, hostedCluster)
 
 	// Get the newly created defautlt NodePool
