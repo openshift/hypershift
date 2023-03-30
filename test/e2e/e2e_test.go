@@ -145,15 +145,17 @@ func main(m *testing.M) int {
 	}
 	defer alertSLOs(testContext)
 
-	oidcBucketName := "hypershift-ci-oidc"
-	iamClient := e2eutil.GetIAMClient(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
-	s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
-	if err := setupSharedOIDCProvider(oidcBucketName, iamClient, s3Client); err != nil {
-		log.Error(err, "failed to setup shared OIDC provider")
-		return -1
+	if globalOpts.Platform == hyperv1.AWSPlatform {
+		oidcBucketName := "hypershift-ci-oidc"
+		iamClient := e2eutil.GetIAMClient(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
+		s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
+		if err := setupSharedOIDCProvider(oidcBucketName, iamClient, s3Client); err != nil {
+			log.Error(err, "failed to setup shared OIDC provider")
+			return -1
+		}
+		defer e2eutil.DestroyOIDCProvider(log, iamClient, globalOpts.IssuerURL)
+		defer e2eutil.CleanupOIDCBucketObjects(log, s3Client, oidcBucketName, globalOpts.IssuerURL)
 	}
-	defer e2eutil.DestroyOIDCProvider(log, iamClient, globalOpts.IssuerURL)
-	defer e2eutil.CleanupOIDCBucketObjects(log, s3Client, oidcBucketName, globalOpts.IssuerURL)
 
 	// Everything's okay to run tests
 	log.Info("executing e2e tests", "options", globalOpts)
