@@ -28,10 +28,10 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	opts.KubevirtPlatform = core.KubevirtPlatformCreateOptions{
 		ServicePublishingStrategy: IngressServicePublishingStrategy,
 		APIServerAddress:          "",
-		Memory:                    "4Gi",
+		Memory:                    "8Gi",
 		Cores:                     2,
 		ContainerDiskImage:        "",
-		RootVolumeSize:            16,
+		RootVolumeSize:            32,
 		InfraKubeConfigFile:       "",
 	}
 
@@ -87,8 +87,8 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		return errors.New("the number of cores inside the machine must be a value greater than or equal to 1")
 	}
 
-	if opts.KubevirtPlatform.RootVolumeSize < 8 {
-		return fmt.Errorf("the root volume size [%d] must be greater than or equal to 8", opts.KubevirtPlatform.RootVolumeSize)
+	if opts.KubevirtPlatform.RootVolumeSize < 16 {
+		return fmt.Errorf("the root volume size [%d] must be greater than or equal to 16", opts.KubevirtPlatform.RootVolumeSize)
 	}
 
 	infraID := opts.InfraID

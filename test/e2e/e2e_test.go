@@ -74,7 +74,9 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
 	flag.StringVar(&globalOpts.configurableClusterOptions.ExternalDNSDomain, "e2e.external-dns-domain", "", "domain that external-dns will use to create DNS records for HCP endpoints")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtContainerDiskImage, "e2e.kubevirt-container-disk-image", "", "DEPRECATED (ignored will be removed soon)")
-	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtNodeMemory, "e2e.kubevirt-node-memory", "4Gi", "the amount of memory to provide to each workload node")
+	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtNodeMemory, "e2e.kubevirt-node-memory", "8Gi", "the amount of memory to provide to each workload node")
+	flag.UintVar(&globalOpts.configurableClusterOptions.KubeVirtNodeCores, "e2e.kubevirt-node-cores", 2, "The number of cores provided to each workload node")
+	flag.UintVar(&globalOpts.configurableClusterOptions.KubeVirtRootVolumeSize, "e2e.kubevirt-root-volume-size", 32, "The root volume size in Gi")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtInfraKubeconfigFile, "e2e.kubevirt-infra-kubeconfig", "", "path to the kubeconfig file of the external infra cluster")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtInfraNamespace, "e2e.kubevirt-infra-namespace", "", "the namespace on the infra cluster the workers will be created on")
 	flag.IntVar(&globalOpts.configurableClusterOptions.NodePoolReplicas, "e2e.node-pool-replicas", 2, "the number of replicas for each node pool in the cluster")
@@ -361,6 +363,8 @@ type configurableClusterOptions struct {
 	ExternalDNSDomain           string
 	KubeVirtContainerDiskImage  string
 	KubeVirtNodeMemory          string
+	KubeVirtRootVolumeSize      uint
+	KubeVirtNodeCores           uint
 	KubeVirtInfraKubeconfigFile string
 	KubeVirtInfraNamespace      string
 	NodePoolReplicas            int
@@ -401,10 +405,11 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		},
 		KubevirtPlatform: core.KubevirtPlatformCreateOptions{
 			ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
-			Cores:                     2,
+			Cores:                     uint32(o.configurableClusterOptions.KubeVirtNodeCores),
 			Memory:                    o.configurableClusterOptions.KubeVirtNodeMemory,
 			InfraKubeConfigFile:       o.configurableClusterOptions.KubeVirtInfraKubeconfigFile,
 			InfraNamespace:            o.configurableClusterOptions.KubeVirtInfraNamespace,
+			RootVolumeSize:            uint32(o.configurableClusterOptions.KubeVirtRootVolumeSize),
 		},
 		AzurePlatform: core.AzurePlatformOptions{
 			CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,

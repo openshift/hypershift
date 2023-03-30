@@ -521,7 +521,7 @@ type KubevirtCompute struct {
 	// Memory represents how much guest memory the VM should have
 	//
 	// +optional
-	// +kubebuilder:default="4Gi"
+	// +kubebuilder:default="8Gi"
 	Memory *resource.Quantity `json:"memory"`
 
 	// Cores represents how many cores the guest VM should have
@@ -539,7 +539,7 @@ type KubevirtPersistentVolume struct {
 	// Size is the size of the persistent storage volume
 	//
 	// +optional
-	// +kubebuilder:default="16Gi"
+	// +kubebuilder:default="32Gi"
 	Size *resource.Quantity `json:"size"`
 	// StorageClass is the storageClass used for the underlying PVC that hosts the volume
 	//
