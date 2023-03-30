@@ -31,3 +31,25 @@ func EnsureNodeCommunication(t *testing.T, ctx context.Context, client crclient.
 		g.Expect(err).NotTo(HaveOccurred())
 	})
 }
+
+func EnsureNodesLabelsAndTaints(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
+	g := NewWithT(t)
+
+	var taintTransformer = func(taint corev1.Taint) hyperv1.Taint {
+		return hyperv1.Taint{
+			Key:    taint.Key,
+			Value:  taint.Value,
+			Effect: taint.Effect,
+		}
+	}
+
+	for _, node := range nodes {
+		for key, value := range nodePool.Spec.NodeLabels {
+			g.Expect(node.Labels).To(HaveKeyWithValue(key, value))
+		}
+
+		for _, taint := range nodePool.Spec.Taints {
+			g.Expect(node.Spec.Taints).To(ContainElement(WithTransform(taintTransformer, Equal(taint))))
+		}
+	}
+}
