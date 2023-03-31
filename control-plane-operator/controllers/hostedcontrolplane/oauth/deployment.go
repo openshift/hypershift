@@ -86,7 +86,7 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 	}
 	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
 	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: utilpointer.BoolPtr(false),
+		AutomountServiceAccountToken: utilpointer.Bool(false),
 		Containers: []corev1.Container{
 			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image)),
 			socks5ProxyContainer(socks5ProxyImage),
@@ -101,9 +101,9 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 			util.BuildVolume(oauthVolumeProvidersTemplate(), buildOAuthVolumeProvidersTemplate),
 			util.BuildVolume(oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs),
 			util.BuildVolume(oauthVolumeMasterCABundle(), buildOAuthVolumeMasterCABundle),
-			{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32Ptr(0640)}}},
-			{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32Ptr(0640)}}},
-			{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32Ptr(0640)}}},
+			{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32(0640)}}},
+			{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32(0640)}}},
+			{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32(0640)}}},
 		},
 	}
 	deploymentConfig.ApplyTo(deployment)
@@ -188,7 +188,7 @@ func oauthVolumeKubeconfig() *corev1.Volume {
 
 func buildOAuthVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32Ptr(0640),
+		DefaultMode: utilpointer.Int32(0640),
 		SecretName:  manifests.KASServiceKubeconfigSecret("").Name,
 	}
 }
@@ -200,7 +200,7 @@ func oauthVolumeServingCert() *corev1.Volume {
 
 func buildOAuthVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32Ptr(0640),
+		DefaultMode: utilpointer.Int32(0640),
 		SecretName:  manifests.OpenShiftOAuthServerCert("").Name,
 	}
 }
@@ -211,7 +211,7 @@ func oauthVolumeSessionSecret() *corev1.Volume {
 }
 func buildOAuthVolumeSessionSecret(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32Ptr(0640),
+		DefaultMode: utilpointer.Int32(0640),
 		SecretName:  manifests.OAuthServerServiceSessionSecret("").Name,
 	}
 }
@@ -223,7 +223,7 @@ func oauthVolumeErrorTemplate() *corev1.Volume {
 
 func buildOAuthVolumeErrorTemplate(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32Ptr(0640),
+		DefaultMode: utilpointer.Int32(0640),
 		SecretName:  manifests.OAuthServerDefaultErrorTemplateSecret("").Name,
 	}
 }
@@ -236,7 +236,7 @@ func oauthVolumeLoginTemplate() *corev1.Volume {
 
 func buildOAuthVolumeLoginTemplate(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32Ptr(0640),
+		DefaultMode: utilpointer.Int32(0640),
 		SecretName:  manifests.OAuthServerDefaultLoginTemplateSecret("").Name,
 	}
 }
@@ -249,7 +249,7 @@ func oauthVolumeProvidersTemplate() *corev1.Volume {
 
 func buildOAuthVolumeProvidersTemplate(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32Ptr(0640),
+		DefaultMode: utilpointer.Int32(0640),
 		SecretName:  manifests.OAuthServerDefaultProviderSelectionTemplateSecret("").Name,
 	}
 }
