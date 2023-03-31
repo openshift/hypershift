@@ -62,9 +62,9 @@ type OAuthConfigParams struct {
 	LoginURLOverride string
 }
 
-// ConfigOverride defines the oauth parameters that can be overriden in special use cases. The only supported
+// ConfigOverride defines the oauth parameters that can be overridden in special use cases. The only supported
 // use case for this currently is the IBMCloud IAM OIDC provider. These parameters are necessary since the public
-// OpenID api does not support some of the customizations used in the IBMCloud IAM OIDC provider. This can be removed
+// OpenID api does not support some customizations used in the IBMCloud IAM OIDC provider. This can be removed
 // if the public API is adjusted to allow specifying these customizations.
 type ConfigOverride struct {
 	URLs      osinv1.OpenIDURLs   `json:"urls,omitempty"`
@@ -104,7 +104,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
-					Port:   intstr.FromInt(int(OAuthServerPort)),
+					Port:   intstr.FromInt(OAuthServerPort),
 					Path:   "healthz",
 				},
 			},
@@ -120,7 +120,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
-					Port:   intstr.FromInt(int(OAuthServerPort)),
+					Port:   intstr.FromInt(OAuthServerPort),
 					Path:   "healthz",
 				},
 			},

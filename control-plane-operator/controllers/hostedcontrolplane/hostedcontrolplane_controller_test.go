@@ -867,6 +867,19 @@ func TestEventHandling(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "etcd-encryption-key"},
 		Data:       map[string][]byte{"key": []byte("very-secret")},
 	}
+	fakeNodeTuningOperator := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "node-tuning-operator",
+			Namespace: "bar",
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "None",
+		},
+	}
+	fakeNodeTuningOperatorTLS := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "node-tuning-operator-tls"},
+		Data:       map[string][]byte{"key": []byte("very-secret")},
+	}
 
 	hcpGVK, err := apiutil.GVKForObject(hcp, api.Scheme)
 	if err != nil {
@@ -876,7 +889,7 @@ func TestEventHandling(t *testing.T) {
 	restMapper.Add(hcpGVK, meta.RESTScopeNamespace)
 	c := &createTrackingClient{Client: fake.NewClientBuilder().
 		WithScheme(api.Scheme).
-		WithObjects(hcp, pullSecret, etcdEncryptionKey).
+		WithObjects(hcp, pullSecret, etcdEncryptionKey, fakeNodeTuningOperator, fakeNodeTuningOperatorTLS).
 		WithRESTMapper(restMapper).
 		Build(),
 	}
