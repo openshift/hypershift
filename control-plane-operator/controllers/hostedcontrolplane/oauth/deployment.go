@@ -3,9 +3,6 @@ package oauth
 import (
 	"context"
 	"fmt"
-	"path"
-	"strings"
-
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/globalconfig"
 	appsv1 "k8s.io/api/apps/v1"
@@ -13,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"path"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -53,7 +51,7 @@ func oauthLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, apiPort *int32, namedCertificates []configv1.APIServerNamedServingCert, socks5ProxyImage string, noProxy []string) error {
+func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, apiPort *int32, namedCertificates []configv1.APIServerNamedServingCert, socks5ProxyImage string) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main oauth container
@@ -90,7 +88,7 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: utilpointer.BoolPtr(false),
 		Containers: []corev1.Container{
-			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image, noProxy)),
+			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image)),
 			socks5ProxyContainer(socks5ProxyImage),
 		},
 		Volumes: []corev1.Volume{
@@ -128,7 +126,7 @@ func oauthContainerMain() *corev1.Container {
 	}
 }
 
-func buildOAuthContainerMain(image string, noProxy []string) func(c *corev1.Container) {
+func buildOAuthContainerMain(image string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Args = []string{
@@ -152,7 +150,7 @@ func buildOAuthContainerMain(image string, noProxy []string) func(c *corev1.Cont
 			},
 			{
 				Name:  "NO_PROXY",
-				Value: strings.Join(noProxy, ","),
+				Value: manifests.KubeAPIServerService("").Name,
 			},
 		}
 	}

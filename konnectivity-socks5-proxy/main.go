@@ -328,5 +328,8 @@ func (d proxyResolver) ResolveK8sService(ctx context.Context, l logr.Logger, nam
 // AZURE: https://docs.microsoft.com/en-us/rest/api/azure/#how-to-call-azure-rest-apis-with-curl
 // IBMCLOUD: https://cloud.ibm.com/apidocs/iam-identity-token-api#endpoints
 func isCloudAPI(host string) bool {
-	return strings.HasSuffix(host, ".amazonaws.com") || strings.HasSuffix(host, ".microsoftonline.com") || strings.HasSuffix(host, "azure.com") || strings.HasSuffix(host, "cloud.ibm.com")
+	return strings.HasSuffix(host, ".amazonaws.com") ||
+		strings.HasSuffix(host, ".microsoftonline.com") ||
+		strings.HasSuffix(host, "azure.com") ||
+		strings.HasSuffix(host, "cloud.ibm.com")
 }
