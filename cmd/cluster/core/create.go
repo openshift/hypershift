@@ -73,6 +73,7 @@ type CreateOptions struct {
 	Log                              logr.Logger
 	SkipAPIBudgetVerification        bool
 	CredentialSecretName             string
+	UpgradeType                      hyperv1.UpgradeType
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -267,6 +268,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		ServiceCIDR:                      opts.ServiceCIDR,
 		ClusterCIDR:                      opts.ClusterCIDR,
 		NodeSelector:                     opts.NodeSelector,
+		UpgradeType:                      opts.UpgradeType,
 	}, nil
 }
 
