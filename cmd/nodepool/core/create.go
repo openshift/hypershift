@@ -16,12 +16,13 @@ import (
 )
 
 type CreateNodePoolOptions struct {
-	Name         string
-	Namespace    string
-	ClusterName  string
-	NodeCount    int32
-	ReleaseImage string
-	Render       bool
+	Name            string
+	Namespace       string
+	ClusterName     string
+	NodeCount       int32
+	ReleaseImage    string
+	Render          bool
+	NodeUpgradeType hyperv1.UpgradeType
 }
 
 type PlatformOptions interface {
@@ -81,7 +82,7 @@ func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts
 		},
 		Spec: hyperv1.NodePoolSpec{
 			Management: hyperv1.NodePoolManagement{
-				UpgradeType: hyperv1.UpgradeTypeReplace,
+				UpgradeType: o.NodeUpgradeType,
 			},
 			ClusterName: o.ClusterName,
 			Replicas:    &o.NodeCount,
