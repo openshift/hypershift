@@ -3,6 +3,7 @@ package nto
 import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -38,11 +39,11 @@ type Params struct {
 	OwnerRef                config.OwnerRef
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	p := Params{
 		Images: Images{
-			NodeTuningOperator: images[operatorName],
-			NodeTunedContainer: images[operatorName],
+			NodeTuningOperator: releaseImageProvider.GetImage(operatorName),
+			NodeTunedContainer: releaseImageProvider.GetImage(operatorName),
 		},
 		ReleaseVersion: version,
 		OwnerRef:       config.OwnerRefFrom(hcp),

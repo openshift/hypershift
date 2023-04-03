@@ -7,6 +7,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -69,7 +70,7 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference      *metav1.OwnerReference
 }
 
-func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
 	params := &KubeAPIServerParams{
@@ -87,12 +88,12 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		DisableProfiling:     util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.KASDeployment("").Name),
 
 		Images: KubeAPIServerImages{
-			HyperKube:                  images["hyperkube"],
-			CLI:                        images["cli"],
-			ClusterConfigOperator:      images["cluster-config-operator"],
-			TokenMinterImage:           images["token-minter"],
-			AWSKMS:                     images["aws-kms-provider"],
-			AWSPodIdentityWebhookImage: images["aws-pod-identity-webhook"],
+			HyperKube:                  releaseImageProvider.GetImage("hyperkube"),
+			CLI:                        releaseImageProvider.GetImage("cli"),
+			ClusterConfigOperator:      releaseImageProvider.GetImage("cluster-config-operator"),
+			TokenMinterImage:           releaseImageProvider.GetImage("token-minter"),
+			AWSKMS:                     releaseImageProvider.GetImage("aws-kms-provider"),
+			AWSPodIdentityWebhookImage: releaseImageProvider.GetImage("aws-pod-identity-webhook"),
 		},
 	}
 	if hcp.Spec.Configuration != nil {

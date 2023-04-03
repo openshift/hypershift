@@ -7,6 +7,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 )
 
 func TestNewEtcdParams(t *testing.T) {
@@ -84,8 +85,9 @@ func TestNewEtcdParams(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			imageProvider := imageprovider.NewFromImages(tt.images)
 			g := NewGomegaWithT(t)
-			p := NewEtcdParams(tt.hcp, tt.images)
+			p := NewEtcdParams(tt.hcp, imageProvider)
 			g.Expect(p).ToNot(BeNil())
 			g.Expect(p.EtcdImage).To(Equal(tt.images["etcd"]))
 			g.Expect(p.StorageSpec).To(Equal(tt.expectedStorageSpec))

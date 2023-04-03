@@ -12,6 +12,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -72,17 +73,17 @@ type ConfigOverride struct {
 	Challenge *bool               `json:"challenge,omitempty"`
 }
 
-func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, host string, port int32, setDefaultSecurityContext bool) *OAuthServerParams {
+func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, host string, port int32, setDefaultSecurityContext bool) *OAuthServerParams {
 	p := &OAuthServerParams{
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ExternalAPIHost:         hcp.Status.ControlPlaneEndpoint.Host,
 		ExternalAPIPort:         hcp.Status.ControlPlaneEndpoint.Port,
 		ExternalHost:            host,
 		ExternalPort:            port,
-		OAuthServerImage:        images["oauth-server"],
-		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		OAuthServerImage:        releaseImageProvider.GetImage("oauth-server"),
+		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
-		Socks5ProxyImage:        images["socks5-proxy"],
+		Socks5ProxyImage:        releaseImageProvider.GetImage("socks5-proxy"),
 	}
 	if hcp.Spec.Configuration != nil {
 		p.APIServer = hcp.Spec.Configuration.APIServer

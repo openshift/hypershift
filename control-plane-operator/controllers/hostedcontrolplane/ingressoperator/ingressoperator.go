@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -41,14 +42,14 @@ type Params struct {
 	DeploymentConfig        config.DeploymentConfig
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
 	p := Params{
-		IngressOperatorImage:    images["cluster-ingress-operator"],
-		HAProxyRouterImage:      images["haproxy-router"],
+		IngressOperatorImage:    releaseImageProvider.GetImage("cluster-ingress-operator"),
+		HAProxyRouterImage:      releaseImageProvider.GetImage("haproxy-router"),
 		ReleaseVersion:          version,
-		TokenMinterImage:        images["token-minter"],
-		Socks5ProxyImage:        images["socks5-proxy"],
-		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		TokenMinterImage:        releaseImageProvider.GetImage("token-minter"),
+		Socks5ProxyImage:        releaseImageProvider.GetImage("socks5-proxy"),
+		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Platform:                platform,
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass

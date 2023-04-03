@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -94,7 +94,7 @@ func ReconcileCCMRoleBinding(roleBinding *rbacv1.RoleBinding, ownerRef config.Ow
 	return nil
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, serviceAccountName string, releaseImage *releaseinfo.ReleaseImage) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
 	clusterName, ok := hcp.Labels["cluster.x-k8s.io/cluster-name"]
 	if !ok {
 		return fmt.Errorf("\"cluster.x-k8s.io/cluster-name\" label doesn't exist in HostedControlPlane")
@@ -117,7 +117,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(CCMContainer(), buildCCMContainer(clusterName, releaseImage, isExternalInfra)),
+					util.BuildContainer(CCMContainer(), buildCCMContainer(clusterName, releaseImageProvider, isExternalInfra)),
 				},
 				Volumes:            []corev1.Volume{},
 				ServiceAccountName: serviceAccountName,
@@ -167,9 +167,9 @@ func podVolumeMounts(isExternalInfra bool) util.PodVolumeMounts {
 	}
 }
 
-func buildCCMContainer(clusterName string, releaseImage *releaseinfo.ReleaseImage, isExternalInfra bool) func(c *corev1.Container) {
+func buildCCMContainer(clusterName string, releaseImageProvider *imageprovider.ReleaseImageProvider, isExternalInfra bool) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
-		c.Image = releaseImage.ComponentImages()["kubevirt-cloud-controller-manager"]
+		c.Image = releaseImageProvider.GetImage("kubevirt-cloud-controller-manager")
 		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{"/bin/kubevirt-cloud-controller-manager"}
 		c.Args = []string{

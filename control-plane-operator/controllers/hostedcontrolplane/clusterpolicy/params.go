@@ -6,6 +6,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -19,10 +20,10 @@ type ClusterPolicyControllerParams struct {
 	config.OwnerRef  `json:",inline"`
 }
 
-func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, setDefaultSecurityContext bool) *ClusterPolicyControllerParams {
+func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *ClusterPolicyControllerParams {
 	params := &ClusterPolicyControllerParams{
-		Image:                   images["cluster-policy-controller"],
-		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		Image:                   releaseImageProvider.GetImage("cluster-policy-controller"),
+		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 	}
 	if hcp.Spec.Configuration != nil {
 		params.APIServer = hcp.Spec.Configuration.APIServer

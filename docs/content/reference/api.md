@@ -2928,6 +2928,10 @@ HostedCluster itself attempts an unsupported version before 4.9 or an
 unsupported upgrade e.g y-stream upgrade before 4.11.
 A failure here is unlikely to resolve without the changing user input.</p>
 </td>
+</tr><tr><td><p>&#34;ValidReleaseInfo&#34;</p></td>
+<td><p>ValidReleaseInfo bubbles up the same condition from HCP. It indicates if the release contains all the images used by hypershift
+and reports missing images if any.</p>
+</td>
 </tr></tbody>
 </table>
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }

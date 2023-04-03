@@ -4,10 +4,10 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -21,7 +21,7 @@ func ReconcileCCMServiceAccount(sa *corev1.ServiceAccount, ownerRef config.Owner
 	return nil
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, serviceAccountName string, releaseImage *releaseinfo.ReleaseImage) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
 	deploymentConfig := newDeploymentConfig()
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -36,7 +36,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(ccmContainer(), buildCCMContainer(releaseImage.ComponentImages()["aws-cloud-controller-manager"])),
+					util.BuildContainer(ccmContainer(), buildCCMContainer(releaseImageProvider.GetImage("aws-cloud-controller-manager"))),
 				},
 				Volumes:            []corev1.Volume{},
 				ServiceAccountName: serviceAccountName,
@@ -46,7 +46,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 
 	addVolumes(deployment)
 
-	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, Provider, &corev1.LocalObjectReference{Name: KubeCloudControllerCredsSecret("").Name}, releaseImage.ComponentImages()["token-minter"], ccmContainer().Name)
+	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, Provider, &corev1.LocalObjectReference{Name: KubeCloudControllerCredsSecret("").Name}, releaseImageProvider.GetImage("token-minter"), ccmContainer().Name)
 
 	config.OwnerRefFrom(hcp).ApplyTo(deployment)
 	deploymentConfig.ApplyTo(deployment)

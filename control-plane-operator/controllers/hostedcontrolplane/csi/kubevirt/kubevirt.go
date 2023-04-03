@@ -8,6 +8,7 @@ import (
 	"io"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/config"
@@ -364,7 +365,7 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 
 // ReconcileInfra reconciles the csi driver controller on the underlying infra/Mgmt cluster
 // that is hosting the KubeVirt VMs.
-func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, componentImages map[string]string) error {
+func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
 
 	deploymentConfig := &config.DeploymentConfig{}
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
@@ -428,7 +429,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 
 	controller := manifests.KubevirtCSIDriverController(infraNamespace)
 	_, err = createOrUpdate(ctx, client, controller, func() error {
-		return reconcileController(controller, componentImages, deploymentConfig)
+		return reconcileController(controller, releaseImageProvider.ComponentImages(), deploymentConfig)
 	})
 	if err != nil {
 		return err
