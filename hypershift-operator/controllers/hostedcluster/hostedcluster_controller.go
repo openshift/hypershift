@@ -15,16 +15,10 @@ package hostedcluster
 import (
 	"bytes"
 	"context"
-	"crypto"
-	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/base64"
-	"encoding/json"
-	"encoding/pem"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"reflect"
 	"sort"
@@ -60,6 +54,7 @@ import (
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -68,7 +63,6 @@ import (
 	hyperutil "github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	ini "gopkg.in/ini.v1"
-	jose "gopkg.in/square/go-jose.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -3732,76 +3726,12 @@ const (
 	oidcDocumentsFinalizer         = "hypershift.io/aws-oidc-discovery"
 	serviceAccountSigningKeySecret = "sa-signing-key"
 	serviceSignerPublicKey         = "service-account.pub"
-	jwksURI                        = "/openid/v1/jwks"
-	discoveryTemplate              = `{
-	"issuer": "%s",
-	"jwks_uri": "%s%s",
-	"response_types_supported": [
-		"id_token"
-	],
-	"subject_types_supported": [
-		"public"
-	],
-	"id_token_signing_alg_values_supported": [
-		"RS256"
-	]
-}`
 )
 
-type oidcGeneratorParams struct {
-	issuerURL string
-	pubKey    []byte
-}
-
-type oidcDocumentGeneratorFunc func(params oidcGeneratorParams) (io.ReadSeeker, error)
-
-func generateConfigurationDocument(params oidcGeneratorParams) (io.ReadSeeker, error) {
-	return strings.NewReader(fmt.Sprintf(discoveryTemplate, params.issuerURL, params.issuerURL, jwksURI)), nil
-}
-
-type KeyResponse struct {
-	Keys []jose.JSONWebKey `json:"keys"`
-}
-
-func generateJWKSDocument(params oidcGeneratorParams) (io.ReadSeeker, error) {
-	block, _ := pem.Decode(params.pubKey)
-	if block == nil || block.Type != "RSA PUBLIC KEY" {
-		return nil, fmt.Errorf("failed to decode PEM block containing RSA public key")
-	}
-	pubKey, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse public key: %w", err)
-	}
-	rsaPubKey, ok := pubKey.(*rsa.PublicKey)
-	if !ok {
-		return nil, fmt.Errorf("public key is not RSA")
-	}
-
-	hasher := crypto.SHA256.New()
-	hasher.Write(block.Bytes)
-	hash := hasher.Sum(nil)
-	kid := base64.RawURLEncoding.EncodeToString(hash)
-
-	var keys []jose.JSONWebKey
-	keys = append(keys, jose.JSONWebKey{
-		Key:       rsaPubKey,
-		KeyID:     kid,
-		Algorithm: string(jose.RS256),
-		Use:       "sig",
-	})
-
-	jwks, err := json.MarshalIndent(KeyResponse{Keys: keys}, "", "  ")
-	if err != nil {
-		return nil, err
-	}
-
-	return bytes.NewReader(jwks), nil
-}
-
-func oidcDocumentGenerators() map[string]oidcDocumentGeneratorFunc {
-	return map[string]oidcDocumentGeneratorFunc{
-		"/.well-known/openid-configuration": generateConfigurationDocument,
-		jwksURI:                             generateJWKSDocument,
+func oidcDocumentGenerators() map[string]oidc.OIDCDocumentGeneratorFunc {
+	return map[string]oidc.OIDCDocumentGeneratorFunc{
+		"/.well-known/openid-configuration": oidc.GenerateConfigurationDocument,
+		oidc.JWKSURI:                        oidc.GenerateJWKSDocument,
 	}
 }
 
@@ -3841,9 +3771,9 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		return fmt.Errorf("controlplane service account signing key secret %q missing required key %s", client.ObjectKeyFromObject(secret), serviceSignerPublicKey)
 	}
 
-	params := oidcGeneratorParams{
-		issuerURL: hcp.Spec.IssuerURL,
-		pubKey:    secret.Data[serviceSignerPublicKey],
+	params := oidc.ODICGeneratorParams{
+		IssuerURL: hcp.Spec.IssuerURL,
+		PubKey:    secret.Data[serviceSignerPublicKey],
 	}
 
 	for path, generator := range oidcDocumentGenerators() {
