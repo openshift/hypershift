@@ -2,6 +2,7 @@ package storage
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 	utilpointer "k8s.io/utils/pointer"
@@ -24,17 +25,17 @@ type Params struct {
 func NewParams(
 	hcp *hyperv1.HostedControlPlane,
 	version string,
-	images map[string]string,
+	releaseImageProvider *imageprovider.ReleaseImageProvider,
 	setDefaultSecurityContext bool) *Params {
 
 	ir := newEnvironmentReplacer()
 	ir.setVersions(version)
-	ir.setOperatorImageReferences(images)
+	ir.setOperatorImageReferences(releaseImageProvider.ComponentImages())
 
 	params := Params{
 		OwnerRef:                config.OwnerRefFrom(hcp),
-		StorageOperatorImage:    images[storageOperatorImageName],
-		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		StorageOperatorImage:    releaseImageProvider.GetImage(storageOperatorImageName),
+		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		ImageReplacer:           ir,
 		APIPort:                 util.APIPort(hcp),
 	}

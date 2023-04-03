@@ -7,6 +7,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
@@ -45,14 +46,14 @@ type OAuthDeploymentParams struct {
 	AuditWebhookRef         *corev1.LocalObjectReference
 }
 
-func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, images map[string]string, setDefaultSecurityContext bool) *OpenShiftAPIServerParams {
+func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftAPIServerParams {
 	params := &OpenShiftAPIServerParams{
-		OpenShiftAPIServerImage: images["openshift-apiserver"],
-		OAuthAPIServerImage:     images["oauth-apiserver"],
-		ProxyImage:              images["socks5-proxy"],
+		OpenShiftAPIServerImage: releaseImageProvider.GetImage("openshift-apiserver"),
+		OAuthAPIServerImage:     releaseImageProvider.GetImage("oauth-apiserver"),
+		ProxyImage:              releaseImageProvider.GetImage("socks5-proxy"),
 		ServiceAccountIssuerURL: hcp.Spec.IssuerURL,
 		IngressSubDomain:        globalconfig.IngressDomain(hcp),
-		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 		Image:                   observedConfig.Image,
 		Project:                 observedConfig.Project,

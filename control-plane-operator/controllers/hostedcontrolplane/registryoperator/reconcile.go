@@ -14,6 +14,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
@@ -98,15 +99,15 @@ type Params struct {
 	deploymentConfig config.DeploymentConfig
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	params := Params{
-		operatorImage:    images["cluster-image-registry-operator"],
-		tokenMinterImage: images["token-minter"],
+		operatorImage:    releaseImageProvider.GetImage("cluster-image-registry-operator"),
+		tokenMinterImage: releaseImageProvider.GetImage("token-minter"),
 		platform:         hcp.Spec.Platform.Type,
 		issuerURL:        hcp.Spec.IssuerURL,
 		releaseVersion:   version,
-		registryImage:    images["docker-registry"],
-		prunerImage:      images["cli"],
+		registryImage:    releaseImageProvider.GetImage("docker-registry"),
+		prunerImage:      releaseImageProvider.GetImage("cli"),
 		deploymentConfig: config.DeploymentConfig{
 			Scheduling: config.Scheduling{
 				PriorityClass: config.DefaultPriorityClass,

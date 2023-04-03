@@ -13,8 +13,8 @@ import (
 	utilpointer "k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/releaseinfo"
 )
 
 const (
@@ -76,7 +76,7 @@ func ReconcileCCMConfigMap(ccmConfig *corev1.ConfigMap, hcp *hyperv1.HostedContr
 	return nil
 }
 
-func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, ccmConfig *corev1.ConfigMap, releaseImage *releaseinfo.ReleaseImage) error {
+func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, ccmConfig *corev1.ConfigMap, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) error {
 	commandToExec := []string{
 		"/bin/ibm-cloud-controller-manager",
 		"--authentication-skip-lookup",
@@ -109,7 +109,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 				Containers: []corev1.Container{
 					{
 						Name:            ccmContainerName,
-						Image:           releaseImage.ComponentImages()["powervs-cloud-controller-manager"],
+						Image:           releaseImageProvider.GetImage("powervs-cloud-controller-manager"),
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Env: []corev1.EnvVar{
 							{

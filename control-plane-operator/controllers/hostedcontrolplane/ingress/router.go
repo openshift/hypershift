@@ -83,9 +83,7 @@ func HCPRouterConfig(hcp *hyperv1.HostedControlPlane, setDefaultSecurityContext 
 	return cfg
 }
 
-func PrivateRouterImage(images map[string]string) string {
-	return images["haproxy-router"]
-}
+const PrivateRouterImage = "haproxy-router"
 
 const (
 	routerTemplateConfigMapKey = "haproxy-config.template"

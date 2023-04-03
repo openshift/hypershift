@@ -1,4 +1,4 @@
-package kubevirt
+package aws
 
 import (
 	"fmt"
@@ -6,88 +6,22 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane) error {
-	cfg := cloudConfig(hcp.Namespace)
-	serializedCfg, err := cfg.serialize()
-	if err != nil {
-		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
-	}
-
-	if cm.Data == nil {
-		cm.Data = map[string]string{}
-	}
-	cm.Data[CloudConfigKey] = string(serializedCfg)
-
-	return nil
-}
-
 func ReconcileCCMServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(sa)
-	return nil
-}
-
-func ReconcileCCMRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(role)
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{"kubevirt.io"},
-			Resources: []string{"virtualmachines"},
-			Verbs: []string{
-				"get",
-				"list",
-				"watch",
-			},
-		},
-		{
-			APIGroups: []string{"kubevirt.io"},
-			Resources: []string{"virtualmachineinstances"},
-			Verbs: []string{
-				"get",
-				"list",
-				"watch",
-				"update",
-			},
-		},
-		{
-			APIGroups: []string{""},
-			Resources: []string{"services"},
-			Verbs:     []string{rbacv1.VerbAll},
-		},
-	}
-	return nil
-}
-
-func ReconcileCCMRoleBinding(roleBinding *rbacv1.RoleBinding, ownerRef config.OwnerRef, sa *corev1.ServiceAccount, role *rbacv1.Role) error {
-	ownerRef.ApplyTo(roleBinding)
-	roleBinding.RoleRef = rbacv1.RoleRef{
-		APIGroup: rbacv1.GroupName,
-		Kind:     "Role",
-		Name:     role.Name,
-	}
-	roleBinding.Subjects = []rbacv1.Subject{
-		{
-			Namespace: sa.Namespace,
-			Kind:      rbacv1.ServiceAccountKind,
-			Name:      sa.Name,
-		},
-	}
+	util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
 	return nil
 }
 
 func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
-	clusterName, ok := hcp.Labels["cluster.x-k8s.io/cluster-name"]
-	if !ok {
-		return fmt.Errorf("\"cluster.x-k8s.io/cluster-name\" label doesn't exist in HostedControlPlane")
-	}
 	deploymentConfig := newDeploymentConfig()
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
@@ -102,7 +36,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(CCMContainer(), buildCCMContainer(clusterName, releaseImageProvider)),
+					util.BuildContainer(ccmContainer(), buildCCMContainer(releaseImageProvider.GetImage("aws-cloud-controller-manager"))),
 				},
 				Volumes:            []corev1.Volume{},
 				ServiceAccountName: serviceAccountName,
@@ -111,6 +45,8 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 	}
 
 	addVolumes(deployment)
+
+	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, Provider, &corev1.LocalObjectReference{Name: KubeCloudControllerCredsSecret("").Name}, releaseImageProvider.GetImage("token-minter"), ccmContainer().Name)
 
 	config.OwnerRefFrom(hcp).ApplyTo(deployment)
 	deploymentConfig.ApplyTo(deployment)
@@ -127,28 +63,38 @@ func addVolumes(deployment *appsv1.Deployment) {
 		deployment.Spec.Template.Spec.Volumes,
 		util.BuildVolume(ccmCloudConfig(), buildCCMCloudConfig),
 	)
+	deployment.Spec.Template.Spec.Volumes = append(
+		deployment.Spec.Template.Spec.Volumes,
+		util.BuildVolume(ccmCloudControllerCreds(), buildCCMControllerCreds),
+	)
 }
 
 func podVolumeMounts() util.PodVolumeMounts {
 	return util.PodVolumeMounts{
-		CCMContainer().Name: util.ContainerVolumeMounts{
-			ccmVolumeKubeconfig().Name: "/etc/kubernetes/kubeconfig",
-			ccmCloudConfig().Name:      "/etc/cloud",
+		ccmContainer().Name: util.ContainerVolumeMounts{
+			ccmVolumeKubeconfig().Name:     "/etc/kubernetes/kubeconfig",
+			ccmCloudConfig().Name:          "/etc/cloud",
+			ccmCloudControllerCreds().Name: "/etc/aws",
 		},
 	}
 }
 
-func buildCCMContainer(clusterName string, releaseImageProvider *imageprovider.ReleaseImageProvider, isExternalInfra bool) func(c *corev1.Container) {
+func buildCCMContainer(controllerManagerImage string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
-		c.Image = releaseImageProvider.GetImage("kubevirt-cloud-controller-manager")
+		c.Image = controllerManagerImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
-		c.Command = []string{"/bin/kubevirt-cloud-controller-manager"}
+		c.Command = []string{"/bin/aws-cloud-controller-manager"}
 		c.Args = []string{
-			"--cloud-provider=kubevirt",
-			"--cloud-config=/etc/cloud/cloud-config",
+			"--cloud-provider=aws",
+			"--use-service-account-credentials=false",
 			"--kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig",
-			"--authentication-skip-lookup",
-			"--cluster-name", clusterName,
+			"--cloud-config=/etc/cloud/aws.conf",
+			"--configure-cloud-routes=false",
+			"--leader-elect=true",
+			fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
+			fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
+			fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
+			"--leader-elect-resource-namespace=openshift-cloud-controller-manager",
 		}
 		c.VolumeMounts = podVolumeMounts().ContainerMounts(c.Name)
 	}
@@ -160,10 +106,16 @@ func buildCCMVolumeKubeconfig(v *corev1.Volume) {
 	}
 }
 
+func buildCCMControllerCreds(v *corev1.Volume) {
+	v.Secret = &corev1.SecretVolumeSource{
+		SecretName: KubeCloudControllerCredsSecret("").Name,
+	}
+}
+
 func buildCCMCloudConfig(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{
 		LocalObjectReference: corev1.LocalObjectReference{
-			Name: CCMConfigMap("").Name,
+			Name: manifests.AWSProviderConfig("").Name,
 		},
 	}
 }
@@ -171,7 +123,7 @@ func buildCCMCloudConfig(v *corev1.Volume) {
 func newDeploymentConfig() config.DeploymentConfig {
 	result := config.DeploymentConfig{}
 	result.Resources = config.ResourcesSpec{
-		CCMContainer().Name: {
+		ccmContainer().Name: {
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("60Mi"),
 				corev1.ResourceCPU:    resource.MustParse("75m"),
@@ -194,7 +146,6 @@ func ccmLabels() map[string]string {
 
 func additionalLabels() map[string]string {
 	return map[string]string{
-		hyperv1.ControlPlaneComponent:       "cloud-controller-manager",
-		config.NeedManagementKASAccessLabel: "true",
+		hyperv1.ControlPlaneComponent: "cloud-controller-manager",
 	}
 }

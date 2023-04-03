@@ -2,6 +2,7 @@ package olm
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 	"k8s.io/utils/pointer"
@@ -25,14 +26,14 @@ type OperatorLifecycleManagerParams struct {
 	config.OwnerRef
 }
 
-func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, images map[string]string, releaseVersion string, setDefaultSecurityContext bool) *OperatorLifecycleManagerParams {
+func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, releaseVersion string, setDefaultSecurityContext bool) *OperatorLifecycleManagerParams {
 	params := &OperatorLifecycleManagerParams{
-		CLIImage:                images["cli"],
-		OLMImage:                images["operator-lifecycle-manager"],
-		ProxyImage:              images["socks5-proxy"],
-		OperatorRegistryImage:   images["operator-registry"],
+		CLIImage:                releaseImageProvider.GetImage("cli"),
+		OLMImage:                releaseImageProvider.GetImage("operator-lifecycle-manager"),
+		ProxyImage:              releaseImageProvider.GetImage("socks5-proxy"),
+		OperatorRegistryImage:   releaseImageProvider.GetImage("operator-registry"),
 		ReleaseVersion:          releaseVersion,
-		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		NoProxy:                 []string{"kube-apiserver"},
 		OwnerRef:                config.OwnerRefFrom(hcp),
 	}
