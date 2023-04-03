@@ -2989,24 +2989,44 @@ func (r *HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.
 	return nil
 }
 
-func deleteAWSEndpointServices(ctx context.Context, c client.Client, namespace string) (bool, error) {
+// deleteAWSEndpointServices loops over AWSEndpointServiceList items and sends a delete request for each.
+// If the HC has no valid aws credentials it removes the CPO finalizer for each AWSEndpointService.
+// It returns true if len(awsEndpointServiceList.Items) != 0.
+func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, namespace string) (bool, error) {
+	log := ctrl.LoggerFrom(ctx)
 	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
 	if err := c.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: namespace}); err != nil && !apierrors.IsNotFound(err) {
 		return false, fmt.Errorf("error listing awsendpointservices in namespace %s: %w", namespace, err)
 	}
 	for _, ep := range awsEndpointServiceList.Items {
 		if ep.DeletionTimestamp != nil {
+			if platformaws.ValidCredentials(hc) {
+				continue
+			}
+
+			// We remove the CPO finalizer if there's no valid credentials so deletion can proceed.
+			cpoFinalizer := "hypershift.openshift.io/control-plane-operator-finalizer"
+			if controllerutil.ContainsFinalizer(&ep, cpoFinalizer) {
+				controllerutil.RemoveFinalizer(&ep, cpoFinalizer)
+				if err := c.Update(ctx, &ep); err != nil {
+					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
+				}
+			}
+			log.Info("Removed finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name)
 			continue
 		}
+
 		if err := c.Delete(ctx, &ep); err != nil && !apierrors.IsNotFound(err) {
 			return false, fmt.Errorf("error deleting awsendpointservices %s in namespace %s: %w", ep.Name, namespace, err)
 		}
 	}
+
 	if len(awsEndpointServiceList.Items) != 0 {
 		// The CPO puts a finalizer on AWSEndpointService resources and should
 		// not be terminated until the resources are removed from the API server
 		return true, nil
 	}
+
 	return false, nil
 }
 
@@ -3082,7 +3102,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, err
 	}
 
-	exists, err := deleteAWSEndpointServices(ctx, r.Client, controlPlaneNamespace)
+	exists, err := deleteAWSEndpointServices(ctx, r.Client, hc, controlPlaneNamespace)
 	if err != nil {
 		return false, err
 	}
