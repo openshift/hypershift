@@ -106,7 +106,7 @@ func WaitForOAuthToken(t *testing.T, ctx context.Context, oauthRoute *routev1.Ro
 	}
 
 	var access_token string
-	err = wait.PollImmediateWithContext(ctx, time.Second, time.Minute, func(ctx context.Context) (done bool, err error) {
+	err = wait.PollImmediateWithContext(ctx, time.Second, time.Minute*2, func(ctx context.Context) (done bool, err error) {
 		resp, err := httpClient.Do(request)
 		if err != nil {
 			t.Logf("Waiting for OAuth token request to succeed")

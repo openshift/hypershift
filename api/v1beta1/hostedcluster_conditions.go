@@ -174,6 +174,8 @@ const (
 
 	ExternalDNSHostNotReachableReason = "ExternalDNSHostNotReachable"
 
+	KASLoadBalancerNotReachableReason = "KASLoadBalancerNotReachable"
+
 	ReconciliationPausedConditionReason             = "ReconciliationPaused"
 	ReconciliationInvalidPausedUntilConditionReason = "InvalidPausedUntilValue"
 )

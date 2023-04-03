@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"fmt"
 	"hash/fnv"
 	"io"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 
@@ -166,6 +168,17 @@ func ResolveDNSHostname(ctx context.Context, hostName string) error {
 	}
 
 	return err
+}
+
+// InsecureHTTPClient return an http.Client which skips server certificate verification
+func InsecureHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+		},
+	}
 }
 
 // HashStruct takes a value, typically a string, and returns a 32-bit FNV-1a hashed version of the value as a string
