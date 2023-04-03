@@ -18,10 +18,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/iam/iamiface"
+	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
+	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	"github.com/openshift/hypershift/test/e2e/util"
@@ -33,6 +38,9 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
+
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/oidc"
 )
 
 var (
@@ -129,9 +137,86 @@ func main(m *testing.M) int {
 		defer dumpTestMetrics(log, globalOpts.ArtifactDir)
 	}
 
+	if globalOpts.Platform == hyperv1.AWSPlatform {
+		oidcBucketName := "hypershift-ci-oidc"
+		iamClient := e2eutil.GetIAMClient(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
+		s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
+		if err := setupSharedOIDCProvider(oidcBucketName, iamClient, s3Client); err != nil {
+			log.Error(err, "failed to setup shared OIDC provider")
+			return -1
+		}
+		defer e2eutil.DestroyOIDCProvider(log, iamClient, globalOpts.IssuerURL)
+		defer e2eutil.CleanupOIDCBucketObjects(log, s3Client, oidcBucketName, globalOpts.IssuerURL)
+	}
+
 	// Everything's okay to run tests
 	log.Info("executing e2e tests", "options", globalOpts)
 	return m.Run()
+}
+
+// setup a shared OIDC provider to be used by all HostedClusters
+func setupSharedOIDCProvider(oidcBucketName string, iamClient iamiface.IAMAPI, s3Client *s3.S3) error {
+	providerID := e2eutil.SimpleNameGenerator.GenerateName("e2e-oidc-provider-")
+	issuerURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", oidcBucketName, globalOpts.configurableClusterOptions.Region, providerID)
+
+	iamOptions := awsinfra.CreateIAMOptions{
+		IssuerURL:      issuerURL,
+		AdditionalTags: globalOpts.additionalTags,
+	}
+
+	if _, err := iamOptions.CreateOIDCProvider(iamClient); err != nil {
+		return fmt.Errorf("failed to create OIDC provider: %w", err)
+	}
+
+	key, err := certs.PrivateKey()
+	if err != nil {
+		return fmt.Errorf("failed generating a private key: %w", err)
+	}
+
+	keyBytes := certs.PrivateKeyToPem(key)
+	publicKeyBytes, err := certs.PublicKeyToPem(&key.PublicKey)
+	if err != nil {
+		return fmt.Errorf("failed to generate public key from private key: %w", err)
+	}
+
+	// create openid configuration
+	params := oidc.ODICGeneratorParams{
+		IssuerURL: issuerURL,
+		PubKey:    publicKeyBytes,
+	}
+
+	oidcGenerators := map[string]oidc.OIDCDocumentGeneratorFunc{
+		"/.well-known/openid-configuration": oidc.GenerateConfigurationDocument,
+		oidc.JWKSURI:                        oidc.GenerateJWKSDocument,
+	}
+
+	for path, generator := range oidcGenerators {
+		bodyReader, err := generator(params)
+		if err != nil {
+			return fmt.Errorf("failed to generate OIDC document %s: %w", path, err)
+		}
+		_, err = s3Client.PutObject(&s3.PutObjectInput{
+			ACL:    aws.String("public-read"),
+			Body:   bodyReader,
+			Bucket: aws.String(oidcBucketName),
+			Key:    aws.String(providerID + path),
+		})
+		if err != nil {
+			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, oidcBucketName)
+			if awsErr, ok := err.(awserr.Error); ok {
+				// Generally, the underlying message from AWS has unique per-request
+				// info not suitable for publishing as condition messages, so just
+				// return the code.
+				wrapped = fmt.Errorf("%w: aws returned an error: %s", wrapped, awsErr.Code())
+			}
+			return wrapped
+		}
+	}
+
+	globalOpts.IssuerURL = issuerURL
+	globalOpts.ServiceAccountSigningKey = keyBytes
+
+	return nil
 }
 
 func e2eObserverControllers(ctx context.Context, log logr.Logger, artifactDir string) {
@@ -213,6 +298,9 @@ type options struct {
 	configurableClusterOptions configurableClusterOptions
 	additionalTags             stringSliceVar
 
+	IssuerURL                string
+	ServiceAccountSigningKey []byte
+
 	// SkipAPIBudgetVerification implies that you are executing the e2e tests
 	// from local to verify that them works fine before push
 	SkipAPIBudgetVerification bool
@@ -264,6 +352,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
 			Region:             o.configurableClusterOptions.Region,
 			EndpointAccess:     o.configurableClusterOptions.AWSEndpointAccess,
+			IssuerURL:          o.IssuerURL,
 		},
 		KubevirtPlatform: core.KubevirtPlatformCreateOptions{
 			ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
