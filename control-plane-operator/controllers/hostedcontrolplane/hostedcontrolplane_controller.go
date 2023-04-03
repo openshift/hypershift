@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -580,6 +581,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		kubeConfigAvailable := hostedControlPlane.Status.KubeConfig != nil
 		etcdCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdAvailable))
 		kubeAPIServerCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.KubeAPIServerAvailable))
+		healthCheckErr := r.healthCheckKASLoadBalancers(ctx, hostedControlPlane)
 
 		status := metav1.ConditionFalse
 		var reason, message string
@@ -599,6 +601,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		case kubeAPIServerCondition != nil && kubeAPIServerCondition.Status == metav1.ConditionFalse:
 			reason = kubeAPIServerCondition.Reason
 			message = kubeAPIServerCondition.Message
+		case healthCheckErr != nil:
+			reason = hyperv1.KASLoadBalancerNotReachableReason
+			message = healthCheckErr.Error()
 		default:
 			reason = hyperv1.AsExpectedReason
 			message = ""
@@ -663,6 +668,70 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	r.Log.Info("Successfully reconciled")
 	return result, nil
+}
+
+// healthCheckKASLoadBalancers performs a health check on the KubeAPI server /healthz endpoint using the public and private load balancers hostnames directly
+// This will detect if load balancers are down or deleted out of band
+func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
+	if serviceStrategy == nil {
+		return fmt.Errorf("APIServer service strategy not specified")
+	}
+
+	if serviceStrategy.Type == hyperv1.Route {
+		internalRoute := manifests.KubeAPIServerInternalRoute(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(internalRoute), internalRoute); err != nil {
+			return fmt.Errorf("failed to get kube apiserver internal route: %w", err)
+		}
+		if len(internalRoute.Status.Ingress) == 0 || internalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
+			return fmt.Errorf("APIServer internal route not admitted")
+		}
+
+		if err := healthCheckKASEndpoint(internalRoute.Status.Ingress[0].RouterCanonicalHostname, hcp); err != nil {
+			return err
+		}
+	}
+
+	var kasServices []*corev1.Service
+	if util.IsPrivateHCP(hcp) {
+		kasServices = append(kasServices, manifests.PrivateRouterService(hcp.Namespace))
+		if serviceStrategy.Type == hyperv1.LoadBalancer {
+			kasServices = append(kasServices, manifests.KubeAPIServerPrivateService(hcp.Namespace))
+		}
+	} else if serviceStrategy.Type != hyperv1.Route {
+		kasServices = append(kasServices, manifests.KubeAPIServerService(hcp.Namespace))
+	}
+
+	for _, svc := range kasServices {
+		if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+			return fmt.Errorf("failed to get kube apiserver service: %w", err)
+		}
+
+		if len(svc.Status.LoadBalancer.Ingress) == 0 || svc.Status.LoadBalancer.Ingress[0].Hostname == "" {
+			return fmt.Errorf("APIServer load balancer is not provisioned")
+		}
+
+		if err := healthCheckKASEndpoint(svc.Status.LoadBalancer.Ingress[0].Hostname, hcp); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func healthCheckKASEndpoint(hostname string, hcp *hyperv1.HostedControlPlane) error {
+	port := util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
+	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz", hostname, port)
+
+	resp, err := util.InsecureHTTPClient().Get(healthEndpoint)
+	if err != nil {
+		return err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("APIServer endpoint %s is not healthy", hostname)
+	}
+	return nil
 }
 
 func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(hc *hyperv1.HostedControlPlane) error {
@@ -3998,10 +4067,5 @@ func (r *HostedControlPlaneReconciler) GetGuestClusterClient(ctx context.Context
 		return nil, err
 	}
 
-	clientset, err := kubernetes.NewForConfig(restConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	return clientset, nil
+	return kubernetes.NewForConfig(restConfig)
 }
