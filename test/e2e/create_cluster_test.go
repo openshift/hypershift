@@ -41,6 +41,27 @@ func TestCreateCluster(t *testing.T) {
 
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
+	// Test W/A until https://github.com/coreos/fedora-coreos-tracker/issues/1126 and https://github.com/coreos/ignition/issues/1574 are resolved
+	if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		rhcosKubevirtImage := "quay.io/openshift-cnv/rhcos:9.2-kubevirt"
+		nodepools := &hyperv1.NodePoolList{}
+		if err := client.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
+			t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
+		}
+		if len(nodepools.Items) != 1 {
+			t.Fatalf("expected exactly one nodepool, got %d", len(nodepools.Items))
+		}
+		nodepool := &nodepools.Items[0]
+		err = client.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
+		original := nodepool.DeepCopy()
+		nodepool.Spec.Platform.Kubevirt.RootVolume.Image = &hyperv1.KubevirtDiskImage{
+			ContainerDiskImage: &rhcosKubevirtImage,
+		}
+		err = client.Patch(ctx, nodepool, crclient.MergeFrom(original))
+		g.Expect(err).NotTo(HaveOccurred(), "failed to update NodePool")
+	}
+
 	// Sanity check the cluster by waiting for the nodes to report ready
 	t.Logf("Waiting for guest client to become available")
 	guestClient := e2eutil.WaitForGuestClient(t, testContext, client, hostedCluster)
