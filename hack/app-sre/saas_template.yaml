@@ -9937,170 +9937,6 @@ objects:
     annotations:
       controller-gen.kubebuilder.io/version: v0.9.2
     creationTimestamp: null
-    labels:
-      cluster.x-k8s.io/v1beta1: v1beta1
-    name: ibmpowervsimages.infrastructure.cluster.x-k8s.io
-  spec:
-    group: infrastructure.cluster.x-k8s.io
-    names:
-      kind: IBMPowerVSImage
-      listKind: IBMPowerVSImageList
-      plural: ibmpowervsimages
-      singular: ibmpowervsimage
-    scope: Namespaced
-    versions:
-    - additionalPrinterColumns:
-      - description: PowerVS image state
-        jsonPath: .status.imageState
-        name: State
-        type: string
-      - description: Image is ready for IBM PowerVS instances
-        jsonPath: .status.ready
-        name: Ready
-        type: string
-      name: v1beta1
-      schema:
-        openAPIV3Schema:
-          description: IBMPowerVSImage is the Schema for the ibmpowervsimages API.
-          properties:
-            apiVersion:
-              description: 'APIVersion defines the versioned schema of this representation
-                of an object. Servers should convert recognized schemas to the latest
-                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-              type: string
-            kind:
-              description: 'Kind is a string value representing the REST resource
-                this object represents. Servers may infer this from the endpoint the
-                client submits requests to. Cannot be updated. In CamelCase. More
-                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-              type: string
-            metadata:
-              type: object
-            spec:
-              description: IBMPowerVSImageSpec defines the desired state of IBMPowerVSImage.
-              properties:
-                bucket:
-                  description: Cloud Object Storage bucket name; bucket-name[/optional/folder]
-                  type: string
-                clusterName:
-                  description: ClusterName is the name of the Cluster this object
-                    belongs to.
-                  minLength: 1
-                  type: string
-                deletePolicy:
-                  default: delete
-                  description: DeletePolicy defines the policy used to identify images
-                    to be preserved beyond the lifecycle of associated cluster.
-                  enum:
-                  - delete
-                  - retain
-                  type: string
-                object:
-                  description: Cloud Object Storage image filename.
-                  type: string
-                region:
-                  description: Cloud Object Storage region.
-                  type: string
-                serviceInstanceID:
-                  description: ServiceInstanceID is the id of the power cloud instance
-                    where the image will get imported.
-                  type: string
-                storageType:
-                  default: tier1
-                  description: Type of storage, storage pool with the most available
-                    space will be selected.
-                  enum:
-                  - tier1
-                  - tier3
-                  type: string
-              required:
-              - bucket
-              - clusterName
-              - object
-              - region
-              - serviceInstanceID
-              type: object
-            status:
-              description: IBMPowerVSImageStatus defines the observed state of IBMPowerVSImage.
-              properties:
-                conditions:
-                  description: Conditions defines current service state of the IBMPowerVSImage.
-                  items:
-                    description: Condition defines an observation of a Cluster API
-                      resource operational state.
-                    properties:
-                      lastTransitionTime:
-                        description: Last time the condition transitioned from one
-                          status to another. This should be when the underlying condition
-                          changed. If that is not known, then using the time when
-                          the API field changed is acceptable.
-                        format: date-time
-                        type: string
-                      message:
-                        description: A human readable message indicating details about
-                          the transition. This field may be empty.
-                        type: string
-                      reason:
-                        description: The reason for the condition's last transition
-                          in CamelCase. The specific API may choose whether or not
-                          this field is considered a guaranteed API. This field may
-                          not be empty.
-                        type: string
-                      severity:
-                        description: Severity provides an explicit classification
-                          of Reason code, so the users or machines can immediately
-                          understand the current situation and act accordingly. The
-                          Severity field MUST be set only when Status=False.
-                        type: string
-                      status:
-                        description: Status of the condition, one of True, False,
-                          Unknown.
-                        type: string
-                      type:
-                        description: Type of condition in CamelCase or in foo.example.com/CamelCase.
-                          Many .condition.type values are consistent across resources
-                          like Available, but because arbitrary conditions can be
-                          useful (see .node.status.conditions), the ability to deconflict
-                          is important.
-                        type: string
-                    required:
-                    - lastTransitionTime
-                    - status
-                    - type
-                    type: object
-                  type: array
-                imageID:
-                  description: ImageID is the id of the imported image.
-                  type: string
-                imageState:
-                  description: ImageState is the status of the imported image.
-                  type: string
-                jobID:
-                  description: JobID is the job ID of an import operation.
-                  type: string
-                ready:
-                  description: Ready is true when the provider resource is ready.
-                  type: boolean
-              type: object
-          type: object
-      served: true
-      storage: true
-      subresources:
-        status: {}
-  status:
-    acceptedNames:
-      kind: ""
-      plural: ""
-    conditions: null
-    storedVersions: null
-- apiVersion: apiextensions.k8s.io/v1
-  kind: CustomResourceDefinition
-  metadata:
-    annotations:
-      controller-gen.kubebuilder.io/version: v0.9.2
-    creationTimestamp: null
-    labels:
-      cluster.x-k8s.io/v1beta1: v1beta1
     name: ibmpowervsmachines.infrastructure.cluster.x-k8s.io
   spec:
     group: infrastructure.cluster.x-k8s.io
@@ -10161,7 +9997,6 @@ objects:
                       description: Name of resource
                       type: string
                   type: object
-                  x-kubernetes-map-type: atomic
                 memory:
                   description: Memory is Amount of memory allocated (in GB)
                   type: string
@@ -10313,7 +10148,6 @@ objects:
                               description: Name of resource
                               type: string
                           type: object
-                          x-kubernetes-map-type: atomic
                         memory:
                           description: Memory is Amount of memory allocated (in GB)
                           type: string
@@ -11159,31 +10993,30 @@ objects:
                                         type: object
                                         x-kubernetes-map-type: atomic
                                       dataSourceRef:
-                                        description: 'dataSourceRef specifies the
-                                          object from which to populate the volume
-                                          with data, if a non-empty volume is desired.
-                                          This may be any local object from a non-empty
-                                          API group (non core object) or a PersistentVolumeClaim
-                                          object. When this field is specified, volume
-                                          binding will only succeed if the type of
-                                          the specified object matches some installed
-                                          volume populator or dynamic provisioner.
-                                          This field will replace the functionality
-                                          of the DataSource field and as such if both
-                                          fields are non-empty, they must have the
-                                          same value. For backwards compatibility,
-                                          both fields (DataSource and DataSourceRef)
-                                          will be set to the same value automatically
-                                          if one of them is empty and the other is
-                                          non-empty. There are two important differences
-                                          between DataSource and DataSourceRef: *
-                                          While DataSource only allows two specific
+                                        description: 'Specifies the object from which
+                                          to populate the volume with data, if a non-empty
+                                          volume is desired. This may be any local
+                                          object from a non-empty API group (non core
+                                          object) or a PersistentVolumeClaim object.
+                                          When this field is specified, volume binding
+                                          will only succeed if the type of the specified
+                                          object matches some installed volume populator
+                                          or dynamic provisioner. This field will
+                                          replace the functionality of the DataSource
+                                          field and as such if both fields are non-empty,
+                                          they must have the same value. For backwards
+                                          compatibility, both fields (DataSource and
+                                          DataSourceRef) will be set to the same value
+                                          automatically if one of them is empty and
+                                          the other is non-empty. There are two important
+                                          differences between DataSource and DataSourceRef:
+                                          * While DataSource only allows two specific
                                           types of objects, DataSourceRef allows any
                                           non-core object, as well as PersistentVolumeClaim
                                           objects. * While DataSource ignores disallowed
                                           values (dropping them), DataSourceRef preserves
                                           all values, and generates an error if a
-                                          disallowed value is specified. (Beta) Using
+                                          disallowed value is specified. (Alpha) Using
                                           this field requires the AnyVolumeDataSource
                                           feature gate to be enabled.'
                                         properties:
@@ -15312,7 +15145,7 @@ objects:
                                                   disallowed values (dropping them),
                                                   DataSourceRef preserves all values,
                                                   and generates an error if a disallowed
-                                                  value is specified. (Beta) Using
+                                                  value is specified. (Alpha) Using
                                                   this field requires the AnyVolumeDataSource
                                                   feature gate to be enabled.'
                                                 properties:
@@ -20601,7 +20434,7 @@ objects:
                               hostname:
                                 description: hostname is the hostname that should
                                   be used by the route.
-                                pattern: ^([a-zA-Z0-9\p{S}\p{L}]((-?[a-zA-Z0-9\p{S}\p{L}]{0,62})?)|([a-zA-Z0-9\p{S}\p{L}](([a-zA-Z0-9-\p{S}\p{L}]{0,61}[a-zA-Z0-9\p{S}\p{L}])?)(\.)){1,}([a-zA-Z\p{L}]){2,63})$|^(([a-z0-9][-a-z0-9]{0,61}[a-z0-9]|[a-z0-9]{1,63})[\.]){0,}([a-z0-9][-a-z0-9]{0,61}[a-z0-9]|[a-z0-9]{1,63})$
+                                format: hostname
                                 type: string
                               name:
                                 description: "name is the logical name of the route
@@ -22232,166 +22065,6 @@ objects:
                             - namespace
                             type: object
                           type: array
-                        rolesRef:
-                          description: RolesRef contains references to various AWS
-                            IAM roles required to enable integrations such as OIDC.
-                          properties:
-                            controlPlaneOperatorARN:
-                              description: "ControlPlaneOperatorARN  is an ARN value
-                                referencing a role appropriate for the Control Plane
-                                Operator. \n The following is an example of a valid
-                                policy document: \n { \"Version\": \"2012-10-17\",
-                                \"Statement\": [ { \"Effect\": \"Allow\", \"Action\":
-                                [ \"ec2:CreateVpcEndpoint\", \"ec2:DescribeVpcEndpoints\",
-                                \"ec2:ModifyVpcEndpoint\", \"ec2:DeleteVpcEndpoints\",
-                                \"ec2:CreateTags\", \"route53:ListHostedZones\" ],
-                                \"Resource\": \"*\" }, { \"Effect\": \"Allow\", \"Action\":
-                                [ \"route53:ChangeResourceRecordSets\", \"route53:ListResourceRecordSets\"
-                                ], \"Resource\": \"arn:aws:route53:::%s\" } ] }"
-                              type: string
-                            imageRegistryARN:
-                              description: "ImageRegistryARN is an ARN value referencing
-                                a role appropriate for the Image Registry Operator.
-                                \n The following is an example of a valid policy document:
-                                \n { \"Version\": \"2012-10-17\", \"Statement\": [
-                                { \"Effect\": \"Allow\", \"Action\": [ \"s3:CreateBucket\",
-                                \"s3:DeleteBucket\", \"s3:PutBucketTagging\", \"s3:GetBucketTagging\",
-                                \"s3:PutBucketPublicAccessBlock\", \"s3:GetBucketPublicAccessBlock\",
-                                \"s3:PutEncryptionConfiguration\", \"s3:GetEncryptionConfiguration\",
-                                \"s3:PutLifecycleConfiguration\", \"s3:GetLifecycleConfiguration\",
-                                \"s3:GetBucketLocation\", \"s3:ListBucket\", \"s3:GetObject\",
-                                \"s3:PutObject\", \"s3:DeleteObject\", \"s3:ListBucketMultipartUploads\",
-                                \"s3:AbortMultipartUpload\", \"s3:ListMultipartUploadParts\"
-                                ], \"Resource\": \"*\" } ] }"
-                              type: string
-                            ingressARN:
-                              description: "The referenced role must have a trust
-                                relationship that allows it to be assumed via web
-                                identity. https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
-                                Example: { \"Version\": \"2012-10-17\", \"Statement\":
-                                [ { \"Effect\": \"Allow\", \"Principal\": { \"Federated\":
-                                \"{{ .ProviderARN }}\" }, \"Action\": \"sts:AssumeRoleWithWebIdentity\",
-                                \"Condition\": { \"StringEquals\": { \"{{ .ProviderName
-                                }}:sub\": {{ .ServiceAccounts }} } } } ] } \n IngressARN
-                                is an ARN value referencing a role appropriate for
-                                the Ingress Operator. \n The following is an example
-                                of a valid policy document: \n { \"Version\": \"2012-10-17\",
-                                \"Statement\": [ { \"Effect\": \"Allow\", \"Action\":
-                                [ \"elasticloadbalancing:DescribeLoadBalancers\",
-                                \"tag:GetResources\", \"route53:ListHostedZones\"
-                                ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\",
-                                \"Action\": [ \"route53:ChangeResourceRecordSets\"
-                                ], \"Resource\": [ \"arn:aws:route53:::PUBLIC_ZONE_ID\",
-                                \"arn:aws:route53:::PRIVATE_ZONE_ID\" ] } ] }"
-                              type: string
-                            kubeCloudControllerARN:
-                              description: "KubeCloudControllerARN is an ARN value
-                                referencing a role appropriate for the KCM/KCC. \n
-                                The following is an example of a valid policy document:
-                                \n { \"Version\": \"2012-10-17\", \"Statement\": [
-                                { \"Action\": [ \"ec2:DescribeInstances\", \"ec2:DescribeImages\",
-                                \"ec2:DescribeRegions\", \"ec2:DescribeRouteTables\",
-                                \"ec2:DescribeSecurityGroups\", \"ec2:DescribeSubnets\",
-                                \"ec2:DescribeVolumes\", \"ec2:CreateSecurityGroup\",
-                                \"ec2:CreateTags\", \"ec2:CreateVolume\", \"ec2:ModifyInstanceAttribute\",
-                                \"ec2:ModifyVolume\", \"ec2:AttachVolume\", \"ec2:AuthorizeSecurityGroupIngress\",
-                                \"ec2:CreateRoute\", \"ec2:DeleteRoute\", \"ec2:DeleteSecurityGroup\",
-                                \"ec2:DeleteVolume\", \"ec2:DetachVolume\", \"ec2:RevokeSecurityGroupIngress\",
-                                \"ec2:DescribeVpcs\", \"elasticloadbalancing:AddTags\",
-                                \"elasticloadbalancing:AttachLoadBalancerToSubnets\",
-                                \"elasticloadbalancing:ApplySecurityGroupsToLoadBalancer\",
-                                \"elasticloadbalancing:CreateLoadBalancer\", \"elasticloadbalancing:CreateLoadBalancerPolicy\",
-                                \"elasticloadbalancing:CreateLoadBalancerListeners\",
-                                \"elasticloadbalancing:ConfigureHealthCheck\", \"elasticloadbalancing:DeleteLoadBalancer\",
-                                \"elasticloadbalancing:DeleteLoadBalancerListeners\",
-                                \"elasticloadbalancing:DescribeLoadBalancers\", \"elasticloadbalancing:DescribeLoadBalancerAttributes\",
-                                \"elasticloadbalancing:DetachLoadBalancerFromSubnets\",
-                                \"elasticloadbalancing:DeregisterInstancesFromLoadBalancer\",
-                                \"elasticloadbalancing:ModifyLoadBalancerAttributes\",
-                                \"elasticloadbalancing:RegisterInstancesWithLoadBalancer\",
-                                \"elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer\",
-                                \"elasticloadbalancing:AddTags\", \"elasticloadbalancing:CreateListener\",
-                                \"elasticloadbalancing:CreateTargetGroup\", \"elasticloadbalancing:DeleteListener\",
-                                \"elasticloadbalancing:DeleteTargetGroup\", \"elasticloadbalancing:DescribeListeners\",
-                                \"elasticloadbalancing:DescribeLoadBalancerPolicies\",
-                                \"elasticloadbalancing:DescribeTargetGroups\", \"elasticloadbalancing:DescribeTargetHealth\",
-                                \"elasticloadbalancing:ModifyListener\", \"elasticloadbalancing:ModifyTargetGroup\",
-                                \"elasticloadbalancing:RegisterTargets\", \"elasticloadbalancing:SetLoadBalancerPoliciesOfListener\",
-                                \"iam:CreateServiceLinkedRole\", \"kms:DescribeKey\"
-                                ], \"Resource\": [ \"*\" ], \"Effect\": \"Allow\"
-                                } ] }"
-                              type: string
-                            networkARN:
-                              description: "NetworkARN is an ARN value referencing
-                                a role appropriate for the Network Operator. \n The
-                                following is an example of a valid policy document:
-                                \n { \"Version\": \"2012-10-17\", \"Statement\": [
-                                { \"Effect\": \"Allow\", \"Action\": [ \"ec2:DescribeInstances\",
-                                \"ec2:DescribeInstanceStatus\", \"ec2:DescribeInstanceTypes\",
-                                \"ec2:UnassignPrivateIpAddresses\", \"ec2:AssignPrivateIpAddresses\",
-                                \"ec2:UnassignIpv6Addresses\", \"ec2:AssignIpv6Addresses\",
-                                \"ec2:DescribeSubnets\", \"ec2:DescribeNetworkInterfaces\"
-                                ], \"Resource\": \"*\" } ] }"
-                              type: string
-                            nodePoolManagementARN:
-                              description: "NodePoolManagementARN is an ARN value
-                                referencing a role appropriate for the CAPI Controller.
-                                \n The following is an example of a valid policy document:
-                                \n { \"Version\": \"2012-10-17\", \"Statement\": [
-                                { \"Action\": [ \"ec2:AllocateAddress\", \"ec2:AssociateRouteTable\",
-                                \"ec2:AttachInternetGateway\", \"ec2:AuthorizeSecurityGroupIngress\",
-                                \"ec2:CreateInternetGateway\", \"ec2:CreateNatGateway\",
-                                \"ec2:CreateRoute\", \"ec2:CreateRouteTable\", \"ec2:CreateSecurityGroup\",
-                                \"ec2:CreateSubnet\", \"ec2:CreateTags\", \"ec2:DeleteInternetGateway\",
-                                \"ec2:DeleteNatGateway\", \"ec2:DeleteRouteTable\",
-                                \"ec2:DeleteSecurityGroup\", \"ec2:DeleteSubnet\",
-                                \"ec2:DeleteTags\", \"ec2:DescribeAccountAttributes\",
-                                \"ec2:DescribeAddresses\", \"ec2:DescribeAvailabilityZones\",
-                                \"ec2:DescribeImages\", \"ec2:DescribeInstances\",
-                                \"ec2:DescribeInternetGateways\", \"ec2:DescribeNatGateways\",
-                                \"ec2:DescribeNetworkInterfaces\", \"ec2:DescribeNetworkInterfaceAttribute\",
-                                \"ec2:DescribeRouteTables\", \"ec2:DescribeSecurityGroups\",
-                                \"ec2:DescribeSubnets\", \"ec2:DescribeVpcs\", \"ec2:DescribeVpcAttribute\",
-                                \"ec2:DescribeVolumes\", \"ec2:DetachInternetGateway\",
-                                \"ec2:DisassociateRouteTable\", \"ec2:DisassociateAddress\",
-                                \"ec2:ModifyInstanceAttribute\", \"ec2:ModifyNetworkInterfaceAttribute\",
-                                \"ec2:ModifySubnetAttribute\", \"ec2:ReleaseAddress\",
-                                \"ec2:RevokeSecurityGroupIngress\", \"ec2:RunInstances\",
-                                \"ec2:TerminateInstances\", \"tag:GetResources\",
-                                \"ec2:CreateLaunchTemplate\", \"ec2:CreateLaunchTemplateVersion\",
-                                \"ec2:DescribeLaunchTemplates\", \"ec2:DescribeLaunchTemplateVersions\",
-                                \"ec2:DeleteLaunchTemplate\", \"ec2:DeleteLaunchTemplateVersions\"
-                                ], \"Resource\": [ \"*\" ], \"Effect\": \"Allow\"
-                                }, { \"Condition\": { \"StringLike\": { \"iam:AWSServiceName\":
-                                \"elasticloadbalancing.amazonaws.com\" } }, \"Action\":
-                                [ \"iam:CreateServiceLinkedRole\" ], \"Resource\":
-                                [ \"arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing\"
-                                ], \"Effect\": \"Allow\" }, { \"Action\": [ \"iam:PassRole\"
-                                ], \"Resource\": [ \"arn:*:iam::*:role/*-worker-role\"
-                                ], \"Effect\": \"Allow\" } ] }"
-                              type: string
-                            storageARN:
-                              description: "StorageARN is an ARN value referencing
-                                a role appropriate for the Storage Operator. \n The
-                                following is an example of a valid policy document:
-                                \n { \"Version\": \"2012-10-17\", \"Statement\": [
-                                { \"Effect\": \"Allow\", \"Action\": [ \"ec2:AttachVolume\",
-                                \"ec2:CreateSnapshot\", \"ec2:CreateTags\", \"ec2:CreateVolume\",
-                                \"ec2:DeleteSnapshot\", \"ec2:DeleteTags\", \"ec2:DeleteVolume\",
-                                \"ec2:DescribeInstances\", \"ec2:DescribeSnapshots\",
-                                \"ec2:DescribeTags\", \"ec2:DescribeVolumes\", \"ec2:DescribeVolumesModifications\",
-                                \"ec2:DetachVolume\", \"ec2:ModifyVolume\" ], \"Resource\":
-                                \"*\" } ] }"
-                              type: string
-                          required:
-                          - controlPlaneOperatorARN
-                          - imageRegistryARN
-                          - ingressARN
-                          - kubeCloudControllerARN
-                          - networkARN
-                          - nodePoolManagementARN
-                          - storageARN
-                          type: object
                         serviceEndpoints:
                           description: "ServiceEndpoints specifies optional custom
                             endpoints which will override the default service endpoint
@@ -22472,154 +22145,6 @@ objects:
                           description: ProviderType is a specific supported infrastructure
                             provider within IBM Cloud.
                           type: string
-                      type: object
-                    powervs:
-                      description: PowerVS specifies configuration for clusters running
-                        on IBMCloud Power VS Service. This field is immutable. Once
-                        set, It can't be changed.
-                      properties:
-                        accountID:
-                          description: AccountID is the IBMCloud account id. This
-                            field is immutable. Once set, It can't be changed.
-                          type: string
-                        cisInstanceCRN:
-                          description: CISInstanceCRN is the IBMCloud CIS Service
-                            Instance's Cloud Resource Name This field is immutable.
-                            Once set, It can't be changed.
-                          pattern: '^crn:'
-                          type: string
-                        controlPlaneOperatorCreds:
-                          description: "ControlPlaneOperatorCreds is a reference to
-                            a secret containing cloud credentials with permissions
-                            matching the control-plane-operator policy. This field
-                            is immutable. Once set, It can't be changed. \n TODO(dan):
-                            document the \"control plane operator policy\""
-                          properties:
-                            name:
-                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?'
-                              type: string
-                          type: object
-                          x-kubernetes-map-type: atomic
-                        ingressOperatorCloudCreds:
-                          description: IngressOperatorCloudCreds is a reference to
-                            a secret containing ibm cloud credentials for ingress
-                            operator to get authenticated with ibm cloud.
-                          properties:
-                            name:
-                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?'
-                              type: string
-                          type: object
-                          x-kubernetes-map-type: atomic
-                        kubeCloudControllerCreds:
-                          description: "KubeCloudControllerCreds is a reference to
-                            a secret containing cloud credentials with permissions
-                            matching the cloud controller policy. This field is immutable.
-                            Once set, It can't be changed. \n TODO(dan): document
-                            the \"cloud controller policy\""
-                          properties:
-                            name:
-                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?'
-                              type: string
-                          type: object
-                          x-kubernetes-map-type: atomic
-                        nodePoolManagementCreds:
-                          description: "NodePoolManagementCreds is a reference to
-                            a secret containing cloud credentials with permissions
-                            matching the node pool management policy. This field is
-                            immutable. Once set, It can't be changed. \n TODO(dan):
-                            document the \"node pool management policy\""
-                          properties:
-                            name:
-                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?'
-                              type: string
-                          type: object
-                          x-kubernetes-map-type: atomic
-                        region:
-                          description: Region is the IBMCloud region in which the
-                            cluster resides. This configures the OCP control plane
-                            cloud integrations, and is used by NodePool to resolve
-                            the correct boot image for a given release. This field
-                            is immutable. Once set, It can't be changed.
-                          type: string
-                        resourceGroup:
-                          description: ResourceGroup is the IBMCloud Resource Group
-                            in which the cluster resides. This field is immutable.
-                            Once set, It can't be changed.
-                          type: string
-                        serviceInstanceID:
-                          description: "ServiceInstance is the reference to the Power
-                            VS service on which the server instance(VM) will be created.
-                            Power VS service is a container for all Power VS instances
-                            at a specific geographic region. serviceInstance can be
-                            created via IBM Cloud catalog or CLI. ServiceInstanceID
-                            is the unique identifier that can be obtained from IBM
-                            Cloud UI or IBM Cloud cli. \n More detail about Power
-                            VS service instance. https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server
-                            \n This field is immutable. Once set, It can't be changed."
-                          type: string
-                        subnet:
-                          description: Subnet is the subnet to use for control plane
-                            cloud resources. This field is immutable. Once set, It
-                            can't be changed.
-                          properties:
-                            id:
-                              description: ID of resource
-                              type: string
-                            name:
-                              description: Name of resource
-                              type: string
-                          type: object
-                        vpc:
-                          description: VPC specifies IBM Cloud PowerVS Load Balancing
-                            configuration for the control plane. This field is immutable.
-                            Once set, It can't be changed.
-                          properties:
-                            name:
-                              description: Name for VPC to used for all the service
-                                load balancer. This field is immutable. Once set,
-                                It can't be changed.
-                              type: string
-                            region:
-                              description: Region is the IBMCloud region in which
-                                VPC gets created, this VPC used for all the ingress
-                                traffic into the OCP cluster. This field is immutable.
-                                Once set, It can't be changed.
-                              type: string
-                            subnet:
-                              description: Subnet is the subnet to use for load balancer.
-                                This field is immutable. Once set, It can't be changed.
-                              type: string
-                            zone:
-                              description: Zone is the availability zone where load
-                                balancer cloud resources are created. This field is
-                                immutable. Once set, It can't be changed.
-                              type: string
-                          required:
-                          - name
-                          - region
-                          type: object
-                        zone:
-                          description: Zone is the availability zone where control
-                            plane cloud resources are created. This field is immutable.
-                            Once set, It can't be changed.
-                          type: string
-                      required:
-                      - accountID
-                      - cisInstanceCRN
-                      - controlPlaneOperatorCreds
-                      - ingressOperatorCloudCreds
-                      - kubeCloudControllerCreds
-                      - nodePoolManagementCreds
-                      - region
-                      - resourceGroup
-                      - serviceInstanceID
-                      - subnet
-                      - vpc
-                      - zone
                       type: object
                     type:
                       description: Type is the type of infrastructure provider for
@@ -23077,13 +22602,6 @@ objects:
                       type: string
                   type: object
                   x-kubernetes-map-type: atomic
-                oauthCallbackURLTemplate:
-                  description: OAuthCallbackURLTemplate contains a template for the
-                    URL to use as a callback for identity providers. The [identity-provider-name]
-                    placeholder must be replaced with the name of an identity provider
-                    defined on the HostedCluster. This is populated after the infrastructure
-                    is ready.
-                  type: string
                 version:
                   description: Version is the status of the release version applied
                     to the HostedCluster.
@@ -23285,39 +22803,6 @@ objects:
                       type: string
                   type: object
                   x-kubernetes-map-type: atomic
-                autoscaling:
-                  description: Autoscaling specifies auto-scaling behavior that applies
-                    to all NodePools associated with the control plane.
-                  properties:
-                    maxNodeProvisionTime:
-                      description: MaxNodeProvisionTime is the maximum time to wait
-                        for node provisioning before considering the provisioning
-                        to be unsuccessful, expressed as a Go duration string. The
-                        default is 15 minutes.
-                      pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
-                      type: string
-                    maxNodesTotal:
-                      description: MaxNodesTotal is the maximum allowable number of
-                        nodes across all NodePools for a HostedCluster. The autoscaler
-                        will not grow the cluster beyond this number.
-                      format: int32
-                      minimum: 0
-                      type: integer
-                    maxPodGracePeriod:
-                      description: MaxPodGracePeriod is the maximum seconds to wait
-                        for graceful pod termination before scaling down a NodePool.
-                        The default is 600 seconds.
-                      format: int32
-                      minimum: 0
-                      type: integer
-                    podPriorityThreshold:
-                      description: "PodPriorityThreshold enables users to schedule
-                        \"best-effort\" pods, which shouldn't trigger autoscaler actions,
-                        but only run when there are spare resources available. The
-                        default is -10. \n See the following for more details: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption"
-                      format: int32
-                      type: integer
-                  type: object
                 clusterID:
                   description: ClusterID is the unique id that identifies the cluster
                     externally. Making it optional here allows us to keep compatibility
@@ -23906,7 +23391,7 @@ objects:
                               hostname:
                                 description: hostname is the hostname that should
                                   be used by the route.
-                                pattern: ^([a-zA-Z0-9\p{S}\p{L}]((-?[a-zA-Z0-9\p{S}\p{L}]{0,62})?)|([a-zA-Z0-9\p{S}\p{L}](([a-zA-Z0-9-\p{S}\p{L}]{0,61}[a-zA-Z0-9\p{S}\p{L}])?)(\.)){1,}([a-zA-Z\p{L}]){2,63})$|^(([a-z0-9][-a-z0-9]{0,61}[a-z0-9]|[a-z0-9]{1,63})[\.]){0,}([a-z0-9][-a-z0-9]{0,61}[a-z0-9]|[a-z0-9]{1,63})$
+                                format: hostname
                                 type: string
                               name:
                                 description: "name is the logical name of the route
@@ -25313,14 +24798,12 @@ objects:
                         type: object
                       type: array
                     networkType:
-                      default: OVNKubernetes
+                      default: OpenShiftSDN
                       description: NetworkType specifies the SDN provider used for
                         cluster networking.
                       enum:
                       - OpenShiftSDN
                       - Calico
-                      - OVNKubernetes
-                      - Other
                       type: string
                     podCIDR:
                       description: Deprecated This field will be removed in the next
@@ -25549,166 +25032,6 @@ objects:
                             - namespace
                             type: object
                           type: array
-                        rolesRef:
-                          description: RolesRef contains references to various AWS
-                            IAM roles required to enable integrations such as OIDC.
-                          properties:
-                            controlPlaneOperatorARN:
-                              description: "ControlPlaneOperatorARN  is an ARN value
-                                referencing a role appropriate for the Control Plane
-                                Operator. \n The following is an example of a valid
-                                policy document: \n { \"Version\": \"2012-10-17\",
-                                \"Statement\": [ { \"Effect\": \"Allow\", \"Action\":
-                                [ \"ec2:CreateVpcEndpoint\", \"ec2:DescribeVpcEndpoints\",
-                                \"ec2:ModifyVpcEndpoint\", \"ec2:DeleteVpcEndpoints\",
-                                \"ec2:CreateTags\", \"route53:ListHostedZones\" ],
-                                \"Resource\": \"*\" }, { \"Effect\": \"Allow\", \"Action\":
-                                [ \"route53:ChangeResourceRecordSets\", \"route53:ListResourceRecordSets\"
-                                ], \"Resource\": \"arn:aws:route53:::%s\" } ] }"
-                              type: string
-                            imageRegistryARN:
-                              description: "ImageRegistryARN is an ARN value referencing
-                                a role appropriate for the Image Registry Operator.
-                                \n The following is an example of a valid policy document:
-                                \n { \"Version\": \"2012-10-17\", \"Statement\": [
-                                { \"Effect\": \"Allow\", \"Action\": [ \"s3:CreateBucket\",
-                                \"s3:DeleteBucket\", \"s3:PutBucketTagging\", \"s3:GetBucketTagging\",
-                                \"s3:PutBucketPublicAccessBlock\", \"s3:GetBucketPublicAccessBlock\",
-                                \"s3:PutEncryptionConfiguration\", \"s3:GetEncryptionConfiguration\",
-                                \"s3:PutLifecycleConfiguration\", \"s3:GetLifecycleConfiguration\",
-                                \"s3:GetBucketLocation\", \"s3:ListBucket\", \"s3:GetObject\",
-                                \"s3:PutObject\", \"s3:DeleteObject\", \"s3:ListBucketMultipartUploads\",
-                                \"s3:AbortMultipartUpload\", \"s3:ListMultipartUploadParts\"
-                                ], \"Resource\": \"*\" } ] }"
-                              type: string
-                            ingressARN:
-                              description: "The referenced role must have a trust
-                                relationship that allows it to be assumed via web
-                                identity. https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
-                                Example: { \"Version\": \"2012-10-17\", \"Statement\":
-                                [ { \"Effect\": \"Allow\", \"Principal\": { \"Federated\":
-                                \"{{ .ProviderARN }}\" }, \"Action\": \"sts:AssumeRoleWithWebIdentity\",
-                                \"Condition\": { \"StringEquals\": { \"{{ .ProviderName
-                                }}:sub\": {{ .ServiceAccounts }} } } } ] } \n IngressARN
-                                is an ARN value referencing a role appropriate for
-                                the Ingress Operator. \n The following is an example
-                                of a valid policy document: \n { \"Version\": \"2012-10-17\",
-                                \"Statement\": [ { \"Effect\": \"Allow\", \"Action\":
-                                [ \"elasticloadbalancing:DescribeLoadBalancers\",
-                                \"tag:GetResources\", \"route53:ListHostedZones\"
-                                ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\",
-                                \"Action\": [ \"route53:ChangeResourceRecordSets\"
-                                ], \"Resource\": [ \"arn:aws:route53:::PUBLIC_ZONE_ID\",
-                                \"arn:aws:route53:::PRIVATE_ZONE_ID\" ] } ] }"
-                              type: string
-                            kubeCloudControllerARN:
-                              description: "KubeCloudControllerARN is an ARN value
-                                referencing a role appropriate for the KCM/KCC. \n
-                                The following is an example of a valid policy document:
-                                \n { \"Version\": \"2012-10-17\", \"Statement\": [
-                                { \"Action\": [ \"ec2:DescribeInstances\", \"ec2:DescribeImages\",
-                                \"ec2:DescribeRegions\", \"ec2:DescribeRouteTables\",
-                                \"ec2:DescribeSecurityGroups\", \"ec2:DescribeSubnets\",
-                                \"ec2:DescribeVolumes\", \"ec2:CreateSecurityGroup\",
-                                \"ec2:CreateTags\", \"ec2:CreateVolume\", \"ec2:ModifyInstanceAttribute\",
-                                \"ec2:ModifyVolume\", \"ec2:AttachVolume\", \"ec2:AuthorizeSecurityGroupIngress\",
-                                \"ec2:CreateRoute\", \"ec2:DeleteRoute\", \"ec2:DeleteSecurityGroup\",
-                                \"ec2:DeleteVolume\", \"ec2:DetachVolume\", \"ec2:RevokeSecurityGroupIngress\",
-                                \"ec2:DescribeVpcs\", \"elasticloadbalancing:AddTags\",
-                                \"elasticloadbalancing:AttachLoadBalancerToSubnets\",
-                                \"elasticloadbalancing:ApplySecurityGroupsToLoadBalancer\",
-                                \"elasticloadbalancing:CreateLoadBalancer\", \"elasticloadbalancing:CreateLoadBalancerPolicy\",
-                                \"elasticloadbalancing:CreateLoadBalancerListeners\",
-                                \"elasticloadbalancing:ConfigureHealthCheck\", \"elasticloadbalancing:DeleteLoadBalancer\",
-                                \"elasticloadbalancing:DeleteLoadBalancerListeners\",
-                                \"elasticloadbalancing:DescribeLoadBalancers\", \"elasticloadbalancing:DescribeLoadBalancerAttributes\",
-                                \"elasticloadbalancing:DetachLoadBalancerFromSubnets\",
-                                \"elasticloadbalancing:DeregisterInstancesFromLoadBalancer\",
-                                \"elasticloadbalancing:ModifyLoadBalancerAttributes\",
-                                \"elasticloadbalancing:RegisterInstancesWithLoadBalancer\",
-                                \"elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer\",
-                                \"elasticloadbalancing:AddTags\", \"elasticloadbalancing:CreateListener\",
-                                \"elasticloadbalancing:CreateTargetGroup\", \"elasticloadbalancing:DeleteListener\",
-                                \"elasticloadbalancing:DeleteTargetGroup\", \"elasticloadbalancing:DescribeListeners\",
-                                \"elasticloadbalancing:DescribeLoadBalancerPolicies\",
-                                \"elasticloadbalancing:DescribeTargetGroups\", \"elasticloadbalancing:DescribeTargetHealth\",
-                                \"elasticloadbalancing:ModifyListener\", \"elasticloadbalancing:ModifyTargetGroup\",
-                                \"elasticloadbalancing:RegisterTargets\", \"elasticloadbalancing:SetLoadBalancerPoliciesOfListener\",
-                                \"iam:CreateServiceLinkedRole\", \"kms:DescribeKey\"
-                                ], \"Resource\": [ \"*\" ], \"Effect\": \"Allow\"
-                                } ] }"
-                              type: string
-                            networkARN:
-                              description: "NetworkARN is an ARN value referencing
-                                a role appropriate for the Network Operator. \n The
-                                following is an example of a valid policy document:
-                                \n { \"Version\": \"2012-10-17\", \"Statement\": [
-                                { \"Effect\": \"Allow\", \"Action\": [ \"ec2:DescribeInstances\",
-                                \"ec2:DescribeInstanceStatus\", \"ec2:DescribeInstanceTypes\",
-                                \"ec2:UnassignPrivateIpAddresses\", \"ec2:AssignPrivateIpAddresses\",
-                                \"ec2:UnassignIpv6Addresses\", \"ec2:AssignIpv6Addresses\",
-                                \"ec2:DescribeSubnets\", \"ec2:DescribeNetworkInterfaces\"
-                                ], \"Resource\": \"*\" } ] }"
-                              type: string
-                            nodePoolManagementARN:
-                              description: "NodePoolManagementARN is an ARN value
-                                referencing a role appropriate for the CAPI Controller.
-                                \n The following is an example of a valid policy document:
-                                \n { \"Version\": \"2012-10-17\", \"Statement\": [
-                                { \"Action\": [ \"ec2:AllocateAddress\", \"ec2:AssociateRouteTable\",
-                                \"ec2:AttachInternetGateway\", \"ec2:AuthorizeSecurityGroupIngress\",
-                                \"ec2:CreateInternetGateway\", \"ec2:CreateNatGateway\",
-                                \"ec2:CreateRoute\", \"ec2:CreateRouteTable\", \"ec2:CreateSecurityGroup\",
-                                \"ec2:CreateSubnet\", \"ec2:CreateTags\", \"ec2:DeleteInternetGateway\",
-                                \"ec2:DeleteNatGateway\", \"ec2:DeleteRouteTable\",
-                                \"ec2:DeleteSecurityGroup\", \"ec2:DeleteSubnet\",
-                                \"ec2:DeleteTags\", \"ec2:DescribeAccountAttributes\",
-                                \"ec2:DescribeAddresses\", \"ec2:DescribeAvailabilityZones\",
-                                \"ec2:DescribeImages\", \"ec2:DescribeInstances\",
-                                \"ec2:DescribeInternetGateways\", \"ec2:DescribeNatGateways\",
-                                \"ec2:DescribeNetworkInterfaces\", \"ec2:DescribeNetworkInterfaceAttribute\",
-                                \"ec2:DescribeRouteTables\", \"ec2:DescribeSecurityGroups\",
-                                \"ec2:DescribeSubnets\", \"ec2:DescribeVpcs\", \"ec2:DescribeVpcAttribute\",
-                                \"ec2:DescribeVolumes\", \"ec2:DetachInternetGateway\",
-                                \"ec2:DisassociateRouteTable\", \"ec2:DisassociateAddress\",
-                                \"ec2:ModifyInstanceAttribute\", \"ec2:ModifyNetworkInterfaceAttribute\",
-                                \"ec2:ModifySubnetAttribute\", \"ec2:ReleaseAddress\",
-                                \"ec2:RevokeSecurityGroupIngress\", \"ec2:RunInstances\",
-                                \"ec2:TerminateInstances\", \"tag:GetResources\",
-                                \"ec2:CreateLaunchTemplate\", \"ec2:CreateLaunchTemplateVersion\",
-                                \"ec2:DescribeLaunchTemplates\", \"ec2:DescribeLaunchTemplateVersions\",
-                                \"ec2:DeleteLaunchTemplate\", \"ec2:DeleteLaunchTemplateVersions\"
-                                ], \"Resource\": [ \"*\" ], \"Effect\": \"Allow\"
-                                }, { \"Condition\": { \"StringLike\": { \"iam:AWSServiceName\":
-                                \"elasticloadbalancing.amazonaws.com\" } }, \"Action\":
-                                [ \"iam:CreateServiceLinkedRole\" ], \"Resource\":
-                                [ \"arn:*:iam::*:role/aws-service-role/elasticloadbalancing.amazonaws.com/AWSServiceRoleForElasticLoadBalancing\"
-                                ], \"Effect\": \"Allow\" }, { \"Action\": [ \"iam:PassRole\"
-                                ], \"Resource\": [ \"arn:*:iam::*:role/*-worker-role\"
-                                ], \"Effect\": \"Allow\" } ] }"
-                              type: string
-                            storageARN:
-                              description: "StorageARN is an ARN value referencing
-                                a role appropriate for the Storage Operator. \n The
-                                following is an example of a valid policy document:
-                                \n { \"Version\": \"2012-10-17\", \"Statement\": [
-                                { \"Effect\": \"Allow\", \"Action\": [ \"ec2:AttachVolume\",
-                                \"ec2:CreateSnapshot\", \"ec2:CreateTags\", \"ec2:CreateVolume\",
-                                \"ec2:DeleteSnapshot\", \"ec2:DeleteTags\", \"ec2:DeleteVolume\",
-                                \"ec2:DescribeInstances\", \"ec2:DescribeSnapshots\",
-                                \"ec2:DescribeTags\", \"ec2:DescribeVolumes\", \"ec2:DescribeVolumesModifications\",
-                                \"ec2:DetachVolume\", \"ec2:ModifyVolume\" ], \"Resource\":
-                                \"*\" } ] }"
-                              type: string
-                          required:
-                          - controlPlaneOperatorARN
-                          - imageRegistryARN
-                          - ingressARN
-                          - kubeCloudControllerARN
-                          - networkARN
-                          - nodePoolManagementARN
-                          - storageARN
-                          type: object
                         serviceEndpoints:
                           description: "ServiceEndpoints specifies optional custom
                             endpoints which will override the default service endpoint
@@ -25789,154 +25112,6 @@ objects:
                           description: ProviderType is a specific supported infrastructure
                             provider within IBM Cloud.
                           type: string
-                      type: object
-                    powervs:
-                      description: PowerVS specifies configuration for clusters running
-                        on IBMCloud Power VS Service. This field is immutable. Once
-                        set, It can't be changed.
-                      properties:
-                        accountID:
-                          description: AccountID is the IBMCloud account id. This
-                            field is immutable. Once set, It can't be changed.
-                          type: string
-                        cisInstanceCRN:
-                          description: CISInstanceCRN is the IBMCloud CIS Service
-                            Instance's Cloud Resource Name This field is immutable.
-                            Once set, It can't be changed.
-                          pattern: '^crn:'
-                          type: string
-                        controlPlaneOperatorCreds:
-                          description: "ControlPlaneOperatorCreds is a reference to
-                            a secret containing cloud credentials with permissions
-                            matching the control-plane-operator policy. This field
-                            is immutable. Once set, It can't be changed. \n TODO(dan):
-                            document the \"control plane operator policy\""
-                          properties:
-                            name:
-                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?'
-                              type: string
-                          type: object
-                          x-kubernetes-map-type: atomic
-                        ingressOperatorCloudCreds:
-                          description: IngressOperatorCloudCreds is a reference to
-                            a secret containing ibm cloud credentials for ingress
-                            operator to get authenticated with ibm cloud.
-                          properties:
-                            name:
-                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?'
-                              type: string
-                          type: object
-                          x-kubernetes-map-type: atomic
-                        kubeCloudControllerCreds:
-                          description: "KubeCloudControllerCreds is a reference to
-                            a secret containing cloud credentials with permissions
-                            matching the cloud controller policy. This field is immutable.
-                            Once set, It can't be changed. \n TODO(dan): document
-                            the \"cloud controller policy\""
-                          properties:
-                            name:
-                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?'
-                              type: string
-                          type: object
-                          x-kubernetes-map-type: atomic
-                        nodePoolManagementCreds:
-                          description: "NodePoolManagementCreds is a reference to
-                            a secret containing cloud credentials with permissions
-                            matching the node pool management policy. This field is
-                            immutable. Once set, It can't be changed. \n TODO(dan):
-                            document the \"node pool management policy\""
-                          properties:
-                            name:
-                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                TODO: Add other useful fields. apiVersion, kind, uid?'
-                              type: string
-                          type: object
-                          x-kubernetes-map-type: atomic
-                        region:
-                          description: Region is the IBMCloud region in which the
-                            cluster resides. This configures the OCP control plane
-                            cloud integrations, and is used by NodePool to resolve
-                            the correct boot image for a given release. This field
-                            is immutable. Once set, It can't be changed.
-                          type: string
-                        resourceGroup:
-                          description: ResourceGroup is the IBMCloud Resource Group
-                            in which the cluster resides. This field is immutable.
-                            Once set, It can't be changed.
-                          type: string
-                        serviceInstanceID:
-                          description: "ServiceInstance is the reference to the Power
-                            VS service on which the server instance(VM) will be created.
-                            Power VS service is a container for all Power VS instances
-                            at a specific geographic region. serviceInstance can be
-                            created via IBM Cloud catalog or CLI. ServiceInstanceID
-                            is the unique identifier that can be obtained from IBM
-                            Cloud UI or IBM Cloud cli. \n More detail about Power
-                            VS service instance. https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server
-                            \n This field is immutable. Once set, It can't be changed."
-                          type: string
-                        subnet:
-                          description: Subnet is the subnet to use for control plane
-                            cloud resources. This field is immutable. Once set, It
-                            can't be changed.
-                          properties:
-                            id:
-                              description: ID of resource
-                              type: string
-                            name:
-                              description: Name of resource
-                              type: string
-                          type: object
-                        vpc:
-                          description: VPC specifies IBM Cloud PowerVS Load Balancing
-                            configuration for the control plane. This field is immutable.
-                            Once set, It can't be changed.
-                          properties:
-                            name:
-                              description: Name for VPC to used for all the service
-                                load balancer. This field is immutable. Once set,
-                                It can't be changed.
-                              type: string
-                            region:
-                              description: Region is the IBMCloud region in which
-                                VPC gets created, this VPC used for all the ingress
-                                traffic into the OCP cluster. This field is immutable.
-                                Once set, It can't be changed.
-                              type: string
-                            subnet:
-                              description: Subnet is the subnet to use for load balancer.
-                                This field is immutable. Once set, It can't be changed.
-                              type: string
-                            zone:
-                              description: Zone is the availability zone where load
-                                balancer cloud resources are created. This field is
-                                immutable. Once set, It can't be changed.
-                              type: string
-                          required:
-                          - name
-                          - region
-                          type: object
-                        zone:
-                          description: Zone is the availability zone where control
-                            plane cloud resources are created. This field is immutable.
-                            Once set, It can't be changed.
-                          type: string
-                      required:
-                      - accountID
-                      - cisInstanceCRN
-                      - controlPlaneOperatorCreds
-                      - ingressOperatorCloudCreds
-                      - kubeCloudControllerCreds
-                      - nodePoolManagementCreds
-                      - region
-                      - resourceGroup
-                      - serviceInstanceID
-                      - subnet
-                      - vpc
-                      - zone
                       type: object
                     type:
                       description: Type is the type of infrastructure provider for
@@ -27043,6 +26218,7 @@ objects:
                                                 - kind
                                                 - name
                                                 type: object
+                                                x-kubernetes-map-type: atomic
                                               dataSourceRef:
                                                 description: 'Specifies the object
                                                   from which to populate the volume
@@ -27067,16 +26243,15 @@ objects:
                                                   differences between DataSource and
                                                   DataSourceRef: * While DataSource
                                                   only allows two specific types of
-                                                  objects, DataSourceRef   allows
-                                                  any non-core object, as well as
-                                                  PersistentVolumeClaim objects. *
-                                                  While DataSource ignores disallowed
-                                                  values (dropping them), DataSourceRef   preserves
-                                                  all values, and generates an error
-                                                  if a disallowed value is   specified.
-                                                  (Alpha) Using this field requires
-                                                  the AnyVolumeDataSource feature
-                                                  gate to be enabled.'
+                                                  objects, DataSourceRef allows any
+                                                  non-core object, as well as PersistentVolumeClaim
+                                                  objects. * While DataSource ignores
+                                                  disallowed values (dropping them),
+                                                  DataSourceRef preserves all values,
+                                                  and generates an error if a disallowed
+                                                  value is specified. (Alpha) Using
+                                                  this field requires the AnyVolumeDataSource
+                                                  feature gate to be enabled.'
                                                 properties:
                                                   apiGroup:
                                                     description: APIGroup is the group
@@ -27099,6 +26274,7 @@ objects:
                                                 - kind
                                                 - name
                                                 type: object
+                                                x-kubernetes-map-type: atomic
                                               resources:
                                                 description: 'Resources represents
                                                   the minimum resources the volume
@@ -27200,6 +26376,7 @@ objects:
                                                       are ANDed.
                                                     type: object
                                                 type: object
+                                                x-kubernetes-map-type: atomic
                                               storageClassName:
                                                 description: 'Name of the StorageClass
                                                   required by the claim. More info:
@@ -27481,6 +26658,7 @@ objects:
                                                 - kind
                                                 - name
                                                 type: object
+                                                x-kubernetes-map-type: atomic
                                               resources:
                                                 description: 'Resources represents
                                                   the minimum resources the volume
@@ -27576,6 +26754,7 @@ objects:
                                                       are ANDed.
                                                     type: object
                                                 type: object
+                                                x-kubernetes-map-type: atomic
                                               storageClassName:
                                                 description: 'Name of the StorageClass
                                                   required by the claim. More info:
@@ -27936,6 +27115,7 @@ objects:
                                                               type: object
                                                             type: array
                                                         type: object
+                                                        x-kubernetes-map-type: atomic
                                                       weight:
                                                         description: Weight associated
                                                           with matching the corresponding
@@ -28092,10 +27272,12 @@ objects:
                                                               type: object
                                                             type: array
                                                         type: object
+                                                        x-kubernetes-map-type: atomic
                                                       type: array
                                                   required:
                                                   - nodeSelectorTerms
                                                   type: object
+                                                  x-kubernetes-map-type: atomic
                                               type: object
                                             podAffinity:
                                               description: Describes pod affinity
@@ -28220,6 +27402,7 @@ objects:
                                                                   ANDed.
                                                                 type: object
                                                             type: object
+                                                            x-kubernetes-map-type: atomic
                                                           namespaceSelector:
                                                             description: A label query
                                                               over the set of namespaces
@@ -28321,6 +27504,7 @@ objects:
                                                                   ANDed.
                                                                 type: object
                                                             type: object
+                                                            x-kubernetes-map-type: atomic
                                                           namespaces:
                                                             description: namespaces
                                                               specifies a static list
@@ -28476,6 +27660,7 @@ objects:
                                                               ANDed.
                                                             type: object
                                                         type: object
+                                                        x-kubernetes-map-type: atomic
                                                       namespaceSelector:
                                                         description: A label query
                                                           over the set of namespaces
@@ -28563,6 +27748,7 @@ objects:
                                                               ANDed.
                                                             type: object
                                                         type: object
+                                                        x-kubernetes-map-type: atomic
                                                       namespaces:
                                                         description: namespaces specifies
                                                           a static list of namespace
@@ -28721,6 +27907,7 @@ objects:
                                                                   ANDed.
                                                                 type: object
                                                             type: object
+                                                            x-kubernetes-map-type: atomic
                                                           namespaceSelector:
                                                             description: A label query
                                                               over the set of namespaces
@@ -28822,6 +28009,7 @@ objects:
                                                                   ANDed.
                                                                 type: object
                                                             type: object
+                                                            x-kubernetes-map-type: atomic
                                                           namespaces:
                                                             description: namespaces
                                                               specifies a static list
@@ -28977,6 +28165,7 @@ objects:
                                                               ANDed.
                                                             type: object
                                                         type: object
+                                                        x-kubernetes-map-type: atomic
                                                       namespaceSelector:
                                                         description: A label query
                                                           over the set of namespaces
@@ -29064,6 +28253,7 @@ objects:
                                                               ANDed.
                                                             type: object
                                                         type: object
+                                                        x-kubernetes-map-type: atomic
                                                       namespaces:
                                                         description: namespaces specifies
                                                           a static list of namespace
@@ -30949,6 +30139,7 @@ objects:
                                                           apiVersion, kind, uid?'
                                                         type: string
                                                     type: object
+                                                    x-kubernetes-map-type: atomic
                                                   secretRef:
                                                     description: UserDataSecretRef
                                                       references a k8s secret that
@@ -30961,6 +30152,7 @@ objects:
                                                           apiVersion, kind, uid?'
                                                         type: string
                                                     type: object
+                                                    x-kubernetes-map-type: atomic
                                                   userData:
                                                     description: UserData contains
                                                       config drive inline cloud-init
@@ -31002,6 +30194,7 @@ objects:
                                                           apiVersion, kind, uid?'
                                                         type: string
                                                     type: object
+                                                    x-kubernetes-map-type: atomic
                                                   secretRef:
                                                     description: UserDataSecretRef
                                                       references a k8s secret that
@@ -31014,6 +30207,7 @@ objects:
                                                           apiVersion, kind, uid?'
                                                         type: string
                                                     type: object
+                                                    x-kubernetes-map-type: atomic
                                                   userData:
                                                     description: UserData contains
                                                       NoCloud inline cloud-init userdata.
@@ -31050,6 +30244,7 @@ objects:
                                                       or "OEMDRV" (kickstart).
                                                     type: string
                                                 type: object
+                                                x-kubernetes-map-type: atomic
                                               containerDisk:
                                                 description: 'ContainerDisk references
                                                   a docker image, embedding a qcow
@@ -31139,6 +30334,7 @@ objects:
                                                           required:
                                                           - fieldPath
                                                           type: object
+                                                          x-kubernetes-map-type: atomic
                                                         mode:
                                                           description: 'Optional:
                                                             mode bits used to set
@@ -31204,6 +30400,7 @@ objects:
                                                           required:
                                                           - resource
                                                           type: object
+                                                          x-kubernetes-map-type: atomic
                                                       required:
                                                       - path
                                                       type: object
@@ -31389,6 +30586,7 @@ objects:
                                                           apiVersion, kind, uid?'
                                                         type: string
                                                     type: object
+                                                    x-kubernetes-map-type: atomic
                                                   secret:
                                                     description: Secret references
                                                       a k8s Secret that contains Sysprep
@@ -31403,6 +30601,7 @@ objects:
                                                           apiVersion, kind, uid?'
                                                         type: string
                                                     type: object
+                                                    x-kubernetes-map-type: atomic
                                                 type: object
                                             required:
                                             - name
