@@ -211,7 +211,6 @@ const (
         "ec2:ModifyInstanceAttribute",
         "ec2:ModifyNetworkInterfaceAttribute",
         "ec2:ModifySubnetAttribute",
-        "ec2:ReleaseAddress",
         "ec2:RevokeSecurityGroupIngress",
         "ec2:RunInstances",
         "ec2:TerminateInstances",
