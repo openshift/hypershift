@@ -29,12 +29,7 @@ import (
 )
 
 var (
-	// InstallScheme only should be used when installing the HyperShift Operator.
-	// The only current difference is that prometheusoperatorv1's GVKs must always be used, regardless of whether
-	// RHOBS monitoring is enabled.
-	// Ref: https://issues.redhat.com/browse/OCPBUGS-8713
-	InstallScheme = runtime.NewScheme()
-	Scheme        = runtime.NewScheme()
+	Scheme = runtime.NewScheme()
 	// TODO: Even though an object typer is specified here, serialized objects
 	// are not always getting their TypeMeta set unless explicitly initialized
 	// on the variable declarations.
@@ -52,27 +47,6 @@ var (
 )
 
 func init() {
-	capiaws.AddToScheme(InstallScheme)
-	capiibm.AddToScheme(InstallScheme)
-	clientgoscheme.AddToScheme(InstallScheme)
-	hyperv1alpha1.AddToScheme(InstallScheme)
-	hyperv1beta1.AddToScheme(InstallScheme)
-	capiv1.AddToScheme(InstallScheme)
-	configv1.AddToScheme(InstallScheme)
-	operatorv1.AddToScheme(InstallScheme)
-	securityv1.AddToScheme(InstallScheme)
-	routev1.AddToScheme(InstallScheme)
-	rbacv1.AddToScheme(InstallScheme)
-	corev1.AddToScheme(InstallScheme)
-	apiextensionsv1.AddToScheme(InstallScheme)
-	kasv1beta1.AddToScheme(InstallScheme)
-	prometheusoperatorv1.AddToScheme(InstallScheme)
-	agentv1.AddToScheme(InstallScheme)
-	capikubevirt.AddToScheme(InstallScheme)
-	capiazure.AddToScheme(InstallScheme)
-	snapshotv1.AddToScheme(InstallScheme)
-	imagev1.AddToScheme(InstallScheme)
-
 	capiaws.AddToScheme(Scheme)
 	capiibm.AddToScheme(Scheme)
 	clientgoscheme.AddToScheme(Scheme)
