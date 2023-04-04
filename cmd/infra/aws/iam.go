@@ -173,7 +173,6 @@ const (
   "Statement": [
     {
       "Action": [
-        "ec2:AllocateAddress",
         "ec2:AssociateRouteTable",
         "ec2:AttachInternetGateway",
         "ec2:AuthorizeSecurityGroupIngress",
