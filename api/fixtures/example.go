@@ -83,6 +83,7 @@ type ExampleOptions struct {
 	NetworkType                      hyperv1.NetworkType
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
+	UpgradeType                      hyperv1.UpgradeType
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -507,7 +508,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			Spec: hyperv1.NodePoolSpec{
 				Management: hyperv1.NodePoolManagement{
 					AutoRepair:  o.AutoRepair,
-					UpgradeType: hyperv1.UpgradeTypeReplace,
+					UpgradeType: o.UpgradeType,
 				},
 				Replicas:    &o.NodePoolReplicas,
 				ClusterName: o.Name,

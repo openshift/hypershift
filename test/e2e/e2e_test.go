@@ -428,6 +428,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		PullSecretFile:                   o.configurableClusterOptions.PullSecretFile,
 		ControlPlaneOperatorImage:        o.configurableClusterOptions.ControlPlaneOperatorImage,
 		ExternalDNSDomain:                o.configurableClusterOptions.ExternalDNSDomain,
+		NodeUpgradeType:                  hyperv1.UpgradeTypeReplace,
 		AWSPlatform: core.AWSPlatformOptions{
 			InstanceType:       "m5.large",
 			RootVolumeSize:     64,
