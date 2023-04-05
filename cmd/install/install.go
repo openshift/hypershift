@@ -222,6 +222,8 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 	if err != nil {
 		return err
 	}
+
+	var errs []error
 	for _, object := range objects {
 		var objectBytes bytes.Buffer
 		err := hyperapi.YamlSerializer.Encode(object, &objectBytes)
@@ -241,12 +243,13 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 			}
 		} else {
 			if err := client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift")); err != nil {
-				return err
+				errs = append(errs, err)
 			}
 			fmt.Printf("applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
 		}
 	}
-	return nil
+
+	return errors.NewAggregate(errs)
 }
 
 func waitUntilAvailable(ctx context.Context, opts Options) error {
