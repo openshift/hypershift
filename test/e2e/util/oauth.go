@@ -12,6 +12,7 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	configmanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -22,6 +23,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	osinv1 "github.com/openshift/api/osin/v1"
 	userv1 "github.com/openshift/api/user/v1"
 	userv1client "github.com/openshift/client-go/user/clientset/versioned/typed/user/v1"
 
@@ -75,7 +77,8 @@ func EnsureOAuthWithIdentityProvider(t *testing.T, ctx context.Context, client c
 
 		// wait for oauth route to be ready
 		oauthRoute := WaitForOAuthRouteReady(t, ctx, client, guestConfig, hostedCluster)
-
+		// wait for oauth config map to be reconciled
+		WaitForOauthConfig(t, ctx, client, hostedCluster)
 		// wait for oauth token request to succeed
 		access_token := WaitForOAuthToken(t, ctx, oauthRoute, guestConfig, "testuser", "password")
 
@@ -210,4 +213,35 @@ func extractAccessToken(resp *http.Response) (string, error) {
 	}
 
 	return fragments["access_token"][0], nil
+}
+
+const OAuthServerConfigKey = "config.yaml"
+
+func WaitForOauthConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	g := NewWithT(t)
+
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+	oauthConfigCM := hcpmanifests.OAuthServerConfig(hcpNamespace)
+
+	err := wait.PollImmediateWithContext(ctx, time.Second, 5*time.Minute, func(ctx context.Context) (done bool, err error) {
+		err = client.Get(context.Background(), crclient.ObjectKeyFromObject(oauthConfigCM), oauthConfigCM)
+		if err != nil {
+			return false, nil
+		}
+		data, ok := oauthConfigCM.Data[OAuthServerConfigKey]
+		if !ok || data == "" {
+			return false, nil
+		}
+
+		ouathConfig := &osinv1.OsinServerConfig{}
+		if _, _, err := api.YamlSerializer.Decode([]byte(data), nil, ouathConfig); err != nil {
+			return false, nil
+		}
+		if len(ouathConfig.OAuthConfig.IdentityProviders) == 0 {
+			return false, nil
+		}
+
+		return true, nil
+	})
+	g.Expect(err).ToNot(HaveOccurred(), "failed validating oauth config")
 }
