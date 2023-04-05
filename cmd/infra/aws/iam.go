@@ -173,7 +173,6 @@ const (
   "Statement": [
     {
       "Action": [
-        "ec2:AllocateAddress",
         "ec2:AssociateRouteTable",
         "ec2:AttachInternetGateway",
         "ec2:AuthorizeSecurityGroupIngress",
@@ -211,7 +210,6 @@ const (
         "ec2:ModifyInstanceAttribute",
         "ec2:ModifyNetworkInterfaceAttribute",
         "ec2:ModifySubnetAttribute",
-        "ec2:ReleaseAddress",
         "ec2:RevokeSecurityGroupIngress",
         "ec2:RunInstances",
         "ec2:TerminateInstances",

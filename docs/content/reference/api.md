@@ -1794,7 +1794,6 @@ string
 &ldquo;Statement&rdquo;: [
 {
 &ldquo;Action&rdquo;: [
-&ldquo;ec2:AllocateAddress&rdquo;,
 &ldquo;ec2:AssociateRouteTable&rdquo;,
 &ldquo;ec2:AttachInternetGateway&rdquo;,
 &ldquo;ec2:AuthorizeSecurityGroupIngress&rdquo;,
@@ -1832,7 +1831,6 @@ string
 &ldquo;ec2:ModifyInstanceAttribute&rdquo;,
 &ldquo;ec2:ModifyNetworkInterfaceAttribute&rdquo;,
 &ldquo;ec2:ModifySubnetAttribute&rdquo;,
-&ldquo;ec2:ReleaseAddress&rdquo;,
 &ldquo;ec2:RevokeSecurityGroupIngress&rdquo;,
 &ldquo;ec2:RunInstances&rdquo;,
 &ldquo;ec2:TerminateInstances&rdquo;,
