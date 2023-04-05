@@ -1531,8 +1531,9 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 }
 
 func TestIsUpgradeable(t *testing.T) {
-	releaseImageFrom := "image:1.2"
-	releaseImageTo := "image:1.3"
+	releaseImageFrom := "image-4.12"
+	releaseImageToZstream := "image-4.12.1"
+	releaseImageTo := "image-4.13"
 	tests := []struct {
 		name      string
 		hc        *hyperv1.HostedCluster
@@ -1545,6 +1546,9 @@ func TestIsUpgradeable(t *testing.T) {
 				Spec: hyperv1.HostedClusterSpec{
 					Release: hyperv1.Release{
 						Image: releaseImageFrom,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
@@ -1561,11 +1565,15 @@ func TestIsUpgradeable(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: releaseImageFrom,
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: releaseImageFrom,
+							Image:   releaseImageFrom,
+							Version: "4.12.0",
 						},
 					},
 				},
@@ -1580,11 +1588,15 @@ func TestIsUpgradeable(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: releaseImageTo,
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: releaseImageFrom,
+							Image:   releaseImageFrom,
+							Version: "4.12.0",
 						},
 					},
 					Conditions: []metav1.Condition{
@@ -1610,11 +1622,15 @@ func TestIsUpgradeable(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: releaseImageTo,
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: releaseImageFrom,
+							Image:   releaseImageFrom,
+							Version: "4.12.0",
 						},
 					},
 					Conditions: []metav1.Condition{
@@ -1640,11 +1656,44 @@ func TestIsUpgradeable(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: releaseImageTo,
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: releaseImageFrom,
+							Image:   releaseImageFrom,
+							Version: "4.12.0",
+						},
+					},
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ClusterVersionUpgradeable),
+							Status: metav1.ConditionFalse,
+						},
+					},
+				},
+			},
+			upgrading: true,
+			err:       false,
+		},
+		{
+			name: "not upgradeable but z-stream upgrade allowed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: releaseImageToZstream,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   releaseImageFrom,
+							Version: "4.12.0",
 						},
 					},
 					Conditions: []metav1.Condition{
@@ -1660,13 +1709,36 @@ func TestIsUpgradeable(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
+		objs := []crclient.Object{
+			&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: nil,
+				},
+			},
+		}
+		r := &HostedClusterReconciler{
+			Client: fake.NewClientBuilder().WithObjects(objs...).Build(),
+			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				ImageVersion: map[string]string{
+					"image-4.12":   "4.12.0",
+					"image-4.12.1": "4.12.1",
+					"image-4.13":   "4.13.0",
+				},
+			},
+		}
+
 		t.Run(test.name, func(t *testing.T) {
-			upgrading, _, err := isUpgradeable(test.hc)
+			releaseImage, err := r.lookupReleaseImage(context.TODO(), test.hc)
+			if err != nil {
+				t.Errorf("isUpgradeable() internal err = %v", err)
+			}
+			upgrading, _, err := isUpgradeable(test.hc, releaseImage)
 			if upgrading != test.upgrading {
 				t.Errorf("isUpgradeable() upgrading = %v, want %v", upgrading, test.upgrading)
 			}
 			if (err == nil) == test.err {
-				t.Errorf("isUpgradeable() err = %v, want %v", (err == nil), test.err)
+				t.Errorf("isUpgradeable() err = %v, want %v", err, test.err)
 				return
 			}
 		})
@@ -1835,11 +1907,15 @@ func TestIsProgressing(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: "release-1.2",
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "release-1.2",
+							Image:   "release-1.2",
+							Version: "1.2.0",
 						},
 					},
 				},
@@ -1854,6 +1930,9 @@ func TestIsProgressing(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: "release-1.2",
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
 				},
 			},
 			want:    true,
@@ -1866,11 +1945,15 @@ func TestIsProgressing(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: "release-1.3",
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "release-1.2",
+							Image:   "release-1.2",
+							Version: "1.2.0",
 						},
 					},
 				},
@@ -1885,11 +1968,15 @@ func TestIsProgressing(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: "release-1.3",
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "release-1.2",
+							Image:   "release-1.2",
+							Version: "1.2.0",
 						},
 					},
 					Conditions: []metav1.Condition{
@@ -1910,11 +1997,15 @@ func TestIsProgressing(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: "release-1.3",
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "release-1.2",
+							Image:   "release-1.2",
+							Version: "1.2.0",
 						},
 					},
 					Conditions: []metav1.Condition{
@@ -1940,11 +2031,15 @@ func TestIsProgressing(t *testing.T) {
 					Release: hyperv1.Release{
 						Image: "release-1.3",
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "release-1.2",
+							Image:   "release-1.2",
+							Version: "1.2.0",
 						},
 					},
 					Conditions: []metav1.Condition{
@@ -1960,8 +2055,30 @@ func TestIsProgressing(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		objs := []crclient.Object{
+			&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: nil,
+				},
+			},
+		}
+		r := &HostedClusterReconciler{
+			Client: fake.NewClientBuilder().WithObjects(objs...).Build(),
+			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				ImageVersion: map[string]string{
+					"release-1.2": "1.2.0",
+					"release-1.3": "1.3.0",
+				},
+			},
+		}
+
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := isProgressing(context.TODO(), tt.hc)
+			releaseImage, err := r.lookupReleaseImage(context.TODO(), tt.hc)
+			if err != nil {
+				t.Errorf("isProgressing() internal err = %v", err)
+			}
+			got, err := isProgressing(tt.hc, releaseImage)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("isProgressing() error = %v, wantErr %v", err, tt.wantErr)
 				return

@@ -807,6 +807,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	releaseImage, err := r.lookupReleaseImage(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+
 	// Set Progressing condition
 	{
 		condition := metav1.Condition{
@@ -816,7 +821,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			Message:            "HostedCluster is at expected version",
 			Reason:             hyperv1.AsExpectedReason,
 		}
-		progressing, err := isProgressing(ctx, hcluster)
+		progressing, err := isProgressing(hcluster, releaseImage)
 		if err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
@@ -893,7 +898,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			log.Error(fmt.Errorf("release image is invalid"), "reconciliation is blocked", "message", validReleaseImage.Message)
 			return ctrl.Result{}, nil
 		}
-		upgrading, msg, err := isUpgradeable(hcluster)
+		upgrading, msg, err := isUpgradeable(hcluster, releaseImage)
 		if upgrading {
 			if err != nil {
 				log.Error(err, "reconciliation is blocked", "message", validReleaseImage.Message)
@@ -3448,7 +3453,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
 }
 
-func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
+func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (bool, error) {
 	for _, condition := range hc.Status.Conditions {
 		switch string(condition.Type) {
 		case string(hyperv1.SupportedHostedCluster), string(hyperv1.ValidHostedClusterConfiguration), string(hyperv1.ValidReleaseImage), string(hyperv1.ReconciliationActive):
@@ -3456,7 +3461,7 @@ func isProgressing(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error)
 				return false, fmt.Errorf("%s condition is false", string(condition.Type))
 			}
 		case string(hyperv1.ClusterVersionUpgradeable):
-			_, _, err := isUpgradeable(hc)
+			_, _, err := isUpgradeable(hc, releaseImage)
 			if err != nil {
 				return false, fmt.Errorf("ClusterVersionUpgradeable condition is false: %w", err)
 			}
@@ -4180,22 +4185,54 @@ func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, creat
 	return nil
 }
 
-func isUpgradeable(hcluster *hyperv1.HostedCluster) (bool, string, error) {
-	if hcluster.Status.Version != nil && hcluster.Status.Version.Desired.Image != hcluster.Spec.Release.Image {
-		upgradeable := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable))
-		if upgradeable != nil && upgradeable.Status == metav1.ConditionFalse {
-			releaseImage, exists := hcluster.Annotations[hyperv1.ForceUpgradeToAnnotation]
-			if !exists {
-				return true, "", fmt.Errorf("cluster version is not upgradeable")
-			} else if releaseImage != hcluster.Spec.Release.Image {
-				return true, "", fmt.Errorf("cluster version is not upgradeable, force annotation is present but does not match desired release image")
-			} else {
-				return true, "cluster version is not upgradeable, upgrade is forced by annotation", nil
-			}
-		}
+func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hcluster *hyperv1.HostedCluster) (*releaseinfo.ReleaseImage, error) {
+	var pullSecret corev1.Secret
+	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
+		return nil, fmt.Errorf("failed to get pull secret: %w", err)
+	}
+	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+	return r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
+}
+
+// isUpgradeable returns
+// 1) bool indicating whether the HostedCluster is upgrading
+// 2) non-error message about the condition of the upgrade
+// 3) error indicating that the upgrade is not allowed or we were not able to determine
+func isUpgradeable(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (bool, string, error) {
+	if hcluster.Status.Version == nil || hcluster.Status.Version.Desired.Image == hcluster.Spec.Release.Image {
+		// cluster is either installing or at the version requested by the spec, no upgrade in progress
+		return false, "", nil
+	}
+	upgradeable := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable))
+	if upgradeable == nil || upgradeable.Status == metav1.ConditionTrue {
+		// CVO reports Upgradeable is true, upgrade is allowed to proceed
 		return true, "", nil
 	}
-	return false, "", nil
+
+	currentTargetVersion, err := semver.Parse(hcluster.Status.Version.Desired.Version)
+	if err != nil {
+		return true, "", fmt.Errorf("cluster is %s=%s (%s: %s), and failed to parse the current target %s as a Semantic Version: %w", upgradeable.Type, upgradeable.Status, upgradeable.Reason, upgradeable.Message, hcluster.Status.Version.Desired.Version, err)
+	}
+	requestedVersion, err := semver.Parse(releaseImage.Version())
+	if err != nil {
+		return true, "", fmt.Errorf("failed to parse release image version: %w", err)
+	}
+	if requestedVersion.Major == currentTargetVersion.Major && requestedVersion.Minor == currentTargetVersion.Minor {
+		// z-stream upgrades should be allowed even when ClusterVersionUpgradeable is false
+		return true, "", nil
+	}
+
+	upgradeImage, exists := hcluster.Annotations[hyperv1.ForceUpgradeToAnnotation]
+	if !exists {
+		return true, "", fmt.Errorf("cluster version is not upgradeable")
+	} else if upgradeImage != hcluster.Spec.Release.Image {
+		return true, "", fmt.Errorf("cluster version is not upgradeable, force annotation is present but does not match desired release image")
+	} else {
+		return true, "cluster version is not upgradeable, upgrade is forced by annotation", nil
+	}
 }
 
 // defaultAPIPortIfNeeded defaults the apiserver port on Azure management clusters as a workaround
