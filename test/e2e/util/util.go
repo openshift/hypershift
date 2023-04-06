@@ -121,7 +121,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 
 	t.Logf("Waiting for a successful connection to the guest apiserver")
 	var guestClient crclient.Client
-	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	// SOA TTL is 60s. If DNS lookup fails on the api-* name, it is unlikely to succeed in less than 60s.
 	err = wait.PollImmediateWithContext(waitForGuestClientCtx, 35*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {

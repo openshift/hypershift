@@ -336,7 +336,7 @@ func (o *CreateInfraOptions) CreateProxyHost(ctx context.Context, l logr.Logger,
 		ImageId:      aws.String("resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"),
 		MaxCount:     aws.Int64(1),
 		MinCount:     aws.Int64(1),
-		InstanceType: aws.String("t2.micro"),
+		InstanceType: aws.String("t3.medium"),
 		UserData:     aws.String(base64.StdEncoding.EncodeToString(userData)),
 		NetworkInterfaces: []*ec2.InstanceNetworkInterfaceSpecification{
 			{

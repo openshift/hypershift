@@ -69,7 +69,7 @@ func CreateProxyInstance(t *testing.T, ctx context.Context, client crclient.Clie
 
 	caAndKey := strings.Join([]string{key, ca}, "")
 
-	userData := []byte(fmt.Sprintf(squidProxyWithSSLScript, caAndKey))
+	userData := []byte(fmt.Sprintf(mitmProxyScript, caAndKey))
 	proxyAddr, err := infraOptions.CreateProxyHost(ctx, opts.Log, ec2Client, *subnetID, *res.SecurityGroups[0].GroupId, userData)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to create proxy")
 
@@ -95,7 +95,7 @@ func CreateProxyInstance(t *testing.T, ctx context.Context, client crclient.Clie
 }
 
 func generateCACert() (string, string, error) {
-	// openssl req -new -newkey rsa:2048 -sha256 -days 365 -nodes -x509 -extensions v3_ca -keyout myCA.pem -out myCA.pem
+	// openssl req -new -newkey rsa:2048 -sha256 -days 365 -nodes -x509 -extensions v3_ca -keyout mitmproxy-ca.pem -out mitmproxy-ca.pem
 	ca := &x509.Certificate{
 		SerialNumber: big.NewInt(2019),
 		Subject: pkix.Name{
@@ -133,6 +133,18 @@ func generateCACert() (string, string, error) {
 
 	return caPEM.String(), caPrivKeyPEM.String(), nil
 }
+
+const mitmProxyScript = `#!/bin/bash
+wget https://snapshots.mitmproxy.org/7.0.2/mitmproxy-7.0.2-linux.tar.gz
+mkdir -p /home/ec2-user/mitm
+tar zxvf mitmproxy-7.0.2-linux.tar.gz -C /home/ec2-user/mitm
+
+# Copy generated CA
+echo '%s' > /home/ec2-user/mitm/mitmproxy-ca.pem
+
+nohup /home/ec2-user/mitm/mitmdump --showhost --ssl-insecure --ignore-hosts quay.io --ignore-hosts registry.redhat.io \
+  --set confdir=/home/ec2-user/mitm --set listen_port=3128  > /home/ec2-user/mitm/mitm.log  &
+`
 
 const squidProxyWithSSLScript = `#!/bin/bash
 yum install -y squid
