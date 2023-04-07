@@ -575,7 +575,7 @@ func TestSecretRefs(t *testing.T) {
 
 func findRefs(sel reflect.Type, prefix, structName string) sets.String {
 	switch sel.Kind() {
-	case reflect.Pointer, reflect.Slice, reflect.Map:
+	case reflect.Ptr, reflect.Slice, reflect.Map:
 		return findRefs(sel.Elem(), prefix, structName)
 	case reflect.Struct:
 		result := sets.NewString()
