@@ -482,6 +482,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			{Name: "TOKEN_MINTER_IMAGE", Value: params.Images.TokenMinter},
 			{Name: "CLI_IMAGE", Value: params.Images.CLI},
 			{Name: "SOCKS5_PROXY_IMAGE", Value: params.Images.Socks5Proxy},
+			{Name: "OPENSHIFT_RELEASE_IMAGE", Value: params.DeploymentConfig.AdditionalAnnotations[hyperv1.ReleaseImageAnnotation]},
 		}...),
 		Name:            operatorName,
 		Image:           params.Images.NetworkOperator,
