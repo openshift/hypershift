@@ -3534,7 +3534,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 
 		deployment := manifests.PowerVSCCMDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, deployment, func() error {
-			return powervs.ReconcileCCMDeployment(deployment, hcp, ccmConfig, releaseImage)
+			return powervs.ReconcileCCMDeployment(deployment, hcp, ccmConfig, releaseImage, r.SetDefaultSecurityContext)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile cloud controller manager deployment: %w", err)
 		}
