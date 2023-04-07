@@ -909,7 +909,7 @@ private node communication with the control plane.</p>
 <a href="#hypershift.openshift.io/v1beta1.AWSKMSSpec">AWSKMSSpec</a>)
 </p>
 <p>
-<p>AWSKMSAuthSpec defines metadata about the management of credentials used to interact and encrypt data via AWS KMS key.</p>
+<p>AWSKMSAuthSpec defines metadata about the management of credentials used to interact with AWS KMS</p>
 </p>
 <table>
 <thead>
@@ -1791,7 +1791,7 @@ string
 &ldquo;ec2:ModifyVpcEndpoint&rdquo;,
 &ldquo;ec2:DeleteVpcEndpoints&rdquo;,
 &ldquo;ec2:CreateTags&rdquo;,
-&ldquo;route53:ListHostedZones&rdquo;,
+&ldquo;route53:ListHostedZones&rdquo;
 ],
 &ldquo;Resource&rdquo;: &ldquo;*&rdquo;
 },
@@ -2644,16 +2644,19 @@ has been created for the specified NLB in the management VPC</p>
 </tr><tr><td><p>&#34;CVOScaledDown&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;CloudResourcesDestroyed&#34;</p></td>
-<td><p>CloudResourcesDestroyed bubbles up the same condition from HCP. It signals if the cloud provider infrastructure created by Kubernetes
-in the consumer cloud provider account was destroyed.
-A failure here may require external user intervention to resolve. E.g. cloud provider perms were corrupted. E.g. the guest cluster was broken
-and kube resource deletion that affects cloud infra like service type load balancer can&rsquo;t succeed.</p>
-</td>
+<td></td>
 </tr><tr><td><p>&#34;ClusterVersionAvailable&#34;</p></td>
 <td><p>ClusterVersionAvailable bubbles up Failing configv1.OperatorAvailable from the CVO.</p>
 </td>
 </tr><tr><td><p>&#34;ClusterVersionFailing&#34;</p></td>
-<td></td>
+<td><p>ClusterVersionFailing bubbles up Failing from the CVO.</p>
+</td>
+</tr><tr><td><p>&#34;ClusterVersionProgressing&#34;</p></td>
+<td><p>ClusterVersionProgressing bubbles up configv1.OperatorProgressing from the CVO.</p>
+</td>
+</tr><tr><td><p>&#34;ClusterVersionReleaseAccepted&#34;</p></td>
+<td><p>ClusterVersionReleaseAccepted bubbles up Failing ReleaseAccepted from the CVO.</p>
+</td>
 </tr><tr><td><p>&#34;ClusterVersionSucceeding&#34;</p></td>
 <td><p>ClusterVersionSucceeding indicates the current status of the desired release
 version of the HostedCluster as indicated by the Failing condition in the
@@ -2664,15 +2667,13 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 underlying cluster&rsquo;s ClusterVersion.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
-<td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
-A failure here often means a software bug or a non-stable cluster.</p>
+<td><p>EtcdAvailable bubbles up the same condition from HCP.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdSnapshotRestored&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>HostedClusterAvailable indicates whether the HostedCluster has a healthy
-control plane.
-When this is false for too long and there&rsquo;s no clear indication in the &ldquo;Reason&rdquo;, please check the remaining more granular conditions.</p>
+control plane.</p>
 </td>
 </tr><tr><td><p>&#34;Degraded&#34;</p></td>
 <td><p>HostedClusterDegraded indicates whether the HostedCluster is encountering
@@ -2680,8 +2681,7 @@ an error that may require user intervention to resolve.</p>
 </td>
 </tr><tr><td><p>&#34;Progressing&#34;</p></td>
 <td><p>HostedClusterProgressing indicates whether the HostedCluster is attempting
-an initial deployment or upgrade.
-When this is false for too long and there&rsquo;s no clear indication in the &ldquo;Reason&rdquo;, please check the remaining more granular conditions.</p>
+an initial deployment or upgrade.</p>
 </td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td></td>
@@ -2689,85 +2689,53 @@ When this is false for too long and there&rsquo;s no clear indication in the &ld
 <td></td>
 </tr><tr><td><p>&#34;IgnitionEndpointAvailable&#34;</p></td>
 <td><p>IgnitionEndpointAvailable indicates whether the ignition server for the
-HostedCluster is available to handle ignition requests.
-A failure here often means a software bug or a non-stable cluster.</p>
+HostedCluster is available to handle ignition requests.</p>
 </td>
 </tr><tr><td><p>&#34;InfrastructureReady&#34;</p></td>
-<td><p>InfrastructureReady bubbles up the same condition from HCP. It signals if the infrastructure for a control plane to be operational,
-e.g. load balancers were created successfully.
-A failure here may require external user intervention to resolve. E.g. hitting quotas on the cloud provider.</p>
+<td><p>InfrastructureReady bubbles up the same condition from HCP.</p>
 </td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
-<td><p>KubeAPIServerAvailable bubbles up the same condition from HCP. It signals if the kube API server is available.
-A failure here often means a software bug or a non-stable cluster.</p>
+<td><p>KubeAPIServerAvailable bubbles up the same condition from HCP.</p>
 </td>
 </tr><tr><td><p>&#34;PlatformCredentialsFound&#34;</p></td>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
-desired platform are valid.
-A failure here is unlikely to resolve without the changing user input.</p>
+desired platform are valid.</p>
 </td>
 </tr><tr><td><p>&#34;ReconciliationActive&#34;</p></td>
 <td><p>ReconciliationActive indicates if reconciliation of the HostedCluster is
-active or paused hostedCluster.spec.pausedUntil.</p>
+active or paused.</p>
 </td>
 </tr><tr><td><p>&#34;ReconciliationSucceeded&#34;</p></td>
 <td><p>ReconciliationSucceeded indicates if the HostedCluster reconciliation
-succeeded.
-A failure here often means a software bug or a non-stable cluster.</p>
+succeeded.</p>
 </td>
 </tr><tr><td><p>&#34;SupportedHostedCluster&#34;</p></td>
 <td><p>SupportedHostedCluster indicates whether a HostedCluster is supported by
 the current configuration of the hypershift-operator.
 e.g. If HostedCluster requests endpointAcess Private but the hypershift-operator
 is running on a management cluster outside AWS or is not configured with AWS
-credentials, the HostedCluster is not supported.
-A failure here is unlikely to resolve without the changing user input.</p>
+credentials, the HostedCluster is not supported.</p>
 </td>
 </tr><tr><td><p>&#34;UnmanagedEtcdAvailable&#34;</p></td>
 <td><p>UnmanagedEtcdAvailable indicates whether a user-managed etcd cluster is
 healthy.</p>
 </td>
-</tr><tr><td><p>&#34;ValidAWSIdentityProvider&#34;</p></td>
-<td><p>ValidAWSIdentityProvider indicates if the Identity Provider referenced
-in the cloud credentials is healthy. E.g. for AWS the idp ARN is referenced in the iam roles.
-&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
-&ldquo;Statement&rdquo;: [
-{
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Principal&rdquo;: {
-&ldquo;Federated&rdquo;: &ldquo;{{ .ProviderARN }}&rdquo;
-},
-&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
-&ldquo;Condition&rdquo;: {
-&ldquo;StringEquals&rdquo;: {
-&ldquo;{{ .ProviderName }}:sub&rdquo;: {{ .ServiceAccounts }}
-}
-}
-}
-]</p>
-<p>A failure here may require external user intervention to resolve.</p>
-</td>
 </tr><tr><td><p>&#34;ValidConfiguration&#34;</p></td>
-<td><p>ValidHostedClusterConfiguration signals if the hostedCluster input is valid and
-supported by the underlying management cluster.
-A failure here is unlikely to resolve without the changing user input.</p>
+<td><p>ValidHostedClusterConfiguration indicates (if status is true) that the
+ClusterConfiguration specified for the HostedCluster is valid.</p>
 </td>
 </tr><tr><td><p>&#34;ValidHostedControlPlaneConfiguration&#34;</p></td>
-<td><p>ValidHostedControlPlaneConfiguration bubbles up the same condition from HCP. It signals if the hostedControlPlane input is valid and
-supported by the underlying management cluster.
-A failure here is unlikely to resolve without the changing user input.</p>
+<td><p>ValidHostedControlPlaneConfiguration bubbles up the same condition from HCP.</p>
 </td>
 </tr><tr><td><p>&#34;ValidOIDCConfiguration&#34;</p></td>
 <td><p>ValidOIDCConfiguration indicates if an AWS cluster&rsquo;s OIDC condition is
-detected as invalid.
-A failure here may require external user intervention to resolve. E.g. oidc was deleted out of band.</p>
+detected as invalid.</p>
 </td>
 </tr><tr><td><p>&#34;ValidReleaseImage&#34;</p></td>
 <td><p>ValidReleaseImage indicates if the release image set in the spec is valid
 for the HostedCluster. For example, this can be set false if the
 HostedCluster itself attempts an unsupported version before 4.9 or an
-unsupported upgrade e.g y-stream upgrade before 4.11.
-A failure here is unlikely to resolve without the changing user input.</p>
+unsupported upgrade e.g y-stream upgrade before 4.11.</p>
 </td>
 </tr></tbody>
 </table>
@@ -3530,6 +3498,7 @@ string
 </em>
 </td>
 <td>
+<p>ReleaseImage is the release image applied to the hosted control plane.</p>
 </td>
 </tr>
 <tr>
@@ -3566,6 +3535,10 @@ string
 </em>
 </td>
 <td>
+<p>IssuerURL is an OIDC issuer URL which is used as the issuer in all
+ServiceAccount tokens generated by the control plane API server. The
+default value is kubernetes.default.svc, which only works for in-cluster
+validation.</p>
 </td>
 </tr>
 <tr>
@@ -4698,52 +4671,6 @@ string
 <em>(Optional)</em>
 <p>AccessModes is an array that contains the desired Access Modes the root volume should have.
 More info: <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes">https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes</a></p>
-</td>
-</tr>
-</tbody>
-</table>
-###KubevirtPlatformSpec { #hypershift.openshift.io/v1beta1.KubevirtPlatformSpec }
-<p>
-(<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
-</p>
-<p>
-<p>KubevirtPlatformSpec specifies configuration for kubevirt guest cluster installations</p>
-</p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>
-<code>baseDomainPassthrough</code></br>
-<em>
-bool
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>BaseDomainPassthrough toggles whether or not an automatically
-generated base domain for the guest cluster should be used that
-is a subdomain of the management cluster&rsquo;s *.apps DNS.</p>
-<p>For the KubeVirt platform, the basedomain can be autogenerated using
-the *.apps domain of the management/infra hosting cluster
-This makes the guest cluster&rsquo;s base domain a subdomain of the
-hypershift infra/mgmt cluster&rsquo;s base domain.</p>
-<p>Example:
-Infra/Mgmt cluster&rsquo;s DNS
-Base: example.com
-Cluster: mgmt-cluster.example.com
-Apps:    *.apps.mgmt-cluster.example.com
-KubeVirt Guest cluster&rsquo;s DNS
-Base: apps.mgmt-cluster.example.com
-Cluster: guest.apps.mgmt-cluster.example.com
-Apps: *.apps.guest.apps.mgmt-cluster.example.com</p>
-<p>This is possible using OCP wildcard routes</p>
 </td>
 </tr>
 </tbody>
@@ -6247,22 +6174,6 @@ This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </tr>
 <tr>
 <td>
-<code>controlPlaneOperatorCreds</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<p>ControlPlaneOperatorCreds is a reference to a secret containing cloud
-credentials with permissions matching the control-plane-operator policy.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
-<p>TODO(dan): document the &ldquo;control plane operator policy&rdquo;</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>ingressOperatorCloudCreds</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
@@ -6273,6 +6184,20 @@ Kubernetes core/v1.LocalObjectReference
 <td>
 <p>IngressOperatorCloudCreds is a reference to a secret containing ibm cloud
 credentials for ingress operator to get authenticated with ibm cloud.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storageOperatorCloudCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>StorageOperatorCloudCreds is a reference to a secret containing ibm cloud
+credentials for storage operator to get authenticated with ibm cloud.</p>
 </td>
 </tr>
 </tbody>
@@ -6816,7 +6741,7 @@ ServicePublishingStrategy
 <p>ServiceType defines what control plane services can be exposed from the
 management control plane.</p>
 </p>
-###UnmanagedEtcdSpec { #hypershift.openshift.io/v1alpha1.UnmanagedEtcdSpec }
+###UnmanagedEtcdSpec { #hypershift.openshift.io/v1beta1.UnmanagedEtcdSpec }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1beta1.EtcdSpec">EtcdSpec</a>)
