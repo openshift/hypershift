@@ -18,6 +18,11 @@ func ProxyConfig() *configv1.Proxy {
 	}
 }
 
+// TODO (relyt0925): this is is utilized by the machine config server and feeds into the user data setup to download
+// ignition configuration. It also factors into the machine config served to the machine. These usages need to be
+// further examined before it directly takes what the user configures for the cluster-wide proxy at the SDN level.
+// In current state of the world: the in cluster proxy configuration set by the user is never picked up (only the one
+// set on the hosted cluster instance).
 func ReconcileProxyConfig(cfg *configv1.Proxy, hcfg *hyperv1.ClusterConfiguration) {
 	spec := configv1.ProxySpec{}
 	if hcfg != nil && hcfg.Proxy != nil {
@@ -25,6 +30,25 @@ func ReconcileProxyConfig(cfg *configv1.Proxy, hcfg *hyperv1.ClusterConfiguratio
 	}
 
 	cfg.Spec = spec
+}
+
+// ReconcileInClusterProxyConfig will reconcile the proxy configured in the hosted cluster spec when specified otherwise
+// will maintain what the user specifies in the proxy spec by default
+func ReconcileInClusterProxyConfig(cfg *configv1.Proxy, hcfg *hyperv1.ClusterConfiguration) {
+	const hostedClusterProxyConfigDefinedAnnotation = "hypershift.io/hosted-cluster-proxy-config"
+	if hcfg != nil && hcfg.Proxy != nil {
+		if cfg.Annotations == nil {
+			cfg.Annotations = map[string]string{}
+		}
+		cfg.Annotations[hostedClusterProxyConfigDefinedAnnotation] = "true"
+		cfg.Spec = *hcfg.Proxy
+	} else {
+		if _, exists := cfg.Annotations[hostedClusterProxyConfigDefinedAnnotation]; exists {
+			//clear out spec after proxy configuration removed from HostedClusterProxy
+			cfg.Spec = configv1.ProxySpec{}
+			delete(cfg.Annotations, hostedClusterProxyConfigDefinedAnnotation)
+		}
+	}
 }
 
 func ReconcileProxyConfigWithStatus(cfg *configv1.Proxy, hcp *hyperv1.HostedControlPlane) {
