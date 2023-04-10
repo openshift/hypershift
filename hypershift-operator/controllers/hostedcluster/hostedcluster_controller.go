@@ -918,6 +918,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			controlPlaneNamespace.Labels = make(map[string]string)
 		}
 		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = "true"
+		controlPlaneNamespace.Labels["hypershift.openshift.io/monitoring"] = "true"
 		if r.EnableOCPClusterMonitoring {
 			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
 		}
