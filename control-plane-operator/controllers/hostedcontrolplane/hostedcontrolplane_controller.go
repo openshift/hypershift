@@ -529,7 +529,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 					Message: hyperv1.AllIsWellMessage,
 					Reason:  hyperv1.AsExpectedReason,
 				}
-				hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s:%d/oauthcallback/[identity-provider-name]", infraStatus.OAuthHost, infraStatus.OAuthPort)
+				hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s:%d/oauth2callback/[identity-provider-name]", infraStatus.OAuthHost, infraStatus.OAuthPort)
 			} else {
 				message := "Cluster infrastructure is still provisioning"
 				if len(infraStatus.Message) > 0 {
