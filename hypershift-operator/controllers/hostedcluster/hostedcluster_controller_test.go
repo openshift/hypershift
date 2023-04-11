@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -908,7 +909,11 @@ func (c *createTypeTrackingClient) Create(ctx context.Context, obj crclient.Obje
 	if c.createdTypes == nil {
 		c.createdTypes = sets.String{}
 	}
-	c.createdTypes.Insert(fmt.Sprintf("%T", obj))
+	u, ok := obj.(*unstructured.Unstructured)
+	kubevirtEgressFirewall := ok && u.GetKind() == "EgressFirewall" && u.GetNamespace() == "-kubevirt"
+	if !kubevirtEgressFirewall {
+		c.createdTypes.Insert(fmt.Sprintf("%T", obj))
+	}
 	return c.Client.Create(ctx, obj, opts...)
 }
 
