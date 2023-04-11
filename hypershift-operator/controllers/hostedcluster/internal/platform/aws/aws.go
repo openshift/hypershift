@@ -16,12 +16,14 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -286,6 +288,42 @@ func (AWS) ReconcileSecretEncryption(ctx context.Context, c client.Client, creat
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
 	return nil
+}
+
+func ValidCredentials(hc *hyperv1.HostedCluster) bool {
+	oidcConfigValid := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidOIDCConfiguration))
+	if oidcConfigValid != nil && oidcConfigValid.Status == metav1.ConditionFalse {
+		return false
+	}
+	validIdentityProvider := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
+	if validIdentityProvider != nil && validIdentityProvider.Status == metav1.ConditionFalse {
+		return false
+	}
+	return true
+}
+
+func (AWS) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	if ValidCredentials(hc) {
+		return nil
+	}
+	awsMachineList := capiaws.AWSMachineList{}
+	if err := c.List(ctx, &awsMachineList, client.InNamespace(controlPlaneNamespace)); err != nil {
+		return fmt.Errorf("failed to list AWSMachines in %s: %w", controlPlaneNamespace, err)
+	}
+	logger := ctrl.LoggerFrom(ctx)
+	var errs []error
+	for i := range awsMachineList.Items {
+		awsMachine := &awsMachineList.Items[i]
+		if !awsMachine.DeletionTimestamp.IsZero() {
+			awsMachine.Finalizers = []string{}
+			if err := c.Update(ctx, awsMachine); err != nil {
+				errs = append(errs, fmt.Errorf("failed to delete machine %s/%s: %w", awsMachine.Namespace, awsMachine.Name, err))
+				continue
+			}
+			logger.Info("skipping cleanup of awsmachine because of invalid AWS identity provider", "machine", client.ObjectKeyFromObject(awsMachine))
+		}
+	}
+	return utilerrors.NewAggregate(errs)
 }
 
 func reconcileAWSCluster(awsCluster *capiaws.AWSCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint) error {
