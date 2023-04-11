@@ -56,3 +56,11 @@ rules:
       - delete
       - patch
       - update
+  - apiGroups:
+      - hypershift.openshift.io
+    resources:
+      - hostedcontrolplanes
+    verbs:
+      - watch
+      - list
+      - get
