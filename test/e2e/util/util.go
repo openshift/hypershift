@@ -38,6 +38,24 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+func PatchObject[T crclient.Object](ctx context.Context, client crclient.Client, obj T) error {
+	return wait.PollImmediateWithContext(ctx, time.Second, time.Minute*1, func(ctx context.Context) (done bool, err error) {
+		original := obj.DeepCopyObject().(T)
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(obj), original); err != nil {
+			return false, nil
+		}
+
+		if err := client.Patch(ctx, obj, crclient.MergeFrom(original)); err != nil {
+			if errors.IsConflict(err) {
+				return false, nil
+			}
+			return false, err
+		}
+
+		return true, nil
+	})
+}
+
 // DeleteNamespace deletes and finalizes the given namespace, logging any failures
 // along the way.
 func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, namespace string) error {
