@@ -21,14 +21,17 @@ import (
 	"io/ioutil"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -72,6 +75,7 @@ type Options struct {
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
 	MetricsSet                                metrics.MetricsSet
+	WaitUntilAvailable                        bool
 }
 
 func (o *Options) Validate() error {
@@ -167,6 +171,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
 	cmd.PersistentFlags().Var(&opts.MetricsSet, "metrics-set", "The set of metrics to produce for each HyperShift control plane. Valid values are: Telemetry, SRE, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, HyperShift operator ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
+	cmd.Flags().BoolVar(&opts.WaitUntilAvailable, "wait-until-available", opts.WaitUntilAvailable, "If true, pauses installation until hypershift operator has been rolled out and its webhook service is available (if installing the webhook)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -183,6 +188,12 @@ func NewCommand() *cobra.Command {
 		err = apply(cmd.Context(), objects)
 		if err != nil {
 			return err
+		}
+
+		if opts.WaitUntilAvailable {
+			if err := waitUntilAvailable(cmd.Context(), opts); err != nil {
+				return err
+			}
 		}
 
 		return nil
@@ -223,6 +234,97 @@ func apply(ctx context.Context, objects []crclient.Object) error {
 		}
 	}
 	return nil
+}
+
+func waitUntilAvailable(ctx context.Context, opts Options) error {
+	client, err := util.GetClient()
+	if err != nil {
+		return err
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
+
+	fmt.Printf("Waiting for operator rollout...\n")
+	err = wait.PollImmediateUntilWithContext(waitCtx, 2*time.Second, func(ctx context.Context) (bool, error) {
+		deployment := operatorDeployment(opts)
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
+			return false, err
+		}
+		if deployment.Generation <= deployment.Status.ObservedGeneration {
+			cond := getDeploymentCondition(deployment.Status, appsv1.DeploymentProgressing)
+			if cond != nil && cond.Reason == "ProgressDeadlineExceeded" {
+				return false, fmt.Errorf("deployment %q exceeded its progress deadline", deployment.Name)
+			}
+			if deployment.Spec.Replicas != nil && deployment.Status.UpdatedReplicas < *deployment.Spec.Replicas {
+				fmt.Printf("Waiting for deployment %q rollout to finish: %d out of %d new replicas have been updated...\n", deployment.Name, deployment.Status.UpdatedReplicas, *deployment.Spec.Replicas)
+				return false, nil
+			}
+			if deployment.Status.Replicas > deployment.Status.UpdatedReplicas {
+				fmt.Printf("Waiting for deployment %q rollout to finish: %d old replicas are pending termination...\n", deployment.Name, deployment.Status.Replicas-deployment.Status.UpdatedReplicas)
+				return false, nil
+			}
+			if deployment.Status.AvailableReplicas < deployment.Status.UpdatedReplicas {
+				fmt.Printf("Waiting for deployment %q rollout to finish: %d of %d updated replicas are available...\n", deployment.Name, deployment.Status.AvailableReplicas, deployment.Status.UpdatedReplicas)
+				return false, nil
+			}
+			fmt.Printf("Deployment %q successfully rolled out\n", deployment.Name)
+			return true, nil
+		} else {
+			fmt.Printf("Waiting for operator deployment to be observed\n")
+			return false, nil
+		}
+	})
+	if err != nil {
+		return fmt.Errorf("failed to wait for operator deployment: %w", err)
+	}
+
+	if opts.Development {
+		return nil
+	}
+	err = wait.PollImmediateUntilWithContext(waitCtx, 2*time.Second, func(ctx context.Context) (bool, error) {
+		endpoints := operatorEndpoints(opts)
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(endpoints), endpoints); err != nil {
+			if apierrors.IsNotFound(err) {
+				fmt.Printf("Operator service endpoints have not been created yet\n")
+				return false, nil
+			}
+			return false, err
+		}
+		if len(endpoints.Subsets) == 0 || len(endpoints.Subsets[0].Addresses) == 0 {
+			fmt.Printf("Waiting for endpoints addresses to be populated\n")
+			return false, nil
+		}
+		fmt.Printf("Endpoints available\n")
+		return true, nil
+
+	})
+	if err != nil {
+		return fmt.Errorf("failed to wait for operator service endpoints: %w", err)
+	}
+	return nil
+}
+
+// getDeploymentCondition returns the condition with the provided type.
+func getDeploymentCondition(status appsv1.DeploymentStatus, condType appsv1.DeploymentConditionType) *appsv1.DeploymentCondition {
+	for i := range status.Conditions {
+		c := status.Conditions[i]
+		if c.Type == condType {
+			return &c
+		}
+	}
+	return nil
+}
+
+func operatorDeployment(opts Options) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Name: "operator", Namespace: opts.Namespace},
+	}
+}
+
+func operatorEndpoints(opts Options) *corev1.Endpoints {
+	return &corev1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{Name: "operator", Namespace: opts.Namespace},
+	}
 }
 
 func fetchImageRefs(file string) (map[string]string, error) {
