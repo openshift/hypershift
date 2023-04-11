@@ -24,6 +24,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"k8s.io/client-go/tools/clientcmd"
@@ -51,6 +52,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/egressfirewall"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -77,6 +79,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -119,6 +122,11 @@ const (
 // NoopReconcile is just a default mutation function that does nothing.
 var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
+type kubevirtInfraClient struct {
+	client.Client
+	namespace string
+}
+
 // HostedClusterReconciler reconciles a HostedCluster object
 type HostedClusterReconciler struct {
 	client.Client
@@ -155,8 +163,9 @@ type HostedClusterReconciler struct {
 
 	MetricsSet metrics.MetricsSet
 
-	overwriteReconcile func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error)
-	now                func() metav1.Time
+	overwriteReconcile   func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error)
+	now                  func() metav1.Time
+	kubevirtInfraClients sync.Map
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -376,6 +385,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
+
 		// Keep trying to delete until we know it's safe to finalize.
 		completed, err := r.delete(ctx, hcluster)
 		if err != nil {
@@ -1460,7 +1470,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the network policies
-	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster); err != nil {
+	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster, hcp); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
 	}
 
@@ -3155,6 +3165,8 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, fmt.Errorf("failed to clean up OIDC bucket data: %w", err)
 	}
 
+	r.kubevirtInfraClients.Delete(hc.Spec.InfraID)
+
 	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
 	// we don't error initially because we can not create new content in a namespace that is being deleted.
 	exists, err = hyperutil.DeleteIfNeeded(ctx, r.Client, &corev1.Namespace{
@@ -3274,7 +3286,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
 }
 
-func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 
 	// Reconcile openshift-ingress Network Policy
@@ -3330,6 +3342,16 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			return reconcileVirtLauncherNetworkPolicy(policy, hcluster)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
+		}
+		kvInfraCluster, err := r.discoverKubevirtClusterClient(ctx, hcluster, hcp.Namespace)
+		if err != nil {
+			return err
+		}
+		egressFirewall := egressfirewall.VirtLauncherEgressFirewall(kvInfraCluster.namespace)
+		if _, err := createOrUpdate(ctx, kvInfraCluster.Client, egressFirewall, func() error {
+			return reconcileVirtLauncherEgressFirewall(egressFirewall)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile firewall to deny metadata server egress: %w", err)
 		}
 	}
 
@@ -4002,6 +4024,26 @@ func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hclu
 	return nil
 }
 
+func reconcileVirtLauncherEgressFirewall(egressFirewall *unstructured.Unstructured) error {
+	egressFirewall.Object["spec"] = map[string]interface{}{
+		"egress": []interface{}{
+			map[string]interface{}{
+				"to": map[string]interface{}{
+					"cidrSelector": "169.254.169.254/32",
+				},
+				"type": "Deny",
+				"ports": []interface{}{
+					map[string]interface{}{
+						"port":     int64(80),
+						"protocol": "TCP",
+					},
+				},
+			},
+		},
+	}
+	return nil
+}
+
 const (
 	oidcDocumentsFinalizer         = "hypershift.io/aws-oidc-discovery"
 	serviceAccountSigningKeySecret = "sa-signing-key"
@@ -4411,28 +4453,16 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 	}
 	// auto generate the basedomain by retrieving the default ingress *.apps dns.
 	if hc.Spec.Platform.Kubevirt.BaseDomainPassthrough != nil && *hc.Spec.Platform.Kubevirt.BaseDomainPassthrough {
-		// get base domain from default ingress of management/infra cluster
-		var targetClient client.Client
-		// If external infra is used, generate the infra client. Otherwise, use the client of the mgmt cluster
-		var namespace string
-		if hc.Spec.Platform.Kubevirt.Credentials != nil {
-			var err error
-			targetClient, err = generateKubevirtInfraClusterClient(ctx, r.Client, *hc)
+		if hc.Spec.DNS.BaseDomain == "" {
+			kvInfraCluster, err := r.discoverKubevirtClusterClient(ctx, hc, hc.Namespace)
 			if err != nil {
 				return err
 			}
-			namespace = hc.Spec.Platform.Kubevirt.Credentials.InfraNamespace
-		} else {
-			targetClient = r.Client
-			namespace = hc.Namespace
-		}
-
-		if hc.Spec.DNS.BaseDomain == "" {
 			// kubevirtInfraTempRoute is used to resolve the base domain of the infra cluster without accessing IngressController
-			kubevirtInfraTempRoute := manifests.KubevirtInfraTempRoute(namespace)
+			kubevirtInfraTempRoute := manifests.KubevirtInfraTempRoute(kvInfraCluster.namespace)
 
 			createOrUpdateProvider := upsert.New(r.EnableCIDebugOutput)
-			_, err := createOrUpdateProvider.CreateOrUpdate(ctx, targetClient, kubevirtInfraTempRoute, func() error {
+			_, err = createOrUpdateProvider.CreateOrUpdate(ctx, kvInfraCluster.Client, kubevirtInfraTempRoute, func() error {
 				return manifests.ReconcileKubevirtInfraTempRoute(kubevirtInfraTempRoute)
 			})
 			if err != nil {
@@ -4462,7 +4492,7 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 				// This is possible using OCP wildcard routes
 				hc.Spec.DNS.BaseDomain = baseDomain
 
-				if err := targetClient.Delete(ctx, kubevirtInfraTempRoute); err != nil {
+				if err := kvInfraCluster.Delete(ctx, kubevirtInfraTempRoute); err != nil {
 					return err
 				}
 			} else {
@@ -4564,4 +4594,25 @@ func generateKubevirtInfraClusterClient(ctx context.Context, cpClient client.Cli
 	}
 
 	return infraClusterClient, nil
+}
+
+func (r *HostedClusterReconciler) discoverKubevirtClusterClient(ctx context.Context, hc *hyperv1.HostedCluster, localInfraNamespace string) (*kubevirtInfraClient, error) {
+	cluster := &kubevirtInfraClient{}
+	if hc.Spec.Platform.Kubevirt.Credentials == nil {
+		cluster.Client = r.Client
+		cluster.namespace = localInfraNamespace
+		return cluster, nil
+	}
+	loaded, ok := r.kubevirtInfraClients.Load(hc.Spec.InfraID)
+	if ok {
+		return loaded.(*kubevirtInfraClient), nil
+	}
+	targetClient, err := generateKubevirtInfraClusterClient(ctx, r.Client, *hc)
+	if err != nil {
+		return nil, err
+	}
+	cluster.Client = targetClient
+	cluster.namespace = hc.Spec.Platform.Kubevirt.Credentials.InfraNamespace
+	r.kubevirtInfraClients.LoadOrStore(hc.Spec.InfraID, cluster)
+	return cluster, nil
 }
