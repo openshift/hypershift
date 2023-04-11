@@ -114,6 +114,10 @@ const (
 	controlplaneOperatorManagesIgnitionServerLabel = "io.openshift.hypershift.control-plane-operator-manages-ignition-server"
 	controlPlaneOperatorManagesMachineApprover     = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
 	controlPlaneOperatorManagesMachineAutoscaler   = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
+
+	// The common label for monitoring in HyperShift
+	// Namespaces with this label will be actively monitored by the observability operator
+	hyperShiftMonitoringLabel = "hypershift.openshift.io/monitoring"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -918,7 +922,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			controlPlaneNamespace.Labels = make(map[string]string)
 		}
 		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = "true"
-		controlPlaneNamespace.Labels["hypershift.openshift.io/monitoring"] = "true"
+
+		// Enable monitoring for hosted control plane namespaces
+		controlPlaneNamespace.Labels[hyperShiftMonitoringLabel] = "true"
+
 		if r.EnableOCPClusterMonitoring {
 			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
 		}
