@@ -890,6 +890,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"endpointslices"},
 				Verbs:     []string{"list", "watch"},
 			},
+			{
+				APIGroups: []string{"k8s.ovn.org"},
+				Resources: []string{"egressfirewalls"},
+				Verbs:     []string{"*"},
+			},
 		},
 	}
 	return role

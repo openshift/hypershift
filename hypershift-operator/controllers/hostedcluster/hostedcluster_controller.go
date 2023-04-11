@@ -46,6 +46,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/egressfirewall"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -72,6 +73,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -1453,7 +1455,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the network policies
-	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster); err != nil {
+	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster, hcp); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
 	}
 
@@ -3267,7 +3269,7 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
 }
 
-func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 
 	// Reconcile openshift-ingress Network Policy
@@ -3323,6 +3325,12 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			return reconcileVirtLauncherNetworkPolicy(policy, hcluster)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
+		}
+		egressFirewall := egressfirewall.VirtLauncherEgressFirewall(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, egressFirewall, func() error {
+			return reconcileVirtLauncherEgressFirewall(egressFirewall)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile firewall to deny metadata server egress: %w", err)
 		}
 	}
 
@@ -3946,6 +3954,26 @@ func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hclu
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"kubevirt.io": "virt-launcher",
+		},
+	}
+	return nil
+}
+
+func reconcileVirtLauncherEgressFirewall(egressFirewall *unstructured.Unstructured) error {
+	egressFirewall.Object["spec"] = map[string]interface{}{
+		"egress": []interface{}{
+			map[string]interface{}{
+				"to": map[string]interface{}{
+					"cidrSelector": "169.254.169.254/32",
+				},
+				"type": "Deny",
+				"ports": []interface{}{
+					map[string]interface{}{
+						"port":     int64(80),
+						"protocol": "TCP",
+					},
+				},
+			},
 		},
 	}
 	return nil
