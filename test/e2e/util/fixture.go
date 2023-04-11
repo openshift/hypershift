@@ -23,6 +23,8 @@ import (
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -106,7 +108,7 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 
 	// Try and create the cluster. If it fails, immediately try and clean up.
 	t.Logf("Creating a new cluster. Options: %v", opts)
-	if err := createCluster(ctx, hc, opts); err != nil {
+	if err := createCluster(ctx, client, hc, opts); err != nil {
 		t.Logf("failed to create cluster, tearing down: %v", err)
 		teardown(context.Background(), t, client, hc, opts, artifactDir)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create cluster")
@@ -236,13 +238,52 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 
 // createCluster calls the correct cluster create CLI function based on the
 // cluster platform.
-func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *core.CreateOptions) error {
+func createCluster(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, opts *core.CreateOptions) error {
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		return aws.CreateCluster(ctx, opts)
 	case hyperv1.NonePlatform:
 		return none.CreateCluster(ctx, opts)
 	case hyperv1.KubevirtPlatform:
+		infraNamespace := opts.Namespace + "-" + opts.Name
+		egressFirewall := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"metadata": map[string]interface{}{
+					"name":      "default",
+					"namespace": infraNamespace,
+				},
+				"spec": map[string]interface{}{
+					"egress": []map[string]interface{}{
+						{
+							"to": map[string]string{
+								"cidrSelector": "169.254.169.254/32",
+							},
+							"type": "Deny",
+							"ports": []map[string]interface{}{
+								{
+									"port":     80,
+									"protocol": "TCP",
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		egressFirewall.SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   "k8s.ovn.org",
+			Kind:    "EgressFirewall",
+			Version: "v1",
+		})
+		if err := client.Create(ctx, &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: infraNamespace,
+			}}); err != nil {
+			return err
+		}
+		if err := client.Create(ctx, egressFirewall); err != nil {
+			return err
+		}
 		return kubevirt.CreateCluster(ctx, opts)
 	case hyperv1.AzurePlatform:
 		return azure.CreateCluster(ctx, opts)
