@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -313,6 +314,14 @@ func DumpGuestCluster(ctx context.Context, log logr.Logger, kubeconfig string, d
 	}
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	cmd.Run(ctx, resourceList)
+	dumpWorkerNodeLogsCmd := OCAdmNodeLogs{
+		oc:          ocCommand,
+		artifactDir: destDir,
+		kubeconfig:  kubeconfig,
+		role:        "worker",
+		log:         log,
+	}
+	dumpWorkerNodeLogsCmd.Run(ctx)
 	return nil
 }
 
@@ -344,6 +353,40 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		i.log.Info("oc adm inspect returned an error", "args", allArgs, "error", err.Error(), "output", string(out))
+	}
+}
+
+type OCAdmNodeLogs struct {
+	oc          string
+	artifactDir string
+	kubeconfig  string
+	log         logr.Logger
+	role        string
+}
+
+func (i *OCAdmNodeLogs) Run(ctx context.Context, cmdArgs ...string) {
+	allArgs := []string{"adm", "node-logs"}
+	if len(i.kubeconfig) > 0 {
+		allArgs = append(allArgs, "--kubeconfig", i.kubeconfig)
+	}
+	nodeLogsFileName := "nodes.log"
+	if len(i.role) > 0 {
+		allArgs = append(allArgs, "--role", i.role)
+		nodeLogsFileName = fmt.Sprintf("%s.%s", i.role, nodeLogsFileName)
+	}
+	allArgs = append(allArgs, cmdArgs...)
+	nodeLogsFile, err := os.Create(filepath.Join(i.artifactDir, nodeLogsFileName))
+	if err != nil {
+		i.log.Info(fmt.Sprintf("failed creating file to dump node-logs: %v", err))
+		return
+	}
+	defer nodeLogsFile.Close()
+	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
+	var errb bytes.Buffer
+	cmd.Stdout = nodeLogsFile
+	cmd.Stderr = &errb
+	if err := cmd.Run(); err != nil {
+		i.log.Info(fmt.Sprintf("failed running command oc %s: %v, %s", strings.Join(allArgs, " "), err, errb.String()))
 	}
 }
 

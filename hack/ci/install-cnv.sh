@@ -126,6 +126,14 @@ kind: HyperConverged
 metadata:
   name: kubevirt-hyperconverged
   namespace: openshift-cnv
+spec:
+  logVerbosityConfig:
+    kubevirt:
+      virtLauncher: 8
+      virtHandler: 8
+      virtController: 8
+      virtApi: 8
+      virtOperator: 8
 EOF
 
 oc wait hyperconverged -n openshift-cnv kubevirt-hyperconverged --for=condition=Available --timeout=15m
