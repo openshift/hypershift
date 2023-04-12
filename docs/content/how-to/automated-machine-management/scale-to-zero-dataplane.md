@@ -10,7 +10,7 @@ The main reason to go through this scenario it's mainly to save resources and mo
 
 In order to continue with the next steps, we need to have in mind some considerations:
 
-- **This is a destructive action**, all the workloads in the worker nodes will dissapear.
+- **This is a destructive action**, all the workloads in the worker nodes will disappear.
 - The Hosted Control Plane will stay up and running, and you can scale up the *NodePool* whenever you want.
 - Some pods in the control plane will stay in "Pending" state.  
 - Once you rescale the *NodePool/s* it will take time until they reach the fully **Ready** state.
@@ -99,7 +99,7 @@ annotate_nodes
 
 function scale_down_pool() {
 
-    # Validated that the nodes in AWS Scale down instantly, they take sometime to dissapear inside of Openshift
+    # Validated that the nodes in AWS Scale down instantly, they take sometime to disappear inside of Openshift
     # but the draining is avoided for sure
     echo "Scalling down the nodes for ${HC_CLUSTER_NAME} cluster"
     NODEPOOLS=$(oc get nodepools -n ${HC_CLUSTER_NS} -o=jsonpath='{.items[?(@.spec.clusterName=="'${HC_CLUSTER_NAME}'")].metadata.name}')
