@@ -2,11 +2,11 @@ package v1beta1
 
 import (
 	"fmt"
-
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"strings"
 )
 
 const (
@@ -184,6 +184,26 @@ const (
 	// additional node capacity requirements.
 	UpgradeTypeInPlace = UpgradeType("InPlace")
 )
+
+func (p *UpgradeType) String() string {
+	return string(*p)
+}
+
+func (p *UpgradeType) Set(s string) error {
+	switch strings.ToLower(s) {
+	case "replace":
+		*p = UpgradeTypeReplace
+	case "inplace":
+		*p = UpgradeTypeInPlace
+	default:
+		return fmt.Errorf("unknown upgrade type used '%s'", s)
+	}
+	return nil
+}
+
+func (p *UpgradeType) Type() string {
+	return "UpgradeType"
+}
 
 // UpgradeStrategy is a specific strategy for upgrading nodes in a NodePool.
 type UpgradeStrategy string

@@ -1,6 +1,7 @@
 package nodepool
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/spf13/cobra"
 
 	"github.com/openshift/hypershift/cmd/nodepool/agent"
@@ -24,11 +25,12 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := &core.CreateNodePoolOptions{
-		Name:         "example",
-		Namespace:    "clusters",
-		ClusterName:  "example",
-		NodeCount:    2,
-		ReleaseImage: "",
+		Name:            "example",
+		Namespace:       "clusters",
+		ClusterName:     "example",
+		NodeCount:       2,
+		ReleaseImage:    "",
+		NodeUpgradeType: hyperv1.UpgradeTypeReplace,
 	}
 
 	cmd.PersistentFlags().StringVar(&opts.Name, "name", opts.Name, "The name of the NodePool")
@@ -36,6 +38,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.PersistentFlags().Int32Var(&opts.NodeCount, "node-count", opts.NodeCount, "The number of nodes to create in the NodePool")
 	cmd.PersistentFlags().StringVar(&opts.ClusterName, "cluster-name", opts.ClusterName, "The name of the HostedCluster nodes in this pool will join")
 	cmd.PersistentFlags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The release image for nodes. If empty, defaults to the same release image as the HostedCluster.")
+	cmd.PersistentFlags().Var(&opts.NodeUpgradeType, "node-upgrade-type", "The NodePool upgrade strategy for how nodes should behave when upgraded. Supported options: Replace, InPlace")
 
 	cmd.PersistentFlags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
 
