@@ -144,11 +144,7 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 	start := time.Now()
 
 	// waitTimeout for nodes to become Ready
-	waitTimeout := 30 * time.Minute
-	switch platform {
-	case hyperv1.PowerVSPlatform:
-		waitTimeout = 60 * time.Minute
-	}
+	waitTimeout := 60 * time.Minute
 
 	t.Logf("Waiting for nodes to become ready. Want: %v", n)
 	nodes := &corev1.NodeList{}
