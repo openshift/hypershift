@@ -271,7 +271,7 @@ func socks5ProxyContainer(socks5ProxyImage string) corev1.Container {
 	c := corev1.Container{
 		Name:    socks5ProxyContainerName,
 		Image:   socks5ProxyImage,
-		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--resolve-from-guest-cluster-dns=true"},
+		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--resolve-from-guest-cluster-dns=true", "--resolve-from-management-cluster-dns=true"},
 		Args:    []string{"run"},
 		Env: []corev1.EnvVar{{
 			Name:  "KUBECONFIG",

@@ -10,8 +10,9 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
-	socks5 "github.com/armon/go-socks5"
+	"github.com/armon/go-socks5"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
@@ -52,12 +53,14 @@ func NewStartCommand() *cobra.Command {
 	var clientKeyPath string
 	var connectDirectlyToCloudAPIs bool
 	var resolveFromGuestClusterDNS bool
+	var resolveFromManagementClusterDNS bool
 
 	cmd.Flags().StringVar(&proxyHostname, "konnectivity-hostname", "konnectivity-server-local", "The hostname of the konnectivity service.")
 	cmd.Flags().IntVar(&proxyPort, "konnectivity-port", 8090, "The konnectivity port that socks5 proxy should connect to.")
 	cmd.Flags().IntVar(&servingPort, "serving-port", 8090, "The port that socks5 proxy should serve on.")
 	cmd.Flags().BoolVar(&connectDirectlyToCloudAPIs, "connect-directly-to-cloud-apis", false, "If true, traffic destined for AWS or Azure APIs should be sent there directly rather than going through konnectivity. If enabled, proxy env vars from the mgmt cluster must be propagated to this container")
 	cmd.Flags().BoolVar(&resolveFromGuestClusterDNS, "resolve-from-guest-cluster-dns", false, "If DNS resolving should use the guest clusters cluster-dns")
+	cmd.Flags().BoolVar(&resolveFromManagementClusterDNS, "resolve-from-management-cluster-dns", false, "If guest cluster's dns fails, fallback to the management cluster's dns")
 
 	cmd.Flags().StringVar(&caCertPath, "ca-cert-path", "/etc/konnectivity/proxy-ca/ca.crt", "The path to the konnectivity client's ca-cert.")
 	cmd.Flags().StringVar(&clientCertPath, "tls-cert-path", "/etc/konnectivity/proxy-client/tls.crt", "The path to the konnectivity client's tls certificate.")
@@ -70,16 +73,24 @@ func NewStartCommand() *cobra.Command {
 			panic(err)
 		}
 
-		dialFunc := dialFunc(caCertPath, clientCertPath, clientKeyPath, proxyHostname, proxyPort, connectDirectlyToCloudAPIs)
+		// shouldDNSFallback is modified in runtime by the '(d proxyResolver) Resolve' and dialDirectWithoutProxy functions.
+		dnsFallbackToMC := &dnsFallbackToManagementCluster{
+			mutex:             sync.RWMutex{},
+			shouldDNSFallback: false,
+		}
+
+		dialFunc := dialFunc(caCertPath, clientCertPath, clientKeyPath, proxyHostname, proxyPort, connectDirectlyToCloudAPIs, resolveFromManagementClusterDNS, dnsFallbackToMC)
 		conf := &socks5.Config{
 			Dial: dialFunc,
 			Resolver: proxyResolver{
-				client:                  client,
-				resolveFromGuestCluster: resolveFromGuestClusterDNS,
+				client:                       client,
+				resolveFromGuestCluster:      resolveFromGuestClusterDNS,
+				resolveFromManagementCluster: resolveFromManagementClusterDNS,
+				dnsFallback:                  dnsFallbackToMC,
 				guestClusterResolver: &guestClusterResolver{
 					log:                  l,
 					client:               client,
-					konnektivityDialFunc: dialFunc,
+					konnectivityDialFunc: dialFunc,
 				},
 				log: l,
 			},
@@ -97,26 +108,38 @@ func NewStartCommand() *cobra.Command {
 	return cmd
 }
 
-func dialFunc(caCertPath string, clientCertPath string, clientKeyPath string, proxyHostname string, proxyPort int, connectDirectlyToCloudApis bool) func(ctx context.Context, network string, addr string) (net.Conn, error) {
-	return func(ctx context.Context, network string, addr string) (net.Conn, error) {
-		if connectDirectlyToCloudApis && isCloudAPI(strings.Split(addr, ":")[0]) {
-			return dialDirect(ctx, network, addr)
+// dialFunc returns the appropriate dial function based on user and proxy setting configurations
+func dialFunc(caCertPath string, clientCertPath string, clientKeyPath string, proxyHostname string, proxyPort int, connectDirectlyToCloudApis bool, resolveFromManagementClusterDNS bool, dnsFallbackToMC *dnsFallbackToManagementCluster) func(ctx context.Context, network string, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network string, requestAddress string) (net.Conn, error) {
+		// return a dial direct function which respects any proxy environment settings
+		if connectDirectlyToCloudApis && isCloudAPI(strings.Split(requestAddress, ":")[0]) {
+			return dialDirectWithProxy(ctx, network, requestAddress)
 		}
-		caCert := caCertPath
-		tlsConfig, err := util.GetClientTLSConfig(caCert, clientCertPath, clientKeyPath, proxyHostname, nil)
+
+		// return a dial direct function ignoring any proxy environment settings
+		shouldDNSFallback := dnsFallbackToMC.get()
+		if shouldDNSFallback && resolveFromManagementClusterDNS {
+			return dialDirectWithoutProxy(ctx, network, requestAddress, dnsFallbackToMC)
+		}
+
+		// get a TLS config based on x509 certs
+		tlsConfig, err := util.GetClientTLSConfig(caCertPath, clientCertPath, clientKeyPath, proxyHostname, nil)
 		if err != nil {
 			return nil, err
 		}
-		var proxyConn net.Conn
 
+		// connect to the proxy address and get a TLS connection
 		proxyAddress := fmt.Sprintf("%s:%d", proxyHostname, proxyPort)
-		requestAddress := addr
-
-		proxyConn, err = tls.Dial("tcp", proxyAddress, tlsConfig)
+		proxyConn, err := tls.Dial("tcp", proxyAddress, tlsConfig)
 		if err != nil {
 			return nil, fmt.Errorf("dialing proxy %q failed: %v", proxyAddress, err)
 		}
-		fmt.Fprintf(proxyConn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", requestAddress, "127.0.0.1")
+		_, err = fmt.Fprintf(proxyConn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", requestAddress, "127.0.0.1")
+		if err != nil {
+			return nil, err
+		}
+
+		// read HTTP response and return the connection
 		br := bufio.NewReader(proxyConn)
 		res, err := http.ReadResponse(br, nil)
 		if err != nil {
@@ -126,11 +149,8 @@ func dialFunc(caCertPath string, clientCertPath string, clientKeyPath string, pr
 		if res.StatusCode != 200 {
 			return nil, fmt.Errorf("proxy error from %s while dialing %s: %v", proxyAddress, requestAddress, res.Status)
 		}
-
-		// It's safe to discard the bufio.Reader here and return the
-		// original TCP conn directly because we only use this for
-		// TLS, and in TLS the client speaks first, so we know there's
-		// no unbuffered data. But we can double-check.
+		// It's safe to discard the bufio.Reader here and return the original TCP conn directly because we only use this
+		// for TLS. In TLS, the client speaks first, so we know there's no unbuffered data, but we can double-check.
 		if br.Buffered() > 0 {
 			return nil, fmt.Errorf("unexpected %d bytes of buffered data from CONNECT proxy %q",
 				br.Buffered(), proxyAddress)
@@ -139,15 +159,46 @@ func dialFunc(caCertPath string, clientCertPath string, clientKeyPath string, pr
 	}
 }
 
-// dialDirect directly connect directly to the target, respecting any local proxy settings from the environment
-func dialDirect(ctx context.Context, network, addr string) (net.Conn, error) {
+// dialDirectWithoutProxy directly connect to the target, ignoring any local proxy settings from the environment
+func dialDirectWithoutProxy(ctx context.Context, network, addr string, dnsFallbackToMC *dnsFallbackToManagementCluster) (net.Conn, error) {
+	var d = net.Dialer{
+		Timeout: 2 * time.Minute,
+	}
+	connection, err := d.DialContext(ctx, network, addr)
+	if err != nil {
+		return nil, err
+	}
+	dnsFallbackToMC.set(false)
+	return connection, nil
+}
+
+// dialDirectWithProxy directly connect to the target, respecting any local proxy settings from the environment
+func dialDirectWithProxy(ctx context.Context, network, addr string) (net.Conn, error) {
 	return proxy.Dial(ctx, network, addr)
+}
+
+type dnsFallbackToManagementCluster struct {
+	shouldDNSFallback bool
+	mutex             sync.RWMutex
+}
+
+func (f *dnsFallbackToManagementCluster) get() bool {
+	f.mutex.RLock()
+	defer f.mutex.RUnlock()
+	value := f.shouldDNSFallback
+	return value
+}
+
+func (f *dnsFallbackToManagementCluster) set(valueToSet bool) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+	f.shouldDNSFallback = valueToSet
 }
 
 type guestClusterResolver struct {
 	log                  logr.Logger
 	client               client.Client
-	konnektivityDialFunc func(ctx context.Context, network string, addr string) (net.Conn, error)
+	konnectivityDialFunc func(ctx context.Context, network string, addr string) (net.Conn, error)
 	resolver             *net.Resolver
 	resolverLock         sync.Mutex
 }
@@ -166,7 +217,7 @@ func (gr *guestClusterResolver) getResolver(ctx context.Context) (*net.Resolver,
 	gr.resolver = &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return gr.konnektivityDialFunc(ctx, "tcp", clusterDNSAddress)
+			return gr.konnectivityDialFunc(ctx, "tcp", clusterDNSAddress)
 		},
 	}
 
@@ -194,15 +245,17 @@ func (gr *guestClusterResolver) resolve(ctx context.Context, name string) (net.I
 }
 
 // proxyResolver tries to resolve addresses using the following steps in order:
-// 1. Not at all for cloud provider apis, as we do not want to tunnel them through Konnektivity
-// 2. If the address is a valid Kubernetes service and that service exists in the guest cluster, it's clusterIP is returned
-// 2. If --resolve-from-guest-cluster-dns is set, it uses the guest clusters dns. If that fails, an error is returned
-// 4. Lastly, golangs default resolver is used
+// 1. Not at all for cloud provider apis, as we do not want to tunnel them through Konnectivity.
+// 2. If the address is a valid Kubernetes service and that service exists in the guest cluster, it's clusterIP is returned.
+// 3. If --resolve-from-guest-cluster-dns is set, it uses the guest clusters dns. If that fails, fallback to the management cluster's resolution.
+// 4. Lastly, Golang's default resolver is used.
 type proxyResolver struct {
-	client                  client.Client
-	resolveFromGuestCluster bool
-	guestClusterResolver    *guestClusterResolver
-	log                     logr.Logger
+	client                       client.Client
+	resolveFromGuestCluster      bool
+	resolveFromManagementCluster bool
+	dnsFallback                  *dnsFallbackToManagementCluster
+	guestClusterResolver         *guestClusterResolver
+	log                          logr.Logger
 }
 
 func (d proxyResolver) Resolve(ctx context.Context, name string) (context.Context, net.IP, error) {
@@ -213,7 +266,6 @@ func (d proxyResolver) Resolve(ctx context.Context, name string) (context.Contex
 	l := d.log.WithValues("name", name)
 	_, ip, err := d.ResolveK8sService(ctx, l, name)
 	if err != nil {
-
 		l.Info("failed to resolve address from Kubernetes service", "err", err.Error())
 		if !d.resolveFromGuestCluster {
 			return socks5.DNSResolver{}.Resolve(ctx, name)
@@ -223,11 +275,18 @@ func (d proxyResolver) Resolve(ctx context.Context, name string) (context.Contex
 		address, err := d.guestClusterResolver.resolve(ctx, name)
 		if err != nil {
 			l.Error(err, "failed to look up address from guest cluster")
+
+			if d.resolveFromManagementCluster {
+				l.Info("Fallback to management cluster resolution")
+				d.dnsFallback.set(true)
+				return ctx, nil, nil
+			}
+
 			return ctx, nil, fmt.Errorf("failed to look up name %s from guest cluster cluster-dns: %w", name, err)
 		}
+
 		l.WithValues("address", address.String()).Info("Successfully looked up address from guest cluster")
 		return ctx, address, nil
-
 	}
 
 	return ctx, ip, nil
@@ -260,7 +319,7 @@ func (d proxyResolver) ResolveK8sService(ctx context.Context, l logr.Logger, nam
 	return ctx, ip, nil
 }
 
-// isCloudAPI is a hardcoded list of domains that should not be routed through konnektivity but be reached
+// isCloudAPI is a hardcoded list of domains that should not be routed through Konnectivity but be reached
 // through the management cluster. This is needed to support management clusters with a proxy configuration,
 // as the components themselves already have proxy env vars pointing to the socks proxy (this binary). If we then
 // actually end up proxying or not depends on the env for this binary.
