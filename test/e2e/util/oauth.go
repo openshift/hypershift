@@ -67,7 +67,7 @@ func EnsureOAuthWithIdentityProvider(t *testing.T, ctx context.Context, client c
 			},
 		}
 
-		err = client.Update(ctx, hostedCluster)
+		err = PatchObject(ctx, client, hostedCluster)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster identity providers")
 
 		guestKubeConfigSecretData, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
@@ -223,7 +223,7 @@ func WaitForOauthConfig(t *testing.T, ctx context.Context, client crclient.Clien
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
 	oauthConfigCM := hcpmanifests.OAuthServerConfig(hcpNamespace)
 
-	err := wait.PollImmediateWithContext(ctx, time.Second, 5*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollImmediateWithContext(ctx, time.Second, 10*time.Minute, func(ctx context.Context) (done bool, err error) {
 		err = client.Get(context.Background(), crclient.ObjectKeyFromObject(oauthConfigCM), oauthConfigCM)
 		if err != nil {
 			return false, nil
