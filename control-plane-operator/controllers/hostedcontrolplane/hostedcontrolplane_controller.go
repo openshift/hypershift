@@ -101,6 +101,9 @@ const (
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 
 	resourceDeletionTimeout = 2 * time.Minute
+
+	hcpReadyRequeueInterval    = 1 * time.Minute
+	hcpNotReadyRequeueInterval = 15 * time.Second
 )
 
 type InfrastructureStatus struct {
@@ -671,7 +674,16 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	r.Log.Info("Successfully reconciled")
-	return result, nil
+
+	if !result.IsZero() {
+		return result, nil
+	}
+
+	if !hostedControlPlane.Status.Ready {
+		return ctrl.Result{RequeueAfter: hcpNotReadyRequeueInterval}, nil
+	}
+
+	return ctrl.Result{RequeueAfter: hcpReadyRequeueInterval}, nil
 }
 
 // healthCheckKASLoadBalancers performs a health check on the KubeAPI server /healthz endpoint using the public and private load balancers hostnames directly
