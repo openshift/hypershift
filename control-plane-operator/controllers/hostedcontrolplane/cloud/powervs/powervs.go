@@ -14,6 +14,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	supportconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
 )
 
@@ -22,6 +23,7 @@ const (
 	kubeConfigFileBasePath = "/etc/kubernetes"
 	secretMountPath        = "/etc/vpc"
 	ccmConfigMapMountPath  = "/etc/ibm"
+	replicas               = 1
 )
 
 const ccmConfigTemplateData = `
@@ -76,7 +78,7 @@ func ReconcileCCMConfigMap(ccmConfig *corev1.ConfigMap, hcp *hyperv1.HostedContr
 	return nil
 }
 
-func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, ccmConfig *corev1.ConfigMap, releaseImage *releaseinfo.ReleaseImage) error {
+func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, ccmConfig *corev1.ConfigMap, releaseImage *releaseinfo.ReleaseImage, setDefaultSecurityContext bool) error {
 	commandToExec := []string{
 		"/bin/ibm-cloud-controller-manager",
 		"--authentication-skip-lookup",
@@ -96,7 +98,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 	}
 
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: utilpointer.Int32Ptr(1),
+		Replicas: utilpointer.Int32Ptr(int32(replicas)),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{"k8s-app": deployment.Name},
 		},
@@ -202,6 +204,16 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 			},
 		},
 	}
+
+	deploymentConfig := supportconfig.DeploymentConfig{
+		Scheduling: supportconfig.Scheduling{
+			PriorityClass: supportconfig.DefaultPriorityClass,
+		},
+		SetDefaultSecurityContext: setDefaultSecurityContext,
+	}
+
+	deploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(replicas))
+	deploymentConfig.ApplyTo(deployment)
 
 	return nil
 }
