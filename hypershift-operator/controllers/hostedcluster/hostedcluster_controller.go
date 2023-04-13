@@ -4044,7 +4044,6 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 			return fmt.Errorf("failed to generate OIDC document %s: %w", path, err)
 		}
 		_, err = r.S3Client.PutObject(&s3.PutObjectInput{
-			ACL:    aws.String("public-read"),
 			Body:   bodyReader,
 			Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
 			Key:    aws.String(hcluster.Spec.InfraID + path),
