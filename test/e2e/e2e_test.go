@@ -204,7 +204,6 @@ func setupSharedOIDCProvider(oidcBucketName string, iamClient iamiface.IAMAPI, s
 			return fmt.Errorf("failed to generate OIDC document %s: %w", path, err)
 		}
 		_, err = s3Client.PutObject(&s3.PutObjectInput{
-			ACL:    aws.String("public-read"),
 			Body:   bodyReader,
 			Bucket: aws.String(oidcBucketName),
 			Key:    aws.String(providerID + path),
