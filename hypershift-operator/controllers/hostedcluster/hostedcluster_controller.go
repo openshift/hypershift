@@ -910,6 +910,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if r.EnableOCPClusterMonitoring {
 			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
 		}
+
+		// Enable observability operator monitoring
+		metrics.EnableOBOMonitoring(controlPlaneNamespace)
+
 		return nil
 	})
 	if err != nil {
