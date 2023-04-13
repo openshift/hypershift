@@ -59,11 +59,16 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 			Name: o.Name,
 		},
 	}
+
 	if o.EnableOCPClusterMonitoring {
 		namespace.Labels = map[string]string{
 			"openshift.io/cluster-monitoring": "true",
 		}
 	}
+
+	// Enable observability operator monitoring
+	metrics.EnableOBOMonitoring(namespace)
+
 	return namespace
 }
 
