@@ -355,7 +355,9 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	log.Info("reconcilation complete")
-	return ctrl.Result{}, nil
+	// always requeue to catch and report out of band changes in AWS
+	// NOTICE: if the RequeueAfter interval is short enough, it could result in hitting some AWS request limits.
+	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
 func hasAWSConfig(platform *hyperv1.PlatformSpec) bool {
