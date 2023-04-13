@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta2
+package v1beta3
 
 import (
 	"bytes"
@@ -52,13 +52,6 @@ type KubeSchedulerConfiguration struct {
 	// ClientConnection specifies the kubeconfig file and client connection
 	// settings for the proxy server to use when communicating with the apiserver.
 	ClientConnection componentbaseconfigv1alpha1.ClientConnectionConfiguration `json:"clientConnection"`
-
-	// Note: Both HealthzBindAddress and MetricsBindAddress fields are deprecated.
-	// Only empty address or port 0 is allowed. Anything else will fail validation.
-	// HealthzBindAddress is the IP address and port for the health check server to serve on.
-	HealthzBindAddress *string `json:"healthzBindAddress,omitempty"`
-	// MetricsBindAddress is the IP address and port for the metrics server to serve on.
-	MetricsBindAddress *string `json:"metricsBindAddress,omitempty"`
 
 	// DebuggingConfiguration holds configuration for Debugging related features
 	// TODO: We might wanna make this a substruct like Debugging componentbaseconfigv1alpha1.DebuggingConfiguration
@@ -193,6 +186,21 @@ type Plugins struct {
 	PostBind PluginSet `json:"postBind,omitempty"`
 
 	// MultiPoint is a simplified config section to enable plugins for all valid extension points.
+	// Plugins enabled through MultiPoint will automatically register for every individual extension
+	// point the plugin has implemented. Disabling a plugin through MultiPoint disables that behavior.
+	// The same is true for disabling "*" through MultiPoint (no default plugins will be automatically registered).
+	// Plugins can still be disabled through their individual extension points.
+	//
+	// In terms of precedence, plugin config follows this basic hierarchy
+	//   1. Specific extension points
+	//   2. Explicitly configured MultiPoint plugins
+	//   3. The set of default plugins, as MultiPoint plugins
+	// This implies that a higher precedence plugin will run first and overwrite any settings within MultiPoint.
+	// Explicitly user-configured plugins also take a higher precedence over default plugins.
+	// Within this hierarchy, an Enabled setting takes precedence over Disabled. For example, if a plugin is
+	// set in both `multiPoint.Enabled` and `multiPoint.Disabled`, the plugin will be enabled. Similarly,
+	// including `multiPoint.Disabled = '*'` and `multiPoint.Enabled = pluginA` will still register that specific
+	// plugin through MultiPoint. This follows the same behavior as all other extension point configurations.
 	MultiPoint PluginSet `json:"multiPoint,omitempty"`
 }
 
