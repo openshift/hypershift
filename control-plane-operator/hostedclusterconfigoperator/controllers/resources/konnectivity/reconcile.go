@@ -60,6 +60,12 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
 					util.BuildVolume(konnectivityVolumeCACert(), buildKonnectivityVolumeCACert),
 				},
+				Tolerations: []corev1.Toleration{
+					{
+						Operator: corev1.TolerationOpExists,
+						Effect:   corev1.TaintEffectNoSchedule,
+					},
+				},
 			},
 		},
 	}
