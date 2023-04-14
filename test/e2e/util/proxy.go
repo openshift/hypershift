@@ -70,7 +70,7 @@ func CreateProxyInstance(t *testing.T, ctx context.Context, client crclient.Clie
 	caAndKey := strings.Join([]string{key, ca}, "")
 
 	userData := []byte(fmt.Sprintf(mitmProxyScript, caAndKey))
-	proxyAddr, err := infraOptions.CreateProxyHost(ctx, opts.Log, ec2Client, *subnetID, *res.SecurityGroups[0].GroupId, userData)
+	proxyIP, err := infraOptions.CreateProxyHost(ctx, opts.Log, ec2Client, *subnetID, *res.SecurityGroups[0].GroupId, userData)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to create proxy")
 
 	caConfigMap := corev1.ConfigMap{
@@ -86,8 +86,8 @@ func CreateProxyInstance(t *testing.T, ctx context.Context, client crclient.Clie
 	g.Expect(err).ToNot(HaveOccurred(), "failed to create CA configmap")
 
 	return &v1.ProxySpec{
-		HTTPProxy:  proxyAddr,
-		HTTPSProxy: proxyAddr,
+		HTTPProxy:  fmt.Sprintf("http://%s:3128", proxyIP),
+		HTTPSProxy: fmt.Sprintf("https://%s:3128", proxyIP),
 		TrustedCA: v1.ConfigMapNameReference{
 			Name: caConfigMap.Name,
 		},

@@ -261,11 +261,11 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		}
 
 		userData := []byte(fmt.Sprintf(proxyConfigurationScript, string(sshKeyFile)))
-		result.ProxyAddr, err = o.CreateProxyHost(ctx, l, ec2Client, result.Zones[0].SubnetID, sgGroupId, userData)
+		proxyIP, err := o.CreateProxyHost(ctx, l, ec2Client, result.Zones[0].SubnetID, sgGroupId, userData)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create proxy host: %w", err)
 		}
-
+		result.ProxyAddr = fmt.Sprintf("http://%s:3128", proxyIP)
 	}
 	return result, nil
 }
@@ -353,7 +353,7 @@ func (o *CreateInfraOptions) CreateProxyHost(ctx context.Context, l logr.Logger,
 	}
 	l.Info("Created proxy host")
 
-	return fmt.Sprintf("http://%s:3128", *result.Instances[0].PrivateIpAddress), nil
+	return *result.Instances[0].PrivateIpAddress, nil
 }
 
 func ec2Backoff() wait.Backoff {
