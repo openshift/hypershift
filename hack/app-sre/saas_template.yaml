@@ -37,6 +37,8 @@ objects:
   kind: Namespace
   metadata:
     creationTimestamp: null
+    labels:
+      hypershift.openshift.io/monitoring: "true"
     name: ${NAMESPACE}
   spec: {}
   status: {}
