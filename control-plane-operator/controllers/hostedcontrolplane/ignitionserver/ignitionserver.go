@@ -379,32 +379,55 @@ func reconcileServingCertSecret(servingCertSecret *corev1.Secret, caCertSecret *
 	)
 }
 
-func reconcileRole(role *rbacv1.Role) error {
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{""},
-			Resources: []string{
-				"secrets",
+	role := ignitionserver.Role(controlPlaneNamespace)
+	if result, err := createOrUpdate(ctx, c, role, func() error {
+		role.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"secrets",
+				},
+				Verbs: []string{"get", "list", "watch", "update", "patch", "delete"},
 			},
-			Verbs: []string{"get", "list", "watch", "update", "patch", "delete"},
-		},
-		{
-			APIGroups: []string{""},
-			Resources: []string{
-				"configmaps",
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"configmaps",
+				},
+				Verbs: []string{"get", "list", "watch"},
 			},
-			Verbs: []string{"get", "list", "watch"},
-		},
-		{
-			APIGroups: []string{""},
-			Resources: []string{
-				"events",
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"events",
+				},
+				Verbs: []string{"*"},
 			},
-			Verbs: []string{"*"},
-		},
+			{
+				APIGroups: []string{hyperv1.GroupVersion.Group},
+				Resources: []string{
+					"hostedcontrolplanes",
+				},
+				Verbs: []string{
+					"get",
+					"list",
+					"watch",
+				},
+			},
+			{
+				APIGroups: []string{hyperv1.GroupVersion.Group},
+				Resources: []string{
+					"hostedcontrolplanes/status",
+				},
+				Verbs: []string{"*"},
+			},
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ignition role: %w", err)
+	} else {
+		log.Info("Reconciled ignition role", "result", result)
 	}
-	return nil
-}
 
 func reconcileProxyRole(role *rbacv1.Role) error {
 	role.Rules = []rbacv1.PolicyRule{

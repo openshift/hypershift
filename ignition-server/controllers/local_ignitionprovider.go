@@ -19,6 +19,7 @@ import (
 	"github.com/docker/distribution/manifest/manifestlist"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
@@ -26,6 +27,8 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -119,20 +122,20 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	}
 
 	// Look up the release image metadata
-	images, err := func() (map[string]string, error) {
+	imageProvider, err := func() (*imageprovider.ReleaseImageProvider, error) {
 		img, err := p.ReleaseProvider.Lookup(ctx, releaseImage, pullSecret)
 		if err != nil {
 			return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
 		}
-		return img.ComponentImages(), nil
+		return imageprovider.New(img), nil
 	}()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get component images: %v", err)
 	}
 
-	mcoImage, hasMcoImage := images["machine-config-operator"]
+	mcoImage, hasMcoImage := imageProvider.ImageExist("machine-config-operator")
 	if !hasMcoImage {
-		return nil, fmt.Errorf("release image does not contain machine-config-operator (images: %v)", images)
+		return nil, fmt.Errorf("release image does not contain machine-config-operator (images: %v)", imageProvider.ComponentImages())
 	}
 	log.Info("discovered mco image", "image", mcoImage)
 
@@ -294,7 +297,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			fmt.Sprintf("--dest-dir=%s", destDir),
 			fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir),
 		}
-		if image, exists := images["mdns-publisher"]; exists {
+		if image, exists := imageProvider.ImageExist("mdns-publisher"); exists {
 			args = append(args, fmt.Sprintf("--mdns-publisher-image=%s", image))
 		}
 		if mcsConfig.Data["user-ca-bundle-config.yaml"] != "" {
@@ -315,13 +318,13 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			// We fall back to MCO previously supported flags.
 			args := []string{
 				"bootstrap",
-				fmt.Sprintf("--machine-config-operator-image=%s", images["machine-config-operator"]),
-				fmt.Sprintf("--machine-config-oscontent-image=%s", images["machine-os-content"]),
-				fmt.Sprintf("--infra-image=%s", images["pod"]),
-				fmt.Sprintf("--keepalived-image=%s", images["keepalived-ipfailover"]),
-				fmt.Sprintf("--coredns-image=%s", images["codedns"]),
-				fmt.Sprintf("--haproxy-image=%s", images["haproxy"]),
-				fmt.Sprintf("--baremetal-runtimecfg-image=%s", images["baremetal-runtimecfg"]),
+				fmt.Sprintf("--machine-config-operator-image=%s", imageProvider.GetImage("machine-config-operator")),
+				fmt.Sprintf("--machine-config-oscontent-image=%s", imageProvider.GetImage("machine-os-content")),
+				fmt.Sprintf("--infra-image=%s", imageProvider.GetImage("pod")),
+				fmt.Sprintf("--keepalived-image=%s", imageProvider.GetImage("keepalived-ipfailover")),
+				fmt.Sprintf("--coredns-image=%s", imageProvider.GetImage("codedns")),
+				fmt.Sprintf("--haproxy-image=%s", imageProvider.GetImage("haproxy-mura")),
+				fmt.Sprintf("--baremetal-runtimecfg-image=%s", imageProvider.GetImage("baremetal-runtimecfg")),
 				fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
 				fmt.Sprintf("--kube-ca=%s/root-ca.crt", configDir),
 				fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
@@ -334,7 +337,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 				fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir),
 			}
 
-			if image, exists := images["mdns-publisher"]; exists {
+			if image, exists := imageProvider.ImageExist("mdns-publisher"); exists {
 				args = append(args, fmt.Sprintf("--mdns-publisher-image=%s", image))
 			}
 			if mcsConfig.Data["user-ca-bundle-config.yaml"] != "" {
@@ -351,6 +354,11 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			if err != nil {
 				return fmt.Errorf("machine-config-operator process failed: %w", err)
 			}
+		}
+
+		// set missing images condition on the HCP
+		if err := p.reconcileValidReleaseInfoCondition(ctx, imageProvider); err != nil {
+			log.Error(err, "failed to reconcile IgnitionValidReleaseInfo condition")
 		}
 
 		// Copy output to the MCC base directory
@@ -509,6 +517,38 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	}
 
 	return payload, nil
+}
+
+func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.Context, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := r.Client.List(ctx, hcpList, client.InNamespace(r.Namespace)); err != nil {
+		return err
+	}
+	if len(hcpList.Items) == 0 {
+		return fmt.Errorf("failed to find HostedControlPlane in namespace %s", r.Namespace)
+	}
+
+	hostedControlPlane := hcpList.Items[0]
+
+	if len(releaseImageProvider.GetMissingImages()) == 0 {
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.IgnitionServerValidReleaseInfo),
+			Status:             metav1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            hyperv1.AllIsWellMessage,
+			ObservedGeneration: hostedControlPlane.Generation,
+		})
+	} else {
+		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.IgnitionServerValidReleaseInfo),
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.MissingReleaseImagesReason,
+			Message:            strings.Join(releaseImageProvider.GetMissingImages(), ", "),
+			ObservedGeneration: hostedControlPlane.Generation,
+		})
+	}
+
+	return r.Client.Status().Update(ctx, &hostedControlPlane)
 }
 
 // copyFile copies a file named src to dst, preserving attributes.

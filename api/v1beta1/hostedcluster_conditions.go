@@ -74,6 +74,10 @@ const (
 	// A failure here often means a software bug or a non-stable cluster.
 	IgnitionEndpointAvailable ConditionType = "IgnitionEndpointAvailable"
 
+	// IgnitionServerValidReleaseInfo indicates if the release contains all the images used by the local ignition provider
+	// and reports missing images if any.
+	IgnitionServerValidReleaseInfo ConditionType = "IgnitionServerValidReleaseInfo"
+
 	// ValidHostedClusterConfiguration signals if the hostedCluster input is valid and
 	// supported by the underlying management cluster.
 	// A failure here is unlikely to resolve without the changing user input.

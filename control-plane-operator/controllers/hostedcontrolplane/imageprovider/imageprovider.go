@@ -37,7 +37,7 @@ func (p *ReleaseImageProvider) GetMissingImages() []string {
 	return p.missingImages
 }
 
-func (p *ReleaseImageProvider) ImageExist(key string) bool {
-	_, exist := p.componentsImages[key]
-	return exist
+func (p *ReleaseImageProvider) ImageExist(key string) (string, bool) {
+	img, exist := p.componentsImages[key]
+	return img, exist
 }
