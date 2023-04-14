@@ -2847,6 +2847,10 @@ When this is false for too long and there&rsquo;s no clear indication in the &ld
 HostedCluster is available to handle ignition requests.
 A failure here often means a software bug or a non-stable cluster.</p>
 </td>
+</tr><tr><td><p>&#34;IgnitionServerValidReleaseInfo&#34;</p></td>
+<td><p>IgnitionServerValidReleaseInfo indicates if the release contains all the images used by the local ignition provider
+and reports missing images if any.</p>
+</td>
 </tr><tr><td><p>&#34;InfrastructureReady&#34;</p></td>
 <td><p>InfrastructureReady bubbles up the same condition from HCP. It signals if the infrastructure for a control plane to be operational,
 e.g. load balancers were created successfully.

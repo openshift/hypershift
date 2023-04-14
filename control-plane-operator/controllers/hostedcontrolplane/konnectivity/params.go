@@ -140,9 +140,9 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider
 	p.AgentDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	p.ServerDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	// check apiserver-network-proxy image in ocp payload and use it
-	if releaseImageProvider.ImageExist("apiserver-network-proxy") {
-		p.KonnectivityServerImage = releaseImageProvider.GetImage("apiserver-network-proxy")
-		p.KonnectivityAgentImage = releaseImageProvider.GetImage("apiserver-network-proxy")
+	if image, exist := releaseImageProvider.ImageExist("apiserver-network-proxy"); exist {
+		p.KonnectivityServerImage = image
+		p.KonnectivityAgentImage = image
 	}
 
 	if hcp.Annotations != nil {
