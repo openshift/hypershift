@@ -2,6 +2,8 @@ package events
 
 import (
 	"context"
+	"fmt"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sort"
 	"testing"
 	"time"
@@ -86,8 +88,18 @@ func TestErrorMessages(t *testing.T) {
 			eventList := &corev1.EventList{
 				Items: test.events,
 			}
-			fakeObj := &corev1.Pod{}
-			client := fake.NewClientBuilder().WithLists(eventList).Build()
+
+			eventIndexer := func(obj crclient.Object) []string {
+				event, ok := obj.(*corev1.Event)
+				if !ok {
+					panic(fmt.Errorf("expects object of type %T but received object of type %T", corev1.Event{}, obj))
+				}
+				return []string{string(event.InvolvedObject.UID)}
+			}
+
+			fakeObj := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{UID: fakeObjUID}}
+			client := fake.NewClientBuilder().WithLists(eventList).WithIndex(&corev1.Event{}, EventInvolvedObjectUIDField, eventIndexer).Build()
+
 			collector := NewMessageCollector(context.Background(), client)
 			result, err := collector.ErrorMessages(fakeObj)
 			g.Expect(err).ToNot(HaveOccurred())
