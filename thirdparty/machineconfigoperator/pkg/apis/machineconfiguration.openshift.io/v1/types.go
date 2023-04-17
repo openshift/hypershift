@@ -13,6 +13,9 @@ import (
 // For example: `master` or `worker`
 const MachineConfigRoleLabelKey = "machineconfiguration.openshift.io/role"
 
+// KubeletConfigRoleLabelPrefix is the label that must be present in the KubeletConfig CR
+const KubeletConfigRoleLabelPrefix = "pools.operator.machineconfiguration.openshift.io/"
+
 // +genclient
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -69,23 +72,35 @@ type ControllerConfigSpec struct {
 	// images is map of images that are used by the controller to render templates under ./templates/
 	Images map[string]string `json:"images"`
 
-	// osImageURL is the location of the container image that contains the OS update payload.
-	// Its value is taken from the data.osImageURL field on the machine-config-osimageurl ConfigMap.
+	// BaseOSContainerImage is the new-format container image for operating system updates.
+	BaseOSContainerImage string `json:"baseOSContainerImage"`
+
+	// BaseOSExtensionsContainerImage is the matching extensions container for the new-format container
+	BaseOSExtensionsContainerImage string `json:"baseOSExtensionsContainerImage"`
+
+	// OSImageURL is the old-format container image that contains the OS update payload.
 	OSImageURL string `json:"osImageURL"`
 
 	// releaseImage is the image used when installing the cluster
 	ReleaseImage string `json:"releaseImage"`
 
 	// proxy holds the current proxy configuration for the nodes
+	// +kubebuilder:validation:EmbeddedResource
 	// +nullable
 	Proxy *configv1.ProxyStatus `json:"proxy"`
 
 	// infra holds the infrastructure details
+	// +kubebuilder:validation:EmbeddedResource
 	// +nullable
 	Infra *configv1.Infrastructure `json:"infra"`
 
-	// kubeletIPv6 is true to force a single-stack IPv6 kubelet config
-	KubeletIPv6 bool `json:"kubeletIPv6,omitempty"`
+	// dns holds the cluster dns details
+	// +kubebuilder:validation:EmbeddedResource
+	// +nullable
+	DNS *configv1.DNS `json:"dns"`
+
+	// ipFamilies indicates the IP families in use by the cluster network
+	IPFamilies IPFamiliesType `json:"ipFamilies"`
 
 	// networkType holds the type of network the cluster is using
 	// XXX: this is temporary and will be dropped as soon as possible in favor of a better support
@@ -93,6 +108,27 @@ type ControllerConfigSpec struct {
 	// Nobody is also changing this once the cluster is up and running the first time, so, disallow
 	// regeneration if this changes.
 	NetworkType string `json:"networkType,omitempty"`
+
+	// Network contains additional network related information
+	// +nullable
+	Network *NetworkInfo `json:"network"`
+}
+
+// IPFamiliesType indicates whether the cluster network is IPv4-only, IPv6-only, or dual-stack
+type IPFamiliesType string
+
+const (
+	IPFamiliesIPv4                 IPFamiliesType = "IPv4"
+	IPFamiliesIPv6                 IPFamiliesType = "IPv6"
+	IPFamiliesDualStack            IPFamiliesType = "DualStack"
+	IPFamiliesDualStackIPv6Primary IPFamiliesType = "DualStackIPv6Primary"
+)
+
+// Network contains network related configuration
+type NetworkInfo struct {
+	// MTUMigration contains the MTU migration configuration.
+	// +nullable
+	MTUMigration *configv1.MTUMigration `json:"mtuMigration"`
 }
 
 // ControllerConfigStatus is the status for ControllerConfig
@@ -168,6 +204,11 @@ type MachineConfigSpec struct {
 	// OSImageURL specifies the remote location that will be used to
 	// fetch the OS.
 	OSImageURL string `json:"osImageURL"`
+
+	// BaseOSExtensionsContainerImage specifies the remote location that will be used
+	// to fetch the extensions container matching a new-format OS image
+	BaseOSExtensionsContainerImage string `json:"baseOSExtensionsContainerImage"`
+
 	// Config is a Ignition Config object.
 	Config runtime.RawExtension `json:"config"`
 
@@ -217,8 +258,17 @@ type MachineConfigPoolSpec struct {
 	// This includes generating new desiredMachineConfig and update of machines.
 	Paused bool `json:"paused"`
 
-	// maxUnavailable specifies the percentage or constant number of machines that can be updating at any given time.
-	// default is 1.
+	// maxUnavailable defines either an integer number or percentage
+	// of nodes in the pool that can go Unavailable during an update.
+	// This includes nodes Unavailable for any reason, including user
+	// initiated cordons, failing nodes, etc. The default value is 1.
+	//
+	// A value larger than 1 will mean multiple nodes going unavailable during
+	// the update, which may affect your workload stress on the remaining nodes.
+	// You cannot set this value to 0 to stop updates (it will default back to 1);
+	// to stop updates, use the 'paused' property instead. Drain will respect
+	// Pod Disruption Budgets (PDBs) such as etcd quorum guards, even if
+	// maxUnavailable is greater than one.
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 
 	// The targeted MachineConfig object for the machine config pool.
@@ -338,8 +388,16 @@ type KubeletConfig struct {
 
 // KubeletConfigSpec defines the desired state of KubeletConfig
 type KubeletConfigSpec struct {
+	AutoSizingReserved        *bool                 `json:"autoSizingReserved,omitempty"`
+	LogLevel                  *int32                `json:"logLevel,omitempty"`
 	MachineConfigPoolSelector *metav1.LabelSelector `json:"machineConfigPoolSelector,omitempty"`
 	KubeletConfig             *runtime.RawExtension `json:"kubeletConfig,omitempty"`
+
+	// If unset, the default is based on the apiservers.config.openshift.io/cluster resource.
+	// Note that only Old and Intermediate profiles are currently supported, and
+	// the maximum available MinTLSVersions is VersionTLS12.
+	// +optional
+	TLSSecurityProfile *configv1.TLSSecurityProfile `json:"tlsSecurityProfile,omitempty"`
 }
 
 // KubeletConfigStatus defines the observed state of a KubeletConfig
@@ -418,7 +476,7 @@ type ContainerRuntimeConfigSpec struct {
 // ContainerRuntimeConfiguration defines the tuneables of the container runtime
 type ContainerRuntimeConfiguration struct {
 	// pidsLimit specifies the maximum number of processes allowed in a container
-	PidsLimit int64 `json:"pidsLimit,omitempty"`
+	PidsLimit *int64 `json:"pidsLimit,omitempty"`
 
 	// logLevel specifies the verbosity of the logs based on the level it is set to.
 	// Options are fatal, panic, error, warn, info, and debug.
@@ -427,12 +485,24 @@ type ContainerRuntimeConfiguration struct {
 	// logSizeMax specifies the Maximum size allowed for the container log file.
 	// Negative numbers indicate that no size limit is imposed.
 	// If it is positive, it must be >= 8192 to match/exceed conmon's read buffer.
-	LogSizeMax resource.Quantity `json:"logSizeMax"`
+	LogSizeMax resource.Quantity `json:"logSizeMax,omitempty"`
 
 	// overlaySize specifies the maximum size of a container image.
-	// This flag can be used to set quota on the size of container images. (default: 10GB)
-	OverlaySize resource.Quantity `json:"overlaySize"`
+	// This flag can be used to set quota on the size of container images.
+	OverlaySize resource.Quantity `json:"overlaySize,omitempty"`
+
+	// defaultRuntime is the name of the OCI runtime to be used as the default.
+	DefaultRuntime ContainerRuntimeDefaultRuntime `json:"defaultRuntime,omitempty"`
 }
+
+type ContainerRuntimeDefaultRuntime string
+
+const (
+	ContainerRuntimeDefaultRuntimeEmpty   = ""
+	ContainerRuntimeDefaultRuntimeRunc    = "runc"
+	ContainerRuntimeDefaultRuntimeCrun    = "crun"
+	ContainerRuntimeDefaultRuntimeDefault = ContainerRuntimeDefaultRuntimeRunc
+)
 
 // ContainerRuntimeConfigStatus defines the observed state of a ContainerRuntimeConfig
 type ContainerRuntimeConfigStatus struct {
