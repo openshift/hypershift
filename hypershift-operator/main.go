@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"os"
 	"strings"
 	"time"
@@ -242,16 +243,38 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
+	// The mgr and therefore the cache is not started yet, thus we have to construct a client that
+	// directly reads from the api.
+	apiReadingClient, err := crclient.NewDelegatingClient(crclient.NewDelegatingClientInput{
+		CacheReader: mgr.GetAPIReader(),
+		Client:      mgr.GetClient(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to construct api reading client: %w", err)
+	}
+
+	// Populate registry overrides with any ICSP and IDMS from a OpenShift management cluster
+	var imageRegistryOverrides map[string][]string
+	if mgmtClusterCaps.Has(capabilities.CapabilityICSP) || mgmtClusterCaps.Has(capabilities.CapabilityIDMS) {
+		imageRegistryOverrides, err = globalconfig.GetAllImageRegistryMirrors(ctx, apiReadingClient)
+		if err != nil {
+			return fmt.Errorf("failed to populate image registry overrides: %w", err)
+		}
+	}
+
 	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
 		Client:                        mgr.GetClient(),
 		ManagementClusterCapabilities: mgmtClusterCaps,
 		HypershiftOperatorImage:       operatorImage,
-		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
+		ReleaseProvider: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+				Delegate: &releaseinfo.CachedProvider{
+					Inner: &releaseinfo.RegistryClientProvider{},
+					Cache: map[string]*releaseinfo.ReleaseImage{},
+				},
+				RegistryOverrides: opts.RegistryOverrides,
 			},
-			RegistryOverrides: opts.RegistryOverrides,
+			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		},
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
@@ -278,12 +301,15 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	if err := (&nodepool.NodePoolReconciler{
 		Client: mgr.GetClient(),
-		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
+		ReleaseProvider: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+				Delegate: &releaseinfo.CachedProvider{
+					Inner: &releaseinfo.RegistryClientProvider{},
+					Cache: map[string]*releaseinfo.ReleaseImage{},
+				},
+				RegistryOverrides: opts.RegistryOverrides,
 			},
-			RegistryOverrides: opts.RegistryOverrides,
+			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		},
 		CreateOrUpdateProvider:  createOrUpdate,
 		HypershiftOperatorImage: operatorImage,
@@ -325,16 +351,6 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to create uwm telemetry controller: %w", err)
 		}
-	}
-
-	// The mgr and therefore the cache is not started yet, thus we have to construct a client that
-	// directly reads from the api.
-	apiReadingClient, err := crclient.NewDelegatingClient(crclient.NewDelegatingClientInput{
-		CacheReader: mgr.GetAPIReader(),
-		Client:      mgr.GetClient(),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to construct api reading client: %w", err)
 	}
 
 	// If it exists, block default ingress controller from admitting HCP private routes

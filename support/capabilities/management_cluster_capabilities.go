@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 
@@ -45,6 +46,12 @@ const (
 	// CapabilityNetworks indicates if the cluster supports the
 	// networks.config.openshift.io api
 	CapabilityNetworks
+
+	// CapabilityICSP indicates if the cluster supports ImageContentSourcePolicy CRDs
+	CapabilityICSP
+
+	// CapabilityIDMS indicates if the cluster supports ImageDigestMirrorSet CRDs
+	CapabilityIDMS
 )
 
 // ManagementClusterCapabilities holds all information about optional capabilities of
@@ -151,6 +158,18 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 	}
 	if hasNetworksCap {
 		discoveredCapabilities[CapabilityNetworks] = struct{}{}
+	}
+
+	// check for ImageContentSourcePolicy capability
+	hasICSPCap, err := isAPIResourceRegistered(client, operatorv1alpha1.GroupVersion, "imagecontentsourcepolicies")
+	if hasICSPCap {
+		discoveredCapabilities[CapabilityICSP] = struct{}{}
+	}
+
+	// check for ImageDigestMirrorSet capability
+	hasIDMSCap, err := isAPIResourceRegistered(client, configv1.GroupVersion, "imagedigestmirrorsets")
+	if hasIDMSCap {
+		discoveredCapabilities[CapabilityIDMS] = struct{}{}
 	}
 
 	return &ManagementClusterCapabilities{capabilities: discoveredCapabilities}, nil
