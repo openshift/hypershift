@@ -1783,7 +1783,7 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 
 	YamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
-		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
+		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: false},
 	)
 
 	cr, _, err := YamlSerializer.Decode(manifest, nil, nil)
