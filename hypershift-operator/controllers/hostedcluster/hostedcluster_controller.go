@@ -930,6 +930,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = "true"
 
+		// Set pod security labels on HCP namespace
+		controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
+		controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = "privileged"
+		controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "privileged"
+
+		// Enable monitoring for hosted control plane namespaces
 		if r.EnableOCPClusterMonitoring {
 			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
 		}
