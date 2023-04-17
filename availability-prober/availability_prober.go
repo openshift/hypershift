@@ -62,12 +62,12 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		if len(opts.requiredAPIs.val) > 0 && opts.kubeconfig == "" {
+		if opts.requiredAPIs.val.Len() > 0 && opts.kubeconfig == "" {
 			log.Info("--kubeconfig is mandatory when --required-api is passed")
 			os.Exit(1)
 
 		}
-		opts.requiredAPIsParsed, err = parseGroupVersionKindArgValues(opts.requiredAPIs.val.List())
+		opts.requiredAPIsParsed, err = parseGroupVersionKindArgValues(sets.List(opts.requiredAPIs.val))
 		if err != nil {
 			log.Error(err, "failed to parse --required-api arguments")
 			os.Exit(1)
@@ -188,19 +188,19 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 }
 
 type stringSetFlag struct {
-	val sets.String
+	val sets.Set[string]
 }
 
 func (s *stringSetFlag) Set(v string) error {
 	if s.val == nil {
-		s.val = sets.String{}
+		s.val = sets.New[string]()
 	}
 	s.val.Insert(v)
 	return nil
 }
 
 func (s *stringSetFlag) String() string {
-	return fmt.Sprintf("%v", s.val.List())
+	return fmt.Sprintf("%v", sets.List(s.val))
 }
 func (s *stringSetFlag) Type() string {
 	return "stringSetFlag"
