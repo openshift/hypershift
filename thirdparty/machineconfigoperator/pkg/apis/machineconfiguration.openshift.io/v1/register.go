@@ -1,6 +1,7 @@
 package v1
 
 import (
+	osev1 "github.com/openshift/api/config/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -34,6 +35,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 		&MachineConfigList{},
 		&MachineConfigPool{},
 		&MachineConfigPoolList{},
+		&osev1.Node{},
+		&osev1.NodeList{},
 	)
 
 	metav1.AddToGroupVersion(scheme, GroupVersion)

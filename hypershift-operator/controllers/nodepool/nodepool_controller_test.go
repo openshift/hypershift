@@ -268,6 +268,7 @@ metadata:
     machineconfiguration.openshift.io/role: worker
   name: config-1
 spec:
+  baseOSExtensionsContainerImage: ""
   config:
     ignition:
       version: 3.2.0
@@ -318,6 +319,7 @@ metadata:
     machineconfiguration.openshift.io/role: worker
   name: config-1
 spec:
+  baseOSExtensionsContainerImage: ""
   config:
     ignition:
       version: 3.2.0
@@ -367,6 +369,7 @@ metadata:
     machineconfiguration.openshift.io/role: worker
   name: config-2
 spec:
+  baseOSExtensionsContainerImage: ""
   config:
     ignition:
       version: 3.2.0
@@ -409,6 +412,7 @@ metadata:
     machineconfiguration.openshift.io/role: worker
   name: 20-apiserver-haproxy
 spec:
+  baseOSExtensionsContainerImage: ""
   config:
     ignition:
       version: 3.2.0
