@@ -10,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -24,14 +25,14 @@ type HostedClusterConfigOperatorParams struct {
 	AvailabilityProberImage string
 }
 
-func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, images map[string]string, openShiftVersion, kubernetesVersion string, setDefaultSecurityContext bool) *HostedClusterConfigOperatorParams {
+func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, openShiftVersion, kubernetesVersion string, setDefaultSecurityContext bool) *HostedClusterConfigOperatorParams {
 	params := &HostedClusterConfigOperatorParams{
-		Image:                   images["hosted-cluster-config-operator"],
+		Image:                   releaseImageProvider.GetImage("hosted-cluster-config-operator"),
 		ReleaseImage:            hcp.Spec.ReleaseImage,
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		OpenShiftVersion:        openShiftVersion,
 		KubernetesVersion:       kubernetesVersion,
-		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 	}
 	params.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,

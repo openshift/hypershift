@@ -7,6 +7,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 )
 
@@ -26,10 +27,10 @@ type KonnectivityParams struct {
 	AgentDeamonSetConfig    config.DeploymentConfig
 }
 
-func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalAddress string, externalPort int32, setDefaultSecurityContext bool) *KonnectivityParams {
+func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, externalAddress string, externalPort int32, setDefaultSecurityContext bool) *KonnectivityParams {
 	p := &KonnectivityParams{
-		KonnectivityServerImage: images["konnectivity-server"],
-		KonnectivityAgentImage:  images["konnectivity-agent"],
+		KonnectivityServerImage: releaseImageProvider.GetImage("konnectivity-server"),
+		KonnectivityAgentImage:  releaseImageProvider.GetImage("konnectivity-agent"),
 		ExternalAddress:         externalAddress,
 		ExternalPort:            externalPort,
 		OwnerRef:                config.OwnerRefFrom(hcp),
@@ -139,9 +140,9 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	p.AgentDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	p.ServerDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	// check apiserver-network-proxy image in ocp payload and use it
-	if _, ok := images["apiserver-network-proxy"]; ok {
-		p.KonnectivityServerImage = images["apiserver-network-proxy"]
-		p.KonnectivityAgentImage = images["apiserver-network-proxy"]
+	if image, exist := releaseImageProvider.ImageExist("apiserver-network-proxy"); exist {
+		p.KonnectivityServerImage = image
+		p.KonnectivityAgentImage = image
 	}
 
 	if hcp.Annotations != nil {

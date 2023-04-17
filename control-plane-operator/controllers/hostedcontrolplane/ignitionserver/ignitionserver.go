@@ -175,6 +175,24 @@ func ReconcileIgnitionServer(ctx context.Context,
 				},
 				Verbs: []string{"*"},
 			},
+			{
+				APIGroups: []string{hyperv1.GroupVersion.Group},
+				Resources: []string{
+					"hostedcontrolplanes",
+				},
+				Verbs: []string{
+					"get",
+					"list",
+					"watch",
+				},
+			},
+			{
+				APIGroups: []string{hyperv1.GroupVersion.Group},
+				Resources: []string{
+					"hostedcontrolplanes/status",
+				},
+				Verbs: []string{"*"},
+			},
 		}
 		return nil
 	}); err != nil {

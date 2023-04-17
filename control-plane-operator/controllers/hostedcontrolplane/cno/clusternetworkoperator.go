@@ -15,6 +15,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
@@ -72,34 +73,34 @@ type Params struct {
 	DefaultIngressDomain    string
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool, defaultIngressDomain string) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, defaultIngressDomain string) Params {
 	p := Params{
 		Images: Images{
-			NetworkOperator:              images["cluster-network-operator"],
-			SDN:                          images["sdn"],
-			KubeProxy:                    images["kube-proxy"],
-			KubeRBACProxy:                images["kube-rbac-proxy"],
-			Multus:                       images["multus-cni"],
-			MultusAdmissionController:    images["multus-admission-controller"],
-			CNIPlugins:                   images["container-networking-plugins"],
-			BondCNIPlugin:                images["network-interface-bond-cni"],
-			WhereaboutsCNI:               images["multus-whereabouts-ipam-cni"],
-			RouteOverrideCNI:             images["multus-route-override-cni"],
-			MultusNetworkPolicy:          images["multus-networkpolicy"],
-			OVN:                          images["ovn-kubernetes"],
-			EgressRouterCNI:              images["egress-router-cni"],
-			KuryrDaemon:                  images["kuryr-cni"],
-			KuryrController:              images["kuryr-controller"],
-			NetworkMetricsDaemon:         images["network-metrics-daemon"],
-			NetworkCheckSource:           images["cluster-network-operator"],
-			NetworkCheckTarget:           images["cluster-network-operator"],
-			CloudNetworkConfigController: images["cloud-network-config-controller"],
-			TokenMinter:                  images["token-minter"],
-			CLI:                          images["cli"],
-			Socks5Proxy:                  images["socks5-proxy"],
+			NetworkOperator:              releaseImageProvider.GetImage("cluster-network-operator"),
+			SDN:                          releaseImageProvider.GetImage("sdn"),
+			KubeProxy:                    releaseImageProvider.GetImage("kube-proxy"),
+			KubeRBACProxy:                releaseImageProvider.GetImage("kube-rbac-proxy"),
+			Multus:                       releaseImageProvider.GetImage("multus-cni"),
+			MultusAdmissionController:    releaseImageProvider.GetImage("multus-admission-controller"),
+			CNIPlugins:                   releaseImageProvider.GetImage("container-networking-plugins"),
+			BondCNIPlugin:                releaseImageProvider.GetImage("network-interface-bond-cni"),
+			WhereaboutsCNI:               releaseImageProvider.GetImage("multus-whereabouts-ipam-cni"),
+			RouteOverrideCNI:             releaseImageProvider.GetImage("multus-route-override-cni"),
+			MultusNetworkPolicy:          releaseImageProvider.GetImage("multus-networkpolicy"),
+			OVN:                          releaseImageProvider.GetImage("ovn-kubernetes"),
+			EgressRouterCNI:              releaseImageProvider.GetImage("egress-router-cni"),
+			KuryrDaemon:                  releaseImageProvider.GetImage("kuryr-cni"),
+			KuryrController:              releaseImageProvider.GetImage("kuryr-controller"),
+			NetworkMetricsDaemon:         releaseImageProvider.GetImage("network-metrics-daemon"),
+			NetworkCheckSource:           releaseImageProvider.GetImage("cluster-network-operator"),
+			NetworkCheckTarget:           releaseImageProvider.GetImage("cluster-network-operator"),
+			CloudNetworkConfigController: releaseImageProvider.GetImage("cloud-network-config-controller"),
+			TokenMinter:                  releaseImageProvider.GetImage("token-minter"),
+			CLI:                          releaseImageProvider.GetImage("cli"),
+			Socks5Proxy:                  releaseImageProvider.GetImage("socks5-proxy"),
 		},
 		ReleaseVersion:          version,
-		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		IsPrivate:               util.IsPrivateHCP(hcp),
 		ExposedThroughHCPRouter: isOVNSBDBExposedThroughHCPRouter(hcp),

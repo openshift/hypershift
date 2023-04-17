@@ -19,6 +19,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
@@ -1228,7 +1229,8 @@ func TestReconcileRouter(t *testing.T) {
 				Log:    ctrl.LoggerFrom(ctx),
 			}
 
-			if err := r.reconcileRouter(ctx, hcp, &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}, controllerutil.CreateOrUpdate, tc.exposeAPIServerThroughRouter, "privateRouterHost", "publicRouterHost"); err != nil {
+			releaseInfo := &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}
+			if err := r.reconcileRouter(ctx, hcp, imageprovider.New(releaseInfo), controllerutil.CreateOrUpdate, tc.exposeAPIServerThroughRouter, "privateRouterHost", "publicRouterHost"); err != nil {
 				t.Fatalf("reconcileRouter failed: %v", err)
 			}
 

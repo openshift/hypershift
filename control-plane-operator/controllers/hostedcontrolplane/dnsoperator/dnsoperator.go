@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
@@ -47,16 +48,16 @@ type Params struct {
 }
 
 // NewParams creates a new Params object for a DNS operator deployment.
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, images map[string]string, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	p := Params{
 		Images: Images{
-			DNSOperator:   images["cluster-dns-operator"],
-			CoreDNS:       images["coredns"],
-			KubeRBACProxy: images["kube-rbac-proxy"],
-			CLI:           images["cli"],
+			DNSOperator:   releaseImageProvider.GetImage("cluster-dns-operator"),
+			CoreDNS:       releaseImageProvider.GetImage("coredns"),
+			KubeRBACProxy: releaseImageProvider.GetImage("kube-rbac-proxy"),
+			CLI:           releaseImageProvider.GetImage("cli"),
 		},
 		ReleaseVersion:          version,
-		AvailabilityProberImage: images[util.AvailabilityProberImageName],
+		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 	}
 
 	p.DeploymentConfig.AdditionalAnnotations = map[string]string{

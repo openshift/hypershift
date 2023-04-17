@@ -2847,6 +2847,10 @@ When this is false for too long and there&rsquo;s no clear indication in the &ld
 HostedCluster is available to handle ignition requests.
 A failure here often means a software bug or a non-stable cluster.</p>
 </td>
+</tr><tr><td><p>&#34;IgnitionServerValidReleaseInfo&#34;</p></td>
+<td><p>IgnitionServerValidReleaseInfo indicates if the release contains all the images used by the local ignition provider
+and reports missing images if any.</p>
+</td>
 </tr><tr><td><p>&#34;InfrastructureReady&#34;</p></td>
 <td><p>InfrastructureReady bubbles up the same condition from HCP. It signals if the infrastructure for a control plane to be operational,
 e.g. load balancers were created successfully.
@@ -2927,6 +2931,10 @@ for the HostedCluster. For example, this can be set false if the
 HostedCluster itself attempts an unsupported version before 4.9 or an
 unsupported upgrade e.g y-stream upgrade before 4.11.
 A failure here is unlikely to resolve without the changing user input.</p>
+</td>
+</tr><tr><td><p>&#34;ValidReleaseInfo&#34;</p></td>
+<td><p>ValidReleaseInfo bubbles up the same condition from HCP. It indicates if the release contains all the images used by hypershift
+and reports missing images if any.</p>
 </td>
 </tr></tbody>
 </table>

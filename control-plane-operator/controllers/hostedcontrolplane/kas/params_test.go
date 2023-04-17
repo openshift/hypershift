@@ -9,6 +9,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 )
 
@@ -52,12 +53,14 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 			expectedPort:    6789,
 		},
 	}
+
+	imageProvider := imageprovider.NewFromImages(map[string]string{})
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{test.apiServiceMapping}
 			hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: test.port, AdvertiseAddress: test.advertiseAddress}
-			p := NewKubeAPIServerParams(context.Background(), hcp, map[string]string{}, "", 0, "", 0, false)
+			p := NewKubeAPIServerParams(context.Background(), hcp, imageProvider, "", 0, "", 0, false)
 			g := NewGomegaWithT(t)
 			g.Expect(p.AdvertiseAddress).To(Equal(test.expectedAddress))
 			g.Expect(p.APIServerPort).To(Equal(test.expectedPort))

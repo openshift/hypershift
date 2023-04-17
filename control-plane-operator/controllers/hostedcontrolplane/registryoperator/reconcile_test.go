@@ -5,6 +5,7 @@ import (
 
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/testutil"
@@ -33,7 +34,8 @@ func TestReconcileDeployment(t *testing.T) {
 		"cli":                             "quay.io/openshift/cli:latest",
 	}
 	deployment := manifests.ImageRegistryOperatorDeployment("test-namespace")
-	params := NewParams(hcp, "1.0.0", images, true)
+	imageProvider := imageprovider.NewFromImages(images)
+	params := NewParams(hcp, "1.0.0", imageProvider, true)
 	if err := ReconcileDeployment(deployment, params); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

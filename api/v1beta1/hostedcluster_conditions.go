@@ -43,6 +43,9 @@ const (
 	// A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
 	// and registered correctly.
 	ExternalDNSReachable ConditionType = "ExternalDNSReachable"
+	// ValidReleaseInfo bubbles up the same condition from HCP. It indicates if the release contains all the images used by hypershift
+	// and reports missing images if any.
+	ValidReleaseInfo ConditionType = "ValidReleaseInfo"
 
 	// Bubble up from HCP which bubbles up from CVO.
 
@@ -70,6 +73,10 @@ const (
 	// HostedCluster is available to handle ignition requests.
 	// A failure here often means a software bug or a non-stable cluster.
 	IgnitionEndpointAvailable ConditionType = "IgnitionEndpointAvailable"
+
+	// IgnitionServerValidReleaseInfo indicates if the release contains all the images used by the local ignition provider
+	// and reports missing images if any.
+	IgnitionServerValidReleaseInfo ConditionType = "IgnitionServerValidReleaseInfo"
 
 	// ValidHostedClusterConfiguration signals if the hostedCluster input is valid and
 	// supported by the underlying management cluster.
@@ -175,6 +182,8 @@ const (
 	ExternalDNSHostNotReachableReason = "ExternalDNSHostNotReachable"
 
 	KASLoadBalancerNotReachableReason = "KASLoadBalancerNotReachable"
+
+	MissingReleaseImagesReason = "MissingReleaseImages"
 
 	ReconciliationPausedConditionReason             = "ReconciliationPaused"
 	ReconciliationInvalidPausedUntilConditionReason = "InvalidPausedUntilValue"

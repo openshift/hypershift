@@ -6,6 +6,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 )
@@ -23,11 +24,11 @@ type OpenShiftControllerManagerParams struct {
 	config.OwnerRef
 }
 
-func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, images map[string]string, setDefaultSecurityContext bool) *OpenShiftControllerManagerParams {
+func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftControllerManagerParams {
 	params := &OpenShiftControllerManagerParams{
-		OpenShiftControllerManagerImage: images["openshift-controller-manager"],
-		DockerBuilderImage:              images["docker-builder"],
-		DeployerImage:                   images["deployer"],
+		OpenShiftControllerManagerImage: releaseImageProvider.GetImage("openshift-controller-manager"),
+		DockerBuilderImage:              releaseImageProvider.GetImage("docker-builder"),
+		DeployerImage:                   releaseImageProvider.GetImage("deployer"),
 		Build:                           observedConfig.Build,
 		Image:                           observedConfig.Image,
 	}
