@@ -292,6 +292,7 @@ func admissionPlugins() []string {
 		"security.openshift.io/SCCExecRestrictions",
 		"security.openshift.io/SecurityContextConstraint",
 		"security.openshift.io/ValidateSecurityContextConstraints",
+		"storage.openshift.io/CSIInlineVolumeSecurity",
 	}
 }
 
