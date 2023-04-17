@@ -25,6 +25,11 @@ type ProviderWithRegistryOverrides interface {
 	GetRegistryOverrides() map[string]string
 }
 
+type ProviderWithOpenShiftImageRegistryOverrides interface {
+	ProviderWithRegistryOverrides
+	GetOpenShiftImageRegistryOverrides() map[string][]string
+}
+
 // ReleaseImage wraps an ImageStream with some utilities that help the user
 // discover constituent component image information.
 type ReleaseImage struct {

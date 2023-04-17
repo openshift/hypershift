@@ -5,12 +5,12 @@ import (
 	"fmt"
 
 	"github.com/clarketm/json"
+	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	jsonserializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 
 	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
@@ -50,8 +50,8 @@ func ReconcileWorkerSSHIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.Owne
 	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, ownerRef)
 }
 
-func ReconcileImageContentSourcePolicyIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageContentSourcePolicy *v1alpha1.ImageContentSourcePolicy) error {
-	return reconcileICSPIgnitionConfigMap(cm, imageContentSourcePolicy, ownerRef)
+func ReconcileImageSourceMirrorsIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageDigestMirrorSet *configv1.ImageDigestMirrorSet) error {
+	return reconcileImageContentPolicyIgnitionConfigMap(cm, imageDigestMirrorSet, ownerRef)
 }
 
 func workerSSHConfig(sshKey string) ([]byte, error) {
@@ -89,17 +89,20 @@ func SetMachineConfigLabels(mc *mcfgv1.MachineConfig) {
 	}
 }
 
-func reconcileICSPIgnitionConfigMap(cm *corev1.ConfigMap, icsp *v1alpha1.ImageContentSourcePolicy, ownerRef config.OwnerRef) error {
+func reconcileImageContentPolicyIgnitionConfigMap(cm *corev1.ConfigMap, imageDigestMirrorSet *configv1.ImageDigestMirrorSet, ownerRef config.OwnerRef) error {
 	scheme := runtime.NewScheme()
-	v1alpha1.Install(scheme)
+	err := configv1.Install(scheme)
+	if err != nil {
+		return err
+	}
 	yamlSerializer := jsonserializer.NewSerializerWithOptions(
 		jsonserializer.DefaultMetaFactory, scheme, scheme,
 		jsonserializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true})
-	imageContentSourceBytesBuffer := bytes.NewBuffer([]byte{})
-	if err := yamlSerializer.Encode(icsp, imageContentSourceBytesBuffer); err != nil {
-		return fmt.Errorf("failed to serialize image content source policy: %w", err)
+	imageContentBytesBuffer := bytes.NewBuffer([]byte{})
+	if err := yamlSerializer.Encode(imageDigestMirrorSet, imageContentBytesBuffer); err != nil {
+		return fmt.Errorf("failed to serialize image digest mirror set: %w", err)
 	}
-	return ReconcileIgnitionConfigMap(cm, imageContentSourceBytesBuffer.String(), ownerRef)
+	return ReconcileIgnitionConfigMap(cm, imageContentBytesBuffer.String(), ownerRef)
 }
 
 func reconcileMachineConfigIgnitionConfigMap(cm *corev1.ConfigMap, mc *mcfgv1.MachineConfig, ownerRef config.OwnerRef) error {

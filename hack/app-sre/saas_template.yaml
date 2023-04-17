@@ -534,6 +534,9 @@ objects:
             name: credentials
           - mountPath: /var/run/secrets/openshift/serviceaccount
             name: token
+          - mountPath: /etc/pki/ca-trust/extracted/pem
+            name: ocm-trusted-ca-bundle
+            readOnly: true
         priorityClassName: hypershift-operator
         serviceAccountName: operator
         volumes:
@@ -552,6 +555,12 @@ objects:
             - serviceAccountToken:
                 audience: openshift
                 path: token
+        - configMap:
+            items:
+            - key: ca-bundle.crt
+              path: tls-ca-bundle.pem
+            name: ocm-trusted-ca-bundle
+          name: ocm-trusted-ca-bundle
   status: {}
 - apiVersion: v1
   kind: Service
