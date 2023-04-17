@@ -829,6 +829,13 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					Type: hyperv1.KubevirtPlatform,
 					Kubevirt: &hyperv1.KubevirtPlatformSpec{
 						GenerateID: "123456789",
+						Credentials: &hyperv1.KubevirtPlatformCredentials{
+							InfraNamespace: "kubevirt-kubevirt",
+							InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
+								Name: "secret",
+								Key:  "key",
+							},
+						},
 					},
 				},
 				Release: hyperv1.Release{
@@ -890,6 +897,11 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		ImageMetadataProvider: &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}},
 		now:                   metav1.Now,
 	}
+
+	r.kubevirtInfraClients.LoadOrStore("infra-id", &kubevirtInfraClient{
+		namespace: "kubevirt-kubevirt",
+		Client:    &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
+	})
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
