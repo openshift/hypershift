@@ -129,7 +129,7 @@ func (o *CreateIAMOptions) Run(ctx context.Context, client crclient.Client) erro
 
 func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client) (*CreateIAMOutput, error) {
 	var err error
-	if err = o.parseAdditionalTags(); err != nil {
+	if err = o.ParseAdditionalTags(); err != nil {
 		return nil, err
 	}
 	if o.OIDCStorageProviderS3BucketName == "" || o.OIDCStorageProviderS3Region == "" {
@@ -175,7 +175,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	return results, nil
 }
 
-func (o *CreateIAMOptions) parseAdditionalTags() error {
+func (o *CreateIAMOptions) ParseAdditionalTags() error {
 	parsed, err := util.ParseAWSTags(o.AdditionalTags)
 	if err != nil {
 		return err
