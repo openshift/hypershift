@@ -103,7 +103,7 @@ func reconcileIBMPowerVSImage(ibmPowerVSImage *capipowervs.IBMPowerVSImage, hclu
 	if ibmPowerVSImage.Annotations == nil {
 		ibmPowerVSImage.Annotations = make(map[string]string)
 	}
-	ibmPowerVSImage.Annotations[capiv1.ClusterLabelName] = infraID
+	ibmPowerVSImage.Annotations[capiv1.ClusterNameLabel] = infraID
 
 	ibmPowerVSImage.Spec = capipowervs.IBMPowerVSImageSpec{
 		ClusterName:       hcluster.Name,

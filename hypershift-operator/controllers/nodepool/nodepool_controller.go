@@ -1289,7 +1289,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	if machineDeployment.GetLabels() == nil {
 		machineDeployment.Labels = map[string]string{}
 	}
-	machineDeployment.Labels[capiv1.ClusterLabelName] = CAPIClusterName
+	machineDeployment.Labels[capiv1.ClusterNameLabel] = CAPIClusterName
 
 	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32(int32(0))
@@ -1312,12 +1312,12 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		machineDeployment.Spec.Selector.MatchLabels = map[string]string{}
 	}
 	machineDeployment.Spec.Selector.MatchLabels[resourcesName] = resourcesName
-	machineDeployment.Spec.Selector.MatchLabels[capiv1.ClusterLabelName] = CAPIClusterName
+	machineDeployment.Spec.Selector.MatchLabels[capiv1.ClusterNameLabel] = CAPIClusterName
 	machineDeployment.Spec.Template = capiv1.MachineTemplateSpec{
 		ObjectMeta: capiv1.ObjectMeta{
 			Labels: map[string]string{
 				resourcesName:           resourcesName,
-				capiv1.ClusterLabelName: CAPIClusterName,
+				capiv1.ClusterNameLabel: CAPIClusterName,
 			},
 			// Annotations here propagate down to Machines
 			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.
