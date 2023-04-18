@@ -22,6 +22,8 @@ import (
 
 const (
 	schedulerSecurePort = 10259
+
+	schedulerConfigHashAnnotation = "hypershift.openshift.io/scheduler-config-hash"
 )
 
 var (
@@ -45,7 +47,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, featureGates []string, policy configv1.ConfigMapNameReference, availabilityProberImage string, apiPort *int32, ciphers []string, tlsVersion string, disableProfiling bool) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, featureGates []string, policy configv1.ConfigMapNameReference, availabilityProberImage string, apiPort *int32, ciphers []string, tlsVersion string, disableProfiling bool, schedulerConfig *corev1.ConfigMap) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main scheduler container
@@ -74,6 +76,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: labels,
+				Annotations: map[string]string{
+					schedulerConfigHashAnnotation: util.ComputeHash(schedulerConfig.Data[KubeSchedulerConfigKey]),
+				},
 			},
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.BoolPtr(false),
