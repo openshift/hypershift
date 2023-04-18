@@ -20,7 +20,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
@@ -59,6 +58,10 @@ var (
 	log = zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	}))
+)
+
+const (
+	oidcBucketName = "hypershift-ci-oidc"
 )
 
 func init() {
@@ -136,6 +139,10 @@ func main(m *testing.M) int {
 		<-sigs
 		log.Info("tests received shutdown signal and will be cancelled")
 		cancel()
+
+		if globalOpts.Platform == hyperv1.AWSPlatform {
+			cleanupSharedOIDCProvider()
+		}
 	}()
 
 	if globalOpts.ArtifactDir != "" {
@@ -146,15 +153,11 @@ func main(m *testing.M) int {
 	defer alertSLOs(testContext)
 
 	if globalOpts.Platform == hyperv1.AWSPlatform {
-		oidcBucketName := "hypershift-ci-oidc"
-		iamClient := e2eutil.GetIAMClient(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
-		s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
-		if err := setupSharedOIDCProvider(oidcBucketName, iamClient, s3Client); err != nil {
+		if err := setupSharedOIDCProvider(); err != nil {
 			log.Error(err, "failed to setup shared OIDC provider")
 			return -1
 		}
-		defer e2eutil.DestroyOIDCProvider(log, iamClient, globalOpts.IssuerURL)
-		defer e2eutil.CleanupOIDCBucketObjects(log, s3Client, oidcBucketName, globalOpts.IssuerURL)
+		defer cleanupSharedOIDCProvider()
 	}
 
 	// Everything's okay to run tests
@@ -163,18 +166,12 @@ func main(m *testing.M) int {
 }
 
 // setup a shared OIDC provider to be used by all HostedClusters
-func setupSharedOIDCProvider(oidcBucketName string, iamClient iamiface.IAMAPI, s3Client *s3.S3) error {
+func setupSharedOIDCProvider() error {
+	iamClient := e2eutil.GetIAMClient(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
+	s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
+
 	providerID := e2eutil.SimpleNameGenerator.GenerateName("e2e-oidc-provider-")
 	issuerURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", oidcBucketName, globalOpts.configurableClusterOptions.Region, providerID)
-
-	iamOptions := awsinfra.CreateIAMOptions{
-		IssuerURL:      issuerURL,
-		AdditionalTags: globalOpts.additionalTags,
-	}
-
-	if _, err := iamOptions.CreateOIDCProvider(iamClient); err != nil {
-		return fmt.Errorf("failed to create OIDC provider: %w", err)
-	}
 
 	key, err := certs.PrivateKey()
 	if err != nil {
@@ -221,10 +218,28 @@ func setupSharedOIDCProvider(oidcBucketName string, iamClient iamiface.IAMAPI, s
 		}
 	}
 
+	iamOptions := awsinfra.CreateIAMOptions{
+		IssuerURL:      issuerURL,
+		AdditionalTags: globalOpts.additionalTags,
+	}
+	iamOptions.ParseAdditionalTags()
+
+	if _, err := iamOptions.CreateOIDCProvider(iamClient); err != nil {
+		return fmt.Errorf("failed to create OIDC provider: %w", err)
+	}
+
 	globalOpts.IssuerURL = issuerURL
 	globalOpts.ServiceAccountSigningKey = keyBytes
 
 	return nil
+}
+
+func cleanupSharedOIDCProvider() {
+	iamClient := e2eutil.GetIAMClient(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
+	s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
+
+	e2eutil.DestroyOIDCProvider(log, iamClient, globalOpts.IssuerURL)
+	e2eutil.CleanupOIDCBucketObjects(log, s3Client, oidcBucketName, globalOpts.IssuerURL)
 }
 
 // alertSLOs creates alert for our SLO/SLIs and log when firing.
