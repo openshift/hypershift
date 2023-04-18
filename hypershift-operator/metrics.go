@@ -52,7 +52,7 @@ func newMetrics(client crclient.Client, log logr.Logger) *hypershiftMetrics {
 		hostedClustersWithFailureCondition: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "hypershift_hostedclusters_failure_conditions",
 			Help: "Total number of HostedClusters by platform with conditions in undesired state",
-		}, []string{"platform", "condition"}),
+		}, []string{"condition"}),
 		hostedClustersNodePools: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "hypershift_hostedcluster_nodepools",
 			Help: "Number of NodePools associated with a given HostedCluster",
@@ -156,8 +156,27 @@ var expectedHCConditionStates = map[hyperv1.ConditionType]bool{
 
 func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.HostedClusterList) {
 	hcCount := newLabelCounter()
-	hcByConditions := newLabelCounter()
+	// We init to 0, this is needed so the metrics reports 0 in cases there's no HostedClusters.
+	// Otherwise the time series would show the last reported value by the counter.
+	hcCount.Init(string(hyperv1.AWSPlatform))
+	hcCount.Init(string(hyperv1.NonePlatform))
+	hcCount.Init(string(hyperv1.IBMCloudPlatform))
+	hcCount.Init(string(hyperv1.AgentPlatform))
+	hcCount.Init(string(hyperv1.KubevirtPlatform))
+	hcCount.Init(string(hyperv1.AzurePlatform))
+	hcCount.Init(string(hyperv1.PowerVSPlatform))
 
+	// Init hcByConditions counter.
+	hcByConditions := make(map[string]float64)
+	for condition, expectedState := range expectedHCConditionStates {
+		if expectedState == true {
+			hcByConditions[string("not_"+condition)] = 0
+		} else {
+			hcByConditions[string(condition)] = 0
+		}
+	}
+
+	// Init identityProvidersCounter counter.
 	identityProvidersCounter := map[configv1.IdentityProviderType]float64{
 		configv1.IdentityProviderTypeBasicAuth:     0,
 		configv1.IdentityProviderTypeGitHub:        0,
@@ -202,19 +221,18 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 
 		platform := string(hc.Spec.Platform.Type)
 		hcCount.Add(platform)
+
 		for _, cond := range hc.Status.Conditions {
 			expectedState, known := expectedHCConditionStates[hyperv1.ConditionType(cond.Type)]
 			if !known {
 				continue
 			}
-			if expectedState {
+			if expectedState == true {
 				if cond.Status == metav1.ConditionFalse {
-					hcByConditions.Add(platform, "not_"+cond.Type)
+					hcByConditions["not_"+cond.Type] = hcByConditions["not_"+cond.Type] + 1
 				}
 			} else {
-				if cond.Status == metav1.ConditionTrue {
-					hcByConditions.Add(platform, cond.Type)
-				}
+				hcByConditions[cond.Type] = hcByConditions[cond.Type] + 1
 			}
 		}
 	}
@@ -229,9 +247,9 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 		m.hostedClusters.WithLabelValues(labels...).Set(float64(count))
 	}
 
-	for key, count := range hcByConditions.Counts() {
-		labels := counterKeyToLabels(key)
-		m.hostedClustersWithFailureCondition.WithLabelValues(labels...).Set(float64(count))
+	// Collect hcByConditions metric.
+	for condition, count := range hcByConditions {
+		m.hostedClustersWithFailureCondition.WithLabelValues(condition).Set(count)
 	}
 }
 
@@ -313,6 +331,11 @@ func newLabelCounter() *labelCounter {
 	return &labelCounter{
 		counts: map[string]int{},
 	}
+}
+
+func (c *labelCounter) Init(values ...string) {
+	key := strings.Join(values, "|")
+	c.counts[key] = 0
 }
 
 func (c *labelCounter) Add(values ...string) {
