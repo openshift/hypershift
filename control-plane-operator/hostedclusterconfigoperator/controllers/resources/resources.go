@@ -694,11 +694,7 @@ func (r *reconciler) reconcileProxyTrustedCAConfigMap(ctx context.Context, hcp *
 
 	destCM := manifests.ProxyTrustedCAConfigMap(sourceCM.Name)
 	if _, err := r.CreateOrUpdate(ctx, r.client, destCM, func() error {
-		destCM.Annotations = sourceCM.Annotations
-		destCM.Labels = sourceCM.Labels
 		destCM.Data = sourceCM.Data
-		destCM.BinaryData = sourceCM.BinaryData
-		destCM.Immutable = sourceCM.Immutable
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile referenced TrustedCA config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
