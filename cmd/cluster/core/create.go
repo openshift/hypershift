@@ -44,6 +44,7 @@ type CreateOptions struct {
 	FIPS                             bool
 	GenerateSSH                      bool
 	ImageContentSources              string
+	ImageDigestSources               string
 	InfrastructureAvailabilityPolicy string
 	InfrastructureJSON               string
 	InfraID                          string
@@ -232,6 +233,10 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		}
 	}
 
+	if len(opts.ImageContentSources) > 0 && len(opts.ImageDigestSources) > 0 {
+		return nil, fmt.Errorf("--image-content-sources and --image-digest-sources cannot be specified together")
+	}
+
 	var imageContentSources []hyperv1.ImageContentSource
 	if len(opts.ImageContentSources) > 0 {
 		icspFileBytes, err := os.ReadFile(opts.ImageContentSources)
@@ -246,9 +251,23 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 
 	}
 
+	var imageDigestSources []hyperv1.ImageDigestSource
+	if len(opts.ImageDigestSources) > 0 {
+		idmsFileBytes, err := os.ReadFile(opts.ImageDigestSources)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read image digest sources file: %w", err)
+		}
+
+		err = yaml.Unmarshal(idmsFileBytes, &imageDigestSources)
+		if err != nil {
+			return nil, fmt.Errorf("unable to deserialize image digest sources file: %w", err)
+		}
+	}
+
 	return &apifixtures.ExampleOptions{
 		AdditionalTrustBundle:            string(userCABundle),
 		ImageContentSources:              imageContentSources,
+		ImageDigestSources:               imageDigestSources,
 		InfraID:                          opts.InfraID,
 		Annotations:                      annotations,
 		AutoRepair:                       opts.AutoRepair,

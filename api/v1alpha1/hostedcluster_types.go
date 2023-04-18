@@ -276,10 +276,19 @@ type HostedClusterSpec struct {
 
 	// ImageContentSources specifies image mirrors that can be used by cluster
 	// nodes to pull content.
+	// only one of imageContentSources or imageDigestSources can be set.
 	//
 	// +optional
 	// +immutable
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
+
+	// ImageDigestSources specifies image mirrors that can be used by cluster
+	// nodes to pull content.
+	// only one of imageContentSources or imageDigestSources can be set.
+	//
+	// +optional
+	// +immutable
+	ImageDigestSources []ImageDigestSource `json:"imageDigestSources,omitempty"`
 
 	// AdditionalTrustBundle is a reference to a ConfigMap containing a
 	// PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes
@@ -343,6 +352,24 @@ const (
 // the pullspec matches Source then one of the Mirrors are substituted as hosts
 // in the pullspec and tried in order to fetch the image.
 type ImageContentSource struct {
+	// Source is the repository that users refer to, e.g. in image pull
+	// specifications.
+	//
+	// +immutable
+	Source string `json:"source"`
+
+	// Mirrors are one or more repositories that may also contain the same images.
+	//
+	// +optional
+	// +immutable
+	Mirrors []string `json:"mirrors,omitempty"`
+}
+
+// ImageDigestSource specifies image mirrors that can be used by cluster nodes
+// to pull content. For cluster workloads, if a container image registry host of
+// the pullspec matches Source then one of the Mirrors are substituted as hosts
+// in the pullspec and tried in order to fetch the image.
+type ImageDigestSource struct {
 	// Source is the repository that users refer to, e.g. in image pull
 	// specifications.
 	//

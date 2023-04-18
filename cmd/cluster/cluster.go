@@ -1,8 +1,9 @@
 package cluster
 
 import (
-	"github.com/openshift/hypershift/api/v1beta1"
 	"time"
+
+	"github.com/openshift/hypershift/api/v1beta1"
 
 	"github.com/spf13/cobra"
 
@@ -33,6 +34,7 @@ func NewCreateCommands() *cobra.Command {
 		ExternalDNSDomain:              "",
 		AdditionalTrustBundle:          "",
 		ImageContentSources:            "",
+		ImageDigestSources:             "",
 		NodeSelector:                   nil,
 		Log:                            log.Log,
 		NodeDrainTimeout:               0,
@@ -58,6 +60,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.SSHKeyFile, "ssh-key", opts.SSHKeyFile, "Path to an SSH key file")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
 	cmd.PersistentFlags().StringVar(&opts.ImageContentSources, "image-content-sources", opts.ImageContentSources, "Path to a file with image content sources")
+	cmd.PersistentFlags().StringVar(&opts.ImageDigestSources, "image-digest-sources", opts.ImageDigestSources, "Path to a file with image digest sources")
 	cmd.PersistentFlags().Int32Var(&opts.NodePoolReplicas, "node-pool-replicas", opts.NodePoolReplicas, "If >-1, create a default NodePool with this many replicas")
 	cmd.PersistentFlags().DurationVar(&opts.NodeDrainTimeout, "node-drain-timeout", opts.NodeDrainTimeout, "The NodeDrainTimeout on any created NodePools")
 	cmd.PersistentFlags().StringArrayVar(&opts.Annotations, "annotations", opts.Annotations, "Annotations to apply to the hostedcluster (key=value). Can be specified multiple times.")
@@ -74,6 +77,8 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
 	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
 	cmd.PersistentFlags().Var(&opts.NodeUpgradeType, "node-upgrade-type", "The NodePool upgrade strategy for how nodes should behave when upgraded. Supported options: Replace, InPlace")
+
+	cmd.PersistentFlags().MarkDeprecated("image-content-sources", "Use --image-digest-source instead")
 
 	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(none.NewCreateCommand(opts))

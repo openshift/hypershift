@@ -49,3 +49,12 @@ func ImageContentSourcePolicyIgnitionConfig(ns string) *corev1.ConfigMap {
 		},
 	}
 }
+
+func ImageDigestMirrorSetIgnitionConfig(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ignition-config-40-image-digest-source",
+			Namespace: ns,
+		},
+	}
+}

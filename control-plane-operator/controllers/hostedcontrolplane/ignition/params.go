@@ -10,6 +10,7 @@ type IgnitionConfigParams struct {
 	FIPSEnabled                 bool
 	SSHKey                      string
 	HasImageContentSourcePolicy bool
+	HasImageDigestMirrorSet     bool
 }
 
 func NewIgnitionConfigParams(hcp *hyperv1.HostedControlPlane, sshKey string) *IgnitionConfigParams {
@@ -18,6 +19,7 @@ func NewIgnitionConfigParams(hcp *hyperv1.HostedControlPlane, sshKey string) *Ig
 		FIPSEnabled:                 hcp.Spec.FIPS,
 		SSHKey:                      sshKey,
 		HasImageContentSourcePolicy: len(hcp.Spec.ImageContentSources) > 0,
+		HasImageDigestMirrorSet:     len(hcp.Spec.ImageDigestSources) > 0,
 	}
 
 	return params

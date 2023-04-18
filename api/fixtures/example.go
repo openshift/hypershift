@@ -60,6 +60,7 @@ type ExampleOptions struct {
 	NodePoolReplicas                 int32
 	NodeDrainTimeout                 time.Duration
 	ImageContentSources              []hyperv1.ImageContentSource
+	ImageDigestSources               []hyperv1.ImageDigestSource
 	InfraID                          string
 	MachineCIDR                      string
 	ServiceCIDR                      string
@@ -481,6 +482,9 @@ func (o ExampleOptions) Resources() *ExampleResources {
 
 	if len(o.ImageContentSources) > 0 {
 		cluster.Spec.ImageContentSources = o.ImageContentSources
+	}
+	if len(o.ImageDigestSources) > 0 {
+		cluster.Spec.ImageDigestSources = o.ImageDigestSources
 	}
 
 	if o.NodePoolReplicas <= -1 {

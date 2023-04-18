@@ -114,9 +114,15 @@ type HostedControlPlaneSpec struct {
 	// +kubebuilder:validation:Optional
 	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
 
-	// ImageContentSources lists sources/repositories for the release-image content.
+	// ImageContentSources lists sources/repositories for the release-image content that will configure ImageContentSourcePolicy.
+	// only one of imageContentSources or imageDigestSources can be set.
 	// +optional
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
+
+	// ImageDigestSources lists sources/repositories for the release-image content that will configure ImageDigestMirrorSet.
+	// only one of imageContentSources or imageDigestSources can be set.
+	// +optional
+	ImageDigestSources []ImageDigestSource `json:"imageDigestSources,omitempty"`
 
 	// AdditionalTrustBundle references a ConfigMap containing a PEM-encoded X.509 certificate bundle
 	// +optional

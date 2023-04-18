@@ -2,11 +2,12 @@ package v1beta1
 
 import (
 	"fmt"
+	"strings"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"strings"
 )
 
 const (
@@ -103,6 +104,7 @@ type NodePoolSpec struct {
 	// MachineConfig
 	// or
 	// ImageContentSourcePolicy
+	// ImageDigestMirrorSet
 	//
 	// +kubebuilder:validation:Optional
 	Config []corev1.LocalObjectReference `json:"config,omitempty"`

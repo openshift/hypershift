@@ -488,6 +488,10 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		// additional core config resource created when image content source specified.
 		expectedCoreConfigResources += 1
 	}
+	if len(hcluster.Spec.ImageDigestSources) > 0 {
+		// additional core config resource created when image digest source specified.
+		expectedCoreConfigResources += 1
+	}
 	config, missingConfigs, err := r.getConfig(ctx, nodePool, expectedCoreConfigResources, controlPlaneNamespace, releaseImage, hcluster)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -1803,6 +1807,7 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 		}
 		manifest = buff.Bytes()
 	case *v1alpha1.ImageContentSourcePolicy:
+	case *configv1.ImageDigestMirrorSet:
 	case *mcfgv1.KubeletConfig:
 	case *mcfgv1.ContainerRuntimeConfig:
 	default:

@@ -627,11 +627,22 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy config: %w", err))
 	}
 
-	icsp := globalconfig.ImageContentSourcePolicy()
-	if _, err := r.CreateOrUpdate(ctx, r.client, icsp, func() error {
-		return globalconfig.ReconcileImageContentSourcePolicy(icsp, hcp)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile image content source policy: %w", err))
+	if len(hcp.Spec.ImageContentSources) > 0 {
+		icsp := globalconfig.ImageContentSourcePolicy()
+		if _, err := r.CreateOrUpdate(ctx, r.client, icsp, func() error {
+			return globalconfig.ReconcileImageContentSourcePolicy(icsp, hcp)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile image content source policy: %w", err))
+		}
+	}
+
+	if len(hcp.Spec.ImageDigestSources) > 0 {
+		idms := globalconfig.ImageDigestMirrorSet()
+		if _, err := r.CreateOrUpdate(ctx, r.client, idms, func() error {
+			return globalconfig.ReconcileImageDigestMirrorSet(idms, hcp)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile image digest mirror set: %w", err))
+		}
 	}
 
 	installConfigCM := manifests.InstallConfigConfigMap()

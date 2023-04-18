@@ -1419,6 +1419,139 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 	}
 }
 
+func TestReconcileCoreIgnitionConfig(t *testing.T) {
+	const (
+		namespace              = "test-ns"
+		imageContentSourceName = "ignition-config-40-image-content-source"
+		imageDigestSourceName  = "ignition-config-40-image-digest-source"
+	)
+
+	tests := []struct {
+		name                string
+		mapname             string
+		imageContentSources []hyperv1.ImageContentSource
+		imageDigestSources  []hyperv1.ImageDigestSource
+		existingObjects     []client.Object
+		expectedErr         bool
+		err                 error
+	}{
+		{
+			name:    "invalid hcp: both imagecontentSources and imageDigestSources are set",
+			mapname: imageContentSourceName,
+			imageContentSources: []hyperv1.ImageContentSource{
+				{
+					Source:  "registry.example.com",
+					Mirrors: []string{"mirror1.example.com", "mirror2.example.com"},
+				},
+			},
+			imageDigestSources: []hyperv1.ImageDigestSource{
+				{
+					Source:  "registry.example.com",
+					Mirrors: []string{"mirror1.example.com", "mirror2.example.com"},
+				},
+			},
+			expectedErr: true,
+			err:         fmt.Errorf("invalid ignition config: cannot set both imageContentSources and imageDigestSources"),
+		},
+		{
+			name:    "imagecontentSources",
+			mapname: imageContentSourceName,
+			imageContentSources: []hyperv1.ImageContentSource{
+				{
+					Source:  "registry.example.com",
+					Mirrors: []string{"mirror1.example.com", "mirror2.example.com"},
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			name:    "imageDigestSources",
+			mapname: imageDigestSourceName,
+			imageDigestSources: []hyperv1.ImageDigestSource{
+				{
+					Source:  "registry.example.com",
+					Mirrors: []string{"mirror1.example.com", "mirror2.example.com"},
+				},
+			},
+			expectedErr: false,
+		},
+		{
+			name:    "imagecontentSources with existing imageDigestSource map",
+			mapname: imageContentSourceName,
+			imageContentSources: []hyperv1.ImageContentSource{
+				{
+					Source:  "registry.example.com",
+					Mirrors: []string{"mirror1.example.com", "mirror2.example.com"},
+				},
+			},
+			existingObjects: []client.Object{manifests.ImageDigestMirrorSetIgnitionConfig(namespace)},
+			expectedErr:     false,
+		},
+		{
+			name:    "imageDigestSources with existing imageContentSource map",
+			mapname: imageDigestSourceName,
+			imageDigestSources: []hyperv1.ImageDigestSource{
+				{
+					Source:  "registry.example.com",
+					Mirrors: []string{"mirror1.example.com", "mirror2.example.com"},
+				},
+			},
+			existingObjects: []client.Object{manifests.ImageContentSourcePolicyIgnitionConfig(namespace)},
+			expectedErr:     false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					ImageContentSources: tc.imageContentSources,
+					ImageDigestSources:  tc.imageDigestSources,
+				},
+			}
+
+			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(tc.existingObjects, hcp)...).Build()
+
+			r := HostedControlPlaneReconciler{
+				Client: c,
+				Log:    ctrl.LoggerFrom(ctx),
+			}
+
+			err := r.reconcileCoreIgnitionConfig(ctx, hcp, controllerutil.CreateOrUpdate)
+			if tc.expectedErr {
+				if err == nil {
+					t.Fatalf("expected error but got none")
+				} else if err.Error() != tc.err.Error() {
+					t.Fatalf("expected error: %v, got: %v", tc.err, err)
+				}
+			}
+			if !tc.expectedErr && err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if !tc.expectedErr {
+				// check that the mapname exists
+				var config corev1.ConfigMap
+				if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: tc.mapname}, &config); err != nil {
+					t.Fatalf("failed to get config: %v", err)
+				}
+				// check the existing configmap of the other kind is deleted
+				if len(tc.existingObjects) > 0 {
+					if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: tc.existingObjects[0].GetName()}, &config); !apierrors.IsNotFound(err) {
+						t.Fatalf("expected not found error, got: %v", err)
+					}
+				}
+			}
+		})
+	}
+
+}
+
 type fakeMessageCollector struct {
 	msg string
 }

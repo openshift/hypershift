@@ -373,7 +373,24 @@ name that corresponds to the constant AuditWebhookKubeconfigKey.</p>
 <td>
 <em>(Optional)</em>
 <p>ImageContentSources specifies image mirrors that can be used by cluster
-nodes to pull content.</p>
+nodes to pull content.
+only one of imageContentSources or imageDigestSources can be set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageDigestSources</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ImageDigestSource">
+[]ImageDigestSource
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ImageDigestSources specifies image mirrors that can be used by cluster
+nodes to pull content.
+only one of imageContentSources or imageDigestSources can be set.</p>
 </td>
 </tr>
 <tr>
@@ -643,7 +660,8 @@ KubeletConfig
 ContainerRuntimeConfig
 MachineConfig
 or
-ImageContentSourcePolicy</p>
+ImageContentSourcePolicy
+ImageDigestMirrorSet</p>
 </td>
 </tr>
 <tr>
@@ -3476,7 +3494,24 @@ name that corresponds to the constant AuditWebhookKubeconfigKey.</p>
 <td>
 <em>(Optional)</em>
 <p>ImageContentSources specifies image mirrors that can be used by cluster
-nodes to pull content.</p>
+nodes to pull content.
+only one of imageContentSources or imageDigestSources can be set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageDigestSources</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ImageDigestSource">
+[]ImageDigestSource
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ImageDigestSources specifies image mirrors that can be used by cluster
+nodes to pull content.
+only one of imageContentSources or imageDigestSources can be set.</p>
 </td>
 </tr>
 <tr>
@@ -3988,7 +4023,23 @@ ClusterConfiguration
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageContentSources lists sources/repositories for the release-image content.</p>
+<p>ImageContentSources lists sources/repositories for the release-image content that will configure ImageContentSourcePolicy.
+only one of imageContentSources or imageDigestSources can be set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageDigestSources</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ImageDigestSource">
+[]ImageDigestSource
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ImageDigestSources lists sources/repositories for the release-image content that will configure ImageDigestMirrorSet.
+only one of imageContentSources or imageDigestSources can be set.</p>
 </td>
 </tr>
 <tr>
@@ -4574,6 +4625,52 @@ github.com/openshift/api/config/v1.IBMCloudProviderType
 </p>
 <p>
 <p>ImageContentSource specifies image mirrors that can be used by cluster nodes
+to pull content. For cluster workloads, if a container image registry host of
+the pullspec matches Source then one of the Mirrors are substituted as hosts
+in the pullspec and tried in order to fetch the image.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>source</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Source is the repository that users refer to, e.g. in image pull
+specifications.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>mirrors</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Mirrors are one or more repositories that may also contain the same images.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ImageDigestSource { #hypershift.openshift.io/v1beta1.ImageDigestSource }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>ImageDigestSource specifies image mirrors that can be used by cluster nodes
 to pull content. For cluster workloads, if a container image registry host of
 the pullspec matches Source then one of the Mirrors are substituted as hosts
 in the pullspec and tried in order to fetch the image.</p>
@@ -5812,7 +5909,8 @@ KubeletConfig
 ContainerRuntimeConfig
 MachineConfig
 or
-ImageContentSourcePolicy</p>
+ImageContentSourcePolicy
+ImageDigestMirrorSet</p>
 </td>
 </tr>
 <tr>
