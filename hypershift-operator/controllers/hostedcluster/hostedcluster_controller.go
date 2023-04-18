@@ -569,7 +569,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.InfrastructureReady,
 			hyperv1.ExternalDNSReachable,
 			hyperv1.ValidHostedControlPlaneConfiguration,
-			hyperv1.ValidAWSKMSConfig,
 			hyperv1.ValidReleaseInfo,
 		}
 

@@ -181,8 +181,6 @@ const (
 
 	ExternalDNSHostNotReachableReason = "ExternalDNSHostNotReachable"
 
-	KASLoadBalancerNotReachableReason = "KASLoadBalancerNotReachable"
-
 	MissingReleaseImagesReason = "MissingReleaseImages"
 
 	ReconciliationPausedConditionReason             = "ReconciliationPaused"

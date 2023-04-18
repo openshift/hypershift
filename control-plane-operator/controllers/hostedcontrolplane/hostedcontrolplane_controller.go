@@ -814,31 +814,6 @@ func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool
 }
 
 func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider *imageprovider.ReleaseImageProvider, infraStatus InfrastructureStatus) error {
-	if useHCPRouter(hostedControlPlane) {
-		r.Log.Info("Reconciling router")
-		if err := r.reconcileRouter(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, util.IsRouteKAS(hostedControlPlane), infraStatus.InternalHCPRouterHost, infraStatus.ExternalHCPRouterHost); err != nil {
-			return fmt.Errorf("failed to reconcile router: %w", err)
-		}
-	}
-
-	r.Log.Info("Reconciling ignition server")
-	if err := ignitionserver.ReconcileIgnitionServer(ctx,
-		r.Client,
-		createOrUpdate,
-		releaseImageProvider.GetImage(util.CPOImageName),
-		releaseImageProvider.ComponentImages(),
-		hostedControlPlane,
-		r.DefaultIngressDomain,
-		// The healthz handler was added before the CPO started to manage the ignition server, and it's the same binary,
-		// so we know it always exists here.
-		true,
-		r.ReleaseProvider.GetRegistryOverrides(),
-		r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
-		config.OwnerRefFrom(hostedControlPlane),
-	); err != nil {
-		return fmt.Errorf("failed to reconcile ignition server: %w", err)
-	}
-
 	// Reconcile default service account
 	r.Log.Info("Reconciling default service account")
 	if err := r.reconcileDefaultServiceAccount(ctx, hostedControlPlane, createOrUpdate); err != nil {
@@ -858,7 +833,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	switch hostedControlPlane.Spec.Etcd.ManagementType {
 	case hyperv1.Managed:
 		statefulSet := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
-		if err := r.reconcileManagedEtcd(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+		if err := r.reconcileManagedEtcd(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, statefulSet); err != nil {
 			return fmt.Errorf("failed to reconcile etcd: %w", err)
 		}
 		// Block until etcd is fully rolled out at the desired generation
@@ -883,7 +858,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	// Reconcile kube apiserver
 	r.Log.Info("Reconciling Kube API Server")
 	kubeAPIServerDeployment := manifests.KASDeployment(hostedControlPlane.Namespace)
-	if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImageProvider, infraStatus.APIHost, infraStatus.APIPort, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate); err != nil {
+	if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImageProvider, infraStatus.APIHost, infraStatus.APIPort, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate, kubeAPIServerDeployment); err != nil {
 		return fmt.Errorf("failed to reconcile kube apiserver: %w", err)
 	}
 
@@ -897,14 +872,14 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	// Reconcile kube controller manager
 	r.Log.Info("Reconciling Kube Controller Manager")
 	kcmDeployment := manifests.KCMDeployment(hostedControlPlane.Namespace)
-	if err := r.reconcileKubeControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+	if err := r.reconcileKubeControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, kcmDeployment); err != nil {
 		return fmt.Errorf("failed to reconcile kube controller manager: %w", err)
 	}
 
 	// Reconcile kube scheduler
 	r.Log.Info("Reconciling Kube Scheduler")
 	schedulerDeployment := manifests.SchedulerDeployment(hostedControlPlane.Namespace)
-	if err := r.reconcileKubeScheduler(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+	if err := r.reconcileKubeScheduler(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, schedulerDeployment); err != nil {
 		return fmt.Errorf("failed to reconcile kube controller manager: %w", err)
 	}
 
@@ -917,7 +892,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	// Reconcile openshift apiserver
 	r.Log.Info("Reconciling OpenShift API Server")
 	openshiftAPIServerDeployment := manifests.OpenShiftAPIServerDeployment(hostedControlPlane.Namespace)
-	if err := r.reconcileOpenShiftAPIServer(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate); err != nil {
+	if err := r.reconcileOpenShiftAPIServer(ctx, hostedControlPlane, observedConfig, releaseImageProvider, createOrUpdate, openshiftAPIServerDeployment); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver: %w", err)
 	}
 
@@ -1065,7 +1040,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 	// Reconcile Ignition
 	r.Log.Info("Reconciling core machine configs")
-	if err := r.reconcileCoreIgnitionConfig(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
+	if err := r.reconcileCoreIgnitionConfig(ctx, hostedControlPlane, releaseImageProvider.ReleaseImage, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile ignition: %w", err)
 	}
 
@@ -1097,12 +1072,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	}
 
 	r.Log.Info("Reconciling autoscaler")
-	if err := r.reconcileAutoscaler(ctx, hostedControlPlane, releaseImage.ComponentImages(), createOrUpdate); err != nil {
+	if err := r.reconcileAutoscaler(ctx, hostedControlPlane, releaseImageProvider.ComponentImages(), createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile autoscaler: %w", err)
 	}
 
 	r.Log.Info("Reconciling machine approver")
-	if err := r.reconcileMachineApprover(ctx, hostedControlPlane, releaseImage.ComponentImages(), createOrUpdate); err != nil {
+	if err := r.reconcileMachineApprover(ctx, hostedControlPlane, releaseImageProvider.ComponentImages(), createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile machine approver: %w", err)
 	}
 
@@ -2058,7 +2033,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, statefulSet *appsv1.StatefulSet) error {
 	p := etcd.NewEtcdParams(hcp, releaseImageProvider)
 
 	discoveryService := manifests.EtcdDiscoveryService(hcp.Namespace)
@@ -2169,7 +2144,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
 	ocpVersion, err := semver.Parse(releaseImageProvider.Version())
 	if err != nil {
 		return fmt.Errorf("failed to parse release version: %w", err)
@@ -2401,7 +2376,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, kcmDeployment *appsv1.Deployment) error {
 	p := kcm.NewKubeControllerManagerParams(ctx, hcp, releaseImageProvider, r.SetDefaultSecurityContext)
 
 	service := manifests.KCMService(hcp.Namespace)
@@ -2475,7 +2450,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, schedulerDeployment *appsv1.Deployment) error {
 	p := scheduler.NewKubeSchedulerParams(ctx, hcp, releaseImageProvider, r.SetDefaultSecurityContext)
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
@@ -2516,7 +2491,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, deployment *appsv1.Deployment) error {
 	p := oapi.NewOpenShiftAPIServerParams(hcp, observedConfig, releaseImageProvider, r.SetDefaultSecurityContext)
 	oapicfg := manifests.OpenShiftAPIServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, oapicfg, func() error {
@@ -3628,20 +3603,6 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 
 func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	switch hcp.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
-		ownerRef := config.OwnerRefFrom(hcp)
-		sa := aws.CCMServiceAccount(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, sa, func() error {
-			return aws.ReconcileCCMServiceAccount(sa, ownerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile Kubevirt cloud provider service account: %w", err)
-		}
-		deployment := aws.CCMDeployment(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, deployment, func() error {
-			return aws.ReconcileDeployment(deployment, hcp, sa.Name, releaseImageProvider)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile ccm deployment: %w", err)
-		}
 	case hyperv1.PowerVSPlatform:
 		ccmConfig := manifests.PowerVSCCMConfigMap(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, ccmConfig, func() error {

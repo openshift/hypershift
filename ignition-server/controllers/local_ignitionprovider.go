@@ -323,7 +323,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 				fmt.Sprintf("--infra-image=%s", imageProvider.GetImage("pod")),
 				fmt.Sprintf("--keepalived-image=%s", imageProvider.GetImage("keepalived-ipfailover")),
 				fmt.Sprintf("--coredns-image=%s", imageProvider.GetImage("codedns")),
-				fmt.Sprintf("--haproxy-image=%s", imageProvider.GetImage("haproxy-mura")),
+				fmt.Sprintf("--haproxy-image=%s", imageProvider.GetImage("haproxy")),
 				fmt.Sprintf("--baremetal-runtimecfg-image=%s", imageProvider.GetImage("baremetal-runtimecfg")),
 				fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
 				fmt.Sprintf("--kube-ca=%s/root-ca.crt", configDir),

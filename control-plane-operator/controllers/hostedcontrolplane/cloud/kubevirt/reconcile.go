@@ -138,7 +138,7 @@ func podVolumeMounts() util.PodVolumeMounts {
 	}
 }
 
-func buildCCMContainer(clusterName string, releaseImageProvider *imageprovider.ReleaseImageProvider, isExternalInfra bool) func(c *corev1.Container) {
+func buildCCMContainer(clusterName string, releaseImageProvider *imageprovider.ReleaseImageProvider) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = releaseImageProvider.GetImage("kubevirt-cloud-controller-manager")
 		c.ImagePullPolicy = corev1.PullIfNotPresent
