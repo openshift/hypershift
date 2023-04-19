@@ -2782,7 +2782,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
 			return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile certified operators service: %w", err)
+			return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
 		}
 
 		certifiedOperatorsService := manifests.CertifiedOperatorsService(hcp.Namespace)

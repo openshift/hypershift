@@ -470,7 +470,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling olm resources")
-	errs = append(errs, r.reconcileOLM(ctx, hcp, releaseImage)...)
+	errs = append(errs, r.reconcileOLM(ctx, hcp)...)
 
 	if hostedcontrolplane.IsStorageAndCSIManaged(hcp) {
 		log.Info("reconciling storage resources")
@@ -1156,10 +1156,10 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 	return errs
 }
 
-func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) []error {
+func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedControlPlane) []error {
 	var errs []error
 
-	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImage.Version())
+	p := olm.NewOperatorLifecycleManagerParams(hcp)
 
 	catalogs := []struct {
 		manifest  func() *operatorsv1alpha1.CatalogSource
