@@ -65,7 +65,7 @@ func main() {
 		},
 	}
 
-	cmd.Version = version.GetRevision()
+	cmd.Version = version.String()
 
 	cmd.AddCommand(NewStartCommand())
 
