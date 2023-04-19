@@ -5,13 +5,11 @@ import (
 	"fmt"
 	"html/template"
 	"strconv"
-	"strings"
 
 	"github.com/clarketm/json"
 	"github.com/vincent-petithory/dataurl"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	jsonserializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -62,10 +60,10 @@ func ReconcileWorkerSSHIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.Owne
 	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, ownerRef)
 }
 
-func ReconcileAPIServerProxyIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, haProxyImage, cpoImage, externalAPIAddress, internalAPIAddress string, externalAPIPort, internalAPIPort int32, proxyAddr string) error {
+func ReconcileAPIServerProxyIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, haProxyImage, cpoImage, externalAPIAddress, internalAPIAddress string, externalAPIPort, internalAPIPort int32) error {
 	machineConfig := manifests.MachineConfigAPIServerHAProxy()
 	setMachineConfigLabels(machineConfig)
-	serializedConfig, err := apiServerProxyConfig(haProxyImage, cpoImage, externalAPIAddress, internalAPIAddress, externalAPIPort, internalAPIPort, proxyAddr)
+	serializedConfig, err := apiServerHAProxyConfig(haProxyImage, cpoImage, externalAPIAddress, internalAPIAddress, externalAPIPort, internalAPIPort)
 	if err != nil {
 		return fmt.Errorf("failed to serialize ignition config: %w", err)
 	}
@@ -103,7 +101,7 @@ type fileToAdd struct {
 	params   map[string]string
 }
 
-func apiServerProxyConfig(haProxyImage, cpoImage, externalAPIAddress, internalAPIAddress string, externalAPIPort, internalAPIPort int32, proxyAddr string) ([]byte, error) {
+func apiServerHAProxyConfig(haProxyImage, cpoImage, externalAPIAddress, internalAPIAddress string, externalAPIPort, internalAPIPort int32) ([]byte, error) {
 	config := &igntypes.Config{}
 	config.Ignition.Version = ignitionVersion
 
@@ -124,32 +122,22 @@ func apiServerProxyConfig(haProxyImage, cpoImage, externalAPIAddress, internalAP
 				"InternalAPIAddress": internalAPIAddress,
 			},
 		},
-	}
-	if proxyAddr == "" {
-		filesToAdd = append(filesToAdd, []fileToAdd{
-			{
-				template: haProxyConfigTemplate,
-				name:     "/etc/kubernetes/apiserver-proxy-config/haproxy.cfg",
-				mode:     0644,
-				params: map[string]string{
-					"ExternalAPIAddress": externalAPIAddress,
-					"ExternalAPIPort":    strconv.FormatInt(int64(externalAPIPort), 10),
-					"InternalAPIAddress": internalAPIAddress,
-					"InternalAPIPort":    strconv.FormatInt(int64(internalAPIPort), 10),
-				},
+		{
+			template: haProxyConfigTemplate,
+			name:     "/etc/kubernetes/apiserver-proxy-config/haproxy.cfg",
+			mode:     0644,
+			params: map[string]string{
+				"ExternalAPIAddress": externalAPIAddress,
+				"ExternalAPIPort":    strconv.FormatInt(int64(externalAPIPort), 10),
+				"InternalAPIAddress": internalAPIAddress,
+				"InternalAPIPort":    strconv.FormatInt(int64(internalAPIPort), 10),
 			},
-			{
-				source: generateHAProxyStaticPod(haProxyImage, internalAPIAddress, internalAPIPort),
-				name:   "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml",
-				mode:   0644,
-			},
-		}...)
-	} else {
-		filesToAdd = append(filesToAdd, fileToAdd{
-			source: generateKubernetesDefaultProxyPod(cpoImage, fmt.Sprintf("%s:%d", internalAPIAddress, internalAPIPort), proxyAddr, fmt.Sprintf("%s:%d", externalAPIAddress, externalAPIPort)),
+		},
+		{
+			source: generateHAProxyStaticPod(haProxyImage, internalAPIAddress, internalAPIPort),
 			name:   "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml",
 			mode:   0644,
-		})
+		},
 	}
 
 	files := []igntypes.File{}
@@ -334,53 +322,5 @@ func fileFromBytes(path string, mode int, contents []byte) igntypes.File {
 				Source: pointer.StringPtr(dataurl.EncodeBytes(contents)),
 			},
 		},
-	}
-}
-
-func generateKubernetesDefaultProxyPod(image string, listenAddr string, proxyAddr string, apiserverAddr string) func() ([]byte, error) {
-	return func() ([]byte, error) {
-		p := &corev1.Pod{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: corev1.SchemeGroupVersion.String(),
-				Kind:       "Pod",
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "kube-apiserver-proxy",
-				Namespace: "kube-system",
-				Labels: map[string]string{
-					"k8s-app": "kube-apiserver-proxy",
-					"hypershift.openshift.io/control-plane-component": "kube-apiserver-proxy",
-				},
-			},
-			Spec: corev1.PodSpec{
-				HostNetwork:       true,
-				PriorityClassName: "system-node-critical",
-				Containers: []corev1.Container{{
-					Image: image,
-					Name:  "kubernetes-default-proxy",
-					Command: []string{
-						"control-plane-operator",
-						"kubernetes-default-proxy",
-						"--listen-addr=" + listenAddr,
-						"--proxy-addr=" + strings.TrimPrefix(strings.TrimPrefix(proxyAddr, "http://"), "https://"),
-						"--apiserver-addr=" + apiserverAddr,
-					},
-					SecurityContext: &corev1.SecurityContext{
-						RunAsUser: pointer.Int64Ptr(config.DefaultSecurityContextUser),
-					},
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceMemory: resource.MustParse("16Mi"),
-							corev1.ResourceCPU:    resource.MustParse("13m"),
-						},
-					},
-				}},
-			},
-		}
-		out := &bytes.Buffer{}
-		if err := api.YamlSerializer.Encode(p, out); err != nil {
-			return nil, err
-		}
-		return out.Bytes(), nil
 	}
 }

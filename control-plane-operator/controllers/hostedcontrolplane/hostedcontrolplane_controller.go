@@ -2218,12 +2218,7 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ssh key ignition config: %w", err)
 	}
-
-	var apiserverProxy string
-	if globalConfig.Proxy != nil && globalConfig.Proxy.Spec.HTTPSProxy != "" && (hcp.Spec.Platform.AWS == nil || hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.Public) {
-		apiserverProxy = globalConfig.Proxy.Spec.HTTPSProxy
-	}
-
+	// TODO (Akshay): removed apiserver proxy changes from https://github.com/openshift/hypershift/pull/1249
 	haProxyConfig := manifests.IgnitionAPIServerHAProxyConfig(hcp.Namespace)
 	if _, err := r.CreateOrUpdate(ctx, r, haProxyConfig, func() error {
 		return ignition.ReconcileAPIServerProxyIgnitionConfig(haProxyConfig,
@@ -2234,7 +2229,6 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 			p.APIServerInternalAddress,
 			p.APIServerExternalPort,
 			p.APIServerInternalPort,
-			apiserverProxy,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server ha proxy ignition config: %w", err)
