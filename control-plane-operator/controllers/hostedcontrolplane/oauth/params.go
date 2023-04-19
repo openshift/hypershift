@@ -12,7 +12,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -41,7 +40,6 @@ type OAuthServerParams struct {
 	AvailabilityProberImage string `json:"availabilityProberImage"`
 	Availability            hyperv1.AvailabilityPolicy
 	Socks5ProxyImage        string
-	NoProxy                 []string
 }
 
 type OAuthConfigParams struct {
@@ -64,9 +62,9 @@ type OAuthConfigParams struct {
 	LoginURLOverride string
 }
 
-// ConfigOverride defines the oauth parameters that can be overriden in special use cases. The only supported
+// ConfigOverride defines the oauth parameters that can be overridden in special use cases. The only supported
 // use case for this currently is the IBMCloud IAM OIDC provider. These parameters are necessary since the public
-// OpenID api does not support some of the customizations used in the IBMCloud IAM OIDC provider. This can be removed
+// OpenID api does not support some customizations used in the IBMCloud IAM OIDC provider. This can be removed
 // if the public API is adjusted to allow specifying these customizations.
 type ConfigOverride struct {
 	URLs      osinv1.OpenIDURLs   `json:"urls,omitempty"`
@@ -85,7 +83,6 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 		AvailabilityProberImage: images[util.AvailabilityProberImageName],
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 		Socks5ProxyImage:        images["socks5-proxy"],
-		NoProxy:                 []string{manifests.KubeAPIServerService("").Name},
 	}
 	if hcp.Spec.Configuration != nil {
 		p.APIServer = hcp.Spec.Configuration.APIServer
@@ -107,7 +104,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
-					Port:   intstr.FromInt(int(OAuthServerPort)),
+					Port:   intstr.FromInt(OAuthServerPort),
 					Path:   "healthz",
 				},
 			},
@@ -123,7 +120,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
-					Port:   intstr.FromInt(int(OAuthServerPort)),
+					Port:   intstr.FromInt(OAuthServerPort),
 					Path:   "healthz",
 				},
 			},
@@ -155,10 +152,6 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, images map[string]str
 	}
 
 	p.SetDefaultSecurityContext = setDefaultSecurityContext
-
-	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		p.NoProxy = append(p.NoProxy, "iam.cloud.ibm.com", "iam.test.cloud.ibm.com")
-	}
 
 	return p
 }

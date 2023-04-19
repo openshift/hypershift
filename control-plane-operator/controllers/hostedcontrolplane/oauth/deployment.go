@@ -3,9 +3,6 @@ package oauth
 import (
 	"context"
 	"fmt"
-	"path"
-	"strings"
-
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/globalconfig"
 	appsv1 "k8s.io/api/apps/v1"
@@ -13,6 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"path"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -53,7 +51,7 @@ func oauthLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, apiPort *int32, namedCertificates []configv1.APIServerNamedServingCert, socks5ProxyImage string, noProxy []string) error {
+func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, apiPort *int32, namedCertificates []configv1.APIServerNamedServingCert, socks5ProxyImage string) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main oauth container
@@ -88,9 +86,9 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 	}
 	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
 	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: utilpointer.BoolPtr(false),
+		AutomountServiceAccountToken: utilpointer.Bool(false),
 		Containers: []corev1.Container{
-			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image, noProxy)),
+			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image)),
 			socks5ProxyContainer(socks5ProxyImage),
 		},
 		Volumes: []corev1.Volume{
@@ -103,9 +101,9 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 			util.BuildVolume(oauthVolumeProvidersTemplate(), buildOAuthVolumeProvidersTemplate),
 			util.BuildVolume(oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs),
 			util.BuildVolume(oauthVolumeMasterCABundle(), buildOAuthVolumeMasterCABundle),
-			{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32Ptr(0640)}}},
-			{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32Ptr(0640)}}},
-			{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32Ptr(0640)}}},
+			{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32(0640)}}},
+			{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32(0640)}}},
+			{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32(0640)}}},
 		},
 	}
 	deploymentConfig.ApplyTo(deployment)
@@ -128,7 +126,7 @@ func oauthContainerMain() *corev1.Container {
 	}
 }
 
-func buildOAuthContainerMain(image string, noProxy []string) func(c *corev1.Container) {
+func buildOAuthContainerMain(image string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Args = []string{
@@ -152,7 +150,7 @@ func buildOAuthContainerMain(image string, noProxy []string) func(c *corev1.Cont
 			},
 			{
 				Name:  "NO_PROXY",
-				Value: strings.Join(noProxy, ","),
+				Value: manifests.KubeAPIServerService("").Name,
 			},
 		}
 	}
@@ -190,7 +188,7 @@ func oauthVolumeKubeconfig() *corev1.Volume {
 
 func buildOAuthVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32Ptr(0640),
+		DefaultMode: utilpointer.Int32(0640),
 		SecretName:  manifests.KASServiceKubeconfigSecret("").Name,
 	}
 }
@@ -202,7 +200,7 @@ func oauthVolumeServingCert() *corev1.Volume {
 
 func buildOAuthVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32Ptr(0640),
+		DefaultMode: utilpointer.Int32(0640),
 		SecretName:  manifests.OpenShiftOAuthServerCert("").Name,
 	}
 }
@@ -213,7 +211,7 @@ func oauthVolumeSessionSecret() *corev1.Volume {
 }
 func buildOAuthVolumeSessionSecret(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32Ptr(0640),
+		DefaultMode: utilpointer.Int32(0640),
 		SecretName:  manifests.OAuthServerServiceSessionSecret("").Name,
 	}
 }
@@ -225,7 +223,7 @@ func oauthVolumeErrorTemplate() *corev1.Volume {
 
 func buildOAuthVolumeErrorTemplate(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32Ptr(0640),
+		DefaultMode: utilpointer.Int32(0640),
 		SecretName:  manifests.OAuthServerDefaultErrorTemplateSecret("").Name,
 	}
 }
@@ -238,7 +236,7 @@ func oauthVolumeLoginTemplate() *corev1.Volume {
 
 func buildOAuthVolumeLoginTemplate(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32Ptr(0640),
+		DefaultMode: utilpointer.Int32(0640),
 		SecretName:  manifests.OAuthServerDefaultLoginTemplateSecret("").Name,
 	}
 }
@@ -251,7 +249,7 @@ func oauthVolumeProvidersTemplate() *corev1.Volume {
 
 func buildOAuthVolumeProvidersTemplate(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		DefaultMode: utilpointer.Int32Ptr(0640),
+		DefaultMode: utilpointer.Int32(0640),
 		SecretName:  manifests.OAuthServerDefaultProviderSelectionTemplateSecret("").Name,
 	}
 }
