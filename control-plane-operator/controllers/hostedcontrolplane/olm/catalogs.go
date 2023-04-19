@@ -113,7 +113,7 @@ func findTagReference(tags []imagev1.TagReference, name string) *imagev1.TagRefe
 	return nil
 }
 
-var catalogToImage map[string]string = map[string]string{
+var CatalogToImage map[string]string = map[string]string{
 	"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.12",
 	"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.12",
 	"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.12",
@@ -125,7 +125,7 @@ func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef con
 	if imageStream.Spec.Tags == nil {
 		imageStream.Spec.Tags = []imagev1.TagReference{}
 	}
-	for name, image := range catalogToImage {
+	for name, image := range CatalogToImage {
 		tagRef := findTagReference(imageStream.Spec.Tags, name)
 		if tagRef == nil {
 			imageStream.Spec.Tags = append(imageStream.Spec.Tags, imagev1.TagReference{
