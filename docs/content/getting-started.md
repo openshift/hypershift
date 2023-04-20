@@ -51,6 +51,18 @@ you should adjust to your own environment.
         BUCKET_NAME=your-bucket-name
         aws s3api create-bucket --bucket $BUCKET_NAME
         aws s3api delete-public-access-block --bucket $BUCKET_NAME
+        echo '{
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": "*",
+              "Action": "s3:GetObject",
+              "Resource": "arn:aws:s3:::${BUCKET_NAME}/*"
+            }
+          ]
+        }' | envsubst > policy.json
+        aws s3api put-bucket-policy --bucket $BUCKET_NAME --policy file://policy.json
         ```
 
     To create the bucket in a region other than us-east-1:
@@ -61,6 +73,18 @@ you should adjust to your own environment.
           --create-bucket-configuration LocationConstraint=$REGION \
           --region $REGION
         aws s3api delete-public-access-block --bucket $BUCKET_NAME
+        echo '{
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": "*",
+              "Action": "s3:GetObject",
+              "Resource": "arn:aws:s3:::${BUCKET_NAME}/*"
+            }
+          ]
+        }' | envsubst > policy.json
+        aws s3api put-bucket-policy --bucket $BUCKET_NAME --policy file://policy.json
         ```
 
 ## Before you begin
