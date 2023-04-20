@@ -4,23 +4,22 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
-	"strings"
-	"testing"
-	"time"
-
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/library-go/test/library/metrics"
 	promapi "github.com/prometheus/client_golang/api"
+	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	promv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	promconfig "github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 	prommodel "github.com/prometheus/common/model"
 	"go.uber.org/zap/zaptest"
 	appsv1 "k8s.io/api/apps/v1"
@@ -32,10 +31,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/kubernetes"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"os"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"strings"
+	"testing"
+	"time"
 )
 
 func PatchObject[T crclient.Object](ctx context.Context, client crclient.Client, obj T) error {
@@ -900,4 +904,52 @@ func CorrelateDaemonSet(ds *appsv1.DaemonSet, nodePool *hyperv1.NodePool, dsName
 	ds.Spec.Template.Spec.NodeSelector = make(map[string]string)
 	ds.Spec.Template.Spec.NodeSelector["hypershift.openshift.io/nodePool"] = nodePool.Name
 
+}
+
+func NewPrometheusClient(ctx context.Context) (prometheusv1.API, error) {
+	config, err := GetConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	kubeClient, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		panic(err)
+	}
+	routeClient, err := routev1client.NewForConfig(config)
+	if err != nil {
+		panic(err)
+	}
+	prometheusClient, err := metrics.NewPrometheusClient(ctx, kubeClient, routeClient)
+	if err != nil {
+		panic(err)
+	}
+	return prometheusClient, nil
+}
+
+// PrometheusResponse is used to contain prometheus query results
+type PrometheusResponse struct {
+	Data prometheusResponseData `json:"data"`
+}
+
+type prometheusResponseData struct {
+	Result model.Vector `json:"result"`
+}
+
+func RunQueryAtTime(ctx context.Context, log logr.Logger, prometheusClient prometheusv1.API, query string, evaluationTime time.Time) (*PrometheusResponse, error) {
+	result, warnings, err := prometheusClient.Query(ctx, query, evaluationTime)
+	if err != nil {
+		return nil, err
+	}
+	if len(warnings) > 0 {
+		log.Info(fmt.Sprintf("#### warnings \n\t%v\n", strings.Join(warnings, "\n\t")))
+	}
+	if result.Type() != model.ValVector {
+		return nil, fmt.Errorf("result type is not the vector: %v", result.Type())
+	}
+	return &PrometheusResponse{
+		Data: prometheusResponseData{
+			Result: result.(model.Vector),
+		},
+	}, nil
 }
