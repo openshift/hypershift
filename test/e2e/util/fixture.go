@@ -20,6 +20,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -210,6 +211,32 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 			}
 		}
 	})
+
+	t.Run("ValidateMetricsAreExposed", func(t *testing.T) {
+		// TODO (alberto) this test should pass in None.
+		// https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/artifacts/e2e-aws/run-e2e/artifacts/TestNoneCreateCluster_PreTeardownClusterDump/
+		// https://storage.googleapis.com/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/build-log.txt
+		// https://prow.ci.openshift.org/view/gs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032
+		if hc.Spec.Platform.Type == hyperv1.NonePlatform {
+			t.Skip()
+		}
+
+		g := NewWithT(t)
+
+		prometheusClient, err := NewPrometheusClient(ctx)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, fmt.Sprintf("%v{name=\"%s\"}", hostedcluster.ClusterDeletionTimeMetricName, hc.Name), time.Now())
+		g.Expect(err).ToNot(HaveOccurred())
+
+		if len(result.Data.Result) < 1 {
+			t.Errorf("Failed to validate that metrics are exposed: %q not found", hostedcluster.ClusterDeletionTimeMetricName)
+		}
+		for _, series := range result.Data.Result {
+			t.Logf("Found metric: %v", series.String())
+		}
+	})
+
 }
 
 // createClusterOpts mutates the cluster creation options according to the
