@@ -300,14 +300,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile deprecated AWS roles.
-	switch hcluster.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
-		if err := r.reconcileDeprecatedAWSRoles(ctx, hcluster); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
 	// Update fields if required.
 	if !equality.Semantic.DeepEqual(&hcluster.Spec, originalSpec) {
 		log.Info("Updating deprecated fields for hosted cluster")
@@ -648,11 +640,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	createOrUpdate := r.createOrUpdate(req)
-
-	// Reconcile deprecated global configuration
-	if err := r.reconcileDeprecatedGlobalConfig(ctx, hcluster); err != nil {
-		return ctrl.Result{}, err
-	}
 
 	// Reconcile the hosted cluster namespace
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -4506,9 +4493,6 @@ func (r *HostedClusterReconciler) reconcileDeprecatedGlobalConfig(ctx context.Co
 		return nil
 	}
 
-	log := ctrl.LoggerFrom(ctx)
-
-	originalSpec := hc.Spec.DeepCopy()
 	gconfig, err := globalconfig.ParseGlobalConfig(ctx, hc.Spec.Configuration)
 	if err != nil {
 		// This should never happen because at this point, the global configuration
@@ -4550,13 +4534,6 @@ func (r *HostedClusterReconciler) reconcileDeprecatedGlobalConfig(ctx context.Co
 	hc.Spec.Configuration.Items = nil
 	hc.Spec.Configuration.ConfigMapRefs = nil
 	hc.Spec.Configuration.SecretRefs = nil
-
-	if !equality.Semantic.DeepEqual(&hc.Spec, originalSpec) {
-		log.Info("Updating deprecated configuration for hosted cluster", "hostedcluster", client.ObjectKeyFromObject(hc).String())
-		if err = r.Client.Update(ctx, hc); err != nil {
-			return fmt.Errorf("failed to update hosted cluster configuration: %w", err)
-		}
-	}
 
 	return nil
 }
