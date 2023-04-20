@@ -33516,13 +33516,12 @@ objects:
                                 ], \"Effect\": \"Allow\" }, { \"Action\": [ \"iam:PassRole\"
                                 ], \"Resource\": [ \"arn:*:iam::*:role/*-worker-role\"
                                 ], \"Effect\": \"Allow\" }, { \"Effect\": \"Allow\",
-                                \"Action\": [ \"kms:Decrypt\", \"kms:Encrypt\", \"kms:GenerateDataKey\",
+                                \"Action\": [ \"kms:Decrypt\", \"kms:ReEncrypt\",
                                 \"kms:GenerateDataKeyWithoutPlainText\", \"kms:DescribeKey\"
                                 ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\",
-                                \"Action\": [ \"kms:RevokeGrant\", \"kms:CreateGrant\",
-                                \"kms:ListGrants\" ], \"Resource\": \"*\", \"Condition\":
-                                { \"Bool\": { \"kms:GrantIsForAWSResource\": true
-                                } } } ] }"
+                                \"Action\": [ \"kms:CreateGrant\" ], \"Resource\":
+                                \"*\", \"Condition\": { \"Bool\": { \"kms:GrantIsForAWSResource\":
+                                true } } } ] }"
                               type: string
                             storageARN:
                               description: "StorageARN is an ARN value referencing
@@ -41039,13 +41038,12 @@ objects:
                                 ], \"Effect\": \"Allow\" }, { \"Action\": [ \"iam:PassRole\"
                                 ], \"Resource\": [ \"arn:*:iam::*:role/*-worker-role\"
                                 ], \"Effect\": \"Allow\" }, { \"Effect\": \"Allow\",
-                                \"Action\": [ \"kms:Decrypt\", \"kms:Encrypt\", \"kms:GenerateDataKey\",
+                                \"Action\": [ \"kms:Decrypt\", \"kms:ReEncrypt\",
                                 \"kms:GenerateDataKeyWithoutPlainText\", \"kms:DescribeKey\"
                                 ], \"Resource\": \"*\" }, { \"Effect\": \"Allow\",
-                                \"Action\": [ \"kms:RevokeGrant\", \"kms:CreateGrant\",
-                                \"kms:ListGrants\" ], \"Resource\": \"*\", \"Condition\":
-                                { \"Bool\": { \"kms:GrantIsForAWSResource\": true
-                                } } } ] }"
+                                \"Action\": [ \"kms:CreateGrant\" ], \"Resource\":
+                                \"*\", \"Condition\": { \"Bool\": { \"kms:GrantIsForAWSResource\":
+                                true } } } ] }"
                               type: string
                             storageARN:
                               description: "StorageARN is an ARN value referencing

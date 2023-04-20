@@ -253,8 +253,7 @@ const (
 		"Effect": "Allow",
 		"Action": [
 			"kms:Decrypt",
-			"kms:Encrypt",
-			"kms:GenerateDataKey",
+			"kms:ReEncrypt",
 			"kms:GenerateDataKeyWithoutPlainText",
 			"kms:DescribeKey"
 		],
@@ -263,9 +262,7 @@ const (
 	{
 		"Effect": "Allow",
 		"Action": [
-			"kms:RevokeGrant",
-			"kms:CreateGrant",
-			"kms:ListGrants"
+			"kms:CreateGrant"
 		],
 		"Resource": "*",
 		"Condition": {

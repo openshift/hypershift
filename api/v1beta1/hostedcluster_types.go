@@ -1324,8 +1324,7 @@ type AWSRolesRef struct {
 	// 	  	"Effect": "Allow",
 	// 	  	"Action": [
 	// 	  		"kms:Decrypt",
-	// 	  		"kms:Encrypt",
-	// 	  		"kms:GenerateDataKey",
+	// 	  		"kms:ReEncrypt",
 	// 	  		"kms:GenerateDataKeyWithoutPlainText",
 	// 	  		"kms:DescribeKey"
 	// 	  	],
@@ -1334,9 +1333,7 @@ type AWSRolesRef struct {
 	// 	  {
 	// 	  	"Effect": "Allow",
 	// 	  	"Action": [
-	// 	  		"kms:RevokeGrant",
-	// 	  		"kms:CreateGrant",
-	// 	  		"kms:ListGrants"
+	// 	  		"kms:CreateGrant"
 	// 	  	],
 	// 	  	"Resource": "*",
 	// 	  	"Condition": {
