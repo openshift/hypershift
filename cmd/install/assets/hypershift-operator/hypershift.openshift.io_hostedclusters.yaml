@@ -2069,9 +2069,35 @@ spec:
                 type: boolean
               imageContentSources:
                 description: ImageContentSources specifies image mirrors that can
-                  be used by cluster nodes to pull content.
+                  be used by cluster nodes to pull content. only one of imageContentSources
+                  or imageDigestSources can be set.
                 items:
                   description: ImageContentSource specifies image mirrors that can
+                    be used by cluster nodes to pull content. For cluster workloads,
+                    if a container image registry host of the pullspec matches Source
+                    then one of the Mirrors are substituted as hosts in the pullspec
+                    and tried in order to fetch the image.
+                  properties:
+                    mirrors:
+                      description: Mirrors are one or more repositories that may also
+                        contain the same images.
+                      items:
+                        type: string
+                      type: array
+                    source:
+                      description: Source is the repository that users refer to, e.g.
+                        in image pull specifications.
+                      type: string
+                  required:
+                  - source
+                  type: object
+                type: array
+              imageDigestSources:
+                description: ImageDigestSources specifies image mirrors that can be
+                  used by cluster nodes to pull content. only one of imageContentSources
+                  or imageDigestSources can be set.
+                items:
+                  description: ImageDigestSource specifies image mirrors that can
                     be used by cluster nodes to pull content. For cluster workloads,
                     if a container image registry host of the pullspec matches Source
                     then one of the Mirrors are substituted as hosts in the pullspec
@@ -5763,9 +5789,35 @@ spec:
                 type: boolean
               imageContentSources:
                 description: ImageContentSources specifies image mirrors that can
-                  be used by cluster nodes to pull content.
+                  be used by cluster nodes to pull content. only one of imageContentSources
+                  or imageDigestSources can be set.
                 items:
                   description: ImageContentSource specifies image mirrors that can
+                    be used by cluster nodes to pull content. For cluster workloads,
+                    if a container image registry host of the pullspec matches Source
+                    then one of the Mirrors are substituted as hosts in the pullspec
+                    and tried in order to fetch the image.
+                  properties:
+                    mirrors:
+                      description: Mirrors are one or more repositories that may also
+                        contain the same images.
+                      items:
+                        type: string
+                      type: array
+                    source:
+                      description: Source is the repository that users refer to, e.g.
+                        in image pull specifications.
+                      type: string
+                  required:
+                  - source
+                  type: object
+                type: array
+              imageDigestSources:
+                description: ImageDigestSources specifies image mirrors that can be
+                  used by cluster nodes to pull content. only one of imageContentSources
+                  or imageDigestSources can be set.
+                items:
+                  description: ImageDigestSource specifies image mirrors that can
                     be used by cluster nodes to pull content. For cluster workloads,
                     if a container image registry host of the pullspec matches Source
                     then one of the Mirrors are substituted as hosts in the pullspec

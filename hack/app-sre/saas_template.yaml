@@ -29321,9 +29321,35 @@ objects:
                   type: boolean
                 imageContentSources:
                   description: ImageContentSources specifies image mirrors that can
-                    be used by cluster nodes to pull content.
+                    be used by cluster nodes to pull content. only one of imageContentSources
+                    or imageDigestSources can be set.
                   items:
                     description: ImageContentSource specifies image mirrors that can
+                      be used by cluster nodes to pull content. For cluster workloads,
+                      if a container image registry host of the pullspec matches Source
+                      then one of the Mirrors are substituted as hosts in the pullspec
+                      and tried in order to fetch the image.
+                    properties:
+                      mirrors:
+                        description: Mirrors are one or more repositories that may
+                          also contain the same images.
+                        items:
+                          type: string
+                        type: array
+                      source:
+                        description: Source is the repository that users refer to,
+                          e.g. in image pull specifications.
+                        type: string
+                    required:
+                    - source
+                    type: object
+                  type: array
+                imageDigestSources:
+                  description: ImageDigestSources specifies image mirrors that can
+                    be used by cluster nodes to pull content. only one of imageContentSources
+                    or imageDigestSources can be set.
+                  items:
+                    description: ImageDigestSource specifies image mirrors that can
                       be used by cluster nodes to pull content. For cluster workloads,
                       if a container image registry host of the pullspec matches Source
                       then one of the Mirrors are substituted as hosts in the pullspec
@@ -33087,9 +33113,35 @@ objects:
                   type: boolean
                 imageContentSources:
                   description: ImageContentSources specifies image mirrors that can
-                    be used by cluster nodes to pull content.
+                    be used by cluster nodes to pull content. only one of imageContentSources
+                    or imageDigestSources can be set.
                   items:
                     description: ImageContentSource specifies image mirrors that can
+                      be used by cluster nodes to pull content. For cluster workloads,
+                      if a container image registry host of the pullspec matches Source
+                      then one of the Mirrors are substituted as hosts in the pullspec
+                      and tried in order to fetch the image.
+                    properties:
+                      mirrors:
+                        description: Mirrors are one or more repositories that may
+                          also contain the same images.
+                        items:
+                          type: string
+                        type: array
+                      source:
+                        description: Source is the repository that users refer to,
+                          e.g. in image pull specifications.
+                        type: string
+                    required:
+                    - source
+                    type: object
+                  type: array
+                imageDigestSources:
+                  description: ImageDigestSources specifies image mirrors that can
+                    be used by cluster nodes to pull content. only one of imageContentSources
+                    or imageDigestSources can be set.
+                  items:
+                    description: ImageDigestSource specifies image mirrors that can
                       be used by cluster nodes to pull content. For cluster workloads,
                       if a container image registry host of the pullspec matches Source
                       then one of the Mirrors are substituted as hosts in the pullspec
@@ -36829,9 +36881,35 @@ objects:
                   type: boolean
                 imageContentSources:
                   description: ImageContentSources lists sources/repositories for
-                    the release-image content.
+                    the release-image content. only one of imageContentSources or
+                    imageDigestSources can be set.
                   items:
                     description: ImageContentSource specifies image mirrors that can
+                      be used by cluster nodes to pull content. For cluster workloads,
+                      if a container image registry host of the pullspec matches Source
+                      then one of the Mirrors are substituted as hosts in the pullspec
+                      and tried in order to fetch the image.
+                    properties:
+                      mirrors:
+                        description: Mirrors are one or more repositories that may
+                          also contain the same images.
+                        items:
+                          type: string
+                        type: array
+                      source:
+                        description: Source is the repository that users refer to,
+                          e.g. in image pull specifications.
+                        type: string
+                    required:
+                    - source
+                    type: object
+                  type: array
+                imageDigestSources:
+                  description: ImageDigestSources lists sources/repositories for the
+                    release-image content that will configure ImageDigestMirrorSet.
+                    only one of imageContentSources or imageDigestSources can be set.
+                  items:
+                    description: ImageDigestSource specifies image mirrors that can
                       be used by cluster nodes to pull content. For cluster workloads,
                       if a container image registry host of the pullspec matches Source
                       then one of the Mirrors are substituted as hosts in the pullspec
@@ -40601,9 +40679,35 @@ objects:
                   type: boolean
                 imageContentSources:
                   description: ImageContentSources lists sources/repositories for
-                    the release-image content.
+                    the release-image content that will configure ImageContentSourcePolicy.
+                    only one of imageContentSources or imageDigestSources can be set.
                   items:
                     description: ImageContentSource specifies image mirrors that can
+                      be used by cluster nodes to pull content. For cluster workloads,
+                      if a container image registry host of the pullspec matches Source
+                      then one of the Mirrors are substituted as hosts in the pullspec
+                      and tried in order to fetch the image.
+                    properties:
+                      mirrors:
+                        description: Mirrors are one or more repositories that may
+                          also contain the same images.
+                        items:
+                          type: string
+                        type: array
+                      source:
+                        description: Source is the repository that users refer to,
+                          e.g. in image pull specifications.
+                        type: string
+                    required:
+                    - source
+                    type: object
+                  type: array
+                imageDigestSources:
+                  description: ImageDigestSources lists sources/repositories for the
+                    release-image content that will configure ImageDigestMirrorSet.
+                    only one of imageContentSources or imageDigestSources can be set.
+                  items:
+                    description: ImageDigestSource specifies image mirrors that can
                       be used by cluster nodes to pull content. For cluster workloads,
                       if a container image registry host of the pullspec matches Source
                       then one of the Mirrors are substituted as hosts in the pullspec
@@ -43249,7 +43353,8 @@ objects:
                     schema is defined here: \n https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185
                     \n Each ConfigMap must have a single key named \"config\" whose
                     value is the JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
-                    KubeletConfig ContainerRuntimeConfig MachineConfig or ImageContentSourcePolicy"
+                    KubeletConfig ContainerRuntimeConfig MachineConfig or ImageContentSourcePolicy
+                    ImageDigestMirrorSet"
                   items:
                     description: LocalObjectReference contains enough information
                       to let you locate the referenced object inside the same namespace.
