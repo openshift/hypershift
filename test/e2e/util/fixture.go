@@ -226,14 +226,19 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 		prometheusClient, err := NewPrometheusClient(ctx)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, fmt.Sprintf("%v{name=\"%s\"}", hostedcluster.ClusterDeletionTimeMetricName, hc.Name), time.Now())
-		g.Expect(err).ToNot(HaveOccurred())
+		for _, metricName := range []string{
+			hostedcluster.HostedClusterDeletionDurationMetricName,
+			hostedcluster.HostedClusterGuestCloudResourcesDeletionDurationMetricName,
+		} {
+			result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name), time.Now())
+			g.Expect(err).ToNot(HaveOccurred())
 
-		if len(result.Data.Result) < 1 {
-			t.Errorf("Failed to validate that metrics are exposed: %q not found", hostedcluster.ClusterDeletionTimeMetricName)
-		}
-		for _, series := range result.Data.Result {
-			t.Logf("Found metric: %v", series.String())
+			if len(result.Data.Result) < 1 {
+				t.Errorf("Failed to validate that metrics are exposed: %q not found", metricName)
+			}
+			for _, series := range result.Data.Result {
+				t.Logf("Found metric: %v", series.String())
+			}
 		}
 	})
 
