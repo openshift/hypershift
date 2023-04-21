@@ -6,14 +6,19 @@ import (
 )
 
 var (
-	clusterDeletionTime = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Help: "Time in seconds it took from initial cluster deletion to the resource all hypershift finalizers being removed",
+	hostedClusterDeletionDuration = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Help: "Time in seconds it took from HostedCluster having a deletion timestamp to all hypershift finalizers being removed",
 		Name: "hypershift_cluster_deletion_duration_seconds",
+	}, []string{"name"})
+	hostedClusterGuestCloudResourcesDeletionDuration = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Help: "Time in seconds it took from HostedCluster having a deletion timestamp to the CloudResourcesDestroyed being true",
+		Name: "hypershift_cluster_guest_cloud_resources_deletion_duration_seconds",
 	}, []string{"name"})
 )
 
 func init() {
 	metrics.Registry.MustRegister(
-		clusterDeletionTime,
+		hostedClusterDeletionDuration,
+		hostedClusterGuestCloudResourcesDeletionDuration,
 	)
 }

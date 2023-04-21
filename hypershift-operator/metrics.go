@@ -36,8 +36,6 @@ type hypershiftMetrics struct {
 	// repeatedly with the same value.
 	clusterAvailableTime *prometheus.GaugeVec
 
-	clusterGuestCloudResourcesDeletionTime *prometheus.GaugeVec
-
 	clusterProxy                       *prometheus.GaugeVec
 	clusterIdentityProviders           *prometheus.GaugeVec
 	clusterLimitedSupportEnabled       *prometheus.GaugeVec
@@ -60,10 +58,6 @@ func newMetrics(client crclient.Client, log logr.Logger) *hypershiftMetrics {
 		clusterCreationTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Help: "Time in seconds it took from initial cluster creation and rollout of initial version",
 			Name: "hypershift_cluster_initial_rollout_duration_seconds",
-		}, []string{"name"}),
-		clusterGuestCloudResourcesDeletionTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Help: "Time in seconds it took from initial cluster deletion to the resource being removed from etcd",
-			Name: "hypershift_cluster_guest_cloud_resources_deletion_duration_seconds",
 		}, []string{"name"}),
 		clusterAvailableTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Help: "Time in seconds it took from initial cluster creation to HostedClusterAvailable condition becoming true",
@@ -155,9 +149,6 @@ func setupMetrics(mgr manager.Manager) error {
 	metrics := newMetrics(mgr.GetClient(), mgr.GetLogger().WithName("metrics"))
 	if err := crmetrics.Registry.Register(metrics.clusterCreationTime); err != nil {
 		return fmt.Errorf("failed to to register clusterCreationTime metric: %w", err)
-	}
-	if err := crmetrics.Registry.Register(metrics.clusterGuestCloudResourcesDeletionTime); err != nil {
-		return fmt.Errorf("failed to to register clusterGuestCloudResourcesDeletionTime metric: %w", err)
 	}
 	if err := crmetrics.Registry.Register(metrics.clusterAvailableTime); err != nil {
 		return fmt.Errorf("failed to to register clusterAvailableTime metric: %w", err)
@@ -337,11 +328,6 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 				hcByConditions[cond.Type] = hcByConditions[cond.Type] + 1
 			}
 		}
-
-		guestCloudResourcesDeletionTime := clusterGuestCloudResourcesDeletionTime(&hc)
-		if guestCloudResourcesDeletionTime != nil {
-			m.clusterGuestCloudResourcesDeletionTime.WithLabelValues(crclient.ObjectKeyFromObject(&hc).String()).Set(*guestCloudResourcesDeletionTime)
-		}
 	}
 
 	// Collect identityProvider metric.
@@ -392,21 +378,6 @@ func clusterAvailableTime(hc *hyperv1.HostedCluster) *float64 {
 	}
 	transitionTime := condition.LastTransitionTime
 	return pointer.Float64(transitionTime.Sub(hc.CreationTimestamp.Time).Seconds())
-}
-
-func clusterGuestCloudResourcesDeletionTime(hc *hyperv1.HostedCluster) *float64 {
-	condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-	if condition == nil {
-		return nil
-	}
-	if condition.Status == metav1.ConditionFalse {
-		return nil
-	}
-	transitionTime := condition.LastTransitionTime
-	if !hc.DeletionTimestamp.IsZero() {
-		return pointer.Float64(transitionTime.Sub(hc.DeletionTimestamp.Time).Seconds())
-	}
-	return nil
 }
 
 var expectedNPConditionStates = map[string]bool{
