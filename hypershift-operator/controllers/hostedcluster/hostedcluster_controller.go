@@ -372,6 +372,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
+		// SLI: Guest cluster resources deletion duration.
+		condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+		if condition != nil && condition.Status == metav1.ConditionTrue {
+			guestClusterResourceDeletionDuration := condition.LastTransitionTime.Sub(hcluster.DeletionTimestamp.Time).Seconds()
+			hostedClusterGuestCloudResourcesDeletionDuration.WithLabelValues(hcluster.Name).Set(guestClusterResourceDeletionDuration)
+		}
+
 		// Keep trying to delete until we know it's safe to finalize.
 		completed, err := r.delete(ctx, hcluster)
 		if err != nil {
@@ -389,8 +396,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 
+		// SLI: HostedCluster deletion duration.
 		deletionDuration := time.Since(hcluster.DeletionTimestamp.Time).Seconds()
-		clusterDeletionTime.WithLabelValues(hcluster.Name).Set(deletionDuration)
+		hostedClusterDeletionDuration.WithLabelValues(hcluster.Name).Set(deletionDuration)
 
 		log.Info("Deleted hostedcluster", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
