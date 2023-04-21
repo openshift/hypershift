@@ -640,6 +640,25 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// availability in the ultimate HostedCluster Available condition)
 	{
 		meta.SetStatusCondition(&hcluster.Status.Conditions, computeHostedClusterAvailability(hcluster, hcp))
+
+		// SLI: clusters that haven't gone available for a long time. Failure.
+		completedVersionImage := ""
+		available := metav1.ConditionFalse
+		for _, version := range hcluster.Status.Version.History {
+			if version.State == configv1.CompletedUpdate {
+				completedVersionImage = version.Image
+			}
+		}
+		condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterAvailable))
+
+		if condition != nil && condition.Status == metav1.ConditionTrue {
+			available = metav1.ConditionTrue
+		}
+		hostedClusterCreated.WithLabelValues(
+			client.ObjectKeyFromObject(hcluster).String(),
+			hcluster.Status.Version.Desired.Image,
+			completedVersionImage,
+			string(available)).Set(float64(hcluster.CreationTimestamp.Time.Unix()))
 	}
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
