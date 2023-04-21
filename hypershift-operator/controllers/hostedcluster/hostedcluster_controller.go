@@ -934,6 +934,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
 		controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = "privileged"
 		controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "privileged"
+		controlPlaneNamespace.Labels["security.openshift.io/scc.podSecurityLabelSync"] = "false"
 
 		// Enable monitoring for hosted control plane namespaces
 		if r.EnableOCPClusterMonitoring {
