@@ -15,7 +15,7 @@ import (
 
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	nodepool "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -26,7 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
-	client "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -58,11 +58,11 @@ type Options struct {
 	MetricsAddr       string
 }
 
-// This is an https server that enable us to satisfy
+// This is a https server that enable us to satisfy
 // 1 - 1 relation between clusters and ign endpoints.
 // It runs a token Secret controller.
 // The token Secret controller uses an IgnitionProvider provider implementation
-// (e.g machineConfigServerIgnitionProvider) to keep up to date a payload store in memory.
+// (e.g. machineConfigServerIgnitionProvider) to keep up to date a payload store in memory.
 // The payload store has the structure "NodePool token": "payload".
 // A token represents a given cluster version (and in the future also a machine Config) at any given point in time.
 // For a request to succeed a token needs to be passed in the Header.
