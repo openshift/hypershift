@@ -36,8 +36,6 @@ type hypershiftMetrics struct {
 	// repeatedly with the same value.
 	clusterAvailableTime *prometheus.GaugeVec
 
-	// clusterDeletionTime is the time it takes between the initial cluster deletion to the resource being removed from etcd
-	clusterDeletionTime                    *prometheus.GaugeVec
 	clusterGuestCloudResourcesDeletionTime *prometheus.GaugeVec
 
 	clusterProxy                       *prometheus.GaugeVec
@@ -54,8 +52,6 @@ type hypershiftMetrics struct {
 
 	client crclient.Client
 
-	hostedClusterDeletingCache map[string]*metav1.Time
-
 	log logr.Logger
 }
 
@@ -64,10 +60,6 @@ func newMetrics(client crclient.Client, log logr.Logger) *hypershiftMetrics {
 		clusterCreationTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Help: "Time in seconds it took from initial cluster creation and rollout of initial version",
 			Name: "hypershift_cluster_initial_rollout_duration_seconds",
-		}, []string{"name"}),
-		clusterDeletionTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Help: "Time in seconds it took from initial cluster deletion to the resource being removed from etcd",
-			Name: "hypershift_cluster_deletion_duration_seconds",
 		}, []string{"name"}),
 		clusterGuestCloudResourcesDeletionTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Help: "Time in seconds it took from initial cluster deletion to the resource being removed from etcd",
@@ -163,9 +155,6 @@ func setupMetrics(mgr manager.Manager) error {
 	metrics := newMetrics(mgr.GetClient(), mgr.GetLogger().WithName("metrics"))
 	if err := crmetrics.Registry.Register(metrics.clusterCreationTime); err != nil {
 		return fmt.Errorf("failed to to register clusterCreationTime metric: %w", err)
-	}
-	if err := crmetrics.Registry.Register(metrics.clusterDeletionTime); err != nil {
-		return fmt.Errorf("failed to to register clusterDeletionTime metric: %w", err)
 	}
 	if err := crmetrics.Registry.Register(metrics.clusterGuestCloudResourcesDeletionTime); err != nil {
 		return fmt.Errorf("failed to to register clusterGuestCloudResourcesDeletionTime metric: %w", err)
@@ -358,31 +347,6 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 	// Collect identityProvider metric.
 	for identityProvider, count := range identityProvidersCounter {
 		m.clusterIdentityProviders.WithLabelValues(string(identityProvider)).Set(count)
-	}
-
-	// Capture cluster deletion time.
-	existingHostedClusters := make(map[string]bool)
-	if m.hostedClusterDeletingCache == nil {
-		m.hostedClusterDeletingCache = make(map[string]*metav1.Time)
-	}
-	for _, hc := range hostedClusters.Items {
-		// store hostedClusters with a deletion timestamp.
-		if deletionTime := hc.DeletionTimestamp; deletionTime != nil {
-			m.hostedClusterDeletingCache[crclient.ObjectKeyFromObject(&hc).String()] = deletionTime
-		}
-
-		// store all existing hostedClusters
-		existingHostedClusters[crclient.ObjectKeyFromObject(&hc).String()] = true
-	}
-	for key, deletionTime := range m.hostedClusterDeletingCache {
-		if ok := existingHostedClusters[key]; ok {
-			continue
-		}
-
-		// If the hostedCluster had a deletion timestamp and does not exist anymore, capture metric.
-		deletionTime := time.Now().Sub(deletionTime.Time).Seconds()
-		m.clusterDeletionTime.WithLabelValues(key).Set(deletionTime)
-		delete(m.hostedClusterDeletingCache, key)
 	}
 
 	for key, count := range hcCount.Counts() {

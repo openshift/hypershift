@@ -402,6 +402,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
 			}
 		}
+
+		deletionDuration := time.Since(hcluster.DeletionTimestamp.Time).Seconds()
+		clusterDeletionTime.WithLabelValues(hcluster.Name).Set(deletionDuration)
+
 		log.Info("Deleted hostedcluster", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
