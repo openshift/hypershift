@@ -75,7 +75,7 @@ func CompressAndEncode(payload []byte) (*bytes.Buffer, error) {
 		return out, nil
 	}
 
-	// We need to base64-encode our gzipped data so we can marshal it in and out
+	// We need to base64-encode our gzipped data, so we can marshal it in and out
 	// of a string since ConfigMaps and Secrets expect a textual representation.
 	base64Enc := base64.NewEncoder(base64.StdEncoding, out)
 	defer base64Enc.Close()
@@ -170,7 +170,7 @@ func ResolveDNSHostname(ctx context.Context, hostName string) error {
 	return err
 }
 
-// InsecureHTTPClient return an http.Client which skips server certificate verification
+// InsecureHTTPClient return a http.Client which skips server certificate verification
 func InsecureHTTPClient() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
@@ -184,7 +184,7 @@ func InsecureHTTPClient() *http.Client {
 // HashStruct takes a value, typically a string, and returns a 32-bit FNV-1a hashed version of the value as a string
 func HashStruct(o interface{}) string {
 	hash := fnv.New32a()
-	hash.Write([]byte(fmt.Sprintf("%v", o)))
+	_, _ = hash.Write([]byte(fmt.Sprintf("%v", o)))
 	intHash := hash.Sum32()
 	return fmt.Sprintf("%08x", intHash)
 }

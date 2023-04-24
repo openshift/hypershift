@@ -1,6 +1,4 @@
 /*
-
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -313,13 +311,13 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// Start controller to manage supported versions configmap
-	if err := (supportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
-		SetupWithManager(mgr)); err != nil {
+	if err := supportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
+		SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create supported version controller: %w", err)
 	}
 
 	// If enabled, start controller to ensure UWM stack is enabled and configured
-	// to remote write telemetry metrics
+	// to remotely write telemetry metrics
 	if opts.EnableUWMTelemetryRemoteWrite {
 		if err := (&uwmtelemetry.Reconciler{
 			Namespace:              opts.Namespace,
@@ -340,7 +338,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("failed to construct api reading client: %w", err)
 	}
 
-	// If it exsists, block default ingress controller from admitting HCP private routes
+	// If it exists, block default ingress controller from admitting HCP private routes
 	ic := &operatorv1.IngressController{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "default",
@@ -371,6 +369,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
 		}
 		log.Info("reconciled default ingress controller")
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get ingress controller: %w", err)
 	}
 
 	if err := setupMetrics(mgr); err != nil {

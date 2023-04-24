@@ -16,13 +16,13 @@ import (
 var _ releaseinfo.ProviderWithRegistryOverrides = &FakeReleaseProvider{}
 
 type FakeReleaseProvider struct {
-	// Version of the returned release iamge. Defaults to 4.12.0 if unset.
+	// Version of the returned release image. Defaults to 4.12.0 if unset.
 	Version string
 	// Allows image-based versioning
 	ImageVersion map[string]string
 }
 
-func (f *FakeReleaseProvider) Lookup(ctx context.Context, image string, pullSecret []byte) (*releaseinfo.ReleaseImage, error) {
+func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
 	releaseImage := &releaseinfo.ReleaseImage{
 		ImageStream: &imagev1.ImageStream{
 			ObjectMeta: metav1.ObjectMeta{Name: "4.12.0"},

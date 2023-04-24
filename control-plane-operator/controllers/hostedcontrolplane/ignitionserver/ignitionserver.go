@@ -60,7 +60,10 @@ func ReconcileIgnitionServer(ctx context.Context,
 		ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace)
 		if util.IsPrivateHCP(hcp) {
 			if _, err := createOrUpdate(ctx, c, ignitionServerRoute, func() error {
-				reconcileInternalRoute(ignitionServerRoute, ownerRef)
+				err := reconcileInternalRoute(ignitionServerRoute, ownerRef)
+				if err != nil {
+					return fmt.Errorf("failed to reconcile internal route in ignition server: %w", err)
+				}
 				return nil
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile ignition internal route: %w", err)
@@ -71,7 +74,10 @@ func ReconcileIgnitionServer(ctx context.Context,
 				if serviceStrategy.Route != nil {
 					hostname = serviceStrategy.Route.Hostname
 				}
-				reconcileExternalRoute(ignitionServerRoute, ownerRef, hostname, defaultIngressDomain)
+				err := reconcileExternalRoute(ignitionServerRoute, ownerRef, hostname, defaultIngressDomain)
+				if err != nil {
+					return fmt.Errorf("failed to reconcile external route in ignition server: %w", err)
+				}
 				return nil
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile ignition external route: %w", err)
@@ -113,7 +119,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		}
 	}
 
-	// Reconcile a ignition serving certificate issued by the generated root CA. We
+	// Reconcile an ignition serving certificate issued by the generated root CA. We
 	// only create this and don't update it for now.
 	servingCertSecret := ignitionserver.IgnitionServingCertSecret(controlPlaneNamespace)
 	if !disablePKIReconciliation {
@@ -266,7 +272,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName:            sa.Name,
-					TerminationGracePeriodSeconds: utilpointer.Int64Ptr(10),
+					TerminationGracePeriodSeconds: utilpointer.Int64(10),
 					Tolerations: []corev1.Toleration{
 						{
 							Key:    "node-role.kubernetes.io/master",
@@ -279,7 +285,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
 									SecretName:  servingCertSecret.Name,
-									DefaultMode: utilpointer.Int32Ptr(0640),
+									DefaultMode: utilpointer.Int32(0640),
 								},
 							},
 						},
@@ -370,7 +376,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		// set security context
 		if !managementClusterHasCapabilitySecurityContextConstraint {
 			ignitionServerDeployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-				RunAsUser: utilpointer.Int64Ptr(config.DefaultSecurityContextUser),
+				RunAsUser: utilpointer.Int64(config.DefaultSecurityContextUser),
 			}
 		}
 
