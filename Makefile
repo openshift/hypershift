@@ -41,6 +41,8 @@ endif
 
 all: build e2e
 
+pre-commit: all verify test
+
 build: hypershift-operator control-plane-operator hypershift
 
 .PHONY: update
