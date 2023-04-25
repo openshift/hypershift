@@ -38,6 +38,28 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
+	return wait.PollImmediateWithContext(ctx, time.Second, time.Minute*1, func(ctx context.Context) (done bool, err error) {
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(original), original); err != nil {
+			t.Logf("failed to retrieve object %s, will retry: %v", original.GetName(), err)
+			return false, nil
+		}
+
+		obj := original.DeepCopyObject().(T)
+		mutate(obj)
+
+		if err := client.Patch(ctx, obj, crclient.MergeFrom(original)); err != nil {
+			t.Logf("failed to patch object %s, will retry: %v", original.GetName(), err)
+			if errors.IsConflict(err) {
+				return false, nil
+			}
+			return false, err
+		}
+
+		return true, nil
+	})
+}
+
 // DeleteNamespace deletes and finalizes the given namespace, logging any failures
 // along the way.
 func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, namespace string) error {
@@ -121,7 +143,8 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 
 	t.Logf("Waiting for a successful connection to the guest apiserver")
 	var guestClient crclient.Client
-	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	// Mulham: increased timeout from 5m to 15m as guest kubeconfig/API server takes longer to report available after switching from private to public
+	waitForGuestClientCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
 	// SOA TTL is 60s. If DNS lookup fails on the api-* name, it is unlikely to succeed in less than 60s.
 	err = wait.PollImmediateWithContext(waitForGuestClientCtx, 35*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
@@ -166,6 +189,7 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 			for _, cond := range node.Status.Conditions {
 				if cond.Type == corev1.NodeReady && cond.Status == corev1.ConditionTrue {
 					readyNodes = append(readyNodes, node.Name)
+					g.Expect(node.Labels[hyperv1.NodePoolLabel]).NotTo(BeEmpty())
 				}
 			}
 		}
@@ -345,6 +369,26 @@ func WaitForNodePoolVersion(t *testing.T, ctx context.Context, client crclient.C
 	g.Expect(err).NotTo(HaveOccurred(), "failed waiting for nodepool version")
 
 	t.Logf("Observed nodepool %s/%s to report version %s in %s", nodePool.Namespace, nodePool.Name, version, time.Since(start).Round(time.Second))
+}
+
+func WaitForNodePoolDesiredNodes(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	g := NewWithT(t)
+
+	waitTimeout := 30 * time.Minute
+	err := wait.PollImmediateWithContext(ctx, 5*time.Second, waitTimeout, func(ctx context.Context) (done bool, err error) {
+		var nodePoolList hyperv1.NodePoolList
+		if err := client.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: hostedCluster.Namespace}); err != nil {
+			t.Fatalf("failed to list nodepools: %v", err)
+		}
+		for _, nodePool := range nodePoolList.Items {
+			if *nodePool.Spec.Replicas != nodePool.Status.Replicas {
+				t.Logf("Waiting. NodePool %q wants %v replicas but has %v", nodePool.Name, *nodePool.Spec.Replicas, nodePool.Status.Replicas)
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), "failed to ensure all NodePools' nodes ready")
 }
 
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
