@@ -85,6 +85,7 @@ spec:
                       TODO: Add other useful fields. apiVersion, kind, uid?'
                     type: string
                 type: object
+                x-kubernetes-map-type: atomic
               clusterID:
                 description: ClusterID is the unique id that identifies the cluster
                   externally. Making it optional here allows us to keep compatibility
@@ -661,7 +662,7 @@ spec:
                             hostname:
                               description: hostname is the hostname that should be
                                 used by the route.
-                              pattern: ^([a-zA-Z0-9\p{S}\p{L}]((-?[a-zA-Z0-9\p{S}\p{L}]{0,62})?)|([a-zA-Z0-9\p{S}\p{L}](([a-zA-Z0-9-\p{S}\p{L}]{0,61}[a-zA-Z0-9\p{S}\p{L}])?)(\.)){1,}([a-zA-Z\p{L}]){2,63})$|^(([a-z0-9][-a-z0-9]{0,61}[a-z0-9]|[a-z0-9]{1,63})[\.]){0,}([a-z0-9][-a-z0-9]{0,61}[a-z0-9]|[a-z0-9]{1,63})$
+                              format: hostname
                               type: string
                             name:
                               description: "name is the logical name of the route
@@ -2039,14 +2040,12 @@ spec:
                       type: object
                     type: array
                   networkType:
-                    default: OVNKubernetes
+                    default: OpenShiftSDN
                     description: NetworkType specifies the SDN provider used for cluster
                       networking.
                     enum:
                     - OpenShiftSDN
                     - Calico
-                    - OVNKubernetes
-                    - Other
                     type: string
                   podCIDR:
                     description: Deprecated This field will be removed in the next

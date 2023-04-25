@@ -56,7 +56,6 @@ spec:
                             description: Name of resource
                             type: string
                         type: object
-                        x-kubernetes-map-type: atomic
                       memory:
                         description: Memory is Amount of memory allocated (in GB)
                         type: string
