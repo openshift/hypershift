@@ -11,27 +11,13 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 type hypershiftMetrics struct {
-	// clusterCreationTime is the time it takes between cluster creation until the first
-	// version got successfully rolled out. Technically this is a const, but using a gauge
-	// means we do not have to track what we already reported and can just call Set
-	// repeatedly with the same value.
-	clusterCreationTime *prometheus.GaugeVec
-
-	// clusterCreationTime is the time it takes between cluster creation until the
-	// HostedClusterAvailable condition becomes true. Technically this is a const, but using a gauge
-	// means we do not have to track what we already reported and can just call Set
-	// repeatedly with the same value.
-	clusterAvailableTime *prometheus.GaugeVec
-
 	clusterProxy                       *prometheus.GaugeVec
 	clusterIdentityProviders           *prometheus.GaugeVec
 	clusterLimitedSupportEnabled       *prometheus.GaugeVec
@@ -50,14 +36,6 @@ type hypershiftMetrics struct {
 
 func newMetrics(client crclient.Client, log logr.Logger) *hypershiftMetrics {
 	return &hypershiftMetrics{
-		clusterCreationTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Help: "Time in seconds it took from initial cluster creation and rollout of initial version",
-			Name: "hypershift_cluster_initial_rollout_duration_seconds",
-		}, []string{"name"}),
-		clusterAvailableTime: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Help: "Time in seconds it took from initial cluster creation to HostedClusterAvailable condition becoming true",
-			Name: "hypershift_cluster_available_duration_seconds",
-		}, []string{"name"}),
 		clusterProxy: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Help: "Indicates cluster proxy state for each cluster",
 			Name: "hypershift_cluster_proxy",
@@ -136,12 +114,6 @@ func (m *hypershiftMetrics) collect(ctx context.Context) error {
 
 func setupMetrics(mgr manager.Manager) error {
 	metrics := newMetrics(mgr.GetClient(), mgr.GetLogger().WithName("metrics"))
-	if err := crmetrics.Registry.Register(metrics.clusterCreationTime); err != nil {
-		return fmt.Errorf("failed to to register clusterCreationTime metric: %w", err)
-	}
-	if err := crmetrics.Registry.Register(metrics.clusterAvailableTime); err != nil {
-		return fmt.Errorf("failed to to register clusterAvailableTime metric: %w", err)
-	}
 	if err := crmetrics.Registry.Register(metrics.clusterProxy); err != nil {
 		return fmt.Errorf("failed to to register clusterProxy metric: %w", err)
 	}
@@ -244,15 +216,6 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 			m.clusterSilenceAlerts.WithLabelValues(hc.Namespace, hc.Name, hc.Spec.ClusterID).Set(0)
 		}
 
-		creationTime := clusterCreationTime(&hc)
-		if creationTime != nil {
-			m.clusterCreationTime.WithLabelValues(hc.Namespace + "/" + hc.Name).Set(*creationTime)
-		}
-
-		availableTime := clusterAvailableTime(&hc)
-		if availableTime != nil {
-			m.clusterAvailableTime.WithLabelValues(hc.Namespace + "/" + hc.Name).Set(*availableTime)
-		}
 		platform := string(hc.Spec.Platform.Type)
 		hcCount.Add(platform)
 		for _, cond := range hc.Status.Conditions {
@@ -286,29 +249,6 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 		labels := counterKeyToLabels(key)
 		m.hostedClustersWithFailureCondition.WithLabelValues(labels...).Set(float64(count))
 	}
-}
-
-func clusterCreationTime(hc *hyperv1.HostedCluster) *float64 {
-	if hc.Status.Version == nil || len(hc.Status.Version.History) == 0 {
-		return nil
-	}
-	completionTime := hc.Status.Version.History[len(hc.Status.Version.History)-1].CompletionTime
-	if completionTime == nil {
-		return nil
-	}
-	return pointer.Float64(completionTime.Sub(hc.CreationTimestamp.Time).Seconds())
-}
-
-func clusterAvailableTime(hc *hyperv1.HostedCluster) *float64 {
-	condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.HostedClusterAvailable))
-	if condition == nil {
-		return nil
-	}
-	if condition.Status == metav1.ConditionFalse {
-		return nil
-	}
-	transitionTime := condition.LastTransitionTime
-	return pointer.Float64(transitionTime.Sub(hc.CreationTimestamp.Time).Seconds())
 }
 
 var expectedNPConditionStates = map[string]bool{

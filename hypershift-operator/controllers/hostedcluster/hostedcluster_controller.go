@@ -626,6 +626,21 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// availability in the ultimate HostedCluster Available condition)
 	{
 		meta.SetStatusCondition(&hcluster.Status.Conditions, computeHostedClusterAvailability(hcluster, hcp))
+
+		// SLI: Hosted Cluster available duration.
+		// TODO (alberto): If the available condition flips from true -> false -> true, then atm this metric
+		// counts availableTime as the duration until the latest transition.
+		// We might want to prevent this from happening and only count first transition by checking the hc.Status.Version.History.
+		availableTime := clusterAvailableTime(hcluster)
+		if availableTime != nil {
+			hostedClusterAvailableDuration.WithLabelValues(hcluster.Name).Set(*availableTime)
+		}
+	}
+
+	// SLI: Hosted Cluster roll out duration.
+	versionRolloutTime := clusterVersionRolloutTime(hcluster)
+	if versionRolloutTime != nil {
+		hostedClusterInitialRolloutDuration.WithLabelValues(hcluster.Name).Set(*versionRolloutTime)
 	}
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
