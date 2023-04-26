@@ -121,4 +121,26 @@ oc delete aws-ebs-csi-driver-controller aws-ebs-csi-driver-operator
 
 The operator will take a while to raise up again and eventually the driver controller will be deployed by the `aws-ebs-csi-driver-operator`.
 
-**Cause:** This issue probably come from objects that are deployed by the Operator, in this case the storage one, but the controller or the operator does not reconcile over them. If you delete the deployments you ensure that the operator recreates them from scratch.
+**Cause:** This issue probably comes from objects that are deployed by the Operator. In this case, `cluster-storage-operator`, but the controller or the operator does not reconcile over them. If you delete the deployments, you ensure the operator is recreated from scratch.
+
+
+### The image-registry ClusterOperator keeps reporting a degraded status
+
+When a migration is done and the image-registry clusteroperator is marked as degraded, you will need to figure out how it reaches that status. The message will look like `ImagePrunerDegraded: Job has reached the specified backoff limit`.
+
+Things we need to review:
+
+- Look for failure pods in the HostedControlPlane namespace at the destination management cluster.
+- Check the other Cluster operators in the HostedCluster.
+- Check if the nodes are ready and working fine in the HostedCluster.
+
+If all three components are working fine, the issue is in the backoff times of the executed job `image-pruner-XXXX`; this job has most likely failed. Once the migrated cluster has already converged and looks fine, you will need to make sure to fix this cluster operator manually; you will need to determine if you want immediate resolution, or you can wait 24h and the cronjob will raise up another job by itself.
+
+To solve it manually, you need to:
+
+- Reexecute the job `image-pruner-xxxx` from the `openshift-image-registry` namespace, using a cronjob called `image-pruner`
+```
+oc create job -n openshift-image-registry --from=cronjob/image-pruner image-pruner-recover
+```
+
+This command creates a new job in that namespace and eventually will report the new status to the cluster operator.
