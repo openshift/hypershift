@@ -15,9 +15,11 @@ import (
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	configmanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/clientcmd"
@@ -32,8 +34,9 @@ import (
 
 func EnsureOAuthWithIdentityProvider(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureOAuthWithIdentityProvider", func(t *testing.T) {
-		g := NewWithT(t)
+		validateClusterPreIDP(t, ctx, client, hostedCluster)
 
+		g := NewWithT(t)
 		// secret containing htpasswd "file": `htpasswd -cbB htpasswd.tmp testuser password`
 		secret := corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -85,6 +88,8 @@ func EnsureOAuthWithIdentityProvider(t *testing.T, ctx context.Context, client c
 		user, err := GetUserForToken(guestConfig, access_token)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(user.Name).To(Equal("testuser"))
+
+		validateClusterPostIDP(t, ctx, client, hostedCluster)
 	})
 }
 
@@ -244,4 +249,44 @@ func WaitForOauthConfig(t *testing.T, ctx context.Context, client crclient.Clien
 		return true, nil
 	})
 	g.Expect(err).ToNot(HaveOccurred(), "failed validating oauth config")
+}
+
+func validateClusterPreIDP(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	g := NewWithT(t)
+
+	g.Expect(hostedCluster.Status.KubeadminPassword).ToNot(BeNil())
+
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+	kubeadminPasswordSecret := configmanifests.KubeadminPasswordSecret(hcpNamespace)
+	// validate kubeadmin secret exist
+	err := client.Get(ctx, crclient.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	oauthDeployment := configmanifests.OAuthDeployment(hcpNamespace)
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(oauthDeployment), oauthDeployment)
+	g.Expect(err).ToNot(HaveOccurred())
+	// validate oauthDeployment has kubeadmin password hash annotation
+	g.Expect(oauthDeployment.Spec.Template.ObjectMeta.Annotations).To(HaveKey(resources.SecretHashAnnotation))
+}
+
+func validateClusterPostIDP(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	g := NewWithT(t)
+
+	// update HC status
+	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(hostedCluster.Status.KubeadminPassword).To(BeNil())
+
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+	kubeadminPasswordSecret := configmanifests.KubeadminPasswordSecret(hcpNamespace)
+	// validate kubeadmin secret is deleted
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+	oauthDeployment := configmanifests.OAuthDeployment(hcpNamespace)
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(oauthDeployment), oauthDeployment)
+	g.Expect(err).ToNot(HaveOccurred())
+	// validate oauthDeployment kubeadmin password hash annotation was removed
+	g.Expect(oauthDeployment.Spec.Template.ObjectMeta.Annotations).ToNot(HaveKey(resources.SecretHashAnnotation))
 }
