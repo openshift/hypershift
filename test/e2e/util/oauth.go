@@ -47,27 +47,27 @@ func EnsureOAuthWithIdentityProvider(t *testing.T, ctx context.Context, client c
 		err := client.Create(ctx, &secret)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to create htpasswd secret")
 
-		if hostedCluster.Spec.Configuration == nil {
-			hostedCluster.Spec.Configuration = &hyperv1.ClusterConfiguration{}
-		}
-		hostedCluster.Spec.Configuration.OAuth = &v1.OAuthSpec{
-			IdentityProviders: []v1.IdentityProvider{
-				{
-					Name:          "my_htpasswd_provider",
-					MappingMethod: v1.MappingMethodClaim,
-					IdentityProviderConfig: v1.IdentityProviderConfig{
-						Type: v1.IdentityProviderTypeHTPasswd,
-						HTPasswd: &v1.HTPasswdIdentityProvider{
-							FileData: v1.SecretNameReference{
-								Name: secret.Name,
+		err = UpdateObject(t, ctx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
+			if obj.Spec.Configuration == nil {
+				obj.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+			}
+			obj.Spec.Configuration.OAuth = &v1.OAuthSpec{
+				IdentityProviders: []v1.IdentityProvider{
+					{
+						Name:          "my_htpasswd_provider",
+						MappingMethod: v1.MappingMethodClaim,
+						IdentityProviderConfig: v1.IdentityProviderConfig{
+							Type: v1.IdentityProviderTypeHTPasswd,
+							HTPasswd: &v1.HTPasswdIdentityProvider{
+								FileData: v1.SecretNameReference{
+									Name: secret.Name,
+								},
 							},
 						},
 					},
 				},
-			},
-		}
-
-		err = PatchObject(ctx, client, hostedCluster)
+			}
+		})
 		g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster identity providers")
 
 		guestKubeConfigSecretData, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
