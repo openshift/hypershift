@@ -1,21 +1,16 @@
-package main
+package hostedcluster
 
 import (
-	"context"
 	"testing"
 	"time"
 
-	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
-	"go.uber.org/zap/zaptest"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/pointer"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestMetrics(t *testing.T) {
@@ -32,11 +27,11 @@ func TestMetrics(t *testing.T) {
 				CompletionTime: &metav1.Time{Time: time.Time{}.Add(2 * time.Hour)},
 			}},
 			expected: []*dto.MetricFamily{{
-				Name: pointer.String("hypershift_cluster_initial_rollout_duration_seconds"),
+				Name: pointer.String(InitialRolloutDurationName),
 				Help: pointer.String("Time in seconds it took from initial cluster creation and rollout of initial version"),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
-					Label: []*dto.LabelPair{{Name: pointer.String("name"), Value: pointer.String("/hc")}},
+					Label: []*dto.LabelPair{{Name: pointer.String("name"), Value: pointer.String("hc")}},
 					Gauge: &dto.Gauge{Value: pointer.Float64(3600)},
 				}},
 			}},
@@ -56,11 +51,11 @@ func TestMetrics(t *testing.T) {
 				},
 			},
 			expected: []*dto.MetricFamily{{
-				Name: pointer.String("hypershift_cluster_initial_rollout_duration_seconds"),
+				Name: pointer.String(InitialRolloutDurationName),
 				Help: pointer.String("Time in seconds it took from initial cluster creation and rollout of initial version"),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
-					Label: []*dto.LabelPair{{Name: pointer.String("name"), Value: pointer.String("/hc")}},
+					Label: []*dto.LabelPair{{Name: pointer.String("name"), Value: pointer.String("hc")}},
 					Gauge: &dto.Gauge{Value: pointer.Float64(3600)},
 				}},
 			}},
@@ -85,11 +80,11 @@ func TestMetrics(t *testing.T) {
 				},
 			},
 			expected: []*dto.MetricFamily{{
-				Name: pointer.String("hypershift_cluster_available_duration_seconds"),
+				Name: pointer.String(AvailableDurationName),
 				Help: pointer.String("Time in seconds it took from initial cluster creation to HostedClusterAvailable condition becoming true"),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
-					Label: []*dto.LabelPair{{Name: pointer.String("name"), Value: pointer.String("/hc")}},
+					Label: []*dto.LabelPair{{Name: pointer.String("name"), Value: pointer.String("hc")}},
 					Gauge: &dto.Gauge{Value: pointer.Float64(3600)},
 				}},
 			}},
@@ -110,27 +105,36 @@ func TestMetrics(t *testing.T) {
 					Conditions: tc.conditions,
 				},
 			}
-			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cluster).Build()
-
-			metrics := newMetrics(client, zapr.NewLogger(zaptest.NewLogger(t)))
-			if err := metrics.collect(context.Background()); err != nil {
-				t.Fatalf("failed to collect metrics: %v", err)
-			}
 
 			// The following somewhat mirrors github.com/prometheus/client_golang/prometheus/testutil.CollectAndCompare.
 			// The testutil parses a text metric and seems to drop the HELP text, which results in the comparison always
 			// failing.
+			hostedClusterInitialRolloutDuration.Reset()
+			hostedClusterAvailableDuration.Reset()
 			reg := prometheus.NewPedanticRegistry()
-			if err := reg.Register(metrics.clusterCreationTime); err != nil {
+
+			// Capture metrics.
+			if err := reg.Register(hostedClusterInitialRolloutDuration); err != nil {
 				t.Fatalf("registering creationTime collector failed: %v", err)
 			}
-			if err := reg.Register(metrics.clusterAvailableTime); err != nil {
+			if err := reg.Register(hostedClusterAvailableDuration); err != nil {
 				t.Fatalf("registering availableTIme collector failed: %v", err)
 			}
+			availableTime := clusterAvailableTime(cluster)
+			if availableTime != nil {
+				hostedClusterAvailableDuration.WithLabelValues(cluster.Name).Set(*availableTime)
+			}
+
+			versionRolloutTime := clusterVersionRolloutTime(cluster)
+			if versionRolloutTime != nil {
+				hostedClusterInitialRolloutDuration.WithLabelValues(cluster.Name).Set(*versionRolloutTime)
+			}
+
 			result, err := reg.Gather()
 			if err != nil {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
+
 			if diff := cmp.Diff(result, tc.expected); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
