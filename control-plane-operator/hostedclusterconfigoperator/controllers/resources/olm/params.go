@@ -1,9 +1,8 @@
 package olm
 
 import (
-	"strings"
-
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 )
 
 type OperatorLifecycleManagerParams struct {
@@ -14,14 +13,12 @@ type OperatorLifecycleManagerParams struct {
 	OLMCatalogPlacement     hyperv1.OLMCatalogPlacement
 }
 
-func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, releaseVersion string) *OperatorLifecycleManagerParams {
-	tag := strings.Join(strings.Split(releaseVersion, ".")[:2], ".")
-
+func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane) *OperatorLifecycleManagerParams {
 	params := &OperatorLifecycleManagerParams{
-		CertifiedOperatorsImage: "registry.redhat.io/redhat/certified-operator-index:v" + tag,
-		CommunityOperatorsImage: "registry.redhat.io/redhat/community-operator-index:v" + tag,
-		RedHatMarketplaceImage:  "registry.redhat.io/redhat/redhat-marketplace-index:v" + tag,
-		RedHatOperatorsImage:    "registry.redhat.io/redhat/redhat-operator-index:v" + tag,
+		CertifiedOperatorsImage: olm.CatalogToImage["certified-operators"],
+		CommunityOperatorsImage: olm.CatalogToImage["community-operators"],
+		RedHatMarketplaceImage:  olm.CatalogToImage["redhat-marketplace"],
+		RedHatOperatorsImage:    olm.CatalogToImage["redhat-operators"],
 		OLMCatalogPlacement:     hcp.Spec.OLMCatalogPlacement,
 	}
 
