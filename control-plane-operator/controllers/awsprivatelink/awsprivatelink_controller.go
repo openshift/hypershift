@@ -509,11 +509,16 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 			for i := range awsEndpointService.Spec.SubnetIDs {
 				subnetIDs = append(subnetIDs, &awsEndpointService.Spec.SubnetIDs[i])
 			}
+
+			if hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "" {
+				return fmt.Errorf("DefaultWorkerSecurityGroupID doesn't exist yet for the endpoint to use")
+			}
 			output, err := ec2Client.CreateVpcEndpointWithContext(ctx, &ec2.CreateVpcEndpointInput{
-				ServiceName:     aws.String(awsEndpointService.Status.EndpointServiceName),
-				VpcId:           aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
-				VpcEndpointType: aws.String(ec2.VpcEndpointTypeInterface),
-				SubnetIds:       subnetIDs,
+				SecurityGroupIds: []*string{aws.String(hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID)},
+				ServiceName:      aws.String(awsEndpointService.Status.EndpointServiceName),
+				VpcId:            aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
+				VpcEndpointType:  aws.String(ec2.VpcEndpointTypeInterface),
+				SubnetIds:        subnetIDs,
 				TagSpecifications: []*ec2.TagSpecification{{
 					ResourceType: aws.String("vpc-endpoint"),
 					Tags:         apiTagToEC2Tag(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
