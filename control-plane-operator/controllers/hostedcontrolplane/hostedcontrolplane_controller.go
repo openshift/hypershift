@@ -634,14 +634,19 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	kubeadminPassword := common.KubeadminPasswordSecret(hostedControlPlane.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(kubeadminPassword), kubeadminPassword); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to get kubeadmin password: %w", err)
-		}
+	explicitOauthConfig := hostedControlPlane.Spec.Configuration != nil && hostedControlPlane.Spec.Configuration.OAuth != nil
+	if explicitOauthConfig {
+		hostedControlPlane.Status.KubeadminPassword = nil
 	} else {
-		hostedControlPlane.Status.KubeadminPassword = &corev1.LocalObjectReference{
-			Name: kubeadminPassword.Name,
+		kubeadminPassword := common.KubeadminPasswordSecret(hostedControlPlane.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(kubeadminPassword), kubeadminPassword); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return reconcile.Result{}, fmt.Errorf("failed to get kubeadmin password: %w", err)
+			}
+		} else {
+			hostedControlPlane.Status.KubeadminPassword = &corev1.LocalObjectReference{
+				Name: kubeadminPassword.Name,
+			}
 		}
 	}
 
@@ -1546,11 +1551,20 @@ func (r *HostedControlPlaneReconciler) reconcileClusterIPServiceStatus(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Context, hcp *hyperv1.HostedControlPlane, explicitOauthConfig bool, createOrUpdate upsert.CreateOrUpdateFN) error {
-	if explicitOauthConfig {
-		return nil
-	}
-	var kubeadminPassword string
 	kubeadminPasswordSecret := common.KubeadminPasswordSecret(hcp.Namespace)
+	if explicitOauthConfig {
+		// delete kubeadminPasswordSecret if it exist
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+
+		return r.Client.Delete(ctx, kubeadminPasswordSecret)
+	}
+
+	var kubeadminPassword string
 	if _, err := createOrUpdate(ctx, r, kubeadminPasswordSecret, func() error {
 		return reconcileKubeadminPasswordSecret(kubeadminPasswordSecret, hcp, &kubeadminPassword)
 	}); err != nil {
