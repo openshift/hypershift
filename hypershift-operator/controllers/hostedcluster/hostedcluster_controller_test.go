@@ -2240,3 +2240,35 @@ func TestComputeAWSEndpointServiceCondition(t *testing.T) {
 		})
 	}
 }
+
+func TestHasBeenAvailable(t *testing.T) {
+	testCases := []struct {
+		name     string
+		hc       *hyperv1.HostedCluster
+		expected bool
+	}{
+		{
+			name: "When it has HasBeenAvailable Annotation it should return true",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						HasBeenAvailableAnnotation: "true",
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name:     "When it has no HasBeenAvailable Annotation it should return false",
+			hc:       &hyperv1.HostedCluster{},
+			expected: false,
+		},
+	}
+
+	g := NewGomegaWithT(t)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g.Expect(HasBeenAvailable(tc.hc)).To(Equal(tc.expected))
+		})
+	}
+}
