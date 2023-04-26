@@ -226,21 +226,33 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 		prometheusClient, err := NewPrometheusClient(ctx)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		for _, metricName := range []string{
-			hostedcluster.DeletionDurationMetricName,
-			hostedcluster.GuestCloudResourcesDeletionDurationMetricName,
-			hostedcluster.AvailableDurationName,
-			hostedcluster.InitialRolloutDurationName,
-		} {
-			result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name), time.Now())
-			g.Expect(err).ToNot(HaveOccurred())
+		// Polling to prevent races with prometheus scrape interval.
+		err = wait.PollImmediate(10*time.Second, 1*time.Minute, func() (bool, error) {
+			for _, metricName := range []string{
+				hostedcluster.DeletionDurationMetricName,
+				hostedcluster.GuestCloudResourcesDeletionDurationMetricName,
+				hostedcluster.AvailableDurationName,
+				hostedcluster.InitialRolloutDurationName,
+			} {
+				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name), time.Now())
+				if err != nil {
+					return false, err
+				}
 
-			if len(result.Data.Result) < 1 {
-				t.Errorf("Failed to validate that metrics are exposed: %q not found for hosted cluster: %q", metricName, hc.Name)
+				if len(result.Data.Result) < 1 {
+					t.Logf("Metric not found: %q", metricName)
+					return false, nil
+				}
+				for _, series := range result.Data.Result {
+					t.Logf("Found metric: %v", series.String())
+				}
 			}
-			for _, series := range result.Data.Result {
-				t.Logf("Found metric: %v", series.String())
-			}
+			return true, nil
+		})
+		if err != nil {
+			t.Errorf("Failed to validate that all metrics are expose")
+		} else {
+			t.Logf("Destroyed cluster. Namespace: %s, name: %s", hc.Namespace, hc.Name)
 		}
 	})
 
