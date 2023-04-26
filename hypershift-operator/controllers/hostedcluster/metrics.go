@@ -44,8 +44,12 @@ func init() {
 	)
 }
 
-// clusterAvailableTime returns LastTransitionTime
+// clusterAvailableTime returns the time in seconds from cluster creation to first available transition.
+// If the condition is nil, false or the cluster has already been available it returns nil.
 func clusterAvailableTime(hc *hyperv1.HostedCluster) *float64 {
+	if HasBeenAvailable(hc) {
+		return nil
+	}
 	condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.HostedClusterAvailable))
 	if condition == nil {
 		return nil

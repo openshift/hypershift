@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -138,6 +139,33 @@ func TestMetrics(t *testing.T) {
 			if diff := cmp.Diff(result, tc.expected); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
+		})
+	}
+}
+
+func TestClusterAvailableTime(t *testing.T) {
+	testCases := []struct {
+		name     string
+		hc       *hyperv1.HostedCluster
+		expected *float64
+	}{
+		{
+			name: "When HostedCluster has been available it should return nil",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						HasBeenAvailableAnnotation: "true",
+					},
+				},
+			},
+			expected: nil,
+		},
+	}
+
+	g := NewGomegaWithT(t)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g.Expect(clusterAvailableTime(tc.hc)).To(BeEquivalentTo(tc.expected))
 		})
 	}
 }

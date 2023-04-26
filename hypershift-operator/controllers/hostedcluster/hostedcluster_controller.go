@@ -96,8 +96,11 @@ import (
 )
 
 const (
-	finalizer                      = "hypershift.openshift.io/finalizer"
-	HostedClusterAnnotation        = "hypershift.openshift.io/cluster"
+	finalizer               = "hypershift.openshift.io/finalizer"
+	HostedClusterAnnotation = "hypershift.openshift.io/cluster"
+	// HasBeenAvailableAnnotation is an implementation detail to check if HC has ever been available.
+	// This is useful for e.g. monitor duration from creation to available and avoid noise from condition flipping.
+	HasBeenAvailableAnnotation     = "hypershift.openshift.io/HasBeenAvailable"
 	clusterDeletionRequeueDuration = 5 * time.Second
 
 	ImageStreamCAPI                        = "cluster-capi-controllers"
@@ -628,12 +631,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, computeHostedClusterAvailability(hcluster, hcp))
 
 		// SLI: Hosted Cluster available duration.
-		// TODO (alberto): If the available condition flips from true -> false -> true, then atm this metric
-		// counts availableTime as the duration until the latest transition.
-		// We might want to prevent this from happening and only count first transition by checking the hc.Status.Version.History.
 		availableTime := clusterAvailableTime(hcluster)
 		if availableTime != nil {
 			hostedClusterAvailableDuration.WithLabelValues(hcluster.Name).Set(*availableTime)
+			if hcluster.Annotations == nil {
+				hcluster.Annotations = make(map[string]string)
+			}
+			hcluster.Annotations[HasBeenAvailableAnnotation] = "true"
 		}
 	}
 
@@ -4500,4 +4504,9 @@ func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, roles
 	}
 
 	return nil
+}
+
+func HasBeenAvailable(hc *hyperv1.HostedCluster) bool {
+	_, ok := hc.Annotations[HasBeenAvailableAnnotation]
+	return ok
 }
