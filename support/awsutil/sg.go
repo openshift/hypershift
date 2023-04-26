@@ -85,15 +85,6 @@ func DefaultWorkerSGIngressRules(vpcCIDRBlock, sgGroupID, sgUserID string) []*ec
 			},
 		},
 		{
-			IpProtocol: aws.String("50"),
-			UserIdGroupPairs: []*ec2.UserIdGroupPair{
-				{
-					GroupId: aws.String(sgGroupID),
-					UserId:  aws.String(sgUserID),
-				},
-			},
-		},
-		{
 			FromPort:   aws.Int64(9000),
 			ToPort:     aws.Int64(9999),
 			IpProtocol: aws.String("tcp"),
@@ -147,6 +138,50 @@ func DefaultWorkerSGIngressRules(vpcCIDRBlock, sgGroupID, sgUserID string) []*ec
 					UserId:  aws.String(sgUserID),
 				},
 			},
+		},
+		{
+			// This is for the private link endpoint.
+			IpProtocol: aws.String("tcp"),
+			IpRanges: []*ec2.IpRange{
+				{
+					CidrIp: aws.String(vpcCIDRBlock),
+				},
+			},
+			FromPort: aws.Int64(6443),
+			ToPort:   aws.Int64(6443),
+		},
+		{
+			// This is for the private link endpoint.
+			IpProtocol: aws.String("tcp"),
+			IpRanges: []*ec2.IpRange{
+				{
+					CidrIp: aws.String(vpcCIDRBlock),
+				},
+			},
+			FromPort: aws.Int64(443),
+			ToPort:   aws.Int64(443),
+		},
+		{
+			// This is for the private link endpoint.
+			IpProtocol: aws.String("udp"),
+			IpRanges: []*ec2.IpRange{
+				{
+					CidrIp: aws.String(vpcCIDRBlock),
+				},
+			},
+			FromPort: aws.Int64(6443),
+			ToPort:   aws.Int64(6443),
+		},
+		{
+			// This is for the private link endpoint.
+			IpProtocol: aws.String("udp"),
+			IpRanges: []*ec2.IpRange{
+				{
+					CidrIp: aws.String(vpcCIDRBlock),
+				},
+			},
+			FromPort: aws.Int64(443),
+			ToPort:   aws.Int64(443),
 		},
 	}
 }
