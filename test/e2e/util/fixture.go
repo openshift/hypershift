@@ -233,6 +233,9 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 				hostedcluster.GuestCloudResourcesDeletionDurationMetricName,
 				hostedcluster.AvailableDurationName,
 				hostedcluster.InitialRolloutDurationName,
+				hostedcluster.ProxyName,
+				hostedcluster.SilenceAlertsName,
+				hostedcluster.LimitedSupportEnabledName,
 			} {
 				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name), time.Now())
 				if err != nil {
