@@ -386,6 +386,37 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Collect limited support metric.
+	if _, ok := hcluster.Labels[hyperv1.LimitedSupportLabel]; ok {
+		limitedSupportEnabled.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(1)
+	} else {
+		limitedSupportEnabled.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(0)
+	}
+
+	// Collect silence alerts metric
+	if _, ok := hcluster.Labels[hyperv1.SilenceClusterAlertsLabel]; ok {
+		silenceAlerts.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(1)
+	} else {
+		silenceAlerts.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(0)
+	}
+
+	// Collect proxy metric.
+	var proxyHTTP, proxyHTTPS, proxyTrustedCA string
+	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil {
+		if hcluster.Spec.Configuration.Proxy.HTTPProxy != "" {
+			proxyHTTP = "1"
+		}
+		if hcluster.Spec.Configuration.Proxy.HTTPSProxy != "" {
+			proxyHTTPS = "1"
+		}
+		if hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+			proxyTrustedCA = "1"
+		}
+		proxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(1)
+	} else {
+		proxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(0)
+	}
+
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
 		// SLI: Guest cluster resources deletion duration.
