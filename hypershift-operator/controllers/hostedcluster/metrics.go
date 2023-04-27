@@ -33,6 +33,24 @@ var (
 		Help: "Time in seconds it took from initial cluster creation and rollout of initial version",
 		Name: InitialRolloutDurationName,
 	}, []string{"name"})
+
+	LimitedSupportEnabledName = "hypershift_cluster_limited_support_enabled"
+	limitedSupportEnabled     = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Help: "Indicates if limited support is enabled for each cluster",
+		Name: LimitedSupportEnabledName,
+	}, []string{"namespace", "name", "_id"})
+
+	SilenceAlertsName = "hypershift_cluster_silence_alerts"
+	silenceAlerts     = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Help: "Indicates if alerts are silenced for each cluster",
+		Name: SilenceAlertsName,
+	}, []string{"namespace", "name", "_id"})
+
+	ProxyName   = "hypershift_cluster_proxy"
+	proxyConfig = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Help: "Indicates cluster proxy state for each cluster",
+		Name: ProxyName,
+	}, []string{"namespace", "name", "proxy_http", "proxy_https", "proxy_trusted_ca"})
 )
 
 func init() {
@@ -41,6 +59,9 @@ func init() {
 		hostedClusterGuestCloudResourcesDeletionDuration,
 		hostedClusterAvailableDuration,
 		hostedClusterInitialRolloutDuration,
+		limitedSupportEnabled,
+		silenceAlerts,
+		proxyConfig,
 	)
 }
 
