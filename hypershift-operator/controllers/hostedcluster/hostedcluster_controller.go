@@ -96,8 +96,11 @@ import (
 )
 
 const (
-	finalizer                      = "hypershift.openshift.io/finalizer"
-	HostedClusterAnnotation        = "hypershift.openshift.io/cluster"
+	finalizer               = "hypershift.openshift.io/finalizer"
+	HostedClusterAnnotation = "hypershift.openshift.io/cluster"
+	// HasBeenAvailableAnnotation is an implementation detail to check if HC has ever been available.
+	// This is useful for e.g. monitor duration from creation to available and avoid noise from condition flipping.
+	HasBeenAvailableAnnotation     = "hypershift.openshift.io/HasBeenAvailable"
 	clusterDeletionRequeueDuration = 5 * time.Second
 
 	ImageStreamCAPI                        = "cluster-capi-controllers"
@@ -370,8 +373,46 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Collect limited support metric.
+	if _, ok := hcluster.Labels[hyperv1.LimitedSupportLabel]; ok {
+		limitedSupportEnabled.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(1)
+	} else {
+		limitedSupportEnabled.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(0)
+	}
+
+	// Collect silence alerts metric
+	if _, ok := hcluster.Labels[hyperv1.SilenceClusterAlertsLabel]; ok {
+		silenceAlerts.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(1)
+	} else {
+		silenceAlerts.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(0)
+	}
+
+	// Collect proxy metric.
+	var proxyHTTP, proxyHTTPS, proxyTrustedCA string
+	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil {
+		if hcluster.Spec.Configuration.Proxy.HTTPProxy != "" {
+			proxyHTTP = "1"
+		}
+		if hcluster.Spec.Configuration.Proxy.HTTPSProxy != "" {
+			proxyHTTPS = "1"
+		}
+		if hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+			proxyTrustedCA = "1"
+		}
+		proxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(1)
+	} else {
+		proxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(0)
+	}
+
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
+		// SLI: Guest cluster resources deletion duration.
+		condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+		if condition != nil && condition.Status == metav1.ConditionTrue {
+			guestClusterResourceDeletionDuration := condition.LastTransitionTime.Sub(hcluster.DeletionTimestamp.Time).Seconds()
+			hostedClusterGuestCloudResourcesDeletionDuration.WithLabelValues(hcluster.Name).Set(guestClusterResourceDeletionDuration)
+		}
+
 		// Keep trying to delete until we know it's safe to finalize.
 		completed, err := r.delete(ctx, hcluster)
 		if err != nil {
@@ -388,6 +429,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
 			}
 		}
+
+		// SLI: HostedCluster deletion duration.
+		deletionDuration := time.Since(hcluster.DeletionTimestamp.Time).Seconds()
+		hostedClusterDeletionDuration.WithLabelValues(hcluster.Name).Set(deletionDuration)
+
 		log.Info("Deleted hostedcluster", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
@@ -614,6 +660,22 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// availability in the ultimate HostedCluster Available condition)
 	{
 		meta.SetStatusCondition(&hcluster.Status.Conditions, computeHostedClusterAvailability(hcluster, hcp))
+
+		// SLI: Hosted Cluster available duration.
+		availableTime := clusterAvailableTime(hcluster)
+		if availableTime != nil {
+			hostedClusterAvailableDuration.WithLabelValues(hcluster.Name).Set(*availableTime)
+			if hcluster.Annotations == nil {
+				hcluster.Annotations = make(map[string]string)
+			}
+			hcluster.Annotations[HasBeenAvailableAnnotation] = "true"
+		}
+	}
+
+	// SLI: Hosted Cluster roll out duration.
+	versionRolloutTime := clusterVersionRolloutTime(hcluster)
+	if versionRolloutTime != nil {
+		hostedClusterInitialRolloutDuration.WithLabelValues(hcluster.Name).Set(*versionRolloutTime)
 	}
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
@@ -4473,4 +4535,9 @@ func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, roles
 	}
 
 	return nil
+}
+
+func HasBeenAvailable(hc *hyperv1.HostedCluster) bool {
+	_, ok := hc.Annotations[HasBeenAvailableAnnotation]
+	return ok
 }

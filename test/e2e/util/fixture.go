@@ -20,6 +20,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -210,6 +211,54 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 			}
 		}
 	})
+
+	t.Run("ValidateMetricsAreExposed", func(t *testing.T) {
+		// TODO (alberto) this test should pass in None.
+		// https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/artifacts/e2e-aws/run-e2e/artifacts/TestNoneCreateCluster_PreTeardownClusterDump/
+		// https://storage.googleapis.com/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/build-log.txt
+		// https://prow.ci.openshift.org/view/gs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032
+		if hc.Spec.Platform.Type == hyperv1.NonePlatform {
+			t.Skip()
+		}
+
+		g := NewWithT(t)
+
+		prometheusClient, err := NewPrometheusClient(ctx)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Polling to prevent races with prometheus scrape interval.
+		err = wait.PollImmediate(10*time.Second, 1*time.Minute, func() (bool, error) {
+			for _, metricName := range []string{
+				hostedcluster.DeletionDurationMetricName,
+				hostedcluster.GuestCloudResourcesDeletionDurationMetricName,
+				hostedcluster.AvailableDurationName,
+				hostedcluster.InitialRolloutDurationName,
+				hostedcluster.ProxyName,
+				hostedcluster.SilenceAlertsName,
+				hostedcluster.LimitedSupportEnabledName,
+			} {
+				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name), time.Now())
+				if err != nil {
+					return false, err
+				}
+
+				if len(result.Data.Result) < 1 {
+					t.Logf("Metric not found: %q", metricName)
+					return false, nil
+				}
+				for _, series := range result.Data.Result {
+					t.Logf("Found metric: %v", series.String())
+				}
+			}
+			return true, nil
+		})
+		if err != nil {
+			t.Errorf("Failed to validate that all metrics are expose")
+		} else {
+			t.Logf("Destroyed cluster. Namespace: %s, name: %s", hc.Namespace, hc.Name)
+		}
+	})
+
 }
 
 // createClusterOpts mutates the cluster creation options according to the
