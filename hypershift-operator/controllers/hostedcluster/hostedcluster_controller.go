@@ -465,14 +465,19 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set kubeadminPassword status
 	{
-		kubeadminPasswordSecret := manifests.KubeadminPasswordSecret(hcluster.Namespace, hcluster.Name)
-		err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
-		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile kubeadmin password secret: %w", err)
-			}
+		explicitOauthConfig := hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.OAuth != nil
+		if explicitOauthConfig {
+			hcluster.Status.KubeadminPassword = nil
 		} else {
-			hcluster.Status.KubeadminPassword = &corev1.LocalObjectReference{Name: kubeadminPasswordSecret.Name}
+			kubeadminPasswordSecret := manifests.KubeadminPasswordSecret(hcluster.Namespace, hcluster.Name)
+			err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					return ctrl.Result{}, fmt.Errorf("failed to reconcile kubeadmin password secret: %w", err)
+				}
+			} else {
+				hcluster.Status.KubeadminPassword = &corev1.LocalObjectReference{Name: kubeadminPasswordSecret.Name}
+			}
 		}
 	}
 
@@ -1431,6 +1436,17 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcluster kubeconfig secret: %w", err)
+		}
+	} else {
+		KubeadminPasswordSecret := manifests.KubeadminPasswordSecret(hcluster.Namespace, hcluster.Name)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(KubeadminPasswordSecret), KubeadminPasswordSecret); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster kubeadmin password secret %q: %w", client.ObjectKeyFromObject(KubeadminPasswordSecret), err)
+			}
+		} else {
+			if err := r.Client.Delete(ctx, KubeadminPasswordSecret); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete hostedcluster kubeadmin password secret %q: %w", client.ObjectKeyFromObject(KubeadminPasswordSecret), err)
+			}
 		}
 	}
 
