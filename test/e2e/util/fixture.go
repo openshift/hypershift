@@ -213,14 +213,6 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 	})
 
 	t.Run("ValidateMetricsAreExposed", func(t *testing.T) {
-		// TODO (alberto) this test should pass in None.
-		// https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/artifacts/e2e-aws/run-e2e/artifacts/TestNoneCreateCluster_PreTeardownClusterDump/
-		// https://storage.googleapis.com/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/build-log.txt
-		// https://prow.ci.openshift.org/view/gs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032
-		if hc.Spec.Platform.Type == hyperv1.NonePlatform {
-			t.Skip()
-		}
-
 		g := NewWithT(t)
 
 		prometheusClient, err := NewPrometheusClient(ctx)
