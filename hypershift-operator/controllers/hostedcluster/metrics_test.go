@@ -32,7 +32,14 @@ func TestMetrics(t *testing.T) {
 				Help: pointer.String("Time in seconds it took from initial cluster creation and rollout of initial version"),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
-					Label: []*dto.LabelPair{{Name: pointer.String("name"), Value: pointer.String("hc")}},
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
 					Gauge: &dto.Gauge{Value: pointer.Float64(3600)},
 				}},
 			}},
@@ -56,7 +63,14 @@ func TestMetrics(t *testing.T) {
 				Help: pointer.String("Time in seconds it took from initial cluster creation and rollout of initial version"),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
-					Label: []*dto.LabelPair{{Name: pointer.String("name"), Value: pointer.String("hc")}},
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
 					Gauge: &dto.Gauge{Value: pointer.Float64(3600)},
 				}},
 			}},
@@ -85,7 +99,14 @@ func TestMetrics(t *testing.T) {
 				Help: pointer.String("Time in seconds it took from initial cluster creation to HostedClusterAvailable condition becoming true"),
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
-					Label: []*dto.LabelPair{{Name: pointer.String("name"), Value: pointer.String("hc")}},
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
 					Gauge: &dto.Gauge{Value: pointer.Float64(3600)},
 				}},
 			}},
@@ -97,6 +118,7 @@ func TestMetrics(t *testing.T) {
 			cluster := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              "hc",
+					Namespace:         "any",
 					CreationTimestamp: metav1.Time{Time: time.Time{}.Add(time.Hour)},
 				},
 				Status: hyperv1.HostedClusterStatus{
@@ -123,12 +145,12 @@ func TestMetrics(t *testing.T) {
 			}
 			availableTime := clusterAvailableTime(cluster)
 			if availableTime != nil {
-				hostedClusterAvailableDuration.WithLabelValues(cluster.Name).Set(*availableTime)
+				hostedClusterAvailableDuration.WithLabelValues(cluster.Namespace, cluster.Name).Set(*availableTime)
 			}
 
 			versionRolloutTime := clusterVersionRolloutTime(cluster)
 			if versionRolloutTime != nil {
-				hostedClusterInitialRolloutDuration.WithLabelValues(cluster.Name).Set(*versionRolloutTime)
+				hostedClusterInitialRolloutDuration.WithLabelValues(cluster.Namespace, cluster.Name).Set(*versionRolloutTime)
 			}
 
 			result, err := reg.Gather()

@@ -410,7 +410,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
 		if condition != nil && condition.Status == metav1.ConditionTrue {
 			guestClusterResourceDeletionDuration := condition.LastTransitionTime.Sub(hcluster.DeletionTimestamp.Time).Seconds()
-			hostedClusterGuestCloudResourcesDeletionDuration.WithLabelValues(hcluster.Name).Set(guestClusterResourceDeletionDuration)
+			hostedClusterGuestCloudResourcesDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(guestClusterResourceDeletionDuration)
 		}
 
 		// Keep trying to delete until we know it's safe to finalize.
@@ -432,7 +432,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 		// SLI: HostedCluster deletion duration.
 		deletionDuration := time.Since(hcluster.DeletionTimestamp.Time).Seconds()
-		hostedClusterDeletionDuration.WithLabelValues(hcluster.Name).Set(deletionDuration)
+		hostedClusterDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(deletionDuration)
 
 		log.Info("Deleted hostedcluster", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
@@ -664,7 +664,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		// SLI: Hosted Cluster available duration.
 		availableTime := clusterAvailableTime(hcluster)
 		if availableTime != nil {
-			hostedClusterAvailableDuration.WithLabelValues(hcluster.Name).Set(*availableTime)
+			hostedClusterAvailableDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(*availableTime)
 			if hcluster.Annotations == nil {
 				hcluster.Annotations = make(map[string]string)
 			}
@@ -675,7 +675,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// SLI: Hosted Cluster roll out duration.
 	versionRolloutTime := clusterVersionRolloutTime(hcluster)
 	if versionRolloutTime != nil {
-		hostedClusterInitialRolloutDuration.WithLabelValues(hcluster.Name).Set(*versionRolloutTime)
+		hostedClusterInitialRolloutDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(*versionRolloutTime)
 	}
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
