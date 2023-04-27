@@ -5,7 +5,6 @@ package e2e
 
 import (
 	"context"
-	"os"
 	"strings"
 	"testing"
 
@@ -15,9 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/install"
-	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
-	"github.com/openshift/hypershift/support/metrics"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -121,11 +118,6 @@ func TestOperatorUpgrade(t *testing.T) {
 
 	opts.ApplyDefaults()
 
-	if os.Getenv("CI") == "true" {
-		opts.PlatformMonitoring = metrics.PlatformMonitoringAll
-		opts.EnableCIDebugOutput = true
-	}
-
 	// Deploy latest HyperShift operator on guest cluster
 	t.Log("Deploying Latest Hypershift Version: " + version.HyperShiftImage)
 	objects, err := install.HyperShiftOperatorManifests(opts)
@@ -137,8 +129,9 @@ func TestOperatorUpgrade(t *testing.T) {
 	err = install.WaitUntilAvailable(ctx, opts)
 	g.Expect(err).NotTo(HaveOccurred(), "failed waiting hypershift installation:", err)
 
-	client, err = util.GetClient()
+	client, err = e2eutil.GetClient()
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
+
 	guestClient = e2eutil.WaitForGuestClient(t, ctx, client, hostedCluster)
 
 	// Create another guest cluster on the guest cluster

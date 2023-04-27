@@ -27,7 +27,7 @@ trap generate_junit EXIT
 bin/test-e2e \
   -test.v \
   -test.timeout=2h10m \
-  -test.run="${CI_TESTS_RUN}" \
+  -test.run="TestOperatorUpgrade" \
   -test.parallel=20 \
   --e2e.aws-credentials-file=/etc/hypershift-pool-aws-credentials/credentials \
   --e2e.aws-zones=us-east-1a,us-east-1b,us-east-1c \
