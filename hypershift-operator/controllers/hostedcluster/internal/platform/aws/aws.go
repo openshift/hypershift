@@ -9,8 +9,10 @@ import (
 
 	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -321,6 +323,8 @@ func (AWS) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hype
 				continue
 			}
 			logger.Info("skipping cleanup of awsmachine because of invalid AWS identity provider", "machine", client.ObjectKeyFromObject(awsMachine))
+			orphanMachineReporter := metrics.NewObjectToMarkAsDeleted(awsMachine.Kind, awsMachine.Name, hc.Name, hc.Namespace)
+			orphanMachineReporter.RegisterDeletionTry(common.HostedClusterSkippedObjectDeletion)
 		}
 	}
 	return utilerrors.NewAggregate(errs)

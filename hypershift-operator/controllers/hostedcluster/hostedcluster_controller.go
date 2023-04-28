@@ -23,6 +23,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,6 +46,7 @@ import (
 	"github.com/openshift/hypershift/api/util/configrefs"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	ignitionserverreconciliation "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
@@ -3113,6 +3115,8 @@ func (r *HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.
 // It returns true if len(awsEndpointServiceList.Items) != 0.
 func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, namespace string) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
+	awsepList := make(map[string]*metrics.ObjectDeletionStatus)
+	var awsep *metrics.ObjectDeletionStatus
 	var awsEndpointServiceList hyperv1.AWSEndpointServiceList
 	if err := c.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: namespace}); err != nil && !apierrors.IsNotFound(err) {
 		return false, fmt.Errorf("error listing awsendpointservices in namespace %s: %w", namespace, err)
@@ -3122,6 +3126,23 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 			if platformaws.ValidCredentials(hc) {
 				continue
 			}
+
+			_, exists := awsepList[ep.Name]
+			if !exists {
+				awsepList[ep.Name] = metrics.NewObjectToMarkAsDeleted(ep.Kind, ep.Name, hc.Name, hc.Namespace)
+			}
+			awsep = awsepList[ep.Name]
+
+			// Inject deletion in Prom
+			fmt.Printf("DELETION TRY!: %v", awsep)
+			awsep.RegisterDeletionTry(common.HostedClusterSkippedObjectDeletion)
+
+			// Debug
+			fmt.Printf("============> Struct Content: \n\tName: %s\n\tID: %s\n\tHC Name: %s\n\tHC Namespace: %s\n\tDeletionRetries: %d\n\tDeleted: %s",
+				awsep.ResourceName, awsep.ResourceID, awsep.HostedClusterName, awsep.HostedClusterNS, awsep.DeletionRetries, strconv.FormatBool(awsep.Deleted))
+
+			fmt.Printf("============> Live Content: \n\tName: %s\n\tID: %s\n\tHC Name: %s\n\tHC Namespace: %s\n\tDeletionRetries: %d\n\tDeleted: %s",
+				ep.Kind, ep.Name, hc.Name, hc.Namespace, awsep.DeletionRetries, strconv.FormatBool(awsep.Deleted))
 
 			// We remove the CPO finalizer if there's no valid credentials so deletion can proceed.
 			cpoFinalizer := "hypershift.openshift.io/control-plane-operator-finalizer"
@@ -3137,6 +3158,17 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 
 		if err := c.Delete(ctx, &ep); err != nil && !apierrors.IsNotFound(err) {
 			return false, fmt.Errorf("error deleting awsendpointservices %s in namespace %s: %w", ep.Name, namespace, err)
+		}
+
+		if !awsep.Deleted {
+			awsep.Deleted = true
+			common.HostedClusterSkippedObjectDeletion.WithLabelValues(
+				awsep.ResourceName,
+				awsep.ResourceID,
+				awsep.HostedClusterName,
+				awsep.HostedClusterName,
+				strconv.FormatBool(awsep.Deleted),
+			).Set(float64(*awsep.DeletionRetries))
 		}
 	}
 
@@ -3228,12 +3260,12 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	}
 
 	// Cleanup Platform specifics.
-
 	if err = p.DeleteCredentials(ctx, r.Client, hc,
 		controlPlaneNamespace); err != nil {
 		return false, err
 	}
 
+	fmt.Println("=======> DEBUG: before delete step")
 	exists, err := deleteAWSEndpointServices(ctx, r.Client, hc, controlPlaneNamespace)
 	if err != nil {
 		return false, err
@@ -3242,6 +3274,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		log.Info("Waiting for awsendpointservice deletion", "controlPlaneNamespace", controlPlaneNamespace)
 		return false, nil
 	}
+	fmt.Println("=======> DEBUG: after delete step")
 
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		err = deleteControlPlaneOperatorRBAC(ctx, r.Client, "openshift-ingress", controlPlaneNamespace)

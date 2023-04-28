@@ -4086,6 +4086,9 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 	if _, err = r.ec2Client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
 		GroupId: sg.GroupId,
 	}); err != nil {
+		sgReporter := metrics.NewObjectToMarkAsDeleted(*sg.GroupName, *sg.GroupId, hcp.Name, hcp.Namespace)
+		sgReporter.RegisterDeletionTry(common.HostedClusterSkippedObjectDeletion)
+
 		return fmt.Errorf("failed to delete security group %s: %w", awssdk.StringValue(sg.GroupId), err)
 	}
 	return nil
