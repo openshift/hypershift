@@ -14,25 +14,25 @@ var (
 	hostedClusterDeletionDuration = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Help: "Time in seconds it took from HostedCluster having a deletion timestamp to all hypershift finalizers being removed",
 		Name: DeletionDurationMetricName,
-	}, []string{"name"})
+	}, []string{"namespace", "name"})
 
 	GuestCloudResourcesDeletionDurationMetricName    = "hypershift_cluster_guest_cloud_resources_deletion_duration_seconds"
 	hostedClusterGuestCloudResourcesDeletionDuration = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Help: "Time in seconds it took from HostedCluster having a deletion timestamp to the CloudResourcesDestroyed being true",
 		Name: GuestCloudResourcesDeletionDurationMetricName,
-	}, []string{"name"})
+	}, []string{"namespace", "name"})
 
 	AvailableDurationName          = "hypershift_cluster_available_duration_seconds"
 	hostedClusterAvailableDuration = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Help: "Time in seconds it took from initial cluster creation to HostedClusterAvailable condition becoming true",
 		Name: AvailableDurationName,
-	}, []string{"name"})
+	}, []string{"namespace", "name"})
 
 	InitialRolloutDurationName          = "hypershift_cluster_initial_rollout_duration_seconds"
 	hostedClusterInitialRolloutDuration = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Help: "Time in seconds it took from initial cluster creation and rollout of initial version",
 		Name: InitialRolloutDurationName,
-	}, []string{"name"})
+	}, []string{"namespace", "name"})
 
 	LimitedSupportEnabledName = "hypershift_cluster_limited_support_enabled"
 	limitedSupportEnabled     = prometheus.NewGaugeVec(prometheus.GaugeOpts{
