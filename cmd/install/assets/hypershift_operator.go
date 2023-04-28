@@ -76,6 +76,8 @@ const (
 	awsCredsSecretName            = "hypershift-operator-aws-credentials"
 	oidcProviderS3CredsSecretName = "hypershift-operator-oidc-provider-s3-credentials"
 	externaDNSCredsSecretName     = "external-dns-credentials"
+
+	HypershiftOperatorName = "operator"
 )
 
 type HyperShiftOperatorCredentialsSecret struct {
@@ -454,22 +456,22 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			APIVersion: appsv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "operator",
+			Name:      HypershiftOperatorName,
 			Namespace: o.Namespace.Name,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &o.Replicas,
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"name": "operator",
+					"name": HypershiftOperatorName,
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"name":                    "operator",
-						hyperv1.OperatorComponent: "operator",
-						"app":                     "operator",
+						"name":                    HypershiftOperatorName,
+						hyperv1.OperatorComponent: HypershiftOperatorName,
+						"app":                     HypershiftOperatorName,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -482,7 +484,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 											{
 												Key:      "name",
 												Operator: metav1.LabelSelectorOpIn,
-												Values:   []string{"operator"},
+												Values:   []string{HypershiftOperatorName},
 											},
 										},
 									},
@@ -495,7 +497,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					ServiceAccountName: o.ServiceAccount.Name,
 					Containers: []corev1.Container{
 						{
-							Name: "operator",
+							Name: HypershiftOperatorName,
 							// needed since hypershift operator runs with anyuuid scc
 							SecurityContext: &corev1.SecurityContext{
 								AllowPrivilegeEscalation: &allowPrivilegeEscalation,
@@ -595,9 +597,9 @@ func (o HyperShiftOperatorService) Build() *corev1.Service {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: o.Namespace.Name,
-			Name:      "operator",
+			Name:      HypershiftOperatorName,
 			Labels: map[string]string{
-				"name": "operator",
+				"name": HypershiftOperatorName,
 			},
 			Annotations: map[string]string{
 				"service.beta.openshift.io/serving-cert-secret-name": "manager-serving-cert",
@@ -606,7 +608,7 @@ func (o HyperShiftOperatorService) Build() *corev1.Service {
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,
 			Selector: map[string]string{
-				"name": "operator",
+				"name": HypershiftOperatorName,
 			},
 			Ports: []corev1.ServicePort{
 				{
@@ -718,7 +720,7 @@ func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: o.Namespace.Name,
-			Name:      "operator",
+			Name:      HypershiftOperatorName,
 		},
 	}
 	return sa
@@ -1140,13 +1142,13 @@ func (o HyperShiftServiceMonitor) Build() *prometheusoperatorv1.ServiceMonitor {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: o.Namespace.Name,
-			Name:      "operator",
+			Name:      HypershiftOperatorName,
 		},
 		Spec: prometheusoperatorv1.ServiceMonitorSpec{
 			JobLabel: "component",
 			Selector: metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"name": "operator",
+					"name": HypershiftOperatorName,
 				},
 			},
 			Endpoints: []prometheusoperatorv1.Endpoint{

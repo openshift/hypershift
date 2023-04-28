@@ -29,6 +29,13 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+var (
+	// Metrics
+	// TODO (jparrill): We need to separate the metrics.go from the main pkg in the hypershift-operator.
+	//     Delete these references when it's done and import it from there
+	HypershiftOperatorInfoName = "hypershift_operator_info"
+)
+
 // CreateCluster creates a new namespace and a HostedCluster in that namespace
 // using the provided options.
 //
@@ -222,6 +229,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 		}
 
 		g := NewWithT(t)
+		var query string
 
 		prometheusClient, err := NewPrometheusClient(ctx)
 		g.Expect(err).ToNot(HaveOccurred())
@@ -236,8 +244,16 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 				hostedcluster.ProxyName,
 				hostedcluster.SilenceAlertsName,
 				hostedcluster.LimitedSupportEnabledName,
+				HypershiftOperatorInfoName,
 			} {
-				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name), time.Now())
+				// Query fo HC specific metrics by hc.name.
+				query = fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name)
+				if metricName == HypershiftOperatorInfoName {
+					// Query HO info metric
+					query = HypershiftOperatorInfoName
+				}
+
+				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, query, time.Now())
 				if err != nil {
 					return false, err
 				}
