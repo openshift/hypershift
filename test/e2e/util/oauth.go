@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"testing"
@@ -101,11 +102,18 @@ func WaitForOAuthToken(t *testing.T, ctx context.Context, oauthRoute *routev1.Ro
 	request, err := http.NewRequest(http.MethodGet, tokenReqUrl, nil)
 	g.Expect(err).ToNot(HaveOccurred())
 
+	fmt.Println("tokenReqUrl", tokenReqUrl)
 	request.Header.Set("Authorization", getBasicHeader(username, password))
 	request.Header.Set("X-CSRF-Token", "1")
 
-	transport, err := restclient.TransportFor(restclient.AnonymousClientConfig(restConfig))
+	restClientConfig := restclient.AnonymousClientConfig(restConfig)
+	fmt.Println("*************************")
+	fmt.Println("restClientConfig", restClientConfig)
+
+	transport, err := restclient.TransportFor(restClientConfig)
 	g.Expect(err).ToNot(HaveOccurred(), "error getting transport")
+	fmt.Println("transport", transport)
+	fmt.Println("*************************")
 
 	httpClient := &http.Client{Transport: transport}
 	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
@@ -115,13 +123,21 @@ func WaitForOAuthToken(t *testing.T, ctx context.Context, oauthRoute *routev1.Ro
 
 	var access_token string
 	err = wait.PollImmediateWithContext(ctx, time.Second, time.Minute*2, func(ctx context.Context) (done bool, err error) {
+		fmt.Println("*************************")
+		fmt.Println("req", request)
 		resp, err := httpClient.Do(request)
 		if err != nil {
 			t.Logf("Waiting for OAuth token request to succeed")
 			return false, nil
 		}
 		defer resp.Body.Close()
-
+		var msg []byte
+		msg, err = io.ReadAll(resp.Body)
+		if err != nil {
+			fmt.Println("error reading body", err)
+		}
+		fmt.Println("*************************")
+		fmt.Println("resp", resp, "body", string(msg))
 		if resp.StatusCode != http.StatusFound {
 			t.Logf("Waiting for OAuth token request status code %v, got %v", http.StatusFound, resp.StatusCode)
 			return false, nil

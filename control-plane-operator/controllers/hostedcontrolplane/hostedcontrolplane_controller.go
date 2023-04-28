@@ -1075,12 +1075,6 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile ingress operator: %w", err)
 	}
 
-	// Reconcile hosted cluster config operator
-	r.Log.Info("Reconciling Hosted Cluster Config Operator")
-	if err = r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, releaseImageProvider, infraStatus, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile hosted cluster config operator: %w", err)
-	}
-
 	// Reconcile cloud controller manager
 	r.Log.Info("Reconciling Cloud Controller Manager")
 	if err := r.reconcileCloudControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
@@ -1138,6 +1132,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		if err := r.reconcileCSISnapshotControllerOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile CSI snapshot controller operator: %w", err)
 		}
+	}
+
+	// Reconcile hosted cluster config operator
+	r.Log.Info("Reconciling Hosted Cluster Config Operator")
+	if err = r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, releaseImageProvider, infraStatus, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile hosted cluster config operator: %w", err)
 	}
 
 	return nil
