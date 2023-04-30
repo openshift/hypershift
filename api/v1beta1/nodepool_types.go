@@ -158,6 +158,9 @@ type NodePoolStatus struct {
 	// +kubebuilder:validation:Optional
 	Version string `json:"version,omitempty"`
 
+	// Platform hols the specific statuses
+	Platform *NodePoolPlatformStatus `json:"platform,omitempty"`
+
 	// Conditions represents the latest available observations of the node pool's
 	// current state.
 	// +optional
@@ -578,7 +581,7 @@ type KubevirtRootVolume struct {
 
 	// CacheStrategy defines the boot image caching strategy. Default - no caching
 	// +optional
-	CacheStrategy *KubevirtCachingStrategy `json:"CacheStrategy,omitempty"`
+	CacheStrategy *KubevirtCachingStrategy `json:"cacheStrategy,omitempty"`
 }
 
 // KubevirtVolumeType is a specific supported KubeVirt volumes
@@ -804,6 +807,24 @@ type NodePoolCondition struct {
 
 	// +kubebuilder:validation:Minimum=0
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+}
+
+// NodePoolPlatformStatus contains specific platform statuses
+type NodePoolPlatformStatus struct {
+	// KubeVirt contains the KubeVirt platform statuses
+	// +optional
+	KubeVirt *KubeVirtNodePoolStatus `json:"kubeVirt,omitempty"`
+}
+
+// KubeVirtNodePoolStatus contains the KubeVirt platform statuses
+type KubeVirtNodePoolStatus struct {
+	// CacheName holds the name of the cache DataVolume, if exists
+	// +optional
+	CacheName string `json:"cacheName,omitempty"`
+
+	// RemoteNamespace holds the namespace of the remote infra cluster, if defined
+	// +optional
+	RemoteNamespace string `json:"remoteNamespace,omitempty"`
 }
 
 // Taint is as v1 Core but without TimeAdded.

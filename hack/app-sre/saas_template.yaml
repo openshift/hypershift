@@ -43177,6 +43177,22 @@ objects:
                     - type
                     type: object
                   type: array
+                platform:
+                  description: Platform hols the specific statuses
+                  properties:
+                    kubeVirt:
+                      description: KubeVirt contains the KubeVirt platform statuses
+                      properties:
+                        cacheName:
+                          description: CacheName holds the name of the cache DataVolume,
+                            if exists
+                          type: string
+                        remoteNamespace:
+                          description: RemoteNamespace holds the namespace of the
+                            remote infra cluster, if defined
+                          type: string
+                      type: object
+                  type: object
                 replicas:
                   description: Replicas is the latest observed number of nodes in
                     the pool.
@@ -43714,7 +43730,7 @@ objects:
                           description: RootVolume represents values associated with
                             the VM volume that will host rhcos
                           properties:
-                            CacheStrategy:
+                            cacheStrategy:
                               description: CacheStrategy defines the boot image caching
                                 strategy. Default - no caching
                               properties:
@@ -44030,6 +44046,22 @@ objects:
                     - type
                     type: object
                   type: array
+                platform:
+                  description: Platform hols the specific statuses
+                  properties:
+                    kubeVirt:
+                      description: KubeVirt contains the KubeVirt platform statuses
+                      properties:
+                        cacheName:
+                          description: CacheName holds the name of the cache DataVolume,
+                            if exists
+                          type: string
+                        remoteNamespace:
+                          description: RemoteNamespace holds the namespace of the
+                            remote infra cluster, if defined
+                          type: string
+                      type: object
+                  type: object
                 replicas:
                   description: Replicas is the latest observed number of nodes in
                     the pool.

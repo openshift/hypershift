@@ -21,7 +21,7 @@ const (
 	bootImageDVAnnotationHash = "hypershift.openshift.io/kubevirt-boot-image-hash"
 	bootImageDVLabelRoleName  = "hypershift.openshift.io/kubevirt-boot-image-role"
 	bootImageDVLabelRoleValue = "kv-boot-image-cache"
-	bootImageDVLabelInfraId   = "hypershift.openshift.io/infra-id"
+	bootImageDVLabelUID       = "hypershift.openshift.io/nodepool-uid"
 	bootImageNamePrefix       = bootImageDVLabelRoleValue + "-"
 
 	// A CDI annotation for DataVolume, to not wait to first customer, but start importing immediately.
@@ -36,8 +36,12 @@ const (
 // reference to be used by the node templates.
 type BootImage interface {
 	// CacheImage creates a PVC to cache the node image.
-	CacheImage(ctx context.Context, cl client.Client, nodePool *hyperv1.NodePool, infraId string) error
+	CacheImage(context.Context, client.Client, *hyperv1.NodePool, string) error
 	getDVSourceForVMTemplate() *v1beta1.DataVolumeSource
+}
+
+type BootImageNamer interface {
+	GetCacheName() string
 }
 
 // containerImage is the implementation of the BootImage interface for container images
@@ -104,7 +108,7 @@ func newCachedQCOWBootImage(name, hash, namespace string) *cachedQCOWImage {
 	}
 }
 
-func (qi *cachedQCOWImage) CacheImage(ctx context.Context, cl client.Client, nodePool *hyperv1.NodePool, infraId string) error {
+func (qi *cachedQCOWImage) CacheImage(ctx context.Context, cl client.Client, nodePool *hyperv1.NodePool, uid string) error {
 	logger := ctrl.LoggerFrom(ctx)
 
 	if nodePool.Spec.Platform.Kubevirt == nil {
@@ -112,7 +116,27 @@ func (qi *cachedQCOWImage) CacheImage(ctx context.Context, cl client.Client, nod
 		return fmt.Errorf("nodePool does not contain KubeVirt configurations")
 	}
 
-	dvList, err := getCacheDVs(ctx, cl, infraId, qi.namespace)
+	if nodePool.Status.Platform != nil &&
+		nodePool.Status.Platform.KubeVirt != nil &&
+		len(nodePool.Status.Platform.KubeVirt.CacheName) > 0 {
+		var dv v1beta1.DataVolume
+		dvName := nodePool.Status.Platform.KubeVirt.CacheName
+
+		err := cl.Get(ctx, client.ObjectKey{Name: dvName, Namespace: qi.namespace}, &dv)
+		if err == nil {
+			if annotations := dv.GetAnnotations(); annotations != nil && annotations[bootImageDVAnnotationHash] == qi.hash {
+				qi.dvName = dvName
+				return nil
+			}
+		} else {
+			if !errors.IsNotFound(err) {
+				return fmt.Errorf("can't read DataVolume %s/%s: %w", qi.namespace, dvName, err)
+			}
+			// cache DV not found - should keep searching, or, if missing, create it
+		}
+	}
+
+	dvList, err := getCacheDVs(ctx, cl, uid, qi.namespace)
 	if err != nil {
 		return err
 	}
@@ -130,7 +154,7 @@ func (qi *cachedQCOWImage) CacheImage(ctx context.Context, cl client.Client, nod
 	// if no DV with the required hash was found
 	if len(dvName) == 0 {
 		logger.Info("couldn't find boot image cache DataVolume; creating it...")
-		dv, err := qi.createDVForCache(ctx, cl, nodePool, infraId)
+		dv, err := qi.createDVForCache(ctx, cl, nodePool, uid)
 		if err != nil {
 			return err
 		}
@@ -159,8 +183,8 @@ func (qi *cachedQCOWImage) cleanOldCaches(ctx context.Context, cl client.Client,
 	}
 }
 
-func (qi *cachedQCOWImage) createDVForCache(ctx context.Context, cl client.Client, nodePool *hyperv1.NodePool, infraId string) (*v1beta1.DataVolume, error) {
-	dv := qi.buildDVForCache(nodePool, infraId)
+func (qi *cachedQCOWImage) createDVForCache(ctx context.Context, cl client.Client, nodePool *hyperv1.NodePool, uid string) (*v1beta1.DataVolume, error) {
+	dv := qi.buildDVForCache(nodePool, uid)
 
 	err := cl.Create(ctx, dv)
 	if err != nil && !errors.IsAlreadyExists(err) {
@@ -179,14 +203,18 @@ func (qi *cachedQCOWImage) getDVSourceForVMTemplate() *v1beta1.DataVolumeSource 
 	}
 }
 
-func (qi *cachedQCOWImage) buildDVForCache(nodePool *hyperv1.NodePool, infraId string) *v1beta1.DataVolume {
+func (qi *cachedQCOWImage) GetCacheName() string {
+	return qi.dvName
+}
+
+func (qi *cachedQCOWImage) buildDVForCache(nodePool *hyperv1.NodePool, uid string) *v1beta1.DataVolume {
 	dv := &v1beta1.DataVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: bootImageNamePrefix,
 			Namespace:    qi.namespace,
 			Labels: map[string]string{
 				bootImageDVLabelRoleName: bootImageDVLabelRoleValue,
-				bootImageDVLabelInfraId:  infraId,
+				bootImageDVLabelUID:      uid,
 			},
 			Annotations: map[string]string{
 				bootImageDVAnnotationHash:          qi.hash,
@@ -229,21 +257,45 @@ func (qi *cachedQCOWImage) buildDVForCache(nodePool *hyperv1.NodePool, infraId s
 	return dv
 }
 
-func getCacheDVSelector(infraId string) client.MatchingLabels {
+func getCacheDVSelector(uid string) client.MatchingLabels {
 	return map[string]string{
 		bootImageDVLabelRoleName: bootImageDVLabelRoleValue,
-		bootImageDVLabelInfraId:  infraId,
+		bootImageDVLabelUID:      uid,
 	}
 }
 
-func getCacheDVs(ctx context.Context, cl client.Client, infraId string, namespace string) ([]v1beta1.DataVolume, error) {
+func getCacheDVs(ctx context.Context, cl client.Client, uid string, namespace string) ([]v1beta1.DataVolume, error) {
 	dvs := &v1beta1.DataVolumeList{}
 
-	err := cl.List(ctx, dvs, client.InNamespace(namespace), getCacheDVSelector(infraId))
+	err := cl.List(ctx, dvs, client.InNamespace(namespace), getCacheDVSelector(uid))
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to read DataVolumes; %w", err)
 	}
 
 	return dvs.Items, nil
+}
+
+// DeleteCache deletes the cache DV
+//
+// This function is not part of the interface, because it called from the nodePool reconciler Delete() method, that is
+// called before getting the cacheImage.
+func DeleteCache(ctx context.Context, cl client.Client, name, namespace string) error {
+	dv := v1beta1.DataVolume{}
+	err := cl.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, &dv)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil // already deleted
+		}
+
+		return fmt.Errorf("failed to get DataVolume %s/%s: %w", namespace, name, err)
+	}
+
+	err = cl.Delete(ctx, &dv)
+	if err != nil {
+		return fmt.Errorf("failed to delete DataVolume %s/%s: %w", namespace, name, err)
+	}
+
+	return nil
 }

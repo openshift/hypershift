@@ -38,6 +38,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/metrics"
@@ -271,6 +272,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		MetricsSet:                 metricsSet,
 		OperatorNamespace:          opts.Namespace,
 		SREConfigHash:              sreConfigHash,
+		KubevirtInfraClients:       kvinfra.NewKubevirtInfraClientMap(),
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
@@ -319,6 +321,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		CreateOrUpdateProvider:  createOrUpdate,
 		HypershiftOperatorImage: operatorImage,
 		ImageMetadataProvider:   &hyperutil.RegistryClientImageMetadataProvider{},
+		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}

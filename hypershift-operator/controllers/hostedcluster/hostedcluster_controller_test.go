@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
@@ -898,10 +899,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		now:                   metav1.Now,
 	}
 
-	r.kubevirtInfraClients.LoadOrStore("infra-id", &kubevirtInfraClient{
-		namespace: "kubevirt-kubevirt",
-		Client:    &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
-	})
+	r.KubevirtInfraClients = newKVInfraMapMock(objects)
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
@@ -2271,4 +2269,29 @@ func TestHasBeenAvailable(t *testing.T) {
 			g.Expect(HasBeenAvailable(tc.hc)).To(Equal(tc.expected))
 		})
 	}
+}
+
+type kubevirtInfraClientMapMock struct {
+	cluster *kvinfra.KubevirtInfraClient
+}
+
+func newKVInfraMapMock(objects []crclient.Object) kvinfra.KubevirtInfraClientMap {
+	return &kubevirtInfraClientMapMock{
+		cluster: &kvinfra.KubevirtInfraClient{
+			Client:    &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
+			Namespace: "kubevirt-kubevirt",
+		},
+	}
+}
+
+func (k *kubevirtInfraClientMapMock) DiscoverKubevirtClusterClient(_ context.Context, _ crclient.Client, _ string, _ *hyperv1.HostedCluster, _ string) (*kvinfra.KubevirtInfraClient, error) {
+	return k.cluster, nil
+}
+
+func (k *kubevirtInfraClientMapMock) GetClient(_ string) *kvinfra.KubevirtInfraClient {
+	return k.cluster
+}
+
+func (*kubevirtInfraClientMapMock) Delete(_ string) {
+	// interface's empty implementation
 }

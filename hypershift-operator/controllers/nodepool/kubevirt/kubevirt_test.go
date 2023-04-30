@@ -143,7 +143,7 @@ func TestCacheImage(t *testing.T) {
 						},
 						Labels: map[string]string{
 							bootImageDVLabelRoleName: bootImageDVLabelRoleValue,
-							bootImageDVLabelInfraId:  infraId,
+							bootImageDVLabelUID:      infraId,
 						},
 					},
 				},
@@ -163,11 +163,11 @@ func TestCacheImage(t *testing.T) {
 						Namespace:    hostedClusterNamespace,
 						Annotations: map[string]string{
 							bootImageDVAnnotationHash: "otherImageHash",
-							bootImageDVLabelInfraId:   infraId,
+							bootImageDVLabelUID:       infraId,
 						},
 						Labels: map[string]string{
 							bootImageDVLabelRoleName: bootImageDVLabelRoleValue,
-							bootImageDVLabelInfraId:  infraId,
+							bootImageDVLabelUID:      infraId,
 						},
 					},
 				},
@@ -187,7 +187,7 @@ func TestCacheImage(t *testing.T) {
 						Namespace:    hostedClusterNamespace,
 						Annotations: map[string]string{
 							bootImageDVAnnotationHash: imageHash,
-							bootImageDVLabelInfraId:   "not-the-same-cluster",
+							bootImageDVLabelUID:       "not-the-same-cluster",
 						},
 						Labels: map[string]string{
 							bootImageDVLabelRoleName: bootImageDVLabelRoleValue,

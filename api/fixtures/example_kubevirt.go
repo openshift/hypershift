@@ -20,7 +20,6 @@ type ExampleKubevirtOptions struct {
 	BaseDomainPassthrough     bool
 	InfraKubeConfig           []byte
 	InfraNamespace            string
-	CacheBootImage            bool
 	CacheStrategyType         string
 }
 
