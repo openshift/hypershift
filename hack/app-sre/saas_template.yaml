@@ -42823,7 +42823,7 @@ objects:
                               anyOf:
                               - type: integer
                               - type: string
-                              default: 4Gi
+                              default: 8Gi
                               description: Memory represents how much guest memory
                                 the VM should have
                               pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
@@ -42865,7 +42865,7 @@ objects:
                                   anyOf:
                                   - type: integer
                                   - type: string
-                                  default: 16Gi
+                                  default: 32Gi
                                   description: Size is the size of the persistent
                                     storage volume
                                   pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
@@ -43664,7 +43664,7 @@ objects:
                               anyOf:
                               - type: integer
                               - type: string
-                              default: 4Gi
+                              default: 8Gi
                               description: Memory represents how much guest memory
                                 the VM should have
                               pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
@@ -43706,7 +43706,7 @@ objects:
                                   anyOf:
                                   - type: integer
                                   - type: string
-                                  default: 16Gi
+                                  default: 32Gi
                                   description: Size is the size of the persistent
                                     storage volume
                                   pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
