@@ -159,7 +159,8 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 		args.Set("profiling", "false")
 	}
 	args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
-	args.Set("enable-admission-plugins", admissionPlugins()...)
+	args.Set("disable-admission-plugins", disabledAdmissionPlugins()...)
+	args.Set("enable-admission-plugins", enabledAdmissionPlugins()...)
 	if version.Minor == 10 {
 		// This is explicitly disabled in OCP 4.10
 		// This is enabled by default in 4.11 but currently disabled by OCP. It is planned to get re-enabled but currently
@@ -246,7 +247,13 @@ func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork []string) runti
 	return cfg
 }
 
-func admissionPlugins() []string {
+func disabledAdmissionPlugins() []string {
+	return []string{
+		"PersistentVolumeLabel",
+	}
+}
+
+func enabledAdmissionPlugins() []string {
 	return []string{
 		"CertificateApproval",
 		"CertificateSigning",
@@ -260,7 +267,6 @@ func admissionPlugins() []string {
 		"NodeRestriction",
 		"OwnerReferencesPermissionEnforcement",
 		"PersistentVolumeClaimResize",
-		"PersistentVolumeLabel",
 		"PodNodeSelector",
 		"PodTolerationRestriction",
 		"Priority",
