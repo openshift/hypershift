@@ -3571,27 +3571,27 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 		if _, err := createOrUpdate(ctx, r, sa, func() error {
 			return aws.ReconcileCCMServiceAccount(sa, ownerRef)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile Kubevirt cloud provider service account: %w", err)
+			return fmt.Errorf("failed to reconcile %s cloud provider service account: %w", hcp.Spec.Platform.Type, err)
 		}
 		deployment := aws.CCMDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, deployment, func() error {
 			return aws.ReconcileDeployment(deployment, hcp, sa.Name, releaseImageProvider)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile ccm deployment: %w", err)
+			return fmt.Errorf("failed to reconcile %s cloud controller manager deployment: %w", hcp.Spec.Platform.Type, err)
 		}
 	case hyperv1.PowerVSPlatform:
 		ccmConfig := manifests.PowerVSCCMConfigMap(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, ccmConfig, func() error {
 			return powervs.ReconcileCCMConfigMap(ccmConfig, hcp)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile cloud controller manager config: %w", err)
+			return fmt.Errorf("failed to reconcile %s cloud controller manager config: %w", hcp.Spec.Platform.Type, err)
 		}
 
 		deployment := manifests.PowerVSCCMDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, deployment, func() error {
 			return powervs.ReconcileCCMDeployment(deployment, hcp, ccmConfig, releaseImageProvider, r.SetDefaultSecurityContext)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile cloud controller manager deployment: %w", err)
+			return fmt.Errorf("failed to reconcile %s cloud controller manager deployment: %w", hcp.Spec.Platform.Type, err)
 		}
 	case hyperv1.KubevirtPlatform:
 		// Create the cloud-config file used by Kubevirt CCM
@@ -3604,7 +3604,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 			return kubevirt.ReconcileCloudConfig(ccmConfig, hcp)
 
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile Kubevirt cloud config: %w", err)
+			return fmt.Errorf("failed to reconcile %s cloud config: %w", hcp.Spec.Platform.Type, err)
 		}
 
 		// Create the ServiceAccount used by Kubevirt CCM to access
@@ -3614,19 +3614,19 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 		if _, err := createOrUpdate(ctx, r, sa, func() error {
 			return kubevirt.ReconcileCCMServiceAccount(sa, ownerRef)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile Kubevirt cloud provider service account: %w", err)
+			return fmt.Errorf("failed to reconcile %s cloud provider service account: %w", hcp.Spec.Platform.Type, err)
 		}
 		role := kubevirt.CCMRole(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, role, func() error {
 			return kubevirt.ReconcileCCMRole(role, ownerRef)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile Kubevirt cloud provider role: %w", err)
+			return fmt.Errorf("failed to reconcile %s cloud provider role: %w", hcp.Spec.Platform.Type, err)
 		}
 		roleBinding := kubevirt.CCMRoleBinding(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, roleBinding, func() error {
 			return kubevirt.ReconcileCCMRoleBinding(roleBinding, ownerRef, sa, role)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile Kubevirt cloud provider rolebinding: %w", err)
+			return fmt.Errorf("failed to reconcile %s cloud provider rolebinding: %w", hcp.Spec.Platform.Type, err)
 		}
 
 		// Deploy Kubevirt CCM
@@ -3634,7 +3634,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 		if _, err := createOrUpdate(ctx, r, deployment, func() error {
 			return kubevirt.ReconcileDeployment(deployment, hcp, sa.Name, releaseImageProvider)
 		}); err != nil {
-			return fmt.Errorf("failed to reconcile ccm deployment: %w", err)
+			return fmt.Errorf("failed to reconcile %s cloud config manager deployment: %w", hcp.Spec.Platform.Type, err)
 		}
 	}
 	return nil
