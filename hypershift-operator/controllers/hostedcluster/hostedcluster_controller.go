@@ -3132,6 +3132,16 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name).Name
 	log := ctrl.LoggerFrom(ctx)
 
+	// add `hyperv1.SilenceClusterAlertsLabel` label to the HostedCluster when it is deleting
+	// this will ensure that alerts triggered because of the deletion process aren't forwarded
+	if _, ok := hc.Labels[hyperv1.SilenceClusterAlertsLabel]; !ok {
+		original := hc.DeepCopy()
+		hc.Labels[hyperv1.SilenceClusterAlertsLabel] = "clusterDeleting"
+		if err := r.Patch(ctx, hc, client.MergeFromWithOptions(original)); err != nil {
+			return false, fmt.Errorf("cannot patch hosted cluster with silence label: %w", err)
+		}
+	}
+
 	// ensure that the cleanup annotation has been propagated to the hcp if it is set
 	if hc.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true" {
 		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name)
