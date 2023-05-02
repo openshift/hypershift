@@ -272,17 +272,30 @@ func validateClusterPreIDP(t *testing.T, ctx context.Context, client crclient.Cl
 func validateClusterPostIDP(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	g := NewWithT(t)
 
-	// update HC status
-	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(hostedCluster.Status.KubeadminPassword).To(BeNil())
-
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
 	kubeadminPasswordSecret := configmanifests.KubeadminPasswordSecret(hcpNamespace)
 	// validate kubeadmin secret is deleted
-	err = client.Get(ctx, crclient.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
-	g.Expect(err).To(HaveOccurred())
-	g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 5*time.Minute, func(ctx context.Context) (bool, error) {
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+			return false, nil
+		}
+
+		if hostedCluster.Status.KubeadminPassword != nil {
+			t.Logf("Waiting for hostedCluster.Status.KubeadminPassword to be unset")
+			return false, nil
+		}
+		t.Logf("Observed hostedCluster.Status.KubeadminPassword to be unset")
+
+		err := client.Get(ctx, crclient.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
+		if err != nil && apierrors.IsNotFound(err) {
+			t.Logf("Observed kubeadmin secret %s to be deleted", kubeadminPasswordSecret.Name)
+			return true, nil
+		}
+
+		t.Logf("Waiting for kubeadmin secret %s to be deleted", kubeadminPasswordSecret.Name)
+		return false, nil
+	})
+	g.Expect(err).ToNot(HaveOccurred())
 
 	oauthDeployment := configmanifests.OAuthDeployment(hcpNamespace)
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(oauthDeployment), oauthDeployment)
