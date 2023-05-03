@@ -664,11 +664,23 @@ func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec
 func invokeBootstrapRenderScript(workDir string) string {
 	var script = `#!/bin/sh
 cd /tmp
-mkdir input output
+mkdir input output manifests
+
+touch /tmp/manifests/99_feature-gate.yaml
+cat <<EOF >/tmp/manifests/99_feature-gate.yaml
+apiVersion: config.openshift.io/v1
+kind: FeatureGate
+metadata:
+  name: cluster
+spec: {}
+EOF
+
 /usr/bin/cluster-config-operator render \
    --config-output-file config \
    --asset-input-dir /tmp/input \
-   --asset-output-dir /tmp/output
+   --asset-output-dir /tmp/output \
+   --rendered-manifest-files=/tmp/manifests \
+   --featuregate-manifest=/tmp/manifests/99_feature-gate.yaml
 cp /tmp/output/manifests/* %[1]s
 `
 	return fmt.Sprintf(script, workDir)
