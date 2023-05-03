@@ -2477,9 +2477,18 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 		return fmt.Errorf("cannot get oauth serving cert: %w", err)
 	}
 
+	caBundleConfigMapExists := true
+	oauthCABundle := manifests.OpenShiftOAuthMasterCABundle(hcp.Namespace)
+	err := r.Get(ctx, client.ObjectKeyFromObject(oauthCABundle), oauthCABundle)
+	if apierrors.IsNotFound(err) {
+		caBundleConfigMapExists = false
+	} else if err != nil {
+		return fmt.Errorf("cannot get oauth CA Bundle configmap: %w", err)
+	}
+
 	oauthConfig := manifests.OAuthServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, oauthConfig, func() error {
-		return oauth.ReconcileOAuthServerConfig(ctx, oauthConfig, p.OwnerRef, r.Client, p.ConfigParams(oauthServingCert))
+		return oauth.ReconcileOAuthServerConfig(ctx, oauthConfig, p.OwnerRef, r.Client, p.ConfigParams(oauthServingCert), caBundleConfigMapExists)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth server config: %w", err)
 	}
@@ -2495,7 +2504,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 
 	deployment := manifests.OAuthServerDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, oauthConfig, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, util.APIPort(hcp), p.NamedCertificates(), p.Socks5ProxyImage)
+		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, oauthConfig, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, util.APIPort(hcp), p.NamedCertificates(), p.Socks5ProxyImage, caBundleConfigMapExists)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
