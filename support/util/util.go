@@ -197,6 +197,7 @@ func ConvertRegistryOverridesToCommandLineFlag(registryOverrides map[string]stri
 		commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
 	}
 	if len(commandLineFlagArray) > 0 {
+		sort.Strings(commandLineFlagArray)
 		return strings.Join(commandLineFlagArray, ",")
 	}
 	// this is the equivalent of null on a StringToString command line variable.

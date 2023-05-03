@@ -164,7 +164,7 @@ func TestConvertImageRegistryOverrideStringToMap(t *testing.T) {
 				},
 			},
 
-			input: "registry-proxy.engineering.redhat.com=registry.example.com,registry-proxy.engineering.redhat.com=registry.example2.com,registry.redhat.io=registry.example.com",
+			input: "registry1=mirror1.1,registry2=mirror2.1,registry3=mirror3.1",
 		},
 		{
 			name: "Registry overrides with multiple mirrors",

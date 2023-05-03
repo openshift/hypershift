@@ -488,6 +488,17 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		objects = append(objects, userCABundleCM)
 	}
 
+	trustedCABundle := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "hypershift",
+			Name:      "openshift-config-managed-trusted-ca-bundle",
+			Labels: map[string]string{
+				"config.openshift.io/inject-trusted-cabundle": "true",
+			},
+		},
+	}
+	objects = append(objects, trustedCABundle)
+
 	if len(opts.ExternalDNSProvider) > 0 {
 		externalDNSServiceAccount := assets.ExternalDNSServiceAccount{
 			Namespace: operatorNamespace,
@@ -538,6 +549,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
 		AdditionalTrustBundle:          userCABundleCM,
+		OpenShiftTrustBundle:           trustedCABundle,
 		Namespace:                      operatorNamespace,
 		OperatorImage:                  opts.HyperShiftImage,
 		ServiceAccount:                 operatorServiceAccount,
