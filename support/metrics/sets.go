@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
+	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"sigs.k8s.io/yaml"
 )
 
 type MetricsSet string
@@ -21,11 +25,45 @@ const (
 const (
 	metricsSetEnvVar  = "METRICS_SET"
 	DefaultMetricsSet = MetricsSetTelemetry
+
+	SREConfigurationConfigMapName = "sre-metric-set"
+	SREConfigurationConfigMapKey  = "config"
 )
 
 var (
 	allMetricsSets = sets.NewString()
+
+	sreMetricsSetConfig = MetricsSetConfig{}
+	sreMetricsSetMutex  = sync.Mutex{}
 )
+
+type MetricsSetConfig struct {
+	// Kube/OpenShift components
+	Etcd                            []*prometheusoperatorv1.RelabelConfig `json:"etcd,omitempty"`
+	KubeAPIServer                   []*prometheusoperatorv1.RelabelConfig `json:"kubeAPIServer,omitempty"`
+	KubeControllerManager           []*prometheusoperatorv1.RelabelConfig `json:"kubeControllerManager,omitempty"`
+	OpenShiftAPIServer              []*prometheusoperatorv1.RelabelConfig `json:"openshiftAPIServer,omitempty"`
+	OpenShiftControllerManager      []*prometheusoperatorv1.RelabelConfig `json:"openshiftControllerManager,omitempty"`
+	OpenShiftRouteControllerManager []*prometheusoperatorv1.RelabelConfig `json:"openshiftRouteControllerManager,omitempty"`
+	CVO                             []*prometheusoperatorv1.RelabelConfig `json:"cvo,omitempty"`
+	OLM                             []*prometheusoperatorv1.RelabelConfig `json:"olm,omitempty"`
+	CatalogOperator                 []*prometheusoperatorv1.RelabelConfig `json:"catalogOperator,omitempty"`
+	RegistryOperator                []*prometheusoperatorv1.RelabelConfig `json:"registryOperator,omitempty"`
+	NodeTuningOperator              []*prometheusoperatorv1.RelabelConfig `json:"nodeTuningOperator,omitempty"`
+
+	// HyperShift components
+	ControlPlaneOperator        []*prometheusoperatorv1.RelabelConfig `json:"controlPlaneOperator,omitempty"`
+	HostedClusterConfigOperator []*prometheusoperatorv1.RelabelConfig `json:"hostedClusterConfigOperator,omitempty"`
+}
+
+func (c *MetricsSetConfig) LoadFromString(value string) error {
+	newConfig := &MetricsSetConfig{}
+	if err := yaml.Unmarshal([]byte(value), newConfig); err != nil {
+		return fmt.Errorf("failed to unmarshal metrics set configuration: %w", err)
+	}
+	*c = *newConfig
+	return nil
+}
 
 func init() {
 	allMetricsSets.Insert(string(MetricsSetTelemetry))
@@ -80,7 +118,8 @@ func CVORelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
-
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.CVO
 	default:
 		return []*prometheusoperatorv1.RelabelConfig{
 			{
@@ -102,7 +141,8 @@ func EtcdRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
-
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.Etcd
 	default:
 		// All metrics
 		return nil
@@ -119,6 +159,8 @@ func KASRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.KubeAPIServer
 	default:
 		return []*prometheusoperatorv1.RelabelConfig{
 			{
@@ -190,6 +232,8 @@ func KCMRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.KubeControllerManager
 	default:
 		return []*prometheusoperatorv1.RelabelConfig{
 			{
@@ -221,6 +265,8 @@ func NTORelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.NodeTuningOperator
 
 	default:
 		// All metrics
@@ -238,6 +284,8 @@ func OpenShiftAPIServerRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.Re
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.OpenShiftAPIServer
 	default:
 		return []*prometheusoperatorv1.RelabelConfig{
 			{
@@ -274,6 +322,8 @@ func OpenShiftControllerManagerRelabelConfigs(set MetricsSet) []*prometheusopera
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.OpenShiftControllerManager
 	default:
 		return []*prometheusoperatorv1.RelabelConfig{
 			{
@@ -295,6 +345,8 @@ func OpenShiftRouteControllerManagerRelabelConfigs(set MetricsSet) []*prometheus
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.OpenShiftRouteControllerManager
 	default:
 		return []*prometheusoperatorv1.RelabelConfig{
 			{
@@ -316,6 +368,8 @@ func OLMRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.OLM
 	default:
 		return []*prometheusoperatorv1.RelabelConfig{
 			{
@@ -337,6 +391,8 @@ func CatalogOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.Relab
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.CatalogOperator
 	default:
 		return []*prometheusoperatorv1.RelabelConfig{
 			{
@@ -358,6 +414,8 @@ func HostedClusterConfigOperatorRelabelConfigs(set MetricsSet) []*prometheusoper
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.HostedClusterConfigOperator
 	default:
 		return nil
 	}
@@ -378,6 +436,45 @@ func RegistryOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.Rela
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.RegistryOperator
 	}
 	return nil
+}
+
+// SREMetricsSetConfigHash calculates a hash of the SRE metrics set configuration
+// given a ConfigMap that contains it.
+func SREMetricsSetConfigHash(cm *corev1.ConfigMap) string {
+	value, ok := cm.Data[SREConfigurationConfigMapKey]
+	if ok {
+		return util.HashStruct(value)
+	}
+	return ""
+}
+
+// LoadSREMetricsSetConfigurationFromConfigMap parses the SRE metrics set configuration
+// from the given ConfigMap and loads it into the singleton variable 'sreMetricsSetConfig'
+// This can then be used by reconcile functions that get lists of RelabelConfigs for a
+// particular component.
+func LoadSREMetricsSetConfigurationFromConfigMap(cm *corev1.ConfigMap) error {
+	sreMetricsSetMutex.Lock()
+	defer sreMetricsSetMutex.Unlock()
+	value, ok := cm.Data[SREConfigurationConfigMapKey]
+	if !ok {
+		return fmt.Errorf("configmap does not contain configuration key %s", SREConfigurationConfigMapKey)
+	}
+	return sreMetricsSetConfig.LoadFromString(value)
+}
+
+// SREMetricsSetConfigurationConfigMap returns a ConfigMap manifest for the SRE metrics set
+// configuration, given a namespace. This configmap is expected to be created by the HyperShift administrator
+// in the hypershift operator's namespace. It is then synced from there to every control plane namespace
+// by the hypershift operator.
+func SREMetricsSetConfigurationConfigMap(namespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      SREConfigurationConfigMapName,
+		},
+	}
 }
