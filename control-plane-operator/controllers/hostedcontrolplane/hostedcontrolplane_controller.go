@@ -157,6 +157,7 @@ type HostedControlPlaneReconciler struct {
 	OperateOnReleaseImage         string
 	DefaultIngressDomain          string
 	MetricsSet                    metrics.MetricsSet
+	SREConfigHash                 string
 	ec2Client                     ec2iface.EC2API
 	awsSession                    *session.Session
 	reconcileInfrastructureStatus func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error)
@@ -893,6 +894,11 @@ func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool
 }
 
 func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider *imageprovider.ReleaseImageProvider, infraStatus InfrastructureStatus) error {
+
+	if err := r.reconcileSREMetricsConfig(ctx, createOrUpdate, hostedControlPlane.Namespace); err != nil {
+		return fmt.Errorf("failed to reconcile metrics config: %w", err)
+	}
+
 	if useHCPRouter(hostedControlPlane) {
 		r.Log.Info("Reconciling router")
 		if err := r.reconcileRouter(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, util.IsRouteKAS(hostedControlPlane), infraStatus.InternalHCPRouterHost, infraStatus.ExternalHCPRouterHost); err != nil {
@@ -4199,4 +4205,31 @@ func (r *HostedControlPlaneReconciler) GetGuestClusterClient(ctx context.Context
 	}
 
 	return kubernetes.NewForConfig(restConfig)
+}
+
+// reconcileSREMetricsConfig ensures that if using the SRE metrics set that the loaded configuration
+// is the latest from the ConfigMap.
+func (r *HostedControlPlaneReconciler) reconcileSREMetricsConfig(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, cpNamespace string) error {
+	log := ctrl.LoggerFrom(ctx)
+	if r.MetricsSet != metrics.MetricsSetSRE {
+		return nil
+	}
+	log.Info("Reconciling SRE metrics configuration")
+	cm := metrics.SREMetricsSetConfigurationConfigMap(cpNamespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(cm), cm); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("SRE configuration does not exist")
+			return nil
+		}
+		return fmt.Errorf("failed to get SRE configuration configmap: %w", err)
+	}
+	currentMetricsSetConfigHash := metrics.SREMetricsSetConfigHash(cm)
+	if currentMetricsSetConfigHash != r.SREConfigHash {
+		// Only load a new config if configuration content has changed
+		if err := metrics.LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+			return fmt.Errorf("failed to load SRE configuration: %w", err)
+		}
+		r.SREConfigHash = currentMetricsSetConfigHash
+	}
+	return nil
 }
