@@ -59,6 +59,7 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, auditWeb
 		"shutdown-delay-duration": {"3s"},
 		"audit-log-format":        {"json"},
 		"audit-log-maxsize":       {"100"},
+		"audit-log-maxbackup":     {"10"},
 		"audit-policy-file":       {cpath(oasVolumeAuditConfig().Name, auditPolicyConfigMapKey)},
 		"audit-log-path":          {cpath(oasVolumeWorkLogs().Name, "audit.log")},
 	}
