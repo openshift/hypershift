@@ -309,6 +309,14 @@ objects:
     name: operator
     namespace: ${NAMESPACE}
 - apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    creationTimestamp: null
+    labels:
+      config.openshift.io/inject-trusted-cabundle: "true"
+    name: openshift-config-managed-trusted-ca-bundle
+    namespace: hypershift
+- apiVersion: v1
   kind: ServiceAccount
   metadata:
     creationTimestamp: null
@@ -535,7 +543,7 @@ objects:
           - mountPath: /var/run/secrets/openshift/serviceaccount
             name: token
           - mountPath: /etc/pki/ca-trust/extracted/pem
-            name: ocm-trusted-ca-bundle
+            name: openshift-config-managed-trusted-ca-bundle
             readOnly: true
         priorityClassName: hypershift-operator
         serviceAccountName: operator
@@ -559,8 +567,8 @@ objects:
             items:
             - key: ca-bundle.crt
               path: tls-ca-bundle.pem
-            name: ocm-trusted-ca-bundle
-          name: ocm-trusted-ca-bundle
+            name: openshift-config-managed-trusted-ca-bundle
+          name: openshift-config-managed-trusted-ca-bundle
   status: {}
 - apiVersion: v1
   kind: Service
