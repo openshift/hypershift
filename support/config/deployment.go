@@ -76,7 +76,7 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	if c.DebugDeployments != nil && c.DebugDeployments.Has(deployment.Name) {
 		deployment.Spec.Replicas = pointer.Int32(0)
 	} else {
-		deployment.Spec.Replicas = pointer.Int32Ptr(int32(c.Replicas))
+		deployment.Spec.Replicas = pointer.Int32(int32(c.Replicas))
 	}
 	// there are two standard cases currently with hypershift: HA mode where there are 3 replicas spread across
 	// zones and then non ha with one replica. When only 3 zones are available you need to be able to set maxUnavailable
@@ -128,7 +128,7 @@ func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
 }
 
 func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
-	sts.Spec.Replicas = pointer.Int32Ptr(int32(c.Replicas))
+	sts.Spec.Replicas = pointer.Int32(int32(c.Replicas))
 	c.Scheduling.ApplyTo(&sts.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&sts.Spec.Template.ObjectMeta)
 	c.SecurityContexts.ApplyTo(&sts.Spec.Template.Spec)

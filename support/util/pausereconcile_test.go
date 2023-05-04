@@ -29,25 +29,25 @@ func TestProcessPausedUntilField(t *testing.T) {
 		},
 		{
 			name:             "if pausedUntil field is later than time.Now then reconciliation is paused",
-			inputPausedField: pointer.StringPtr(now.Add(4 * time.Hour).Format(time.RFC3339Nano)),
+			inputPausedField: pointer.String(now.Add(4 * time.Hour).Format(time.RFC3339Nano)),
 			expectedPaused:   true,
 			expectedDuration: 4 * time.Hour,
 		},
 		{
 			name:             "if pausedUntil field is before time.Now then reconciliation is not paused",
-			inputPausedField: pointer.StringPtr(now.Add(-4 * time.Hour).Format(time.RFC3339Nano)),
+			inputPausedField: pointer.String(now.Add(-4 * time.Hour).Format(time.RFC3339Nano)),
 			expectedPaused:   false,
 			expectedDuration: -(4 * time.Hour),
 		},
 		{
 			name:             "if pausedUntil field is true then reconciliation is paused",
-			inputPausedField: pointer.StringPtr("true"),
+			inputPausedField: pointer.String("true"),
 			expectedPaused:   true,
 			expectedDuration: time.Duration(0),
 		},
 		{
 			name:             "if pausedUntil field has an improper value then reconciliation is not paused",
-			inputPausedField: pointer.StringPtr("badValue"),
+			inputPausedField: pointer.String("badValue"),
 			expectedPaused:   false,
 			expectedDuration: time.Duration(0),
 			expectedError:    true,
@@ -66,8 +66,8 @@ func TestProcessPausedUntilField(t *testing.T) {
 
 func TestGenerateReconciliationPausedCondition(t *testing.T) {
 	fakeInputGeneration := int64(5)
-	fakeFutureDate := pointer.StringPtr(time.Now().Add(4 * time.Hour).Format(time.RFC3339))
-	fakePastDate := pointer.StringPtr(time.Now().Add(-4 * time.Hour).Format(time.RFC3339))
+	fakeFutureDate := pointer.String(time.Now().Add(4 * time.Hour).Format(time.RFC3339))
+	fakePastDate := pointer.String(time.Now().Add(-4 * time.Hour).Format(time.RFC3339))
 	testsCases := []struct {
 		name              string
 		inputPausedField  *string
@@ -108,7 +108,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 		},
 		{
 			name:             "if pausedUntil field is true then ReconciliationActive condition is false",
-			inputPausedField: pointer.StringPtr("true"),
+			inputPausedField: pointer.String("true"),
 			expectedCondition: metav1.Condition{
 				Type:               string(hyperv1.ReconciliationActive),
 				Status:             metav1.ConditionFalse,
@@ -119,7 +119,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 		},
 		{
 			name:             "if pausedUntil field has an improper value then ReconciliationActive condition is true with a reason indicating invalid value provided",
-			inputPausedField: pointer.StringPtr("badValue"),
+			inputPausedField: pointer.String("badValue"),
 			expectedCondition: metav1.Condition{
 				Type:               string(hyperv1.ReconciliationActive),
 				Status:             metav1.ConditionTrue,

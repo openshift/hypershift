@@ -21,7 +21,7 @@ func NewSession(agent string, credentialsFile string, credKey string, credSecret
 		sessionOpts.Config.Credentials = credentials.NewStaticCredentials(credKey, credSecretKey, "")
 	}
 	if region != "" {
-		sessionOpts.Config.Region = utilpointer.StringPtr(region)
+		sessionOpts.Config.Region = utilpointer.String(region)
 	}
 	awsSession := session.Must(session.NewSessionWithOptions(sessionOpts))
 	awsSession.Handlers.Build.PushBackNamed(request.NamedHandler{

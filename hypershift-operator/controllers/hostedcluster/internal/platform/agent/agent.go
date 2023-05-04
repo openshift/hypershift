@@ -69,10 +69,10 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 		providerImage = override
 	}
 	deploymentSpec := &appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32Ptr(1),
+		Replicas: k8sutilspointer.Int32(1),
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
+				TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
 				Containers: []corev1.Container{
 					{
 						Name:  "manager",

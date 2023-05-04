@@ -241,25 +241,25 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 		{
 			name: "advertise address specified",
 			networking: &hyperv1.APIServerNetworking{
-				AdvertiseAddress: pointer.StringPtr("1.2.3.4"),
+				AdvertiseAddress: pointer.String("1.2.3.4"),
 			},
-			expectedAPIAdvertiseAddress: pointer.StringPtr("1.2.3.4"),
+			expectedAPIAdvertiseAddress: pointer.String("1.2.3.4"),
 		},
 		{
 			name: "port specified",
 			networking: &hyperv1.APIServerNetworking{
-				Port: pointer.Int32Ptr(1234),
+				Port: pointer.Int32(1234),
 			},
-			expectedAPIPort: pointer.Int32Ptr(1234),
+			expectedAPIPort: pointer.Int32(1234),
 		},
 		{
 			name: "both specified",
 			networking: &hyperv1.APIServerNetworking{
-				Port:             pointer.Int32Ptr(6789),
-				AdvertiseAddress: pointer.StringPtr("9.8.7.6"),
+				Port:             pointer.Int32(6789),
+				AdvertiseAddress: pointer.String("9.8.7.6"),
 			},
-			expectedAPIPort:             pointer.Int32Ptr(6789),
-			expectedAPIAdvertiseAddress: pointer.StringPtr("9.8.7.6"),
+			expectedAPIPort:             pointer.Int32(6789),
+			expectedAPIAdvertiseAddress: pointer.String("9.8.7.6"),
 		},
 	}
 

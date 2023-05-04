@@ -370,7 +370,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 	deploymentConfig := &config.DeploymentConfig{}
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	deploymentConfig.SetDefaults(hcp, nil, utilpointer.IntPtr(1))
+	deploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
 
 	infraNamespace := hcp.Namespace
 

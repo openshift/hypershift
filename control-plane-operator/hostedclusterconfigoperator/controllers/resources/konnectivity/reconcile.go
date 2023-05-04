@@ -49,9 +49,9 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 				Labels: labels,
 			},
 			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
+				AutomountServiceAccountToken: pointer.Bool(false),
 				SecurityContext: &corev1.PodSecurityContext{
-					RunAsUser: pointer.Int64Ptr(1000),
+					RunAsUser: pointer.Int64(1000),
 				},
 				Containers: []corev1.Container{
 					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(image, host, port, proxy)),
@@ -146,13 +146,13 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 func buildKonnectivityVolumeWorkerAgentCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KonnectivityAgentSecret("").Name,
-		DefaultMode: pointer.Int32Ptr(0640),
+		DefaultMode: pointer.Int32(0640),
 	}
 }
 
 func buildKonnectivityVolumeCACert(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{
-		DefaultMode: pointer.Int32Ptr(0640),
+		DefaultMode: pointer.Int32(0640),
 	}
 	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
 }

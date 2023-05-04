@@ -103,7 +103,7 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 		"app": "machine-approver",
 	}
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32Ptr(1),
+		Replicas: k8sutilspointer.Int32(1),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: selector,
 		},
@@ -136,8 +136,8 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 								LocalObjectReference: corev1.LocalObjectReference{
 									Name: cm.Name,
 								},
-								Optional:    k8sutilspointer.BoolPtr(true),
-								DefaultMode: k8sutilspointer.Int32Ptr(440),
+								Optional:    k8sutilspointer.Bool(true),
+								DefaultMode: k8sutilspointer.Int32(440),
 							},
 						},
 					},

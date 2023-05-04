@@ -118,7 +118,7 @@ func testKillRandomMembers(parentCtx context.Context, client crclient.Client, cl
 			wait.UntilWithContext(ctx, func(ctx context.Context) {
 				pod := randomPods(etcdPods.Items, 1)[0]
 				err := client.Delete(ctx, &pod, &crclient.DeleteOptions{
-					GracePeriodSeconds: pointer.Int64Ptr(0),
+					GracePeriodSeconds: pointer.Int64(0),
 				})
 				if err != nil {
 					t.Errorf("failed to delete pod %s: %s", pod.Name, err)
@@ -205,7 +205,7 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 				timeout, cancel := context.WithTimeout(ctx, 5*time.Second)
 				defer cancel()
 				err := client.Delete(timeout, pod, &crclient.DeleteOptions{
-					GracePeriodSeconds: pointer.Int64Ptr(0),
+					GracePeriodSeconds: pointer.Int64(0),
 				})
 				if err != nil {
 					t.Errorf("failed to delete pod %s: %s", pod.Name, err)

@@ -37,7 +37,7 @@ func TestReconcileOAuthServerCert(t *testing.T) {
 			Kind:       "Deployment",
 			Name:       "dummy",
 			UID:        types.UID("12345abcdef"),
-			Controller: pointer.BoolPtr(true),
+			Controller: pointer.Bool(true),
 		},
 	}
 

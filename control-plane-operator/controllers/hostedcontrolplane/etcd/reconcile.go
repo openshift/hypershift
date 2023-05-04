@@ -58,7 +58,7 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 	ss.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: etcdPodSelector(),
 	}
-	ss.Spec.Replicas = pointer.Int32Ptr(int32(p.DeploymentConfig.Replicas))
+	ss.Spec.Replicas = pointer.Int32(int32(p.DeploymentConfig.Replicas))
 	ss.Spec.PodManagementPolicy = appsv1.ParallelPodManagement
 	ss.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{
 		{

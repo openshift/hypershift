@@ -487,10 +487,10 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 		},
 		"contains all optional parameters": {
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
-				MaxNodesTotal:        pointer.Int32Ptr(100),
-				MaxPodGracePeriod:    pointer.Int32Ptr(300),
+				MaxNodesTotal:        pointer.Int32(100),
+				MaxPodGracePeriod:    pointer.Int32(300),
 				MaxNodeProvisionTime: "20m",
-				PodPriorityThreshold: pointer.Int32Ptr(-5),
+				PodPriorityThreshold: pointer.Int32(-5),
 			},
 			ExpectedArgs: []string{
 				"--cloud-provider=clusterapi",
@@ -561,7 +561,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 					Namespace: "thens",
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32Ptr(1),
+					Replicas: pointer.Int32(1),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:      1,
@@ -601,7 +601,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 					Namespace: "thens",
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32Ptr(1),
+					Replicas: pointer.Int32(1),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:      1,
@@ -647,7 +647,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 					Namespace: "thens",
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32Ptr(3),
+					Replicas: pointer.Int32(3),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:      3,

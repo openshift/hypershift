@@ -1666,7 +1666,7 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 	for i := range routerPods.Items {
 		rp := &routerPods.Items[i]
 		log.Info("Force deleting", "pod", client.ObjectKeyFromObject(rp).String())
-		if err := r.client.Delete(ctx, rp, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64Ptr(0)}); err != nil {
+		if err := r.client.Delete(ctx, rp, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to force delete %s", client.ObjectKeyFromObject(rp).String()))
 		}
 	}
@@ -1838,7 +1838,7 @@ func cleanupResources(ctx context.Context, c client.Client, list client.ObjectLi
 				log.Info("Deleting resource", "type", fmt.Sprintf("%T", obj), "name", client.ObjectKeyFromObject(obj).String())
 				var deleteErr error
 				if force {
-					deleteErr = c.Delete(ctx, obj, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64Ptr(0)})
+					deleteErr = c.Delete(ctx, obj, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)})
 				} else {
 					deleteErr = c.Delete(ctx, obj)
 				}

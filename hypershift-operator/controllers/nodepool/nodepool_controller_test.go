@@ -168,7 +168,7 @@ func TestValidateAutoscaling(t *testing.T) {
 			name: "fails when both nodeCount and autoscaling are set",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
-					Replicas: k8sutilspointer.Int32Ptr(1),
+					Replicas: k8sutilspointer.Int32(1),
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
 						Min: 1,
 						Max: 2,
@@ -1047,7 +1047,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
-					Replicas: k8sutilspointer.Int32Ptr(5),
+					Replicas: k8sutilspointer.Int32(5),
 				},
 			},
 			machineDeployment: &capiv1.MachineDeployment{
@@ -1077,7 +1077,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineDeploymentSpec{
-					Replicas: k8sutilspointer.Int32Ptr(3),
+					Replicas: k8sutilspointer.Int32(3),
 				},
 			},
 			expectReplicas: 3,
@@ -1122,7 +1122,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineDeploymentSpec{
-					Replicas: k8sutilspointer.Int32Ptr(0),
+					Replicas: k8sutilspointer.Int32(0),
 				},
 			},
 			expectReplicas: 1,
@@ -1200,7 +1200,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineDeploymentSpec{
-					Replicas: k8sutilspointer.Int32Ptr(1),
+					Replicas: k8sutilspointer.Int32(1),
 				},
 			},
 			expectReplicas: 2,
@@ -1226,7 +1226,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineDeploymentSpec{
-					Replicas: k8sutilspointer.Int32Ptr(10),
+					Replicas: k8sutilspointer.Int32(10),
 				},
 			},
 			expectReplicas: 5,
@@ -1434,11 +1434,11 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 				Template: capiaws.AWSMachineTemplateResource{
 					Spec: capiaws.AWSMachineSpec{
 						AMI: capiaws.AMIReference{
-							ID: k8sutilspointer.StringPtr(ami),
+							ID: k8sutilspointer.String(ami),
 						},
 						IAMInstanceProfile:   "test-worker-profile",
 						Subnet:               &capiaws.AWSResourceReference{},
-						UncompressedUserData: k8sutilspointer.BoolPtr(true),
+						UncompressedUserData: k8sutilspointer.Bool(true),
 					},
 				},
 			},
@@ -1457,11 +1457,11 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 			Template: capiaws.AWSMachineTemplateResource{
 				Spec: capiaws.AWSMachineSpec{
 					AMI: capiaws.AMIReference{
-						ID: k8sutilspointer.StringPtr(ami),
+						ID: k8sutilspointer.String(ami),
 					},
 					IAMInstanceProfile:   "test-worker-profile",
 					Subnet:               &capiaws.AWSResourceReference{},
-					UncompressedUserData: k8sutilspointer.BoolPtr(true),
+					UncompressedUserData: k8sutilspointer.Bool(true),
 					CloudInit: capiaws.CloudInit{
 						InsecureSkipSecretsManager: true,
 						SecureSecretsBackend:       "secrets-manager",
@@ -1783,7 +1783,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 					Management: hyperv1.NodePoolManagement{
 						InPlace: &hyperv1.InPlaceUpgrade{},
 					},
-					Replicas: k8sutilspointer.Int32Ptr(4),
+					Replicas: k8sutilspointer.Int32(4),
 				},
 			},
 			expect: 1,
@@ -1797,7 +1797,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 							MaxUnavailable: &intPointer1,
 						},
 					},
-					Replicas: k8sutilspointer.Int32Ptr(4),
+					Replicas: k8sutilspointer.Int32(4),
 				},
 			},
 			expect: 1,
@@ -1811,7 +1811,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 							MaxUnavailable: &intPointer2,
 						},
 					},
-					Replicas: k8sutilspointer.Int32Ptr(4),
+					Replicas: k8sutilspointer.Int32(4),
 				},
 			},
 			expect: 2,
@@ -1825,7 +1825,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 							MaxUnavailable: &strPointer75,
 						},
 					},
-					Replicas: k8sutilspointer.Int32Ptr(4),
+					Replicas: k8sutilspointer.Int32(4),
 				},
 			},
 			expect: 3,
@@ -1839,7 +1839,7 @@ func TestInPlaceUpgradeMaxUnavailable(t *testing.T) {
 							MaxUnavailable: &strPointer10,
 						},
 					},
-					Replicas: k8sutilspointer.Int32Ptr(4),
+					Replicas: k8sutilspointer.Int32(4),
 				},
 			},
 			expect: 1,

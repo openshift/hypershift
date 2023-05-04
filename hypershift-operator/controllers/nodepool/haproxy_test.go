@@ -89,7 +89,7 @@ kind: Config`
 			name: "private cluster uses .local address and custom apiserver port",
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.Private
-				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: utilpointer.Int32Ptr(443)}
+				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: utilpointer.Int32(443)}
 			}),
 
 			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:443"},
@@ -106,7 +106,7 @@ kind: Config`
 			name: "public and private cluster uses .local address and custom apiserver port",
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.PublicAndPrivate
-				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: utilpointer.Int32Ptr(443)}
+				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: utilpointer.Int32(443)}
 			}),
 
 			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:443"},
@@ -130,7 +130,7 @@ kind: Config`
 			name: "public cluster uses address from kubeconfig and custom port",
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.Public
-				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: utilpointer.Int32Ptr(443)}
+				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: utilpointer.Int32(443)}
 				hc.Status.KubeConfig = &corev1.LocalObjectReference{Name: "kk"}
 			}),
 			other: []crclient.Object{&corev1.Secret{

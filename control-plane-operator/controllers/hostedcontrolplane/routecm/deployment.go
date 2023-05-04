@@ -71,7 +71,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image string, config *co
 	deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
 		configHashAnnotation: configHash,
 	}
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(false)
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(routeOCMContainerMain(), buildRouteOCMContainerMain(image)),
 	}

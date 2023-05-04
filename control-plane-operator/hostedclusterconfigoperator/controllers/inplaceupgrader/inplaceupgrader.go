@@ -361,7 +361,7 @@ func (r *Reconciler) createUpgradePod(pod *corev1.Pod, nodeName, poolName, mcoIm
 			},
 			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			SecurityContext: &corev1.SecurityContext{
-				Privileged: k8sutilspointer.BoolPtr(true),
+				Privileged: k8sutilspointer.Bool(true),
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{

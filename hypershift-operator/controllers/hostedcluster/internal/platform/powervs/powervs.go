@@ -88,7 +88,7 @@ func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
+				TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
 				Volumes: []corev1.Volume{
 					{
 						Name: "capi-webhooks-tls",

@@ -69,7 +69,7 @@ func ReconcileServerDeployment(deployment *appsv1.Deployment, ownerRef config.Ow
 				Labels: konnectivityServerLabels(),
 			},
 			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
+				AutomountServiceAccountToken: pointer.Bool(false),
 				Containers: []corev1.Container{
 					util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(image)),
 				},
@@ -141,7 +141,7 @@ func konnectivityVolumeServerCerts() *corev1.Volume {
 func buildKonnectivityVolumeServerCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KonnectivityServerSecret("").Name,
-		DefaultMode: pointer.Int32Ptr(0640),
+		DefaultMode: pointer.Int32(0640),
 	}
 }
 
@@ -154,7 +154,7 @@ func konnectivityVolumeClusterCerts() *corev1.Volume {
 func buildKonnectivityVolumeClusterCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KonnectivityClusterSecret("").Name,
-		DefaultMode: pointer.Int32Ptr(0640),
+		DefaultMode: pointer.Int32(0640),
 	}
 }
 
@@ -305,7 +305,7 @@ func konnectivityVolumeAgentCerts() *corev1.Volume {
 func buildKonnectivityVolumeAgentCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KonnectivityAgentSecret("").Name,
-		DefaultMode: pointer.Int32Ptr(0640),
+		DefaultMode: pointer.Int32(0640),
 	}
 }
 
@@ -320,7 +320,7 @@ func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.Own
 				Labels: konnectivityAgentLabels(),
 			},
 			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
+				AutomountServiceAccountToken: pointer.Bool(false),
 				Containers: []corev1.Container{
 					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, ips)),
 				},

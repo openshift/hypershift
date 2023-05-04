@@ -171,7 +171,7 @@ func defaultAWSMachineTemplate(modify ...func(*capiaws.AWSMachineTemplate)) *cap
 			Template: capiaws.AWSMachineTemplateResource{
 				Spec: capiaws.AWSMachineSpec{
 					AMI: capiaws.AMIReference{
-						ID: k8sutilspointer.StringPtr(amiName),
+						ID: k8sutilspointer.String(amiName),
 					},
 					AdditionalTags: capiaws.Tags{
 						awsClusterCloudProviderTagKey(infraName): infraLifecycleOwned,
@@ -179,7 +179,7 @@ func defaultAWSMachineTemplate(modify ...func(*capiaws.AWSMachineTemplate)) *cap
 					IAMInstanceProfile:       infraName + "-worker-profile",
 					AdditionalSecurityGroups: []capiaws.AWSResourceReference{{ID: k8sutilspointer.String("default")}},
 					Subnet:                   &capiaws.AWSResourceReference{},
-					UncompressedUserData:     k8sutilspointer.BoolPtr(true),
+					UncompressedUserData:     k8sutilspointer.Bool(true),
 					CloudInit: capiaws.CloudInit{
 						InsecureSkipSecretsManager: true,
 						SecureSecretsBackend:       "secrets-manager",

@@ -98,7 +98,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 	}
 
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: utilpointer.Int32Ptr(int32(replicas)),
+		Replicas: utilpointer.Int32(int32(replicas)),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{"k8s-app": deployment.Name},
 		},
@@ -107,7 +107,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 				Labels: map[string]string{"k8s-app": deployment.Name},
 			},
 			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: utilpointer.Int64Ptr(90),
+				TerminationGracePeriodSeconds: utilpointer.Int64(90),
 				Containers: []corev1.Container{
 					{
 						Name:            ccmContainerName,
@@ -178,7 +178,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  manifests.KASServiceKubeconfigSecret("").Name,
-								DefaultMode: utilpointer.Int32Ptr(400),
+								DefaultMode: utilpointer.Int32(400),
 							},
 						},
 					},
@@ -186,7 +186,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 						Name: ccmConfig.Name,
 						VolumeSource: corev1.VolumeSource{
 							ConfigMap: &corev1.ConfigMapVolumeSource{
-								DefaultMode:          utilpointer.Int32Ptr(420),
+								DefaultMode:          utilpointer.Int32(420),
 								LocalObjectReference: corev1.LocalObjectReference{Name: ccmConfig.Name},
 							},
 						},
@@ -196,7 +196,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  hcp.Spec.Platform.PowerVS.KubeCloudControllerCreds.Name,
-								DefaultMode: utilpointer.Int32Ptr(400),
+								DefaultMode: utilpointer.Int32(400),
 							},
 						},
 					},
