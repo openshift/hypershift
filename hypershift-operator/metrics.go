@@ -293,8 +293,11 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 				if cond.Status == metav1.ConditionFalse {
 					hcByConditions["not_"+cond.Type] = hcByConditions["not_"+cond.Type] + 1
 				}
-			} else {
-				hcByConditions[cond.Type] = hcByConditions[cond.Type] + 1
+			}
+			if expectedState == false {
+				if cond.Status == metav1.ConditionTrue {
+					hcByConditions[cond.Type] = hcByConditions[cond.Type] + 1
+				}
 			}
 		}
 	}
