@@ -274,6 +274,7 @@ spec:
                             - ""
                             - identity
                             - aescbc
+                            - aesgcm
                             type: string
                         type: object
                       servingCerts:
@@ -551,12 +552,18 @@ spec:
                             description: disabled is a list of all feature gates that
                               you want to force off
                             items:
+                              description: FeatureGateName is a string to enforce
+                                patterns on the name of a FeatureGate
+                              pattern: ^([A-Za-z0-9-]+\.)*[A-Za-z0-9-]+\.?$
                               type: string
                             type: array
                           enabled:
                             description: enabled is a list of all feature gates that
                               you want to force on
                             items:
+                              description: FeatureGateName is a string to enforce
+                                patterns on the name of a FeatureGate
+                              pattern: ^([A-Za-z0-9-]+\.)*[A-Za-z0-9-]+\.?$
                               type: string
                             type: array
                         type: object
@@ -4012,6 +4019,7 @@ spec:
                             - ""
                             - identity
                             - aescbc
+                            - aesgcm
                             type: string
                         type: object
                       servingCerts:
@@ -4273,12 +4281,18 @@ spec:
                             description: disabled is a list of all feature gates that
                               you want to force off
                             items:
+                              description: FeatureGateName is a string to enforce
+                                patterns on the name of a FeatureGate
+                              pattern: ^([A-Za-z0-9-]+\.)*[A-Za-z0-9-]+\.?$
                               type: string
                             type: array
                           enabled:
                             description: enabled is a list of all feature gates that
                               you want to force on
                             items:
+                              description: FeatureGateName is a string to enforce
+                                patterns on the name of a FeatureGate
+                              pattern: ^([A-Za-z0-9-]+\.)*[A-Za-z0-9-]+\.?$
                               type: string
                             type: array
                         type: object
