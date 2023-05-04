@@ -234,7 +234,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 		},
 	}}
 	dep.Spec.Template.Spec.Volumes = []corev1.Volume{
-		{Name: "node-tuning-operator-tls", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "node-tuning-operator-tls"}}},
+		{Name: "node-tuning-operator-tls", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "node-tuning-operator-tls", DefaultMode: utilpointer.Int32Ptr(416)}}},
 		{Name: "trusted-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
 			Optional:             utilpointer.Bool(true),
 			LocalObjectReference: corev1.LocalObjectReference{Name: "trusted-ca"},
@@ -242,7 +242,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 				{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"},
 			},
 		}}},
-		{Name: "hosted-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KASServiceKubeconfigSecret("").Name}}},
+		{Name: "hosted-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KASServiceKubeconfigSecret("").Name, DefaultMode: utilpointer.Int32Ptr(416)}}},
 	}
 
 	params.DeploymentConfig.ApplyTo(dep)

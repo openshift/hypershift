@@ -142,4 +142,5 @@ func routeOCMVolumeServingCert() *corev1.Volume {
 func buildRouteOCMVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftRouteControllerManagerCertSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 }
