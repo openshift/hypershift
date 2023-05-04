@@ -102,8 +102,6 @@ const (
 	resourceDeletionTimeout = 2 * time.Minute
 )
 
-var NoopReconcile controllerutil.MutateFn = func() error { return nil }
-
 type InfrastructureStatus struct {
 	APIHost                 string
 	APIPort                 int32
@@ -280,7 +278,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
-	// This is a best effort ping to the identity provider
+	// This is the best effort ping to the identity provider
 	// that enables access from the operator to the cloud provider resources.
 	healthCheckIdentityProvider(ctx, hostedControlPlane)
 	// We want to ensure the healthCheckIdentityProvider condition is in status before we go through the deletion timestamp path.
@@ -528,7 +526,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 					Message: hyperv1.AllIsWellMessage,
 					Reason:  hyperv1.AsExpectedReason,
 				}
-				hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s:%d/oauthcallback/[identity-provider-name]", infraStatus.OAuthHost, infraStatus.OAuthPort)
+				hostedControlPlane.Status.OAuthCallbackURLTemplate = fmt.Sprintf("https://%s:%d/oauth2callback/[identity-provider-name]", infraStatus.OAuthHost, infraStatus.OAuthPort)
 			} else {
 				message := "Cluster infrastructure is still provisioning"
 				if len(infraStatus.Message) > 0 {
@@ -610,7 +608,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			message = ""
 			status = metav1.ConditionTrue
 		}
-		hostedControlPlane.Status.Ready = (status == metav1.ConditionTrue)
+		hostedControlPlane.Status.Ready = status == metav1.ConditionTrue
 		condition := metav1.Condition{
 			Type:               string(hyperv1.HostedControlPlaneAvailable),
 			Status:             status,
@@ -795,7 +793,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		releaseImage.ComponentImages()[util.CPOImageName],
 		hostedControlPlane,
 		r.DefaultIngressDomain,
-		// The healthz handler was added before the CPO started to mange te ignition server and its the same binary,
+		// The healthz handler was added before the CPO started to manage the ignition server, and it's the same binary,
 		// so we know it always exists here.
 		true,
 		r.ReleaseProvider.GetRegistryOverrides(),
@@ -884,7 +882,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 	// Reconcile openshift apiserver
 	r.Log.Info("Reconciling OpenShift API Server")
-	if err := r.reconcileOpenShiftAPIServer(ctx, hostedControlPlane, observedConfig, releaseImage, infraStatus.OpenShiftAPIHost, createOrUpdate); err != nil {
+	if err := r.reconcileOpenShiftAPIServer(ctx, hostedControlPlane, observedConfig, releaseImage, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver: %w", err)
 	}
 
@@ -901,7 +899,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 	// Reconcile openshift oauth apiserver
 	r.Log.Info("Reconciling OpenShift OAuth API Server")
-	if err := r.reconcileOpenShiftOAuthAPIServer(ctx, hostedControlPlane, observedConfig, releaseImage, infraStatus.OauthAPIServerHost, createOrUpdate); err != nil {
+	if err := r.reconcileOpenShiftOAuthAPIServer(ctx, hostedControlPlane, observedConfig, releaseImage, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver: %w", err)
 	}
 
@@ -969,7 +967,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 	// Reconcile OLM
 	r.Log.Info("Reconciling OLM")
-	if err = r.reconcileOperatorLifecycleManager(ctx, hostedControlPlane, releaseImage, infraStatus.PackageServerAPIAddress, createOrUpdate); err != nil {
+	if err = r.reconcileOperatorLifecycleManager(ctx, hostedControlPlane, releaseImage, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile olm: %w", err)
 	}
 
@@ -993,7 +991,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile ignition: %w", err)
 	}
 
-	// Reconcle machine config server config
+	// Reconcile machine config server config
 	r.Log.Info("Reconciling machine config server config")
 	if err = r.reconcileMachineConfigServerConfig(ctx, hostedControlPlane, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile mcs config: %w", err)
@@ -1792,6 +1790,19 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile machine config server cert secret: %w", err)
 	}
 
+	// Cluster Node Tuning Operator metrics Serving Cert
+	NodeTuningOperatorServingCert := manifests.ClusterNodeTuningOperatorServingCertSecret(hcp.Namespace)
+	NodeTuningOperatorService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
+	err := removeServiceCAAnnotationAndSecret(ctx, r.Client, NodeTuningOperatorService, NodeTuningOperatorServingCert)
+	if err != nil {
+		r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+	}
+	if _, err = createOrUpdate(ctx, r, NodeTuningOperatorServingCert, func() error {
+		return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile node tuning operator serving cert: %w", err)
+	}
+
 	// OLM PackageServer Cert
 	packageServerCertSecret := manifests.OLMPackageServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, packageServerCertSecret, func() error {
@@ -2359,7 +2370,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImage *releaseinfo.ReleaseImage, serviceClusterIP string, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := oapi.NewOpenShiftAPIServerParams(hcp, observedConfig, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
 	oapicfg := manifests.OpenShiftAPIServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, oapicfg, func() error {
@@ -2403,7 +2414,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImage *releaseinfo.ReleaseImage, serviceClusterIP string, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := oapi.NewOpenShiftAPIServerParams(hcp, observedConfig, releaseImage.ComponentImages(), r.SetDefaultSecurityContext)
 	auditCfg := manifests.OpenShiftOAuthAPIServerAuditConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, auditCfg, func() error {
@@ -2484,7 +2495,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 
 	deployment := manifests.OAuthServerDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, oauthConfig, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, util.APIPort(hcp), p.NamedCertificates(), p.Socks5ProxyImage, p.NoProxy)
+		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, oauthConfig, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, util.APIPort(hcp), p.NamedCertificates(), p.Socks5ProxyImage)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
@@ -2756,7 +2767,7 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, packageServerAddress string, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImage.ComponentImages(), releaseImage.Version(), r.SetDefaultSecurityContext)
 
 	if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {
@@ -3171,6 +3182,40 @@ func deleteIfExists(ctx context.Context, c client.Client, o client.Object) error
 	}
 	if err := c.Delete(ctx, o); err != nil {
 		return fmt.Errorf("failed to delete object: %w", err)
+	}
+	return nil
+}
+
+// removeServiceCAAnnotationAndSecret will delete Secret 'secret' and
+// remove the annotation "service.beta.openshift.io/serving-cert-secret-name"
+// from Service 'service' if it contains this annotation.
+// This is used to remove Secrets generated by the service-ca in case
+// of upgrade, from a control-plane version using service-ca generated certs
+// to a version where the service uses HCP controller generated certs.
+func removeServiceCAAnnotationAndSecret(ctx context.Context, c client.Client, service *corev1.Service, secret *corev1.Secret) error {
+	if err := c.Get(ctx, client.ObjectKeyFromObject(service), service); err != nil {
+		return fmt.Errorf("failed to get service: %w", err)
+	}
+
+	if err := c.Get(ctx, client.ObjectKeyFromObject(secret), secret); err != nil {
+		return fmt.Errorf("failed to get secret: %w", err)
+	}
+
+	_, ok := service.Annotations["service.beta.openshift.io/serving-cert-secret-name"]
+	if ok {
+		delete(service.Annotations, "service.beta.openshift.io/serving-cert-secret-name")
+		err := c.Update(ctx, service)
+		if err != nil {
+			return fmt.Errorf("failed to update service: %w", err)
+		}
+	}
+
+	_, ok = secret.Annotations["service.beta.openshift.io/originating-service-name"]
+	if ok {
+		err := deleteIfExists(ctx, c, secret)
+		if err != nil {
+			return fmt.Errorf("failed to delete secret generated by service-ca: %w", err)
+		}
 	}
 	return nil
 }
@@ -3634,7 +3679,7 @@ func healthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedControl
 	// We try to interact with cloud provider to see validate is operational.
 	if _, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{}); err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
-			// When awsErr.Code() is WebIdentityErr it's likely to be an external issue, e.g the idp resource was deleted.
+			// When awsErr.Code() is WebIdentityErr it's likely to be an external issue, e.g. the idp resource was deleted.
 			// We don't set awsErr.Message() in the condition as it might contain aws requests IDs that would make the condition be updated in loop.
 			if awsErr.Code() == "WebIdentityErr" {
 				condition := metav1.Condition{
