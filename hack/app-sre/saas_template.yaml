@@ -42859,7 +42859,7 @@ objects:
                           description: RootVolume represents values associated with
                             the VM volume that will host rhcos
                           properties:
-                            CacheStrategy:
+                            cacheStrategy:
                               description: CacheStrategy defines the boot image caching
                                 strategy. Default - no caching
                               properties:

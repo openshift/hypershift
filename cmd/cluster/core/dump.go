@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
+	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -210,6 +211,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&routev1.Route{},
 		&imagev1.ImageStream{},
 		&networkingv1.NetworkPolicy{},
+		&cdiv1beta1.DataVolume{},
 	}
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	if opts.AgentNamespace != "" {
@@ -221,6 +223,17 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	cmd.WithNamespace("hypershift").Run(ctx, resourceList)
 	if opts.AgentNamespace != "" {
 		cmd.WithNamespace(opts.AgentNamespace).Run(ctx, "agent.agent-install.openshift.io,infraenv.agent-install.openshift.io")
+	}
+
+	kubevirtInUse := false
+	for _, np := range nodePools {
+		if np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+			kubevirtInUse = true
+			break
+		}
+	}
+	if kubevirtInUse {
+		cmd.WithNamespace("openshift-virtualization").Run(ctx, resourceList)
 	}
 
 	podList := &corev1.PodList{}

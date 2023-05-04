@@ -587,7 +587,7 @@ type KubevirtRootVolume struct {
 
 	// CacheStrategy defines the boot image caching strategy. Default - no caching
 	// +optional
-	CacheStrategy *KubevirtCachingStrategy `json:"CacheStrategy,omitempty"`
+	CacheStrategy *KubevirtCachingStrategy `json:"cacheStrategy,omitempty"`
 }
 
 // KubevirtVolumeType is a specific supported KubeVirt volumes

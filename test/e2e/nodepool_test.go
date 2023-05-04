@@ -101,6 +101,10 @@ func TestNodePool(t *testing.T) {
 				manifestBuilder: NewNodePoolInPlaceUpgradeTestManifest(hostedCluster, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
 			},
 		*/
+		{
+			name: "KubeVirtCacheTest",
+			test: NewKubeVirtCacheTest(ctx, mgmtClient, hostedCluster),
+		},
 	}
 
 	t.Run("NodePool Tests Group", func(t *testing.T) {

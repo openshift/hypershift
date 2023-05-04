@@ -1235,10 +1235,19 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 	}
 
 	// Delete all secrets related to the NodePool
-	if err := r.deleteNodePoolSecrets(ctx, nodePool); err != nil {
+	if err = r.deleteNodePoolSecrets(ctx, nodePool); err != nil {
 		return fmt.Errorf("failed to delete NodePool secrets: %w", err)
 	}
 
+	err = r.deleteKubeVirtCache(ctx, nodePool, controlPlaneNamespace)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *NodePoolReconciler) deleteKubeVirtCache(ctx context.Context, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
 	if nodePool.Status.Platform != nil {
 		if nodePool.Status.Platform.KubeVirt != nil {
 			if cacheName := nodePool.Status.Platform.KubeVirt.CacheName; len(cacheName) > 0 {
@@ -1249,7 +1258,7 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 				}
 
 				if cl := r.KubevirtInfraClients.GetClient(string(nodePool.GetUID())); cl != nil {
-					err = kubevirt.DeleteCache(ctx, cl, cacheName, ns)
+					err := kubevirt.DeleteCache(ctx, cl, cacheName, ns)
 					if err != nil {
 						return err
 					}
@@ -1258,7 +1267,6 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 			}
 		}
 	}
-
 	return nil
 }
 

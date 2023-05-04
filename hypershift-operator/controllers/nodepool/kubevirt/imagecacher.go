@@ -151,6 +151,8 @@ func (qi *cachedQCOWImage) CacheImage(ctx context.Context, cl client.Client, nod
 		}
 	}
 
+	qi.cleanOldCaches(ctx, cl, oldDVs)
+
 	// if no DV with the required hash was found
 	if len(dvName) == 0 {
 		logger.Info("couldn't find boot image cache DataVolume; creating it...")
@@ -161,11 +163,7 @@ func (qi *cachedQCOWImage) CacheImage(ctx context.Context, cl client.Client, nod
 		dvName = dv.Name
 	}
 
-	if len(dvName) == 0 {
-		return fmt.Errorf("can't get the name of the boot image cache DataVolume")
-	}
 	qi.dvName = dvName
-	qi.cleanOldCaches(ctx, cl, oldDVs)
 
 	return nil
 }
@@ -173,7 +171,7 @@ func (qi *cachedQCOWImage) CacheImage(ctx context.Context, cl client.Client, nod
 func (qi *cachedQCOWImage) cleanOldCaches(ctx context.Context, cl client.Client, oldDVs []v1beta1.DataVolume) {
 	logger := ctrl.LoggerFrom(ctx)
 	for _, oldDV := range oldDVs {
-		if oldDV.DeletionTimestamp == nil {
+		if oldDV.DeletionTimestamp.IsZero() {
 			logger.Info("deleting an old boot image cache DataVolume", "namespace", oldDV.Namespace, "DataVolume name", oldDV.Name)
 			err := cl.Delete(ctx, &oldDV)
 			if err != nil {
@@ -292,9 +290,11 @@ func DeleteCache(ctx context.Context, cl client.Client, name, namespace string) 
 		return fmt.Errorf("failed to get DataVolume %s/%s: %w", namespace, name, err)
 	}
 
-	err = cl.Delete(ctx, &dv)
-	if err != nil {
-		return fmt.Errorf("failed to delete DataVolume %s/%s: %w", namespace, name, err)
+	if dv.ObjectMeta.DeletionTimestamp.IsZero() {
+		err = cl.Delete(ctx, &dv)
+		if err != nil {
+			return fmt.Errorf("failed to delete DataVolume %s/%s: %w", namespace, name, err)
+		}
 	}
 
 	return nil
