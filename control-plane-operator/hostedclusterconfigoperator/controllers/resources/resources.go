@@ -1498,6 +1498,8 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	}
 	if !removed {
 		remaining.Insert("image-registry")
+	} else {
+		log.Info("Image registry is removed")
 	}
 	log.Info("Ensuring ingress controllers are removed")
 	removed, err = r.ensureIngressControllersRemoved(ctx)
@@ -1506,6 +1508,8 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	}
 	if !removed {
 		remaining.Insert("ingress-controllers")
+	} else {
+		log.Info("Ingress controllers are removed")
 	}
 	log.Info("Ensuring load balancers are removed")
 	removed, err = r.ensureServiceLoadBalancersRemoved(ctx)
@@ -1514,6 +1518,8 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	}
 	if !removed {
 		remaining.Insert("loadbalancers")
+	} else {
+		log.Info("Load balancers are removed")
 	}
 	log.Info("Ensuring persistent volumes are removed")
 	removed, err = r.ensurePersistentVolumesRemoved(ctx)
@@ -1522,6 +1528,8 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	}
 	if !removed {
 		remaining.Insert("persistent-volumes")
+	} else {
+		log.Info("Persistent volumes are removed")
 	}
 
 	return remaining, errors.NewAggregate(errs)
@@ -1671,7 +1679,13 @@ func (r *reconciler) ensureImageRegistryStorageRemoved(ctx context.Context) (boo
 func (r *reconciler) ensureServiceLoadBalancersRemoved(ctx context.Context) (bool, error) {
 	found, err := cleanupResources(ctx, r.client, &corev1.ServiceList{}, func(obj client.Object) bool {
 		svc := obj.(*corev1.Service)
-		return svc.Spec.Type == corev1.ServiceTypeLoadBalancer
+		if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
+			return false
+		}
+		if _, hasAnnotation := svc.Annotations["ingresscontroller.operator.openshift.io/owning-ingresscontroller"]; hasAnnotation {
+			return false
+		}
+		return true
 	}, false)
 	if err != nil {
 		return false, fmt.Errorf("failed to remove load balancer services: %w", err)
