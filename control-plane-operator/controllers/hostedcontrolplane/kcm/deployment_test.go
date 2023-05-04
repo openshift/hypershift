@@ -17,7 +17,7 @@ func TestKCMArgs(t *testing.T) {
 			name: "Leader elect args get set correctly",
 			p:    &KubeControllerManagerParams{},
 			expected: []string{
-				"--leader-elect-resource-lock=configmapsleases",
+				"--leader-elect-resource-lock=leases",
 				"--leader-elect=true",
 				// Contrary to everything else, KCM should not have an increased lease duration, see
 				// https://github.com/openshift/cluster-kube-controller-manager-operator/pull/557#issuecomment-904648807
