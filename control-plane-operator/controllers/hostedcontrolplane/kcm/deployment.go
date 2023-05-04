@@ -346,7 +346,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		fmt.Sprintf("--pv-recycler-pod-template-filepath-nfs=%s", cpath(kcmVolumeRecyclerConfig().Name, RecyclerPodTemplateKey)),
 		"--kube-api-burst=300",
 		"--kube-api-qps=150",
-		"--leader-elect-resource-lock=configmapsleases",
+		"--leader-elect-resource-lock=leases",
 		"--leader-elect=true",
 		"--leader-elect-retry-period=3s",
 		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeRootCA().Name, certs.CASignerCertMapKey)),
