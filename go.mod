@@ -181,6 +181,8 @@ require (
 )
 
 replace (
+	k8s.io/api => k8s.io/api v0.25.2
+	k8s.io/apimachinery => k8s.io/apimachinery v0.25.2
 	k8s.io/client-go => k8s.io/client-go v0.25.2
 	k8s.io/kubernetes => k8s.io/kubernetes v0.23.3
 	kubevirt.io/client-go => kubevirt.io/client-go v0.0.0-00010101000000-000000000000
