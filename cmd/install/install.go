@@ -148,10 +148,6 @@ func NewCommand() *cobra.Command {
 	}
 
 	var opts Options
-	if os.Getenv("CI") == "true" {
-		opts.PlatformMonitoring = metrics.PlatformMonitoringAll
-		opts.EnableCIDebugOutput = true
-	}
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
 	opts.MetricsSet = metrics.DefaultMetricsSet
 	opts.EnableConversionWebhook = true // default to enabling the conversion webhook
