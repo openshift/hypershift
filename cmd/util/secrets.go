@@ -68,3 +68,15 @@ func GetDockerConfigJSON(name string, namespace string) ([]byte, error) {
 	}
 	return dockerConfigJSON, nil
 }
+
+func GetPullSecret(name string, namespace string) ([]byte, error) {
+	secret, err := GetSecret(name, namespace)
+	if err != nil {
+		return nil, err
+	}
+	pullSecret := secret.Data["pullSecret"]
+	if len(pullSecret) == 0 {
+		return nil, fmt.Errorf("the pull secret is invalid, {namespace: %s, secret: %s}", namespace, name)
+	}
+	return []byte(pullSecret), nil
+}
