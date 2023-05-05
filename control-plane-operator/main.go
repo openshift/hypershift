@@ -361,6 +361,7 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 		setupLog.Info("Using metrics set", "set", metricsSet.String())
+
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                        mgr.GetClient(),
 			ManagementClusterCapabilities: mgmtClusterCaps,

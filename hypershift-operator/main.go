@@ -43,7 +43,6 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
@@ -228,6 +227,25 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 	log.Info("Using metrics set", "set", metricsSet.String())
 
+	sreConfigHash := ""
+	if metricsSet == metrics.MetricsSetSRE {
+		readerClient := mgr.GetAPIReader()
+		cm := metrics.SREMetricsSetConfigurationConfigMap(opts.Namespace)
+		err := readerClient.Get(context.Background(), crclient.ObjectKeyFromObject(cm), cm)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				log.Info("WARNING: no configuration found for the SRE metrics set")
+			} else {
+				return fmt.Errorf("unable to read SRE metrics set configmap: %w", err)
+			}
+		} else {
+			if err := metrics.LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+				return fmt.Errorf("unable to load SRE metrics configuration: %w", err)
+			}
+			sreConfigHash = metrics.SREMetricsSetConfigHash(cm)
+		}
+	}
+
 	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
 		Client:                        mgr.GetClient(),
 		ManagementClusterCapabilities: mgmtClusterCaps,
@@ -241,8 +259,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		},
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
-		ImageMetadataProvider:      &util.RegistryClientImageMetadataProvider{},
+		ImageMetadataProvider:      &hyperutil.RegistryClientImageMetadataProvider{},
 		MetricsSet:                 metricsSet,
+		OperatorNamespace:          opts.Namespace,
+		SREConfigHash:              sreConfigHash,
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
@@ -251,7 +271,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		hostedClusterReconciler.S3Client = s3Client
 		hostedClusterReconciler.OIDCStorageProviderS3BucketName = opts.OIDCStorageProviderS3BucketName
 	}
-	if err := hostedClusterReconciler.SetupWithManager(mgr, createOrUpdate); err != nil {
+	if err := hostedClusterReconciler.SetupWithManager(mgr, createOrUpdate, metricsSet, opts.Namespace); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 	if opts.CertDir != "" {
@@ -290,7 +310,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		},
 		CreateOrUpdateProvider:  createOrUpdate,
 		HypershiftOperatorImage: operatorImage,
-		ImageMetadataProvider:   &util.RegistryClientImageMetadataProvider{},
+		ImageMetadataProvider:   &hyperutil.RegistryClientImageMetadataProvider{},
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
