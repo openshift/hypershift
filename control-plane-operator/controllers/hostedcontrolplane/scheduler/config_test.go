@@ -25,7 +25,7 @@ func TestGenerateConfig(t *testing.T) {
 	g.Expect(err).ShouldNot(HaveOccurred())
 
 	leaderElectionConfig := componentbasev1.LeaderElectionConfiguration{
-		LeaderElect:   pointer.BoolPtr(true),
+		LeaderElect:   pointer.Bool(true),
 		LeaseDuration: metav1.Duration{Duration: leaseDuration},
 		RenewDeadline: metav1.Duration{Duration: renewDeadline},
 		RetryPeriod:   metav1.Duration{Duration: retryPeriod},

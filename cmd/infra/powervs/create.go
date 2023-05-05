@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/go-logr/logr"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/go-logr/logr"
 
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -915,8 +916,8 @@ func (infra *Infra) createVpc(ctx context.Context, options *CreateInfraOptions, 
 			SecurityGroupRulePrototype: &vpcv1.SecurityGroupRulePrototype{
 				Direction: utilpointer.String("inbound"),
 				Protocol:  utilpointer.String("tcp"),
-				PortMax:   utilpointer.Int64Ptr(port),
-				PortMin:   utilpointer.Int64Ptr(port),
+				PortMax:   utilpointer.Int64(port),
+				PortMin:   utilpointer.Int64(port),
 			},
 		})
 

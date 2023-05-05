@@ -54,7 +54,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.IntPtr(1))
+	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	p.DeploymentConfig.ReadinessProbes = config.ReadinessProbes{
 		ingressOperatorContainerName: {
@@ -109,7 +109,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		hyperv1.ControlPlaneComponent: operatorName,
 	}
 
-	dep.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.BoolPtr(false)
+	dep.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.Bool(false)
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{
 			"ingress-operator",
@@ -157,10 +157,10 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	}}
 	dep.Spec.Template.Spec.Containers = append(dep.Spec.Template.Spec.Containers, ingressOperatorSocks5ProxyContainer(params.Socks5ProxyImage))
 	dep.Spec.Template.Spec.Volumes = []corev1.Volume{
-		{Name: "ingress-operator-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.IngressOperatorKubeconfig("").Name, DefaultMode: utilpointer.Int32Ptr(0640)}}},
-		{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32Ptr(0640)}}},
-		{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32Ptr(0640)}}},
-		{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32Ptr(0640)}}},
+		{Name: "ingress-operator-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.IngressOperatorKubeconfig("").Name, DefaultMode: utilpointer.Int32(0640)}}},
+		{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32(0640)}}},
+		{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32(0640)}}},
+		{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32(0640)}}},
 	}
 
 	if params.Platform == hyperv1.AWSPlatform {

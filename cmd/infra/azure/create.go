@@ -284,7 +284,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		Location: utilpointer.String("global"),
 		VirtualNetworkLinkProperties: &privatedns.VirtualNetworkLinkProperties{
 			VirtualNetwork:      &privatedns.SubResource{ID: vnet.ID},
-			RegistrationEnabled: utilpointer.BoolPtr(false),
+			RegistrationEnabled: utilpointer.Bool(false),
 		},
 	}
 	networkLinkPromise, err := privateZoneLinkClient.CreateOrUpdate(ctx, *rg.Name, *privateDNSZone.Name, o.Name+"-"+o.InfraID, virtualNetworkLinkParams, "", "")

@@ -387,7 +387,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 
 	var etcdStorgageClass *string = nil
 	if len(o.EtcdStorageClass) > 0 {
-		etcdStorgageClass = pointer.StringPtr(o.EtcdStorageClass)
+		etcdStorgageClass = pointer.String(o.EtcdStorageClass)
 	}
 	cluster := &hyperv1.HostedCluster{
 		TypeMeta: metav1.TypeMeta{

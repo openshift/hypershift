@@ -67,7 +67,7 @@ func generateAWSKMSEncryptionConfig(activeKey hyperv1.AWSKMSKeyEntry, backupKey 
 		KMS: &v1.KMSConfiguration{
 			Name:      fmt.Sprintf("%s-%d", awsKeyNamePrefix, hasher.Sum32()),
 			Endpoint:  activeAWSKMSUnixSocket,
-			CacheSize: pointer.Int32Ptr(100),
+			CacheSize: pointer.Int32(100),
 			Timeout:   &metav1.Duration{Duration: 35 * time.Second},
 		},
 	})
@@ -81,7 +81,7 @@ func generateAWSKMSEncryptionConfig(activeKey hyperv1.AWSKMSKeyEntry, backupKey 
 			KMS: &v1.KMSConfiguration{
 				Name:      fmt.Sprintf("%s-%d", awsKeyNamePrefix, hasher.Sum32()),
 				Endpoint:  backupAWSKMSUnixSocket,
-				CacheSize: pointer.Int32Ptr(100),
+				CacheSize: pointer.Int32(100),
 				Timeout:   &metav1.Duration{Duration: 35 * time.Second},
 			},
 		})

@@ -75,10 +75,10 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 	}
 	defaultMode := int32(0640)
 	return &appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32Ptr(1),
+		Replicas: k8sutilspointer.Int32(1),
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
+				TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
 				Tolerations: []corev1.Toleration{
 					{
 						Key:    "node-role.kubernetes.io/master",

@@ -81,7 +81,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 				},
 			},
 			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.BoolPtr(false),
+				AutomountServiceAccountToken: pointer.Bool(false),
 				Containers: []corev1.Container{
 					util.BuildContainer(schedulerContainerMain(), buildSchedulerContainerMain(image, deployment.Namespace, featureGates, policy, ciphers, tlsVersion, disableProfiling)),
 				},
@@ -172,6 +172,6 @@ func schedulerVolumeKubeconfig() *corev1.Volume {
 func buildSchedulerVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.SchedulerKubeconfigSecret("").Name,
-		DefaultMode: pointer.Int32Ptr(0640),
+		DefaultMode: pointer.Int32(0640),
 	}
 }

@@ -49,7 +49,7 @@ func TestApplyNamedCertificateMounts(t *testing.T) {
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
 							SecretName:  "example-cert",
-							DefaultMode: pointer.Int32Ptr(0640),
+							DefaultMode: pointer.Int32(0640),
 						},
 					},
 				},

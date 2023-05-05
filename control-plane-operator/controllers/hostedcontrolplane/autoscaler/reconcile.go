@@ -78,7 +78,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 	}
 
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32Ptr(1),
+		Replicas: k8sutilspointer.Int32(1),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: selector,
 		},
@@ -88,7 +88,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName:            sa.Name,
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
+				TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
 				Tolerations: []corev1.Toleration{
 					{
 						Key:    "node-role.kubernetes.io/master",
@@ -101,7 +101,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  kubeConfigSecret.Name,
-								DefaultMode: k8sutilspointer.Int32Ptr(0640),
+								DefaultMode: k8sutilspointer.Int32(0640),
 								Items: []corev1.KeyToPath{
 									{
 										// TODO: should the key be published on status?

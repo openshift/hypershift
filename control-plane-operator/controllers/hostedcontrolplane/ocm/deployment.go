@@ -70,7 +70,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
 		configHashAnnotation: configHash,
 	}
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.BoolPtr(false)
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(false)
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(ocmContainerMain(), buildOCMContainerMain(image)),
 	}
@@ -130,7 +130,7 @@ func ocmVolumeKubeconfig() *corev1.Volume {
 func buildOCMVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
+	v.Secret.DefaultMode = pointer.Int32(0640)
 }
 
 func ocmVolumeServingCert() *corev1.Volume {
@@ -142,5 +142,5 @@ func ocmVolumeServingCert() *corev1.Volume {
 func buildOCMVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftControllerManagerCertSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
+	v.Secret.DefaultMode = pointer.Int32(0640)
 }

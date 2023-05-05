@@ -70,7 +70,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.IntPtr(1))
+	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	return p
@@ -105,7 +105,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	dep.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: map[string]string{"name": "dns-operator"},
 	}
-	dep.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.BoolPtr(false)
+	dep.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.Bool(false)
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Args: []string{
 			"--leader-elect=true",
@@ -153,7 +153,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
 				SecretName:  "dns-operator-kubeconfig",
-				DefaultMode: utilpointer.Int32Ptr(0640),
+				DefaultMode: utilpointer.Int32(0640),
 			},
 		},
 	}}

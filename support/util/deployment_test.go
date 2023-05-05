@@ -19,7 +19,7 @@ func TestIsDeploymentReady(t *testing.T) {
 				Generation: 1,
 			},
 			Spec: appsv1.DeploymentSpec{
-				Replicas: pointer.Int32Ptr(3),
+				Replicas: pointer.Int32(3),
 			},
 			Status: appsv1.DeploymentStatus{
 				UpdatedReplicas:    3,
@@ -35,7 +35,7 @@ func TestIsDeploymentReady(t *testing.T) {
 				Generation: 1,
 			},
 			Spec: appsv1.DeploymentSpec{
-				Replicas: pointer.Int32Ptr(3),
+				Replicas: pointer.Int32(3),
 			},
 			Status: appsv1.DeploymentStatus{
 				UpdatedReplicas:    2,
@@ -51,7 +51,7 @@ func TestIsDeploymentReady(t *testing.T) {
 				Generation: 1,
 			},
 			Spec: appsv1.DeploymentSpec{
-				Replicas: pointer.Int32Ptr(3),
+				Replicas: pointer.Int32(3),
 			},
 			Status: appsv1.DeploymentStatus{
 				UpdatedReplicas:    3,
@@ -67,7 +67,7 @@ func TestIsDeploymentReady(t *testing.T) {
 				Generation: 2,
 			},
 			Spec: appsv1.DeploymentSpec{
-				Replicas: pointer.Int32Ptr(3),
+				Replicas: pointer.Int32(3),
 			},
 			Status: appsv1.DeploymentStatus{
 				UpdatedReplicas:    3,

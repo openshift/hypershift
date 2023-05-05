@@ -266,7 +266,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName:            sa.Name,
-					TerminationGracePeriodSeconds: utilpointer.Int64Ptr(10),
+					TerminationGracePeriodSeconds: utilpointer.Int64(10),
 					Tolerations: []corev1.Toleration{
 						{
 							Key:    "node-role.kubernetes.io/master",
@@ -279,7 +279,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
 									SecretName:  servingCertSecret.Name,
-									DefaultMode: utilpointer.Int32Ptr(0640),
+									DefaultMode: utilpointer.Int32(0640),
 								},
 							},
 						},
@@ -370,7 +370,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		// set security context
 		if !managementClusterHasCapabilitySecurityContextConstraint {
 			ignitionServerDeployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-				RunAsUser: utilpointer.Int64Ptr(config.DefaultSecurityContextUser),
+				RunAsUser: utilpointer.Int64(config.DefaultSecurityContextUser),
 			}
 		}
 

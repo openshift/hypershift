@@ -46,7 +46,7 @@ func NewParams(
 	params.DeploymentConfig.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,
 	}
-	params.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.IntPtr(1))
+	params.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	return &params

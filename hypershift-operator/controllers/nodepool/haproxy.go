@@ -293,7 +293,7 @@ func generateHAProxyStaticPod(image, internalAPIAddress string, internalAPIPort 
 					},
 				},
 				SecurityContext: &corev1.SecurityContext{
-					RunAsUser: pointer.Int64Ptr(config.DefaultSecurityContextUser),
+					RunAsUser: pointer.Int64(config.DefaultSecurityContextUser),
 				},
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
@@ -361,7 +361,7 @@ func generateKubernetesDefaultProxyPod(image string, listenAddr string, proxyAdd
 						"--apiserver-addr=" + apiserverAddr,
 					},
 					SecurityContext: &corev1.SecurityContext{
-						RunAsUser: pointer.Int64Ptr(config.DefaultSecurityContextUser),
+						RunAsUser: pointer.Int64(config.DefaultSecurityContextUser),
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
@@ -386,12 +386,12 @@ func fileFromBytes(path string, mode int, contents []byte) ignitionapi.File {
 	return ignitionapi.File{
 		Node: ignitionapi.Node{
 			Path:      path,
-			Overwrite: pointer.BoolPtr(true),
+			Overwrite: pointer.Bool(true),
 		},
 		FileEmbedded1: ignitionapi.FileEmbedded1{
 			Mode: &mode,
 			Contents: ignitionapi.Resource{
-				Source: pointer.StringPtr(dataurl.EncodeBytes(contents)),
+				Source: pointer.String(dataurl.EncodeBytes(contents)),
 			},
 		},
 	}
@@ -402,6 +402,6 @@ func apiServerIPUnit() ignitionapi.Unit {
 	return ignitionapi.Unit{
 		Name:     "apiserver-ip.service",
 		Contents: &content,
-		Enabled:  pointer.BoolPtr(true),
+		Enabled:  pointer.Bool(true),
 	}
 }

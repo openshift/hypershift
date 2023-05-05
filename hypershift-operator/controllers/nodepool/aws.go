@@ -99,7 +99,7 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 	awsMachineTemplateSpec := &capiaws.AWSMachineTemplateSpec{
 		Template: capiaws.AWSMachineTemplateResource{
 			Spec: capiaws.AWSMachineSpec{
-				UncompressedUserData: k8sutilspointer.BoolPtr(true),
+				UncompressedUserData: k8sutilspointer.Bool(true),
 				CloudInit: capiaws.CloudInit{
 					InsecureSkipSecretsManager: true,
 					SecureSecretsBackend:       "secrets-manager",
@@ -107,7 +107,7 @@ func awsMachineTemplateSpec(infraName, ami string, hostedCluster *hyperv1.Hosted
 				IAMInstanceProfile: instanceProfile,
 				InstanceType:       instanceType,
 				AMI: capiaws.AMIReference{
-					ID: k8sutilspointer.StringPtr(ami),
+					ID: k8sutilspointer.String(ami),
 				},
 				AdditionalSecurityGroups: securityGroups,
 				Subnet:                   subnet,

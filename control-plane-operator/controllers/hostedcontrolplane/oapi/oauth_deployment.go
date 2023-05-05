@@ -76,7 +76,7 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftOAuthAPIServerLabels()
 	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: pointer.BoolPtr(false),
+		AutomountServiceAccountToken: pointer.Bool(false),
 		Containers: []corev1.Container{
 			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(p)),
 			{
@@ -210,7 +210,7 @@ func oauthVolumeKubeconfig() *corev1.Volume {
 func buildOAuthVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
+	v.Secret.DefaultMode = pointer.Int32(0640)
 }
 
 func oauthVolumeEtcdClientCA() *corev1.Volume {
@@ -233,7 +233,7 @@ func oauthVolumeServingCert() *corev1.Volume {
 func buildOAuthVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftOAuthAPIServerCertSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
+	v.Secret.DefaultMode = pointer.Int32(0640)
 }
 
 func oauthVolumeEtcdClientCert() *corev1.Volume {
@@ -278,7 +278,7 @@ func oauthAuditWebhookConfigFile() string {
 func buildOAuthVolumeEtcdClientCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32Ptr(0640)
+	v.Secret.DefaultMode = pointer.Int32(0640)
 }
 
 func ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *OAuthDeploymentParams) error {

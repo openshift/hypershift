@@ -506,7 +506,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 										"ALL",
 									},
 								},
-								RunAsUser: k8sutilspointer.Int64Ptr(1000),
+								RunAsUser: k8sutilspointer.Int64(1000),
 								SeccompProfile: &corev1.SeccompProfile{
 									Type: corev1.SeccompProfileTypeRuntimeDefault,
 								},

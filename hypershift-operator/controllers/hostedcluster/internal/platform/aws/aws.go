@@ -81,7 +81,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64Ptr(10),
+				TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
 				Tolerations: []corev1.Toleration{
 					{
 						Key:    "node-role.kubernetes.io/master",

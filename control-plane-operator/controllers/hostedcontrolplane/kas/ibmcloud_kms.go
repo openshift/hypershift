@@ -93,7 +93,7 @@ func generateIBMCloudKMSEncryptionConfig(kmsKeyList []hyperv1.IBMCloudKMSKeyEntr
 			KMS: &v1.KMSConfiguration{
 				Name:      fmt.Sprintf("%s%d", ibmKeyNamePrefix, keyVersionKeyEntryMap[keys[i]].KeyVersion),
 				Endpoint:  ibmCloudKMSUnixSocket,
-				CacheSize: pointer.Int32Ptr(100),
+				CacheSize: pointer.Int32(100),
 				Timeout:   &metav1.Duration{Duration: 35 * time.Second},
 			},
 		}

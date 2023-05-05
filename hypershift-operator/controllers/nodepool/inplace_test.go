@@ -87,7 +87,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineSetSpec{
-					Replicas: k8sutilspointer.Int32Ptr(1),
+					Replicas: k8sutilspointer.Int32(1),
 				},
 			},
 			expectReplicas: 2,
@@ -113,7 +113,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineSetSpec{
-					Replicas: k8sutilspointer.Int32Ptr(10),
+					Replicas: k8sutilspointer.Int32(10),
 				},
 			},
 			expectReplicas: 5,

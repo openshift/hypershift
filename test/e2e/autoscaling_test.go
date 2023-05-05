@@ -152,9 +152,9 @@ func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, ima
 					RestartPolicy: corev1.RestartPolicy("Never"),
 				},
 			},
-			BackoffLimit: pointer.Int32Ptr(4),
-			Completions:  pointer.Int32Ptr(njobs),
-			Parallelism:  pointer.Int32Ptr(njobs),
+			BackoffLimit: pointer.Int32(4),
+			Completions:  pointer.Int32(njobs),
+			Parallelism:  pointer.Int32(njobs),
 		},
 	}
 	if nodeSelector != "" {

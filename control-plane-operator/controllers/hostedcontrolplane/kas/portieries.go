@@ -60,6 +60,6 @@ func kasVolumePortierisCerts() *corev1.Volume {
 func buildKASVolumePortierisCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  v.Name,
-		DefaultMode: pointer.Int32Ptr(0640),
+		DefaultMode: pointer.Int32(0640),
 	}
 }
