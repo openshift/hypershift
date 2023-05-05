@@ -745,7 +745,9 @@ func healthCheckKASEndpoint(hostname string, hcp *hyperv1.HostedControlPlane) er
 	port := util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz", hostname, port)
 
-	resp, err := util.InsecureHTTPClient().Get(healthEndpoint)
+	httpClient := util.InsecureHTTPClient()
+	httpClient.Timeout = 10 * time.Second
+	resp, err := httpClient.Get(healthEndpoint)
 	if err != nil {
 		return err
 	}
