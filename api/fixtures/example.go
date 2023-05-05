@@ -3,6 +3,7 @@ package fixtures
 import (
 	"crypto/rand"
 	"fmt"
+	"strings"
 	"time"
 
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -305,6 +306,27 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			platformSpec.Kubevirt.BaseDomainPassthrough = &o.Kubevirt.BaseDomainPassthrough
 		}
 
+		if len(o.Kubevirt.InfraStorageClassMappings) > 0 {
+			platformSpec.Kubevirt.StorageDriver = &hyperv1.KubevirtStorageDriverSpec{
+				Type:   hyperv1.ManualKubevirtStorageDriverConfigType,
+				Manual: &hyperv1.KubevirtManualStorageDriverConfig{},
+			}
+
+			for _, mapping := range o.Kubevirt.InfraStorageClassMappings {
+				split := strings.Split(mapping, "/")
+				if len(split) != 2 {
+					// This is sanity checked by the hypershift cli as well, so this error should
+					// not be encountered here. This check is left here as a safety measure.
+					panic(fmt.Sprintf("invalid KubeVirt infra storage class mapping [%s]", mapping))
+				}
+				newMap := hyperv1.KubevirtStorageClassMapping{
+					InfraStorageClassName: split[0],
+					GuestStorageClassName: split[1],
+				}
+				platformSpec.Kubevirt.StorageDriver.Manual.StorageClassMapping =
+					append(platformSpec.Kubevirt.StorageDriver.Manual.StorageClassMapping, newMap)
+			}
+		}
 	case o.Azure != nil:
 		credentialSecret := &corev1.Secret{
 			TypeMeta: metav1.TypeMeta{

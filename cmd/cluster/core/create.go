@@ -123,6 +123,7 @@ type KubevirtPlatformCreateOptions struct {
 	InfraKubeConfigFile       string
 	InfraNamespace            string
 	CacheStrategyType         string
+	InfraStorageClassMappings []string
 }
 
 type AWSPlatformOptions struct {

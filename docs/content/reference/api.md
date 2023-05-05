@@ -4918,6 +4918,41 @@ string
 </tr>
 </tbody>
 </table>
+###KubevirtManualStorageDriverConfig { #hypershift.openshift.io/v1beta1.KubevirtManualStorageDriverConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtStorageDriverSpec">KubevirtStorageDriverSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>storageClassMapping</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtStorageClassMapping">
+[]KubevirtStorageClassMapping
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StorageClassMapping maps StorageClasses on the infra cluster hosting
+the KubeVirt VMs to StorageClasses that are made available within the
+Guest Cluster.</p>
+<p>NOTE: It is possible that not all capablities of an infra cluster&rsquo;s
+storageclass will be present for the corresponding guest clusters storageclass.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###KubevirtNodePoolPlatform { #hypershift.openshift.io/v1beta1.KubevirtNodePoolPlatform }
 <p>
 (<em>Appears on:</em>
@@ -5143,6 +5178,21 @@ on a cluster separate from the one hosting the Hosted Control Plane components.<
 the same cluster and namespace as the Hosted Control Plane.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>storageDriver</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtStorageDriverSpec">
+KubevirtStorageDriverSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StorageDriver defines how the KubeVirt CSI driver exposes StorageClasses on
+the infra cluster (hosting the VMs) to the guest cluster.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubevirtRootVolume { #hypershift.openshift.io/v1beta1.KubevirtRootVolume }
@@ -5203,6 +5253,121 @@ KubevirtCachingStrategy
 <td>
 <em>(Optional)</em>
 <p>CacheStrategy defines the boot image caching strategy. Default - no caching</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtStorageClassMapping { #hypershift.openshift.io/v1beta1.KubevirtStorageClassMapping }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtManualStorageDriverConfig">KubevirtManualStorageDriverConfig</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>infraStorageClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>InfraStorageClassName is the name of the infra cluster storage class that
+will be exposed into the guest.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestStorageClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>GuestStorageClassName is the name that the corresponding storageclass will
+be called within the guest cluster</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtStorageDriverConfigType { #hypershift.openshift.io/v1beta1.KubevirtStorageDriverConfigType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtStorageDriverSpec">KubevirtStorageDriverSpec</a>)
+</p>
+<p>
+<p>KubevirtStorageDriverConfigType defines how the kubevirt storage driver is configured.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Default&#34;</p></td>
+<td><p>DefaultKubevirtStorageDriverConfigType means the kubevirt storage driver maps to the
+underlying infra cluster&rsquo;s default storageclass</p>
+</td>
+</tr><tr><td><p>&#34;Manual&#34;</p></td>
+<td><p>ManualKubevirtStorageDriverConfigType means the kubevirt storage driver mapping is
+explicitly defined.</p>
+</td>
+</tr><tr><td><p>&#34;None&#34;</p></td>
+<td><p>NoneKubevirtStorageDriverConfigType means no kubevirt storage driver is used</p>
+</td>
+</tr></tbody>
+</table>
+###KubevirtStorageDriverSpec { #hypershift.openshift.io/v1beta1.KubevirtStorageDriverSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtPlatformSpec">KubevirtPlatformSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtStorageDriverConfigType">
+KubevirtStorageDriverConfigType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Type represents the type of kubevirt csi driver configuration to use</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>manual</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtManualStorageDriverConfig">
+KubevirtManualStorageDriverConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Manual is used to explicilty define how the infra storageclasses are
+mapped to guest storageclasses</p>
 </td>
 </tr>
 </tbody>

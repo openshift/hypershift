@@ -29994,6 +29994,63 @@ objects:
                           x-kubernetes-validations:
                           - message: Kubevirt GenerateID is immutable once set
                             rule: self == oldSelf
+                        storageDriver:
+                          description: StorageDriver defines how the KubeVirt CSI
+                            driver exposes StorageClasses on the infra cluster (hosting
+                            the VMs) to the guest cluster.
+                          properties:
+                            manual:
+                              description: Manual is used to explicilty define how
+                                the infra storageclasses are mapped to guest storageclasses
+                              properties:
+                                storageClassMapping:
+                                  description: "StorageClassMapping maps StorageClasses
+                                    on the infra cluster hosting the KubeVirt VMs
+                                    to StorageClasses that are made available within
+                                    the Guest Cluster. \n NOTE: It is possible that
+                                    not all capablities of an infra cluster's storageclass
+                                    will be present for the corresponding guest clusters
+                                    storageclass."
+                                  items:
+                                    properties:
+                                      guestStorageClassName:
+                                        description: GuestStorageClassName is the
+                                          name that the corresponding storageclass
+                                          will be called within the guest cluster
+                                        type: string
+                                      infraStorageClassName:
+                                        description: InfraStorageClassName is the
+                                          name of the infra cluster storage class
+                                          that will be exposed into the guest.
+                                        type: string
+                                    required:
+                                    - guestStorageClassName
+                                    - infraStorageClassName
+                                    type: object
+                                  type: array
+                                  x-kubernetes-validations:
+                                  - message: storageClassMapping is immutable
+                                    rule: self == oldSelf
+                              type: object
+                              x-kubernetes-validations:
+                              - message: storageDriver.Manual is immutable
+                                rule: self == oldSelf
+                            type:
+                              default: Default
+                              description: Type represents the type of kubevirt csi
+                                driver configuration to use
+                              enum:
+                              - None
+                              - Default
+                              - Manual
+                              type: string
+                              x-kubernetes-validations:
+                              - message: storageDriver.Type is immutable
+                                rule: self == oldSelf
+                          type: object
+                          x-kubernetes-validations:
+                          - message: storageDriver is immutable
+                            rule: self == oldSelf
                       type: object
                       x-kubernetes-validations:
                       - message: Kubevirt GenerateID is required once set
@@ -33713,6 +33770,63 @@ objects:
                           type: string
                           x-kubernetes-validations:
                           - message: Kubevirt GenerateID is immutable once set
+                            rule: self == oldSelf
+                        storageDriver:
+                          description: StorageDriver defines how the KubeVirt CSI
+                            driver exposes StorageClasses on the infra cluster (hosting
+                            the VMs) to the guest cluster.
+                          properties:
+                            manual:
+                              description: Manual is used to explicilty define how
+                                the infra storageclasses are mapped to guest storageclasses
+                              properties:
+                                storageClassMapping:
+                                  description: "StorageClassMapping maps StorageClasses
+                                    on the infra cluster hosting the KubeVirt VMs
+                                    to StorageClasses that are made available within
+                                    the Guest Cluster. \n NOTE: It is possible that
+                                    not all capablities of an infra cluster's storageclass
+                                    will be present for the corresponding guest clusters
+                                    storageclass."
+                                  items:
+                                    properties:
+                                      guestStorageClassName:
+                                        description: GuestStorageClassName is the
+                                          name that the corresponding storageclass
+                                          will be called within the guest cluster
+                                        type: string
+                                      infraStorageClassName:
+                                        description: InfraStorageClassName is the
+                                          name of the infra cluster storage class
+                                          that will be exposed into the guest.
+                                        type: string
+                                    required:
+                                    - guestStorageClassName
+                                    - infraStorageClassName
+                                    type: object
+                                  type: array
+                                  x-kubernetes-validations:
+                                  - message: storageClassMapping is immutable
+                                    rule: self == oldSelf
+                              type: object
+                              x-kubernetes-validations:
+                              - message: storageDriver.Manual is immutable
+                                rule: self == oldSelf
+                            type:
+                              default: Default
+                              description: Type represents the type of kubevirt csi
+                                driver configuration to use
+                              enum:
+                              - None
+                              - Default
+                              - Manual
+                              type: string
+                              x-kubernetes-validations:
+                              - message: storageDriver.Type is immutable
+                                rule: self == oldSelf
+                          type: object
+                          x-kubernetes-validations:
+                          - message: storageDriver is immutable
                             rule: self == oldSelf
                       type: object
                       x-kubernetes-validations:
@@ -37561,6 +37675,63 @@ objects:
                           x-kubernetes-validations:
                           - message: Kubevirt GenerateID is immutable once set
                             rule: self == oldSelf
+                        storageDriver:
+                          description: StorageDriver defines how the KubeVirt CSI
+                            driver exposes StorageClasses on the infra cluster (hosting
+                            the VMs) to the guest cluster.
+                          properties:
+                            manual:
+                              description: Manual is used to explicilty define how
+                                the infra storageclasses are mapped to guest storageclasses
+                              properties:
+                                storageClassMapping:
+                                  description: "StorageClassMapping maps StorageClasses
+                                    on the infra cluster hosting the KubeVirt VMs
+                                    to StorageClasses that are made available within
+                                    the Guest Cluster. \n NOTE: It is possible that
+                                    not all capablities of an infra cluster's storageclass
+                                    will be present for the corresponding guest clusters
+                                    storageclass."
+                                  items:
+                                    properties:
+                                      guestStorageClassName:
+                                        description: GuestStorageClassName is the
+                                          name that the corresponding storageclass
+                                          will be called within the guest cluster
+                                        type: string
+                                      infraStorageClassName:
+                                        description: InfraStorageClassName is the
+                                          name of the infra cluster storage class
+                                          that will be exposed into the guest.
+                                        type: string
+                                    required:
+                                    - guestStorageClassName
+                                    - infraStorageClassName
+                                    type: object
+                                  type: array
+                                  x-kubernetes-validations:
+                                  - message: storageClassMapping is immutable
+                                    rule: self == oldSelf
+                              type: object
+                              x-kubernetes-validations:
+                              - message: storageDriver.Manual is immutable
+                                rule: self == oldSelf
+                            type:
+                              default: Default
+                              description: Type represents the type of kubevirt csi
+                                driver configuration to use
+                              enum:
+                              - None
+                              - Default
+                              - Manual
+                              type: string
+                              x-kubernetes-validations:
+                              - message: storageDriver.Type is immutable
+                                rule: self == oldSelf
+                          type: object
+                          x-kubernetes-validations:
+                          - message: storageDriver is immutable
+                            rule: self == oldSelf
                       type: object
                       x-kubernetes-validations:
                       - message: Kubevirt GenerateID is required once set
@@ -41274,6 +41445,63 @@ objects:
                           type: string
                           x-kubernetes-validations:
                           - message: Kubevirt GenerateID is immutable once set
+                            rule: self == oldSelf
+                        storageDriver:
+                          description: StorageDriver defines how the KubeVirt CSI
+                            driver exposes StorageClasses on the infra cluster (hosting
+                            the VMs) to the guest cluster.
+                          properties:
+                            manual:
+                              description: Manual is used to explicilty define how
+                                the infra storageclasses are mapped to guest storageclasses
+                              properties:
+                                storageClassMapping:
+                                  description: "StorageClassMapping maps StorageClasses
+                                    on the infra cluster hosting the KubeVirt VMs
+                                    to StorageClasses that are made available within
+                                    the Guest Cluster. \n NOTE: It is possible that
+                                    not all capablities of an infra cluster's storageclass
+                                    will be present for the corresponding guest clusters
+                                    storageclass."
+                                  items:
+                                    properties:
+                                      guestStorageClassName:
+                                        description: GuestStorageClassName is the
+                                          name that the corresponding storageclass
+                                          will be called within the guest cluster
+                                        type: string
+                                      infraStorageClassName:
+                                        description: InfraStorageClassName is the
+                                          name of the infra cluster storage class
+                                          that will be exposed into the guest.
+                                        type: string
+                                    required:
+                                    - guestStorageClassName
+                                    - infraStorageClassName
+                                    type: object
+                                  type: array
+                                  x-kubernetes-validations:
+                                  - message: storageClassMapping is immutable
+                                    rule: self == oldSelf
+                              type: object
+                              x-kubernetes-validations:
+                              - message: storageDriver.Manual is immutable
+                                rule: self == oldSelf
+                            type:
+                              default: Default
+                              description: Type represents the type of kubevirt csi
+                                driver configuration to use
+                              enum:
+                              - None
+                              - Default
+                              - Manual
+                              type: string
+                              x-kubernetes-validations:
+                              - message: storageDriver.Type is immutable
+                                rule: self == oldSelf
+                          type: object
+                          x-kubernetes-validations:
+                          - message: storageDriver is immutable
                             rule: self == oldSelf
                       type: object
                       x-kubernetes-validations:

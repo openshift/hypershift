@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -48,6 +49,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.InfraKubeConfigFile, "infra-kubeconfig-file", opts.KubevirtPlatform.InfraKubeConfigFile, "Path to a kubeconfig file of an external infra cluster to be used to create the guest clusters nodes onto")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.InfraNamespace, "infra-namespace", opts.KubevirtPlatform.InfraNamespace, "The namespace in the external infra cluster that is used to host the KubeVirt virtual machines. The namespace must exist prior to creating the HostedCluster")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.CacheStrategyType, "root-volume-cache-strategy", opts.KubevirtPlatform.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
+	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.InfraStorageClassMappings, "infra-storage-class-mapping", opts.KubevirtPlatform.InfraStorageClassMappings, "KubeVirt CSI napping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb")
 
 	cmd.MarkPersistentFlagRequired("pull-secret")
 
@@ -94,6 +96,13 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		return fmt.Errorf("the root volume size [%d] must be greater than or equal to 16", opts.KubevirtPlatform.RootVolumeSize)
 	}
 
+	for _, mapping := range opts.KubevirtPlatform.InfraStorageClassMappings {
+		split := strings.Split(mapping, "/")
+		if len(split) != 2 {
+			return fmt.Errorf("invalid infra storageclass mapping [%s]", mapping)
+		}
+	}
+
 	infraID := opts.InfraID
 	if len(infraID) == 0 {
 		exampleOptions.InfraID = infraid.New(opts.Name)
@@ -138,6 +147,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		InfraKubeConfig:           infraKubeConfigContents,
 		InfraNamespace:            opts.KubevirtPlatform.InfraNamespace,
 		CacheStrategyType:         opts.KubevirtPlatform.CacheStrategyType,
+		InfraStorageClassMappings: opts.KubevirtPlatform.InfraStorageClassMappings,
 	}
 
 	if opts.BaseDomain != "" {
