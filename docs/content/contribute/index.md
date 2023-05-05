@@ -23,5 +23,4 @@ Thanks for your interest in contributing to HyperShift. Here are some guidelines
     1. This avoids situations where big changes are submitted that are then declined or never reviewed, which is frustrating for everyone. 
 3. Regardless of the size of the change, always explain how the change will improve the project.
 4. Every PR title must be prefixed with the Jira ticket that is addressing e.g. [https://github.com/openshift/hypershift/pull/2233](https://github.com/openshift/hypershift/pull/2233).
-5. This repository is the base code for the Hypershift Operator and the Control Plane Operator (belongs to the OCP payload) so they might have different release cadence. To make it clear which component your PR impacts:
-    1. Every PR must have at least one of these labels: `area/hypershift-operator`, `area/control-plane-operator`, `area/documentation`, `area/cli`, or `area/testing`
+5. This repository is the base code for the Hypershift Operator and the Control Plane Operator (belongs to the OCP payload) so they might have different release cadence.
