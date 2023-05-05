@@ -131,6 +131,7 @@ func routeOCMVolumeKubeconfig() *corev1.Volume {
 func buildRouteOCMVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 }
 
 func routeOCMVolumeServingCert() *corev1.Volume {
@@ -142,4 +143,5 @@ func routeOCMVolumeServingCert() *corev1.Volume {
 func buildRouteOCMVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftRouteControllerManagerCertSecret("").Name
+	v.Secret.DefaultMode = pointer.Int32Ptr(416)
 }
