@@ -939,11 +939,13 @@ func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, h
 	kubeadminPasswordSecret := manifests.KubeadminPasswordSecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret); err != nil {
 		if apierrors.IsNotFound(err) {
-			// kubeAdminPasswordHash will not exist when a user specifies an explicit oauth config
-			return nil
+			// kubeAdminPasswordHash should not exist when a user specifies an explicit oauth config
+			// delete kubeAdminPasswordHash if it exist
+			return r.deleteKubeadminPasswordHashSecret(ctx, hcp)
 		}
 		return fmt.Errorf("failed to get kubeadmin password secret: %w", err)
 	}
+
 	kubeadminPasswordHashSecret := manifests.KubeadminPasswordHashSecret()
 	if _, err := r.CreateOrUpdate(ctx, r.client, kubeadminPasswordHashSecret, func() error {
 		return kubeadminpassword.ReconcileKubeadminPasswordHashSecret(kubeadminPasswordHashSecret, kubeadminPasswordSecret)
@@ -956,6 +958,29 @@ func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, h
 			oauthDeployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 		}
 		oauthDeployment.Spec.Template.ObjectMeta.Annotations[SecretHashAnnotation] = secretHash(kubeadminPasswordHashSecret.Data["kubeadmin"])
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (r *reconciler) deleteKubeadminPasswordHashSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	kubeadminPasswordHashSecret := manifests.KubeadminPasswordHashSecret()
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordHashSecret), kubeadminPasswordHashSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+
+	if err := r.client.Delete(ctx, kubeadminPasswordHashSecret); err != nil {
+		return err
+	}
+
+	oauthDeployment := manifests.OAuthDeployment(hcp.Namespace)
+	if _, err := r.CreateOrUpdate(ctx, r.cpClient, oauthDeployment, func() error {
+		delete(oauthDeployment.Spec.Template.ObjectMeta.Annotations, SecretHashAnnotation)
 		return nil
 	}); err != nil {
 		return err
