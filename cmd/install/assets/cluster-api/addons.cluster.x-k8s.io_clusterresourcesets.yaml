@@ -119,6 +119,7 @@ spec:
                   Defaults to ApplyOnce. This field is immutable.
                 enum:
                 - ApplyOnce
+                - Reconcile
                 type: string
             required:
             - clusterSelector
