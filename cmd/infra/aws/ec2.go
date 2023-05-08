@@ -21,6 +21,14 @@ const (
 	invalidRouteTableID      = "InvalidRouteTableId.NotFound"
 	invalidElasticIPNotFound = "InvalidElasticIpID.NotFound"
 	invalidSubnet            = "InvalidSubnet"
+
+	// tagNameSubnetInternalELB is the tag name used on a subnet to designate that
+	// it should be used for internal ELBs
+	tagNameSubnetInternalELB = "kubernetes.io/role/internal-elb"
+
+	// tagNameSubnetPublicELB is the tag name used on a subnet to designate that
+	// it should be used for internet ELBs
+	tagNameSubnetPublicELB = "kubernetes.io/role/elb"
 )
 
 var (
@@ -197,14 +205,14 @@ func (o *CreateInfraOptions) existingDHCPOptions(client ec2iface.EC2API) (string
 }
 
 func (o *CreateInfraOptions) CreatePrivateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID string, zone string, cidr string) (string, error) {
-	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-private-%s", o.InfraID, zone))
+	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-private-%s", o.InfraID, zone), tagNameSubnetInternalELB)
 }
 
 func (o *CreateInfraOptions) CreatePublicSubnet(l logr.Logger, client ec2iface.EC2API, vpcID string, zone string, cidr string) (string, error) {
-	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-public-%s", o.InfraID, zone))
+	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-public-%s", o.InfraID, zone), tagNameSubnetPublicELB)
 }
 
-func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID, zone, cidr, name string) (string, error) {
+func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID, zone, cidr, name, scopeTag string) (string, error) {
 	subnetID, err := o.existingSubnet(client, name)
 	if err != nil {
 		return "", err
@@ -213,11 +221,17 @@ func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API,
 		l.Info("Found existing subnet", "name", name, "id", subnetID)
 		return subnetID, nil
 	}
+	tagSpec := o.ec2TagSpecifications("subnet", name)
+	tagSpec[0].Tags = append(tagSpec[0].Tags, &ec2.Tag{
+		Key:   aws.String(scopeTag),
+		Value: aws.String("true"),
+	})
+
 	result, err := client.CreateSubnet(&ec2.CreateSubnetInput{
 		AvailabilityZone:  aws.String(zone),
 		VpcId:             aws.String(vpcID),
 		CidrBlock:         aws.String(cidr),
-		TagSpecifications: o.ec2TagSpecifications("subnet", name),
+		TagSpecifications: tagSpec,
 	})
 	if err != nil {
 		return "", fmt.Errorf("cannot create public subnet: %w", err)
