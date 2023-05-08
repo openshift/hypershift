@@ -10,6 +10,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -177,6 +178,11 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	nodePool, err := manifestBuilder.BuildNodePoolManifest(defaultNodepool)
 	g.Expect(err).ToNot(HaveOccurred())
 
+	// Using default security group is main use case for OCM.
+	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
+		nodePool.Spec.Platform.AWS.SecurityGroups = nil
+	}
+
 	// Create NodePool for current test
 	err = mgmtClient.Create(ctx, nodePool)
 	if err != nil {
@@ -198,4 +204,12 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 
 	// run test validations
 	nodePoolTest.Run(t, *nodePool, nodes)
+
+	// validate default security group
+	err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodePool")
+
+	nodePoolCondition := nodepool.FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
+	g.Expect(nodePoolCondition).ToNot(BeNil(), "%s condition not found", hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
+	g.Expect(nodePoolCondition.Status).To(Equal(corev1.ConditionTrue), "condition %s is not True", hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
 }
