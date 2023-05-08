@@ -701,49 +701,36 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		return fmt.Errorf("APIServer service strategy not specified")
 	}
 
-	if serviceStrategy.Type == hyperv1.Route {
-		internalRoute := manifests.KubeAPIServerInternalRoute(hcp.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(internalRoute), internalRoute); err != nil {
-			return fmt.Errorf("failed to get kube apiserver internal route: %w", err)
+	p := kas.NewKubeAPIServerServiceParams(hcp)
+	switch {
+	case !util.IsPublicHCP(hcp):
+		// When the cluster is private, checking the load balancers will depend on whether the load balancer is
+		// using the right subnets. To avoid uncertainty, we'll limit the check to the service endpoint.
+		return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, p.APIServerPort, hcp)
+	case serviceStrategy.Type == hyperv1.Route:
+		externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
+			return fmt.Errorf("failed to get kube apiserver external route: %w", err)
 		}
-		if len(internalRoute.Status.Ingress) == 0 || internalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
-			return fmt.Errorf("APIServer internal route not admitted")
+		if len(externalRoute.Status.Ingress) == 0 || externalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
+			return fmt.Errorf("APIServer external route not admitted")
 		}
+		return healthCheckKASEndpoint(externalRoute.Status.Ingress[0].RouterCanonicalHostname, 443, hcp)
 
-		if err := healthCheckKASEndpoint(internalRoute.Status.Ingress[0].RouterCanonicalHostname, hcp); err != nil {
-			return err
-		}
-	}
-
-	var kasServices []*corev1.Service
-	if util.IsPrivateHCP(hcp) {
-		kasServices = append(kasServices, manifests.PrivateRouterService(hcp.Namespace))
-		if serviceStrategy.Type == hyperv1.LoadBalancer {
-			kasServices = append(kasServices, manifests.KubeAPIServerPrivateService(hcp.Namespace))
-		}
-	} else if serviceStrategy.Type != hyperv1.Route {
-		kasServices = append(kasServices, manifests.KubeAPIServerService(hcp.Namespace))
-	}
-
-	for _, svc := range kasServices {
+	case serviceStrategy.Type == hyperv1.LoadBalancer:
+		svc := manifests.KubeAPIServerService(hcp.Namespace)
 		if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 			return fmt.Errorf("failed to get kube apiserver service: %w", err)
 		}
-
 		if len(svc.Status.LoadBalancer.Ingress) == 0 || svc.Status.LoadBalancer.Ingress[0].Hostname == "" {
 			return fmt.Errorf("APIServer load balancer is not provisioned")
 		}
-
-		if err := healthCheckKASEndpoint(svc.Status.LoadBalancer.Ingress[0].Hostname, hcp); err != nil {
-			return err
-		}
+		return healthCheckKASEndpoint(svc.Status.LoadBalancer.Ingress[0].Hostname, p.APIServerPort, hcp)
 	}
-
 	return nil
 }
 
-func healthCheckKASEndpoint(hostname string, hcp *hyperv1.HostedControlPlane) error {
-	port := util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
+func healthCheckKASEndpoint(hostname string, port int, hcp *hyperv1.HostedControlPlane) error {
 	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz", hostname, port)
 
 	httpClient := util.InsecureHTTPClient()
