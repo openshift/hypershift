@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +22,7 @@ func TestMetrics(t *testing.T) {
 		updateHistory []configv1.UpdateHistory
 		conditions    []metav1.Condition
 		expected      []*dto.MetricFamily
+		annotations   map[string]string
 	}{
 		{
 			name: "Cluster rollout duration is reported",
@@ -111,6 +113,57 @@ func TestMetrics(t *testing.T) {
 				}},
 			}},
 		},
+		{
+			name: "Force skipping deletion aws cloud resources by broken OIDC, SkippedCloudResourcesDeletion should be reported",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ValidAWSIdentityProvider),
+					Status: metav1.ConditionFalse,
+				},
+			},
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(platformaws.SkippedCloudResourcesDeletionName),
+				Help: pointer.String("Indicates the operator will skip the aws resources deletion"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(1)},
+				}},
+			}},
+		},
+		{
+			name:        "Force skipping deletion aws cloud resources metric by annotation, SkippedCloudResourcesDeletion should be reported",
+			annotations: map[string]string{hyperv1.CleanupCloudResourcesAnnotation: "true"},
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(platformaws.SkippedCloudResourcesDeletionName),
+				Help: pointer.String("Indicates the operator will skip the aws resources deletion"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(1)},
+				}},
+			}},
+		},
+		{
+			name:        "In a usual cluster teardown, SkippedCloudResourcesDeletion should not be reported",
+			annotations: map[string]string{},
+			conditions:  []metav1.Condition{},
+			expected:    []*dto.MetricFamily{},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -119,6 +172,7 @@ func TestMetrics(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              "hc",
 					Namespace:         "any",
+					Annotations:       tc.annotations,
 					CreationTimestamp: metav1.Time{Time: time.Time{}.Add(time.Hour)},
 				},
 				Status: hyperv1.HostedClusterStatus{
@@ -134,6 +188,7 @@ func TestMetrics(t *testing.T) {
 			// failing.
 			hostedClusterInitialRolloutDuration.Reset()
 			hostedClusterAvailableDuration.Reset()
+			platformaws.SkippedCloudResourcesDeletion.Reset()
 			reg := prometheus.NewPedanticRegistry()
 
 			// Capture metrics.
@@ -143,6 +198,9 @@ func TestMetrics(t *testing.T) {
 			if err := reg.Register(hostedClusterAvailableDuration); err != nil {
 				t.Fatalf("registering availableTIme collector failed: %v", err)
 			}
+			if err := reg.Register(platformaws.SkippedCloudResourcesDeletion); err != nil {
+				t.Fatalf("registering SkippedCloudResourcesDeletion collector failed: %v", err)
+			}
 			availableTime := clusterAvailableTime(cluster)
 			if availableTime != nil {
 				hostedClusterAvailableDuration.WithLabelValues(cluster.Namespace, cluster.Name).Set(*availableTime)
@@ -151,6 +209,16 @@ func TestMetrics(t *testing.T) {
 			versionRolloutTime := clusterVersionRolloutTime(cluster)
 			if versionRolloutTime != nil {
 				hostedClusterInitialRolloutDuration.WithLabelValues(cluster.Namespace, cluster.Name).Set(*versionRolloutTime)
+			}
+
+			for _, condition := range cluster.Status.Conditions {
+				if condition.Type == string(hyperv1.ValidAWSIdentityProvider) && condition.Status == metav1.ConditionFalse {
+					platformaws.SkippedCloudResourcesDeletion.WithLabelValues(cluster.Namespace, cluster.Name).Set(float64(1))
+				}
+			}
+
+			if cluster.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true" {
+				platformaws.SkippedCloudResourcesDeletion.WithLabelValues(cluster.Namespace, cluster.Name).Set(float64(1))
 			}
 
 			result, err := reg.Gather()

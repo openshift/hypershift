@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -29,6 +30,14 @@ import (
 
 const (
 	ImageStreamCAPA = "aws-cluster-api-controllers"
+)
+
+var (
+	SkippedCloudResourcesDeletionName = "hypershift_cluster_skipped_cloud_resources_deletion"
+	SkippedCloudResourcesDeletion     = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Help: "Indicates the operator will skip the aws resources deletion",
+		Name: SkippedCloudResourcesDeletionName,
+	}, []string{"namespace", "name"})
 )
 
 func New(utilitiesImage string, capiProviderImage string, payloadVersion *semver.Version) *AWS {
@@ -320,6 +329,7 @@ func (AWS) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hype
 				errs = append(errs, fmt.Errorf("failed to delete machine %s/%s: %w", awsMachine.Namespace, awsMachine.Name, err))
 				continue
 			}
+			SkippedCloudResourcesDeletion.WithLabelValues(hc.Namespace, hc.Name).Set(float64(1))
 			logger.Info("skipping cleanup of awsmachine because of invalid AWS identity provider", "machine", client.ObjectKeyFromObject(awsMachine))
 		}
 	}

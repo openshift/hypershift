@@ -3141,6 +3141,7 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
 				}
 			}
+			platformaws.SkippedCloudResourcesDeletion.WithLabelValues(hc.Namespace, hc.Name).Set(float64(1))
 			log.Info("Removed finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name)
 			continue
 		}

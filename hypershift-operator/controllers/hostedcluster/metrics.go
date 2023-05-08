@@ -2,6 +2,7 @@ package hostedcluster
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,6 +63,7 @@ func init() {
 		limitedSupportEnabled,
 		silenceAlerts,
 		proxyConfig,
+		platformaws.SkippedCloudResourcesDeletion,
 	)
 }
 
