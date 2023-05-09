@@ -9,7 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	utilpointer "k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -71,7 +71,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image string, config *co
 	deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
 		configHashAnnotation: configHash,
 	}
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(false)
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.Bool(false)
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(routeOCMContainerMain(), buildRouteOCMContainerMain(image)),
 	}
@@ -131,6 +131,7 @@ func routeOCMVolumeKubeconfig() *corev1.Volume {
 func buildRouteOCMVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
+	utilpointer.Int32Ptr(416)
 }
 
 func routeOCMVolumeServingCert() *corev1.Volume {
@@ -142,4 +143,5 @@ func routeOCMVolumeServingCert() *corev1.Volume {
 func buildRouteOCMVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftRouteControllerManagerCertSecret("").Name
+	utilpointer.Int32Ptr(416)
 }
