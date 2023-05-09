@@ -29,6 +29,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
+	kubevirtv1 "kubevirt.io/api/core/v1"
+	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -51,6 +53,8 @@ type DumpOptions struct {
 	// AgentNamespace is the namespace where Agents
 	// are located, when using the agent platform.
 	AgentNamespace string
+
+	Platform hyperv1.PlatformType
 
 	DumpGuestCluster bool
 
@@ -211,6 +215,16 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&imagev1.ImageStream{},
 		&networkingv1.NetworkPolicy{},
 	}
+
+	switch opts.Platform {
+	case hyperv1.KubevirtPlatform:
+		resources = append(resources, []client.Object{
+			&kubevirtv1.VirtualMachine{},
+			&kubevirtv1.VirtualMachineInstance{},
+			&cdiv1.DataVolume{},
+		}...)
+	}
+
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	if opts.AgentNamespace != "" {
 		// Additional Agent platform resources

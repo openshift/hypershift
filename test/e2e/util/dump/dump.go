@@ -29,6 +29,7 @@ func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedClus
 	err := core.DumpCluster(ctx, &core.DumpOptions{
 		Namespace:        hc.Namespace,
 		Name:             hc.Name,
+		Platform:         hc.Spec.Platform.Type,
 		ArtifactDir:      artifactDir,
 		LogCheckers:      []core.LogChecker{findKubeObjectUpdateLoops},
 		DumpGuestCluster: dumpGuestCluster,
