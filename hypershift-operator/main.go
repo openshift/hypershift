@@ -134,6 +134,14 @@ func NewStartCommand() *cobra.Command {
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 		defer cancel()
+
+		switch hyperv1.PlatformType(opts.PrivatePlatform) {
+		case hyperv1.AWSPlatform, hyperv1.NonePlatform:
+		default:
+			fmt.Println(fmt.Sprintf("Unsupported private platform: %q", opts.PrivatePlatform))
+			os.Exit(1)
+		}
+
 		if err := run(ctx, &opts, ctrl.Log.WithName("setup")); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
