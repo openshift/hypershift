@@ -611,6 +611,23 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile ingress config: %w", err))
 	}
 
+	var clusterVersion configv1.ClusterVersion
+	err := r.client.Get(ctx, types.NamespacedName{Name: "version"}, &clusterVersion)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("unable to retrieve cluster version resource"))
+	}
+	featureGate := globalconfig.FeatureGateConfig()
+	if _, err := r.CreateOrUpdate(ctx, r.client, featureGate, func() error {
+		globalconfig.ReconcileFeatureGateConfig(featureGate, hcp.Spec.Configuration)
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile feature gate config: %w", err))
+	}
+	globalconfig.ReconcileFeatureGateConfigStatus(featureGate, hcp.Spec.Configuration, &clusterVersion, r.versions["release"])
+	if err := r.client.Status().Update(ctx, featureGate); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile feature gate config status: %w", err))
+	}
+
 	networkConfig := globalconfig.NetworkConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, networkConfig, func() error {
 		globalconfig.ReconcileNetworkConfig(networkConfig, hcp)
