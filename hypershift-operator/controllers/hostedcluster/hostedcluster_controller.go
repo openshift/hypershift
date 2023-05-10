@@ -91,6 +91,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
@@ -152,7 +153,10 @@ type HostedClusterReconciler struct {
 
 	ImageMetadataProvider hyperutil.ImageMetadataProvider
 
-	MetricsSet metrics.MetricsSet
+	MetricsSet    metrics.MetricsSet
+	SREConfigHash string
+
+	OperatorNamespace string
 
 	overwriteReconcile func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error)
 	now                func() metav1.Time
@@ -161,7 +165,7 @@ type HostedClusterReconciler struct {
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters/status,verbs=get;update;patch
 
-func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateProvider) error {
+func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateProvider, metricsSet metrics.MetricsSet, operatorNamespace string) error {
 	if r.Clock == nil {
 		r.Clock = clock.RealClock{}
 	}
@@ -181,7 +185,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 			MaxConcurrentReconciles: 10,
 		})
 	for _, managedResource := range r.managedResources() {
-		builder.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueParentHostedCluster))
+		builder.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())))
 	}
 
 	// Set based on SCC capability
@@ -1507,6 +1511,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	defaultIngressDomain, err := r.defaultIngressDomain(ctx)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to determine default ingress domain: %w", err)
+	}
+
+	// Reconcile SRE metrics config
+	if err := r.reconcileSREMetricsConfig(ctx, createOrUpdate, hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile SRE metrics config: %w", err)
 	}
 
 	// Reconcile the control plane operator
@@ -3262,16 +3271,36 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	return true, nil
 }
 
-func enqueueParentHostedCluster(obj client.Object) []reconcile.Request {
-	var hostedClusterName string
-	if obj.GetAnnotations() != nil {
-		hostedClusterName = obj.GetAnnotations()[HostedClusterAnnotation]
-	}
-	if hostedClusterName == "" {
-		return []reconcile.Request{}
-	}
-	return []reconcile.Request{
-		{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
+func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace string, c client.Client) func(client.Object) []reconcile.Request {
+	return func(obj client.Object) []reconcile.Request {
+		log := ctrllog.Log
+		if metricsSet == metrics.MetricsSetSRE {
+			if _, isCM := obj.(*corev1.ConfigMap); isCM {
+				if obj.GetName() == metrics.SREConfigurationConfigMapName && obj.GetNamespace() == operatorNamespace {
+					// A change has occurred to the SRE metrics set configuration. We should requeue all HostedClusters
+					hcList := &hyperv1.HostedClusterList{}
+					if err := c.List(context.Background(), hcList); err != nil {
+						// An error occurred, report it.
+						log.Error(err, "failed to list hosted clusters while processing SRE config event")
+					}
+					requests := make([]reconcile.Request, 0, len(hcList.Items))
+					for _, hc := range hcList.Items {
+						requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Name: hc.Name, Namespace: hc.Namespace}})
+					}
+					return requests
+				}
+			}
+		}
+		var hostedClusterName string
+		if obj.GetAnnotations() != nil {
+			hostedClusterName = obj.GetAnnotations()[HostedClusterAnnotation]
+		}
+		if hostedClusterName == "" {
+			return []reconcile.Request{}
+		}
+		return []reconcile.Request{
+			{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
+		}
 	}
 }
 
@@ -4563,6 +4592,42 @@ func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, roles
 		rolesRef.KubeCloudControllerARN = arn
 	}
 
+	return nil
+}
+
+// reconcileSREMetricsConfig loads the SRE metrics configuration (avoids parsing if the content is the same)
+// and ensures that it is synced to the hosted control plane
+func (r *HostedClusterReconciler) reconcileSREMetricsConfig(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
+	if r.MetricsSet != metrics.MetricsSetSRE {
+		return nil
+	}
+	log.Info("Reconciling SRE metrics configuration")
+	cm := metrics.SREMetricsSetConfigurationConfigMap(r.OperatorNamespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(cm), cm); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("SRE configuration does not exist")
+			return nil
+		}
+		return fmt.Errorf("failed to get SRE configuration configmap: %w", err)
+	}
+	currentMetricsSetConfigHash := metrics.SREMetricsSetConfigHash(cm)
+	if currentMetricsSetConfigHash != r.SREConfigHash {
+		// Only load a new config if configuration content has changed
+		if err := metrics.LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+			return fmt.Errorf("failed to load SRE configuration: %w", err)
+		}
+		r.SREConfigHash = currentMetricsSetConfigHash
+	}
+	destinationCM := metrics.SREMetricsSetConfigurationConfigMap(hcp.Namespace)
+	ownerRef := config.OwnerRefFrom(hcp)
+	if _, err := createOrUpdate(ctx, r.Client, destinationCM, func() error {
+		ownerRef.ApplyTo(destinationCM)
+		destinationCM.Data = cm.Data
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to update hosted cluster SRE metrics configuration: %w", err)
+	}
 	return nil
 }
 

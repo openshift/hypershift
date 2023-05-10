@@ -13,9 +13,8 @@ The following metrics sets are supported:
 
 * `Telemetry` - metrics needed for telemetry. This is the default and the smallest
    set of metrics.
-* `SRE` - metrics in `Telemetry` plus those needed for service reliability monitoring of HyperShift control planes.
-   Includes metrics necessary to produce alerts and allow troubleshooting of control plane
-   components.
+* `SRE` - Configurable metrics set, intended to include necessary metrics to produce alerts and 
+   allow troubleshooting of control plane components.
 * `All` - all the metrics produced by standalone OCP control plane components.
 
 The metrics set is configured by setting the `METRICS_SET` environment variable in the HyperShift
@@ -24,3 +23,26 @@ operator deployment:
 ```
 oc set env -n hypershift deployment/operator METRICS_SET=All
 ```
+
+## Configuring the SRE Metrics Set
+
+When the SRE metrics set is specified, the HyperShift operator looks for a ConfigMap named
+`sre-metric-set` with a single key: `config`. The value of the `config` key should contain a set
+of RelabelConfigs organized by control plane component. An example of this configuration can be
+found in `support/metrics/testdata/sreconfig.yaml` in this repository.
+
+The following components can be specified:
+
+* etcd
+* kubeAPIServer
+* kubeControllerManager
+* openshiftAPIServer
+* openshiftControllerManager
+* openshiftRouteControllerManager
+* cvo
+* olm
+* catalogOperator
+* registryOperator
+* nodeTuningOperator
+* controlPlaneOperator
+* hostedClusterConfigOperator
