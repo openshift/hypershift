@@ -3,7 +3,6 @@ title: Getting started
 ---
 
 # Getting started
-
 HyperShift is middleware for hosting OpenShift control planes at scale that
 solves for cost and time to provision, as well as portability across cloud service providers with
 strong separation of concerns between management and workloads. Clusters are
@@ -15,38 +14,29 @@ Throughout the instructions, shell variables are used to indicate values that
 you should adjust to your own environment.
 
 ## Prerequisites
-
-* The HyperShift CLI (`hypershift`).
-
-    Install it using Go 1.18:
+1. Install the HyperShift CLI (`hypershift`) using Go 1.19:
         ```shell linenums="1"
         git clone https://github.com/openshift/hypershift.git
         cd hypershift
         make build
         sudo install -m 0755 bin/hypershift /usr/local/bin/hypershift
         ```
-
-* Admin access to an OpenShift cluster (version 4.8+) specified by the `KUBECONFIG` environment variable.
-* The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
-* A valid [pull secret](https://cloud.redhat.com/openshift/install/aws/installer-provisioned) file for the `quay.io/openshift-release-dev` repository.
-* An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html)
-  with permissions to create infrastructure for the cluster.
-* A Route53 public zone for cluster DNS records.
-
-    To create a public zone:
+2. Admin access to an OpenShift cluster (version 4.12+) specified by the `KUBECONFIG` environment variable.
+3. The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`). 
+4. A valid [pull secret](https://cloud.redhat.com/openshift/install/aws/installer-provisioned) file for the `quay.io/openshift-release-dev` repository. 
+5. An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) with permissions to create infrastructure for the cluster. 
+6. A Route53 public zone for cluster DNS records. To create a public zone:
         ```shell linenums="1"
         BASE_DOMAIN=www.example.com
         aws route53 create-hosted-zone --name $BASE_DOMAIN --caller-reference $(whoami)-$(date --rfc-3339=date)
         ```
 
-!!! important
+    !!! important
 
-	To access applications in your guest clusters, the public zone must be routable. If the public zone exists, skip 
-    this step. Otherwise, the public zone will affect the existing functions.
+        To access applications in your guest clusters, the public zone must be routable. If the public zone exists, skip 
+        this step. Otherwise, the public zone will affect the existing functions.
 
-* An S3 bucket with public access to host OIDC discovery documents for your clusters.
-
-    To create the bucket (in us-east-1):
+7. An S3 bucket with public access to host OIDC discovery documents for your clusters. To create the bucket in *us-east-1*:
         ```shell linenums="1"
         BUCKET_NAME=your-bucket-name
         aws s3api create-bucket --bucket $BUCKET_NAME
@@ -87,10 +77,8 @@ you should adjust to your own environment.
         aws s3api put-bucket-policy --bucket $BUCKET_NAME --policy file://policy.json
         ```
 
-## Before you begin
-
-Install HyperShift into the management cluster, specifying the OIDC bucket,
-its region and credentials to access it (see [Prerequisites](#prerequisites)):
+## Install HyperShift Operator
+Install the HyperShift Operator into the management cluster, specifying the OIDC bucket, its region and credentials to access it (see [Prerequisites](#prerequisites)):
 
 ```shell linenums="1"
 REGION=us-east-1
@@ -103,9 +91,8 @@ hypershift install \
   --oidc-storage-provider-s3-region $REGION
 ```
 
-## Create a HostedCluster
-
-Create a new cluster, specifying the domain of the public zone provided in the
+## Create a Hosted Cluster
+Create a new hosted cluster, specifying the domain of the public zone provided in the
 [Prerequisites](#prerequisites):
 
 ```shell linenums="1"
@@ -166,12 +153,9 @@ standard out using the `hypershift` CLI:
 hypershift create kubeconfig
 ```
 
-## Add NodePools
-
+## Create Additional NodePools
 Create additional NodePools for a cluster by specifying a name, number of replicas
 and additional information such as instance type.
-
-Create a NodePool:
 
 ```shell linenums="1"
 NODEPOOL_NAME=${CLUSTER_NAME}-work
@@ -200,7 +184,6 @@ oc get nodepools --namespace clusters
 ```
 
 ## Scale a NodePool
-
 Manually scale a NodePool using the `oc scale` command:
 
 ```shell linenums="1"
@@ -212,22 +195,11 @@ oc scale nodepool/$NODEPOOL_NAME \
   --replicas=$NODEPOOL_REPLICAS
 ```
 
-## Delete a HostedCluster
-
-To delete a HostedCluster:
+## Delete a Hosted Cluster
+To delete a Hosted Cluster:
 
 ```shell
 hypershift destroy cluster aws \
   --name $CLUSTER_NAME \
   --aws-creds $AWS_CREDS
-```
-
-To clean up cloud resources that may have been created by the HostedCluster during its lifetime, add
-the `--destroy-cloud-resources` flag:
-
-```shell
-hypershift destroy cluster aws \
-  --name $CLUSTER_NAME \
-  --aws-creds $AWS_CREDS \
-  --destroy-cloud-resources
 ```

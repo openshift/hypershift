@@ -50,8 +50,8 @@ you can check the following:
     specified your own key and know how to access it, you can skip this step.
     ```
     mkdir /tmp/ssh
-    oc get secret -n clusters ${NAME}-ssh-key -o jsonpath='{ .data.id_rsa }' | base64 -d > /tmp/ssh/id_rsa
-    oc get secret -n clusters ${NAME}-ssh-key -o jsonpath='{ .data.id_rsa\.pub }' | base64 -d > /tmp/ssh/id_rsa.pub
+    oc get secret -n clusters ${HC_NAME}-ssh-key -o jsonpath='{ .data.id_rsa }' | base64 -d > /tmp/ssh/id_rsa
+    oc get secret -n clusters ${HC_NAME}-ssh-key -o jsonpath='{ .data.id_rsa\.pub }' | base64 -d > /tmp/ssh/id_rsa.pub
     ```
  
     Create a bastion machine
