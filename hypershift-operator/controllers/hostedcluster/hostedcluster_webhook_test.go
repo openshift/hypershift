@@ -11,6 +11,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	version "github.com/openshift/hypershift/cmd/version"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
+	"github.com/openshift/hypershift/support/metrics"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
@@ -111,7 +112,7 @@ func TestWebhookAllowsHostedClusterReconcilerUpdates(t *testing.T) {
 				}),
 				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{},
 			}
-			if err := hostedClusterReconciler.SetupWithManager(mgr, upsert.New(true)); err != nil {
+			if err := hostedClusterReconciler.SetupWithManager(mgr, upsert.New(true), metrics.MetricsSetAll, "hypershift"); err != nil {
 				t.Fatalf("failed to set up hostedClusterReconciler: %v", err)
 			}
 
