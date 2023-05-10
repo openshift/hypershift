@@ -10,6 +10,10 @@ import (
 	"github.com/openshift/hypershift/support/config"
 )
 
+const (
+	EtcdSTSQuotaBackendSize = 8 * 1024 * 1024 * 1024
+)
+
 type EtcdParams struct {
 	EtcdImage string
 	CPOImage  string

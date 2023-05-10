@@ -5608,7 +5608,7 @@ spec:
                   managed:
                     storage:
                       persistentVolume:
-                        size: 4Gi
+                        size: 8Gi
                       type: PersistentVolume
                   managementType: Managed
                 description: Etcd specifies configuration for the control plane etcd
@@ -5633,7 +5633,7 @@ spec:
                                 anyOf:
                                 - type: integer
                                 - type: string
-                                default: 4Gi
+                                default: 8Gi
                                 description: Size is the minimum size of the data
                                   volume for each etcd member.
                                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
