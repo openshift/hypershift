@@ -41,6 +41,8 @@ const (
 	// TLSSignerKeyMapKey is the key the default k8s cert-manager looks for in a private key field in a TLS secret.
 	// TLSSignerKeyMapKey is programmatically enforced to have the same data as CASignerKeyMapKey.
 	TLSSignerKeyMapKey = "tls.key"
+	// UserCABundleMapKeyis the key value in a user-provided CA configMap.
+	UserCABundleMapKey = "ca-bundle.crt"
 )
 
 // CertCfg contains all needed fields to configure a new certificate

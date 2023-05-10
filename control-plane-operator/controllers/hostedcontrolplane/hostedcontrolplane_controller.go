@@ -58,6 +58,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -1774,6 +1775,21 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
 	}
 
+	var userCABundles []client.ObjectKey
+	if hcp.Spec.AdditionalTrustBundle != nil {
+		userCABundles = append(userCABundles, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.AdditionalTrustBundle.Name})
+	}
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil && hcp.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+		userCABundles = append(userCABundles, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Configuration.Proxy.TrustedCA.Name})
+	}
+
+	trustedCABundle := manifests.TrustedCABundleConfigMap(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, trustedCABundle, func() error {
+		return r.reconcileManagedTrustedCABundle(ctx, trustedCABundle, userCABundles)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile managed UserCA configMap: %w", err)
+	}
+
 	// OAuth server Cert
 	oauthServerCert := manifests.OpenShiftOAuthServerCert(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, oauthServerCert, func() error {
@@ -1796,6 +1812,15 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			bundleSources = append(bundleSources, certSecret)
 		}
 	}
+
+	if trustedCABundle.Data[certs.UserCABundleMapKey] != "" {
+		bundleSources = append(bundleSources, &corev1.Secret{
+			Data: map[string][]byte{
+				certs.CASignerCertMapKey: []byte(trustedCABundle.Data[certs.UserCABundleMapKey]),
+			},
+		})
+	}
+
 	oauthMasterCABundle := manifests.OpenShiftOAuthMasterCABundle(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, oauthMasterCABundle, func() error {
 		return pki.ReconcileOAuthMasterCABundle(oauthMasterCABundle, p.OwnerRef, bundleSources)
@@ -3026,12 +3051,9 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 		return fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
-	var userCA *corev1.ConfigMap
-	if hcp.Spec.AdditionalTrustBundle != nil {
-		userCA = manifests.UserCAConfigMap(hcp.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(userCA), userCA); err != nil {
-			return fmt.Errorf("failed to get user ca: %w", err)
-		}
+	trustedCABundle := manifests.TrustedCABundleConfigMap(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(trustedCABundle), trustedCABundle); err != nil {
+		return fmt.Errorf("failed to get trustedCABundle: %w", err)
 	}
 
 	kubeletClientCA := manifests.KubeletClientCABundle(hcp.Namespace)
@@ -3039,7 +3061,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 		return fmt.Errorf("failed to get root kubelet client CA: %w", err)
 	}
 
-	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, userCA, kubeletClientCA)
+	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, trustedCABundle, kubeletClientCA)
 
 	cm := manifests.MachineConfigServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, cm, func() error {
@@ -3047,6 +3069,27 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile machine config server config: %w", err)
 	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileManagedTrustedCABundle(ctx context.Context, trustedCABundle *corev1.ConfigMap, caBundleConfigMaps []client.ObjectKey) error {
+	caBundles := make([]string, len(caBundleConfigMaps))
+	for _, key := range caBundleConfigMaps {
+		cm := &corev1.ConfigMap{}
+		if err := r.Get(ctx, key, cm); err != nil {
+			return fmt.Errorf("failed to get configMap %s: %w", key.Name, err)
+		}
+		data, hasData := cm.Data[certs.UserCABundleMapKey]
+		if !hasData {
+			return fmt.Errorf("configMap %s must have a %s key", cm.Name, certs.UserCABundleMapKey)
+		}
+
+		caBundles = append(caBundles, data)
+	}
+
+	trustedCABundle.Data = make(map[string]string)
+	trustedCABundle.Data[certs.UserCABundleMapKey] = strings.Join(caBundles, "")
+
 	return nil
 }
 
