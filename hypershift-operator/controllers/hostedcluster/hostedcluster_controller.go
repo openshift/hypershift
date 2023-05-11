@@ -3564,7 +3564,36 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		}
 	}
 
+	if err := r.validateUserCAConfigMaps(ctx, hc); err != nil {
+		errs = append(errs, err...)
+	}
+
 	return utilerrors.NewAggregate(errs)
+}
+
+func (r *HostedClusterReconciler) validateUserCAConfigMaps(ctx context.Context, hc *hyperv1.HostedCluster) []error {
+	var userCABundles []client.ObjectKey
+	if hc.Spec.AdditionalTrustBundle != nil {
+		userCABundles = append(userCABundles, client.ObjectKey{Namespace: hc.Namespace, Name: hc.Spec.AdditionalTrustBundle.Name})
+	}
+	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Proxy != nil && hc.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+		userCABundles = append(userCABundles, client.ObjectKey{Namespace: hc.Namespace, Name: hc.Spec.Configuration.Proxy.TrustedCA.Name})
+	}
+
+	var errs []error
+	for _, key := range userCABundles {
+		cm := &corev1.ConfigMap{}
+		if err := r.Get(ctx, key, cm); err != nil {
+			errs = append(errs, fmt.Errorf("failed to get configMap %s: %w", key.Name, err))
+			continue
+		}
+		_, hasData := cm.Data[certs.UserCABundleMapKey]
+		if !hasData {
+			errs = append(errs, fmt.Errorf("configMap %s must have a %s key", cm.Name, certs.UserCABundleMapKey))
+		}
+	}
+
+	return errs
 }
 
 func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster) error {
