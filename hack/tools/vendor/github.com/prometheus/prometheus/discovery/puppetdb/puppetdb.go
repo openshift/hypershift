@@ -19,18 +19,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
 	"path"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -42,6 +40,7 @@ import (
 
 const (
 	pdbLabel            = model.MetaLabelPrefix + "puppetdb_"
+	pdbLabelQuery       = pdbLabel + "query"
 	pdbLabelCertname    = pdbLabel + "certname"
 	pdbLabelResource    = pdbLabel + "resource"
 	pdbLabelType        = pdbLabel + "type"
@@ -187,19 +186,19 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, err
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("server returned HTTP status %s", resp.Status)
+		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
 	if ct := resp.Header.Get("Content-Type"); !matchContentType.MatchString(ct) {
-		return nil, errors.Errorf("unsupported content type %s", resp.Header.Get("Content-Type"))
+		return nil, fmt.Errorf("unsupported content type %s", resp.Header.Get("Content-Type"))
 	}
 
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +216,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	for _, resource := range resources {
 		labels := model.LabelSet{
+			pdbLabelQuery:       model.LabelValue(d.query),
 			pdbLabelCertname:    model.LabelValue(resource.Certname),
 			pdbLabelResource:    model.LabelValue(resource.Resource),
 			pdbLabelType:        model.LabelValue(resource.Type),

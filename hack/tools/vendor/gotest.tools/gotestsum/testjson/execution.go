@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -11,10 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jonboulle/clockwork"
-	"github.com/pkg/errors"
 	"golang.org/x/sync/errgroup"
-	"gotest.tools/gotestsum/log"
+	"gotest.tools/gotestsum/internal/log"
 )
 
 // Action of TestEvent
@@ -82,6 +81,9 @@ type Package struct {
 	Skipped []TestCase
 	Passed  []TestCase
 
+	// elapsed time reported by the pass or fail event for the package.
+	elapsed time.Duration
+
 	// mapping of root TestCase ID to all sub test IDs. Used to mitigate
 	// github.com/golang/go/issues/29755, and github.com/golang/go/issues/40771.
 	// In the future when those bug are fixed this mapping can likely be removed.
@@ -104,6 +106,14 @@ type Package struct {
 	// github.com/golang/go/issues/45508. This field may be removed in the future
 	// if the issue is fixed in Go.
 	panicked bool
+	// shuffleSeed is the seed used to shuffle the tests. The value is set when
+	// tests are run with -shuffle
+	shuffleSeed string
+
+	// testTimeoutPanicInTest stores the name of a test that received the panic
+	// output caused by a test timeout. This is necessary to work around a race
+	// condition in test2json. See https://github.com/golang/go/issues/57305.
+	testTimeoutPanicInTest string
 }
 
 // Result returns if the package passed, failed, or was skipped because there
@@ -112,13 +122,10 @@ func (p *Package) Result() Action {
 	return p.action
 }
 
-// Elapsed returns the sum of the elapsed time for all tests in the package.
+// Elapsed returns the elapsed time of the package, as reported by the
+// pass or fail event for the package.
 func (p *Package) Elapsed() time.Duration {
-	elapsed := time.Duration(0)
-	for _, testcase := range p.TestCases() {
-		elapsed += testcase.Elapsed
-	}
-	return elapsed
+	return p.elapsed
 }
 
 // TestCases returns all the test cases.
@@ -144,11 +151,22 @@ func (p *Package) LastFailedByName(name string) TestCase {
 	return TestCase{}
 }
 
-// Output returns the full test output for a test.
+// Output returns the full test output for a test. Unlike OutputLines() it does
+// not return lines from subtests in some cases.
 //
-// Unlike OutputLines() it does not return lines from subtests in some cases.
+// Deprecated: use WriteOutputTo to avoid lots of allocation
 func (p *Package) Output(id int) string {
 	return strings.Join(p.output[id], "")
+}
+
+// WriteOutputTo writes the output for TestCase with id to out.
+func (p *Package) WriteOutputTo(out io.StringWriter, id int) error {
+	for _, v := range p.output[id] {
+		if _, err := out.WriteString(v); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // OutputLines returns the full test output for a test as a slice of strings.
@@ -156,6 +174,7 @@ func (p *Package) Output(id int) string {
 // As a workaround for test output being attributed to the wrong subtest, if:
 //   - the TestCase is a root TestCase (not a subtest), and
 //   - the TestCase has no subtest failures;
+//
 // then all output for every subtest under the root test is returned.
 // See https://github.com/golang/go/issues/29755.
 func (p *Package) OutputLines(tc TestCase) []string {
@@ -227,6 +246,11 @@ func tcIDSet(skipped []TestCase) map[int]struct{} {
 // This may occur if the package init() or TestMain exited non-zero.
 func (p *Package) TestMainFailed() bool {
 	return p.action == ActionFail && len(p.Failed) == 0
+}
+
+// IsEmpty returns true if this package contains no tests.
+func (p *Package) IsEmpty() bool {
+	return p.Total == 0 && !p.TestMainFailed()
 }
 
 const neverFinished time.Duration = -1
@@ -339,12 +363,16 @@ func (p *Package) addEvent(event TestEvent) {
 	switch event.Action {
 	case ActionPass, ActionFail:
 		p.action = event.Action
+		p.elapsed = elapsedDuration(event.Elapsed)
 	case ActionOutput:
 		if isCoverageOutput(event.Output) {
 			p.coverage = strings.TrimRight(event.Output, "\n")
 		}
-		if isCachedOutput(event.Output) {
+		if strings.Contains(event.Output, "\t(cached)") {
 			p.cached = true
+		}
+		if isShuffleSeedOutput(event.Output) {
+			p.shuffleSeed = strings.TrimRight(event.Output, "\n")
 		}
 		p.addOutput(0, event.Output)
 	}
@@ -386,6 +414,14 @@ func (p *Package) addTestEvent(event TestEvent) {
 
 	switch event.Action {
 	case ActionOutput, ActionBench:
+		if strings.HasPrefix(event.Output, "panic: test timed out") {
+			p.testTimeoutPanicInTest = event.Test
+		}
+		if p.testTimeoutPanicInTest == event.Test {
+			p.addOutput(0, event.Output)
+			return
+		}
+
 		tc := p.running[event.Test]
 		p.addOutput(tc.ID, event.Output)
 		return
@@ -436,8 +472,8 @@ func isCoverageOutput(output string) bool {
 		strings.Contains(output, "% of statements"))
 }
 
-func isCachedOutput(output string) bool {
-	return strings.Contains(output, "\t(cached)")
+func isShuffleSeedOutput(output string) bool {
+	return strings.HasPrefix(output, "-test.shuffle ")
 }
 
 func isWarningNoTestsToRunOutput(output string) bool {
@@ -463,11 +499,11 @@ func (e *Execution) Packages() []string {
 	return sortedKeys(e.packages)
 }
 
-var clock = clockwork.NewRealClock()
+var timeNow = time.Now
 
 // Elapsed returns the time elapsed since the execution started.
 func (e *Execution) Elapsed() time.Duration {
-	return clock.Now().Sub(e.started)
+	return timeNow().Sub(e.started)
 }
 
 // Failed returns a list of all the failed test cases.
@@ -479,8 +515,10 @@ func (e *Execution) Failed() []TestCase {
 	for _, name := range sortedKeys(e.packages) {
 		pkg := e.packages[name]
 
-		// Add package-level failure output if there were no failed tests.
-		if pkg.TestMainFailed() {
+		// Add package-level failure output if there were no failed tests, or
+		// if the test timeout was reached (because we now have to store that
+		// output on the package).
+		if pkg.TestMainFailed() || pkg.testTimeoutPanicInTest != "" {
 			failed = append(failed, TestCase{Package: name})
 		}
 		failed = append(failed, pkg.Failed...)
@@ -572,7 +610,7 @@ func (e *Execution) Started() time.Time {
 // time the test execution started.
 func newExecution() *Execution {
 	return &Execution{
-		started:  clock.Now(),
+		started:  timeNow(),
 		packages: make(map[string]*Package),
 	}
 }
@@ -674,7 +712,7 @@ func readStdout(config ScanConfig, execution *Execution) error {
 				config.Handler.Err(string(raw))
 				continue
 			}
-			return errors.Wrapf(err, "failed to parse test output: %s", string(raw))
+			return fmt.Errorf("failed to parse test output: %s: %w", string(raw), err)
 		}
 
 		event.RunID = config.RunID
@@ -683,7 +721,10 @@ func readStdout(config ScanConfig, execution *Execution) error {
 			return err
 		}
 	}
-	return errors.Wrap(scanner.Err(), "failed to scan test output")
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("failed to scan test output: %w", err)
+	}
+	return nil
 }
 
 func readStderr(config ScanConfig, execution *Execution) error {
@@ -694,6 +735,9 @@ func readStderr(config ScanConfig, execution *Execution) error {
 			return fmt.Errorf("failed to handle stderr: %v", err)
 		}
 		if isGoModuleOutput(line) {
+			continue
+		}
+		if strings.HasPrefix(line, "warning:") {
 			continue
 		}
 		execution.addError(line)

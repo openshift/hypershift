@@ -476,7 +476,7 @@ func unpackDataNsec(msg []byte, off int) ([]uint16, int, error) {
 	length, window, lastwindow := 0, 0, -1
 	for off < len(msg) {
 		if off+2 > len(msg) {
-			return nsec, len(msg), &Error{err: "overflow unpacking nsecx"}
+			return nsec, len(msg), &Error{err: "overflow unpacking NSEC(3)"}
 		}
 		window = int(msg[off])
 		length = int(msg[off+1])
@@ -484,17 +484,17 @@ func unpackDataNsec(msg []byte, off int) ([]uint16, int, error) {
 		if window <= lastwindow {
 			// RFC 4034: Blocks are present in the NSEC RR RDATA in
 			// increasing numerical order.
-			return nsec, len(msg), &Error{err: "out of order NSEC block"}
+			return nsec, len(msg), &Error{err: "out of order NSEC(3) block in type bitmap"}
 		}
 		if length == 0 {
 			// RFC 4034: Blocks with no types present MUST NOT be included.
-			return nsec, len(msg), &Error{err: "empty NSEC block"}
+			return nsec, len(msg), &Error{err: "empty NSEC(3) block in type bitmap"}
 		}
 		if length > 32 {
-			return nsec, len(msg), &Error{err: "NSEC block too long"}
+			return nsec, len(msg), &Error{err: "NSEC(3) block too long in type bitmap"}
 		}
 		if off+length > len(msg) {
-			return nsec, len(msg), &Error{err: "overflowing NSEC block"}
+			return nsec, len(msg), &Error{err: "overflowing NSEC(3) block in type bitmap"}
 		}
 
 		// Walk the bytes in the window and extract the type bits
@@ -557,6 +557,16 @@ func typeBitMapLen(bitmap []uint16) int {
 func packDataNsec(bitmap []uint16, msg []byte, off int) (int, error) {
 	if len(bitmap) == 0 {
 		return off, nil
+	}
+	if off > len(msg) {
+		return off, &Error{err: "overflow packing nsec"}
+	}
+	toZero := msg[off:]
+	if maxLen := typeBitMapLen(bitmap); maxLen < len(toZero) {
+		toZero = toZero[:maxLen]
+	}
+	for i := range toZero {
+		toZero[i] = 0
 	}
 	var lastwindow, lastlength uint16
 	for _, t := range bitmap {
@@ -781,6 +791,8 @@ func unpackDataAplPrefix(msg []byte, off int) (APLPrefix, int, error) {
 	if off+afdlen > len(msg) {
 		return APLPrefix{}, len(msg), &Error{err: "overflow unpacking APL address"}
 	}
+
+	// Address MUST NOT contain trailing zero bytes per RFC3123 Sections 4.1 and 4.2.
 	off += copy(ip, msg[off:off+afdlen])
 	if afdlen > 0 {
 		last := ip[afdlen-1]
@@ -792,13 +804,43 @@ func unpackDataAplPrefix(msg []byte, off int) (APLPrefix, int, error) {
 		IP:   ip,
 		Mask: net.CIDRMask(int(prefix), 8*len(ip)),
 	}
-	network := ipnet.IP.Mask(ipnet.Mask)
-	if !network.Equal(ipnet.IP) {
-		return APLPrefix{}, len(msg), &Error{err: "invalid APL address length"}
-	}
 
 	return APLPrefix{
 		Negation: (nlen & 0x80) != 0,
 		Network:  ipnet,
 	}, off, nil
+}
+
+func unpackIPSECGateway(msg []byte, off int, gatewayType uint8) (net.IP, string, int, error) {
+	var retAddr net.IP
+	var retString string
+	var err error
+
+	switch gatewayType {
+	case IPSECGatewayNone: // do nothing
+	case IPSECGatewayIPv4:
+		retAddr, off, err = unpackDataA(msg, off)
+	case IPSECGatewayIPv6:
+		retAddr, off, err = unpackDataAAAA(msg, off)
+	case IPSECGatewayHost:
+		retString, off, err = UnpackDomainName(msg, off)
+	}
+
+	return retAddr, retString, off, err
+}
+
+func packIPSECGateway(gatewayAddr net.IP, gatewayString string, msg []byte, off int, gatewayType uint8, compression compressionMap, compress bool) (int, error) {
+	var err error
+
+	switch gatewayType {
+	case IPSECGatewayNone: // do nothing
+	case IPSECGatewayIPv4:
+		off, err = packDataA(gatewayAddr, msg, off)
+	case IPSECGatewayIPv6:
+		off, err = packDataAAAA(gatewayAddr, msg, off)
+	case IPSECGatewayHost:
+		off, err = packDomainName(gatewayString, msg, off, compression, compress)
+	}
+
+	return off, err
 }

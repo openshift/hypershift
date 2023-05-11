@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hashicorp/go-immutable-radix"
+	iradix "github.com/hashicorp/go-immutable-radix"
 )
 
 type Label struct {
@@ -172,6 +172,12 @@ func (m *Metrics) UpdateFilterAndLabels(allow, block, allowedLabels, blockedLabe
 	}
 }
 
+func (m *Metrics) Shutdown() {
+	if ss, ok := m.sink.(ShutdownSink); ok {
+		ss.Shutdown()
+	}
+}
+
 // labelIsAllowed return true if a should be included in metric
 // the caller should lock m.filterLock while calling this method
 func (m *Metrics) labelIsAllowed(label *Label) bool {
@@ -228,12 +234,12 @@ func (m *Metrics) allowMetric(key []string, labels []Label) (bool, []Label) {
 func (m *Metrics) collectStats() {
 	for {
 		time.Sleep(m.ProfileInterval)
-		m.emitRuntimeStats()
+		m.EmitRuntimeStats()
 	}
 }
 
 // Emits various runtime statsitics
-func (m *Metrics) emitRuntimeStats() {
+func (m *Metrics) EmitRuntimeStats() {
 	// Export number of Goroutines
 	numRoutines := runtime.NumGoroutine()
 	m.SetGauge([]string{"runtime", "num_goroutines"}, float32(numRoutines))

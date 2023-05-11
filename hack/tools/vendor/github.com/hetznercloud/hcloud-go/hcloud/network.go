@@ -20,6 +20,8 @@ type NetworkZone string
 // List of available Network Zones.
 const (
 	NetworkZoneEUCentral NetworkZone = "eu-central"
+	NetworkZoneUSEast    NetworkZone = "us-east"
+	NetworkZoneUSWest    NetworkZone = "us-west"
 )
 
 // NetworkSubnetType specifies a type of a subnet.
@@ -113,12 +115,16 @@ func (c *NetworkClient) Get(ctx context.Context, idOrName string) (*Network, *Re
 type NetworkListOpts struct {
 	ListOpts
 	Name string
+	Sort []string
 }
 
 func (l NetworkListOpts) values() url.Values {
 	vals := l.ListOpts.values()
 	if l.Name != "" {
 		vals.Add("name", l.Name)
+	}
+	for _, sort := range l.Sort {
+		vals.Add("sort", sort)
 	}
 	return vals
 }

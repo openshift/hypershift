@@ -1,8 +1,9 @@
 package api
 
 import (
+	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"strconv"
 )
 
@@ -28,14 +29,13 @@ func (d *Debug) Heap() ([]byte, error) {
 		return nil, fmt.Errorf("error making request: %s", err)
 	}
 	defer closeResponseBody(resp)
-
-	if resp.StatusCode != 200 {
-		return nil, generateUnexpectedResponseCodeError(resp)
+	if err := requireOK(resp); err != nil {
+		return nil, err
 	}
 
 	// We return a raw response because we're just passing through a response
 	// from the pprof handlers
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding body: %s", err)
 	}
@@ -55,19 +55,37 @@ func (d *Debug) Profile(seconds int) ([]byte, error) {
 		return nil, fmt.Errorf("error making request: %s", err)
 	}
 	defer closeResponseBody(resp)
-
-	if resp.StatusCode != 200 {
-		return nil, generateUnexpectedResponseCodeError(resp)
+	if err := requireOK(resp); err != nil {
+		return nil, err
 	}
 
 	// We return a raw response because we're just passing through a response
 	// from the pprof handlers
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding body: %s", err)
 	}
 
 	return body, nil
+}
+
+// PProf returns a pprof profile for the specified number of seconds. The caller
+// is responsible for closing the returned io.ReadCloser once all bytes are read.
+func (d *Debug) PProf(ctx context.Context, name string, seconds int) (io.ReadCloser, error) {
+	r := d.c.newRequest("GET", "/debug/pprof/"+name)
+	r.ctx = ctx
+
+	// Capture a profile for the specified number of seconds
+	r.params.Set("seconds", strconv.Itoa(seconds))
+
+	_, resp, err := d.c.doRequest(r)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %s", err)
+	}
+	if err := requireOK(resp); err != nil {
+		return nil, err
+	}
+	return resp.Body, nil
 }
 
 // Trace returns an execution trace
@@ -82,14 +100,13 @@ func (d *Debug) Trace(seconds int) ([]byte, error) {
 		return nil, fmt.Errorf("error making request: %s", err)
 	}
 	defer closeResponseBody(resp)
-
-	if resp.StatusCode != 200 {
-		return nil, generateUnexpectedResponseCodeError(resp)
+	if err := requireOK(resp); err != nil {
+		return nil, err
 	}
 
 	// We return a raw response because we're just passing through a response
 	// from the pprof handlers
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding body: %s", err)
 	}
@@ -106,14 +123,13 @@ func (d *Debug) Goroutine() ([]byte, error) {
 		return nil, fmt.Errorf("error making request: %s", err)
 	}
 	defer closeResponseBody(resp)
-
-	if resp.StatusCode != 200 {
-		return nil, generateUnexpectedResponseCodeError(resp)
+	if err := requireOK(resp); err != nil {
+		return nil, err
 	}
 
 	// We return a raw response because we're just passing through a response
 	// from the pprof handlers
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding body: %s", err)
 	}
