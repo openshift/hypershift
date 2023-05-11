@@ -21,6 +21,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	nodepoolmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -229,7 +230,6 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 		}
 
 		g := NewWithT(t)
-		var query string
 
 		prometheusClient, err := NewPrometheusClient(ctx)
 		g.Expect(err).ToNot(HaveOccurred())
@@ -245,12 +245,19 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 				hostedcluster.SilenceAlertsName,
 				hostedcluster.LimitedSupportEnabledName,
 				HypershiftOperatorInfoName,
+				nodepoolmetrics.NodePoolSizeMetricName,
+				nodepoolmetrics.NodePoolAvailableReplicasMetricName,
 			} {
 				// Query fo HC specific metrics by hc.name.
-				query = fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name)
+				query := fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name)
 				if metricName == HypershiftOperatorInfoName {
 					// Query HO info metric
 					query = HypershiftOperatorInfoName
+				}
+				if metricName == nodepoolmetrics.NodePoolSizeMetricName || metricName == nodepoolmetrics.NodePoolAvailableReplicasMetricName {
+					// Mulham: `namespace`` label is used and overrwriten by prometheus relabeling configs.
+					// Therfore, the `namespace` label we set in our metrics is renamed as `exported_namespace`
+					query = fmt.Sprintf("%v{exported_namespace=\"%s\"}", metricName, hc.Namespace)
 				}
 
 				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, query, time.Now())
@@ -269,7 +276,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 			return true, nil
 		})
 		if err != nil {
-			t.Errorf("Failed to validate that all metrics are expose")
+			t.Errorf("Failed to validate that all metrics are exposed")
 		} else {
 			t.Logf("Destroyed cluster. Namespace: %s, name: %s", hc.Namespace, hc.Name)
 		}
