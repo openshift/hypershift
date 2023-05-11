@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -874,6 +875,8 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		} else {
 			log.Info("Reconciled MachineSet", "result", result)
 		}
+		// we use machineSet.Spec.Replicas because .Spec.Replicas will not be set if autoscaling is enabled
+		metrics.RecordNodePoolSize(nodePool, float64(*ms.Spec.Replicas))
 	}
 
 	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
@@ -892,7 +895,12 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		} else {
 			log.Info("Reconciled MachineDeployment", "result", result)
 		}
+		// we use machineDeployment.Spec.Replicas because .Spec.Replicas will not be set if autoscaling is enabled
+		metrics.RecordNodePoolSize(nodePool, float64(*md.Spec.Replicas))
 	}
+
+	// .Status.Replicas is updated at this point, record metric
+	metrics.RecordNodePoolAvailableReplicas(nodePool)
 
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 	if nodePool.Spec.Management.AutoRepair {
