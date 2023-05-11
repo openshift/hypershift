@@ -2,6 +2,7 @@ apiVersion: tekton.dev/v1beta1
 kind: PipelineRun
 metadata:
   annotations:
+    build.appstudio.openshift.io/repo: https://github.com/openshift/hypershift?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
     build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
@@ -14,7 +15,7 @@ metadata:
     appstudio.openshift.io/component: hypershift-d1mz
     pipelines.appstudio.openshift.io/type: build
   name: hypershift-d1mz-on-pull-request
-  namespace: red-hat-acm-tenant
+  namespace: crt-redhat-acm-tenant
 spec:
   params:
   - name: dockerfile
@@ -24,7 +25,7 @@ spec:
   - name: image-expires-after
     value: 5d
   - name: output-image
-    value: quay.io/redhat-user-workloads/red-hat-acm-tenant/mce-24/hypershift-d1mz:on-pr-{{revision}}
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/mce-24/hypershift-d1mz:on-pr-{{revision}}
   - name: path-context
     value: .
   - name: revision
