@@ -1346,20 +1346,51 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		},
 	}
 
-	// Propagate labels.
-	for k, v := range nodePool.Spec.NodeLabels {
-		// Propagated managed labels down to Machines with a known hardcoded prefix
-		// so the CPO HCCO Node controller can recognize them and apply them to Nodes.
-		labelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, k)
-		machineDeployment.Spec.Template.Labels[labelKey] = v
-	}
-
-	// Propagate taints.
-	taintsInJSON, err := taintsToJSON(nodePool.Spec.Taints)
-	if err != nil {
+	// After a MachineDeployment is created we propagate label/taints directly into Machines.
+	// This is to avoid a NodePool label/taints to trigger a rolling upgrade.
+	// TODO(Alberto): drop this an rely on core in-place propagation once CAPI 1.4.0 https://github.com/kubernetes-sigs/cluster-api/releases comes through the payload.
+	// https://issues.redhat.com/browse/HOSTEDCP-971
+	machineList := &capiv1.MachineList{}
+	if err := r.List(context.TODO(), machineList, client.InNamespace(machineDeployment.Namespace)); err != nil {
 		return err
 	}
-	machineDeployment.Spec.Template.Annotations[nodePoolAnnotationTaints] = taintsInJSON
+
+	for _, machine := range machineList.Items {
+		if nodePoolName := machine.GetAnnotations()[nodePoolAnnotation]; nodePoolName != client.ObjectKeyFromObject(nodePool).String() {
+			continue
+		}
+
+		if machine.Annotations == nil {
+			machine.Annotations = make(map[string]string)
+		}
+		if machine.Labels == nil {
+			machine.Labels = make(map[string]string)
+		}
+
+		if result, err := controllerutil.CreateOrPatch(context.TODO(), r.Client, &machine, func() error {
+			// Propagate labels.
+			for k, v := range nodePool.Spec.NodeLabels {
+				// Propagated managed labels down to Machines with a known hardcoded prefix
+				// so the CPO HCCO Node controller can recognize them and apply them to Nodes.
+				labelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, k)
+				machine.Labels[labelKey] = v
+			}
+
+			// Propagate taints.
+			taintsInJSON, err := taintsToJSON(nodePool.Spec.Taints)
+			if err != nil {
+				return err
+			}
+
+			machine.Annotations[nodePoolAnnotationTaints] = taintsInJSON
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile Machine %q: %w",
+				client.ObjectKeyFromObject(&machine).String(), err)
+		} else {
+			log.Info("Reconciled Machine", "result", result)
+		}
+	}
 
 	// Set strategy
 	machineDeployment.Spec.Strategy = &capiv1.MachineDeploymentStrategy{}
