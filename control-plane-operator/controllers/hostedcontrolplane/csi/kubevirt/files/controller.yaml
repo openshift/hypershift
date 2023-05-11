@@ -44,6 +44,11 @@ spec:
                 configMapKeyRef:
                   name: driver-config
                   key: infraClusterLabels
+            - name: INFRA_STORAGE_CLASS_ENFORCEMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: driver-config
+                  key: infraStorageClassEnforcement
           volumeMounts:
             - name: socket-dir
               mountPath: /var/lib/csi/sockets/pluginproxy/

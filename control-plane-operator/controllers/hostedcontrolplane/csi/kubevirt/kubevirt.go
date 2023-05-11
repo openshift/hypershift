@@ -123,9 +123,12 @@ func getContentsOrDie(file string) []byte {
 }
 
 func reconcileInfraConfigMap(cm *corev1.ConfigMap, infraID string) error {
+	storageClassEnforcement := "allowDefault: true\nallowAll: false\n"
+
 	cm.Data = map[string]string{
-		"infraClusterNamespace": cm.Namespace,
-		"infraClusterLabels":    fmt.Sprintf("%s=%s", hyperv1.InfraIDLabel, infraID),
+		"infraClusterNamespace":        cm.Namespace,
+		"infraClusterLabels":           fmt.Sprintf("%s=%s", hyperv1.InfraIDLabel, infraID),
+		"infraStorageClassEnforcement": storageClassEnforcement,
 	}
 	return nil
 }
