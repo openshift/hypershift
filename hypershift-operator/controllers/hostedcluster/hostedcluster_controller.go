@@ -2366,6 +2366,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 				"cluster.x-k8s.io",
 				"monitoring.coreos.com",
 				"monitoring.rhobs",
+				"capi-provider.agent-install.openshift.io",
 			},
 			Resources: []string{"*"},
 			Verbs:     []string{"*"},

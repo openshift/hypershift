@@ -212,6 +212,11 @@ func ReconcileAutoscalerRole(role *rbacv1.Role, owner config.OwnerRef) error {
 			Resources: []string{"*"},
 			Verbs:     []string{"get", "list"},
 		},
+		{
+			APIGroups: []string{"capi-provider.agent-install.openshift.io"},
+			Resources: []string{"agentmachinetemplates"},
+			Verbs:     []string{"get", "list"},
+		},
 	}
 	return nil
 }
