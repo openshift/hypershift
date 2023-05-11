@@ -521,10 +521,36 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		ServiceIds: []*string{aws.String(serviceID)},
 	})
 	if err != nil {
-		if awsErr, ok := err.(awserr.Error); ok {
-			return false, errors.New(awsErr.Code())
+		log.Error(err, "Failed to delete vpc endpoint service configuration", "serviceID", serviceID)
+		existingConnectionsResult, describeConnectionsErr := r.ec2Client.DescribeVpcEndpointConnectionsWithContext(ctx, &ec2.DescribeVpcEndpointConnectionsInput{
+			Filters: []*ec2.Filter{
+				{
+					Name:   aws.String("service-id"),
+					Values: []*string{aws.String(serviceID)},
+				},
+			},
+		})
+		if describeConnectionsErr != nil {
+			log.Error(describeConnectionsErr, "Failed to get existing connections", "serviceID", serviceID)
+			return false, unwrapError(describeConnectionsErr)
 		}
-		return false, err
+		var existingEndpointIDs []*string
+		for _, conn := range existingConnectionsResult.VpcEndpointConnections {
+			state := aws.StringValue(conn.VpcEndpointState)
+			switch state {
+			case "pendingAcceptance", "pending", "available":
+				existingEndpointIDs = append(existingEndpointIDs, conn.VpcEndpointId)
+			}
+		}
+		if len(existingEndpointIDs) > 0 {
+			if _, rejectEndpointsErr := r.ec2Client.RejectVpcEndpointConnectionsWithContext(ctx, &ec2.RejectVpcEndpointConnectionsInput{
+				ServiceId:      aws.String(serviceID),
+				VpcEndpointIds: existingEndpointIDs,
+			}); rejectEndpointsErr != nil {
+				return false, unwrapError(rejectEndpointsErr)
+			}
+		}
+		return false, unwrapError(err)
 	}
 	if output != nil && len(output.Unsuccessful) != 0 && output.Unsuccessful[0].Error != nil {
 		itemErr := *output.Unsuccessful[0].Error
@@ -537,6 +563,13 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 
 	log.Info("endpoint service deleted", "serviceID", serviceID)
 	return true, nil
+}
+
+func unwrapError(err error) error {
+	if awsErr, ok := err.(awserr.Error); ok {
+		return fmt.Errorf("error code: %s", awsErr.Code())
+	}
+	return err
 }
 
 func (r *AWSEndpointServiceReconciler) hostedControlPlane(ctx context.Context, hcpNamespace string) (*hyperv1.HostedControlPlane, error) {
