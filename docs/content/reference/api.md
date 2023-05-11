@@ -1874,8 +1874,7 @@ string
 &ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
 &ldquo;Action&rdquo;: [
 &ldquo;kms:Decrypt&rdquo;,
-&ldquo;kms:Encrypt&rdquo;,
-&ldquo;kms:GenerateDataKey&rdquo;,
+&ldquo;kms:ReEncrypt&rdquo;,
 &ldquo;kms:GenerateDataKeyWithoutPlainText&rdquo;,
 &ldquo;kms:DescribeKey&rdquo;
 ],
@@ -1884,9 +1883,7 @@ string
 {
 &ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
 &ldquo;Action&rdquo;: [
-&ldquo;kms:RevokeGrant&rdquo;,
-&ldquo;kms:CreateGrant&rdquo;,
-&ldquo;kms:ListGrants&rdquo;
+&ldquo;kms:CreateGrant&rdquo;
 ],
 &ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
 &ldquo;Condition&rdquo;: {
