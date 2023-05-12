@@ -8,6 +8,7 @@ require (
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.11
 	github.com/IBM-Cloud/power-go-client v1.2.1
 	github.com/IBM/go-sdk-core/v5 v5.10.2
+	github.com/IBM/ibm-cos-sdk-go v1.9.4
 	github.com/IBM/networking-go-sdk v0.29.0
 	github.com/IBM/platform-services-go-sdk v0.28.5
 	github.com/IBM/vpc-go-sdk v0.26.0
@@ -28,7 +29,7 @@ require (
 	github.com/onsi/gomega v1.24.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799
-	github.com/openshift/api v0.0.0-20230119154305-a7b1b9651014
+	github.com/openshift/api v0.0.0-20230213202419-42edf4f1d905
 	github.com/openshift/client-go v0.0.0-20220525160904-9e1acff93e4a
 	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20220227135922-dd6353f609dc
@@ -36,6 +37,7 @@ require (
 	github.com/openshift/library-go v0.0.0-20220811164604-fef421ec24f4
 	github.com/operator-framework/api v0.10.7
 	github.com/pkg/errors v0.9.1
+	github.com/ppc64le-cloud/powervs-utils v0.0.0-20230306072409-bc42a581099f
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.57.0
 	github.com/prometheus/client_golang v1.14.0
 	github.com/prometheus/client_model v0.3.0
@@ -45,14 +47,14 @@ require (
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.uber.org/zap v1.19.1
 	golang.org/x/crypto v0.3.0
-	golang.org/x/net v0.4.0
+	golang.org/x/net v0.5.0
 	golang.org/x/time v0.0.0-20220210224613-90d013bbcef8
 	gopkg.in/ini.v1 v1.66.4
 	gopkg.in/square/go-jose.v2 v2.5.1
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.25.2
+	k8s.io/api v0.26.1
 	k8s.io/apiextensions-apiserver v0.24.4
-	k8s.io/apimachinery v0.25.2
+	k8s.io/apimachinery v0.26.1
 	k8s.io/apiserver v0.24.4
 	k8s.io/cli-runtime v0.24.2
 	k8s.io/client-go v12.0.0+incompatible
@@ -61,7 +63,7 @@ require (
 	k8s.io/kube-scheduler v0.23.1
 	k8s.io/kubectl v0.24.2
 	k8s.io/pod-security-admission v0.23.5
-	k8s.io/utils v0.0.0-20220922133306-665eaaec4324
+	k8s.io/utils v0.0.0-20221107191617-1a15be271d1d
 	kubevirt.io/api v0.58.0
 	kubevirt.io/containerized-data-importer-api v1.50.0
 	sigs.k8s.io/apiserver-network-proxy v0.0.24
@@ -164,9 +166,9 @@ require (
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20220608161450-d0670ef3b1eb // indirect
-	golang.org/x/sys v0.3.0 // indirect
-	golang.org/x/term v0.3.0 // indirect
-	golang.org/x/text v0.5.0 // indirect
+	golang.org/x/sys v0.4.0 // indirect
+	golang.org/x/term v0.4.0 // indirect
+	golang.org/x/text v0.6.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.2.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
@@ -175,7 +177,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/klog/v2 v2.80.1 // indirect
-	k8s.io/kube-openapi v0.0.0-20220803162953-67bda5d908f1 // indirect
+	k8s.io/kube-openapi v0.0.0-20221012153701-172d655c2280 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk v0.2.1 // indirect
 	sigs.k8s.io/json v0.0.0-20220713155537-f223a00ba0e2 // indirect
 	sigs.k8s.io/kustomize/api v0.12.1 // indirect
@@ -184,8 +186,11 @@ require (
 )
 
 replace (
+	k8s.io/api => k8s.io/api v0.25.2
+	k8s.io/apimachinery => k8s.io/apimachinery v0.25.2
 	k8s.io/client-go => k8s.io/client-go v0.25.2
 	k8s.io/kubernetes => k8s.io/kubernetes v0.23.3
+	k8s.io/utils => k8s.io/utils v0.0.0-20220922133306-665eaaec4324
 	kubevirt.io/client-go => kubevirt.io/client-go v0.0.0-00010101000000-000000000000
 	kubevirt.io/containerized-data-importer-api => github.com/kubevirt/containerized-data-importer-api v1.41.1-0.20211201033752-05520fb9f18d
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client => sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.24
