@@ -100,6 +100,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSProcessors, "e2e.powervs-processors", "0.5", "Number of processors allocated. Default is 0.5")
 	flag.IntVar(&globalOpts.configurableClusterOptions.PowerVSMemory, "e2e.powervs-memory", 32, "Amount of memory allocated (in GB). Default is 32")
 	flag.BoolVar(&globalOpts.SkipAPIBudgetVerification, "e2e.skip-api-budget", false, "Bool to avoid send metrics to E2E Server on local test execution.")
+	flag.StringVar(&globalOpts.configurableClusterOptions.EtcdStorageClass, "e2e.etcd-storage-class", "", "The persistent volume storage class for etcd data volumes")
 
 	flag.Parse()
 
@@ -378,6 +379,7 @@ type configurableClusterOptions struct {
 	PowerVSProcType             hyperv1.PowerVSNodePoolProcType
 	PowerVSProcessors           string
 	PowerVSMemory               int
+	EtcdStorageClass            string
 }
 
 var nextAWSZoneIndex = 0
@@ -435,6 +437,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
 		},
 		SkipAPIBudgetVerification: o.SkipAPIBudgetVerification,
+		EtcdStorageClass:          o.configurableClusterOptions.EtcdStorageClass,
 	}
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {
