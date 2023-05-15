@@ -36,6 +36,7 @@ var (
 
 	tenantNodeClusterRole        = mustClusterRole("tenant_node_clusterrole.yaml")
 	tenantNodeClusterRoleBinding = mustClusterRoleBinding("tenant_node_clusterrolebinding.yaml")
+	tenantCSIDriver              = mustCSIDriver("tenant_csidriver.yaml")
 
 	daemonset = mustDaemonSet("daemonset.yaml")
 
@@ -99,6 +100,16 @@ func mustRole(file string) *rbacv1.Role {
 func mustRoleBinding(file string) *rbacv1.RoleBinding {
 	b := getContentsOrDie(file)
 	obj := &rbacv1.RoleBinding{}
+	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(b), 500).Decode(&obj); err != nil {
+		panic(err)
+	}
+
+	return obj
+}
+
+func mustCSIDriver(file string) *storagev1.CSIDriver {
+	b := getContentsOrDie(file)
+	obj := &storagev1.CSIDriver{}
 	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(b), 500).Decode(&obj); err != nil {
 		panic(err)
 	}
@@ -277,6 +288,11 @@ func reconcileDefaultTenantStorageClass(sc *storagev1.StorageClass) error {
 	return nil
 }
 
+func reconcileDefaultTenantCSIDriverResource(csiDriver *storagev1.CSIDriver) error {
+	csiDriver.Spec = *tenantCSIDriver.Spec.DeepCopy()
+	return nil
+}
+
 func reconcileTenantNodeSA(sa *corev1.ServiceAccount) error {
 	return nil
 }
@@ -436,6 +452,14 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 	}
 
 	err = reconcileTenantStorageClasses(client, hcp, ctx, createOrUpdate)
+	if err != nil {
+		return err
+	}
+
+	csidriverResource := manifests.KubevirtCSIDriverResource()
+	_, err = createOrUpdate(ctx, client, csidriverResource, func() error {
+		return reconcileDefaultTenantCSIDriverResource(csidriverResource)
+	})
 	if err != nil {
 		return err
 	}
