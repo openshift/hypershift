@@ -178,6 +178,9 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from nodepool: %w", err)
 			}
 		}
+
+		metrics.RecordNodePoolDeletionDuration(nodePool)
+
 		log.Info("Deleted nodepool", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
@@ -1443,6 +1446,10 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	// is at the expected version (spec.version) and config (userData Secret) so we reconcile status and annotation.
 	if MachineDeploymentComplete(machineDeployment) {
 		if nodePool.Status.Version != targetVersion {
+			if nodePool.Status.Version == "" {
+				metrics.RecordNodePoolInitialRolloutDuration(nodePool)
+			}
+
 			log.Info("Version update complete",
 				"previous", nodePool.Status.Version, "new", targetVersion)
 			nodePool.Status.Version = targetVersion

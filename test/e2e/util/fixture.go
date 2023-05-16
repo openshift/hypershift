@@ -247,6 +247,8 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 				HypershiftOperatorInfoName,
 				nodepoolmetrics.NodePoolSizeMetricName,
 				nodepoolmetrics.NodePoolAvailableReplicasMetricName,
+				nodepoolmetrics.NodePoolDeletionDurationMetricName,
+				nodepoolmetrics.NodePoolInitialRolloutDurationMetricName,
 			} {
 				// Query fo HC specific metrics by hc.name.
 				query := fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name)
@@ -254,8 +256,8 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 					// Query HO info metric
 					query = HypershiftOperatorInfoName
 				}
-				if metricName == nodepoolmetrics.NodePoolSizeMetricName || metricName == nodepoolmetrics.NodePoolAvailableReplicasMetricName {
-					// Mulham: `namespace`` label is used and overrwriten by prometheus relabeling configs.
+				if strings.HasPrefix(metricName, "hypershift_nodepools") {
+					// Mulham: `namespace` label is used and overrwriten by prometheus relabeling configs.
 					// Therfore, the `namespace` label we set in our metrics is renamed as `exported_namespace`
 					query = fmt.Sprintf("%v{exported_namespace=\"%s\"}", metricName, hc.Namespace)
 				}
