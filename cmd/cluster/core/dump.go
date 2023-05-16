@@ -39,6 +39,8 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/config"
+	supportutil "github.com/openshift/hypershift/support/util"
 )
 
 type DumpOptions struct {
@@ -96,23 +98,20 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	if err != nil {
 		return err
 	}
-	hcluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{
-		Namespace: opts.Namespace,
-		Name:      opts.Name,
-	}}
-	if err := c.Get(ctx, client.ObjectKeyFromObject(hcluster), hcluster); err != nil {
-		return fmt.Errorf("failed to get hostedcluster %s/%s: %w", opts.Namespace, opts.Name, err)
+	hostedCluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: opts.Namespace, Name: opts.Name}}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+		return fmt.Errorf("failed to get hosted cluster %s/%s: %w", opts.Namespace, opts.Name, err)
 	}
-	if hcluster.Status.KubeConfig == nil {
-		opts.Log.Info("Hostedcluster has no kubeconfig published, skipping guest cluster duming", "namespace", opts.Namespace, "name", opts.Name)
-		return nil
+
+	cpNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name).Name
+	localhostKubeconfigSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "localhost-kubeconfig",
+			Namespace: cpNamespace,
+		},
 	}
-	kubeconfigSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
-		Namespace: hcluster.Namespace,
-		Name:      hcluster.Status.KubeConfig.Name,
-	}}
-	if err := c.Get(ctx, client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret); err != nil {
-		return fmt.Errorf("failed to get guest cluster kubeconfig secret: %w", err)
+	if err := c.Get(ctx, client.ObjectKeyFromObject(localhostKubeconfigSecret), localhostKubeconfigSecret); err != nil {
+		return fmt.Errorf("failed to get hostedcluster %s/%s kubeconfig: %w", opts.Namespace, opts.Name, err)
 	}
 	kubeconfigFile, err := os.CreateTemp(os.TempDir(), "kubeconfig-")
 	if err != nil {
@@ -126,10 +125,50 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 			opts.Log.Error(err, "Failed to cleanup temporary kubeconfig")
 		}
 	}()
-	if _, err := kubeconfigFile.Write(kubeconfigSecret.Data["kubeconfig"]); err != nil {
+	if _, err := kubeconfigFile.Write(localhostKubeconfigSecret.Data["kubeconfig"]); err != nil {
 		return fmt.Errorf("failed to write kubeconfig data: %w", err)
 	}
 	target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
+
+	kubeAPIServerPodList := &corev1.PodList{}
+	if err := c.List(ctx, kubeAPIServerPodList, client.InNamespace(cpNamespace), client.MatchingLabels{"app": "kube-apiserver", hyperv1.ControlPlaneComponent: "kube-apiserver"}); err != nil {
+		return fmt.Errorf("failed to list kube-apiserver pods in control plane namespace: %w", err)
+	}
+	var podToForward *corev1.Pod
+	for i := range kubeAPIServerPodList.Items {
+		pod := &kubeAPIServerPodList.Items[i]
+		if pod.Status.Phase == corev1.PodRunning {
+			podToForward = pod
+			break
+		}
+	}
+	if podToForward == nil {
+		return fmt.Errorf("did not find running kube-apiserver pod for guest cluster")
+	}
+	restConfig, err := util.GetConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get a config for management cluster: %w", err)
+	}
+	kubeClient, err := kubeclient.NewForConfig(restConfig)
+	if err != nil {
+		return fmt.Errorf("failed to get a kubernetes client: %w", err)
+	}
+	forwarderOutput := &bytes.Buffer{}
+	forwarder := portForwarder{
+		Namespace: podToForward.Namespace,
+		PodName:   podToForward.Name,
+		Config:    restConfig,
+		Client:    kubeClient,
+		Out:       forwarderOutput,
+		ErrOut:    forwarderOutput,
+	}
+	podPort := supportutil.BindAPIPortWithDefaultFromHostedCluster(hostedCluster, config.DefaultAPIServerPort)
+	forwarderStop := make(chan struct{})
+	if err := forwarder.ForwardPorts([]string{fmt.Sprintf("%d", podPort)}, forwarderStop); err != nil {
+		return fmt.Errorf("cannot forward kube apiserver port: %w, output: %s", err, forwarderOutput.String())
+	}
+	defer close(forwarderStop)
+
 	opts.Log.Info("Dumping guestcluster", "target", target)
 	if err := DumpGuestCluster(ctx, opts.Log, kubeconfigFile.Name(), target); err != nil {
 		return fmt.Errorf("failed to dump guest cluster: %w", err)
@@ -259,7 +298,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	if out, err := tarCMD.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to run tar with %v args: got err %w and out \n%s", args, err, string(out))
 	}
-	opts.Log.Info("Successfully archied dump", "duration", time.Since(startArchivingDump).String())
+	opts.Log.Info("Successfully archived dump", "duration", time.Since(startArchivingDump).String())
 
 	return nil
 }
