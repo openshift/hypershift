@@ -2733,6 +2733,11 @@ func reconcileCAPIManagerClusterRole(role *rbacv1.ClusterRole) error {
 			Resources: []string{"customresourcedefinitions"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"events"},
+			Verbs:     []string{"update", "create", "patch"},
+		},
 	}
 	return nil
 }
@@ -2785,6 +2790,11 @@ func reconcileCAPIManagerRole(role *rbacv1.Role) error {
 				"secrets",
 			},
 			Verbs: []string{"get", "list", "watch"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"events"},
+			Verbs:     []string{"create", "update", "patch"},
 		},
 		{
 			APIGroups: []string{"coordination.k8s.io"},
