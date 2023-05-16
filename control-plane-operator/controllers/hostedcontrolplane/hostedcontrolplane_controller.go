@@ -2977,25 +2977,6 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile red hat operators deployment: %w", err)
 		}
-
-		catalogRolloutSA := manifests.CatalogRolloutServiceAccount(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, catalogRolloutSA, func() error {
-			return olm.ReconcileCatalogRolloutServiceAccount(catalogRolloutSA, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile catalog rollout service account: %w", err)
-		}
-		catalogRolloutRole := manifests.CatalogRolloutRole(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, catalogRolloutRole, func() error {
-			return olm.ReconcileCatalogRolloutRole(catalogRolloutRole, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile catalog rollout role: %w", err)
-		}
-		catalogRolloutRoleBinding := manifests.CatalogRolloutRoleBinding(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, catalogRolloutRoleBinding, func() error {
-			return olm.ReconcileCatalogRolloutRoleBinding(catalogRolloutRoleBinding, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile catalog rollout rolebinding: %w", err)
-		}
 	}
 
 	catalogOperatorMetricsService := manifests.CatalogOperatorMetricsService(hcp.Namespace)
