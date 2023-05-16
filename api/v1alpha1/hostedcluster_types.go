@@ -1535,7 +1535,7 @@ const (
 )
 
 var (
-	DefaultPersistentVolumeEtcdStorageSize resource.Quantity = resource.MustParse("4Gi")
+	DefaultPersistentVolumeEtcdStorageSize resource.Quantity = resource.MustParse("8Gi")
 )
 
 // ManagedEtcdStorageSpec describes the storage configuration for etcd data.
