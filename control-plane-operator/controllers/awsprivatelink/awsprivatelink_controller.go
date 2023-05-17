@@ -508,7 +508,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 				subnetIDs = append(subnetIDs, &awsEndpointService.Spec.SubnetIDs[i])
 			}
 
-			if hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "" {
+			if hcp.Status.Platform == nil || hcp.Status.Platform.AWS == nil || hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "" {
 				return fmt.Errorf("DefaultWorkerSecurityGroupID doesn't exist yet for the endpoint to use")
 			}
 			output, err := ec2Client.CreateVpcEndpointWithContext(ctx, &ec2.CreateVpcEndpointInput{
