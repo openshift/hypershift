@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
@@ -29,6 +30,12 @@ var (
 		Help: "Time in seconds it took from initial cluster creation and rollout of initial version",
 		Name: InitialRolloutDurationName,
 	}, []string{"namespace", "name"})
+
+	ClusterUpgradeDurationMetricName = "hypershift_cluster_upgrade_duration_seconds"
+	ClusterUpgradeDuration           = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Help: "Time in seconds it took a cluster to upgrade and rollout a given version",
+		Name: ClusterUpgradeDurationMetricName,
+	}, []string{"namespace", "name", "previous_version", "new_version"})
 
 	LimitedSupportEnabledName = "hypershift_cluster_limited_support_enabled"
 	LimitedSupportEnabled     = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -61,9 +68,34 @@ func init() {
 		HostedClusterGuestCloudResourcesDeletionDuration,
 		HostedClusterAvailableDuration,
 		HostedClusterInitialRolloutDuration,
+		ClusterUpgradeDuration,
 		LimitedSupportEnabled,
 		SilenceAlerts,
 		ProxyConfig,
 		SkippedCloudResourcesDeletion,
 	)
+}
+
+func ReportClusterUpgradeDuration(hc *hyperv1.HostedCluster) {
+	// if history has less than 2 entries, then there were no upgrades.
+	if hc.Status.Version == nil || len(hc.Status.Version.History) < 2 {
+		return
+	}
+
+	newVersion := hc.Status.Version.History[0]
+	for i := 1; i < len(hc.Status.Version.History); i++ {
+		prevVersion := hc.Status.Version.History[i]
+		if newVersion.CompletionTime != nil {
+			upgradeDuration := newVersion.CompletionTime.Time.Sub(newVersion.StartedTime.Time).Seconds()
+
+			ClusterUpgradeDuration.With(prometheus.Labels{
+				"namespace":        hc.Namespace,
+				"name":             hc.Name,
+				"previous_version": prevVersion.Version,
+				"new_version":      newVersion.Version,
+			}).Set(upgradeDuration)
+		}
+
+		newVersion = prevVersion
+	}
 }
