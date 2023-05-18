@@ -27,6 +27,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -107,6 +108,7 @@ type NodePoolReconciler struct {
 	upsert.CreateOrUpdateProvider
 	HypershiftOperatorImage string
 	ImageMetadataProvider   supportutil.ImageMetadataProvider
+	KubevirtInfraClients    kvinfra.KubevirtInfraClientMap
 }
 
 type NotReadyError struct {
@@ -178,6 +180,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from nodepool: %w", err)
 			}
 		}
+
 		log.Info("Deleted nodepool", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
@@ -300,6 +303,87 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		ObservedGeneration: nodePool.Generation,
 	})
 
+	// Validate and get releaseImage.
+	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("Failed to get release image: %v", err.Error()),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
+
+	var kubevirtBootImage kubevirt.BootImage
+	// moved KubeVirt specific handling up here, so the caching of the boot image will start as early as possible
+	// in order to actually save time. Caching form the original location will take more time, because the VMs can't
+	// be created before the caching is 100% done. But moving this logic here, the caching will be done in parallel
+	// to the ignition settings, and so it will be ready, or almost ready, when the VMs are created.
+	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		if err := kubevirt.PlatformValidation(nodePool); err != nil {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolValidationFailedReason,
+				Message:            fmt.Sprintf("validation of NodePool KubeVirt platform failed: %s", err.Error()),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return ctrl.Result{}, fmt.Errorf("validation of NodePool KubeVirt platform failed: %w", err)
+		}
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
+
+		infraNS := controlPlaneNamespace
+		if hcluster.Spec.Platform.Kubevirt != nil &&
+			hcluster.Spec.Platform.Kubevirt.Credentials != nil &&
+			len(hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace) > 0 {
+
+			infraNS = hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace
+
+			if nodePool.Status.Platform == nil {
+				nodePool.Status.Platform = &hyperv1.NodePoolPlatformStatus{}
+			}
+
+			if nodePool.Status.Platform.KubeVirt == nil {
+				nodePool.Status.Platform.KubeVirt = &hyperv1.KubeVirtNodePoolStatus{}
+			}
+
+			nodePool.Status.Platform.KubeVirt.RemoteNamespace = infraNS
+		}
+		kubevirtBootImage, err = kubevirt.GetImage(nodePool, releaseImage, infraNS)
+		if err != nil {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidPlatformImageType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolValidationFailedReason,
+				Message:            fmt.Sprintf("Couldn't discover a KubeVirt Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return ctrl.Result{}, fmt.Errorf("couldn't discover a KubeVirt Image in release payload image: %w", err)
+		}
+
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidPlatformImageType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %q", kubevirtBootImage),
+			ObservedGeneration: nodePool.Generation,
+		})
+
+		uid := string(nodePool.GetUID())
+		kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, uid, hcluster, controlPlaneNamespace)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get KubeVirt external infra-cluster: %w", err)
+		}
+		err = kubevirtBootImage.CacheImage(ctx, kvInfraClient, nodePool, uid)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to create or validate KubeVirt image cache: %w", err)
+		}
+
+		r.addKubeVirtCacheNameToStatus(kubevirtBootImage, nodePool)
+	}
+
 	// Validate IgnitionEndpoint.
 	if ignEndpoint == "" {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -348,17 +432,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
 	// Validate and get releaseImage.
-	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
-	if err != nil {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
-			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedReason,
-			Message:            fmt.Sprintf("Failed to get release image: %v", err.Error()),
-			ObservedGeneration: nodePool.Generation,
-		})
-		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
-	}
 	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolValidReleaseImageConditionType,
 		Status:             corev1.ConditionTrue,
@@ -441,41 +514,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
 			Message:            fmt.Sprintf("Bootstrap PowerVS Image is %q", powervsBootImage),
-			ObservedGeneration: nodePool.Generation,
-		})
-	}
-
-	// Validate KubeVirt platform specific input
-	var kubevirtBootImage string
-	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		if err := kubevirt.PlatformValidation(nodePool); err != nil {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedReason,
-				Message:            fmt.Sprintf("validation of NodePool KubeVirt platform failed: %s", err.Error()),
-				ObservedGeneration: nodePool.Generation,
-			})
-			return ctrl.Result{}, fmt.Errorf("validation of NodePool KubeVirt platform failed: %w", err)
-		}
-		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
-
-		kubevirtBootImage, err = kubevirt.GetImage(nodePool, releaseImage)
-		if err != nil {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidPlatformImageType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedReason,
-				Message:            fmt.Sprintf("Couldn't discover a KubeVirt Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
-				ObservedGeneration: nodePool.Generation,
-			})
-			return ctrl.Result{}, fmt.Errorf("couldn't discover a KubeVirt Image in release payload image: %w", err)
-		}
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidPlatformImageType,
-			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
-			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %q", kubevirtBootImage),
 			ObservedGeneration: nodePool.Generation,
 		})
 	}
@@ -943,6 +981,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	return ctrl.Result{}, nil
 }
 
+func (r *NodePoolReconciler) addKubeVirtCacheNameToStatus(kubevirtBootImage kubevirt.BootImage, nodePool *hyperv1.NodePool) {
+	if namer, ok := kubevirtBootImage.(kubevirt.BootImageNamer); ok {
+		if cacheName := namer.GetCacheName(); len(cacheName) > 0 {
+			if nodePool.Status.Platform == nil {
+				nodePool.Status.Platform = &hyperv1.NodePoolPlatformStatus{}
+			}
+
+			if nodePool.Status.Platform.KubeVirt == nil {
+				nodePool.Status.Platform.KubeVirt = &hyperv1.KubeVirtNodePoolStatus{}
+			}
+
+			nodePool.Status.Platform.KubeVirt.CacheName = cacheName
+		}
+	}
+}
+
 // createReachedIgnitionEndpointCondition creates a condition for the NodePool based on the tokenSecret data.
 func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) (*hyperv1.NodePoolCondition, error) {
 	var condition *hyperv1.NodePoolCondition
@@ -1181,10 +1235,38 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 	}
 
 	// Delete all secrets related to the NodePool
-	if err := r.deleteNodePoolSecrets(ctx, nodePool); err != nil {
+	if err = r.deleteNodePoolSecrets(ctx, nodePool); err != nil {
 		return fmt.Errorf("failed to delete NodePool secrets: %w", err)
 	}
 
+	err = r.deleteKubeVirtCache(ctx, nodePool, controlPlaneNamespace)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *NodePoolReconciler) deleteKubeVirtCache(ctx context.Context, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
+	if nodePool.Status.Platform != nil {
+		if nodePool.Status.Platform.KubeVirt != nil {
+			if cacheName := nodePool.Status.Platform.KubeVirt.CacheName; len(cacheName) > 0 {
+				ns := controlPlaneNamespace
+
+				if len(nodePool.Status.Platform.KubeVirt.RemoteNamespace) > 0 {
+					ns = nodePool.Status.Platform.KubeVirt.RemoteNamespace
+				}
+
+				if cl := r.KubevirtInfraClients.GetClient(string(nodePool.GetUID())); cl != nil {
+					err := kubevirt.DeleteCache(ctx, cl, cacheName, ns)
+					if err != nil {
+						return err
+					}
+					r.KubevirtInfraClients.Delete(string(nodePool.GetUID()))
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -2244,7 +2326,7 @@ func isPlatformNone(nodePool *hyperv1.NodePool) bool {
 // a func to mutate the (platform)MachineTemplate.spec, a json string representation for (platform)MachineTemplate.spec
 // and an error.
 func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool,
-	infraID, ami, powervsBootImage, kubevirtBootImage string, defaultSG bool) (client.Object, func(object client.Object) error, string, error) {
+	infraID, ami, powervsBootImage string, kubevirtBootImage kubevirt.BootImage, defaultSG bool) (client.Object, func(object client.Object) error, string, error) {
 	var mutateTemplate func(object client.Object) error
 	var template client.Object
 	var machineTemplateSpec interface{}
@@ -2281,7 +2363,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		}
 	case hyperv1.KubevirtPlatform:
 		template = &capikubevirt.KubevirtMachineTemplate{}
-		machineTemplateSpec = kubevirt.MachineTemplateSpec(kubevirtBootImage, nodePool, hcluster)
+		machineTemplateSpec = kubevirt.MachineTemplateSpec(nodePool, kubevirtBootImage, hcluster)
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capikubevirt.KubevirtMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capikubevirt.KubevirtMachineTemplateSpec)

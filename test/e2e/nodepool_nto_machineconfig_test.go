@@ -66,7 +66,13 @@ func NewNTOMachineConfigRolloutTest(ctx context.Context, mgmtClient crclient.Cli
 	}
 }
 
-func (mc *NTOMachineConfigRolloutTest) Setup(t *testing.T) {}
+func (mc *NTOMachineConfigRolloutTest) Setup(t *testing.T) {
+	if globalOpts.Platform == hyperv1.KubevirtPlatform {
+		t.Skip("test can't run for the platform KubeVirt")
+	}
+
+	t.Log("Starting test NTOMachineConfigRolloutTest")
+}
 
 func (mc *NTOMachineConfigRolloutTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
 	nodePool := &hyperv1.NodePool{

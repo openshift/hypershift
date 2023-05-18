@@ -42907,6 +42907,20 @@ objects:
                           description: RootVolume represents values associated with
                             the VM volume that will host rhcos
                           properties:
+                            cacheStrategy:
+                              description: CacheStrategy defines the boot image caching
+                                strategy. Default - no caching
+                              properties:
+                                type:
+                                  default: None
+                                  description: Type is the type of the caching strategy
+                                  enum:
+                                  - None
+                                  - PVC
+                                  type: string
+                              required:
+                              - type
+                              type: object
                             diskImage:
                               description: Image represents what rhcos image to use
                                 for the node pool
@@ -43211,6 +43225,22 @@ objects:
                     - type
                     type: object
                   type: array
+                platform:
+                  description: Platform hols the specific statuses
+                  properties:
+                    kubeVirt:
+                      description: KubeVirt contains the KubeVirt platform statuses
+                      properties:
+                        cacheName:
+                          description: CacheName holds the name of the cache DataVolume,
+                            if exists
+                          type: string
+                        remoteNamespace:
+                          description: RemoteNamespace holds the namespace of the
+                            remote infra cluster, if defined
+                          type: string
+                      type: object
+                  type: object
                 replicas:
                   description: Replicas is the latest observed number of nodes in
                     the pool.
@@ -43748,6 +43778,20 @@ objects:
                           description: RootVolume represents values associated with
                             the VM volume that will host rhcos
                           properties:
+                            cacheStrategy:
+                              description: CacheStrategy defines the boot image caching
+                                strategy. Default - no caching
+                              properties:
+                                type:
+                                  default: None
+                                  description: Type is the type of the caching strategy
+                                  enum:
+                                  - None
+                                  - PVC
+                                  type: string
+                              required:
+                              - type
+                              type: object
                             diskImage:
                               description: Image represents what rhcos image to use
                                 for the node pool
@@ -44050,6 +44094,22 @@ objects:
                     - type
                     type: object
                   type: array
+                platform:
+                  description: Platform hols the specific statuses
+                  properties:
+                    kubeVirt:
+                      description: KubeVirt contains the KubeVirt platform statuses
+                      properties:
+                        cacheName:
+                          description: CacheName holds the name of the cache DataVolume,
+                            if exists
+                          type: string
+                        remoteNamespace:
+                          description: RemoteNamespace holds the namespace of the
+                            remote infra cluster, if defined
+                          type: string
+                      type: object
+                  type: object
                 replicas:
                   description: Replicas is the latest observed number of nodes in
                     the pool.

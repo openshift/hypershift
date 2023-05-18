@@ -24,10 +24,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"sync"
 	"time"
-
-	"k8s.io/client-go/tools/clientcmd"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -55,6 +52,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/egressfirewall"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -126,11 +124,6 @@ const (
 // NoopReconcile is just a default mutation function that does nothing.
 var NoopReconcile controllerutil.MutateFn = func() error { return nil }
 
-type kubevirtInfraClient struct {
-	client.Client
-	namespace string
-}
-
 // HostedClusterReconciler reconciles a HostedCluster object
 type HostedClusterReconciler struct {
 	client.Client
@@ -172,7 +165,7 @@ type HostedClusterReconciler struct {
 
 	overwriteReconcile   func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error)
 	now                  func() metav1.Time
-	kubevirtInfraClients sync.Map
+	KubevirtInfraClients kvinfra.KubevirtInfraClientMap
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -3287,7 +3280,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, fmt.Errorf("failed to clean up OIDC bucket data: %w", err)
 	}
 
-	r.kubevirtInfraClients.Delete(hc.Spec.InfraID)
+	r.KubevirtInfraClients.Delete(hc.Spec.InfraID)
 
 	// Block until the namespace is deleted, so that if a hostedcluster is deleted and then re-created with the same name
 	// we don't error initially because we can not create new content in a namespace that is being deleted.
@@ -3485,11 +3478,11 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
 		}
-		kvInfraCluster, err := r.discoverKubevirtClusterClient(ctx, hcluster, hcp.Namespace)
+		kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hcluster.Spec.InfraID, hcluster, hcp.Namespace)
 		if err != nil {
 			return err
 		}
-		egressFirewall := egressfirewall.VirtLauncherEgressFirewall(kvInfraCluster.namespace)
+		egressFirewall := egressfirewall.VirtLauncherEgressFirewall(kvInfraCluster.Namespace)
 		if _, err := createOrUpdate(ctx, kvInfraCluster.Client, egressFirewall, func() error {
 			return reconcileVirtLauncherEgressFirewall(egressFirewall)
 		}); err != nil {
@@ -4624,12 +4617,12 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 	// auto generate the basedomain by retrieving the default ingress *.apps dns.
 	if hc.Spec.Platform.Kubevirt.BaseDomainPassthrough != nil && *hc.Spec.Platform.Kubevirt.BaseDomainPassthrough {
 		if hc.Spec.DNS.BaseDomain == "" {
-			kvInfraCluster, err := r.discoverKubevirtClusterClient(ctx, hc, hc.Namespace)
+			kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hc.Spec.InfraID, hc, hc.Namespace)
 			if err != nil {
 				return err
 			}
 			// kubevirtInfraTempRoute is used to resolve the base domain of the infra cluster without accessing IngressController
-			kubevirtInfraTempRoute := manifests.KubevirtInfraTempRoute(kvInfraCluster.namespace)
+			kubevirtInfraTempRoute := manifests.KubevirtInfraTempRoute(kvInfraCluster.Namespace)
 
 			createOrUpdateProvider := upsert.New(r.EnableCIDebugOutput)
 			_, err = createOrUpdateProvider.CreateOrUpdate(ctx, kvInfraCluster.Client, kubevirtInfraTempRoute, func() error {
@@ -4729,62 +4722,6 @@ func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, roles
 	}
 
 	return nil
-}
-
-func generateKubevirtInfraClusterClient(ctx context.Context, cpClient client.Client, hc hyperv1.HostedCluster) (client.Client, error) {
-	infraClusterSecretRef := hc.Spec.Platform.Kubevirt.Credentials.InfraKubeConfigSecret
-
-	infraKubeconfigSecret := &corev1.Secret{}
-	secretNamespace := hc.Namespace
-
-	infraKubeconfigSecretKey := client.ObjectKey{Namespace: secretNamespace, Name: infraClusterSecretRef.Name}
-	if err := cpClient.Get(ctx, infraKubeconfigSecretKey, infraKubeconfigSecret); err != nil {
-		return nil, fmt.Errorf("failed to fetch infra kubeconfig secret %s/%s: %w", secretNamespace, infraClusterSecretRef.Name, err)
-	}
-
-	kubeConfig, ok := infraKubeconfigSecret.Data["kubeconfig"]
-	if !ok {
-		return nil, errors.New("failed to retrieve infra kubeconfig from secret: 'kubeconfig' key is missing")
-	}
-
-	clientConfig, err := clientcmd.NewClientConfigFromBytes(kubeConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create K8s-API client config: %w", err)
-	}
-
-	restConfig, err := clientConfig.ClientConfig()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create REST config: %w", err)
-	}
-	var infraClusterClient client.Client
-
-	infraClusterClient, err = client.New(restConfig, client.Options{Scheme: cpClient.Scheme()})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create infra cluster client: %w", err)
-	}
-
-	return infraClusterClient, nil
-}
-
-func (r *HostedClusterReconciler) discoverKubevirtClusterClient(ctx context.Context, hc *hyperv1.HostedCluster, localInfraNamespace string) (*kubevirtInfraClient, error) {
-	cluster := &kubevirtInfraClient{}
-	if hc.Spec.Platform.Kubevirt.Credentials == nil {
-		cluster.Client = r.Client
-		cluster.namespace = localInfraNamespace
-		return cluster, nil
-	}
-	loaded, ok := r.kubevirtInfraClients.Load(hc.Spec.InfraID)
-	if ok {
-		return loaded.(*kubevirtInfraClient), nil
-	}
-	targetClient, err := generateKubevirtInfraClusterClient(ctx, r.Client, *hc)
-	if err != nil {
-		return nil, err
-	}
-	cluster.Client = targetClient
-	cluster.namespace = hc.Spec.Platform.Kubevirt.Credentials.InfraNamespace
-	r.kubevirtInfraClients.LoadOrStore(hc.Spec.InfraID, cluster)
-	return cluster, nil
 }
 
 // reconcileSREMetricsConfig loads the SRE metrics configuration (avoids parsing if the content is the same)

@@ -101,6 +101,10 @@ func TestNodePool(t *testing.T) {
 				manifestBuilder: NewNodePoolInPlaceUpgradeTestManifest(hostedCluster, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
 			},
 		*/
+		{
+			name: "KubeVirtCacheTest",
+			test: NewKubeVirtCacheTest(ctx, mgmtClient, hostedCluster),
+		},
 	}
 
 	t.Run("NodePool Tests Group", func(t *testing.T) {
@@ -205,11 +209,13 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	// run test validations
 	nodePoolTest.Run(t, *nodePool, nodes)
 
-	// validate default security group
 	err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodePool")
 
-	nodePoolCondition := nodepool.FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
-	g.Expect(nodePoolCondition).ToNot(BeNil(), "%s condition not found", hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
-	g.Expect(nodePoolCondition.Status).To(Equal(corev1.ConditionTrue), "condition %s is not True", hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
+	if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		// validate default security group
+		nodePoolCondition := nodepool.FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
+		g.Expect(nodePoolCondition).ToNot(BeNil(), "%s condition not found", hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
+		g.Expect(nodePoolCondition.Status).To(Equal(corev1.ConditionTrue), "condition %s is not True", hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
+	}
 }

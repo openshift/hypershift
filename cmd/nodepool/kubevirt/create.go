@@ -2,6 +2,7 @@ package kubevirt
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/openshift/hypershift/api/fixtures"
 	"github.com/spf13/cobra"
@@ -18,6 +19,7 @@ type KubevirtPlatformCreateOptions struct {
 	RootVolumeSize         uint32
 	RootVolumeStorageClass string
 	RootVolumeAccessModes  string
+	CacheStrategyType      string
 }
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
@@ -25,6 +27,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		Memory:             "4Gi",
 		Cores:              2,
 		ContainerDiskImage: "",
+		CacheStrategyType:  "",
 	}
 	cmd := &cobra.Command{
 		Use:          "kubevirt",
@@ -38,6 +41,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().Uint32Var(&platformOpts.RootVolumeSize, "root-volume-size", platformOpts.RootVolumeSize, "The size of the root volume for machines in the NodePool in Gi")
 	cmd.Flags().StringVar(&platformOpts.RootVolumeAccessModes, "root-volume-access-modes", platformOpts.RootVolumeAccessModes, "The access modes of the root volume to use for machines in the NodePool (comma-delimited list)")
 	cmd.Flags().StringVar(&platformOpts.ContainerDiskImage, "containerdisk", platformOpts.ContainerDiskImage, "A reference to docker image with the embedded disk to be used to create the machines")
+	cmd.Flags().StringVar(&platformOpts.CacheStrategyType, "root-volume-cache-strategy", platformOpts.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
 
 	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
@@ -45,6 +49,12 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 }
 
 func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
+	if o.CacheStrategyType != "" &&
+		o.CacheStrategyType != string(hyperv1.KubevirtCachingStrategyNone) &&
+		o.CacheStrategyType != string(hyperv1.KubevirtCachingStrategyPVC) {
+		return fmt.Errorf(`wrong value for the --root-volume-cache-strategy parameter. May be only "None" or "PVC"`)
+	}
+
 	nodePool.Spec.Platform.Kubevirt = fixtures.ExampleKubeVirtTemplate(&fixtures.ExampleKubevirtOptions{
 		Memory:                 o.Memory,
 		Cores:                  o.Cores,
@@ -52,6 +62,7 @@ func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePo
 		RootVolumeSize:         o.RootVolumeSize,
 		RootVolumeStorageClass: o.RootVolumeStorageClass,
 		RootVolumeAccessModes:  o.RootVolumeAccessModes,
+		CacheStrategyType:      o.CacheStrategyType,
 	})
 	return nil
 }
