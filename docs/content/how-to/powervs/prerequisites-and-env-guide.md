@@ -42,6 +42,8 @@ API Key used should have below services with respective roles for hypershift clu
 | IAM Identity Service                       | User API key creator, Service ID creator, Administrator |
 | All account management services            | Administrator                                           |
 | All Identity and Access enabled services   | Manager, Editor                                         |
+| Cloud Object Storage                       | Manager, Administrator                                         |
+
 
 ## Base Domain
 Need to have existing CIS Domain in [IBM Cloud Internet Services](https://cloud.ibm.com/docs/cis) which can be used as a `BASEDOMAIN` while creating the cluster.
@@ -58,4 +60,5 @@ Use following environment variables to set custom endpoint.
 IBMCLOUD_POWER_API_ENDPOINT    - to setup PowerVS custom endpoint
 IBMCLOUD_VPC_API_ENDPOINT      - to setup VPC custom endpoint
 IBMCLOUD_PLATFORM_API_ENDPOINT - to setup platform services custom endpoint
+IBMCLOUD_COS_API_ENDPOINT      - to setup COS custom endpoint, can use this to set up custom endpoints mentioned here https://cloud.ibm.com/docs/cloud-object-storage?topic=cloud-object-storage-endpoints#endpoints-region 
 ```

@@ -80,6 +80,7 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			Region:         hcp.Spec.Platform.PowerVS.Region,
 			Zone:           hcp.Spec.Platform.PowerVS.Zone,
 			CISInstanceCRN: hcp.Spec.Platform.PowerVS.CISInstanceCRN,
+			ResourceGroup:  hcp.Spec.Platform.PowerVS.ResourceGroup,
 		}
 	}
 }

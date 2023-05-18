@@ -168,10 +168,11 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	powerVSResources := apifixtures.ExamplePowerVSResources{
-		KubeCloudControllerCreds:  infra.Secrets.KubeCloudControllerManager,
-		NodePoolManagementCreds:   infra.Secrets.NodePoolManagement,
-		IngressOperatorCloudCreds: infra.Secrets.IngressOperator,
-		StorageOperatorCloudCreds: infra.Secrets.StorageOperator,
+		KubeCloudControllerCreds:        infra.Secrets.KubeCloudControllerManager,
+		NodePoolManagementCreds:         infra.Secrets.NodePoolManagement,
+		IngressOperatorCloudCreds:       infra.Secrets.IngressOperator,
+		StorageOperatorCloudCreds:       infra.Secrets.StorageOperator,
+		ImageRegistryOperatorCloudCreds: infra.Secrets.ImageRegistryOperator,
 	}
 
 	exampleOptions.PowerVS.Resources = powerVSResources
