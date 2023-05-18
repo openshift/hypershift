@@ -83,6 +83,15 @@ func UserCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
+func TrustedCABundleConfigMap(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "trusted-ca-bundle-managed",
+			Namespace: ns,
+		},
+	}
+}
+
 func KonnectivityCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
