@@ -5,14 +5,20 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/util"
+	support "github.com/openshift/hypershift/support/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -200,6 +206,7 @@ func validatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
+	validateHostedClusterConditions(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
@@ -232,5 +239,60 @@ func validatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
+	validateHostedClusterConditions(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+}
+
+func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	expectedConditions := conditions.ExpectedHCConditions()
+
+	if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
+		// AWS KMS is not configured
+		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionUnknown
+	} else {
+		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionTrue
+	}
+
+	kasExternalHostname := support.ServiceExternalDNSHostnameByHC(hostedCluster, hyperv1.APIServer)
+	if kasExternalHostname == "" {
+		// ExternalDNS is not configured
+		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionUnknown
+	} else {
+		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionTrue
+	}
+
+	start := time.Now()
+	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (bool, error) {
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+			t.Logf("Failed to get hostedcluster: %v", err)
+			return false, nil
+		}
+
+		for _, condition := range hostedCluster.Status.Conditions {
+			if condition.Type == string(hyperv1.ClusterVersionUpgradeable) {
+				// ClusterVersionUpgradeable condition status is not always guranteed to be true, skip.
+				t.Logf("observed condition %s status [%s]", condition.Type, condition.Status)
+				continue
+			}
+
+			expectedStatus, known := expectedConditions[hyperv1.ConditionType(condition.Type)]
+			if !known {
+				return false, fmt.Errorf("unknown condition %s", condition.Type)
+			}
+
+			if condition.Status != expectedStatus {
+				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
+				return false, nil
+			}
+			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
+		}
+
+		return true, nil
+	})
+	duration := time.Since(start).Round(time.Second)
+
+	if err != nil {
+		t.Fatalf("Failed to validate HostedCluster conditions in %s: %v", duration, err)
+	}
+	t.Logf("Successfully validated all expected HostedCluster conditions in %s", duration)
 }
