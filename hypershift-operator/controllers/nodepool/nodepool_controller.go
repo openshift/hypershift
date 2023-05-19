@@ -440,6 +440,17 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		ObservedGeneration: nodePool.Generation,
 	})
 
+	// Validate arch platform support
+	if (nodePool.Spec.Arch != "") && (nodePool.Spec.Platform.Type != hyperv1.AWSPlatform) {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidArchPlatform,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("Arch flag is not supported for platform: %s", nodePool.Spec.Platform.Type),
+			ObservedGeneration: nodePool.Generation,
+		})
+	}
+
 	// Validate AWS platform specific input
 	var ami string
 	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -452,7 +463,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
 		} else {
 			// TODO: Should the region be included in the NodePool platform information?
-			ami, err = defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, releaseImage)
+			ami, err = defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, releaseImage)
 			if err != nil {
 				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 					Type:               hyperv1.NodePoolValidPlatformImageType,
@@ -2015,11 +2026,10 @@ func validateAutoscaling(nodePool *hyperv1.NodePool) error {
 	return nil
 }
 
-func defaultNodePoolAMI(region string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	// TODO: The architecture should be specified from the API
-	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+func defaultNodePoolAMI(region string, specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	arch, foundArch := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[specifiedArch]]
 	if !foundArch {
-		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
+		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
 	}
 
 	regionData, hasRegionData := arch.Images.AWS.Regions[region]

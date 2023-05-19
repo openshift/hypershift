@@ -23,6 +23,7 @@ type CreateNodePoolOptions struct {
 	ReleaseImage    string
 	Render          bool
 	NodeUpgradeType hyperv1.UpgradeType
+	Arch            string
 }
 
 type PlatformOptions interface {
@@ -92,6 +93,7 @@ func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts
 			Platform: hyperv1.NodePoolPlatform{
 				Type: hcluster.Spec.Platform.Type,
 			},
+			Arch: o.Arch,
 		},
 	}
 

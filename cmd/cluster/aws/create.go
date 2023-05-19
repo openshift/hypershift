@@ -25,7 +25,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	opts.AWSPlatform = core.AWSPlatformOptions{
 		AWSCredentialsFile: "",
 		Region:             "us-east-1",
-		InstanceType:       "m5.large",
+		InstanceType:       "",
 		RootVolumeType:     "gp3",
 		RootVolumeSize:     120,
 		RootVolumeIOPS:     0,
@@ -195,6 +195,19 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		tags = append(tags, hyperv1.AWSResourceTag{Key: k, Value: v})
 	}
 
+	var instanceType string
+	if opts.AWSPlatform.InstanceType != "" {
+		instanceType = opts.AWSPlatform.InstanceType
+	} else {
+		// Aligning with AWS IPI instance type defaults
+		switch opts.Arch {
+		case hyperv1.ArchitectureAMD64:
+			instanceType = "m5.large"
+		case hyperv1.ArchitectureARM64:
+			instanceType = "m6g.large"
+		}
+	}
+
 	exampleOptions.BaseDomain = infra.BaseDomain
 	exampleOptions.BaseDomainPrefix = infra.BaseDomainPrefix
 	exampleOptions.MachineCIDR = infra.MachineCIDR
@@ -220,7 +233,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		VPCID:                   infra.VPCID,
 		SecurityGroupID:         infra.SecurityGroupID,
 		InstanceProfile:         iamInfo.ProfileName,
-		InstanceType:            opts.AWSPlatform.InstanceType,
+		InstanceType:            instanceType,
 		Roles:                   iamInfo.Roles,
 		KMSProviderRoleARN:      iamInfo.KMSProviderRoleARN,
 		KMSKeyARN:               iamInfo.KMSKeyARN,

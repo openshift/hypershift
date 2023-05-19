@@ -74,6 +74,7 @@ type ExampleOptions struct {
 	AutoRepair                       bool
 	EtcdStorageClass                 string
 	ExternalDNSDomain                string
+	Arch                             string
 	AWS                              *ExampleAWSOptions
 	None                             *ExampleNoneOptions
 	Agent                            *ExampleAgentOptions
@@ -519,6 +520,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				Platform: hyperv1.NodePoolPlatform{
 					Type: cluster.Spec.Platform.Type,
 				},
+				Arch:             o.Arch,
 				NodeDrainTimeout: &metav1.Duration{Duration: o.NodeDrainTimeout},
 			},
 		}

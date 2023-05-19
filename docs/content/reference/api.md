@@ -725,6 +725,21 @@ nodes in the NodePool. The Tuned API is defined here:</p>
 JSON or YAML of a serialized Tuned.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>arch</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
+NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
+<a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
+TODO Add ppc64le and s390x to enum validation once the architectures are supported</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -6032,6 +6047,21 @@ nodes in the NodePool. The Tuned API is defined here:</p>
 <p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;tuned&rdquo; whose value is the
 JSON or YAML of a serialized Tuned.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>arch</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
+NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
+<a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
+TODO Add ppc64le and s390x to enum validation once the architectures are supported</p>
 </td>
 </tr>
 </tbody>
