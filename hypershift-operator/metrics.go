@@ -14,6 +14,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/pkg/version"
+	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
@@ -192,22 +193,7 @@ func setupMetrics(mgr manager.Manager) error {
 	return nil
 }
 
-var expectedHCConditionStates = map[hyperv1.ConditionType]bool{
-	hyperv1.HostedClusterAvailable:          true,
-	hyperv1.HostedClusterProgressing:        false,
-	hyperv1.HostedClusterDegraded:           false,
-	hyperv1.IgnitionEndpointAvailable:       true,
-	hyperv1.UnmanagedEtcdAvailable:          true,
-	hyperv1.ValidHostedClusterConfiguration: true,
-	hyperv1.SupportedHostedCluster:          true,
-	hyperv1.ClusterVersionSucceeding:        true,
-	hyperv1.ClusterVersionUpgradeable:       true,
-	hyperv1.ReconciliationActive:            true,
-	hyperv1.ValidOIDCConfiguration:          true,
-	hyperv1.ValidAWSIdentityProvider:        true,
-	hyperv1.ValidAWSKMSConfig:               true,
-	hyperv1.AWSDefaultSecurityGroupCreated:  true,
-}
+var expectedHCConditionStates = conditions.ExpectedHCConditions()
 
 func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.HostedClusterList) {
 	hcCount := newLabelCounter()
@@ -224,7 +210,7 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 	// Init hcByConditions counter.
 	hcByConditions := make(map[string]float64)
 	for condition, expectedState := range expectedHCConditionStates {
-		if expectedState == true {
+		if expectedState == metav1.ConditionTrue {
 			hcByConditions[string("not_"+condition)] = 0
 		} else {
 			hcByConditions[string(condition)] = 0
@@ -282,12 +268,12 @@ func (m *hypershiftMetrics) observeHostedClusters(hostedClusters *hyperv1.Hosted
 			if !known {
 				continue
 			}
-			if expectedState == true {
+			if expectedState == metav1.ConditionTrue {
 				if cond.Status == metav1.ConditionFalse {
 					hcByConditions["not_"+cond.Type] = hcByConditions["not_"+cond.Type] + 1
 				}
 			}
-			if expectedState == false {
+			if expectedState == metav1.ConditionFalse {
 				if cond.Status == metav1.ConditionTrue {
 					hcByConditions[cond.Type] = hcByConditions[cond.Type] + 1
 				}
@@ -322,14 +308,7 @@ func transitionTime(hc *hyperv1.HostedCluster, conditionType hyperv1.ConditionTy
 	return &condition.LastTransitionTime
 }
 
-var expectedNPConditionStates = map[string]bool{
-	hyperv1.NodePoolValidReleaseImageConditionType:  true,
-	hyperv1.NodePoolValidPlatformImageType:          true,
-	hyperv1.NodePoolValidMachineConfigConditionType: true,
-	hyperv1.NodePoolReadyConditionType:              true,
-	hyperv1.NodePoolUpdatingVersionConditionType:    false,
-	hyperv1.NodePoolUpdatingConfigConditionType:     false,
-}
+var expectedNPConditionStates = conditions.ExpectedNodePoolConditions()
 
 func (m *hypershiftMetrics) observeNodePools(ctx context.Context, nodePools *hyperv1.NodePoolList) error {
 	npByCluster := newLabelCounter()
@@ -354,7 +333,7 @@ func (m *hypershiftMetrics) observeNodePools(ctx context.Context, nodePools *hyp
 			if !known {
 				continue
 			}
-			if expectedState {
+			if expectedState == corev1.ConditionTrue {
 				if cond.Status == corev1.ConditionFalse {
 					npByCondition.Add(platform, "not_"+cond.Type)
 				}

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/support/conditions"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -209,13 +209,50 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	// run test validations
 	nodePoolTest.Run(t, *nodePool, nodes)
 
-	err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodePool")
+	validateNodePoolConditions(t, ctx, mgmtClient, nodePool)
+}
 
-	if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		// validate default security group
-		nodePoolCondition := nodepool.FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
-		g.Expect(nodePoolCondition).ToNot(BeNil(), "%s condition not found", hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
-		g.Expect(nodePoolCondition.Status).To(Equal(corev1.ConditionTrue), "condition %s is not True", hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
+func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool) {
+	expectedConditions := conditions.ExpectedNodePoolConditions()
+
+	if nodePool.Spec.AutoScaling != nil {
+		expectedConditions[hyperv1.NodePoolAutoscalingEnabledConditionType] = corev1.ConditionTrue
+	} else {
+		expectedConditions[hyperv1.NodePoolAutoscalingEnabledConditionType] = corev1.ConditionFalse
 	}
+
+	if nodePool.Spec.Management.AutoRepair {
+		expectedConditions[hyperv1.NodePoolAutorepairEnabledConditionType] = corev1.ConditionTrue
+	} else {
+		expectedConditions[hyperv1.NodePoolAutorepairEnabledConditionType] = corev1.ConditionFalse
+	}
+
+	start := time.Now()
+	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (bool, error) {
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool); err != nil {
+			t.Logf("Failed to get nodepool: %v", err)
+			return false, nil
+		}
+
+		for _, condition := range nodePool.Status.Conditions {
+			expectedStatus, known := expectedConditions[condition.Type]
+			if !known {
+				return false, fmt.Errorf("unknown condition %s", condition.Type)
+			}
+
+			if condition.Status != expectedStatus {
+				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
+				return false, nil
+			}
+			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
+		}
+
+		return true, nil
+	})
+	duration := time.Since(start).Round(time.Second)
+
+	if err != nil {
+		t.Fatalf("Failed to validate NodePool conditions in %s: %v", duration, err)
+	}
+	t.Logf("Successfully validated all expected NodePool conditions in %s", duration)
 }
