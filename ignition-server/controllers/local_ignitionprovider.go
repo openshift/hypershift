@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blang/semver"
 	"github.com/docker/distribution/manifest/manifestlist"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
@@ -283,11 +284,15 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			return fmt.Errorf("failed to write pull secret to config dir: %w", err)
 		}
 
+		payloadVersion, err := semver.Parse(imageProvider.Version())
+		if err != nil {
+			return fmt.Errorf("failed to parse payload version: %w", err)
+		}
+
+		// args contains the base args that have not changed over time.
 		args := []string{
 			"bootstrap",
-			fmt.Sprintf("--image-references=%s", path.Join(configDir, "release-manifests", "image-references")),
 			fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
-			fmt.Sprintf("--kube-ca=%s/signer-ca.crt", configDir),
 			fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
 			fmt.Sprintf("--network-config-file=%s/cluster-network-02-config.yaml", configDir),
 			fmt.Sprintf("--proxy-config-file=%s/cluster-proxy-01-config.yaml", configDir),
@@ -297,6 +302,36 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			fmt.Sprintf("--dest-dir=%s", destDir),
 			fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir),
 		}
+
+		// Depending on the version, we need different args.
+		switch y := payloadVersion.Minor; {
+		case y >= 14:
+			args = append(args,
+				fmt.Sprintf("--payload-version=%s", imageProvider.Version()),
+			)
+			// We need to include 4.13 plus args here too.
+			fallthrough
+		case y >= 13:
+			args = append(args,
+				fmt.Sprintf("--image-references=%s", path.Join(configDir, "release-manifests", "image-references")),
+				fmt.Sprintf("--kube-ca=%s/signer-ca.crt", configDir),
+			)
+		case y <= 12:
+			// when the CPO is at N and the NodePool.spec.release at N-1
+			// we fail to render ignition payload because https://github.com/openshift/machine-config-operator/pull/3286
+			// broke backward compatibility.
+			args = append(args,
+				fmt.Sprintf("--machine-config-operator-image=%s", imageProvider.GetImage("machine-config-operator")),
+				fmt.Sprintf("--machine-config-oscontent-image=%s", imageProvider.GetImage("machine-os-content")),
+				fmt.Sprintf("--infra-image=%s", imageProvider.GetImage("pod")),
+				fmt.Sprintf("--keepalived-image=%s", imageProvider.GetImage("keepalived-ipfailover")),
+				fmt.Sprintf("--coredns-image=%s", imageProvider.GetImage("codedns")),
+				fmt.Sprintf("--haproxy-image=%s", imageProvider.GetImage("haproxy")),
+				fmt.Sprintf("--baremetal-runtimecfg-image=%s", imageProvider.GetImage("baremetal-runtimecfg")),
+				fmt.Sprintf("--kube-ca=%s/root-ca.crt", configDir),
+			)
+		}
+
 		if image, exists := imageProvider.ImageExist("mdns-publisher"); exists {
 			args = append(args, fmt.Sprintf("--mdns-publisher-image=%s", image))
 		}
@@ -312,48 +347,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		out, err := cmd.CombinedOutput()
 		log.Info("machine-config-operator process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
 		if err != nil {
-			// when the CPO is at N and the NodePool.spec.release at N-1
-			// we fail to render ignition payload because https://github.com/openshift/machine-config-operator/pull/3286
-			// broke backward compatibility.
-			// We fall back to MCO previously supported flags.
-			args := []string{
-				"bootstrap",
-				fmt.Sprintf("--machine-config-operator-image=%s", imageProvider.GetImage("machine-config-operator")),
-				fmt.Sprintf("--machine-config-oscontent-image=%s", imageProvider.GetImage("machine-os-content")),
-				fmt.Sprintf("--infra-image=%s", imageProvider.GetImage("pod")),
-				fmt.Sprintf("--keepalived-image=%s", imageProvider.GetImage("keepalived-ipfailover")),
-				fmt.Sprintf("--coredns-image=%s", imageProvider.GetImage("codedns")),
-				fmt.Sprintf("--haproxy-image=%s", imageProvider.GetImage("haproxy")),
-				fmt.Sprintf("--baremetal-runtimecfg-image=%s", imageProvider.GetImage("baremetal-runtimecfg")),
-				fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
-				fmt.Sprintf("--kube-ca=%s/root-ca.crt", configDir),
-				fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
-				fmt.Sprintf("--network-config-file=%s/cluster-network-02-config.yaml", configDir),
-				fmt.Sprintf("--proxy-config-file=%s/cluster-proxy-01-config.yaml", configDir),
-				fmt.Sprintf("--config-file=%s/install-config.yaml", configDir),
-				fmt.Sprintf("--dns-config-file=%s/cluster-dns-02-config.yaml", configDir),
-				fmt.Sprintf("--pull-secret=%s/pull-secret.yaml", configDir),
-				fmt.Sprintf("--dest-dir=%s", destDir),
-				fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir),
-			}
-
-			if image, exists := imageProvider.ImageExist("mdns-publisher"); exists {
-				args = append(args, fmt.Sprintf("--mdns-publisher-image=%s", image))
-			}
-			if mcsConfig.Data["user-ca-bundle-config.yaml"] != "" {
-				args = append(args, fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir))
-			}
-			if p.CloudProvider == hyperv1.AzurePlatform {
-				args = append(args, fmt.Sprintf("--cloud-config-file=%s/cloud.conf.configmap.yaml", mcoBaseDir))
-			}
-
-			start = time.Now()
-			cmd = exec.CommandContext(ctx, filepath.Join(binDir, "machine-config-operator"), args...)
-			out, err = cmd.CombinedOutput()
-			log.Info("machine-config-operator process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
-			if err != nil {
-				return fmt.Errorf("machine-config-operator process failed: %w", err)
-			}
+			return fmt.Errorf("machine-config-operator process failed: %w", err)
 		}
 
 		// set missing images condition on the HCP

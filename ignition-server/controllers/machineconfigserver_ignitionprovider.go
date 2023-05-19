@@ -213,7 +213,8 @@ machine-config-operator bootstrap \
 {{ if .isAzure -}}
 --cloud-config-file=/tmp/cloud.conf.configmap.yaml \
 {{ end -}}
---pull-secret=/assets/manifests/pull-secret.yaml
+--pull-secret=/assets/manifests/pull-secret.yaml \
+--payload-version={{ .payloadVersion }}
 # Use our own version of configpools that swap master and workers
 mv /mcc-manifests/bootstrap/manifests /mcc-manifests/bootstrap/manifests.tmp
 mkdir /mcc-manifests/bootstrap/manifests
@@ -234,6 +235,7 @@ func machineConfigServerPod(namespace string, releaseImage *releaseinfo.ReleaseI
 		"haproxyImage":             images["haproxy-router"],
 		"baremetalRuntimeCfgImage": images["baremetal-runtimecfg"],
 		"isAzure":                  provider == hyperv1.AzurePlatform,
+		"payloadVersion":           releaseImage.Version(),
 	}
 	bootstrapScriptBytes := &bytes.Buffer{}
 	if err := mcoBootstrapScriptTemplate.Execute(bootstrapScriptBytes, scriptArgs); err != nil {
