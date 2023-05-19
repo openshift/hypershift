@@ -69,7 +69,6 @@ import (
 const (
 	ControllerName       = "resources"
 	SecretHashAnnotation = "hypershift.openshift.io/kubeadmin-secret-hash"
-	observedConfigKey    = "config"
 )
 
 var (
@@ -111,7 +110,7 @@ func eventHandler() handler.EventHandler {
 }
 
 func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
-	if err := imageregistryv1.AddToScheme(opts.Manager.GetScheme()); err != nil {
+	if err := imageregistryv1.Install(opts.Manager.GetScheme()); err != nil {
 		return fmt.Errorf("failed to add to scheme: %w", err)
 	}
 
@@ -423,7 +422,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling oauth serving cert ca bundle")
-	if err := r.reconcileOAuthServingCertCABundle(ctx, hcp, r.oauthAddress); err != nil {
+	if err := r.reconcileOAuthServingCertCABundle(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert CA bundle: %w", err))
 	}
 
@@ -488,7 +487,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	if hostedcontrolplane.IsStorageAndCSIManaged(hcp) {
 		log.Info("reconciling storage resources")
-		errs = append(errs, r.reconcileStorage(ctx, hcp, releaseImage)...)
+		errs = append(errs, r.reconcileStorage(ctx, hcp)...)
 
 		log.Info("reconciling node level csi configuration")
 		if err := r.reconcileCSIDriver(ctx, hcp, releaseImage); err != nil {
@@ -1101,7 +1100,7 @@ func secretHash(data []byte) string {
 	return fmt.Sprintf("%x", md5.Sum(data))
 }
 
-func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane, oauthHost string) error {
+func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	sourceBundle := cpomanifests.OpenShiftOAuthMasterCABundle(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(sourceBundle), sourceBundle); err != nil {
 		return fmt.Errorf("cannot get oauth master ca bundle: %w", err)
@@ -1568,7 +1567,7 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 	}
 
 	if remaining.Len() > 0 {
-		// If we are still waiting for resources to go away, ensure we are requeued in at most 30 secs
+		// If we are still waiting for resources to go away, ensure we are requeued in at most 30 secs,
 		// so we can at least update the timestamp on the condition.
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	} else {
@@ -1975,7 +1974,7 @@ func (r *reconciler) isClusterVersionUpdated(ctx context.Context, version string
 	return true
 }
 
-func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) []error {
+func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedControlPlane) []error {
 	var errs []error
 
 	snapshotController := manifests.CSISnapshotController()
