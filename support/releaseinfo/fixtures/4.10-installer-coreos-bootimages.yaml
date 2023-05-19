@@ -607,6 +607,11 @@ data:
               "release": "410.84.202111111322-0",
               "project": "rhcos-cloud",
               "name": "rhcos-410-84-202111111322-0-gcp-x86-64"
+            },
+            "kubevirt": {
+              "release": "414.92.202305090606-0",
+              "image": "quay.io/openshift-release-dev/ocp-v4.0-art-dev:4.14-9.2-kubevirt",
+              "digest-ref": "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:5ba2d624b78fff140a255baa17c5713b07316a1c809f922717ed014128d6ac85"
             }
           },
           "rhel-coreos-extensions": {

@@ -69,46 +69,23 @@ func (ci containerImage) getDVSourceForVMTemplate() *v1beta1.DataVolumeSource {
 	}
 }
 
-// containerImage is the implementation of the BootImage interface for container images
-type qcowImage struct {
-	name string
-}
-
-func newQCOWBootImage(imageName string) *qcowImage {
-	return &qcowImage{
-		name: imageName,
-	}
-}
-
-func (qcowImage) CacheImage(_ context.Context, _ client.Client, _ *hyperv1.NodePool, _ string) error {
-	return nil // no implementation
-}
-
-func (qi qcowImage) getDVSourceForVMTemplate() *v1beta1.DataVolumeSource {
-	return &v1beta1.DataVolumeSource{
-		HTTP: &v1beta1.DataVolumeSourceHTTP{
-			URL: qi.name,
-		},
-	}
-}
-
-// cachedQCOWImage is the implementation of the BootImage interface for QCOW images
-type cachedQCOWImage struct {
+// cachedContainerBootImage is the implementation of the BootImage interface for QCOW images
+type cachedContainerBootImage struct {
 	name      string
 	hash      string
 	namespace string
 	dvName    string
 }
 
-func newCachedQCOWBootImage(name, hash, namespace string) *cachedQCOWImage {
-	return &cachedQCOWImage{
-		name:      name,
+func newCachedContainerBootImage(name, hash, namespace string) *cachedContainerBootImage {
+	return &cachedContainerBootImage{
+		name:      containerImagePrefix + name,
 		hash:      hash,
 		namespace: namespace,
 	}
 }
 
-func (qi *cachedQCOWImage) CacheImage(ctx context.Context, cl client.Client, nodePool *hyperv1.NodePool, uid string) error {
+func (qi *cachedContainerBootImage) CacheImage(ctx context.Context, cl client.Client, nodePool *hyperv1.NodePool, uid string) error {
 	logger := ctrl.LoggerFrom(ctx)
 
 	if nodePool.Spec.Platform.Kubevirt == nil {
@@ -168,7 +145,7 @@ func (qi *cachedQCOWImage) CacheImage(ctx context.Context, cl client.Client, nod
 	return nil
 }
 
-func (qi *cachedQCOWImage) cleanOldCaches(ctx context.Context, cl client.Client, oldDVs []v1beta1.DataVolume) {
+func (qi *cachedContainerBootImage) cleanOldCaches(ctx context.Context, cl client.Client, oldDVs []v1beta1.DataVolume) {
 	logger := ctrl.LoggerFrom(ctx)
 	for _, oldDV := range oldDVs {
 		if oldDV.DeletionTimestamp.IsZero() {
@@ -181,7 +158,7 @@ func (qi *cachedQCOWImage) cleanOldCaches(ctx context.Context, cl client.Client,
 	}
 }
 
-func (qi *cachedQCOWImage) createDVForCache(ctx context.Context, cl client.Client, nodePool *hyperv1.NodePool, uid string) (*v1beta1.DataVolume, error) {
+func (qi *cachedContainerBootImage) createDVForCache(ctx context.Context, cl client.Client, nodePool *hyperv1.NodePool, uid string) (*v1beta1.DataVolume, error) {
 	dv := qi.buildDVForCache(nodePool, uid)
 
 	err := cl.Create(ctx, dv)
@@ -192,7 +169,7 @@ func (qi *cachedQCOWImage) createDVForCache(ctx context.Context, cl client.Clien
 	return dv, nil
 }
 
-func (qi *cachedQCOWImage) getDVSourceForVMTemplate() *v1beta1.DataVolumeSource {
+func (qi *cachedContainerBootImage) getDVSourceForVMTemplate() *v1beta1.DataVolumeSource {
 	return &v1beta1.DataVolumeSource{
 		PVC: &v1beta1.DataVolumeSourcePVC{
 			Namespace: qi.namespace,
@@ -201,11 +178,12 @@ func (qi *cachedQCOWImage) getDVSourceForVMTemplate() *v1beta1.DataVolumeSource 
 	}
 }
 
-func (qi *cachedQCOWImage) GetCacheName() string {
+func (qi *cachedContainerBootImage) GetCacheName() string {
 	return qi.dvName
 }
 
-func (qi *cachedQCOWImage) buildDVForCache(nodePool *hyperv1.NodePool, uid string) *v1beta1.DataVolume {
+func (qi *cachedContainerBootImage) buildDVForCache(nodePool *hyperv1.NodePool, uid string) *v1beta1.DataVolume {
+	pullMethod := v1beta1.RegistryPullNode
 	dv := &v1beta1.DataVolume{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: bootImageNamePrefix,
@@ -222,8 +200,9 @@ func (qi *cachedQCOWImage) buildDVForCache(nodePool *hyperv1.NodePool, uid strin
 		},
 		Spec: v1beta1.DataVolumeSpec{
 			Source: &v1beta1.DataVolumeSource{
-				HTTP: &v1beta1.DataVolumeSourceHTTP{
-					URL: qi.name,
+				Registry: &v1beta1.DataVolumeSourceRegistry{
+					URL:        &qi.name,
+					PullMethod: &pullMethod,
 				},
 			},
 			Preallocation: pointer.Bool(true),

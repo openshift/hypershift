@@ -2,6 +2,7 @@ package kubevirt
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
@@ -17,22 +18,20 @@ import (
 func defaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
 	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
 	if !foundArch {
-		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
-	}
-	openStack, exists := arch.Artifacts["openstack"]
-	if !exists {
-		return "", "", fmt.Errorf("couldn't find OS metadata for openstack")
-	}
-	artifact, exists := openStack.Formats["qcow2.gz"]
-	if !exists {
-		return "", "", fmt.Errorf("couldn't find OS metadata for openstack qcow2.gz")
-	}
-	disk, exists := artifact["disk"]
-	if !exists {
-		return "", "", fmt.Errorf("couldn't find OS metadata for the openstack qcow2.gz disk")
+		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x84_64")
 	}
 
-	return disk.Location, disk.SHA256, nil
+	containerImage := arch.Images.Kubevirt.DigestRef
+	if containerImage == "" {
+		return "", "", fmt.Errorf("no kubevirt vm disk image present in release")
+	}
+
+	split := strings.Split(containerImage, "@")
+	if len(split) != 2 {
+		return "", "", fmt.Errorf("no kubevirt sha digest found for vm disk image")
+	}
+
+	return containerImage, split[1], nil
 }
 
 func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, hostedNamespace string) (BootImage, error) {
@@ -57,10 +56,10 @@ func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage
 
 	// KubeVirt Caching is disabled by default
 	if rootVolume != nil && rootVolume.CacheStrategy != nil && rootVolume.CacheStrategy.Type == hyperv1.KubevirtCachingStrategyPVC {
-		return newCachedQCOWBootImage(imageName, imageHash, hostedNamespace), nil
+		return newCachedContainerBootImage(imageName, imageHash, hostedNamespace), nil
 	}
 
-	return newQCOWBootImage(imageName), nil
+	return newContainerBootImage(imageName), nil
 }
 
 func PlatformValidation(nodePool *hyperv1.NodePool) error {
