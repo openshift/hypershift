@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"os"
 
+	"k8s.io/client-go/rest"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/configmetrics"
@@ -243,6 +245,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		OAuthAddress:          o.OAuthAddress,
 		OAuthPort:             o.OAuthPort,
 		OperateOnReleaseImage: os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
+		EnableCIDebugOutput:   o.enableCIDebugOutput,
 	}
 	configmetrics.Register(mgr.GetCache())
 	return operatorConfig.Start(ctx)

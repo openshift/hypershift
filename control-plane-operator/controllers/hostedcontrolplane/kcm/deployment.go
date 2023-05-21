@@ -25,6 +25,8 @@ import (
 const (
 	AWSCloudProviderCredsKey = "credentials"
 	configHashAnnotation     = "kube-controller-manager.hypershift.openshift.io/config-hash"
+	serviceCAHashAnnotation  = "kube-controller-manager.hypershift.openshift.io/service-ca-hash"
+	rootCAHashAnnotation     = "kube-controller-manager.hypershift.openshift.io/root-ca-hash"
 )
 
 var (
@@ -60,7 +62,7 @@ func kcmLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev1.ConfigMap, p *KubeControllerManagerParams, apiPort *int32) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceServingCA *corev1.ConfigMap, p *KubeControllerManagerParams, apiPort *int32) error {
 	// preserve existing resource requirements for main KCM container
 	mainContainer := util.FindContainer(kcmContainerMain().Name, deployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
@@ -95,6 +97,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 	}
 	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
+	deployment.Spec.Template.ObjectMeta.Annotations[rootCAHashAnnotation] = util.HashStruct(rootCA.Data)
 
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
@@ -114,8 +117,11 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, servingCA *corev
 		},
 	}
 	p.DeploymentConfig.ApplyTo(deployment)
-	if servingCA != nil {
-		applyServingCAVolume(&deployment.Spec.Template.Spec, servingCA)
+	if serviceServingCA != nil {
+		deployment.Spec.Template.ObjectMeta.Annotations[serviceCAHashAnnotation] = util.HashStruct(serviceServingCA.Data)
+		applyServingCAVolume(&deployment.Spec.Template.Spec, serviceServingCA)
+	} else {
+		deployment.Spec.Template.ObjectMeta.Annotations[serviceCAHashAnnotation] = ""
 	}
 	applyCloudConfigVolumeMount(&deployment.Spec.Template.Spec, p.CloudProviderConfig, p.CloudProvider)
 	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, p.CloudProvider, p.CloudProviderCreds, p.TokenMinterImage, kcmContainerMain().Name)
@@ -291,13 +297,8 @@ func (name serviceCAVolumeBuilder) buildKCMVolumeServiceServingCA(v *corev1.Volu
 func applyServingCAVolume(ps *corev1.PodSpec, cm *corev1.ConfigMap) {
 	builder := serviceCAVolumeBuilder(cm.Name)
 	ps.Volumes = append(ps.Volumes, util.BuildVolume(kcmVolumeServiceServingCA(), builder.buildKCMVolumeServiceServingCA))
-	var container *corev1.Container
-	for i, c := range ps.Containers {
-		if c.Name == kcmContainerMain().Name {
-			container = &ps.Containers[i]
-			break
-		}
-	}
+
+	container := util.FindContainer(kcmContainerMain().Name, ps.Containers)
 	if container == nil {
 		panic("did not find the main kcm container in pod spec")
 	}
