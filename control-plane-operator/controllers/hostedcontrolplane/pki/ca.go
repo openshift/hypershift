@@ -85,8 +85,16 @@ func ReconcileEtcdMetricsSignerConfigMap(cm *corev1.ConfigMap, ownerRef config.O
 	return reconcileAggregateCA(cm, ownerRef, etcdMetricsSigner)
 }
 
-func ReconcileRootCAConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, rootCA *corev1.Secret) error {
-	return reconcileAggregateCA(cm, ownerRef, rootCA)
+func ReconcileRootCAConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, rootCA *corev1.Secret, observedDefaultIngressCert *corev1.ConfigMap) error {
+	sources := []*corev1.Secret{rootCA}
+	if observedDefaultIngressCert != nil {
+		sources = append(sources, &corev1.Secret{
+			Data: map[string][]byte{
+				certs.CASignerCertMapKey: []byte(observedDefaultIngressCert.Data[certs.CASignerCertMapKey]),
+			},
+		})
+	}
+	return reconcileAggregateCA(cm, ownerRef, sources...)
 }
 
 func ReconcileKonnectivityConfigMap(cm *corev1.ConfigMap, ownerRef config.OwnerRef, konnectivityCA *corev1.Secret) error {
