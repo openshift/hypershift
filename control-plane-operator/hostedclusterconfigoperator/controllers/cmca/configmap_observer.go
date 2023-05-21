@@ -1,24 +1,47 @@
 package cmca
 
 import (
-	"bytes"
 	"context"
-	"crypto/md5"
 	"fmt"
 
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubeclient "k8s.io/client-go/kubernetes"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	resourcemanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/upsert"
 )
 
 const (
-	RouterCAConfigMap  = "router-ca"
-	ServiceCAConfigMap = "service-ca"
+	ServiceCAConfigMap        = "service-ca"
+	DefaultIngressCAConfigMap = "default-ingress-cert"
 )
+
+type syncDesc struct {
+	destination *corev1.ConfigMap
+	sourceKey   string
+	destKey     string
+}
+
+func configMapsToSync(ns string) map[string]syncDesc {
+	return map[string]syncDesc{
+		"service-ca": {
+			destination: manifests.ServiceServingCA(ns),
+			sourceKey:   "ca-bundle.crt",
+			destKey:     "service-ca.crt",
+		},
+		"default-ingress-cert": {
+			destination: manifests.IngressObservedDefaultIngressCertCA(ns),
+			sourceKey:   "ca-bundle.crt",
+			destKey:     "ca.crt",
+		},
+	}
+}
 
 // ManagedCAObserver watches 2 CA configmaps in the target cluster:
 // - openshift-managed-config/router-ca
@@ -27,121 +50,71 @@ const (
 // A separate controller uses that content to adjust the configmap for
 // the Kube controller manager CA.
 type ManagedCAObserver struct {
+	createOrUpdate upsert.CreateOrUpdateFN
 
-	// Client is a client that allows access to the management cluster
-	Client kubeclient.Interface
+	// cpClient is a client that allows access to the management cluster
+	cpClient client.Client
 
-	// TargetClient is a Kube client for the target cluster
-	TargetClient kubeclient.Interface
+	// cmLister is a lister of configmaps on the guest cluster
+	cmLister corev1listers.ConfigMapLister
 
-	// Namespace is the namespace where the control plane of the cluster
+	// namespace is the namespace where the control plane of the cluster
 	// lives on the management server
-	Namespace string
+	namespace string
 
-	// InitialCA is the initial CA for the controller manager
-	InitialCA string
+	// hcpName is the name of the hostedcontrolplane resource in the
+	// control plane namespace
+	hcpName string
 
-	// Log is the logger for this controller
-	Log logr.Logger
+	// log is the logger for this controller
+	log logr.Logger
 }
 
-func (r *ManagedCAObserver) managedDeployments() []string {
-	return []string{
-		manifests.KCMDeployment(r.Namespace).Name,
-		manifests.OpenShiftAPIServerDeployment(r.Namespace).Name,
-	}
-}
-
-// Reconcile periodically watches for changes in the CA configmaps and updates
-// the kube-controller-manager-ca configmap in the management cluster with their
-// content.
+// Reconcile periodically watches configmaps in the guest cluster and syncs them to the control plane side
 func (r *ManagedCAObserver) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
 	if req.Namespace != ManagedConfigNamespace {
 		return ctrl.Result{}, nil
 	}
 
-	controllerLog := r.Log.WithValues("configmap", req.NamespacedName)
+	configMaps := configMapsToSync(r.namespace)
+	if _, found := configMaps[req.Name]; !found {
+		return ctrl.Result{}, nil
+	}
 
-	controllerLog.Info("syncing configmap")
+	log := r.log.WithValues("configmap", req.NamespacedName)
+	log.Info("syncing configmap")
 
-	additionalCAs, err := r.getAdditionalCAs(ctx)
+	hcp := resourcemanifests.HostedControlPlane(r.namespace, r.hcpName)
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get hosted control plane %s/%s: %w", r.namespace, r.hcpName, err)
+	}
+	ownerRef := config.OwnerRefFrom(hcp)
+
+	sourceCM, err := r.cmLister.ConfigMaps(req.Namespace).Get(req.Name)
 	if err != nil {
-		return ctrl.Result{}, err
+		if !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to get source ConfigMap %s: %w", req.Name, err)
+		}
+		sourceCM = nil
 	}
-
-	ca := &bytes.Buffer{}
-	if _, err = fmt.Fprintf(ca, "%s", r.InitialCA); err != nil {
-		return ctrl.Result{}, err
-	}
-	for _, additionalCA := range additionalCAs {
-		ca.Write(additionalCA)
-	}
-
-	hash := calculateHash(ca.Bytes())
-	controllerLog.Info("Calculated controller manager hash", "hash", hash)
-
-	destinationCM, err := r.Client.CoreV1().ConfigMaps(r.Namespace).Get(ctx, manifests.ServiceServingCA(r.Namespace).Name, metav1.GetOptions{})
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if destinationCM.Data["service-ca.crt"] != ca.String() {
-		destinationCM.Data["service-ca.crt"] = ca.String()
-		r.Log.Info("Updating controller manager configmap")
-		if _, err = r.Client.CoreV1().ConfigMaps(r.Namespace).Update(ctx, destinationCM, metav1.UpdateOptions{}); err != nil {
-			return ctrl.Result{}, err
+	desc := configMaps[req.Name]
+	destinationCM := desc.destination
+	if sourceCM != nil {
+		if _, err := r.createOrUpdate(ctx, r.cpClient, destinationCM, func() error {
+			ownerRef.ApplyTo(destinationCM)
+			if destinationCM.Data == nil {
+				destinationCM.Data = map[string]string{}
+			}
+			destinationCM.Data[desc.destKey] = sourceCM.Data[desc.sourceKey]
+			return nil
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update destination ConfigMap %s: %w", destinationCM.Name, err)
+		}
+	} else {
+		if err := r.cpClient.Delete(ctx, destinationCM); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete destination ConfigMap %s: %w", destinationCM.Name, err)
 		}
 	}
-
-	for _, deployment := range r.managedDeployments() {
-		if err := r.ensureAnnotationOnDeployment(ctx, deployment, hash); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to ensure annotation on %s deployment: %w", deployment, err)
-		}
-	}
-
 	return ctrl.Result{}, nil
-
-}
-
-func (r *ManagedCAObserver) ensureAnnotationOnDeployment(ctx context.Context, deploymentName string, hash string) error {
-	deployment, err := r.Client.AppsV1().Deployments(r.Namespace).Get(ctx, deploymentName, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to get deployment %s/%s: %w", r.Namespace, deploymentName, err)
-	}
-
-	if deployment.Spec.Template.ObjectMeta.Annotations["ca-checksum"] == hash {
-		return nil
-	}
-
-	r.Log.Info("Updating deployment", "name", deploymentName)
-	if deployment.Spec.Template.ObjectMeta.Annotations == nil {
-		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
-	}
-	deployment.Spec.Template.ObjectMeta.Annotations["ca-checksum"] = hash
-
-	_, err = r.Client.AppsV1().Deployments(r.Namespace).Update(ctx, deployment, metav1.UpdateOptions{})
-	return err
-}
-
-func (r *ManagedCAObserver) getAdditionalCAs(ctx context.Context) ([][]byte, error) {
-	additionalCAs := [][]byte{}
-	cm, err := r.TargetClient.CoreV1().ConfigMaps(ManagedConfigNamespace).Get(ctx, RouterCAConfigMap, metav1.GetOptions{})
-	if err != nil && !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to fetch router ca configmap: %v", err)
-	}
-	if err == nil {
-		additionalCAs = append(additionalCAs, []byte(cm.Data["ca-bundle.crt"]))
-	}
-	cm, err = r.TargetClient.CoreV1().ConfigMaps(ManagedConfigNamespace).Get(ctx, ServiceCAConfigMap, metav1.GetOptions{})
-	if err != nil && !errors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to fetch service ca configmap: %v", err)
-	}
-	if err == nil {
-		additionalCAs = append(additionalCAs, []byte(cm.Data["ca-bundle.crt"]))
-	}
-	return additionalCAs, nil
-}
-
-func calculateHash(b []byte) string {
-	return fmt.Sprintf("%x", md5.Sum(b))
 }
