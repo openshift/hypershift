@@ -206,7 +206,9 @@ func validatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
-	validateHostedClusterConditions(t, ctx, client, hostedCluster)
+	if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		validateHostedClusterAWSConditions(t, ctx, client, hostedCluster)
+	}
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
@@ -239,11 +241,14 @@ func validatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
-	validateHostedClusterConditions(t, ctx, client, hostedCluster)
+	if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		validateHostedClusterAWSConditions(t, ctx, client, hostedCluster)
+	}
+
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 }
 
-func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func validateHostedClusterAWSConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	expectedConditions := conditions.ExpectedHCConditions()
 
 	if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
