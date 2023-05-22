@@ -96,23 +96,33 @@ func ReconcileDefaultIngressControllerCertSecret(certSecret *corev1.Secret, sour
 }
 
 func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultNodePort *corev1.Service, hcp *hyperv1.HostedControlPlane) error {
+	detectedHTTPNodePort := int32(0)
 	detectedHTTPSNodePort := int32(0)
 
 	for _, port := range defaultNodePort.Spec.Ports {
+		if port.Port == 80 {
+			detectedHTTPNodePort = port.NodePort
+		}
 		if port.Port == 443 {
 			detectedHTTPSNodePort = port.NodePort
-			break
 		}
 	}
 
-	if detectedHTTPSNodePort == 0 {
+	if detectedHTTPSNodePort == 0 || detectedHTTPNodePort == 0 {
 		return fmt.Errorf("unable to detect default ingress NodePort https port")
 	}
 
 	if service.Labels == nil {
 		service.Labels = map[string]string{}
 	}
+
 	service.Spec.Ports = []corev1.ServicePort{
+		{
+			Name:       "http-80",
+			Protocol:   corev1.ProtocolTCP,
+			Port:       80,
+			TargetPort: intstr.FromInt(int(detectedHTTPNodePort)),
+		},
 		{
 			Name:       "https-443",
 			Protocol:   corev1.ProtocolTCP,
@@ -120,6 +130,7 @@ func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultN
 			TargetPort: intstr.FromInt(int(detectedHTTPSNodePort)),
 		},
 	}
+
 	service.Spec.Selector = map[string]string{
 		"kubevirt.io":        "virt-launcher",
 		hyperv1.InfraIDLabel: hcp.Spec.InfraID,
