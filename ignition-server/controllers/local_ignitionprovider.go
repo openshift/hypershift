@@ -66,6 +66,11 @@ type LocalIgnitionProvider struct {
 	// deleted after use.
 	PreserveOutput bool
 
+	// FeatureGateManifest is the path to a rendered feature gate manifest.
+	// This must be copied into the MCC directory as it is required
+	// to render the ignition payload.
+	FeatureGateManifest string
+
 	ImageFileCache *imageFileCache
 
 	lock sync.Mutex
@@ -233,6 +238,23 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	}()
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract templates from image: %w", err)
+	}
+
+	// Write out the feature gate manifest to the MCC dir.
+	// Use the feature gate from the hosted control plane which should reflect the feature gate of the cluster.
+	if err := func() error {
+		featureGateBytes, err := os.ReadFile(p.FeatureGateManifest)
+		if err != nil {
+			return fmt.Errorf("failed to read feature gate: %w", err)
+		}
+
+		if err := os.WriteFile(filepath.Join(mccBaseDir, "99_feature-gate.yaml"), featureGateBytes, 0644); err != nil {
+			return fmt.Errorf("failed to write feature gate: %w", err)
+		}
+
+		return nil
+	}(); err != nil {
+		return nil, fmt.Errorf("failed to extract feature gate: %w", err)
 	}
 
 	// Extract binaries from the MCO image into the bin directory
