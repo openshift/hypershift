@@ -81,26 +81,20 @@ func TestNodePool(t *testing.T) {
 			name: "TestNTOMachineConfigGetsRolledOut",
 			test: NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
 		},
-		/*
-			// TODO: (csrwng) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
-			{
-				name:            "TestNTOMachineConfigAppliedInPlace",
-				test:            NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
-				manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
-			},
-		*/
+		{
+			name:            "TestNTOMachineConfigAppliedInPlace",
+			test:            NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
+			manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
+		},
 		{
 			name: "TestNodePoolReplaceUpgrade",
 			test: NewNodePoolUpgradeTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
 		},
-		// TODO: (jparrill) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
-		/*
-			{
-				name:            "TestNodePoolInPlaceUpgrade",
-				test:            NewNodePoolUpgradeTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
-				manifestBuilder: NewNodePoolInPlaceUpgradeTestManifest(hostedCluster, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
-			},
-		*/
+		{
+			name:            "TestNodePoolInPlaceUpgrade",
+			test:            NewNodePoolUpgradeTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+			manifestBuilder: NewNodePoolInPlaceUpgradeTestManifest(hostedCluster, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+		},
 		{
 			name: "KubeVirtCacheTest",
 			test: NewKubeVirtCacheTest(ctx, mgmtClient, hostedCluster),
@@ -244,7 +238,7 @@ func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclie
 				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
 				return false, nil
 			}
-			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
+			t.Logf("observed condition %s status to match expected status [%s]", condition.Type, expectedStatus)
 		}
 
 		return true, nil

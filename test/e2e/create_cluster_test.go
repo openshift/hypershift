@@ -270,7 +270,7 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 
 		for _, condition := range hostedCluster.Status.Conditions {
 			if condition.Type == string(hyperv1.ClusterVersionUpgradeable) {
-				// ClusterVersionUpgradeable condition status is not always guranteed to be true, skip.
+				// ClusterVersionUpgradeable condition status is not always guaranteed to be true, skip.
 				t.Logf("observed condition %s status [%s]", condition.Type, condition.Status)
 				continue
 			}
@@ -284,7 +284,7 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
 				return false, nil
 			}
-			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
+			t.Logf("observed condition %s status to match expected status [%s]", condition.Type, expectedStatus)
 		}
 
 		return true, nil
