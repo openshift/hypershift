@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	labelNames = []string{"namespace", "name", "platform"}
+	labelNames = []string{"namespace", "name", "cluster_name", "platform"}
 
 	NodePoolSizeMetricName = "hypershift_nodepools_size"
 	nodePoolSize           = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -45,28 +45,29 @@ func init() {
 	)
 }
 
-func labelValues(nodePool *hyperv1.NodePool) []string {
-	return []string{
-		nodePool.Namespace,
-		nodePool.Name,
-		string(nodePool.Spec.Platform.Type),
+func labels(nodePool *hyperv1.NodePool) prometheus.Labels {
+	return prometheus.Labels{
+		"namespace":    nodePool.Namespace,
+		"name":         nodePool.Name,
+		"cluster_name": nodePool.Spec.ClusterName,
+		"platform":     string(nodePool.Spec.Platform.Type),
 	}
 }
 
 func RecordNodePoolSize(nodePool *hyperv1.NodePool, size float64) {
-	nodePoolSize.WithLabelValues(labelValues(nodePool)...).Set(size)
+	nodePoolSize.With(labels(nodePool)).Set(size)
 }
 
 func RecordNodePoolAvailableReplicas(nodePool *hyperv1.NodePool) {
-	nodePoolAvailableReplicas.WithLabelValues(labelValues(nodePool)...).Set(float64(nodePool.Status.Replicas))
+	nodePoolAvailableReplicas.With(labels(nodePool)).Set(float64(nodePool.Status.Replicas))
 }
 
 func RecordNodePoolDeletionDuration(nodePool *hyperv1.NodePool) {
 	duration := time.Since(nodePool.DeletionTimestamp.Time).Seconds()
-	nodePoolDeletionDuration.WithLabelValues(labelValues(nodePool)...).Set(duration)
+	nodePoolDeletionDuration.With(labels(nodePool)).Set(duration)
 }
 
 func RecordNodePoolInitialRolloutDuration(nodePool *hyperv1.NodePool) {
 	duration := time.Since(nodePool.CreationTimestamp.Time).Seconds()
-	nodePoolInitialRolloutDuration.WithLabelValues(labelValues(nodePool)...).Set(duration)
+	nodePoolInitialRolloutDuration.With(labels(nodePool)).Set(duration)
 }
