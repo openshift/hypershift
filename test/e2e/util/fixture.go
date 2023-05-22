@@ -235,7 +235,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// Polling to prevent races with prometheus scrape interval.
-		err = wait.PollImmediate(10*time.Second, 1*time.Minute, func() (bool, error) {
+		err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
 			for _, metricName := range []string{
 				hostedcluster.DeletionDurationMetricName,
 				hostedcluster.GuestCloudResourcesDeletionDurationMetricName,
