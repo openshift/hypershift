@@ -257,9 +257,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 					query = HypershiftOperatorInfoName
 				}
 				if strings.HasPrefix(metricName, "hypershift_nodepools") {
-					// Mulham: `namespace` label is used and overrwriten by prometheus relabeling configs.
-					// Therfore, the `namespace` label we set in our metrics is renamed as `exported_namespace`
-					query = fmt.Sprintf("%v{exported_namespace=\"%s\"}", metricName, hc.Namespace)
+					query = fmt.Sprintf("%v{cluster_name=\"%s\"}", metricName, hc.Name)
 				}
 
 				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, query, time.Now())
