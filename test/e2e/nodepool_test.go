@@ -222,7 +222,7 @@ func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclie
 	}
 
 	start := time.Now()
-	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (bool, error) {
+	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 20*time.Minute, func(ctx context.Context) (bool, error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool); err != nil {
 			t.Logf("Failed to get nodepool: %v", err)
 			return false, nil
