@@ -1,6 +1,7 @@
 package testjson
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -10,18 +11,24 @@ import (
 
 	"golang.org/x/term"
 	"gotest.tools/gotestsum/internal/dotwriter"
-	"gotest.tools/gotestsum/log"
+	"gotest.tools/gotestsum/internal/log"
 )
 
-func dotsFormatV1(event TestEvent, exec *Execution) (string, error) {
-	pkg := exec.Package(event.Package)
-	switch {
-	case event.PackageEvent():
-		return "", nil
-	case event.Action == ActionRun && pkg.Total == 1:
-		return "[" + RelativePackagePath(event.Package) + "]", nil
-	}
-	return fmtDot(event), nil
+func dotsFormatV1(out io.Writer) EventFormatter {
+	buf := bufio.NewWriter(out)
+	// nolint:errcheck
+	return eventFormatterFunc(func(event TestEvent, exec *Execution) error {
+		pkg := exec.Package(event.Package)
+		switch {
+		case event.PackageEvent():
+			return nil
+		case event.Action == ActionRun && pkg.Total == 1:
+			buf.WriteString("[" + RelativePackagePath(event.Package) + "]")
+			return buf.Flush()
+		}
+		buf.WriteString(fmtDot(event))
+		return buf.Flush()
+	})
 }
 
 func fmtDot(event TestEvent) string {
@@ -41,6 +48,7 @@ type dotFormatter struct {
 	pkgs      map[string]*dotLine
 	order     []string
 	writer    *dotwriter.Writer
+	opts      FormatOptions
 	termWidth int
 }
 
@@ -67,16 +75,17 @@ func (l *dotLine) checkWidth(prefix, terminal int) {
 	}
 }
 
-func newDotFormatter(out io.Writer) EventFormatter {
+func newDotFormatter(out io.Writer, opts FormatOptions) EventFormatter {
 	w, _, err := term.GetSize(int(os.Stdout.Fd()))
 	if err != nil || w == 0 {
 		log.Warnf("Failed to detect terminal width for dots format, error: %v", err)
-		return &formatAdapter{format: dotsFormatV1, out: out}
+		return dotsFormatV1(out)
 	}
 	return &dotFormatter{
 		pkgs:      make(map[string]*dotLine),
 		writer:    dotwriter.New(out),
 		termWidth: w,
+		opts:      opts,
 	}
 }
 
@@ -101,6 +110,10 @@ func (d *dotFormatter) Format(event TestEvent, exec *Execution) error {
 
 	sort.Slice(d.order, d.orderByLastUpdated)
 	for _, pkg := range d.order {
+		if d.opts.HideEmptyPackages && exec.Package(pkg).IsEmpty() {
+			continue
+		}
+
 		line := d.pkgs[pkg]
 		pkgname := RelativePackagePath(pkg) + " "
 		prefix := fmtDotElapsed(exec.Package(pkg))

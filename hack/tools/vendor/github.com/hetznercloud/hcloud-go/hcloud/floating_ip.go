@@ -32,7 +32,7 @@ type FloatingIP struct {
 }
 
 // DNSPtrForIP returns the reverse DNS pointer of the IP address.
-// Deprecated: Use GetDNSPtrForIP instead
+// Deprecated: Use GetDNSPtrForIP instead.
 func (f *FloatingIP) DNSPtrForIP(ip net.IP) string {
 	return f.DNSPtr[ip.String()]
 }
@@ -137,12 +137,16 @@ func (c *FloatingIPClient) Get(ctx context.Context, idOrName string) (*FloatingI
 type FloatingIPListOpts struct {
 	ListOpts
 	Name string
+	Sort []string
 }
 
 func (l FloatingIPListOpts) values() url.Values {
 	vals := l.ListOpts.values()
 	if l.Name != "" {
 		vals.Add("name", l.Name)
+	}
+	for _, sort := range l.Sort {
+		vals.Add("sort", sort)
 	}
 	return vals
 }
@@ -237,10 +241,10 @@ func (c *FloatingIPClient) Create(ctx context.Context, opts FloatingIPCreateOpts
 		Name:        opts.Name,
 	}
 	if opts.HomeLocation != nil {
-		reqBody.HomeLocation = String(opts.HomeLocation.Name)
+		reqBody.HomeLocation = Ptr(opts.HomeLocation.Name)
 	}
 	if opts.Server != nil {
-		reqBody.Server = Int(opts.Server.ID)
+		reqBody.Server = Ptr(opts.Server.ID)
 	}
 	if opts.Labels != nil {
 		reqBody.Labels = &opts.Labels

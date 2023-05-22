@@ -2,17 +2,19 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"strings"
+	"sync/atomic"
+	"syscall"
 
 	"github.com/dnephin/pflag"
 	"github.com/fatih/color"
-	"github.com/pkg/errors"
-	"gotest.tools/gotestsum/log"
+	"gotest.tools/gotestsum/internal/log"
 	"gotest.tools/gotestsum/testjson"
 )
 
@@ -46,8 +48,8 @@ func setupFlags(name string) (*pflag.FlagSet, *options) {
 		junitTestCaseClassnameFormat: &junitFieldFormatValue{},
 		junitTestSuiteNameFormat:     &junitFieldFormatValue{},
 		postRunHookCmd:               &commandValue{},
-		stdout:                       os.Stdout,
-		stderr:                       os.Stderr,
+		stdout:                       color.Output,
+		stderr:                       color.Error,
 	}
 	flags := pflag.NewFlagSet(name, pflag.ContinueOnError)
 	flags.SetInterspersed(false)
@@ -57,6 +59,10 @@ func setupFlags(name string) (*pflag.FlagSet, *options) {
 	flags.StringVarP(&opts.format, "format", "f",
 		lookEnvWithDefault("GOTESTSUM_FORMAT", "short"),
 		"print format of test input")
+	flags.BoolVar(&opts.formatOptions.HideEmptyPackages, "format-hide-empty-pkg",
+		false, "do not print empty packages in compact formats")
+	flags.BoolVar(&opts.formatOptions.UseHiVisibilityIcons, "format-hivis",
+		false, "use high visibility characters in some formats")
 	flags.BoolVar(&opts.rawCommand, "raw-command", false,
 		"don't prepend 'go test -json' to the 'go test' command")
 	flags.BoolVar(&opts.ignoreNonJSONOutputLines, "ignore-non-json-output-lines", false,
@@ -65,7 +71,10 @@ func setupFlags(name string) (*pflag.FlagSet, *options) {
 	flags.StringVar(&opts.jsonFile, "jsonfile",
 		lookEnvWithDefault("GOTESTSUM_JSONFILE", ""),
 		"write all TestEvents to file")
-	flags.BoolVar(&opts.noColor, "no-color", color.NoColor, "disable color output")
+	flags.StringVar(&opts.jsonFileTimingEvents, "jsonfile-timing-events",
+		lookEnvWithDefault("GOTESTSUM_JSONFILE_TIMING_EVENTS", ""),
+		"write only the pass, skip, and fail TestEvents to the file")
+	flags.BoolVar(&opts.noColor, "no-color", defaultNoColor, "disable color output")
 
 	flags.Var(opts.hideSummary, "no-summary",
 		"do not print summary of: "+testjson.SummarizeAll.String())
@@ -76,6 +85,8 @@ func setupFlags(name string) (*pflag.FlagSet, *options) {
 		"command to run after the tests have completed")
 	flags.BoolVar(&opts.watch, "watch", false,
 		"watch go files, and run tests when a file is modified")
+	flags.BoolVar(&opts.watchChdir, "watch-chdir", false,
+		"in watch mode change the working directory to the directory with the modified file before running tests")
 	flags.IntVar(&opts.maxFails, "max-fails", 0,
 		"end the test run after this number of failures")
 
@@ -86,9 +97,15 @@ func setupFlags(name string) (*pflag.FlagSet, *options) {
 		"format the testsuite name field as: "+junitFieldFormatValues)
 	flags.Var(opts.junitTestCaseClassnameFormat, "junitfile-testcase-classname",
 		"format the testcase classname field as: "+junitFieldFormatValues)
+	flags.StringVar(&opts.junitProjectName, "junitfile-project-name",
+		lookEnvWithDefault("GOTESTSUM_JUNITFILE_PROJECT_NAME", ""),
+		"name of the project used in the junit.xml file")
+	flags.BoolVar(&opts.junitHideEmptyPackages, "junitfile-hide-empty-pkg",
+		truthyFlag(lookEnvWithDefault("GOTESTSUM_JUNIT_HIDE_EMPTY_PKG", "")),
+		"omit packages with no tests from the junit.xml file")
 
 	flags.IntVar(&opts.rerunFailsMaxAttempts, "rerun-fails", 0,
-		"rerun failed tests until they all pass, or attempts exceeds maximum. Defaults to max 2 reruns when enabled.")
+		"rerun failed tests until they all pass, or attempts exceeds maximum. Defaults to max 2 reruns when enabled")
 	flags.Lookup("rerun-fails").NoOptDefVal = "2"
 	flags.IntVar(&opts.rerunFailsMaxInitialFailures, "rerun-fails-max-failures", 10,
 		"do not rerun any tests if the initial run has more than this number of failures")
@@ -96,9 +113,8 @@ func setupFlags(name string) (*pflag.FlagSet, *options) {
 		"space separated list of package to test")
 	flags.StringVar(&opts.rerunFailsReportFile, "rerun-fails-report", "",
 		"write a report to the file, of the tests that were rerun")
-	flags.BoolVar(&opts.rerunFailsOnlyRootCases, "rerun-fails-only-root-testcases", false,
-		"rerun only root testcaes, instead of only subtests")
-	flags.Lookup("rerun-fails-only-root-testcases").Hidden = true
+	flags.BoolVar(&opts.rerunFailsRunRootCases, "rerun-fails-run-root-test", false,
+		"rerun the entire root testcase when any of its subtests fail, instead of only the failed subtest")
 
 	flags.BoolVar(&opts.debug, "debug", false, "enabled debug logging")
 	flags.BoolVar(&opts.version, "version", false, "show version and exit")
@@ -110,23 +126,26 @@ func usage(out io.Writer, name string, flags *pflag.FlagSet) {
     %[1]s [flags] [--] [go test flags]
     %[1]s [command]
 
+See https://pkg.go.dev/gotest.tools/gotestsum#section-readme for detailed documentation.
+
 Flags:
 `, name)
 	flags.SetOutput(out)
 	flags.PrintDefaults()
-	fmt.Fprint(out, `
+	fmt.Fprintf(out, `
 Formats:
-    dots                    print a character for each test
-    dots-v2                 experimental dots format, one package per line
-    pkgname                 print a line for each package
-    pkgname-and-test-fails  print a line for each package and failed test output
-    testname                print a line for each test and package
-    standard-quiet          standard go test format
-    standard-verbose        standard go test -v format
+    dots                     print a character for each test
+    dots-v2                  experimental dots format, one package per line
+    pkgname                  print a line for each package
+    pkgname-and-test-fails   print a line for each package and failed test output
+    testname                 print a line for each test and package
+    standard-quiet           standard go test format
+    standard-verbose         standard go test -v format
 
 Commands:
-    tool                    tools for working with test2json output
-`)
+    %[1]s tool slowest   find or skip the slowest tests
+    %[1]s help           print this help next
+`, name)
 }
 
 func lookEnvWithDefault(key, defValue string) string {
@@ -139,22 +158,27 @@ func lookEnvWithDefault(key, defValue string) string {
 type options struct {
 	args                         []string
 	format                       string
+	formatOptions                testjson.FormatOptions
 	debug                        bool
 	rawCommand                   bool
 	ignoreNonJSONOutputLines     bool
 	jsonFile                     string
+	jsonFileTimingEvents         string
 	junitFile                    string
 	postRunHookCmd               *commandValue
 	noColor                      bool
 	hideSummary                  *hideSummaryValue
 	junitTestSuiteNameFormat     *junitFieldFormatValue
 	junitTestCaseClassnameFormat *junitFieldFormatValue
+	junitProjectName             string
+	junitHideEmptyPackages       bool
 	rerunFailsMaxAttempts        int
 	rerunFailsMaxInitialFailures int
 	rerunFailsReportFile         string
-	rerunFailsOnlyRootCases      bool
+	rerunFailsRunRootCases       bool
 	packages                     []string
 	watch                        bool
+	watchChdir                   bool
 	maxFails                     int
 	version                      bool
 
@@ -166,11 +190,22 @@ type options struct {
 func (o options) Validate() error {
 	if o.rerunFailsMaxAttempts > 0 && len(o.args) > 0 && !o.rawCommand && len(o.packages) == 0 {
 		return fmt.Errorf(
-			"when go test args are used with --rerun-fails-max-attempts " +
+			"when go test args are used with --rerun-fails " +
 				"the list of packages to test must be specified by the --packages flag")
+	}
+	if o.rerunFailsMaxAttempts > 0 && boolArgIndex("failfast", o.args) > -1 {
+		return fmt.Errorf("-failfast can not be used with --rerun-fails " +
+			"because not all test cases will run")
 	}
 	return nil
 }
+
+var defaultNoColor = func() bool {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		return false
+	}
+	return color.NoColor
+}()
 
 func setupLogging(opts *options) {
 	if opts.debug {
@@ -187,7 +222,7 @@ func run(opts *options) error {
 		return err
 	}
 
-	goTestProc, err := startGoTestFn(ctx, goTestCmdArgs(opts, rerunOpts{}))
+	goTestProc, err := startGoTestFn(ctx, "", goTestCmdArgs(opts, rerunOpts{}))
 	if err != nil {
 		return err
 	}
@@ -205,10 +240,15 @@ func run(opts *options) error {
 		IgnoreNonJSONOutputLines: opts.ignoreNonJSONOutputLines,
 	}
 	exec, err := testjson.ScanTestOutput(cfg)
+	handler.Flush()
 	if err != nil {
 		return finishRun(opts, exec, err)
 	}
+
 	exitErr := goTestProc.cmd.Wait()
+	if signum := atomic.LoadInt32(&goTestProc.signal); signum != 0 {
+		return finishRun(opts, exec, exitError{num: signalExitCode + int(signum)})
+	}
 	if exitErr == nil || opts.rerunFailsMaxAttempts == 0 {
 		return finishRun(opts, exec, exitErr)
 	}
@@ -226,6 +266,7 @@ func run(opts *options) error {
 
 	cfg = testjson.ScanConfig{Execution: exec, Handler: handler}
 	exitErr = rerunFailed(ctx, opts, cfg)
+	handler.Flush()
 	if err := writeRerunFailsReport(opts, exec); err != nil {
 		return err
 	}
@@ -335,38 +376,44 @@ type proc struct {
 	cmd    waiter
 	stdout io.Reader
 	stderr io.Reader
+	// signal is atomically set to the signal value when a signal is received
+	// by newSignalHandler.
+	signal int32
 }
 
 type waiter interface {
 	Wait() error
 }
 
-func startGoTest(ctx context.Context, args []string) (proc, error) {
+func startGoTest(ctx context.Context, dir string, args []string) (*proc, error) {
 	if len(args) == 0 {
-		return proc{}, errors.New("missing command to run")
+		return nil, errors.New("missing command to run")
 	}
 
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Dir = dir
+
 	p := proc{cmd: cmd}
 	log.Debugf("exec: %s", cmd.Args)
 	var err error
 	p.stdout, err = cmd.StdoutPipe()
 	if err != nil {
-		return p, err
+		return nil, err
 	}
 	p.stderr, err = cmd.StderrPipe()
 	if err != nil {
-		return p, err
+		return nil, err
 	}
 	if err := cmd.Start(); err != nil {
-		return p, errors.Wrapf(err, "failed to run %s", strings.Join(cmd.Args, " "))
+		return nil, fmt.Errorf("failed to run %s: %w", strings.Join(cmd.Args, " "), err)
 	}
 	log.Debugf("go test pid: %d", cmd.Process.Pid)
 
 	ctx, cancel := context.WithCancel(ctx)
-	newSignalHandler(ctx, cmd.Process.Pid)
+	newSignalHandler(ctx, cmd.Process.Pid, &p)
 	p.cmd = &cancelWaiter{cancel: cancel, wrapped: p.cmd}
-	return p, nil
+	return &p, nil
 }
 
 // ExitCodeWithDefault returns the ExitStatus of a process from the error returned by
@@ -387,12 +434,28 @@ type exitCoder interface {
 	ExitCode() int
 }
 
-func isExitCoder(err error) bool {
+func IsExitCoder(err error) bool {
 	_, ok := err.(exitCoder)
 	return ok
 }
 
-func newSignalHandler(ctx context.Context, pid int) {
+type exitError struct {
+	num int
+}
+
+func (e exitError) Error() string {
+	return fmt.Sprintf("exit code %d", e.num)
+}
+
+func (e exitError) ExitCode() int {
+	return e.num
+}
+
+// signalExitCode is the base value added to a signal number to produce the
+// exit code value. This matches the behaviour of bash.
+const signalExitCode = 128
+
+func newSignalHandler(ctx context.Context, pid int, p *proc) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 
@@ -403,6 +466,8 @@ func newSignalHandler(ctx context.Context, pid int) {
 		case <-ctx.Done():
 			return
 		case s := <-c:
+			atomic.StoreInt32(&p.signal, int32(s.(syscall.Signal)))
+
 			proc, err := os.FindProcess(pid)
 			if err != nil {
 				log.Errorf("failed to find pid of 'go test': %v", err)

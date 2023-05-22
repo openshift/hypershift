@@ -20,11 +20,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -34,7 +34,7 @@ import (
 const maxSamplesInMemory = 5000
 
 type queryRangeAPI interface {
-	QueryRange(ctx context.Context, query string, r v1.Range) (model.Value, v1.Warnings, error)
+	QueryRange(ctx context.Context, query string, r v1.Range, opts ...v1.Option) (model.Value, v1.Warnings, error)
 }
 
 type ruleImporter struct {
@@ -48,10 +48,11 @@ type ruleImporter struct {
 }
 
 type ruleImporterConfig struct {
-	outputDir    string
-	start        time.Time
-	end          time.Time
-	evalInterval time.Duration
+	outputDir        string
+	start            time.Time
+	end              time.Time
+	evalInterval     time.Duration
+	maxBlockDuration time.Duration
 }
 
 // newRuleImporter creates a new rule importer that can be used to parse and evaluate recording rule files and create new series
@@ -68,7 +69,7 @@ func newRuleImporter(logger log.Logger, config ruleImporterConfig, apiClient que
 
 // loadGroups parses groups from a list of recording rule files.
 func (importer *ruleImporter) loadGroups(ctx context.Context, filenames []string) (errs []error) {
-	groups, errs := importer.ruleManager.LoadGroups(importer.config.evalInterval, labels.Labels{}, "", filenames...)
+	groups, errs := importer.ruleManager.LoadGroups(importer.config.evalInterval, labels.Labels{}, "", nil, filenames...)
 	if errs != nil {
 		return errs
 	}
@@ -83,7 +84,7 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 
 		for i, r := range group.Rules() {
 			level.Info(importer.logger).Log("backfiller", "processing rule", "id", i, "name", r.Name())
-			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), importer.config.start, importer.config.end, group); err != nil {
+			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), importer.config.start, importer.config.end, int64(importer.config.maxBlockDuration/time.Millisecond), group); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -92,8 +93,10 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 }
 
 // importRule queries a prometheus API to evaluate rules at times in the past.
-func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, start, end time.Time, grp *rules.Group) (err error) {
-	blockDuration := tsdb.DefaultBlockDuration
+func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, start, end time.Time,
+	maxBlockDuration int64, grp *rules.Group,
+) (err error) {
+	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
 	startInMs := start.Unix() * int64(time.Second/time.Millisecond)
 	endInMs := end.Unix() * int64(time.Second/time.Millisecond)
 
@@ -118,7 +121,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 			},
 		)
 		if err != nil {
-			return errors.Wrap(err, "query range")
+			return fmt.Errorf("query range: %w", err)
 		}
 		if warnings != nil {
 			level.Warn(importer.logger).Log("msg", "Range query returned warnings.", "warnings", warnings)
@@ -130,9 +133,9 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		// also need to append samples throughout the whole block range. To allow that, we
 		// pretend that the block is twice as large here, but only really add sample in the
 		// original interval later.
-		w, err := tsdb.NewBlockWriter(log.NewNopLogger(), importer.config.outputDir, 2*tsdb.DefaultBlockDuration)
+		w, err := tsdb.NewBlockWriter(log.NewNopLogger(), importer.config.outputDir, 2*blockDuration)
 		if err != nil {
-			return errors.Wrap(err, "new block writer")
+			return fmt.Errorf("new block writer: %w", err)
 		}
 		var closed bool
 		defer func() {
@@ -155,24 +158,25 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 
 				// Setting the rule labels after the output of the query,
 				// so they can override query output.
-				for _, l := range ruleLabels {
+				ruleLabels.Range(func(l labels.Label) {
 					lb.Set(l.Name, l.Value)
-				}
+				})
 
 				lb.Set(labels.MetricName, ruleName)
+				lbls := lb.Labels(labels.EmptyLabels())
 
 				for _, value := range sample.Values {
-					if err := app.add(ctx, lb.Labels(), timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
-						return errors.Wrap(err, "add")
+					if err := app.add(ctx, lbls, timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
+						return fmt.Errorf("add: %w", err)
 					}
 				}
 			}
 		default:
-			return errors.New(fmt.Sprintf("rule result is wrong type %s", val.Type().String()))
+			return fmt.Errorf("rule result is wrong type %s", val.Type().String())
 		}
 
 		if err := app.flushAndCommit(ctx); err != nil {
-			return errors.Wrap(err, "flush and commit")
+			return fmt.Errorf("flush and commit: %w", err)
 		}
 		err = tsdb_errors.NewMulti(err, w.Close()).Err()
 		closed = true
@@ -200,7 +204,7 @@ type multipleAppender struct {
 
 func (m *multipleAppender) add(ctx context.Context, l labels.Labels, t int64, v float64) error {
 	if _, err := m.appender.Append(0, l, t, v); err != nil {
-		return errors.Wrap(err, "multiappender append")
+		return fmt.Errorf("multiappender append: %w", err)
 	}
 	m.currentSampleCount++
 	if m.currentSampleCount >= m.maxSamplesInMemory {
@@ -214,7 +218,7 @@ func (m *multipleAppender) commit(ctx context.Context) error {
 		return nil
 	}
 	if err := m.appender.Commit(); err != nil {
-		return errors.Wrap(err, "multiappender commit")
+		return fmt.Errorf("multiappender commit: %w", err)
 	}
 	m.appender = m.writer.Appender(ctx)
 	m.currentSampleCount = 0
@@ -226,7 +230,7 @@ func (m *multipleAppender) flushAndCommit(ctx context.Context) error {
 		return err
 	}
 	if _, err := m.writer.Flush(ctx); err != nil {
-		return errors.Wrap(err, "multiappender flush")
+		return fmt.Errorf("multiappender flush: %w", err)
 	}
 	return nil
 }

@@ -1,7 +1,7 @@
 package api
 
 import (
-	"io/ioutil"
+	"io"
 	"strings"
 	"time"
 )
@@ -29,6 +29,9 @@ type License struct {
 	// The time at which the license ceases to function and can
 	// no longer be used in any capacity
 	TerminationTime time.Time `json:"termination_time"`
+
+	// Whether the license will ignore termination
+	IgnoreTermination bool `json:"ignore_termination"`
 
 	// The product the license is valid for
 	Product string `json:"product"`
@@ -62,13 +65,16 @@ func (op *Operator) LicenseGetSigned(q *QueryOptions) (string, error) {
 	r := op.c.newRequest("GET", "/v1/operator/license")
 	r.params.Set("signed", "1")
 	r.setQueryOptions(q)
-	_, resp, err := requireOK(op.c.doRequest(r))
+	_, resp, err := op.c.doRequest(r)
 	if err != nil {
 		return "", err
 	}
 	defer closeResponseBody(resp)
+	if err := requireOK(resp); err != nil {
+		return "", err
+	}
 
-	data, err := ioutil.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err
 	}
@@ -85,11 +91,14 @@ func (op *Operator) LicenseReset(opts *WriteOptions) (*LicenseReply, error) {
 	var reply LicenseReply
 	r := op.c.newRequest("DELETE", "/v1/operator/license")
 	r.setWriteOptions(opts)
-	_, resp, err := requireOK(op.c.doRequest(r))
+	_, resp, err := op.c.doRequest(r)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
+	if err := requireOK(resp); err != nil {
+		return nil, err
+	}
 	if err := decodeBody(resp, &reply); err != nil {
 		return nil, err
 	}
@@ -105,11 +114,14 @@ func (op *Operator) LicensePut(license string, opts *WriteOptions) (*LicenseRepl
 	r := op.c.newRequest("PUT", "/v1/operator/license")
 	r.setWriteOptions(opts)
 	r.body = strings.NewReader(license)
-	_, resp, err := requireOK(op.c.doRequest(r))
+	_, resp, err := op.c.doRequest(r)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
+	if err := requireOK(resp); err != nil {
+		return nil, err
+	}
 
 	if err := decodeBody(resp, &reply); err != nil {
 		return nil, err

@@ -265,6 +265,11 @@ loop:
 
 			wasDot = false
 		case '.':
+			if i == 0 && len(s) > 1 {
+				// leading dots are not legal except for the root zone
+				return len(msg), ErrRdata
+			}
+
 			if wasDot {
 				// two dots back to back is not legal
 				return len(msg), ErrRdata
@@ -675,9 +680,9 @@ func unpackRRslice(l int, msg []byte, off int) (dst1 []RR, off1 int, err error) 
 
 // Convert a MsgHdr to a string, with dig-like headers:
 //
-//;; opcode: QUERY, status: NOERROR, id: 48404
+// ;; opcode: QUERY, status: NOERROR, id: 48404
 //
-//;; flags: qr aa rd ra;
+// ;; flags: qr aa rd ra;
 func (h *MsgHdr) String() string {
 	if h == nil {
 		return "<nil> MsgHdr"
@@ -901,6 +906,11 @@ func (dns *Msg) String() string {
 	s += "ANSWER: " + strconv.Itoa(len(dns.Answer)) + ", "
 	s += "AUTHORITY: " + strconv.Itoa(len(dns.Ns)) + ", "
 	s += "ADDITIONAL: " + strconv.Itoa(len(dns.Extra)) + "\n"
+	opt := dns.IsEdns0()
+	if opt != nil {
+		// OPT PSEUDOSECTION
+		s += opt.String() + "\n"
+	}
 	if len(dns.Question) > 0 {
 		s += "\n;; QUESTION SECTION:\n"
 		for _, r := range dns.Question {
@@ -923,10 +933,10 @@ func (dns *Msg) String() string {
 			}
 		}
 	}
-	if len(dns.Extra) > 0 {
+	if len(dns.Extra) > 0 && (opt == nil || len(dns.Extra) > 1) {
 		s += "\n;; ADDITIONAL SECTION:\n"
 		for _, r := range dns.Extra {
-			if r != nil {
+			if r != nil && r.Header().Rrtype != TypeOPT {
 				s += r.String() + "\n"
 			}
 		}
