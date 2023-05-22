@@ -396,7 +396,6 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		ControlPlaneOperatorImage:        o.configurableClusterOptions.ControlPlaneOperatorImage,
 		ExternalDNSDomain:                o.configurableClusterOptions.ExternalDNSDomain,
 		NodeUpgradeType:                  hyperv1.UpgradeTypeReplace,
-		Arch:                             "amd64",
 		AWSPlatform: core.AWSPlatformOptions{
 			RootVolumeSize:     64,
 			RootVolumeType:     "gp3",
@@ -439,6 +438,12 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		SkipAPIBudgetVerification: o.SkipAPIBudgetVerification,
 		EtcdStorageClass:          o.configurableClusterOptions.EtcdStorageClass,
 	}
+
+	// Arch is only currently valid for aws platform
+	if o.Platform == hyperv1.AWSPlatform {
+		createOption.Arch = "amd64"
+	}
+
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {
 		// align with default for e2e.aws-region flag
