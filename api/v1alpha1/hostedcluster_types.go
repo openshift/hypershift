@@ -1585,7 +1585,9 @@ type PersistentVolumeEtcdStorageSpec struct {
 	// Size is the minimum size of the data volume for each etcd member.
 	//
 	// +optional
-	// +kubebuilder:default="4Gi"
+	// +kubebuilder:default="8Gi"
+	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Etcd PV storage size is immutable"
 	Size *resource.Quantity `json:"size,omitempty"`
 }
 

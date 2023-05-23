@@ -1968,11 +1968,14 @@ spec:
                                 anyOf:
                                 - type: integer
                                 - type: string
-                                default: 4Gi
+                                default: 8Gi
                                 description: Size is the minimum size of the data
                                   volume for each etcd member.
                                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                 x-kubernetes-int-or-string: true
+                                x-kubernetes-validations:
+                                - message: Etcd PV storage size is immutable
+                                  rule: self == oldSelf
                               storageClassName:
                                 description: "StorageClassName is the StorageClass
                                   of the data volume for each etcd member. \n See
@@ -5691,6 +5694,9 @@ spec:
                                   volume for each etcd member.
                                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                 x-kubernetes-int-or-string: true
+                                x-kubernetes-validations:
+                                - message: Etcd PV storage size is immutable
+                                  rule: self == oldSelf
                               storageClassName:
                                 description: "StorageClassName is the StorageClass
                                   of the data volume for each etcd member. \n See
