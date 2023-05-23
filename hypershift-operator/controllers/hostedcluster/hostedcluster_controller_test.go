@@ -17,6 +17,8 @@ import (
 	version "github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
+	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
+	hcpmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -25,6 +27,8 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -35,6 +39,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/clock"
+	clocktesting "k8s.io/utils/clock/testing"
 	"k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
@@ -48,6 +53,65 @@ import (
 
 var Now = metav1.NewTime(time.Now())
 var Later = metav1.NewTime(Now.Add(5 * time.Minute))
+
+func TestHasBeenAvailable(t *testing.T) {
+	testCases := []struct {
+		name     string
+		hc       *hyperv1.HostedCluster
+		expected bool
+	}{
+		{
+			name: "When it has HasBeenAvailable Annotation it should return true",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						HasBeenAvailableAnnotation: "true",
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name:     "When it has no HasBeenAvailable Annotation it should return false",
+			hc:       &hyperv1.HostedCluster{},
+			expected: false,
+		},
+	}
+
+	g := NewGomegaWithT(t)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g.Expect(hasBeenAvailable(tc.hc)).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestClusterAvailableTime(t *testing.T) {
+	testCases := []struct {
+		name     string
+		hc       *hyperv1.HostedCluster
+		expected *float64
+	}{
+		{
+			name: "When HostedCluster has been available it should return nil",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						HasBeenAvailableAnnotation: "true",
+					},
+				},
+			},
+			expected: nil,
+		},
+	}
+
+	g := NewGomegaWithT(t)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g.Expect(clusterAvailableTime(tc.hc)).To(BeEquivalentTo(tc.expected))
+		})
+	}
+}
 
 func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	// TODO: the spec/status comparison of control plane is a weak check; the
@@ -2239,34 +2303,737 @@ func TestComputeAWSEndpointServiceCondition(t *testing.T) {
 	}
 }
 
-func TestHasBeenAvailable(t *testing.T) {
+func TestSkipCloudResourceDeletionMetric(t *testing.T) {
+	now := metav1.Time{Time: time.Now().Round(time.Second)}
+	reconcilerNow := metav1.Time{Time: now.Add(time.Second)}
+
 	testCases := []struct {
-		name     string
-		hc       *hyperv1.HostedCluster
-		expected bool
+		name            string
+		reconcileResult error
+		conditions      []metav1.Condition
+		expected        []*dto.MetricFamily
 	}{
 		{
-			name: "When it has HasBeenAvailable Annotation it should return true",
-			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						HasBeenAvailableAnnotation: "true",
-					},
+			name: "Force skipping deletion aws cloud resources by broken OIDC, SkippedCloudResourcesDeletion should be reported",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ValidAWSIdentityProvider),
+					Status: metav1.ConditionFalse,
 				},
 			},
-			expected: true,
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(hcmetrics.SkippedCloudResourcesDeletionName),
+				Help: pointer.String("Indicates the operator will skip the aws resources deletion"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hcluster"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(1)},
+				}},
+			}},
 		},
 		{
-			name:     "When it has no HasBeenAvailable Annotation it should return false",
-			hc:       &hyperv1.HostedCluster{},
-			expected: false,
+			name: "In a usual cluster teardown, SkippedCloudResourcesDeletion should not be reported",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ValidAWSIdentityProvider),
+					Status: metav1.ConditionTrue,
+				},
+			},
+			expected: []*dto.MetricFamily{},
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "hcluster",
+					Namespace:         "any",
+					Labels:            map[string]string{hyperv1.SilenceClusterAlertsLabel: "clusterDeleting"},
+					DeletionTimestamp: &metav1.Time{Time: time.Now().Round(time.Second)},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "fakeInfraID",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.PlatformType(hyperv1.AWSPlatform),
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region: "fake",
+							CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+								VPC: "fake",
+							},
+						},
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tc.conditions,
+				},
+			}
+
+			hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
+			hcp := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
+			// This is necessary because, the fakeClient fails if the hcp does not have an Status
+			hcp.Status = hyperv1.HostedControlPlaneStatus{
+				Conditions: tc.conditions,
+			}
+			orphanMachine := &capiaws.AWSMachine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "fakeMachine",
+					Namespace:         hcpNs,
+					DeletionTimestamp: &metav1.Time{Time: time.Now().Round(time.Second)},
+				},
+			}
+			awsep := &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "fakeAWSEp",
+					Namespace:         hcpNs,
+					DeletionTimestamp: &metav1.Time{Time: time.Now().Round(time.Second)},
+				},
+			}
+
+			hcmetrics.SkippedCloudResourcesDeletion.Reset()
+			reg := prometheus.NewPedanticRegistry()
+
+			if err := reg.Register(hcmetrics.SkippedCloudResourcesDeletion); err != nil {
+				t.Fatalf("registering SkippedCloudResourcesDeletion collector failed: %v", err)
+			}
+
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, hcp, awsep, orphanMachine).Build()
+			r := &HostedClusterReconciler{
+				Client:                        c,
+				Clock:                         clock.RealClock{},
+				ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
+				now:                           func() metav1.Time { return reconcilerNow },
+			}
+
+			ctx := context.Background()
+
+			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
+			if err != nil {
+				t.Fatalf("error on %s reconciliation: %v", hcluster.Name, err)
+			}
+
+			result, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
+				t.Errorf("result differs from actual: %s", diff)
+			}
+		})
+	}
+}
+
+func TestReportAvailableTime(t *testing.T) {
+	testCases := []struct {
+		name       string
+		conditions []metav1.Condition
+		expected   []*dto.MetricFamily
+	}{
+		{
+			name: "When HostedClusterAvailable is false, Cluster available duration is not reported",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.HostedClusterAvailable),
+					Status: metav1.ConditionFalse,
+				},
+			},
+			expected: []*dto.MetricFamily{},
+		},
+		{
+			name: "When HostedClusterAvailable is true, Cluster available duration is reported",
+			conditions: []metav1.Condition{
+				{
+					Type:               string(hyperv1.HostedClusterAvailable),
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: metav1.Time{Time: time.Time{}.Add(2 * time.Hour)},
+				},
+			},
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(hcmetrics.AvailableDurationName),
+				Help: pointer.String("Time in seconds it took from initial cluster creation to HostedClusterAvailable condition becoming true"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(3600)},
+				}},
+			}},
 		},
 	}
 
-	g := NewGomegaWithT(t)
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g.Expect(HasBeenAvailable(tc.hc)).To(Equal(tc.expected))
+			cluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "hc",
+					Namespace:         "any",
+					CreationTimestamp: metav1.Time{Time: time.Time{}.Add(time.Hour)},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tc.conditions,
+				},
+			}
+
+			hcmetrics.HostedClusterAvailableDuration.Reset()
+			reg := prometheus.NewPedanticRegistry()
+
+			// Capture metrics.
+			if err := reg.Register(hcmetrics.HostedClusterAvailableDuration); err != nil {
+				t.Fatalf("registering HostedClusterAvailableDuration collector failed: %v", err)
+			}
+			reportAvailableTime(cluster)
+
+			result, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
+				t.Errorf("result differs from actual: %s", diff)
+			}
+		})
+	}
+}
+
+func TestReportClusterVersionRolloutTime(t *testing.T) {
+	testCases := []struct {
+		name          string
+		updateHistory []configv1.UpdateHistory
+		expected      []*dto.MetricFamily
+	}{
+		{
+			name: "When HostedCluster provision is finished, Cluster rollout duration is reported",
+			updateHistory: []configv1.UpdateHistory{{
+				CompletionTime: &metav1.Time{Time: time.Time{}.Add(2 * time.Hour)},
+			}},
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(hcmetrics.InitialRolloutDurationName),
+				Help: pointer.String("Time in seconds it took from initial cluster creation and rollout of initial version"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(3600)},
+				}},
+			}},
+		},
+		{
+			name:     "When HostedCluster didn't finish updating, Cluster rollout duration is not reported",
+			expected: []*dto.MetricFamily{},
+		},
+		{
+			name: "When HostedCluster has Multiple versions, the oldest one is used in metrics report",
+			updateHistory: []configv1.UpdateHistory{
+				{
+					CompletionTime: &metav1.Time{Time: time.Time{}.Add(3 * time.Hour)},
+				},
+				{
+					CompletionTime: &metav1.Time{Time: time.Time{}.Add(2 * time.Hour)},
+				},
+			},
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(hcmetrics.InitialRolloutDurationName),
+				Help: pointer.String("Time in seconds it took from initial cluster creation and rollout of initial version"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(3600)},
+				}},
+			}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "hc",
+					Namespace:         "any",
+					CreationTimestamp: metav1.Time{Time: time.Time{}.Add(time.Hour)},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						History: tc.updateHistory,
+					},
+				},
+			}
+
+			hcmetrics.HostedClusterInitialRolloutDuration.Reset()
+			reg := prometheus.NewPedanticRegistry()
+
+			// Capture metric.
+			if err := reg.Register(hcmetrics.HostedClusterInitialRolloutDuration); err != nil {
+				t.Fatalf("registering HostedClusterInitialRolloutDuration collector failed: %v", err)
+			}
+
+			// Report metric.
+			reportClusterVersionRolloutTime(cluster)
+
+			result, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
+				t.Errorf("result differs from actual: %s", diff)
+			}
+		})
+	}
+}
+
+func TestReportLimitedSuportEnabled(t *testing.T) {
+	testCases := []struct {
+		name     string
+		labels   map[string]string
+		expected []*dto.MetricFamily
+	}{
+		{
+			name:   "When LimitedSupport label is set, metric is reported as one",
+			labels: map[string]string{hyperv1.LimitedSupportLabel: "true"},
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(hcmetrics.LimitedSupportEnabledName),
+				Help: pointer.String("Indicates if limited support is enabled for each cluster"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("_id"), Value: pointer.String("fakeClusterID"),
+						},
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(1)},
+				}},
+			}},
+		},
+		{
+			name:   "When LimitedSupport label is not set, metric is reported as zero",
+			labels: map[string]string{},
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(hcmetrics.LimitedSupportEnabledName),
+				Help: pointer.String("Indicates if limited support is enabled for each cluster"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("_id"), Value: pointer.String("fakeClusterID"),
+						},
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(0)},
+				}},
+			}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "hc",
+					Namespace:         "any",
+					Labels:            tc.labels,
+					CreationTimestamp: metav1.Time{Time: time.Time{}.Add(time.Hour)},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "fakeClusterID",
+				},
+			}
+
+			hcmetrics.LimitedSupportEnabled.Reset()
+			reg := prometheus.NewPedanticRegistry()
+
+			// Capture.
+			if err := reg.Register(hcmetrics.LimitedSupportEnabled); err != nil {
+				t.Fatalf("registering LimitedSupportEnabled collector failed: %v", err)
+			}
+
+			// Report.
+			reportLimitedSuportEnabled(cluster)
+
+			// Gather.
+			result, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			// Validate.
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
+				t.Errorf("result differs from actual: %s", diff)
+			}
+		})
+	}
+}
+
+func TestReportSilencedAlerts(t *testing.T) {
+	testCases := []struct {
+		name     string
+		labels   map[string]string
+		expected []*dto.MetricFamily
+	}{
+		{
+			name:   "When SilencedAlerts label is set, metric is reported as one",
+			labels: map[string]string{hyperv1.SilenceClusterAlertsLabel: "true"},
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(hcmetrics.SilenceAlertsName),
+				Help: pointer.String("Indicates if alerts are silenced for each cluster"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("_id"), Value: pointer.String("fakeClusterID"),
+						},
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(1)},
+				}},
+			}},
+		},
+		{
+			name:   "When SilencedAlerts label is not set, metric is reported as zero",
+			labels: map[string]string{},
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(hcmetrics.SilenceAlertsName),
+				Help: pointer.String("Indicates if alerts are silenced for each cluster"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("_id"), Value: pointer.String("fakeClusterID"),
+						},
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(0)},
+				}},
+			}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "hc",
+					Namespace:         "any",
+					Labels:            tc.labels,
+					CreationTimestamp: metav1.Time{Time: time.Time{}.Add(time.Hour)},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "fakeClusterID",
+				},
+			}
+
+			hcmetrics.SilenceAlerts.Reset()
+			reg := prometheus.NewPedanticRegistry()
+
+			// Capture.
+			if err := reg.Register(hcmetrics.SilenceAlerts); err != nil {
+				t.Fatalf("registering SilenceAlertsName collector failed: %v", err)
+			}
+
+			// Report.
+			reportSilecedAlerts(cluster)
+
+			// Gather.
+			result, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			// Validate.
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
+				t.Errorf("result differs from actual: %s", diff)
+			}
+		})
+	}
+}
+
+func TestReportProxyConfig(t *testing.T) {
+	testCases := []struct {
+		name        string
+		clusterConf hyperv1.ClusterConfiguration
+		expected    []*dto.MetricFamily
+	}{
+		{
+			name: "When Proxy configuration is set in the HostedCluster, proxy fields are reported as one",
+			clusterConf: hyperv1.ClusterConfiguration{
+				Proxy: &configv1.ProxySpec{
+					HTTPProxy:  "fakeProxyServer",
+					HTTPSProxy: "fakeProxySecureServer",
+					TrustedCA: configv1.ConfigMapNameReference{
+						Name: "fakeProxyTrustedCA",
+					},
+				},
+			},
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(hcmetrics.ProxyName),
+				Help: pointer.String("Indicates cluster proxy state for each cluster"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+						{
+							Name: pointer.String("proxy_http"), Value: pointer.String("1"),
+						},
+						{
+							Name: pointer.String("proxy_https"), Value: pointer.String("1"),
+						},
+						{
+							Name: pointer.String("proxy_trusted_ca"), Value: pointer.String("1"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(1)},
+				}},
+			}},
+		},
+		{
+			name: "When Proxy configuration is not set in the HostedCluster, proxy fields are reported as empty",
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(hcmetrics.ProxyName),
+				Help: pointer.String("Indicates cluster proxy state for each cluster"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+						{
+							Name: pointer.String("proxy_http"), Value: pointer.String(""),
+						},
+						{
+							Name: pointer.String("proxy_https"), Value: pointer.String(""),
+						},
+						{
+							Name: pointer.String("proxy_trusted_ca"), Value: pointer.String(""),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(0)},
+				}},
+			}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "hc",
+					Namespace:         "any",
+					CreationTimestamp: metav1.Time{Time: time.Time{}.Add(time.Hour)},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &tc.clusterConf,
+				},
+			}
+
+			hcmetrics.ProxyConfig.Reset()
+			reg := prometheus.NewPedanticRegistry()
+
+			// Capture.
+			if err := reg.Register(hcmetrics.ProxyConfig); err != nil {
+				t.Fatalf("registering reportProxyConfig collector failed: %v", err)
+			}
+
+			// Report.
+			reportProxyConfig(cluster)
+
+			// Gather.
+			result, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			// Validate.
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
+				t.Errorf("result differs from actual: %s", diff)
+			}
+		})
+	}
+}
+
+func TestReportHostedClusterGuestCloudResourcesDeletionDuration(t *testing.T) {
+	testCases := []struct {
+		name       string
+		conditions []metav1.Condition
+		expected   []*dto.MetricFamily
+	}{
+		{
+			name: "When HostedCluster cloud resources are deleted, it should report GuestCloudResourcesDeletionDuration metric",
+			conditions: []metav1.Condition{
+				{
+					Type:               string(hyperv1.CloudResourcesDestroyed),
+					Status:             metav1.ConditionTrue,
+					LastTransitionTime: Later,
+				},
+			},
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(hcmetrics.GuestCloudResourcesDeletionDurationMetricName),
+				Help: pointer.String("Time in seconds it took from HostedCluster having a deletion timestamp to the CloudResourcesDestroyed being true"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(300)},
+				}},
+			}},
+		},
+		{
+			name:       "When Cluster is not deleted, it should not report GuestCloudResourcesDeletionDuration metric",
+			conditions: []metav1.Condition{},
+			expected:   []*dto.MetricFamily{},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			cluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "hc",
+					Namespace:         "any",
+					DeletionTimestamp: &Now,
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tc.conditions,
+				},
+			}
+
+			hcmetrics.HostedClusterGuestCloudResourcesDeletionDuration.Reset()
+			reg := prometheus.NewPedanticRegistry()
+
+			// Capture metrics.
+			if err := reg.Register(hcmetrics.HostedClusterGuestCloudResourcesDeletionDuration); err != nil {
+				t.Fatalf("registering TestReportHostedClusterGuestCloudResourcesDeletionDuration collector failed: %v", err)
+			}
+			reportHostedClusterGuestCloudResourcesDeletionDuration(cluster)
+
+			result, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
+				t.Errorf("result differs from actual: %s", diff)
+			}
+		})
+	}
+}
+
+func TestReportHostedClusterDeletionDuration(t *testing.T) {
+	testCases := []struct {
+		name     string
+		expected []*dto.MetricFamily
+	}{
+		{
+			name: "When HostedCluster has deletionTimestamp set, it should report hostedClusterDeletionDuration time metric",
+			expected: []*dto.MetricFamily{{
+				Name: pointer.String(hcmetrics.DeletionDurationMetricName),
+				Help: pointer.String("Time in seconds it took from HostedCluster having a deletion timestamp to all hypershift finalizers being removed"),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("name"), Value: pointer.String("hc"),
+						},
+						{
+							Name: pointer.String("namespace"), Value: pointer.String("any"),
+						},
+					},
+					Gauge: &dto.Gauge{Value: pointer.Float64(300)},
+				}},
+			}},
+		},
+	}
+
+	for _, tc := range testCases {
+		now := time.Now()
+		fakeClock := clocktesting.NewFakeClock(now)
+		deletionTime := metav1.NewTime(now.Add(-5 * time.Minute))
+
+		t.Run(tc.name, func(t *testing.T) {
+			cluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "hc",
+					Namespace:         "any",
+					DeletionTimestamp: &deletionTime,
+				},
+			}
+
+			hcmetrics.HostedClusterDeletionDuration.Reset()
+			reg := prometheus.NewPedanticRegistry()
+
+			// Capture metrics.
+			if err := reg.Register(hcmetrics.HostedClusterDeletionDuration); err != nil {
+				t.Fatalf("registering HostedClusterDeletionDuration collector failed: %v", err)
+			}
+			reportHostedClusterDeletionDuration(cluster, fakeClock)
+
+			result, err := reg.Gather()
+			if err != nil {
+				t.Fatalf("gathering metrics failed: %v", err)
+			}
+
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
+				t.Errorf("result differs from actual: %s", diff)
+			}
 		})
 	}
 }

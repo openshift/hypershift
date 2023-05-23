@@ -20,7 +20,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	nodepoolmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	corev1 "k8s.io/api/core/v1"
@@ -237,13 +237,13 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 		// Polling to prevent races with prometheus scrape interval.
 		err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
 			for _, metricName := range []string{
-				hostedcluster.DeletionDurationMetricName,
-				hostedcluster.GuestCloudResourcesDeletionDurationMetricName,
-				hostedcluster.AvailableDurationName,
-				hostedcluster.InitialRolloutDurationName,
-				hostedcluster.ProxyName,
-				hostedcluster.SilenceAlertsName,
-				hostedcluster.LimitedSupportEnabledName,
+				hcmetrics.DeletionDurationMetricName,
+				hcmetrics.GuestCloudResourcesDeletionDurationMetricName,
+				hcmetrics.AvailableDurationName,
+				hcmetrics.InitialRolloutDurationName,
+				hcmetrics.ProxyName,
+				hcmetrics.SilenceAlertsName,
+				hcmetrics.LimitedSupportEnabledName,
 				HypershiftOperatorInfoName,
 				nodepoolmetrics.NodePoolSizeMetricName,
 				nodepoolmetrics.NodePoolAvailableReplicasMetricName,

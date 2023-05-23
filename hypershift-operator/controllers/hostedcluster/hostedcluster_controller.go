@@ -46,6 +46,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
+	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
@@ -383,45 +384,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Collect limited support metric.
-	if _, ok := hcluster.Labels[hyperv1.LimitedSupportLabel]; ok {
-		limitedSupportEnabled.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(1)
-	} else {
-		limitedSupportEnabled.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(0)
-	}
-
-	// Collect silence alerts metric
-	if _, ok := hcluster.Labels[hyperv1.SilenceClusterAlertsLabel]; ok {
-		silenceAlerts.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(1)
-	} else {
-		silenceAlerts.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(0)
-	}
-
-	// Collect proxy metric.
-	var proxyHTTP, proxyHTTPS, proxyTrustedCA string
-	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil {
-		if hcluster.Spec.Configuration.Proxy.HTTPProxy != "" {
-			proxyHTTP = "1"
-		}
-		if hcluster.Spec.Configuration.Proxy.HTTPSProxy != "" {
-			proxyHTTPS = "1"
-		}
-		if hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
-			proxyTrustedCA = "1"
-		}
-		proxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(1)
-	} else {
-		proxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(0)
-	}
+	reportLimitedSuportEnabled(hcluster)
+	reportSilecedAlerts(hcluster)
+	reportProxyConfig(hcluster)
 
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
-		// SLI: Guest cluster resources deletion duration.
-		condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-		if condition != nil && condition.Status == metav1.ConditionTrue {
-			guestClusterResourceDeletionDuration := condition.LastTransitionTime.Sub(hcluster.DeletionTimestamp.Time).Seconds()
-			hostedClusterGuestCloudResourcesDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(guestClusterResourceDeletionDuration)
-		}
+		reportHostedClusterGuestCloudResourcesDeletionDuration(hcluster)
 
 		// Keep trying to delete until we know it's safe to finalize.
 		completed, err := r.delete(ctx, hcluster)
@@ -440,9 +409,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 
-		// SLI: HostedCluster deletion duration.
-		deletionDuration := time.Since(hcluster.DeletionTimestamp.Time).Seconds()
-		hostedClusterDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(deletionDuration)
+		reportHostedClusterDeletionDuration(hcluster, r.Clock)
 
 		log.Info("Deleted hostedcluster", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
@@ -678,21 +645,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, computeHostedClusterAvailability(hcluster, hcp))
 
 		// SLI: Hosted Cluster available duration.
-		availableTime := clusterAvailableTime(hcluster)
-		if availableTime != nil {
-			hostedClusterAvailableDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(*availableTime)
-			if hcluster.Annotations == nil {
-				hcluster.Annotations = make(map[string]string)
-			}
-			hcluster.Annotations[HasBeenAvailableAnnotation] = "true"
-		}
+		reportAvailableTime(hcluster)
 	}
 
-	// SLI: Hosted Cluster roll out duration.
-	versionRolloutTime := clusterVersionRolloutTime(hcluster)
-	if versionRolloutTime != nil {
-		hostedClusterInitialRolloutDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(*versionRolloutTime)
-	}
+	reportClusterVersionRolloutTime(hcluster)
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
 	{
@@ -3135,6 +3091,7 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
 				}
 			}
+			hcmetrics.SkippedCloudResourcesDeletion.WithLabelValues(hc.Namespace, hc.Name).Set(float64(1))
 			log.Info("Removed finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name)
 			continue
 		}
@@ -4761,7 +4718,107 @@ func (r *HostedClusterReconciler) reconcileSREMetricsConfig(ctx context.Context,
 	return nil
 }
 
-func HasBeenAvailable(hc *hyperv1.HostedCluster) bool {
+func hasBeenAvailable(hc *hyperv1.HostedCluster) bool {
 	_, ok := hc.Annotations[HasBeenAvailableAnnotation]
 	return ok
+}
+
+// clusterAvailableTime returns the time in seconds from cluster creation to first available transition.
+// If the condition is nil, false or the cluster has already been available it returns nil.
+func clusterAvailableTime(hc *hyperv1.HostedCluster) *float64 {
+	if hasBeenAvailable(hc) {
+		return nil
+	}
+	condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.HostedClusterAvailable))
+	if condition == nil {
+		return nil
+	}
+	if condition.Status == metav1.ConditionFalse {
+		return nil
+	}
+	transitionTime := condition.LastTransitionTime
+	return k8sutilspointer.Float64(transitionTime.Sub(hc.CreationTimestamp.Time).Seconds())
+}
+
+func clusterVersionRolloutTime(hc *hyperv1.HostedCluster) *float64 {
+	if hc.Status.Version == nil || len(hc.Status.Version.History) == 0 {
+		return nil
+	}
+	completionTime := hc.Status.Version.History[len(hc.Status.Version.History)-1].CompletionTime
+	if completionTime == nil {
+		return nil
+	}
+	return k8sutilspointer.Float64(completionTime.Sub(hc.CreationTimestamp.Time).Seconds())
+}
+
+func reportAvailableTime(hcluster *hyperv1.HostedCluster) {
+	// SLI: Hosted Cluster available duration.
+	availableTime := clusterAvailableTime(hcluster)
+	if availableTime != nil {
+		hcmetrics.HostedClusterAvailableDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(*availableTime)
+		if hcluster.Annotations == nil {
+			hcluster.Annotations = make(map[string]string)
+		}
+		hcluster.Annotations[HasBeenAvailableAnnotation] = "true"
+	}
+}
+
+func reportClusterVersionRolloutTime(hcluster *hyperv1.HostedCluster) {
+	// SLI: Hosted Cluster roll out duration.
+	versionRolloutTime := clusterVersionRolloutTime(hcluster)
+	if versionRolloutTime != nil {
+		hcmetrics.HostedClusterInitialRolloutDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(*versionRolloutTime)
+	}
+}
+
+func reportLimitedSuportEnabled(hcluster *hyperv1.HostedCluster) {
+	// Collect limited support metric.
+	if _, ok := hcluster.Labels[hyperv1.LimitedSupportLabel]; ok {
+		hcmetrics.LimitedSupportEnabled.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(1)
+	} else {
+		hcmetrics.LimitedSupportEnabled.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(0)
+	}
+}
+
+func reportSilecedAlerts(hcluster *hyperv1.HostedCluster) {
+	// Collect silence alerts metric
+	if _, ok := hcluster.Labels[hyperv1.SilenceClusterAlertsLabel]; ok {
+		hcmetrics.SilenceAlerts.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(1)
+	} else {
+		hcmetrics.SilenceAlerts.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(0)
+	}
+}
+
+func reportProxyConfig(hcluster *hyperv1.HostedCluster) {
+	// Collect proxy metric.
+	var proxyHTTP, proxyHTTPS, proxyTrustedCA string
+	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil {
+		if hcluster.Spec.Configuration.Proxy.HTTPProxy != "" {
+			proxyHTTP = "1"
+		}
+		if hcluster.Spec.Configuration.Proxy.HTTPSProxy != "" {
+			proxyHTTPS = "1"
+		}
+		if hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+			proxyTrustedCA = "1"
+		}
+		hcmetrics.ProxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(1)
+	} else {
+		hcmetrics.ProxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(0)
+	}
+}
+
+func reportHostedClusterGuestCloudResourcesDeletionDuration(hcluster *hyperv1.HostedCluster) {
+	// SLI: Guest cluster resources deletion duration.
+	condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
+	if condition != nil && condition.Status == metav1.ConditionTrue {
+		guestClusterResourceDeletionDuration := condition.LastTransitionTime.Sub(hcluster.DeletionTimestamp.Time).Seconds()
+		hcmetrics.HostedClusterGuestCloudResourcesDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(guestClusterResourceDeletionDuration)
+	}
+}
+
+func reportHostedClusterDeletionDuration(hcluster *hyperv1.HostedCluster, funcClock clock.WithTickerAndDelayedExecution) {
+	// SLI: HostedCluster deletion duration.
+	deletionDuration := funcClock.Since(hcluster.DeletionTimestamp.Time).Seconds()
+	hcmetrics.HostedClusterDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(deletionDuration)
 }
