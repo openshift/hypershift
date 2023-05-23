@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
@@ -73,4 +74,5 @@ func init() {
 	snapshotv1.AddToScheme(Scheme)
 	imagev1.AddToScheme(Scheme)
 	cdiv1beta1.AddToScheme(Scheme)
+	kubevirtv1.AddToScheme(Scheme)
 }

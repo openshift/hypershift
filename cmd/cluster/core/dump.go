@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
@@ -219,6 +220,14 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name).Name
 
+	kubevirtInUse := false
+	for _, np := range nodePools {
+		if np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+			kubevirtInUse = true
+			break
+		}
+	}
+
 	resources := []client.Object{
 		&appsv1.DaemonSet{},
 		&appsv1.Deployment{},
@@ -250,8 +259,16 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&routev1.Route{},
 		&imagev1.ImageStream{},
 		&networkingv1.NetworkPolicy{},
-		&cdiv1beta1.DataVolume{},
 	}
+
+	if kubevirtInUse {
+		resources = append(resources,
+			&cdiv1beta1.DataVolume{},
+			&kubevirtv1.VirtualMachine{},
+			&kubevirtv1.VirtualMachineInstance{},
+		)
+	}
+
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	if opts.AgentNamespace != "" {
 		// Additional Agent platform resources
@@ -264,15 +281,8 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		cmd.WithNamespace(opts.AgentNamespace).Run(ctx, "agent.agent-install.openshift.io,infraenv.agent-install.openshift.io")
 	}
 
-	kubevirtInUse := false
-	for _, np := range nodePools {
-		if np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-			kubevirtInUse = true
-			break
-		}
-	}
 	if kubevirtInUse {
-		cmd.WithNamespace("openshift-virtualization").Run(ctx, resourceList)
+		cmd.WithNamespace("openshift-cnv").Run(ctx, resourceList)
 	}
 
 	podList := &corev1.PodList{}
