@@ -96,7 +96,16 @@ func NewNodePoolUpgradeTest(ctx context.Context, mgmtClient crclient.Client, hos
 	}
 }
 
-func (ru *NodePoolUpgradeTest) Setup(t *testing.T) {}
+func (ru *NodePoolUpgradeTest) Setup(t *testing.T) {
+
+	// TODO re-enable this for KubeVirt platform once the new KubeVirt rhcos
+	// image is available in a previous release. Right now we can't test updating
+	// because the KubeVirt rhcos variant is only in latest.
+	// Tracking this here, https://issues.redhat.com/browse/CNV-29003
+	if globalOpts.Platform == hyperv1.KubevirtPlatform {
+		t.Skip("test can't run for the platform KubeVirt")
+	}
+}
 
 func (ru *NodePoolUpgradeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
 	nodePool := &hyperv1.NodePool{
