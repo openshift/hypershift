@@ -2711,11 +2711,6 @@ func reconcileCAPIManagerClusterRole(role *rbacv1.ClusterRole) error {
 			Resources: []string{"customresourcedefinitions"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
-		{
-			APIGroups: []string{""},
-			Resources: []string{"events"},
-			Verbs:     []string{"update", "create", "patch"},
-		},
 	}
 	return nil
 }
