@@ -53,7 +53,7 @@ func TestNodePool(t *testing.T) {
 	hostedCluster := e2eutil.CreateCluster(t, ctx, mgmtClient, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 	hostedClusterClient := e2eutil.WaitForGuestClient(t, ctx, mgmtClient, hostedCluster)
 
-	// Get the newly created defautlt NodePool
+	// Get the newly created default NodePool
 	nodepools := &hyperv1.NodePoolList{}
 	if err := mgmtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
 		t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
@@ -64,7 +64,6 @@ func TestNodePool(t *testing.T) {
 	// Set of tests
 	// Each test should have their own NodePool
 	nodePoolTests := []NodePoolTestCase{
-
 		{
 			name: "TestKMSRootVolumeEncryption",
 			test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
@@ -104,6 +103,10 @@ func TestNodePool(t *testing.T) {
 		{
 			name: "KubeVirtCacheTest",
 			test: NewKubeVirtCacheTest(ctx, mgmtClient, hostedCluster),
+		},
+		{
+			name: "CreateArmNodePoolTest",
+			test: NewCreateClusterWithArmNodePoolTest(hostedCluster, clusterOpts),
 		},
 	}
 
