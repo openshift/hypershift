@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpotypes "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/types"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -166,6 +167,17 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 			}),
 		},
 	}
+
+	emptyDirVols := common.EmptyDirVolumeAggregator(
+		oasTrustAnchorVolume().Name,
+		oasVolumeWorkLogs().Name,
+	)
+
+	if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+		deployment.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+	}
+
+	deployment.Spec.Template.ObjectMeta.Annotations[cpotypes.PodSafeToEvictLocalVolumesKey] = emptyDirVols
 
 	if serviceServingCA != nil {
 		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, util.BuildVolume(serviceCASignerVolume(), buildServiceCASignerVolume))

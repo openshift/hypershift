@@ -120,6 +120,14 @@ const (
 	controlplaneOperatorManagesIgnitionServerLabel = "io.openshift.hypershift.control-plane-operator-manages-ignition-server"
 	controlPlaneOperatorManagesMachineApprover     = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
 	controlPlaneOperatorManagesMachineAutoscaler   = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
+
+	// PodSafeToEvictKey is an annotation used by the CA operator which makes sure
+	// all the pods annotated with it, could be drained properly.
+	// source https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-types-of-pods-can-prevent-ca-from-removing-a-node
+	PodSafeToEvictKey = "cluster-autoscaler.kubernetes.io/safe-to-evict"
+	// PodSafeToEvictLocalVolumesKey is an annotation used by the CA operator which makes sure
+	// all the pods annotated with it and the picking the desired local volumes that are safe to evict, could be drained properly.
+	PodSafeToEvictLocalVolumesKey = "cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -1824,6 +1832,17 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		"app":                         "capi-provider-controller-manager",
 		hyperv1.ControlPlaneComponent: "capi-provider-controller-manager",
 	}
+
+	emptyDirVols := manifests.EmptyDirVolumeAggregator(
+		"token",
+	)
+
+	if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+		deployment.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+	}
+
+	deployment.Spec.Template.ObjectMeta.Annotations[PodSafeToEvictLocalVolumesKey] = emptyDirVols
+
 	_, err = createOrUpdate(ctx, r.Client, deployment, func() error {
 		// Enforce provider specifics.
 		deployment.Spec = *capiProviderDeploymentSpec
@@ -1850,6 +1869,11 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 		}
 
 		deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+
+		// Enforce safe-to-evict annotation
+		deploymentConfig.AdditionalAnnotations = map[string]string{
+			PodSafeToEvictLocalVolumesKey: emptyDirVols,
+		}
 		deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 		deploymentConfig.ApplyTo(deployment)
 
@@ -2220,6 +2244,17 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 					},
 				},
 			})
+
+		emptyDirVols := manifests.EmptyDirVolumeAggregator(
+			"cloud-token",
+		)
+
+		if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+			deployment.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+		}
+
+		deployment.Spec.Template.ObjectMeta.Annotations[PodSafeToEvictLocalVolumesKey] = emptyDirVols
+
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{
 				Name:  "AWS_SHARED_CREDENTIALS_FILE",

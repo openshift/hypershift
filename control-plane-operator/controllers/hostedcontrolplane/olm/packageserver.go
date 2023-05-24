@@ -9,7 +9,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	cpotypes "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/types"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -21,6 +23,15 @@ var (
 func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, apiPort *int32, noProxy []string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = packageServerDeployment.DeepCopy().Spec
+	emptyDirVols := common.EmptyDirVolumeAggregator(
+		"tmpfs",
+	)
+
+	if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+	}
+
+	deployment.Spec.Template.ObjectMeta.Annotations[cpotypes.PodSafeToEvictLocalVolumesKey] = emptyDirVols
 	for i, container := range deployment.Spec.Template.Spec.Containers {
 		switch container.Name {
 		case "packageserver":

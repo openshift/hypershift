@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	hcptypes "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/types"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -502,6 +503,16 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 		{Name: "hosted-etc-kube", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KASServiceKubeconfigSecret("").Name}}},
 		{Name: "configs", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 	}
+
+	emptyDirVols := common.EmptyDirVolumeAggregator(
+		"configs",
+	)
+
+	if dep.Spec.Template.ObjectMeta.Annotations == nil {
+		dep.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+	}
+
+	dep.Spec.Template.ObjectMeta.Annotations[hcptypes.PodSafeToEvictLocalVolumesKey] = emptyDirVols
 
 	params.DeploymentConfig.ApplyTo(dep)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(dep.Namespace, apiPort), params.AvailabilityProberImage, &dep.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {

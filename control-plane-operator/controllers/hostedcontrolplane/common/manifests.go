@@ -1,6 +1,9 @@
 package common
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -49,7 +52,12 @@ func VolumeAggregatorCA() *corev1.Volume {
 		Name: "aggregator-ca",
 	}
 }
+
 func BuildVolumeAggregatorCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	v.ConfigMap.Name = manifests.AggregatorClientCAConfigMap("").Name
+}
+
+func EmptyDirVolumeAggregator(volumes ...string) string {
+	return fmt.Sprintf("\"%s\"", strings.Join(volumes[:], ","))
 }

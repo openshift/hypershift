@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: packageserver
+  annotations:
+    cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: "tmpfs"
 spec:
   progressDeadlineSeconds: 600
   replicas: 2

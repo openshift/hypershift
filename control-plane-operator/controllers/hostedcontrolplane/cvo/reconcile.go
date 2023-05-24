@@ -19,8 +19,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpotypes "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/types"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -147,6 +149,18 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			},
 		},
 	}
+
+	emptyDirVols := common.EmptyDirVolumeAggregator(
+		cvoVolumeUpdatePayloads().Name,
+		cvoVolumePayload().Name,
+	)
+
+	if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+		deployment.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+	}
+
+	deployment.Spec.Template.ObjectMeta.Annotations[cpotypes.PodSafeToEvictLocalVolumesKey] = emptyDirVols
+
 	deploymentConfig.ApplyTo(deployment)
 	util.AvailabilityProber(
 		kas.InClusterKASReadyURL(deployment.Namespace, apiPort),

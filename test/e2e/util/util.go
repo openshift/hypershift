@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -12,6 +17,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	cpotypes "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/types"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/library-go/test/library/metrics"
@@ -34,12 +40,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"strings"
-	"testing"
-	"time"
 )
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -538,6 +541,46 @@ func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, h
 
 		if replicas != len(nodes.Items) {
 			t.Errorf("nodepool replicas %d does not match number of nodes in cluster %d", replicas, len(nodes.Items))
+		}
+	})
+}
+
+func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
+	t.Run("EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations", func(t *testing.T) {
+		g := NewWithT(t)
+		hcpPods := &corev1.PodList{}
+		if err := hostClient.List(ctx, hcpPods, &client.ListOptions{
+			Namespace: hcpNs,
+		}); err != nil {
+			t.Fatalf("cannot list hostedControlPlane pods: %v", err)
+		}
+
+		// Check if the pods with volumes or emptyDir mounts are annotated with safe-to-evict annotation from CA operator
+		for _, pod := range hcpPods.Items {
+			if pod.Spec.Volumes != nil {
+				for _, volume := range pod.Spec.Volumes {
+					if volume.EmptyDir != nil {
+						checked := false
+						// Checking if PodSafeToEvictKey annotation is set
+						if val, exists := pod.Annotations[cpotypes.PodSafeToEvictKey]; exists {
+							g.Expect(exists).To(BeTrue(), "pod annotation %s does not exists in pod %s: %v", cpotypes.PodSafeToEvictKey, pod.Name, pod.Annotations)
+							g.Expect(val).To(Equal("true"), "the pod annotation %s is set to false in pod %s: %v", cpotypes.PodSafeToEvictKey, pod.Name, pod.Annotations)
+							checked = true
+						}
+
+						// Checking if PodSafeToEvictLocalVolumesKey annotation is set
+						if val, exists := pod.Annotations[cpotypes.PodSafeToEvictLocalVolumesKey]; exists {
+							g.Expect(exists).To(BeTrue(), "pod annotation %s does not exists in pod %s: %v", cpotypes.PodSafeToEvictLocalVolumesKey, pod.Name, pod.Annotations)
+							g.Expect(val).NotTo(BeEmpty(), "the pod annotation's value %s is empty in pod %s: %v", cpotypes.PodSafeToEvictLocalVolumesKey, pod.Name, pod.Annotations)
+							checked = true
+						}
+
+						// If the validations has passed and the checked value is still false, means that
+						// there are pods with PV which has not the safe-to-evict annotation set
+						g.Expect(checked).To(BeTrue(), "the pod %s has not the safe-to-evict annotations properly set: %v", pod.Name, pod.Annotations)
+					}
+				}
+			}
 		}
 	})
 }

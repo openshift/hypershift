@@ -4,8 +4,10 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	hcpcommon "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	hcptypes "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/types"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -47,6 +49,16 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 	addVolumes(deployment)
 
 	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, Provider, &corev1.LocalObjectReference{Name: KubeCloudControllerCredsSecret("").Name}, releaseImageProvider.GetImage("token-minter"), ccmContainer().Name)
+
+	emptyDirVols := hcpcommon.EmptyDirVolumeAggregator(
+		"cloud-token",
+	)
+
+	if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+		deployment.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+	}
+
+	deployment.Spec.Template.ObjectMeta.Annotations[hcptypes.PodSafeToEvictLocalVolumesKey] = emptyDirVols
 
 	config.OwnerRefFrom(hcp).ApplyTo(deployment)
 	deploymentConfig.ApplyTo(deployment)

@@ -14,9 +14,11 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	cpotypes "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/types"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
@@ -116,6 +118,13 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceS
 			util.BuildVolume(kcmVolumeRecyclerConfig(), buildKCMVolumeRecyclerConfigMap),
 		},
 	}
+	emptyDirVols := common.EmptyDirVolumeAggregator(
+		kcmVolumeWorkLogs().Name,
+		kcmVolumeCertDir().Name,
+	)
+
+	deployment.Spec.Template.ObjectMeta.Annotations[cpotypes.PodSafeToEvictLocalVolumesKey] = emptyDirVols
+
 	p.DeploymentConfig.ApplyTo(deployment)
 	if serviceServingCA != nil {
 		deployment.Spec.Template.ObjectMeta.Annotations[serviceCAHashAnnotation] = util.HashStruct(serviceServingCA.Data)

@@ -8,6 +8,8 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	cpotypes "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/types"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/certs"
@@ -255,9 +257,6 @@ func ReconcileIgnitionServer(ctx context.Context,
 	// Reconcile deployment
 	ignitionServerDeployment := ignitionserver.Deployment(controlPlaneNamespace)
 	if result, err := createOrUpdate(ctx, c, ignitionServerDeployment, func() error {
-		if ignitionServerDeployment.Annotations == nil {
-			ignitionServerDeployment.Annotations = map[string]string{}
-		}
 		ignitionServerLabels := map[string]string{
 			"app":                         ignitionserver.ResourceName,
 			hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
@@ -366,6 +365,16 @@ func ReconcileIgnitionServer(ctx context.Context,
 				},
 			},
 		}
+
+		emptyDirVols := common.EmptyDirVolumeAggregator(
+			"payloads",
+		)
+		if ignitionServerDeployment.Spec.Template.ObjectMeta.Annotations == nil {
+			ignitionServerDeployment.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+		}
+
+		ignitionServerDeployment.Spec.Template.ObjectMeta.Annotations[cpotypes.PodSafeToEvictLocalVolumesKey] = emptyDirVols
+
 		proxy.SetEnvVars(&ignitionServerDeployment.Spec.Template.Spec.Containers[0].Env)
 
 		if hcp.Spec.AdditionalTrustBundle != nil {

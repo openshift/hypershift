@@ -16,6 +16,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: '"client-token,web-identity-token"'
         hypershift.openshift.io/release-image: quay.io/ocp-dev/test-release-image:latest
       creationTimestamp: null
       labels:

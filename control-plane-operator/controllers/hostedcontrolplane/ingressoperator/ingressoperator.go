@@ -4,10 +4,12 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	hcptypes "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/types"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
@@ -96,10 +98,13 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 	dep.Spec.Replicas = utilpointer.Int32(1)
 	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": operatorName}}
 	dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
-	if dep.Spec.Template.Annotations == nil {
-		dep.Spec.Template.Annotations = map[string]string{}
+
+	if dep.Spec.Template.ObjectMeta.Annotations == nil {
+		dep.Spec.Template.ObjectMeta.Annotations = map[string]string{}
 	}
-	dep.Spec.Template.Annotations["target.workload.openshift.io/management"] = `{"effect": "PreferredDuringScheduling"}`
+
+	dep.Spec.Template.ObjectMeta.Annotations["target.workload.openshift.io/management"] = `{"effect": "PreferredDuringScheduling"}`
+
 	if dep.Spec.Template.Labels == nil {
 		dep.Spec.Template.Labels = map[string]string{}
 	}
@@ -196,6 +201,15 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		})
 		dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes,
 			corev1.Volume{Name: "serviceaccount-token", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}})
+
+		emptyDirVols := common.EmptyDirVolumeAggregator(
+			"serviceaccount-token",
+		)
+		if dep.Spec.Template.ObjectMeta.Annotations == nil {
+			dep.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+		}
+
+		dep.Spec.Template.ObjectMeta.Annotations[hcptypes.PodSafeToEvictLocalVolumesKey] = emptyDirVols
 	}
 
 	util.AvailabilityProber(
