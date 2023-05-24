@@ -18,8 +18,6 @@ import (
 	"fmt"
 	"os"
 
-	"k8s.io/client-go/rest"
-
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/configmetrics"
