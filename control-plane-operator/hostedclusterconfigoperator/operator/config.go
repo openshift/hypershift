@@ -66,6 +66,7 @@ type HostedClusterConfigOperatorConfig struct {
 	OAuthAddress                 string
 	OAuthPort                    int32
 	OperateOnReleaseImage        string
+	EnableCIDebugOutput          bool
 
 	kubeClient kubeclient.Interface
 }
