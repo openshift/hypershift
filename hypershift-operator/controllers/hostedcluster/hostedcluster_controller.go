@@ -326,7 +326,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Bubble up ValidIdentityProvider condition from the hostedControlPlane.
 	// We set this condition even if the HC is being deleted. Otherwise, a hostedCluster with a conflicted identity provider
 	// would fail to complete deletion forever with no clear signal for consumers.
-	{
+	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		freshCondition := &metav1.Condition{
 			Type:               string(hyperv1.ValidAWSIdentityProvider),
 			Status:             metav1.ConditionUnknown,
@@ -573,7 +573,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.InfrastructureReady,
 			hyperv1.ExternalDNSReachable,
 			hyperv1.ValidHostedControlPlaneConfiguration,
-			hyperv1.ValidAWSKMSConfig,
 			hyperv1.ValidReleaseInfo,
 		}
 
@@ -604,12 +603,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Copy the AWSDefaultSecurityGroupCreated condition from the hostedcontrolplane
-	{
+	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if hcp != nil {
 			sgCreated := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupCreated))
 			if sgCreated != nil {
 				sgCreated.ObservedGeneration = hcluster.Generation
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *sgCreated)
+			}
+
+			validKMSConfig := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSKMSConfig))
+			if validKMSConfig != nil {
+				validKMSConfig.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *validKMSConfig)
 			}
 		}
 	}
@@ -651,7 +656,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	reportClusterVersionRolloutTime(hcluster)
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
-	{
+	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 		var awsEndpointServiceList hyperv1.AWSEndpointServiceList
 		if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
