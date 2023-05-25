@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -122,12 +123,46 @@ func getContentsOrDie(file string) []byte {
 	return b
 }
 
-func reconcileInfraConfigMap(cm *corev1.ConfigMap, infraID string) error {
-	storageClassEnforcement := "allowDefault: true\nallowAll: false\n"
+func getStorageDriverType(hcp *hyperv1.HostedControlPlane) hyperv1.KubevirtStorageDriverConfigType {
+
+	storageDriverType := hyperv1.DefaultKubevirtStorageDriverConfigType
+
+	if hcp.Spec.Platform.Kubevirt != nil &&
+		hcp.Spec.Platform.Kubevirt.StorageDriver != nil &&
+		hcp.Spec.Platform.Kubevirt.StorageDriver.Type != "" {
+
+		storageDriverType = hcp.Spec.Platform.Kubevirt.StorageDriver.Type
+	}
+	return storageDriverType
+}
+
+func reconcileInfraConfigMap(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane) error {
+	var storageClassEnforcement string
+
+	storageDriverType := getStorageDriverType(hcp)
+
+	switch storageDriverType {
+	case hyperv1.ManualKubevirtStorageDriverConfigType:
+		allowedSC := []string{}
+
+		if hcp.Spec.Platform.Kubevirt.StorageDriver.Manual != nil {
+			for _, mapping := range hcp.Spec.Platform.Kubevirt.StorageDriver.Manual.StorageClassMapping {
+				allowedSC = append(allowedSC, mapping.InfraStorageClassName)
+			}
+		}
+
+		storageClassEnforcement = fmt.Sprintf("allowAll: false\nallowList: [%s]\n", strings.Join(allowedSC, ", "))
+	case hyperv1.NoneKubevirtStorageDriverConfigType:
+		storageClassEnforcement = "allowDefault: false\nallowAll: false\n"
+	case hyperv1.DefaultKubevirtStorageDriverConfigType:
+		storageClassEnforcement = "allowDefault: true\nallowAll: false\n"
+	default:
+		storageClassEnforcement = "allowDefault: true\nallowAll: false\n"
+	}
 
 	cm.Data = map[string]string{
 		"infraClusterNamespace":        cm.Namespace,
-		"infraClusterLabels":           fmt.Sprintf("%s=%s", hyperv1.InfraIDLabel, infraID),
+		"infraClusterLabels":           fmt.Sprintf("%s=%s", hyperv1.InfraIDLabel, hcp.Spec.InfraID),
 		"infraStorageClassEnforcement": storageClassEnforcement,
 	}
 	return nil
@@ -220,6 +255,16 @@ func reconcileTenantControllerClusterRoleBinding(crb *rbacv1.ClusterRoleBinding,
 	return nil
 }
 
+func reconcileCustomTenantStorageClass(sc *storagev1.StorageClass, infraSCName string) error {
+	sc.Provisioner = "csi.kubevirt.io"
+	sc.Parameters = map[string]string{
+		"bus":                   "scsi",
+		"infraStorageClassName": infraSCName,
+	}
+
+	return nil
+}
+
 func reconcileDefaultTenantStorageClass(sc *storagev1.StorageClass) error {
 	sc.Annotations = map[string]string{
 		"storageclass.kubernetes.io/is-default-class": "true",
@@ -289,7 +334,42 @@ func reconcileTenantDaemonset(ds *appsv1.DaemonSet, componentImages map[string]s
 	return nil
 }
 
+func reconcileTenantStorageClasses(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN) error {
+
+	switch getStorageDriverType(hcp) {
+	case hyperv1.ManualKubevirtStorageDriverConfigType:
+		if hcp.Spec.Platform.Kubevirt.StorageDriver.Manual != nil {
+			for _, mapping := range hcp.Spec.Platform.Kubevirt.StorageDriver.Manual.StorageClassMapping {
+				customSC := manifests.KubevirtCSIDriverDefaultTenantStorageClass()
+				customSC.Name = mapping.GuestStorageClassName
+				_, err := createOrUpdate(ctx, client, customSC, func() error {
+					return reconcileCustomTenantStorageClass(customSC, mapping.InfraStorageClassName)
+				})
+				if err != nil {
+					return err
+				}
+			}
+		}
+	case hyperv1.NoneKubevirtStorageDriverConfigType:
+		// do nothing.
+	default:
+		storageClass := manifests.KubevirtCSIDriverDefaultTenantStorageClass()
+		_, err := createOrUpdate(ctx, client, storageClass, func() error {
+			return reconcileDefaultTenantStorageClass(storageClass)
+		})
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, componentImages map[string]string) error {
+
+	if getStorageDriverType(hcp) == hyperv1.NoneKubevirtStorageDriverConfigType {
+		return nil
+	}
 
 	tenantNamespace := manifests.KubevirtCSIDriverTenantNamespaceStr
 
@@ -355,10 +435,7 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 		return err
 	}
 
-	storageClass := manifests.KubevirtCSIDriverDefaultTenantStorageClass()
-	_, err = createOrUpdate(ctx, client, storageClass, func() error {
-		return reconcileDefaultTenantStorageClass(storageClass)
-	})
+	err = reconcileTenantStorageClasses(client, hcp, ctx, createOrUpdate)
 	if err != nil {
 		return err
 	}
@@ -369,6 +446,11 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 // ReconcileInfra reconciles the csi driver controller on the underlying infra/Mgmt cluster
 // that is hosting the KubeVirt VMs.
 func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+
+	// Do not install kubevirt-csi if the storage driver is set to NONE
+	if getStorageDriverType(hcp) == hyperv1.NoneKubevirtStorageDriverConfigType {
+		return nil
+	}
 
 	deploymentConfig := &config.DeploymentConfig{}
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
@@ -424,7 +506,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 
 	infraConfigMap := manifests.KubevirtCSIDriverInfraConfigMap(infraNamespace)
 	_, err = createOrUpdate(ctx, client, infraConfigMap, func() error {
-		return reconcileInfraConfigMap(infraConfigMap, hcp.Spec.InfraID)
+		return reconcileInfraConfigMap(infraConfigMap, hcp)
 	})
 	if err != nil {
 		return err

@@ -21,6 +21,7 @@ type ExampleKubevirtOptions struct {
 	InfraKubeConfig           []byte
 	InfraNamespace            string
 	CacheStrategyType         string
+	InfraStorageClassMappings []string
 }
 
 func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoolPlatform {

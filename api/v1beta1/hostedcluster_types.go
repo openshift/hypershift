@@ -737,6 +737,76 @@ type KubevirtPlatformSpec struct {
 	// the same cluster and namespace as the Hosted Control Plane.
 	// +optional
 	Credentials *KubevirtPlatformCredentials `json:"credentials,omitempty"`
+
+	// StorageDriver defines how the KubeVirt CSI driver exposes StorageClasses on
+	// the infra cluster (hosting the VMs) to the guest cluster.
+	//
+	// +kubebuilder:validation:Optional
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageDriver is immutable"
+	StorageDriver *KubevirtStorageDriverSpec `json:"storageDriver,omitempty"`
+}
+
+// KubevirtStorageDriverConfigType defines how the kubevirt storage driver is configured.
+//
+// +kubebuilder:validation:Enum=None;Default;Manual
+type KubevirtStorageDriverConfigType string
+
+const (
+	// NoneKubevirtStorageDriverConfigType means no kubevirt storage driver is used
+	NoneKubevirtStorageDriverConfigType KubevirtStorageDriverConfigType = "None"
+
+	// DefaultKubevirtStorageDriverConfigType means the kubevirt storage driver maps to the
+	// underlying infra cluster's default storageclass
+	DefaultKubevirtStorageDriverConfigType KubevirtStorageDriverConfigType = "Default"
+
+	// ManualKubevirtStorageDriverConfigType means the kubevirt storage driver mapping is
+	// explicitly defined.
+	ManualKubevirtStorageDriverConfigType KubevirtStorageDriverConfigType = "Manual"
+)
+
+type KubevirtStorageDriverSpec struct {
+	// Type represents the type of kubevirt csi driver configuration to use
+	//
+	// +unionDiscriminator
+	// +immutable
+	// +kubebuilder:default=Default
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageDriver.Type is immutable"
+	Type KubevirtStorageDriverConfigType `json:"type,omitempty"`
+
+	// Manual is used to explicilty define how the infra storageclasses are
+	// mapped to guest storageclasses
+	//
+	// +immutable
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageDriver.Manual is immutable"
+	Manual *KubevirtManualStorageDriverConfig `json:"manual,omitempty"`
+}
+
+type KubevirtManualStorageDriverConfig struct {
+	// StorageClassMapping maps StorageClasses on the infra cluster hosting
+	// the KubeVirt VMs to StorageClasses that are made available within the
+	// Guest Cluster.
+	//
+	// NOTE: It is possible that not all capablities of an infra cluster's
+	// storageclass will be present for the corresponding guest clusters storageclass.
+	//
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageClassMapping is immutable"
+	StorageClassMapping []KubevirtStorageClassMapping `json:"storageClassMapping,omitempty"`
+}
+
+type KubevirtStorageClassMapping struct {
+	// InfraStorageClassName is the name of the infra cluster storage class that
+	// will be exposed into the guest.
+	InfraStorageClassName string `json:"infraStorageClassName"`
+	// GuestStorageClassName is the name that the corresponding storageclass will
+	// be called within the guest cluster
+	GuestStorageClassName string `json:"guestStorageClassName"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.
