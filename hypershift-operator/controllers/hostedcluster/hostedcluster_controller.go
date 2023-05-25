@@ -41,9 +41,6 @@ import (
 	"github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/api/util/configrefs"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
-	ignitionserverreconciliation "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
@@ -116,10 +113,6 @@ const (
 
 	controlPlaneOperatorSubcommandsLabel = "io.openshift.hypershift.control-plane-operator-subcommands"
 	ignitionServerHealthzHandlerLabel    = "io.openshift.hypershift.ignition-server-healthz-handler"
-
-	controlplaneOperatorManagesIgnitionServerLabel = "io.openshift.hypershift.control-plane-operator-manages-ignition-server"
-	controlPlaneOperatorManagesMachineApprover     = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
-	controlPlaneOperatorManagesMachineAutoscaler   = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -993,10 +986,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if !cpoHasUtilities {
 		utilitiesImage = r.HypershiftOperatorImage
 	}
-	_, ignitionServerHasHealthzHandler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[ignitionServerHealthzHandlerLabel]
-	_, controlplaneOperatorManagesIgnitionServer := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
-	_, controlPlaneOperatorManagesMachineAutoscaler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]
-	_, controlPlaneOperatorManagesMachineApprover := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]
 
 	p, err := platform.GetPlatform(ctx, hcluster, r.ReleaseProvider, utilitiesImage, pullSecretBytes)
 	if err != nil {
@@ -1449,36 +1438,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
-	// Get release image version, if needed
-	var releaseImageVersion semver.Version
-	if !controlPlaneOperatorManagesMachineAutoscaler || !controlPlaneOperatorManagesMachineApprover || !controlplaneOperatorManagesIgnitionServer {
-		releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
-		}
-		releaseImageVersion, err = semver.Parse(releaseInfo.Version())
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
-		}
-	}
-
-	// In >= 4.11 We want to move most of the components reconciliation down to the CPO https://issues.redhat.com/browse/HOSTEDCP-375.
-	// For IBM existing clusters < 4.11 we need to stay consistent and keep deploying existing pods to satisfy validations.
-	// TODO (alberto): drop this after dropping < 4.11 support.
-	if !controlPlaneOperatorManagesMachineAutoscaler {
-		// Reconcile the autoscaler.
-		err = r.reconcileAutoscaler(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile autoscaler: %w", err)
-		}
-	}
-	if !controlPlaneOperatorManagesMachineApprover {
-		// Reconcile the machine approver.
-		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
-		}
-	}
-
 	defaultIngressDomain, err := r.defaultIngressDomain(ctx)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to determine default ingress domain: %w", err)
@@ -1493,23 +1452,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
-	}
-
-	// Reconcile the Ignition server
-	if !controlplaneOperatorManagesIgnitionServer {
-		if err := ignitionserverreconciliation.ReconcileIgnitionServer(ctx,
-			r.Client,
-			createOrUpdate,
-			utilitiesImage,
-			hcp,
-			defaultIngressDomain,
-			ignitionServerHasHealthzHandler,
-			r.ReleaseProvider.GetRegistryOverrides(),
-			r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
-			config.MutatingOwnerRefFromHCP(hcp, releaseImageVersion),
-		); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
-		}
 	}
 
 	// Reconcile the machine config server
@@ -1991,22 +1933,6 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1
 		}
 	}
 	return nil
-}
-
-// reconcileAutoscaler orchestrates reconciliation of autoscaler components using
-// both the HostedCluster and the HostedControlPlane which the autoscaler takes
-// inputs from.
-func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte, releaseVersion semver.Version) error {
-	clusterAutoscalerImage, err := hyperutil.GetPayloadImage(ctx, r.ReleaseProvider, hcluster, ImageStreamAutoscalerImage, pullSecretBytes)
-	if err != nil {
-		return fmt.Errorf("failed to get image for cluster autoscaler: %w", err)
-	}
-	// TODO: can remove this override when all IBM production clusters upgraded to a version that uses the release image
-	if imageVal, ok := hcluster.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
-		clusterAutoscalerImage = imageVal
-	}
-
-	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, clusterAutoscalerImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
 }
 
 // GetControlPlaneOperatorImage resolves the appropriate control plane operator
@@ -3359,19 +3285,6 @@ func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Con
 	}
 
 	return nil
-}
-
-func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte, releaseVersion semver.Version) error {
-	machineApproverImage, err := hyperutil.GetPayloadImage(ctx, r.ReleaseProvider, hcluster, ImageStreamClusterMachineApproverImage, pullSecretBytes)
-	if err != nil {
-		return fmt.Errorf("failed to get image for machine approver: %w", err)
-	}
-	// TODO: can remove this override when all IBM production clusters upgraded to a version that uses the release image
-	if imageVal, ok := hcluster.Annotations[hyperv1.MachineApproverImage]; ok {
-		machineApproverImage = imageVal
-	}
-
-	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
 }
 
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
