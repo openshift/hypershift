@@ -221,6 +221,8 @@ func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crcl
 	// waitTimeout for nodes to become Ready
 	waitTimeout := 30 * time.Minute
 	switch platform {
+	case hyperv1.KubevirtPlatform:
+		waitTimeout = 45 * time.Minute
 	case hyperv1.PowerVSPlatform:
 		waitTimeout = 60 * time.Minute
 	}
