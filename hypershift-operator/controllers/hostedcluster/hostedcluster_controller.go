@@ -36,7 +36,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	configv1 "github.com/openshift/api/config/v1"
-	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	"github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/api/util/configrefs"
@@ -209,18 +208,12 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 		&rbacv1.ClusterRoleBinding{},
 		&rbacv1.Role{},
 		&rbacv1.RoleBinding{},
-		&corev1.ConfigMap{},
 		&corev1.Secret{},
 		&corev1.Namespace{},
 		&corev1.ServiceAccount{},
-		&corev1.Service{},
 		&agentv1.AgentCluster{},
 		&capiibmv1.IBMVPCCluster{},
 		&capikubevirt.KubevirtCluster{},
-	}
-	// Watch based on Routes capability
-	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
-		managedResources = append(managedResources, &routev1.Route{})
 	}
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityIngress) {
 		managedResources = append(managedResources, &configv1.Ingress{})
@@ -1452,11 +1445,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
-	}
-
-	// Reconcile the machine config server
-	if err = r.reconcileMachineConfigServer(ctx, createOrUpdate, hcluster); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine config server: %w", err)
 	}
 
 	// Reconcile the network policies
@@ -3208,44 +3196,6 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 			{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
 		}
 	}
-}
-
-func (r *HostedClusterReconciler) reconcileMachineConfigServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
-
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace); err != nil {
-		return fmt.Errorf("failed to get control plane namespace: %w", err)
-	}
-
-	// Reconcile service
-	mcsService := ignitionserver.MCSService(controlPlaneNamespace.Name)
-	if _, err := createOrUpdate(ctx, r.Client, mcsService, func() error {
-		return reconcileMachineConfigServerService(mcsService)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine config server service: %w", err)
-	}
-
-	return nil
-}
-
-func reconcileMachineConfigServerService(svc *corev1.Service) error {
-	svc.Spec.Selector = map[string]string{
-		"app": "machine-config-server",
-	}
-	var portSpec corev1.ServicePort
-	if len(svc.Spec.Ports) > 0 {
-		portSpec = svc.Spec.Ports[0]
-	} else {
-		svc.Spec.Ports = []corev1.ServicePort{portSpec}
-	}
-	portSpec.Port = int32(8443)
-	portSpec.Name = "https"
-	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(8443)
-	svc.Spec.Ports[0] = portSpec
-	svc.Spec.Type = corev1.ServiceTypeClusterIP
-	svc.Spec.ClusterIP = corev1.ClusterIPNone
-	return nil
 }
 
 func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, namespace string) error {

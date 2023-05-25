@@ -71,6 +71,10 @@ type LocalIgnitionProvider struct {
 	lock sync.Mutex
 }
 
+const (
+	pullSecretName = "pull-secret"
+)
+
 var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
 
 func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage string, customConfig string, pullSecretHash string) ([]byte, error) {

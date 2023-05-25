@@ -8,8 +8,8 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
@@ -47,7 +47,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		return fmt.Errorf("Ignition service strategy not specified")
 	}
 	// Reconcile service
-	ignitionServerService := ignitionserver.Service(controlPlaneNamespace)
+	ignitionServerService := manifests.IgnitionServerService(controlPlaneNamespace)
 	if _, err := createOrUpdate(ctx, c, ignitionServerService, func() error {
 		return reconcileIgnitionServerService(ignitionServerService, serviceStrategy)
 	}); err != nil {
@@ -57,7 +57,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 	switch serviceStrategy.Type {
 	case hyperv1.Route:
 		// Reconcile routes
-		ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace)
+		ignitionServerRoute := manifests.IgnitionServerRoute(controlPlaneNamespace)
 		if util.IsPrivateHCP(hcp) {
 			if _, err := createOrUpdate(ctx, c, ignitionServerRoute, func() error {
 				err := reconcileInternalRoute(ignitionServerRoute, ownerRef)
@@ -104,7 +104,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 
 	// Reconcile a root CA for ignition serving certificates. We only create this
 	// and don't update it for now.
-	caCertSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace)
+	caCertSecret := manifests.IgnitionServerIgnitionCACertSecret(controlPlaneNamespace)
 	if !disablePKIReconciliation {
 		if result, err := createOrUpdate(ctx, c, caCertSecret, func() error {
 			caCertSecret.Type = corev1.SecretTypeTLS
@@ -121,7 +121,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 
 	// Reconcile an ignition serving certificate issued by the generated root CA. We
 	// only create this and don't update it for now.
-	servingCertSecret := ignitionserver.IgnitionServingCertSecret(controlPlaneNamespace)
+	servingCertSecret := manifests.IgnitionServingCertSecret(controlPlaneNamespace)
 	if !disablePKIReconciliation {
 		if result, err := createOrUpdate(ctx, c, servingCertSecret, func() error {
 			servingCertSecret.Type = corev1.SecretTypeTLS
@@ -157,7 +157,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		}
 	}
 
-	role := ignitionserver.Role(controlPlaneNamespace)
+	role := manifests.IgnitionServerRole(controlPlaneNamespace)
 	if result, err := createOrUpdate(ctx, c, role, func() error {
 		role.Rules = []rbacv1.PolicyRule{
 			{
@@ -207,7 +207,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		log.Info("Reconciled ignition role", "result", result)
 	}
 
-	sa := ignitionserver.ServiceAccount(controlPlaneNamespace)
+	sa := manifests.IgnitionServerServiceAccount(controlPlaneNamespace)
 	if result, err := createOrUpdate(ctx, c, sa, func() error {
 		util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
 		return nil
@@ -217,7 +217,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		log.Info("Reconciled ignition server service account", "result", result)
 	}
 
-	roleBinding := ignitionserver.RoleBinding(controlPlaneNamespace)
+	roleBinding := manifests.IgnitionServerRoleBinding(controlPlaneNamespace)
 	if result, err := createOrUpdate(ctx, c, roleBinding, func() error {
 		roleBinding.RoleRef = rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
@@ -253,14 +253,14 @@ func ReconcileIgnitionServer(ctx context.Context,
 	}
 
 	// Reconcile deployment
-	ignitionServerDeployment := ignitionserver.Deployment(controlPlaneNamespace)
+	ignitionServerDeployment := manifests.IgnitionServerDeployment(controlPlaneNamespace)
 	if result, err := createOrUpdate(ctx, c, ignitionServerDeployment, func() error {
 		if ignitionServerDeployment.Annotations == nil {
 			ignitionServerDeployment.Annotations = map[string]string{}
 		}
 		ignitionServerLabels := map[string]string{
-			"app":                         ignitionserver.ResourceName,
-			hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
+			"app":                         manifests.IgnitionServerResourceName,
+			hyperv1.ControlPlaneComponent: manifests.IgnitionServerResourceName,
 		}
 		ignitionServerDeployment.Spec = appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{
@@ -298,7 +298,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 					},
 					Containers: []corev1.Container{
 						{
-							Name:            ignitionserver.ResourceName,
+							Name:            manifests.IgnitionServerResourceName,
 							Image:           utilitiesImage,
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env: []corev1.EnvVar{
@@ -394,7 +394,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 	}
 
 	// Reconcile PodMonitor
-	podMonitor := ignitionserver.PodMonitor(controlPlaneNamespace)
+	podMonitor := manifests.IgnitionServerPodMonitor(controlPlaneNamespace)
 	ownerRef.ApplyTo(podMonitor)
 	if result, err := createOrUpdate(ctx, c, podMonitor, func() error {
 		podMonitor.Spec.Selector = *ignitionServerDeployment.Spec.Selector
@@ -418,7 +418,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 
 func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
 	svc.Spec.Selector = map[string]string{
-		"app": ignitionserver.ResourceName,
+		"app": manifests.IgnitionServerResourceName,
 	}
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
@@ -447,13 +447,13 @@ func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.Servi
 
 func reconcileExternalRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string) error {
 	ownerRef.ApplyTo(route)
-	return util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, ignitionserver.Service(route.Namespace).Name)
+	return util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.IgnitionServerService(route.Namespace).Name)
 }
 
 func reconcileInternalRoute(route *routev1.Route, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(route)
 	// Assumes ownerRef is the HCP
-	return util.ReconcileInternalRoute(route, ownerRef.Reference.Name, ignitionserver.Service(route.Namespace).Name)
+	return util.ReconcileInternalRoute(route, ownerRef.Reference.Name, manifests.IgnitionServerService(route.Namespace).Name)
 }
 
 func convertRegistryOverridesToCommandLineFlag(registryOverrides map[string]string) string {
