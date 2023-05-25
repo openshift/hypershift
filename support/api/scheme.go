@@ -27,6 +27,7 @@ import (
 	apiserverconfigv1 "k8s.io/apiserver/pkg/apis/config/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
@@ -81,4 +82,5 @@ func init() {
 	}
 	mcfgv1.AddToScheme(Scheme)
 	cdiv1beta1.AddToScheme(Scheme)
+	kubevirtv1.AddToScheme(Scheme)
 }
