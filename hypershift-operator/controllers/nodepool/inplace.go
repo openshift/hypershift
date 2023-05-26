@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -151,6 +152,14 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 		if nodePool.Status.Version != targetVersion {
 			if nodePool.Status.Version == "" {
 				metrics.RecordNodePoolInitialRolloutDuration(nodePool)
+			} else {
+				updatingCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
+				if updatingCondition == nil {
+					// condition must be present if nodePool.Status.Version != targetVersion yet.
+					return fmt.Errorf("condition %s not found", hyperv1.NodePoolUpdatingVersionConditionType)
+				}
+				updateDuration := time.Since(updatingCondition.LastTransitionTime.Time)
+				metrics.RecordNodePoolUpgradeDuration(nodePool, nodePool.Status.Version, targetVersion, updateDuration)
 			}
 
 			log.Info("Version upgrade complete",
@@ -177,7 +186,6 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 	reason := ""
 	message := ""
 	status = "unknown"
-	removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
 
 	if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]; ok {
 		status = corev1.ConditionTrue
@@ -204,6 +212,8 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 			Message:            message,
 			Reason:             reason,
 		})
+	} else {
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
 	}
 
 	if isUpdatingConfig {

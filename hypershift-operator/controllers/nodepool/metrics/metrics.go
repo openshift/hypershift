@@ -34,6 +34,12 @@ var (
 		Help: "Time in seconds it took from initial NodePool creation and rollout of initial version",
 		Name: NodePoolInitialRolloutDurationMetricName,
 	}, labelNames)
+
+	NodePoolUpgradeDurationMetricName = "hypershift_nodepools_upgrade_duration_seconds"
+	nodePoolUpgradeDuration           = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Help: "Time in seconds it took a NodePool to upgrade and rollout a given version",
+		Name: NodePoolUpgradeDurationMetricName,
+	}, append(labelNames, "previous_version", "new_version"))
 )
 
 func init() {
@@ -42,6 +48,7 @@ func init() {
 		nodePoolAvailableReplicas,
 		nodePoolDeletionDuration,
 		nodePoolInitialRolloutDuration,
+		nodePoolUpgradeDuration,
 	)
 }
 
@@ -70,4 +77,12 @@ func RecordNodePoolDeletionDuration(nodePool *hyperv1.NodePool) {
 func RecordNodePoolInitialRolloutDuration(nodePool *hyperv1.NodePool) {
 	duration := time.Since(nodePool.CreationTimestamp.Time).Seconds()
 	nodePoolInitialRolloutDuration.With(labels(nodePool)).Set(duration)
+}
+
+func RecordNodePoolUpgradeDuration(nodePool *hyperv1.NodePool, prevVersion, newVersion string, duration time.Duration) {
+	mlabels := labels(nodePool)
+	mlabels["previous_version"] = prevVersion
+	mlabels["new_version"] = newVersion
+
+	nodePoolUpgradeDuration.With(mlabels).Set(duration.Seconds())
 }

@@ -1540,6 +1540,14 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		if nodePool.Status.Version != targetVersion {
 			if nodePool.Status.Version == "" {
 				metrics.RecordNodePoolInitialRolloutDuration(nodePool)
+			} else {
+				updatingCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
+				if updatingCondition == nil {
+					// condition must be present if nodePool.Status.Version != targetVersion yet.
+					return fmt.Errorf("condition %s not found", hyperv1.NodePoolUpdatingVersionConditionType)
+				}
+				updateDuration := time.Since(updatingCondition.LastTransitionTime.Time)
+				metrics.RecordNodePoolUpgradeDuration(nodePool, nodePool.Status.Version, targetVersion, updateDuration)
 			}
 
 			log.Info("Version update complete",
