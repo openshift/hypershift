@@ -44,7 +44,7 @@ func maxInt64(a, b uint64) uint64 {
 	return b
 }
 
-func IsValidReleaseVersion(version, currentVersion, latestVersionSupported, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
+func IsValidReleaseVersion(version, currentVersion, latestVersionSupported, minVersionSupported *semver.Version, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
 	if version.LT(semver.MustParse("4.8.0")) {
 		return fmt.Errorf("releases before 4.8 are not supported. Attempting to use: %q", version)
 	}
@@ -67,11 +67,11 @@ func IsValidReleaseVersion(version, currentVersion, latestVersionSupported, minS
 	}
 
 	if (version.Major == latestVersionSupported.Major && version.Minor > latestVersionSupported.Minor) || version.Major > latestVersionSupported.Major {
-		return fmt.Errorf("the latest version supported is: %q. Attempting to use: %q", LatestSupportedVersion, version)
+		return fmt.Errorf("the latest version supported is: %q. Attempting to use: %q", latestVersionSupported, version)
 	}
 
-	if (version.Major == minSupportedVersion.Major && version.Minor < minSupportedVersion.Minor) || version.Major < minSupportedVersion.Major {
-		return fmt.Errorf("the minimum version supported is: %q. Attempting to use: %q", MinSupportedVersion, version)
+	if (version.Major == minVersionSupported.Major && version.Minor < minVersionSupported.Minor) || version.Major < minVersionSupported.Major {
+		return fmt.Errorf("the minimum version supported is: %q. Attempting to use: %q", minVersionSupported, version)
 	}
 
 	return nil
