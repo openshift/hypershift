@@ -62,6 +62,7 @@ type CreateOptions struct {
 	ClusterCIDR                      string
 	ExternalDNSDomain                string
 	Arch                             string
+	UpgradeChannel                   string
 	NodeSelector                     map[string]string
 	NonePlatform                     NonePlatformCreateOptions
 	KubevirtPlatform                 KubevirtPlatformCreateOptions
@@ -163,6 +164,10 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 	}
 	if err := defaultNetworkType(ctx, opts, &releaseinfo.RegistryClientProvider{}, os.ReadFile); err != nil {
 		return nil, fmt.Errorf("failed to default network: %w", err)
+	}
+
+	if err := defaultUpgradeChannel(ctx, opts, &releaseinfo.RegistryClientProvider{}, os.ReadFile); err != nil {
+		return nil, fmt.Errorf("failed to default upgrade channel: %w", err)
 	}
 
 	annotations := map[string]string{}
@@ -271,6 +276,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		ServiceCIDR:                      opts.ServiceCIDR,
 		ClusterCIDR:                      opts.ClusterCIDR,
 		Arch:                             opts.Arch,
+		UpgradeChannel:                   opts.UpgradeChannel,
 		NodeSelector:                     opts.NodeSelector,
 		UpgradeType:                      opts.NodeUpgradeType,
 	}, nil
@@ -447,6 +453,20 @@ func defaultNetworkType(ctx context.Context, opts *CreateOptions, releaseProvide
 	} else {
 		opts.NetworkType = string(hyperv1.OpenShiftSDN)
 	}
+
+	return nil
+}
+
+func defaultUpgradeChannel(ctx context.Context, opts *CreateOptions, releaseProvider releaseinfo.Provider, readFile func(string) ([]byte, error)) error {
+	if opts.UpgradeChannel != "" {
+		return nil
+	}
+	version, err := getReleaseSemanticVersion(ctx, opts, releaseProvider, readFile)
+	if err != nil {
+		return fmt.Errorf("failed to get version for release image %s: %w", opts.ReleaseImage, err)
+	}
+
+	opts.UpgradeChannel = fmt.Sprintf("stable-%d.%d", version.Major, version.Minor)
 
 	return nil
 }

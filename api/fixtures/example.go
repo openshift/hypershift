@@ -76,6 +76,7 @@ type ExampleOptions struct {
 	EtcdStorageClass                 string
 	ExternalDNSDomain                string
 	Arch                             string
+	UpgradeChannel                   string
 	AWS                              *ExampleAWSOptions
 	None                             *ExampleNoneOptions
 	Agent                            *ExampleAgentOptions
@@ -457,6 +458,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			ControllerAvailabilityPolicy:     o.ControlPlaneAvailabilityPolicy,
 			InfrastructureAvailabilityPolicy: o.InfrastructureAvailabilityPolicy,
 			Platform:                         platformSpec,
+			Channel:                          o.UpgradeChannel,
 		},
 	}
 

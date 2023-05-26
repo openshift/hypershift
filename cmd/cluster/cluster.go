@@ -1,8 +1,9 @@
 package cluster
 
 import (
-	"github.com/openshift/hypershift/api/v1beta1"
 	"time"
+
+	"github.com/openshift/hypershift/api/v1beta1"
 
 	"github.com/spf13/cobra"
 
@@ -38,6 +39,7 @@ func NewCreateCommands() *cobra.Command {
 		NodeDrainTimeout:               0,
 		NodeUpgradeType:                v1beta1.UpgradeTypeReplace,
 		Arch:                           "amd64",
+		UpgradeChannel:                 "",
 	}
 	cmd := &cobra.Command{
 		Use:          "cluster",
@@ -76,6 +78,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
 	cmd.PersistentFlags().Var(&opts.NodeUpgradeType, "node-upgrade-type", "The NodePool upgrade strategy for how nodes should behave when upgraded. Supported options: Replace, InPlace")
 	cmd.PersistentFlags().StringVar(&opts.Arch, "arch", opts.Arch, "The default processor architecture for the NodePool (e.g. arm64, amd64)")
+	cmd.PersistentFlags().StringVar(&opts.UpgradeChannel, "upgrade-channel", opts.UpgradeChannel, "The OpenShift upgrade channel to use to track update paths. This will default to the minor release's stable channel")
 
 	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(none.NewCreateCommand(opts))
