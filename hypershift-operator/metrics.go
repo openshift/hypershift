@@ -48,7 +48,6 @@ type hypershiftMetrics struct {
 	hostedClustersNodePools            *prometheus.GaugeVec
 	nodePools                          *prometheus.GaugeVec
 	nodePoolsWithFailureCondition      *prometheus.GaugeVec
-	nodePoolSize                       *prometheus.GaugeVec
 	hypershiftOperatorInfo             prometheus.GaugeFunc
 	hostedClusterTransitionSeconds     *prometheus.HistogramVec
 
@@ -91,10 +90,6 @@ func newMetrics(client crclient.Client, log logr.Logger, hypershiftImage ImageIn
 			Name: "hypershift_nodepools_failure_conditions",
 			Help: "Total number of NodePools by platform with conditions in undesired state",
 		}, []string{"platform", "condition"}),
-		nodePoolSize: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Name: "hypershift_nodepools_size",
-			Help: "Number of replicas associated with a given NodePool",
-		}, []string{"name", "platform"}),
 		// hypershiftOperatorInfo is a metric to capture the current operator details of the management cluster
 		hypershiftOperatorInfo: prometheus.NewGaugeFunc(prometheus.GaugeOpts{
 			Name: HypershiftOperatorInfoName,
@@ -184,9 +179,6 @@ func setupMetrics(mgr manager.Manager) error {
 	}
 	if err := crmetrics.Registry.Register(metrics.nodePools); err != nil {
 		return fmt.Errorf("failed to register nodePools metric: %w", err)
-	}
-	if err := crmetrics.Registry.Register(metrics.nodePoolSize); err != nil {
-		return fmt.Errorf("failed to register nodePoolSize metric: %w", err)
 	}
 	if err := crmetrics.Registry.Register(metrics.hostedClusterTransitionSeconds); err != nil {
 		return fmt.Errorf("failed to register hostedClusterTransitionSeconds metric: %w", err)
@@ -373,7 +365,6 @@ func (m *hypershiftMetrics) observeNodePools(ctx context.Context, nodePools *hyp
 				}
 			}
 		}
-		m.nodePoolSize.WithLabelValues(crclient.ObjectKeyFromObject(&np).String(), platform).Set(float64(np.Status.Replicas))
 	}
 	for key, count := range npByCluster.Counts() {
 		labels := counterKeyToLabels(key)
