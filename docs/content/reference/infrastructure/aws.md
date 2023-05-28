@@ -1,6 +1,3 @@
-
-## Infrastructure
-
 In this section we want to dissect who creates what and what not. It contains 4 stages:
 
 - Infra pre-required and unmanaged for hypershift operator in an arbitrary AWS account
