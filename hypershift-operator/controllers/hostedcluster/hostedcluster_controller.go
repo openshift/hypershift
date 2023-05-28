@@ -3434,7 +3434,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
 		}
-		kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hcluster.Spec.InfraID, hcluster, hcp.Namespace)
+		kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hcluster.Spec.InfraID, hcluster.Spec.Platform.Kubevirt.Credentials, hcp.Namespace, hcluster.Namespace)
 		if err != nil {
 			return err
 		}
@@ -4573,7 +4573,7 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 	// auto generate the basedomain by retrieving the default ingress *.apps dns.
 	if hc.Spec.Platform.Kubevirt.BaseDomainPassthrough != nil && *hc.Spec.Platform.Kubevirt.BaseDomainPassthrough {
 		if hc.Spec.DNS.BaseDomain == "" {
-			kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hc.Spec.InfraID, hc, hc.Namespace)
+			kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hc.Spec.InfraID, hc.Spec.Platform.Kubevirt.Credentials, hc.Namespace, hc.Namespace)
 			if err != nil {
 				return err
 			}

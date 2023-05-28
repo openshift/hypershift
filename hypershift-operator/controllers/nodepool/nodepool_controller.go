@@ -351,7 +351,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 				nodePool.Status.Platform.KubeVirt = &hyperv1.KubeVirtNodePoolStatus{}
 			}
 
-			nodePool.Status.Platform.KubeVirt.RemoteNamespace = infraNS
+			nodePool.Status.Platform.KubeVirt.Credentials = hcluster.Spec.Platform.Kubevirt.Credentials.DeepCopy()
 		}
 		kubevirtBootImage, err = kubevirt.GetImage(nodePool, releaseImage, infraNS)
 		if err != nil {
@@ -374,7 +374,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 
 		uid := string(nodePool.GetUID())
-		kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, uid, hcluster, controlPlaneNamespace)
+		kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, uid, hcluster.Spec.Platform.Kubevirt.Credentials, controlPlaneNamespace, hcluster.GetNamespace())
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get KubeVirt external infra-cluster: %w", err)
 		}
@@ -1257,6 +1257,8 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 		return err
 	}
 
+	r.KubevirtInfraClients.Delete(string(nodePool.GetUID()))
+
 	return nil
 }
 
@@ -1264,18 +1266,20 @@ func (r *NodePoolReconciler) deleteKubeVirtCache(ctx context.Context, nodePool *
 	if nodePool.Status.Platform != nil {
 		if nodePool.Status.Platform.KubeVirt != nil {
 			if cacheName := nodePool.Status.Platform.KubeVirt.CacheName; len(cacheName) > 0 {
-				ns := controlPlaneNamespace
-
-				if len(nodePool.Status.Platform.KubeVirt.RemoteNamespace) > 0 {
-					ns = nodePool.Status.Platform.KubeVirt.RemoteNamespace
+				uid := string(nodePool.GetUID())
+				cl, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, uid, nodePool.Status.Platform.KubeVirt.Credentials, controlPlaneNamespace, nodePool.GetNamespace())
+				if err != nil {
+					return fmt.Errorf("failed to get KubeVirt external infra-cluster:  %w", err)
 				}
 
-				if cl := r.KubevirtInfraClients.GetClient(string(nodePool.GetUID())); cl != nil {
-					err := kubevirt.DeleteCache(ctx, cl, cacheName, ns)
-					if err != nil {
-						return err
-					}
-					r.KubevirtInfraClients.Delete(string(nodePool.GetUID()))
+				ns := controlPlaneNamespace
+				if nodePool.Status.Platform.KubeVirt.Credentials != nil && len(nodePool.Status.Platform.KubeVirt.Credentials.InfraNamespace) > 0 {
+					ns = nodePool.Status.Platform.KubeVirt.Credentials.InfraNamespace
+				}
+
+				err = kubevirt.DeleteCache(ctx, cl, cacheName, ns)
+				if err != nil {
+					return err
 				}
 			}
 		}

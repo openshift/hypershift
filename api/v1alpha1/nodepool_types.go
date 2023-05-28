@@ -856,9 +856,14 @@ type KubeVirtNodePoolStatus struct {
 	// +optional
 	CacheName string `json:"cacheName,omitempty"`
 
-	// RemoteNamespace holds the namespace of the remote infra cluster, if defined
+	// Credentials shows the client credentials used when creating KubeVirt virtual machines.
+	// This filed is only exists when the KubeVirt virtual machines are being placed
+	// on a cluster separate from the one hosting the Hosted Control Plane components.
+	//
+	// The default behavior when Credentials is not defined is for the KubeVirt VMs to be placed on
+	// the same cluster and namespace as the Hosted Control Plane.
 	// +optional
-	RemoteNamespace string `json:"remoteNamespace,omitempty"`
+	Credentials *KubevirtPlatformCredentials `json:"credentials,omitempty"`
 }
 
 // Taint is as v1 Core but without TimeAdded.

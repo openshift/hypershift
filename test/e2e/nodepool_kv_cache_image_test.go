@@ -57,14 +57,17 @@ func (k KubeVirtCacheTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []
 
 	localInfraNS := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name).Name
 	var guestNamespace string
-	if len(np.Status.Platform.KubeVirt.RemoteNamespace) != 0 {
-		guestNamespace = np.Status.Platform.KubeVirt.RemoteNamespace
+	if np.Status.Platform.KubeVirt.Credentials != nil &&
+		len(np.Status.Platform.KubeVirt.Credentials.InfraNamespace) > 0 {
+		guestNamespace = np.Status.Platform.KubeVirt.Credentials.InfraNamespace
+		g.Expect(np.Status.Platform.KubeVirt.Credentials.InfraKubeConfigSecret).ToNot(BeNil())
+		g.Expect(np.Status.Platform.KubeVirt.Credentials.InfraKubeConfigSecret.Key).Should(Equal("kubeconfig"))
 	} else {
 		guestNamespace = localInfraNS
 	}
 
 	cm := kvinfra.NewKubevirtInfraClientMap()
-	infraClient, err := cm.DiscoverKubevirtClusterClient(k.ctx, k.client, k.hostedCluster.Spec.InfraID, k.hostedCluster, localInfraNS)
+	infraClient, err := cm.DiscoverKubevirtClusterClient(k.ctx, k.client, k.hostedCluster.Spec.InfraID, np.Status.Platform.KubeVirt.Credentials, localInfraNS, np.GetNamespace())
 	g.Expect(err).ShouldNot(HaveOccurred())
 
 	dv := &v1beta1.DataVolume{}
