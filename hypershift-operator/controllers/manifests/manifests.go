@@ -13,12 +13,16 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName string) *corev1.Namespace {
+func HostedControlPlaneNamespaceObject(hostedClusterNamespace, hostedClusterName string) *corev1.Namespace {
 	return &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: fmt.Sprintf("%s-%s", hostedClusterNamespace, strings.ReplaceAll(hostedClusterName, ".", "-")),
+			Name: HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName),
 		},
 	}
+}
+
+func HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName string) string {
+	return fmt.Sprintf("%s-%s", hostedClusterNamespace, strings.ReplaceAll(hostedClusterName, ".", "-"))
 }
 
 func KubeConfigSecret(hostedClusterNamespace string, hostedClusterName string) *corev1.Secret {

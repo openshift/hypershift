@@ -168,7 +168,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(nodePool.Namespace, nodePool.Spec.ClusterName).Name
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(nodePool.Namespace, nodePool.Spec.ClusterName)
 
 	// If deleted, clean up and return early.
 	if !nodePool.DeletionTimestamp.IsZero() {
@@ -239,7 +239,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	})
 
 	// Get HostedCluster deps.
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	ignEndpoint := hcluster.Status.IgnitionEndpoint
 	infraID := hcluster.Spec.InfraID
 	if err := validateInfraID(infraID); err != nil {
@@ -2534,7 +2534,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		// TODO(alberto): Consider signal in a condition.
 		return nil, nil, "", fmt.Errorf("unsupported platform type: %s", nodePool.Spec.Platform.Type)
 	}
-	template.SetNamespace(manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name)
+	template.SetNamespace(manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name))
 
 	machineTemplateSpecJSON, err := json.Marshal(machineTemplateSpec)
 	if err != nil {

@@ -1440,7 +1440,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 		preCreatedMachineTemplate := &capiaws.AWSMachineTemplate{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      nodePool.GetName(),
-				Namespace: manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name,
+				Namespace: manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name),
 			},
 			Spec: capiaws.AWSMachineTemplateSpec{
 				Template: capiaws.AWSMachineTemplateResource{
@@ -1462,7 +1462,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	expectedMachineTemplate := &capiaws.AWSMachineTemplate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        nodePool.GetName(),
-			Namespace:   manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name,
+			Namespace:   manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name),
 			Annotations: map[string]string{nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String()},
 		},
 		Spec: capiaws.AWSMachineTemplateSpec{

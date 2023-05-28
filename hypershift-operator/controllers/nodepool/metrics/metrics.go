@@ -325,7 +325,7 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 				}
 
 				if pathToReplicasCount != nil {
-					hcpNs := manifests.HostedControlPlaneNamespace(nodePool.Namespace, nodePool.Spec.ClusterName).Name
+					hcpNs := manifests.HostedControlPlaneNamespace(nodePool.Namespace, nodePool.Spec.ClusterName)
 					wishedReplicas := float64((*pathToReplicasCount)[hcpNs+"/"+nodePool.Name])
 
 					ch <- prometheus.MustNewConstMetric(

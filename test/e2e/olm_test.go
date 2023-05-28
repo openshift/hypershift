@@ -48,7 +48,7 @@ func TestOLM(t *testing.T) {
 		t.Logf("Waiting for guest client to become available")
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-		guestNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		guestNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		t.Logf("Hosted control plane namespace is %s", guestNamespace)
 
 		waitCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
