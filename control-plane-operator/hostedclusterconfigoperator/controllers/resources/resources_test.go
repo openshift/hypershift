@@ -249,6 +249,14 @@ func fakePackageServerService() *corev1.Service {
 func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 	testNamespace := "master-cluster1"
 	testHCPName := "cluster1"
+
+	annotatedOauthDeployment := &appsv1.Deployment{
+		ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
+	}
+	annotatedOauthDeployment.Spec.Template.Annotations = map[string]string{
+		SecretHashAnnotation: "fake-hash",
+	}
+
 	tests := map[string]struct {
 		inputHCP                                 *hyperv1.HostedControlPlane
 		inputObjects                             []client.Object
@@ -289,6 +297,19 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 				&appsv1.Deployment{
 					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
 				},
+			},
+			expectedOauthServerAnnotations:           nil,
+			expectKubeadminPasswordHashSecretToExist: false,
+		},
+		"when kubeadminPasswordSecret doesn't exist the oauth server SecretHashAnnotation annotation is deleted and the hash secret is not created": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+			},
+			inputObjects: []client.Object{
+				annotatedOauthDeployment,
 			},
 			expectedOauthServerAnnotations:           nil,
 			expectKubeadminPasswordHashSecretToExist: false,
