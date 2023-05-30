@@ -482,6 +482,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Set version status
 	hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
 
+	// compute ClusterUpgradeDuration and record metric if there were any upgrades
+	hcmetrics.ReportClusterUpgradeDuration(hcluster)
+
 	// Copy the CVO conditions from the HCP.
 	hcpCVOConditions := map[hyperv1.ConditionType]*metav1.Condition{
 		hyperv1.ClusterVersionSucceeding:      nil,
