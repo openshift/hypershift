@@ -1518,6 +1518,8 @@ type PersistentVolumeEtcdStorageSpec struct {
 	//
 	// +optional
 	// +kubebuilder:default="8Gi"
+	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Etcd PV storage size is immutable"
 	Size *resource.Quantity `json:"size,omitempty"`
 }
 
