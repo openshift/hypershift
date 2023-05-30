@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"reflect"
 	"sort"
@@ -86,6 +87,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
+	utilsnet "k8s.io/utils/net"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2" // Need this dep atm to satisfy IBM provider dep.
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
@@ -3428,11 +3430,14 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
 	} else if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
-		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcileVirtLauncherNetworkPolicy(policy, hcluster)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
+		if hcluster.Spec.Platform.Kubevirt.Credentials == nil {
+			// network policy is being set on centralized infra only, not on external infra
+			policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
+			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+				return reconcileVirtLauncherNetworkPolicy(policy, hcluster, managementClusterNetwork)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
+			}
 		}
 		kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hcluster.Spec.InfraID, hcluster, hcp.Namespace)
 		if err != nil {
@@ -4123,10 +4128,37 @@ func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolic
 	return nil
 }
 
-func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func addToBlockedNetworks(network string, blockedIPv4Networks []string, blockedIPv6Networks []string) ([]string, []string) {
+	if utilsnet.IsIPv6CIDRString(network) {
+		blockedIPv6Networks = append(blockedIPv6Networks, network)
+	} else {
+		blockedIPv4Networks = append(blockedIPv4Networks, network)
+	}
+	return blockedIPv4Networks, blockedIPv6Networks
+}
+
+func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, managementClusterNetwork *configv1.Network) error {
 	protocolTCP := corev1.ProtocolTCP
 	protocolUDP := corev1.ProtocolUDP
 	protocolSCTP := corev1.ProtocolSCTP
+
+	blockedIPv4Networks := []string{}
+	blockedIPv6Networks := []string{}
+	for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
+		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network.CIDR, blockedIPv4Networks, blockedIPv6Networks)
+	}
+
+	for _, network := range managementClusterNetwork.Spec.ServiceNetwork {
+		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network, blockedIPv4Networks, blockedIPv6Networks)
+	}
+
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			hyperv1.InfraIDLabel: hcluster.Spec.InfraID,
+			"kubevirt.io":        "virt-launcher",
+		},
+	}
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			Ports: []networkingv1.NetworkPolicyPort{
@@ -4136,9 +4168,69 @@ func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hclu
 			},
 		},
 	}
-	policy.Spec.PodSelector = metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"kubevirt.io": "virt-launcher",
+	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+		{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					// Allow access towards outside the cluster for the virtual machines (guest nodes),
+					// But deny access to other cluster's pods and services with the exceptions below
+					// IPv4
+					IPBlock: &networkingv1.IPBlock{
+						CIDR:   netip.PrefixFrom(netip.IPv4Unspecified(), 0).String(), // 0.0.0.0/0
+						Except: blockedIPv4Networks,
+					},
+				},
+				{
+					// IPv6
+					IPBlock: &networkingv1.IPBlock{
+						CIDR:   netip.PrefixFrom(netip.IPv6Unspecified(), 0).String(), // ::/0
+						Except: blockedIPv6Networks,
+					},
+				},
+				{
+					// Allow the guest nodes to communicate between each other
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							hyperv1.InfraIDLabel: hcluster.Spec.InfraID,
+							"kubevirt.io":        "virt-launcher",
+						},
+					},
+				},
+				{
+					// Allow access to the cluster's DNS server for name resolution
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"dns.operator.openshift.io/daemonset-dns": "default",
+						},
+					},
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"kubernetes.io/metadata.name": "openshift-dns",
+						},
+					},
+				},
+				{
+					// Allow access to the guest cluster API server
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"hypershift.openshift.io/control-plane-component": "kube-apiserver",
+						},
+					},
+				},
+				{
+					// Allow access to the management cluster ingress (for ignition server)
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"ingresscontroller.operator.openshift.io/deployment-ingresscontroller": "default",
+						},
+					},
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"name": "openshift-ingress",
+						},
+					},
+				},
+			},
 		},
 	}
 	return nil
