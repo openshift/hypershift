@@ -454,8 +454,8 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			fmt.Sprintf("--bootstrap-kubeconfig=%s/kubeconfig", mcsBaseDir),
 			fmt.Sprintf("--cert=%s/tls.crt", mcsBaseDir),
 			fmt.Sprintf("--key=%s/tls.key", mcsBaseDir),
-			"--secure-port=22623",
-			"--insecure-port=22624",
+			"--secure-port=22625",
+			"--insecure-port=22626",
 		)
 		go func() {
 			out, err := cmd.CombinedOutput()
@@ -469,7 +469,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		}
 		var payload []byte
 		err = wait.PollUntilWithContext(ctx, 1*time.Second, func(ctx context.Context) (bool, error) {
-			req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:22624/config/master", nil)
+			req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:22626/config/master", nil)
 			if err != nil {
 				return false, fmt.Errorf("error building http request: %w", err)
 			}
