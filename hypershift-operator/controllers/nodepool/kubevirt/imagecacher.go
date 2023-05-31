@@ -3,6 +3,7 @@ package kubevirt
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -38,6 +39,7 @@ type BootImage interface {
 	// CacheImage creates a PVC to cache the node image.
 	CacheImage(context.Context, client.Client, *hyperv1.NodePool, string) error
 	getDVSourceForVMTemplate() *v1beta1.DataVolumeSource
+	String() string
 }
 
 type BootImageNamer interface {
@@ -59,6 +61,10 @@ func newBootImage(imageName string, isHTTP bool) *bootImage {
 		bi.name = containerImagePrefix + imageName
 	}
 	return bi
+}
+
+func (bi bootImage) String() string {
+	return strings.TrimPrefix(bi.name, containerImagePrefix)
 }
 
 func (bootImage) CacheImage(_ context.Context, _ client.Client, _ *hyperv1.NodePool, _ string) error {
@@ -106,6 +112,10 @@ func newCachedBootImage(name, hash, namespace string, isHTTP bool) *cachedBootIm
 	}
 
 	return cbi
+}
+
+func (cbi cachedBootImage) String() string {
+	return strings.TrimPrefix(cbi.name, containerImagePrefix)
 }
 
 func (qi *cachedBootImage) CacheImage(ctx context.Context, cl client.Client, nodePool *hyperv1.NodePool, uid string) error {
