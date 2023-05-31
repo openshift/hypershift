@@ -85,7 +85,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 
 			g.Expect(PlatformValidation(tc.nodePool)).To(Succeed())
 
-			bootImage := newCachedContainerBootImage(bootImageName, imageHash, hostedClusterNamespace)
+			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
 			bootImage.dvName = bootImageNamePrefix + "12345"
 			result := MachineTemplateSpec(tc.nodePool, bootImage, tc.hcluster)
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
@@ -117,7 +117,7 @@ func TestCacheImage(t *testing.T) {
 		name              string
 		nodePool          *hyperv1.NodePool
 		existingResources []client.Object
-		asserFunc         func(Gomega, []v1beta1.DataVolume, string, *cachedContainerBootImage)
+		asserFunc         func(Gomega, []v1beta1.DataVolume, string, *cachedBootImage)
 		errExpected       bool
 		dvNamePrefix      string
 	}{
@@ -196,7 +196,7 @@ func TestCacheImage(t *testing.T) {
 				},
 			},
 			dvNamePrefix: bootImageNamePrefix,
-			asserFunc: func(g Gomega, dvs []v1beta1.DataVolume, expectedDVNamePrefix string, bootImage *cachedContainerBootImage) {
+			asserFunc: func(g Gomega, dvs []v1beta1.DataVolume, expectedDVNamePrefix string, bootImage *cachedBootImage) {
 				g.ExpectWithOffset(1, dvs).Should(HaveLen(2), "should not clear the other DV")
 				for _, dv := range dvs {
 					if dv.Name != bootImageNamePrefix+"another-one" {
@@ -217,7 +217,7 @@ func TestCacheImage(t *testing.T) {
 			_ = v1beta1.AddToScheme(scheme)
 			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.existingResources...).Build()
 
-			bootImage := newCachedContainerBootImage(bootImageName, imageHash, hostedClusterNamespace)
+			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
 			err := bootImage.CacheImage(ctx, cl, tc.nodePool, infraId)
 
 			if tc.errExpected != (err != nil) {
@@ -235,7 +235,7 @@ func TestCacheImage(t *testing.T) {
 	}
 }
 
-func assertDV(g Gomega, dvs []v1beta1.DataVolume, expectedDVNamePrefix string, bootImage *cachedContainerBootImage) {
+func assertDV(g Gomega, dvs []v1beta1.DataVolume, expectedDVNamePrefix string, bootImage *cachedBootImage) {
 	g.ExpectWithOffset(1, dvs).Should(HaveLen(1), "failed to read the DataVolume back; No matched DataVolume")
 	g.ExpectWithOffset(1, dvs[0].Name).Should(HavePrefix(expectedDVNamePrefix))
 	g.ExpectWithOffset(1, bootImage.dvName).Should(Equal(dvs[0].Name), "failed to set the dvName filed in the cacheImage object")
