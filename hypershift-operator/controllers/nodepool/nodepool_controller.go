@@ -1355,7 +1355,7 @@ func reconcileNodeTuningConfigMap(tuningConfigMap *corev1.ConfigMap, nodePool *h
 		tuningConfigMap.Labels = make(map[string]string)
 	}
 
-	tuningConfigMap.Annotations[nodePoolAnnotation] = nodePool.GetName()
+	tuningConfigMap.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 	tuningConfigMap.Labels[nodePoolAnnotation] = nodePool.GetName()
 
 	if tuningConfigMap.Data == nil {
