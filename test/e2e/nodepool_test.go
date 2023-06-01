@@ -227,6 +227,10 @@ func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclie
 		expectedConditions[hyperv1.NodePoolAutorepairEnabledConditionType] = corev1.ConditionFalse
 	}
 
+	if nodePool.Spec.Arch != "" && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+		expectedConditions[hyperv1.NodePoolValidArchPlatform] = corev1.ConditionFalse
+	}
+
 	start := time.Now()
 	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (bool, error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool); err != nil {
