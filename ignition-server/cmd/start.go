@@ -49,13 +49,14 @@ func init() {
 }
 
 type Options struct {
-	Addr              string
-	CertFile          string
-	KeyFile           string
-	RegistryOverrides map[string]string
-	Platform          string
-	WorkDir           string
-	MetricsAddr       string
+	Addr                string
+	CertFile            string
+	KeyFile             string
+	RegistryOverrides   map[string]string
+	Platform            string
+	WorkDir             string
+	MetricsAddr         string
+	FeatureGateManifest string
 }
 
 // This is a https server that enable us to satisfy
@@ -88,6 +89,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Platform, "platform", "", "The cloud provider platform name")
 	cmd.Flags().StringVar(&opts.WorkDir, "work-dir", opts.WorkDir, "Directory in which to store transient working data")
 	cmd.Flags().StringVar(&opts.MetricsAddr, "metrics-addr", opts.MetricsAddr, "The address the metric endpoint binds to.")
+	cmd.Flags().StringVar(&opts.FeatureGateManifest, "feature-gate-manifest", opts.FeatureGateManifest, "Path to a rendered featuregates.config.openshift.io/v1 file")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -110,7 +112,7 @@ func NewStartCommand() *cobra.Command {
 
 // setUpPayloadStoreReconciler sets up manager with a TokenSecretReconciler controller
 // to keep the PayloadStore up to date.
-func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[string]string, cloudProvider hyperv1.PlatformType, cacheDir string, metricsAddr string) (ctrl.Manager, error) {
+func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[string]string, cloudProvider hyperv1.PlatformType, cacheDir string, metricsAddr string, featureGateManifest string) (ctrl.Manager, error) {
 	if os.Getenv(namespaceEnvVariableName) == "" {
 		return nil, fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
 	}
@@ -153,11 +155,12 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 				},
 				OpenShiftImageRegistryOverrides: util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
 			},
-			Client:         mgr.GetClient(),
-			Namespace:      os.Getenv(namespaceEnvVariableName),
-			CloudProvider:  cloudProvider,
-			WorkDir:        cacheDir,
-			ImageFileCache: imageFileCache,
+			Client:              mgr.GetClient(),
+			Namespace:           os.Getenv(namespaceEnvVariableName),
+			CloudProvider:       cloudProvider,
+			WorkDir:             cacheDir,
+			ImageFileCache:      imageFileCache,
+			FeatureGateManifest: featureGateManifest,
 		},
 	}).SetupWithManager(ctx, mgr); err != nil {
 		return nil, fmt.Errorf("unable to create controller: %w", err)
@@ -178,7 +181,7 @@ func run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to load serving cert: %w", err)
 	}
 
-	mgr, err := setUpPayloadStoreReconciler(ctx, opts.RegistryOverrides, hyperv1.PlatformType(opts.Platform), opts.WorkDir, opts.MetricsAddr)
+	mgr, err := setUpPayloadStoreReconciler(ctx, opts.RegistryOverrides, hyperv1.PlatformType(opts.Platform), opts.WorkDir, opts.MetricsAddr, opts.FeatureGateManifest)
 	if err != nil {
 		return fmt.Errorf("error setting up manager: %w", err)
 	}

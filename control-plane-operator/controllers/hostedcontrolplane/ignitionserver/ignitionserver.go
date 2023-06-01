@@ -1,11 +1,14 @@
 package ignitionserver
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
 
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
@@ -29,7 +32,9 @@ import (
 func ReconcileIgnitionServer(ctx context.Context,
 	c client.Client,
 	createOrUpdate upsert.CreateOrUpdateFN,
+	releaseVersion string,
 	utilitiesImage string,
+	configOperatorImage string,
 	hcp *hyperv1.HostedControlPlane,
 	defaultIngressDomain string,
 	hasHealthzHandler bool,
@@ -252,6 +257,26 @@ func ReconcileIgnitionServer(ctx context.Context,
 		}
 	}
 
+	// Use the default FeatureSet unless otherwise specified.
+	featureGate := &configv1.FeatureGate{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "FeatureGate",
+			APIVersion: configv1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.FeatureGate != nil {
+		featureGate.Spec = *hcp.Spec.Configuration.FeatureGate
+	}
+
+	featureGateBuffer := &bytes.Buffer{}
+	if err := api.YamlSerializer.Encode(featureGate, featureGateBuffer); err != nil {
+		return fmt.Errorf("failed to encode feature gates: %w", err)
+	}
+	featureGateYAML := featureGateBuffer.String()
+
 	// Reconcile deployment
 	ignitionServerDeployment := ignitionserver.Deployment(controlPlaneNamespace)
 	if result, err := createOrUpdate(ctx, c, ignitionServerDeployment, func() error {
@@ -295,6 +320,38 @@ func ReconcileIgnitionServer(ctx context.Context,
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
 						},
+						{
+							Name: "shared",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name:            "fetch-feature-gate",
+							Image:           configOperatorImage,
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Command: []string{
+								"/bin/bash",
+							},
+							Args: []string{
+								"-c",
+								invokeFeatureGateRenderScript("/shared", releaseVersion, string(featureGateYAML)),
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("40Mi"),
+									corev1.ResourceCPU:    resource.MustParse("10m"),
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "shared",
+									MountPath: "/shared",
+								},
+							},
+						},
 					},
 					Containers: []corev1.Container{
 						{
@@ -322,6 +379,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 								"--key-file", "/var/run/secrets/ignition/serving-cert/tls.key",
 								"--registry-overrides", util.ConvertRegistryOverridesToCommandLineFlag(registryOverrides),
 								"--platform", string(hcp.Spec.Platform.Type),
+								"--feature-gate-manifest=/shared/99_feature-gate.yaml",
 							},
 							LivenessProbe: &corev1.Probe{
 								ProbeHandler:        probeHandler,
@@ -363,6 +421,10 @@ func ReconcileIgnitionServer(ctx context.Context,
 								{
 									Name:      "payloads",
 									MountPath: "/payloads",
+								},
+								{
+									Name:      "shared",
+									MountPath: "/shared",
 								},
 							},
 						},
@@ -458,4 +520,26 @@ func reconcileInternalRoute(route *routev1.Route, ownerRef config.OwnerRef) erro
 	ownerRef.ApplyTo(route)
 	// Assumes ownerRef is the HCP
 	return util.ReconcileInternalRoute(route, ownerRef.Reference.Name, ignitionserver.Service(route.Namespace).Name)
+}
+
+func invokeFeatureGateRenderScript(workDir, payloadVersion, featureGateYAML string) string {
+	var script = `#!/bin/bash
+set -e
+cd /tmp
+mkdir input output manifests
+
+touch /tmp/manifests/99_feature-gate.yaml
+cat <<EOF >/tmp/manifests/99_feature-gate.yaml
+%[3]s
+EOF
+
+/usr/bin/cluster-config-operator render \
+   --config-output-file config \
+   --asset-input-dir /tmp/input \
+   --asset-output-dir /tmp/output \
+   --rendered-manifest-files=/tmp/manifests \
+   --payload-version=%[2]s
+cp /tmp/manifests/99_feature-gate.yaml %[1]s/99_feature-gate.yaml
+`
+	return fmt.Sprintf(script, workDir, payloadVersion, featureGateYAML)
 }
