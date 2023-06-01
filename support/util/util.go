@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -187,4 +188,60 @@ func HashStruct(o interface{}) string {
 	_, _ = hash.Write([]byte(fmt.Sprintf("%v", o)))
 	intHash := hash.Sum32()
 	return fmt.Sprintf("%08x", intHash)
+}
+
+// ConvertRegistryOverridesToCommandLineFlag converts a map of registry sources and their mirrors into a string
+func ConvertRegistryOverridesToCommandLineFlag(registryOverrides map[string]string) string {
+	var commandLineFlagArray []string
+	for registrySource, registryReplacement := range registryOverrides {
+		commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
+	}
+	if len(commandLineFlagArray) > 0 {
+		sort.Strings(commandLineFlagArray)
+		return strings.Join(commandLineFlagArray, ",")
+	}
+	// this is the equivalent of null on a StringToString command line variable.
+	return "="
+}
+
+// ConvertOpenShiftImageRegistryOverridesToCommandLineFlag converts a map of image registry sources and their mirrors into a string
+func ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(registryOverrides map[string][]string) string {
+	var commandLineFlagArray []string
+	for registrySource, registryReplacements := range registryOverrides {
+		for _, registryReplacement := range registryReplacements {
+			commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
+		}
+	}
+	if len(commandLineFlagArray) > 0 {
+		sort.Strings(commandLineFlagArray)
+		return strings.Join(commandLineFlagArray, ",")
+	}
+	// this is the equivalent of null on a StringToString command line variable.
+	return "="
+}
+
+// ConvertImageRegistryOverrideStringToMap translates the environment variable containing registry source to mirror
+// mappings back to a map[string]string structure that can be ingested by the registry image content policies release provider
+func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string {
+	registryMirrorPair := strings.Split(envVar, ",")
+
+	if len(registryMirrorPair) == 0 || envVar == "=" {
+		return nil
+	}
+
+	imageRegistryOverrides := make(map[string][]string)
+
+	for _, pair := range registryMirrorPair {
+		registryMirror := strings.Split(pair, "=")
+		registry := registryMirror[0]
+		mirror := registryMirror[1]
+
+		if _, ok := imageRegistryOverrides[registry]; ok {
+			imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], mirror)
+		} else {
+			imageRegistryOverrides[registry] = []string{mirror}
+		}
+	}
+
+	return imageRegistryOverrides
 }

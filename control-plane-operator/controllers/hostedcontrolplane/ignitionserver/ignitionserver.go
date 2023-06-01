@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"strings"
 
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -35,6 +34,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 	defaultIngressDomain string,
 	hasHealthzHandler bool,
 	registryOverrides map[string]string,
+	openShiftRegistryOverrides string,
 	managementClusterHasCapabilitySecurityContextConstraint bool,
 	ownerRef config.OwnerRef,
 ) error {
@@ -310,13 +310,17 @@ func ReconcileIgnitionServer(ctx context.Context,
 										},
 									},
 								},
+								{
+									Name:  "OPENSHIFT_IMG_OVERRIDES",
+									Value: openShiftRegistryOverrides,
+								},
 							},
 							Command: []string{
 								"/usr/bin/control-plane-operator",
 								"ignition-server",
 								"--cert-file", "/var/run/secrets/ignition/serving-cert/tls.crt",
 								"--key-file", "/var/run/secrets/ignition/serving-cert/tls.key",
-								"--registry-overrides", convertRegistryOverridesToCommandLineFlag(registryOverrides),
+								"--registry-overrides", util.ConvertRegistryOverridesToCommandLineFlag(registryOverrides),
 								"--platform", string(hcp.Spec.Platform.Type),
 							},
 							LivenessProbe: &corev1.Probe{
@@ -454,16 +458,4 @@ func reconcileInternalRoute(route *routev1.Route, ownerRef config.OwnerRef) erro
 	ownerRef.ApplyTo(route)
 	// Assumes ownerRef is the HCP
 	return util.ReconcileInternalRoute(route, ownerRef.Reference.Name, ignitionserver.Service(route.Namespace).Name)
-}
-
-func convertRegistryOverridesToCommandLineFlag(registryOverrides map[string]string) string {
-	commandLineFlagArray := []string{}
-	for registrySource, registryReplacement := range registryOverrides {
-		commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
-	}
-	if len(commandLineFlagArray) > 0 {
-		return strings.Join(commandLineFlagArray, ",")
-	}
-	// this is the equivalent of null on a StringToString command line variable.
-	return "="
 }

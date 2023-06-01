@@ -143,12 +143,15 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
 		IgnitionProvider: &controllers.LocalIgnitionProvider{
-			ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
-				Delegate: &releaseinfo.CachedProvider{
-					Inner: &releaseinfo.RegistryClientProvider{},
-					Cache: map[string]*releaseinfo.ReleaseImage{},
+			ReleaseProvider: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+				Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+					Delegate: &releaseinfo.CachedProvider{
+						Inner: &releaseinfo.RegistryClientProvider{},
+						Cache: map[string]*releaseinfo.ReleaseImage{},
+					},
+					RegistryOverrides: registryOverrides,
 				},
-				RegistryOverrides: registryOverrides,
+				OpenShiftImageRegistryOverrides: util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
 			},
 			Client:         mgr.GetClient(),
 			Namespace:      os.Getenv(namespaceEnvVariableName),

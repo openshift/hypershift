@@ -138,7 +138,7 @@ type HostedClusterReconciler struct {
 	HypershiftOperatorImage string
 
 	// ReleaseProvider looks up the OCP version for the release images in HostedClusters
-	ReleaseProvider releaseinfo.ProviderWithRegistryOverrides
+	ReleaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
 
 	// SetDefaultSecurityContext is used to configure Security Context for containers
 	SetDefaultSecurityContext bool
@@ -1508,6 +1508,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			defaultIngressDomain,
 			ignitionServerHasHealthzHandler,
 			r.ReleaseProvider.GetRegistryOverrides(),
+			hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
 			r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
 			config.MutatingOwnerRefFromHCP(hcp, releaseImageVersion),
 		); err != nil {
@@ -1941,7 +1942,20 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	// Reconcile operator deployment
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, hostedControlPlane, controlPlaneOperatorImage, utilitiesImage, r.SetDefaultSecurityContext, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()), defaultIngressDomain, cpoHasUtilities, r.MetricsSet)
+		return reconcileControlPlaneOperatorDeployment(
+			controlPlaneOperatorDeployment,
+			hcluster,
+			hostedControlPlane,
+			controlPlaneOperatorImage,
+			utilitiesImage,
+			r.SetDefaultSecurityContext,
+			controlPlaneOperatorServiceAccount,
+			r.EnableCIDebugOutput,
+			hyperutil.ConvertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()),
+			hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
+			defaultIngressDomain,
+			cpoHasUtilities,
+			r.MetricsSet)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1973,18 +1987,6 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 
 	return nil
-}
-
-func convertRegistryOverridesToCommandLineFlag(registryOverrides map[string]string) string {
-	commandLineFlagArray := []string{}
-	for registrySource, registryReplacement := range registryOverrides {
-		commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
-	}
-	if len(commandLineFlagArray) > 0 {
-		return strings.Join(commandLineFlagArray, ",")
-	}
-	// this is the equivalent of null on a StringToString command line variable.
-	return "="
 }
 
 func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
@@ -2048,7 +2050,21 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	return hypershiftOperatorImage, nil
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, cpoImage, utilitiesImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine, defaultIngressDomain string, cpoHasUtilities bool, metricsSet metrics.MetricsSet) error {
+func reconcileControlPlaneOperatorDeployment(
+	deployment *appsv1.Deployment,
+	hc *hyperv1.HostedCluster,
+	hcp *hyperv1.HostedControlPlane,
+	cpoImage,
+	utilitiesImage string,
+	setDefaultSecurityContext bool,
+	sa *corev1.ServiceAccount,
+	enableCIDebugOutput bool,
+	registryOverrideCommandLine string,
+	openShiftRegistryOverrides string,
+	defaultIngressDomain string,
+	cpoHasUtilities bool,
+	metricsSet metrics.MetricsSet) error {
+
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("80Mi"),
@@ -2125,6 +2141,10 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							{
 								Name:  "OPERATE_ON_RELEASE_IMAGE",
 								Value: hc.Spec.Release.Image,
+							},
+							{
+								Name:  "OPENSHIFT_IMG_OVERRIDES",
+								Value: openShiftRegistryOverrides,
 							},
 							metrics.MetricsSetToEnv(metricsSet),
 						},
