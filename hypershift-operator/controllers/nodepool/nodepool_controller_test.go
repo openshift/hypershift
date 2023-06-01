@@ -912,17 +912,80 @@ spec:
     profile: tuned-2-profile
 status: {}
 `
+	perfprofOne := `apiVersion: performance.openshift.io/v2
+kind: PerformanceProfile
+metadata:
+    name: perfprofOne
+spec:
+    cpu:
+        isolated: 1,3-39,41,43-79
+        reserved: 0,2,40,42
+    machineConfigPoolSelector:
+        machineconfiguration.openshift.io/role: worker-cnf
+    nodeSelector:
+        node-role.kubernetes.io/worker-cnf: ""
+    numa:
+        topologyPolicy: restricted
+    realTimeKernel:
+        enabled: true
+    workloadHints:
+        highPowerConsumption: false
+        realTime: true
+`
+	perfprofTwo := `apiVersion: performance.openshift.io/v2
+kind: PerformanceProfile
+metadata:
+    name: perfprofTwo
+spec:
+    cpu:
+        isolated: 1,3-39,41,43-79
+        reserved: 0,2,40,42
+    machineConfigPoolSelector:
+        machineconfiguration.openshift.io/role: worker-cnf
+    nodeSelector:
+        node-role.kubernetes.io/worker-cnf: ""
+    numa:
+        topologyPolicy: restricted
+    realTimeKernel:
+        enabled: false
+    workloadHints:
+        highPowerConsumption: false
+        realTime: true
+`
+	perfprofOneDefaulted := `apiVersion: performance.openshift.io/v2
+kind: PerformanceProfile
+metadata:
+  creationTimestamp: null
+  name: perfprofOne
+spec:
+  cpu:
+    isolated: 1,3-39,41,43-79
+    reserved: 0,2,40,42
+  machineConfigPoolSelector:
+    machineconfiguration.openshift.io/role: worker-cnf
+  nodeSelector:
+    node-role.kubernetes.io/worker-cnf: ""
+  numa:
+    topologyPolicy: restricted
+  realTimeKernel:
+    enabled: true
+  workloadHints:
+    highPowerConsumption: false
+    realTime: true
+status: {}
+`
 
 	namespace := "test"
 	testCases := []struct {
-		name         string
-		nodePool     *hyperv1.NodePool
-		tuningConfig []client.Object
-		expect       string
-		error        bool
+		name           string
+		nodePool       *hyperv1.NodePool
+		tuningConfig   []client.Object
+		tunedExpect    string
+		perfprofExpect string
+		error          bool
 	}{
 		{
-			name: "gets a single valid TuningConfig",
+			name: "gets a single valid TunedConfig",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -948,11 +1011,12 @@ status: {}
 					BinaryData: nil,
 				},
 			},
-			expect: tuned1Defaulted,
-			error:  false,
+			tunedExpect:    tuned1Defaulted,
+			perfprofExpect: "",
+			error:          false,
 		},
 		{
-			name: "gets two valid TuningConfigs",
+			name: "gets two valid TunedConfigs",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -989,11 +1053,12 @@ status: {}
 					},
 				},
 			},
-			expect: tuned1Defaulted + "\n---\n" + tuned2Defaulted,
-			error:  false,
+			tunedExpect:    tuned1Defaulted + "\n---\n" + tuned2Defaulted,
+			perfprofExpect: "",
+			error:          false,
 		},
 		{
-			name: "fails if a non existent TuningConfig is referenced",
+			name: "fails if a non existent TunedConfig is referenced",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: namespace,
@@ -1007,9 +1072,158 @@ status: {}
 				},
 				Status: hyperv1.NodePoolStatus{},
 			},
-			tuningConfig: []client.Object{},
-			expect:       "",
-			error:        true,
+			tuningConfig:   []client.Object{},
+			tunedExpect:    "",
+			perfprofExpect: "",
+			error:          true,
+		},
+		//-------------------------------------------------------------------------
+		{
+			name: "gets a single valid PerformanceProfileConfig",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TuningConfig: []corev1.LocalObjectReference{
+						{
+							Name: "perfprofOne",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tuningConfig: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "perfprofOne",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: perfprofOne,
+					},
+					BinaryData: nil,
+				},
+			},
+			tunedExpect:    "",
+			perfprofExpect: perfprofOneDefaulted,
+			error:          false,
+		},
+		{
+			name: "Should be at most one PerformanceProfileConfig per NodePool",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TuningConfig: []corev1.LocalObjectReference{
+						{
+							Name: "perfprofOne",
+						},
+						{
+							Name: "perfprofTwo",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tuningConfig: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "perfprofOne",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: perfprofOne,
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "perfprofTwo",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: perfprofTwo,
+					},
+				},
+			},
+			tunedExpect:    "",
+			perfprofExpect: "",
+			error:          true,
+		},
+		{
+			name: "fails if a non existent PerformanceProfile is referenced",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TuningConfig: []corev1.LocalObjectReference{
+						{
+							Name: "does-not-exist",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tuningConfig:   []client.Object{},
+			tunedExpect:    "",
+			perfprofExpect: "",
+			error:          true,
+		},
+		{
+			name: "PerformanceProfiles and Tuned Configs could cohexists",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					TuningConfig: []corev1.LocalObjectReference{
+						{
+							Name: "tuned-1",
+						},
+						{
+							Name: "tuned-2",
+						},
+						{
+							Name: "perfprofOne",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			tuningConfig: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tuned-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: tuned1,
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "tuned-2",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: tuned2,
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "perfprofOne",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						tuningConfigKey: perfprofOne,
+					},
+				},
+			},
+			tunedExpect:    tuned1Defaulted + "\n---\n" + tuned2Defaulted,
+			perfprofExpect: perfprofOneDefaulted,
+			error:          false,
 		},
 	}
 
@@ -1021,16 +1235,20 @@ status: {}
 				Client: fake.NewClientBuilder().WithObjects(tc.tuningConfig...).Build(),
 			}
 
-			td, _, err := r.getTuningConfig(context.Background(), tc.nodePool)
+			td, pp, err := r.getTuningConfig(context.Background(), tc.nodePool)
 
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
 				return
 			}
 			g.Expect(err).ToNot(HaveOccurred())
-			if diff := cmp.Diff(td, tc.expect); diff != "" {
+			if diff := cmp.Diff(td, tc.tunedExpect); diff != "" {
 				t.Errorf("actual tuned config differs from expected: %s", diff)
-				t.Logf("got: %s \n, expected: \n %s", td, tc.expect)
+				t.Logf("got: %s \n, expected: \n %s", td, tc.tunedExpect)
+			}
+			if diff := cmp.Diff(pp, tc.perfprofExpect); diff != "" {
+				t.Errorf("actual Performance Profile config differs from expected: %s", diff)
+				t.Logf("got:\n%s\n, expected:\n%s\n", pp, tc.perfprofExpect)
 			}
 		})
 	}
