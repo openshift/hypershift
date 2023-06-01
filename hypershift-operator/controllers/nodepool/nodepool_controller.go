@@ -692,6 +692,27 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 	}
 
+	performanceProfileConfigMap := PerformanceProfileConfigMap(controlPlaneNamespace, nodePool.Name)
+	if ppConfig == "" {
+		err = r.Get(ctx, client.ObjectKeyFromObject(performanceProfileConfigMap), performanceProfileConfigMap)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to get performanceprofileConfig ConfigMap: %w", err)
+		}
+		if err == nil {
+			if err := r.Delete(ctx, performanceProfileConfigMap); err != nil && !apierrors.IsNotFound(err) {
+				return ctrl.Result{}, fmt.Errorf("failed to delete tunedConfig ConfigMap with no PerformanceProfile defined: %w", err)
+			}
+		}
+	} else {
+		if result, err := r.CreateOrUpdate(ctx, r.Client, performanceProfileConfigMap, func() error {
+			return reconcilePerformanceProfileConfigMap(performanceProfileConfigMap, nodePool, ppConfig)
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile PerformanceProfile ConfigMap: %w", err)
+		} else {
+			log.Info("Reconciled PerformanceProfile ConfigMap", "result", result)
+		}
+	}
+
 	// Set AllMachinesReadyCondition.
 	// Get all Machines for NodePool.
 	machines, err := r.getMachinesForNodePool(nodePool)
@@ -784,27 +805,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		Message:            message,
 		ObservedGeneration: nodePool.Generation,
 	})
-
-	performanceProfileConfigMap := PerformanceProfileConfigMap(controlPlaneNamespace, nodePool.Name)
-	if ppConfig == "" {
-		err = r.Get(ctx, client.ObjectKeyFromObject(performanceProfileConfigMap), performanceProfileConfigMap)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to get performanceprofileConfig ConfigMap: %w", err)
-		}
-		if err == nil {
-			if err := r.Delete(ctx, performanceProfileConfigMap); err != nil && !apierrors.IsNotFound(err) {
-				return ctrl.Result{}, fmt.Errorf("failed to delete tunedConfig ConfigMap with no PerformanceProfile defined: %w", err)
-			}
-		}
-	} else {
-		if result, err := r.CreateOrUpdate(ctx, r.Client, performanceProfileConfigMap, func() error {
-			return reconcilePerformanceProfileConfigMap(performanceProfileConfigMap, nodePool, ppConfig)
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile PerformanceProfile ConfigMap: %w", err)
-		} else {
-			log.Info("Reconciled PerformanceProfile ConfigMap", "result", result)
-		}
-	}
 
 	// 2. - Reconcile towards expected state of the world.
 	compressedConfig, err := supportutil.CompressAndEncode([]byte(config))
