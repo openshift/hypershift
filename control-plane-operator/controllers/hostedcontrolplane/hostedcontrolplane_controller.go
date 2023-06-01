@@ -1591,9 +1591,17 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile root CA: %w", err)
 	}
 
+	observedDefaultIngressCert := manifests.IngressObservedDefaultIngressCertCA(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(observedDefaultIngressCert), observedDefaultIngressCert); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get observed default ingress cert: %w", err)
+		}
+		observedDefaultIngressCert = nil
+	}
+
 	rootCAConfigMap := manifests.RootCAConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, rootCAConfigMap, func() error {
-		return pki.ReconcileRootCAConfigMap(rootCAConfigMap, p.OwnerRef, rootCASecret)
+		return pki.ReconcileRootCAConfigMap(rootCAConfigMap, p.OwnerRef, rootCASecret, observedDefaultIngressCert)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile root CA configmap: %w", err)
 	}
@@ -2320,13 +2328,13 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 		return fmt.Errorf("failed to fetch combined ca configmap: %w", err)
 	}
 
-	// TODO: the following is weird, it adds the rootCA to the service-ca configmap
-	//       why would anyone want that?
 	serviceServingCA := manifests.ServiceServingCA(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, serviceServingCA, func() error {
-		return kcm.ReconcileKCMServiceServingCA(serviceServingCA, rootCAConfigMap, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile kcm serving ca: %w", err)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(serviceServingCA), serviceServingCA); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get service serving CA")
+		} else {
+			serviceServingCA = nil
+		}
 	}
 
 	clientCertSecret := manifests.KubeControllerManagerClientCertSecret(hcp.Namespace)
@@ -2365,7 +2373,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 
 	kcmDeployment := manifests.KCMDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kcmDeployment, func() error {
-		return kcm.ReconcileDeployment(kcmDeployment, kcmConfig, serviceServingCA, p, util.APIPort(hcp))
+		return kcm.ReconcileDeployment(kcmDeployment, kcmConfig, rootCAConfigMap, serviceServingCA, p, util.APIPort(hcp))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kcm deployment: %w", err)
 	}
@@ -2449,9 +2457,18 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 		r.Log.Info("reconciled openshift apiserver servicemonitor", "result", result)
 	}
 
+	serviceServingCA := manifests.ServiceServingCA(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(serviceServingCA), serviceServingCA); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get service serving CA")
+		} else {
+			serviceServingCA = nil
+		}
+	}
+
 	deployment := manifests.OpenShiftAPIServerDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oapi.ReconcileDeployment(deployment, p.AuditWebhookRef, p.OwnerRef, oapicfg, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, util.APIPort(hcp))
+		return oapi.ReconcileDeployment(deployment, p.AuditWebhookRef, p.OwnerRef, oapicfg, serviceServingCA, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, util.APIPort(hcp))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver deployment: %w", err)
 	}
