@@ -258,3 +258,12 @@ func CSISnapshotControllerWebhookCertSecret(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func PerformanceAddonOperatorWebhookCertSecret(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "performance-addon-operator-webhook-cert",
+			Namespace: ns,
+		},
+	}
+}

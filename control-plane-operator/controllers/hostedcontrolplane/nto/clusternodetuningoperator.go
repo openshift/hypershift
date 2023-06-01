@@ -254,7 +254,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 			Name: apiServiceCertName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName:  "performance-addon-operator-webhook-cert",
+					SecretName:  manifests.PerformanceAddonOperatorWebhookCertSecret("").Name,
 					DefaultMode: utilpointer.Int32(420),
 					Items: []corev1.KeyToPath{
 						{Key: "tls.crt", Path: "apiserver.crt"},

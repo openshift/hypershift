@@ -2008,6 +2008,13 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile CSI snapshot webhook cert: %w", err)
 	}
 
+	paoWebhookSecret := manifests.PerformanceAddonOperatorWebhookCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, paoWebhookSecret, func() error {
+		return pki.ReconcilePerformanceAddonOperatorWebhook(paoWebhookSecret, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile PAO webhook cert: %w", err)
+	}
+
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		awsPodIdentityWebhookServingCert := manifests.AWSPodIdentityWebhookServingCert(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, awsPodIdentityWebhookServingCert, func() error {
