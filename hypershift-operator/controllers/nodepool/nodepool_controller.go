@@ -1933,7 +1933,7 @@ func validateTuningConfigManifest(manifest []byte) ([]byte, []byte, error) {
 	case *performanceprofilev2.PerformanceProfile:
 		buff := bytes.Buffer{}
 		if err := yamlSerializer.Encode(obj, &buff); err != nil {
-			return nil, nil, fmt.Errorf("failed to encode tuned config after defaulting it: %w", err)
+			return nil, nil, fmt.Errorf("failed to encode performance profile after defaulting it: %w", err)
 		}
 		manifest = buff.Bytes()
 		return nil, manifest, nil
