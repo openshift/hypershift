@@ -1024,14 +1024,13 @@ func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, h
 func (r *reconciler) deleteKubeadminPasswordHashSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	kubeadminPasswordHashSecret := manifests.KubeadminPasswordHashSecret()
 	if err := r.client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordHashSecret), kubeadminPasswordHashSecret); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
+		if !apierrors.IsNotFound(err) {
+			return err
 		}
-		return err
-	}
-
-	if err := r.client.Delete(ctx, kubeadminPasswordHashSecret); err != nil {
-		return err
+	} else {
+		if err := r.client.Delete(ctx, kubeadminPasswordHashSecret); err != nil {
+			return err
+		}
 	}
 
 	oauthDeployment := manifests.OAuthDeployment(hcp.Namespace)
