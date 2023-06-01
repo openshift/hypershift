@@ -1021,16 +1021,16 @@ status: {}
 				Client: fake.NewClientBuilder().WithObjects(tc.tuningConfig...).Build(),
 			}
 
-			got, err := r.getTuningConfig(context.Background(), tc.nodePool)
+			td, _, err := r.getTuningConfig(context.Background(), tc.nodePool)
 
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
 				return
 			}
 			g.Expect(err).ToNot(HaveOccurred())
-			if diff := cmp.Diff(got, tc.expect); diff != "" {
-				t.Errorf("actual config differs from expected: %s", diff)
-				t.Logf("got: %s \n, expected: \n %s", got, tc.expect)
+			if diff := cmp.Diff(td, tc.expect); diff != "" {
+				t.Errorf("actual tuned config differs from expected: %s", diff)
+				t.Logf("got: %s \n, expected: \n %s", td, tc.expect)
 			}
 		})
 	}
