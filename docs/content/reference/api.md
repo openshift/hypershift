@@ -722,7 +722,7 @@ Tuned resources to define the tuning configuration to be applied to
 nodes in the NodePool. The Tuned API is defined here:</p>
 <p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;tuned&rdquo; whose value is the
-JSON or YAML of a serialized Tuned.</p>
+JSON or YAML of a serialized Tuned or PerformanceProfile.</p>
 </td>
 </tr>
 <tr>
@@ -6211,7 +6211,7 @@ Tuned resources to define the tuning configuration to be applied to
 nodes in the NodePool. The Tuned API is defined here:</p>
 <p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;tuned&rdquo; whose value is the
-JSON or YAML of a serialized Tuned.</p>
+JSON or YAML of a serialized Tuned or PerformanceProfile.</p>
 </td>
 </tr>
 <tr>

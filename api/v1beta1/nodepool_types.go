@@ -153,7 +153,7 @@ type NodePoolSpec struct {
 	// https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go
 	//
 	// Each ConfigMap must have a single key named "tuned" whose value is the
-	// JSON or YAML of a serialized Tuned.
+	// JSON or YAML of a serialized Tuned or PerformanceProfile.
 	// +kubebuilder:validation:Optional
 	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig,omitempty"`
 
