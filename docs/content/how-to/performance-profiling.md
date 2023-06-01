@@ -10,7 +10,7 @@ In HyperShift, node profiling can be configured by creating ConfigMaps which con
 ## Steps
 
 1. Create a ConfigMap which contains a valid `PerformanceProfile` manifest and reference it in a NodePool.
-   The example `PerformanceProfile` manifests defines many profiling parameters like which cpus could be used for workload pods or which ones only for house keeping activities, also enforce a `single-numa-node` topology, etc.
+   The example `PerformanceProfile` manifest defines several parameters like how to partition your CPUs into housekeeping and workload partitions, what topology policy to use, and more.
    Save this ConfigMap as `perfprof-1.yaml`.
 
     ```yaml
@@ -56,7 +56,7 @@ In HyperShift, node profiling can be configured by creating ConfigMaps which con
     oc --kubeconfig="$MGMT_KUBECONFIG" create -f perfprof-1.yaml
     ```
 
-3. Reference the ConfigMap in the NodePools `spec.tunedConfig` field, either by editing an existing NodePool or creating a new NodePool. In this example we assume we only have one NodePool called `nodepool-1`, containing 2 Nodes.
+3. Reference the ConfigMap in the NodePools `spec.tuningConfig` field, either by editing an existing NodePool or creating a new NodePool. In this example we assume we only have one NodePool called `nodepool-1`, containing 2 Nodes.
 
     ```yaml
     apiVersion: hypershift.openshift.io/v1alpha1
@@ -68,7 +68,7 @@ In HyperShift, node profiling can be configured by creating ConfigMaps which con
     ...
     spec:
       ...
-      tunedConfig:
+      tuningConfig:
       - name: perfprof-1
     status:
     ...
@@ -80,4 +80,4 @@ In HyperShift, node profiling can be configured by creating ConfigMaps which con
     - `MachineConfig`: This will be embedded into a ConfigMap that will be handled by NTO as any other ConfigMap with MachineConfig embedded (see [this PR](https://github.com/openshift/hypershift/pull/1729) for further info)
     - `KubeletConfig`: This will be embedded into a ConfigMap that will be handled by NTO in a simillar way as a ConfigMap with a MachineConfig embedded
     - `Tuned`: This will be embedded into a ConfigMap and so handled directly by the NTO.
-    - `RuntimeClass`: TBD
+    - `RuntimeClass`: This will be created directly inside the guest cluster.
