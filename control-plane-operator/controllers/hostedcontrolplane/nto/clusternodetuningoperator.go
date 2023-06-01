@@ -213,6 +213,8 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 		{Name: "KUBECONFIG", Value: "/etc/kubernetes/kubeconfig"},
 	}...)
 
+	const apiServiceCertName = "apiservice-cert"
+
 	dep.Spec.Template.Spec.ServiceAccountName = manifests.ClusterNodeTuningOperatorServiceAccount("").Name
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{"cluster-node-tuning-operator"},
@@ -234,6 +236,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 			{Name: "metrics-client-ca", MountPath: "/tmp/metrics-client-ca"},
 			{Name: "trusted-ca", MountPath: "/var/run/configmaps/trusted-ca/"},
 			{Name: "hosted-kubeconfig", MountPath: "/etc/kubernetes"},
+			{Name: apiServiceCertName, MountPath: "/apiserver.local.config/certificates"},
 		},
 	}}
 	dep.Spec.Template.Spec.Volumes = []corev1.Volume{
@@ -247,6 +250,19 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 			},
 		}}},
 		{Name: "hosted-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KASServiceKubeconfigSecret("").Name}}},
+		{
+			Name: apiServiceCertName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName:  "performance-addon-operator-webhook-cert",
+					DefaultMode: utilpointer.Int32(420),
+					Items: []corev1.KeyToPath{
+						{Key: "tls.crt", Path: "apiserver.crt"},
+						{Key: "tls.key", Path: "apiserver.key"},
+					},
+				},
+			},
+		},
 	}
 
 	params.DeploymentConfig.ApplyTo(dep)
