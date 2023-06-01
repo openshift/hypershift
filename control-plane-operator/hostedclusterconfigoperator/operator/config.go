@@ -115,6 +115,7 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				&configv1.ClusterVersion{}:  allSelector,
 				&configv1.FeatureGate{}:     allSelector,
 				&configv1.ClusterOperator{}: allSelector,
+				&configv1.OperatorHub{}:     allSelector,
 
 				// Needed for inplace upgrader.
 				&corev1.Node{}: allSelector,

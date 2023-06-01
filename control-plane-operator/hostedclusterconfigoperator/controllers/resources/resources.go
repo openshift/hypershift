@@ -179,6 +179,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&configv1.Image{},
 		&configv1.Project{},
 		&configv1.ClusterOperator{},
+		&configv1.OperatorHub{},
 		&appsv1.DaemonSet{},
 		&configv1.ClusterOperator{},
 		&configv1.ClusterVersion{},
@@ -1241,6 +1242,18 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 
 	p := olm.NewOperatorLifecycleManagerParams(hcp)
 
+	// Check if the defaultSources are disabled
+	operatorHub := &configv1.OperatorHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub); err != nil {
+		if !apierrors.IsNotFound(err) {
+			errs = append(errs, fmt.Errorf("failed to get OperatorHub %s: %w", client.ObjectKeyFromObject(operatorHub).String(), err))
+		}
+	}
+
 	catalogs := []struct {
 		manifest  func() *operatorsv1alpha1.CatalogSource
 		reconcile func(*operatorsv1alpha1.CatalogSource, *olm.OperatorLifecycleManagerParams)
@@ -1253,11 +1266,19 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 
 	for _, catalog := range catalogs {
 		cs := catalog.manifest()
-		if _, err := r.CreateOrUpdate(ctx, r.client, cs, func() error {
-			catalog.reconcile(cs, p)
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile catalog source %s/%s: %w", cs.Namespace, cs.Name, err))
+		if operatorHub.Spec.DisableAllDefaultSources {
+			if err := r.client.Delete(ctx, cs); err != nil {
+				if !apierrors.IsNotFound(err) {
+					errs = append(errs, fmt.Errorf("failed to delete catalogSource %s/%s: %w", cs.Namespace, cs.Name, err))
+				}
+			}
+		} else {
+			if _, err := r.CreateOrUpdate(ctx, r.client, cs, func() error {
+				catalog.reconcile(cs, p)
+				return nil
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile catalog source %s/%s: %w", cs.Namespace, cs.Name, err))
+			}
 		}
 	}
 
