@@ -406,6 +406,51 @@ spec:
   kubeletConfig:
     maxPods: 100
 `
+	kubeletConfig1Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  creationTimestamp: null
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: set-max-pods
+spec:
+  kubeletConfig:
+    maxPods: 100
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+status:
+  conditions: null
+`
+	kubeletConfig2 := `
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: set-max-pods-2
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+  kubeletConfig:
+    maxPods: 200
+`
+	kubeletConfig2Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  creationTimestamp: null
+  labels:
+    machineconfiguration.openshift.io/role: worker
+  name: set-max-pods-2
+spec:
+  kubeletConfig:
+    maxPods: 200
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+status:
+  conditions: null
+`
+
 	haproxyIgnititionConfig := `apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
@@ -463,6 +508,17 @@ spec:
   kernelArguments: null
   kernelType: ""
   osImageURL: ""
+`
+	containerRuntimeConfig1 := `apiVersion: machineconfiguration.openshift.io/v1
+kind: ContainerRuntimeConfig
+metadata:
+  name: set-pids-limit
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+  containerRuntimeConfig:
+    pidsLimit: 2048
 `
 
 	namespace := "test"
@@ -575,7 +631,7 @@ spec:
 				Spec: hyperv1.NodePoolSpec{
 					Config: []corev1.LocalObjectReference{
 						{
-							Name: "kubeletconfig-1",
+							Name: "containerRuntimeConfig-1",
 						},
 					},
 				},
@@ -583,15 +639,15 @@ spec:
 			config: []client.Object{
 				&corev1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "kubeletconfig-1",
+						Name:      "containerRuntimeConfig-1",
 						Namespace: namespace,
 					},
 					Data: map[string]string{
-						TokenSecretConfigKey: kubeletConfig1,
+						TokenSecretConfigKey: containerRuntimeConfig1,
 					},
 				},
 			},
-			expect: kubeletConfig1,
+			expect: containerRuntimeConfig1,
 			error:  false,
 		},
 		{
@@ -769,6 +825,77 @@ kind: Config`)},
 			}},
 			expectedCoreConfigResources: 3,
 			expect:                      haproxyIgnititionConfig + "\n---\n" + coreMachineConfig1Defaulted + "\n---\n" + machineConfig1Defaulted,
+		},
+		{
+			name: "gets a single valid KubeletConfig",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Config: []corev1.LocalObjectReference{
+						{
+							Name: "kubeletconfig-1",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			config: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kubeletconfig-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: kubeletConfig1,
+					},
+					BinaryData: nil,
+				},
+			},
+			expect: kubeletConfig1Defaulted,
+			error:  false,
+		},
+		{
+			name: "gets two valid KubeletConfig",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Config: []corev1.LocalObjectReference{
+						{
+							Name: "kubeletconfig-1",
+						},
+						{
+							Name: "kubeletconfig-2",
+						},
+					},
+				},
+				Status: hyperv1.NodePoolStatus{},
+			},
+			config: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kubeletconfig-1",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: kubeletConfig1,
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kubeletconfig-2",
+						Namespace: namespace,
+					},
+					Data: map[string]string{
+						TokenSecretConfigKey: kubeletConfig2,
+					},
+				},
+			},
+			expect: kubeletConfig1Defaulted + "\n---\n" + kubeletConfig2Defaulted,
+			error:  false,
 		},
 	}
 

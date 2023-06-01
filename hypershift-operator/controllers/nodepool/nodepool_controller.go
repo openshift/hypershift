@@ -2002,6 +2002,15 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 		manifest = buff.Bytes()
 	case *v1alpha1.ImageContentSourcePolicy:
 	case *mcfgv1.KubeletConfig:
+		if obj.Labels == nil {
+			obj.Labels = map[string]string{}
+		}
+		obj.Labels["machineconfiguration.openshift.io/role"] = "worker"
+		buff := bytes.Buffer{}
+		if err := YamlSerializer.Encode(obj, &buff); err != nil {
+			return nil, fmt.Errorf("failed to encode config after defaulting it: %w", err)
+		}
+		manifest = buff.Bytes()
 	case *mcfgv1.ContainerRuntimeConfig:
 	default:
 		return nil, fmt.Errorf("unsupported config type: %T", obj)
