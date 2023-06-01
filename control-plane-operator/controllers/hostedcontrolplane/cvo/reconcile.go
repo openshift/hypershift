@@ -62,7 +62,6 @@ var (
 		"0000_50_olm_15-packageserver.clusterserviceversion.yaml",
 		"0000_50_olm_99-operatorstatus.yaml",
 		"0000_90_olm_00-service-monitor.yaml",
-		"0000_90_olm_01-prometheus-rule.yaml",
 		"0000_50_operator-marketplace_04_service_account.yaml",
 		"0000_50_operator-marketplace_05_role.yaml",
 		"0000_50_operator-marketplace_06_role_binding.yaml",

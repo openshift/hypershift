@@ -1306,14 +1306,6 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 		}
 	}
 
-	olmAlertRules := manifests.OLMAlertRules()
-	if _, err := r.CreateOrUpdate(ctx, r.client, olmAlertRules, func() error {
-		olm.ReconcileOLMAlertRules(olmAlertRules)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile olm alert rules: %w", err))
-	}
-
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		errs = append(errs, fmt.Errorf("failed to get root ca cert from control plane namespace: %w", err))

@@ -2,10 +2,8 @@ package olm
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 )
 
@@ -46,45 +44,6 @@ func ReconcilePackageServerEndpoints(ep *corev1.Endpoints, serviceIP string) {
 					Name:     "https",
 					Port:     443,
 					Protocol: corev1.ProtocolTCP,
-				},
-			},
-		},
-	}
-}
-
-func ReconcileOLMAlertRules(rule *prometheusoperatorv1.PrometheusRule) {
-	if rule.Labels == nil {
-		rule.Labels = map[string]string{}
-	}
-	rule.Labels["prometheus"] = "alert-rules"
-	rule.Labels["role"] = "alert-rules"
-	rule.Spec.Groups = []prometheusoperatorv1.RuleGroup{
-		{
-			Name: "olm.csv_abnormal.rules",
-			Rules: []prometheusoperatorv1.Rule{
-				{
-					Alert: "CsvAbnormalFailedOver2Min",
-					Expr:  intstr.FromString(`csv_abnormal{phase=~"^Failed$"}`),
-					For:   "2m",
-					Labels: map[string]string{
-						"severity":  "warning",
-						"namespace": "{{ $labels.namespace }}",
-					},
-					Annotations: map[string]string{
-						"message": "Failed to install Operator {{ $labels.name }} version {{ $labels.version }}. Reason-{{ $labels.reason }}",
-					},
-				},
-				{
-					Alert: "CsvAbnormalOver30Min",
-					Expr:  intstr.FromString(`csv_abnormal{phase=~"(^Replacing$|^Pending$|^Deleting$|^Unknown$)"}`),
-					For:   "30m",
-					Labels: map[string]string{
-						"severity":  "warning",
-						"namespace": "{{ $labels.namespace }}",
-					},
-					Annotations: map[string]string{
-						"message": "Failed to install Operator {{ $labels.name }} version {{ $labels.version }}. Phase-{{ $labels.phase }} Reason-{{ $labels.reason }}",
-					},
 				},
 			},
 		},
