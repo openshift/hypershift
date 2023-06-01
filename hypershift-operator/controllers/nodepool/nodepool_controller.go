@@ -1979,44 +1979,50 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 	mcfgv1.Install(scheme)
 	v1alpha1.Install(scheme)
 
-	YamlSerializer := serializer.NewSerializerWithOptions(
+	yamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
 		serializer.SerializerOptions{Yaml: true, Pretty: true, Strict: false},
 	)
 
-	cr, _, err := YamlSerializer.Decode(manifest, nil, nil)
+	cr, _, err := yamlSerializer.Decode(manifest, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error decoding config: %w", err)
 	}
 
 	switch obj := cr.(type) {
 	case *mcfgv1.MachineConfig:
-		if obj.Labels == nil {
-			obj.Labels = map[string]string{}
+		addWorkerLabel(&obj.ObjectMeta)
+		manifest, err = encode(cr, yamlSerializer)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode machine config after defaulting it: %w", err)
 		}
-		obj.Labels["machineconfiguration.openshift.io/role"] = "worker"
-		buff := bytes.Buffer{}
-		if err := YamlSerializer.Encode(obj, &buff); err != nil {
-			return nil, fmt.Errorf("failed to encode config after defaulting it: %w", err)
-		}
-		manifest = buff.Bytes()
 	case *v1alpha1.ImageContentSourcePolicy:
 	case *mcfgv1.KubeletConfig:
-		if obj.Labels == nil {
-			obj.Labels = map[string]string{}
+		addWorkerLabel(&obj.ObjectMeta)
+		manifest, err = encode(cr, yamlSerializer)
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode kubelet config after defaulting it: %w", err)
 		}
-		obj.Labels["machineconfiguration.openshift.io/role"] = "worker"
-		buff := bytes.Buffer{}
-		if err := YamlSerializer.Encode(obj, &buff); err != nil {
-			return nil, fmt.Errorf("failed to encode config after defaulting it: %w", err)
-		}
-		manifest = buff.Bytes()
 	case *mcfgv1.ContainerRuntimeConfig:
 	default:
 		return nil, fmt.Errorf("unsupported config type: %T", obj)
 	}
 
 	return manifest, err
+}
+
+func addWorkerLabel(obj *metav1.ObjectMeta) {
+	if obj.Labels == nil {
+		obj.Labels = map[string]string{}
+	}
+	obj.Labels["machineconfiguration.openshift.io/role"] = "worker"
+}
+func encode(obj runtime.Object, ser *serializer.Serializer) ([]byte, error) {
+	buff := bytes.Buffer{}
+	if err := ser.Encode(obj, &buff); err != nil {
+		return nil, err
+	}
+	return buff.Bytes(), nil
 }
 
 func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster *hyperv1.HostedCluster, currentVersion string, releaseImage string) (*releaseinfo.ReleaseImage, error) {
