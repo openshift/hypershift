@@ -59,6 +59,7 @@ var initialObjects = []client.Object{
 	manifests.NodeTuningClusterOperator(),
 	manifests.NamespaceKubeSystem(),
 	&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
+	fakeOperatorHub(),
 }
 
 func shouldNotError(key client.ObjectKey) bool {
@@ -244,6 +245,14 @@ func fakePackageServerService() *corev1.Service {
 	s := manifests.OLMPackageServerControlPlaneService("bar")
 	s.Spec.ClusterIP = "1.1.1.1"
 	return s
+}
+
+func fakeOperatorHub() *configv1.OperatorHub {
+	return &configv1.OperatorHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
 }
 
 func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
