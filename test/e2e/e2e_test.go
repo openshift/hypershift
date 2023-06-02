@@ -476,7 +476,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 // up additional contextual defaulting.
 func (o *options) Complete() error {
 	if len(o.LatestReleaseImage) == 0 {
-		defaultVersion, err := version.LookupDefaultOCPVersion()
+		defaultVersion, err := version.LookupDefaultOCPVersion("")
 		if err != nil {
 			return fmt.Errorf("couldn't look up default OCP version: %w", err)
 		}
