@@ -3051,7 +3051,7 @@ func newKVInfraMapMock(objects []crclient.Object) kvinfra.KubevirtInfraClientMap
 	}
 }
 
-func (k *kubevirtInfraClientMapMock) DiscoverKubevirtClusterClient(_ context.Context, _ crclient.Client, _ string, _ *hyperv1.HostedCluster, _ string) (*kvinfra.KubevirtInfraClient, error) {
+func (k *kubevirtInfraClientMapMock) DiscoverKubevirtClusterClient(_ context.Context, _ crclient.Client, _ string, _ *hyperv1.KubevirtPlatformCredentials, _ string, _ string) (*kvinfra.KubevirtInfraClient, error) {
 	return k.cluster, nil
 }
 

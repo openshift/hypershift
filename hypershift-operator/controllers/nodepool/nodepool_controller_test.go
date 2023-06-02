@@ -12,16 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/openshift/api/image/docker10"
 	imagev1 "github.com/openshift/api/image/v1"
-	api "github.com/openshift/hypershift/api"
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
-	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -33,6 +23,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	api "github.com/openshift/hypershift/api"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 )
 
 func TestIsUpdatingConfig(t *testing.T) {
@@ -1758,7 +1760,11 @@ func TestNodepoolDeletionDoesntRequireHCluster(t *testing.T) {
 		t.Errorf("expected to be able to get nodepool after deletion because of finalizer, but got err: %v", err)
 	}
 
-	if _, err := (&NodePoolReconciler{Client: c}).Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(nodePool)}); err != nil {
+	r := &NodePoolReconciler{
+		Client:               c,
+		KubevirtInfraClients: newKVInfraMapMock([]client.Object{nodePool}),
+	}
+	if _, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(nodePool)}); err != nil {
 		t.Fatalf("reconciliation failed: %v", err)
 	}
 
@@ -2097,4 +2103,29 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			}
 		})
 	}
+}
+
+type kubevirtInfraClientMapMock struct {
+	cluster *kvinfra.KubevirtInfraClient
+}
+
+func newKVInfraMapMock(objects []client.Object) kvinfra.KubevirtInfraClientMap {
+	return &kubevirtInfraClientMapMock{
+		cluster: &kvinfra.KubevirtInfraClient{
+			Client:    fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build(),
+			Namespace: "kubevirt-kubevirt",
+		},
+	}
+}
+
+func (k *kubevirtInfraClientMapMock) DiscoverKubevirtClusterClient(_ context.Context, _ client.Client, _ string, _ *hyperv1.KubevirtPlatformCredentials, _ string, _ string) (*kvinfra.KubevirtInfraClient, error) {
+	return k.cluster, nil
+}
+
+func (k *kubevirtInfraClientMapMock) GetClient(_ string) *kvinfra.KubevirtInfraClient {
+	return k.cluster
+}
+
+func (*kubevirtInfraClientMapMock) Delete(_ string) {
+	// interface's empty implementation
 }

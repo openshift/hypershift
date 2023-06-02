@@ -14,7 +14,7 @@ import (
 )
 
 type KubevirtInfraClientMap interface {
-	DiscoverKubevirtClusterClient(context.Context, client.Client, string, *hyperv1.HostedCluster, string) (*KubevirtInfraClient, error)
+	DiscoverKubevirtClusterClient(context.Context, client.Client, string, *hyperv1.KubevirtPlatformCredentials, string, string) (*KubevirtInfraClient, error)
 	GetClient(key string) *KubevirtInfraClient
 	Delete(string)
 }
@@ -34,12 +34,12 @@ type KubevirtInfraClient struct {
 	Namespace string
 }
 
-func (k *kubevirtInfraClientMapImp) DiscoverKubevirtClusterClient(ctx context.Context, cl client.Client, key string, hc *hyperv1.HostedCluster, localInfraNamespace string) (*KubevirtInfraClient, error) {
+func (k *kubevirtInfraClientMapImp) DiscoverKubevirtClusterClient(ctx context.Context, cl client.Client, key string, credentials *hyperv1.KubevirtPlatformCredentials, localInfraNamespace string, secretNS string) (*KubevirtInfraClient, error) {
 	if k == nil {
 		return nil, nil
 	}
 
-	if hc.Spec.Platform.Kubevirt.Credentials == nil {
+	if credentials == nil || credentials.InfraKubeConfigSecret == nil {
 		return &KubevirtInfraClient{
 			Client:    cl,
 			Namespace: localInfraNamespace,
@@ -49,14 +49,14 @@ func (k *kubevirtInfraClientMapImp) DiscoverKubevirtClusterClient(ctx context.Co
 	if ok {
 		return loaded.(*KubevirtInfraClient), nil
 	}
-	targetClient, err := generateKubevirtInfraClusterClient(ctx, cl, *hc)
+	targetClient, err := generateKubevirtInfraClusterClient(ctx, cl, credentials, secretNS)
 	if err != nil {
 		return nil, err
 	}
 
 	cluster := &KubevirtInfraClient{
 		Client:    targetClient,
-		Namespace: hc.Spec.Platform.Kubevirt.Credentials.InfraNamespace,
+		Namespace: credentials.InfraNamespace,
 	}
 
 	k.theMap.LoadOrStore(key, cluster)
@@ -81,15 +81,12 @@ func (k *kubevirtInfraClientMapImp) Delete(key string) {
 	}
 }
 
-func generateKubevirtInfraClusterClient(ctx context.Context, cpClient client.Client, hc hyperv1.HostedCluster) (client.Client, error) {
-	infraClusterSecretRef := hc.Spec.Platform.Kubevirt.Credentials.InfraKubeConfigSecret
-
+func generateKubevirtInfraClusterClient(ctx context.Context, cpClient client.Client, credentials *hyperv1.KubevirtPlatformCredentials, secretNamespace string) (client.Client, error) {
 	infraKubeconfigSecret := &corev1.Secret{}
-	secretNamespace := hc.Namespace
 
-	infraKubeconfigSecretKey := client.ObjectKey{Namespace: secretNamespace, Name: infraClusterSecretRef.Name}
+	infraKubeconfigSecretKey := client.ObjectKey{Namespace: secretNamespace, Name: credentials.InfraKubeConfigSecret.Name}
 	if err := cpClient.Get(ctx, infraKubeconfigSecretKey, infraKubeconfigSecret); err != nil {
-		return nil, fmt.Errorf("failed to fetch infra kubeconfig secret %s/%s: %w", secretNamespace, infraClusterSecretRef.Name, err)
+		return nil, fmt.Errorf("failed to fetch infra kubeconfig secret %s/%s: %w", secretNamespace, credentials.InfraKubeConfigSecret.Name, err)
 	}
 
 	kubeConfig, ok := infraKubeconfigSecret.Data["kubeconfig"]

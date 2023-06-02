@@ -4777,14 +4777,20 @@ string
 </tr>
 <tr>
 <td>
-<code>remoteNamespace</code></br>
+<code>credentials</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.KubevirtPlatformCredentials">
+KubevirtPlatformCredentials
+</a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>RemoteNamespace holds the namespace of the remote infra cluster, if defined</p>
+<p>Credentials shows the client credentials used when creating KubeVirt virtual machines.
+This filed is only exists when the KubeVirt virtual machines are being placed
+on a cluster separate from the one hosting the Hosted Control Plane components.</p>
+<p>The default behavior when Credentials is not defined is for the KubeVirt VMs to be placed on
+the same cluster and namespace as the Hosted Control Plane.</p>
 </td>
 </tr>
 </tbody>
@@ -5061,6 +5067,7 @@ More info: <a href="https://kubernetes.io/docs/concepts/storage/persistent-volum
 ###KubevirtPlatformCredentials { #hypershift.openshift.io/v1beta1.KubevirtPlatformCredentials }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubeVirtNodePoolStatus">KubeVirtNodePoolStatus</a>, 
 <a href="#hypershift.openshift.io/v1beta1.KubevirtPlatformSpec">KubevirtPlatformSpec</a>)
 </p>
 <p>
