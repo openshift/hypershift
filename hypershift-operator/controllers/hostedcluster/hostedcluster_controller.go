@@ -2721,6 +2721,11 @@ func reconcileCAPIManagerRole(role *rbacv1.Role) error {
 			Verbs: []string{"get", "list", "watch"},
 		},
 		{
+			APIGroups: []string{""},
+			Resources: []string{"events"},
+			Verbs:     []string{"create", "update", "patch"},
+		},
+		{
 			APIGroups: []string{"coordination.k8s.io"},
 			Resources: []string{
 				"leases",
