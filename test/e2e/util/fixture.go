@@ -21,6 +21,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	nodepoolmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	corev1 "k8s.io/api/core/v1"
@@ -131,10 +132,13 @@ func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, op
 
 	// Everything went well, so register the async cleanup handler and allow tests
 	// to proceed.
+	hcpNs := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name).Name
 	t.Logf("Successfully created hostedcluster %s/%s in %s", hc.Namespace, hc.Name, time.Since(start).Round(time.Second))
 
 	t.Cleanup(func() { teardown(context.Background(), t, client, hc, opts, artifactDir) })
-
+	t.Cleanup(func() {
+		EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t, context.Background(), client, hcpNs)
+	})
 	t.Cleanup(func() { EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), client, hc) })
 	t.Cleanup(func() { EnsureHCPContainersHaveResourceRequests(t, context.Background(), client, hc) })
 	t.Cleanup(func() { EnsureNoPodsWithTooHighPriority(t, context.Background(), client, hc) })

@@ -1,11 +1,13 @@
 package kubevirt
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	suppconfig "github.com/openshift/hypershift/support/config"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
@@ -133,6 +135,9 @@ func generateNodeTemplate(memory string, cpu uint32, image string, volumeSize st
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
 						nodePoolNameLabelKey: "my-pool",
+					},
+					Annotations: map[string]string{
+						suppconfig.PodSafeToEvictLocalVolumesKey: strings.Join(LocalStorageVolumes, ","),
 					},
 				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{

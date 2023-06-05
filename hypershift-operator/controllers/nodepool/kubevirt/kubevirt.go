@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
@@ -12,6 +13,19 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+)
+
+var (
+	LocalStorageVolumes = []string{
+		"private",
+		"public",
+		"sockets",
+		"virt-bin-share-dir",
+		"libvirt-runtime",
+		"ephemeral-disks",
+		"container-disks",
+		"hotplug-disks",
+	}
 )
 
 func defaultImage(releaseImage *releaseinfo.ReleaseImage) (string, error) {
@@ -197,6 +211,14 @@ func virtualMachineTemplateBase(image string, kvPlatform *hyperv1.KubevirtNodePo
 	}
 
 	template.Spec.DataVolumeTemplates = []kubevirtv1.DataVolumeTemplateSpec{dataVolume}
+
+	// Adding volumes for safe-eviction by clusterAutoscaler when it comes in action.
+	// The volumes that should be included in the annotation are the emptyDir and hostPath ones
+	if template.Spec.Template.ObjectMeta.Annotations == nil {
+		template.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+	}
+
+	template.Spec.Template.ObjectMeta.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey] = strings.Join(LocalStorageVolumes, ",")
 
 	return template
 }

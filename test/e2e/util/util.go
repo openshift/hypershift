@@ -4,6 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -35,13 +41,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sort"
-	"strings"
-	"testing"
-	"time"
 )
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -1137,4 +1139,76 @@ func RunQueryAtTime(ctx context.Context, log logr.Logger, prometheusClient prome
 			Result: result.(model.Vector),
 		},
 	}, nil
+}
+
+func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
+	t.Run("EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations", func(t *testing.T) {
+		g := NewWithT(t)
+
+		auditedAppList := map[string]string{
+			"cloud-controller-manager":         "app",
+			"aws-ebs-csi-driver-controller":    "app",
+			"capi-provider-controller-manager": "app",
+			"cloud-network-config-controller":  "app",
+			"cluster-network-operator":         "app",
+			"cluster-version-operator":         "app",
+			"control-plane-operator":           "app",
+			"ignition-server":                  "app",
+			"ingress-operator":                 "app",
+			"kube-apiserver":                   "app",
+			"kube-controller-manager":          "app",
+			"kube-scheduler":                   "app",
+			"multus-admission-controller":      "app",
+			"oauth-openshift":                  "app",
+			"openshift-apiserver":              "app",
+			"openshift-oauth-apiserver":        "app",
+			"packageserver":                    "app",
+			"ovnkube-master":                   "app",
+			"kubevirt-csi-driver":              "app",
+			"cluster-image-registry-operator":  "name",
+			"virt-launcher":                    "kubevirt.io",
+		}
+
+		hcpPods := &corev1.PodList{}
+		if err := hostClient.List(ctx, hcpPods, &client.ListOptions{
+			Namespace: hcpNs,
+		}); err != nil {
+			t.Fatalf("cannot list hostedControlPlane pods: %v", err)
+		}
+
+		// Check if the pod's volumes are hostPath or emptyDir, if so, the deployment
+		// should annotate the pods with the safe-to-evict-local-volumes, with all the volumes
+		// involved as an string  and separated by comma, to satisfy CA operator contract.
+		// more info here: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-types-of-pods-can-prevent-ca-from-removing-a-node
+		for _, pod := range hcpPods.Items {
+			var labelKey, labelValue string
+			// Go through our audited list looking for the label that matches the pod Labels
+			// Get the key and value and delete the entry from the audited list.
+			for appName, prefix := range auditedAppList {
+				if pod.Labels[prefix] == appName {
+					labelKey = prefix
+					labelValue = appName
+					delete(auditedAppList, prefix)
+					break
+				}
+			}
+
+			if labelKey == "" || labelValue == "" {
+				// if the Key/Value are empty we asume that the pod is not in the auditedList,
+				// if that's the case the annotation should not exists in that pod.
+				// Then continue to the next pod
+				g.Expect(pod.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey]).To(BeEmpty(), "the pod  %s is not in the audited list for safe-eviction and should not contain the safe-to-evict-local-volume annotation", pod.Name)
+				continue
+			}
+
+			annotationValue := pod.ObjectMeta.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey]
+			for _, volume := range pod.Spec.Volumes {
+				// Check the pod's volumes, if they are emptyDir or hostPath,
+				// they should include that volume in the annotation
+				if volume.EmptyDir != nil || volume.HostPath != nil {
+					g.Expect(strings.Contains(annotationValue, volume.Name)).To(BeTrue(), "pod with name %s do not have the right volumes set in the safe-to-evict-local-volume annotation: \nCurrent: %s, Expected to be included in: %s", pod.Name, volume.Name, annotationValue)
+				}
+			}
+		}
+	})
 }
