@@ -283,6 +283,11 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		return nil, fmt.Errorf("failed to download binaries: %w", err)
 	}
 
+	payloadVersion, err := semver.Parse(imageProvider.Version())
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse payload version: %w", err)
+	}
+
 	// First, run the MCO using templates and image refs as input. This generates
 	// output for the MCC.
 	err = func() error {
@@ -304,11 +309,6 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		}
 		if err = os.WriteFile(fmt.Sprintf("%s/pull-secret.yaml", configDir), []byte(serializedPullSecret), 0644); err != nil {
 			return fmt.Errorf("failed to write pull secret to config dir: %w", err)
-		}
-
-		payloadVersion, err := semver.Parse(imageProvider.Version())
-		if err != nil {
-			return fmt.Errorf("failed to parse payload version: %w", err)
 		}
 
 		// args contains the base args that have not changed over time.
@@ -422,12 +422,23 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	// for the MCS.
 	err = func() error {
 		start := time.Now()
-		cmd := exec.CommandContext(ctx, filepath.Join(binDir, "machine-config-controller"), "bootstrap",
+
+		args := []string{
+			"bootstrap",
 			fmt.Sprintf("--manifest-dir=%s", mccBaseDir),
 			fmt.Sprintf("--templates=%s", filepath.Join(mccBaseDir, "etc", "mcc", "templates")),
 			fmt.Sprintf("--pull-secret=%s/machineconfigcontroller-pull-secret", mccBaseDir),
 			fmt.Sprintf("--dest-dir=%s", mcsBaseDir),
-		)
+		}
+
+		// For 4.14 onwards there's a requirement to include the payload version flag.
+		if payloadVersion.Minor >= 14 {
+			args = append(args,
+				fmt.Sprintf("--payload-version=%s", imageProvider.Version()),
+			)
+		}
+
+		cmd := exec.CommandContext(ctx, filepath.Join(binDir, "machine-config-controller"), args...)
 		out, err := cmd.CombinedOutput()
 		log.Info("machine-config-controller process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
 		if err != nil {
@@ -469,18 +480,28 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			return nil, fmt.Errorf("failed to generate certificates: %w", err)
 		}
 
-		// Spin up the MCS process and ensure it's signaled to terminate when
-		// the function returns
-		mcsCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		cmd := exec.CommandContext(mcsCtx, filepath.Join(binDir, "machine-config-server"), "bootstrap",
+		args := []string{
+			"bootstrap",
 			fmt.Sprintf("--server-basedir=%s", mcsBaseDir),
 			fmt.Sprintf("--bootstrap-kubeconfig=%s/kubeconfig", mcsBaseDir),
 			fmt.Sprintf("--cert=%s/tls.crt", mcsBaseDir),
 			fmt.Sprintf("--key=%s/tls.key", mcsBaseDir),
 			"--secure-port=22625",
 			"--insecure-port=22626",
-		)
+		}
+
+		// For 4.14 onwards there's a requirement to include the payload version flag.
+		if payloadVersion.Minor >= 14 {
+			args = append(args,
+				fmt.Sprintf("--payload-version=%s", imageProvider.Version()),
+			)
+		}
+
+		// Spin up the MCS process and ensure it's signaled to terminate when
+		// the function returns
+		mcsCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		cmd := exec.CommandContext(mcsCtx, filepath.Join(binDir, "machine-config-server"), args...)
 		go func() {
 			out, err := cmd.CombinedOutput()
 			log.Info("machine-config-server process exited", "output", string(out), "error", err)
