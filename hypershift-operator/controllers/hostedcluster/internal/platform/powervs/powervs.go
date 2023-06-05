@@ -146,7 +146,6 @@ func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *
 						},
 						Command: []string{"/bin/cluster-api-provider-ibmcloud-controller-manager"},
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
-							"--alsologtostderr",
 							"--v=4",
 							"--leader-elect=true",
 							"--powervs-provider-id-fmt=v2",
