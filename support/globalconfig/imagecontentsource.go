@@ -2,7 +2,6 @@ package globalconfig
 
 import (
 	"context"
-
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -70,7 +69,7 @@ func ReconcileImageDigestMirrors(idms *configv1.ImageDigestMirrorSet, hcp *hyper
 //
 //		https://issues.redhat.com/browse/OCPNODE-1258
 //	    https://github.com/openshift/hypershift/pull/1776
-func GetAllImageRegistryMirrors(ctx context.Context, client client.Client) (map[string][]string, error) {
+func GetAllImageRegistryMirrors(ctx context.Context, client client.Client, mgmtClusterHasIDMSCapability bool) (map[string][]string, error) {
 	var mgmtClusterRegistryOverrides = make(map[string][]string)
 
 	// Retrieve any ImageContentSourcePolicy from the management cluster
@@ -91,20 +90,22 @@ func GetAllImageRegistryMirrors(ctx context.Context, client client.Client) (map[
 		}
 	}
 
-	// Retrieve any ImageDigestMirrorSet from the management cluster
-	var imageDigestMirrorSets = ImageDigestMirrorSetList()
-	err = client.List(ctx, imageDigestMirrorSets)
-	if err != nil {
-		return nil, err
-	}
+	if mgmtClusterHasIDMSCapability {
+		// Retrieve any ImageDigestMirrorSet from the management cluster
+		var imageDigestMirrorSets = ImageDigestMirrorSetList()
+		err = client.List(ctx, imageDigestMirrorSets)
+		if err != nil {
+			return nil, err
+		}
 
-	// For each image digest mirror set in the management cluster, map the source with each of its mirrors
-	for _, item := range imageDigestMirrorSets.Items {
-		for _, imageDigestMirror := range item.Spec.ImageDigestMirrors {
-			source := imageDigestMirror.Source
+		// For each image digest mirror set in the management cluster, map the source with each of its mirrors
+		for _, item := range imageDigestMirrorSets.Items {
+			for _, imageDigestMirror := range item.Spec.ImageDigestMirrors {
+				source := imageDigestMirror.Source
 
-			for n := range imageDigestMirror.Mirrors {
-				mgmtClusterRegistryOverrides[source] = append(mgmtClusterRegistryOverrides[source], string(imageDigestMirror.Mirrors[n]))
+				for n := range imageDigestMirror.Mirrors {
+					mgmtClusterRegistryOverrides[source] = append(mgmtClusterRegistryOverrides[source], string(imageDigestMirror.Mirrors[n]))
+				}
 			}
 		}
 	}
