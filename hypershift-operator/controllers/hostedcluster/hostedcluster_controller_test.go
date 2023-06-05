@@ -824,7 +824,7 @@ func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
 }
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
-	releaseImage, _ := version.LookupDefaultOCPVersion()
+	releaseImage, _ := version.LookupDefaultOCPVersion("")
 	hostedClusters := []*hyperv1.HostedCluster{
 		{
 			ObjectMeta: metav1.ObjectMeta{Name: "agent"},
