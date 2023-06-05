@@ -1,6 +1,4 @@
 /*
-
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -19,9 +17,13 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"os"
 	"strings"
 	"time"
+
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
@@ -35,6 +37,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/metrics"
@@ -44,7 +47,6 @@ import (
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -132,6 +134,14 @@ func NewStartCommand() *cobra.Command {
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
 		defer cancel()
+
+		switch hyperv1.PlatformType(opts.PrivatePlatform) {
+		case hyperv1.AWSPlatform, hyperv1.NonePlatform:
+		default:
+			fmt.Println(fmt.Sprintf("Unsupported private platform: %q", opts.PrivatePlatform))
+			os.Exit(1)
+		}
+
 		if err := run(ctx, &opts, ctrl.Log.WithName("setup")); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
@@ -244,16 +254,38 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
+	// The mgr and therefore the cache is not started yet, thus we have to construct a client that
+	// directly reads from the api.
+	apiReadingClient, err := crclient.NewDelegatingClient(crclient.NewDelegatingClientInput{
+		CacheReader: mgr.GetAPIReader(),
+		Client:      mgr.GetClient(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to construct api reading client: %w", err)
+	}
+
+	// Populate registry overrides with any ICSP and IDMS from a OpenShift management cluster
+	var imageRegistryOverrides map[string][]string
+	if mgmtClusterCaps.Has(capabilities.CapabilityICSP) || mgmtClusterCaps.Has(capabilities.CapabilityIDMS) {
+		imageRegistryOverrides, err = globalconfig.GetAllImageRegistryMirrors(ctx, apiReadingClient, mgmtClusterCaps.Has(capabilities.CapabilityIDMS))
+		if err != nil {
+			return fmt.Errorf("failed to populate image registry overrides: %w", err)
+		}
+	}
+
 	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
 		Client:                        mgr.GetClient(),
 		ManagementClusterCapabilities: mgmtClusterCaps,
 		HypershiftOperatorImage:       operatorImage,
-		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
+		ReleaseProvider: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+				Delegate: &releaseinfo.CachedProvider{
+					Inner: &releaseinfo.RegistryClientProvider{},
+					Cache: map[string]*releaseinfo.ReleaseImage{},
+				},
+				RegistryOverrides: opts.RegistryOverrides,
 			},
-			RegistryOverrides: opts.RegistryOverrides,
+			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		},
 		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
@@ -261,6 +293,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		MetricsSet:                 metricsSet,
 		OperatorNamespace:          opts.Namespace,
 		SREConfigHash:              sreConfigHash,
+		KubevirtInfraClients:       kvinfra.NewKubevirtInfraClientMap(),
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
@@ -278,18 +311,41 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
+	// Since we dropped the validation webhook server we need to ensure this resource doesn't exist
+	// otherwise it will intercept kas requests and fail.
+	// TODO (alberto): dropped in 4.14.
+	validatingWebhookConfiguration := &admissionregistrationv1.ValidatingWebhookConfiguration{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ValidatingWebhookConfiguration",
+			APIVersion: admissionregistrationv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: opts.Namespace,
+			Name:      hyperv1.GroupVersion.Group,
+		},
+	}
+	if err := mgr.GetClient().Delete(ctx, validatingWebhookConfiguration); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return err
+		}
+	}
+
 	if err := (&nodepool.NodePoolReconciler{
 		Client: mgr.GetClient(),
-		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
+		ReleaseProvider: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+				Delegate: &releaseinfo.CachedProvider{
+					Inner: &releaseinfo.RegistryClientProvider{},
+					Cache: map[string]*releaseinfo.ReleaseImage{},
+				},
+				RegistryOverrides: opts.RegistryOverrides,
 			},
-			RegistryOverrides: opts.RegistryOverrides,
+			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		},
 		CreateOrUpdateProvider:  createOrUpdate,
 		HypershiftOperatorImage: operatorImage,
 		ImageMetadataProvider:   &hyperutil.RegistryClientImageMetadataProvider{},
+		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
@@ -312,13 +368,13 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// Start controller to manage supported versions configmap
-	if err := (supportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
-		SetupWithManager(mgr)); err != nil {
+	if err := supportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
+		SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create supported version controller: %w", err)
 	}
 
 	// If enabled, start controller to ensure UWM stack is enabled and configured
-	// to remote write telemetry metrics
+	// to remotely write telemetry metrics
 	if opts.EnableUWMTelemetryRemoteWrite {
 		if err := (&uwmtelemetry.Reconciler{
 			Namespace:              opts.Namespace,
@@ -329,17 +385,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
-	// The mgr and therefore the cache is not started yet, thus we have to construct a client that
-	// directly reads from the api.
-	apiReadingClient, err := crclient.NewDelegatingClient(crclient.NewDelegatingClientInput{
-		CacheReader: mgr.GetAPIReader(),
-		Client:      mgr.GetClient(),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to construct api reading client: %w", err)
-	}
-
-	// If it exsists, block default ingress controller from admitting HCP private routes
+	// If it exists, block default ingress controller from admitting HCP private routes
 	ic := &operatorv1.IngressController{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "default",
@@ -370,6 +416,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
 		}
 		log.Info("reconciled default ingress controller")
+	}
+	if err != nil {
+		return fmt.Errorf("failed to get ingress controller: %w", err)
 	}
 
 	if err := setupMetrics(mgr); err != nil {
