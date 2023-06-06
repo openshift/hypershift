@@ -369,7 +369,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Type:               hyperv1.NodePoolValidPlatformImageType,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
-			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %q", kubevirtBootImage),
+			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %s", kubevirtBootImage.String()),
 			ObservedGeneration: nodePool.Generation,
 		})
 

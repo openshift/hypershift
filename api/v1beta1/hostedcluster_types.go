@@ -152,6 +152,12 @@ const (
 	// RouteVisibilityPrivate is a value for RouteVisibilityLabel that will result
 	// in the labeled route being ignored by external-dns
 	RouteVisibilityPrivate = "private"
+
+	// AllowUnsupportedKubeVirtRHCOSVariantsAnnotation allows a NodePool to use image sources
+	// other than the official rhcos kubevirt variant, such as the openstack variant. This
+	// allows the creation of guest clusters <= 4.13, which are before the rhcos kubevirt
+	// variant was released.
+	AllowUnsupportedKubeVirtRHCOSVariantsAnnotation = "hypershift.openshift.io/allow-unsupported-kubevirt-rhcos-variants"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

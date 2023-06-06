@@ -577,6 +577,13 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		nodePool := defaultNodePool(cluster.Name)
 		nodePool.Spec.Platform.Kubevirt = ExampleKubeVirtTemplate(o.Kubevirt)
 		nodePools = append(nodePools, nodePool)
+		val, exists := o.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation]
+		if exists {
+			if nodePool.Annotations == nil {
+				nodePool.Annotations = map[string]string{}
+			}
+			nodePool.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation] = val
+		}
 	case hyperv1.NonePlatform, hyperv1.AgentPlatform:
 		nodePools = append(nodePools, defaultNodePool(cluster.Name))
 	case hyperv1.AzurePlatform:
