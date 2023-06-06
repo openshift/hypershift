@@ -76,7 +76,7 @@ type Params struct {
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, defaultIngressDomain string) Params {
 	p := Params{
 		Images: Images{
-			NetworkOperator:              releaseImageProvider.GetImage("cluster-network-operator"),
+			NetworkOperator:              "quay.io/jtanenba/cno:hypershift-build620-6",
 			SDN:                          releaseImageProvider.GetImage("sdn"),
 			KubeProxy:                    releaseImageProvider.GetImage("kube-proxy"),
 			KubeRBACProxy:                releaseImageProvider.GetImage("kube-rbac-proxy"),
@@ -87,7 +87,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 			WhereaboutsCNI:               releaseImageProvider.GetImage("multus-whereabouts-ipam-cni"),
 			RouteOverrideCNI:             releaseImageProvider.GetImage("multus-route-override-cni"),
 			MultusNetworkPolicy:          releaseImageProvider.GetImage("multus-networkpolicy"),
-			OVN:                          releaseImageProvider.GetImage("ovn-kubernetes"),
+			OVN:                          "quay.io/jtanenba/openshift-ovn:ic",
 			EgressRouterCNI:              releaseImageProvider.GetImage("egress-router-cni"),
 			KuryrDaemon:                  releaseImageProvider.GetImage("kuryr-cni"),
 			KuryrController:              releaseImageProvider.GetImage("kuryr-controller"),
