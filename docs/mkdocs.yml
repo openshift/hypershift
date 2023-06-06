@@ -55,6 +55,7 @@ nav:
   - how-to/pause-reconciliation.md
   - how-to/debug-nodes.md
   - how-to/metrics-sets.md
+  - how-to/troubleshooting.md
   - 'Automated Machine Management':
     - how-to/automated-machine-management/index.md
     - how-to/automated-machine-management/scale-to-zero-dataplane.md
@@ -67,6 +68,7 @@ nav:
     - how-to/aws/external-dns.md
     - how-to/aws/etc-backup-restore.md
     - how-to/aws/disaster-recovery.md
+    - how-to/aws/troubleshooting.md
   - 'Azure':
     - how-to/azure/create-azure-cluster.md
   - 'Agent':
