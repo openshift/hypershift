@@ -47,6 +47,12 @@ import (
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 )
 
+const (
+	// ExternalDNSImage - This is specifically tag 1.1.0-3 from https://catalog.redhat.com/software/containers/edo/external-dns-rhel8/61d4c35023156829b87a434a?container-tabs=overview&tag=1.1.0-3&push_date=1671131187000
+	// TODO this needs to be updated to a multi-arch image including Arm - https://issues.redhat.com/browse/NE-1298
+	ExternalDNSImage = "registry.redhat.io/edo/external-dns-rhel8@sha256:638fb6b5fc348f5cf52b9800d3d8e9f5315078fc9b1e57e800cb0a4a50f1b4b9"
+)
+
 type Options struct {
 	AdditionalTrustBundle                     string
 	Namespace                                 string
@@ -76,6 +82,7 @@ type Options struct {
 	ExternalDNSCredentialsSecret              string
 	ExternalDNSDomainFilter                   string
 	ExternalDNSTxtOwnerId                     string
+	ExternalDNSImage                          string
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
 	MetricsSet                                metrics.MetricsSet
@@ -154,6 +161,7 @@ func NewCommand() *cobra.Command {
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
 	opts.MetricsSet = metrics.DefaultMetricsSet
 	opts.EnableConversionWebhook = true // default to enabling the conversion webhook
+	opts.ExternalDNSImage = ExternalDNSImage
 
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
@@ -178,6 +186,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentialsSecret, "external-dns-secret", "", "Name of an existing secret containing the external-dns credentials.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specifed domain.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSImage, "external-dns-image", opts.ExternalDNSImage, "Image to use for external-dns")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", false, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
@@ -516,9 +525,8 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		}
 
 		externalDNSDeployment := assets.ExternalDNSDeployment{
-			Namespace: operatorNamespace,
-			// TODO: need to look this up from somewhere
-			Image:             "registry.redhat.io/edo/external-dns-rhel8@sha256:e8c50c1c158d08a99b1f388c65860c533209299fd0ff87f5c9fe29d7c9b5a4d1",
+			Namespace:         operatorNamespace,
+			Image:             opts.ExternalDNSImage,
 			ServiceAccount:    externalDNSServiceAccount,
 			Provider:          opts.ExternalDNSProvider,
 			DomainFilter:      opts.ExternalDNSDomainFilter,
