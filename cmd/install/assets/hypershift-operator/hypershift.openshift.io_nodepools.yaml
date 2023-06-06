@@ -899,6 +899,9 @@ spec:
                             - key
                             - name
                             type: object
+                            x-kubernetes-validations:
+                            - message: infraKubeConfigSecret is immutable
+                              rule: self == oldSelf
                           infraNamespace:
                             description: InfraNamespace defines the namespace on the
                               external infra cluster that is used to host the KubeVirt
@@ -907,6 +910,9 @@ spec:
                               referenced in the InfraKubeConfigSecret must have access
                               to manage the required resources within this namespace.
                             type: string
+                            x-kubernetes-validations:
+                            - message: infraNamespace is immutable
+                              rule: self == oldSelf
                         required:
                         - infraNamespace
                         type: object
@@ -1801,6 +1807,9 @@ spec:
                             - key
                             - name
                             type: object
+                            x-kubernetes-validations:
+                            - message: infraKubeConfigSecret is immutable
+                              rule: self == oldSelf
                           infraNamespace:
                             description: InfraNamespace defines the namespace on the
                               external infra cluster that is used to host the KubeVirt
@@ -1809,6 +1818,9 @@ spec:
                               referenced in the InfraKubeConfigSecret must have access
                               to manage the required resources within this namespace.
                             type: string
+                            x-kubernetes-validations:
+                            - message: infraNamespace is immutable
+                              rule: self == oldSelf
                         required:
                         - infraNamespace
                         type: object
