@@ -2640,7 +2640,6 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 							},
 						},
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
-							"--alsologtostderr",
 							"--v=4",
 							"--leader-elect=true",
 							fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),

@@ -170,7 +170,6 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 							},
 						},
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
-							"--alsologtostderr",
 							"--v=4",
 							"--leader-elect=true",
 							"--feature-gates=EKS=false",
