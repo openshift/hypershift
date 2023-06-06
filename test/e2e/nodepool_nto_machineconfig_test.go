@@ -126,8 +126,13 @@ func (mc *NTOMachineConfigRolloutTest) Run(t *testing.T, nodePool hyperv1.NodePo
 		}
 	}
 
+	timeout := time.Duration(15 * time.Minute)
+	if np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		timeout = time.Duration(25 * time.Minute)
+	}
+
 	t.Logf("waiting for rollout of NodePools with NTO-generated config")
-	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 15*time.Minute, func(ctx context.Context) (bool, error) {
+	err := wait.PollImmediateWithContext(ctx, 10*time.Second, timeout, func(ctx context.Context) (bool, error) {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
