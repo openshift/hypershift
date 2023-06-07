@@ -723,7 +723,8 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 			return fmt.Errorf("failed to get kube apiserver service: %w", err)
 		}
-		if len(svc.Status.LoadBalancer.Ingress) == 0 || svc.Status.LoadBalancer.Ingress[0].Hostname == "" {
+		if len(svc.Status.LoadBalancer.Ingress) == 0 ||
+			svc.Status.LoadBalancer.Ingress[0].Hostname == "" && svc.Status.LoadBalancer.Ingress[0].IP == "" {
 			return fmt.Errorf("APIServer load balancer is not provisioned")
 		}
 		return healthCheckKASEndpoint(svc.Status.LoadBalancer.Ingress[0].Hostname, p.APIServerPort, hcp)
