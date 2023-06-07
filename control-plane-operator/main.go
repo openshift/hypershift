@@ -342,7 +342,12 @@ func NewStartCommand() *cobra.Command {
 			componentImages[name] = image
 		}
 
-		imageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES"))
+		var imageRegistryOverrides map[string][]string
+
+		openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
+		if ok {
+			imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+		}
 
 		releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
