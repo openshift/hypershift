@@ -421,6 +421,19 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 						},
 					},
 					{
+						Name: "bootstrap-manifests",
+						VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
+						},
+					},
+					{
+						Name: "manifests",
+						VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
+						},
+					},
+
+					{
 						Name: "shared",
 						VolumeSource: corev1.VolumeSource{
 							EmptyDir: &corev1.EmptyDirVolumeSource{},
@@ -437,7 +450,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 						},
 						Args: []string{
 							"-c",
-							invokeFeatureGateRenderScript("/shared", releaseVersion, string(featureGateYAML)),
+							invokeFeatureGateRenderScript("/shared", string(featureGateYAML)),
 						},
 						Resources: corev1.ResourceRequirements{
 							Requests: corev1.ResourceList{
@@ -523,6 +536,14 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 								MountPath: "/payloads",
 							},
 							{
+								Name:      "bootstrap-manifests",
+								MountPath: "/usr/share/bootkube/manifests/bootstrap-manifests",
+							},
+							{
+								Name:      "manifests",
+								MountPath: "/usr/share/bootkube/manifests/manifests",
+							},
+							{
 								Name:      "shared",
 								MountPath: "/shared",
 							},
@@ -575,7 +596,8 @@ func reconcilePodMonitor(podMonitor *prometheusoperatorv1.PodMonitor,
 	return nil
 }
 
-func invokeFeatureGateRenderScript(workDir, payloadVersion, featureGateYAML string) string {
+// invokeFeatureGateRenderScript writes the passed yaml to disk in a given dir.
+func invokeFeatureGateRenderScript(workDir, featureGateYAML string) string {
 	var script = `#!/bin/bash
 set -e
 cd /tmp
@@ -583,16 +605,10 @@ mkdir input output manifests
 
 touch /tmp/manifests/99_feature-gate.yaml
 cat <<EOF >/tmp/manifests/99_feature-gate.yaml
-%[3]s
+%[2]s
 EOF
 
-/usr/bin/cluster-config-operator render \
-   --config-output-file config \
-   --asset-input-dir /tmp/input \
-   --asset-output-dir /tmp/output \
-   --rendered-manifest-files=/tmp/manifests \
-   --payload-version=%[2]s
 cp /tmp/manifests/99_feature-gate.yaml %[1]s/99_feature-gate.yaml
 `
-	return fmt.Sprintf(script, workDir, payloadVersion, featureGateYAML)
+	return fmt.Sprintf(script, workDir, featureGateYAML)
 }
