@@ -89,10 +89,11 @@ func TestNodePool(t *testing.T) {
 				manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
 			},
 		*/
-		{
-			name: "TestNodePoolReplaceUpgrade",
-			test: NewNodePoolUpgradeTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
-		},
+		// Until this is fixed https://github.com/openshift/hypershift/pull/2664.
+		//{
+		//	name: "TestNodePoolReplaceUpgrade",
+		//	test: NewNodePoolUpgradeTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+		//},
 		// TODO: (jparrill) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
 		/*
 			{
