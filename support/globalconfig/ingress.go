@@ -18,9 +18,11 @@ func IngressConfig() *configv1.Ingress {
 }
 
 func ReconcileIngressConfig(cfg *configv1.Ingress, hcp *hyperv1.HostedControlPlane) {
-	cfg.Spec.Domain = IngressDomain(hcp)
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Ingress != nil {
 		cfg.Spec = *hcp.Spec.Configuration.Ingress
+	}
+	if cfg.Spec.Domain == "" {
+		cfg.Spec.Domain = IngressDomain(hcp)
 	}
 }
 
@@ -29,7 +31,9 @@ func IngressDomain(hcp *hyperv1.HostedControlPlane) string {
 		if len(hcp.Spec.Configuration.Ingress.AppsDomain) > 0 {
 			return hcp.Spec.Configuration.Ingress.AppsDomain
 		}
-		return hcp.Spec.Configuration.Ingress.Domain
+		if len(hcp.Spec.Configuration.Ingress.Domain) > 0 {
+			return hcp.Spec.Configuration.Ingress.Domain
+		}
 	}
 	return fmt.Sprintf("apps.%s", BaseDomain(hcp))
 }
