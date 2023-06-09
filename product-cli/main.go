@@ -17,13 +17,15 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/openshift/hypershift/product-cli/cmd/create"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"github.com/openshift/hypershift/pkg/version"
 	"github.com/spf13/cobra"
+
+	"github.com/openshift/hypershift/pkg/version"
+	"github.com/openshift/hypershift/product-cli/cmd/create"
+	"github.com/openshift/hypershift/product-cli/cmd/destroy"
 )
 
 func main() {
@@ -33,7 +35,7 @@ func main() {
 		TraverseChildren: true,
 
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}
@@ -45,17 +47,18 @@ func main() {
 	defer cancel()
 
 	cmd.AddCommand(create.NewCommand())
+	cmd.AddCommand(destroy.NewCommand())
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT)
 	go func() {
 		<-sigs
-		fmt.Fprintln(os.Stderr, "\nAborted...")
+		_, _ = fmt.Fprintln(os.Stderr, "\nAborted...")
 		cancel()
 	}()
 
 	if err := cmd.ExecuteContext(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 }

@@ -1,4 +1,4 @@
-package aws
+package destroy
 
 import (
 	"github.com/spf13/cobra"

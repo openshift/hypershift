@@ -1,6 +1,8 @@
 package cluster
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
 
 	"github.com/openshift/hypershift/api/v1beta1"
@@ -32,6 +34,7 @@ func NewCreateCommands() *cobra.Command {
 		NodeUpgradeType:                v1beta1.UpgradeTypeReplace,
 		Arch:                           "amd64",
 	}
+
 	cmd := &cobra.Command{
 		Use:          "cluster",
 		Short:        "Creates basic functional HostedCluster resources",
@@ -40,6 +43,34 @@ func NewCreateCommands() *cobra.Command {
 
 	cmd.AddCommand(agent.NewCreateCommand(opts))
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
+
+	return cmd
+}
+
+func NewDestroyCommands() *cobra.Command {
+
+	opts := &core.DestroyOptions{
+		Namespace:             "clusters",
+		Name:                  "",
+		ClusterGracePeriod:    10 * time.Minute,
+		Log:                   log.Log,
+		DestroyCloudResources: true,
+	}
+
+	cmd := &cobra.Command{
+		Use:          "cluster",
+		Short:        "Destroys a HostedCluster and its associated infrastructure.",
+		SilenceUsage: true,
+	}
+	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A cluster namespace")
+	cmd.PersistentFlags().StringVar(&opts.Name, "name", opts.Name, "A cluster name (required)")
+	cmd.PersistentFlags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "How long to wait for the cluster to be deleted before forcibly destroying its infra")
+	cmd.PersistentFlags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID inferred from the hosted cluster by default")
+	cmd.PersistentFlags().BoolVar(&opts.DestroyCloudResources, "destroy-cloud-resources", opts.DestroyCloudResources, "If true, cloud resources such as load balancers and persistent storage disks created by the cluster during its lifetime are removed")
+
+	_ = cmd.MarkPersistentFlagRequired("name")
+
+	cmd.AddCommand(kubevirt.NewDestroyCommand(opts))
 
 	return cmd
 }
