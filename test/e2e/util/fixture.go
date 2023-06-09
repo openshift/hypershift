@@ -241,6 +241,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 				hcmetrics.GuestCloudResourcesDeletionDurationMetricName,
 				hcmetrics.AvailableDurationName,
 				hcmetrics.InitialRolloutDurationName,
+				hcmetrics.ClusterUpgradeDurationMetricName,
 				hcmetrics.ProxyName,
 				hcmetrics.SilenceAlertsName,
 				hcmetrics.LimitedSupportEnabledName,
@@ -258,6 +259,10 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 				}
 				if strings.HasPrefix(metricName, "hypershift_nodepools") {
 					query = fmt.Sprintf("%v{cluster_name=\"%s\"}", metricName, hc.Name)
+				}
+				// upgrade metric is only available for TestUpgradeControlPlane
+				if metricName == hcmetrics.ClusterUpgradeDurationMetricName && !strings.HasPrefix("TestUpgradeControlPlane", t.Name()) {
+					continue
 				}
 
 				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, query, time.Now())
