@@ -22,6 +22,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		inputReplicas             int32
 		inputIsIBMCloudUPI        bool
 		inputIsPrivate            bool
+		inputIsNLB                bool
 		expectedIngressController *operatorv1.IngressController
 	}{
 		{
@@ -220,11 +221,42 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 				Spec: operatorv1.IngressControllerSpec{},
 			},
 		},
+		{
+			name:                   "NLB ingress controller service",
+			inputPlatformType:      hyperv1.AWSPlatform,
+			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressDomain:     fakeIngressDomain,
+			inputReplicas:          fakeInputReplicas,
+			inputIsNLB:             true,
+			expectedIngressController: &operatorv1.IngressController{
+				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				Spec: operatorv1.IngressControllerSpec{
+					Domain:   fakeIngressDomain,
+					Replicas: &fakeInputReplicas,
+					EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
+						Type: operatorv1.LoadBalancerServiceStrategyType,
+						LoadBalancer: &operatorv1.LoadBalancerStrategy{
+							Scope: operatorv1.ExternalLoadBalancer,
+							ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
+								Type: operatorv1.AWSLoadBalancerProvider,
+								AWS: &operatorv1.AWSLoadBalancerParameters{
+									Type:                          operatorv1.AWSNetworkLoadBalancer,
+									NetworkLoadBalancerParameters: &operatorv1.AWSNetworkLoadBalancerParameters{},
+								},
+							},
+						},
+					},
+					DefaultCertificate: &corev1.LocalObjectReference{
+						Name: manifests.IngressDefaultIngressControllerCert().Name,
+					},
+				},
+			},
+		},
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := ReconcileDefaultIngressController(tc.inputIngressController, tc.inputIngressDomain, tc.inputPlatformType, tc.inputReplicas, tc.inputIsIBMCloudUPI, tc.inputIsPrivate)
+			err := ReconcileDefaultIngressController(tc.inputIngressController, tc.inputIngressDomain, tc.inputPlatformType, tc.inputReplicas, tc.inputIsIBMCloudUPI, tc.inputIsPrivate, tc.inputIsNLB)
 			g.Expect(err).To(BeNil())
 			g.Expect(tc.inputIngressController).To(BeEquivalentTo(tc.expectedIngressController))
 		})
