@@ -3,12 +3,14 @@ package kubevirt
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
+	suppconfig "github.com/openshift/hypershift/support/config"
 	"go.uber.org/zap/zaptest"
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
@@ -308,6 +310,9 @@ func generateNodeTemplate(memory string, cpu uint32, volumeSize string) *capikub
 					Labels: map[string]string{
 						hyperv1.NodePoolNameLabel: "my-pool",
 						hyperv1.InfraIDLabel:      "1234",
+					},
+					Annotations: map[string]string{
+						suppconfig.PodSafeToEvictLocalVolumesKey: strings.Join(LocalStorageVolumes, ","),
 					},
 				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{

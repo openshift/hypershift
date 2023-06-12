@@ -12,7 +12,21 @@ import (
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
+)
+
+var (
+	LocalStorageVolumes = []string{
+		"private",
+		"public",
+		"sockets",
+		"virt-bin-share-dir",
+		"libvirt-runtime",
+		"ephemeral-disks",
+		"container-disks",
+		"hotplug-disks",
+	}
 )
 
 func defaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
@@ -266,6 +280,15 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, bootImage BootImage, hclust
 
 	vmTemplate.ObjectMeta.Labels[hyperv1.NodePoolNameLabel] = nodePool.Name
 	vmTemplate.ObjectMeta.Labels[hyperv1.InfraIDLabel] = hcluster.Spec.InfraID
+
+	// Adding volumes for safe-eviction by clusterAutoscaler when it comes in action.
+	// The volumes that should be included in the annotation are the emptyDir and hostPath ones
+
+	if vmTemplate.Spec.Template.ObjectMeta.Annotations == nil {
+		vmTemplate.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+	}
+
+	vmTemplate.Spec.Template.ObjectMeta.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey] = strings.Join(LocalStorageVolumes, ",")
 
 	if hcluster.Spec.Platform.Kubevirt != nil && hcluster.Spec.Platform.Kubevirt.Credentials != nil {
 		vmTemplate.ObjectMeta.Namespace = hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace
