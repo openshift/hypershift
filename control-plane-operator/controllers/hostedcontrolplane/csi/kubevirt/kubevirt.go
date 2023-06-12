@@ -36,7 +36,6 @@ var (
 
 	tenantNodeClusterRole        = mustClusterRole("tenant_node_clusterrole.yaml")
 	tenantNodeClusterRoleBinding = mustClusterRoleBinding("tenant_node_clusterrolebinding.yaml")
-	tenantCSIDriver              = mustCSIDriver("tenant_csidriver.yaml")
 
 	daemonset = mustDaemonSet("daemonset.yaml")
 
@@ -100,16 +99,6 @@ func mustRole(file string) *rbacv1.Role {
 func mustRoleBinding(file string) *rbacv1.RoleBinding {
 	b := getContentsOrDie(file)
 	obj := &rbacv1.RoleBinding{}
-	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(b), 500).Decode(&obj); err != nil {
-		panic(err)
-	}
-
-	return obj
-}
-
-func mustCSIDriver(file string) *storagev1.CSIDriver {
-	b := getContentsOrDie(file)
-	obj := &storagev1.CSIDriver{}
 	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(b), 500).Decode(&obj); err != nil {
 		panic(err)
 	}
@@ -289,7 +278,10 @@ func reconcileDefaultTenantStorageClass(sc *storagev1.StorageClass) error {
 }
 
 func reconcileDefaultTenantCSIDriverResource(csiDriver *storagev1.CSIDriver) error {
-	csiDriver.Spec = *tenantCSIDriver.Spec.DeepCopy()
+	csiDriver.Spec.AttachRequired = utilpointer.Bool(true)
+	csiDriver.Spec.PodInfoOnMount = utilpointer.Bool(true)
+	fsPolicy := storagev1.ReadWriteOnceWithFSTypeFSGroupPolicy
+	csiDriver.Spec.FSGroupPolicy = &fsPolicy
 	return nil
 }
 
