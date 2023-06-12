@@ -554,9 +554,7 @@ EOF
 
 #### Step 2 - Get the MetalLB Operator Configured
 
-We will create an `IPAddressPool` with a single IP address and L2Advertisement to advertise the LoadBalancer IPs provided by the `IPAddressPool` via L2. 
-Since layer 2 mode relies on ARP and NDP, the IP address must be on the same subnet as the network used by the cluster nodes in order for the MetalLB to work.
-more information about metalLB configuration options is available [here](https://metallb.universe.tf/configuration/).
+We will create an `IPAddressPool` with a single IP address and L2Advertisement to advertise the LoadBalancer IPs provided by the `IPAddressPool` via L2.
 > **WARN:** Change `INGRESS_IP` env var to match your environments addressing.
 
 ~~~sh
@@ -582,6 +580,20 @@ metadata:
   namespace: metallb
 EOF
 ~~~
+
+Since layer 2 mode relies on ARP and NDP, the IP address must be on the same subnet as the network used by the cluster worker nodes in order for the MetalLB to work.
+If your worker nodes are on different subnets use BGPAdvertisement to advertise the LoadBalancer IP via BGP protocol.
+
+~~~sh
+apiVersion: metallb.io/v1beta1
+kind: BGPAdvertisement
+metadata:
+name: ingress-public-ip
+namespace: metallb
+EOF
+~~~
+
+more information about metalLB configuration options is available [here](https://metallb.universe.tf/configuration/).
 
 #### Step 3 - Get the OpenShift Router exposed via MetalLB
 
