@@ -59,6 +59,7 @@ type DumpOptions struct {
 	AgentNamespace string
 
 	DumpGuestCluster bool
+	ImpersonateAs    string
 
 	Log logr.Logger
 }
@@ -80,6 +81,7 @@ func NewDumpCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace of the hostedcluster to dump")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the hostedcluster to dump")
+	cmd.Flags().StringVar(&opts.ImpersonateAs, "as", opts.ImpersonateAs, "The user or service account to impersonate to and used to execute the cluster dump command")
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
 	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
 	cmd.Flags().BoolVar(&opts.DumpGuestCluster, "dump-guest-cluster", opts.DumpGuestCluster, "If the guest cluster contents should also be dumped")
@@ -214,6 +216,9 @@ func createGuestKubeconfig(ctx context.Context, c client.Client, cpNamespace str
 }
 
 func DumpCluster(ctx context.Context, opts *DumpOptions) error {
+	var c client.Client
+	var err error
+
 	ocCommand, err := exec.LookPath("oc")
 	if err != nil || len(ocCommand) == 0 {
 		return fmt.Errorf("cannot find oc command")
@@ -222,9 +227,21 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	if err != nil {
 		return err
 	}
-	c, err := util.GetClient()
-	if err != nil {
-		return err
+
+	if len(opts.ImpersonateAs) > 0 {
+		cfg.Impersonate = restclient.ImpersonationConfig{
+			UserName: opts.ImpersonateAs,
+		}
+
+		c, err = util.GetImpersonatedClient(opts.ImpersonateAs)
+		if err != nil {
+			return err
+		}
+	} else {
+		c, err = util.GetClient()
+		if err != nil {
+			return err
+		}
 	}
 	allNodePools := &hyperv1.NodePoolList{}
 	if err = c.List(ctx, allNodePools, client.InNamespace(opts.Namespace)); err != nil {
@@ -242,6 +259,11 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		agentNamespace: opts.AgentNamespace,
 		log:            opts.Log,
 	}
+
+	if len(opts.ImpersonateAs) > 0 {
+		cmd.impersonate = opts.ImpersonateAs
+	}
+
 	objectNames := make([]string, 0, len(nodePools)+1)
 	objectNames = append(objectNames, typedName(&hyperv1.HostedCluster{}, opts.Name))
 	for _, nodePool := range nodePools {
@@ -426,6 +448,7 @@ type OCAdmInspect struct {
 	namespace      string
 	kubeconfig     string
 	agentNamespace string
+	impersonate    string
 	log            logr.Logger
 }
 
@@ -442,6 +465,9 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	}
 	if len(i.kubeconfig) > 0 {
 		allArgs = append(allArgs, "--kubeconfig", i.kubeconfig)
+	}
+	if len(i.impersonate) > 0 {
+		allArgs = append(allArgs, "--as", i.impersonate)
 	}
 	allArgs = append(allArgs, cmdArgs...)
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
