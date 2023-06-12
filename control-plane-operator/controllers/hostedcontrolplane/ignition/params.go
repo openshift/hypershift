@@ -3,6 +3,7 @@ package ignition
 import (
 	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 )
 
 type IgnitionConfigParams struct {
@@ -33,10 +34,7 @@ func NewIgnitionConfigParams(hcp *hyperv1.HostedControlPlane, images map[string]
 	} else {
 		params.APIServerInternalAddress = config.DefaultAdvertiseAddress
 	}
-	if hcp.Spec.APIPort != nil {
-		params.APIServerInternalPort = *hcp.Spec.APIPort
-	} else {
-		params.APIServerInternalPort = config.DefaultAPIServerPort
-	}
+	params.APIServerInternalPort = util.APIPortWithDefault(hcp, config.DefaultAPIServerPort)
+
 	return params
 }
