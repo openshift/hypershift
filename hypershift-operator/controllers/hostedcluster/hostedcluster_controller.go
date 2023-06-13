@@ -3712,6 +3712,10 @@ func (r *HostedClusterReconciler) validateAWSConfig(hc *hyperv1.HostedCluster) e
 		if servicePublishingStrategy != nil && servicePublishingStrategy.Type != hyperv1.Route {
 			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported, use Route", serviceType, servicePublishingStrategy.Type))
 		}
+
+		if serviceType != hyperv1.OAuthServer && hc.Spec.Platform.AWS.EndpointAccess != hyperv1.Public && servicePublishingStrategy.Route != nil && servicePublishingStrategy.Route.Hostname != "" {
+			errs = append(errs, fmt.Errorf("setting a hostname for service type %v with publishing strategy %v is not supported in combination with a PublicAndPrivate or Private endpoint access", serviceType, servicePublishingStrategy.Type))
+		}
 	}
 
 	servicePublishingStrategy := hyperutil.ServicePublishingStrategyByTypeByHC(hc, hyperv1.APIServer)
@@ -3723,41 +3727,55 @@ func (r *HostedClusterReconciler) validateAWSConfig(hc *hyperv1.HostedCluster) e
 		if servicePublishingStrategy != nil && servicePublishingStrategy.Type != hyperv1.Route && servicePublishingStrategy.Type != hyperv1.LoadBalancer {
 			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported, use Route", hyperv1.APIServer, servicePublishingStrategy.Type))
 		}
-
 	} else {
 		if !hyperutil.UseDedicatedDNSForKASByHC(hc) && servicePublishingStrategy.Type != hyperv1.LoadBalancer {
 			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported, use Route or Loadbalancer", hyperv1.APIServer, servicePublishingStrategy.Type))
 		}
 	}
 
+	if hc.Spec.Platform.AWS.EndpointAccess == hyperv1.Public && servicePublishingStrategy.Type != hyperv1.Route {
+		errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported in combination with a Public endpoint access, use Route", hyperv1.APIServer, servicePublishingStrategy.Type))
+	}
+
 	return utilerrors.NewAggregate(errs)
 }
 
-// validatePublishingStrategyMapping validates that each published serviceType has a unique hostname.
+// validatePublishingStrategyMapping validates:
+// 1. Each published serviceType has a unique hostname.
+// 2. APIServer has hostname field set if using Route.
 func (r *HostedClusterReconciler) validatePublishingStrategyMapping(hc *hyperv1.HostedCluster) error {
 	hostnameServiceMap := make(map[string]string, len(hc.Spec.Services))
-	for _, svc := range hc.Spec.Services {
-		hostname := ""
-		if svc.Type == hyperv1.LoadBalancer && svc.LoadBalancer != nil {
-			hostname = svc.LoadBalancer.Hostname
-		}
-		if svc.Type == hyperv1.Route && svc.Route != nil {
-			hostname = svc.Route.Hostname
-		}
+	var errs []error
 
+	for _, svc := range hc.Spec.Services {
+		hostname := servicePublishingStrategyHostname(svc)
 		if hostname == "" {
+			if svc.Service == hyperv1.APIServer && svc.Type == hyperv1.Route {
+				errs = append(errs, fmt.Errorf("hostname field is required for service type %v with publishing strategy %v", svc.Service, svc.Type))
+			}
 			continue
 		}
 
 		serviceType, exists := hostnameServiceMap[hostname]
 		if exists {
-			return fmt.Errorf("service type %s can't be published with the same hostname %s as service type %s", svc.Service, hostname, serviceType)
+			errs = append(errs, fmt.Errorf("service type %s can't be published with the same hostname %s as service type %s", svc.Service, hostname, serviceType))
+			continue
 		}
 
 		hostnameServiceMap[hostname] = string(svc.Service)
 	}
 
-	return nil
+	return utilerrors.NewAggregate(errs)
+}
+
+func servicePublishingStrategyHostname(svc hyperv1.ServicePublishingStrategyMapping) string {
+	if svc.Type == hyperv1.LoadBalancer && svc.LoadBalancer != nil {
+		return svc.LoadBalancer.Hostname
+	}
+	if svc.Type == hyperv1.Route && svc.Route != nil {
+		return svc.Route.Hostname
+	}
+	return ""
 }
 
 func (r *HostedClusterReconciler) validateAzureConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {
