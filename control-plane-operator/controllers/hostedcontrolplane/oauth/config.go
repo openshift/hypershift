@@ -33,12 +33,12 @@ func serializeOsinConfig(cfg *osinv1.OsinServerConfig) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func ReconcileOAuthServerConfig(ctx context.Context, cm *corev1.ConfigMap, ownerRef config.OwnerRef, client crclient.Client, params *OAuthConfigParams) error {
+func ReconcileOAuthServerConfig(ctx context.Context, cm *corev1.ConfigMap, ownerRef config.OwnerRef, client crclient.Client, params *OAuthConfigParams, caBundleConfigMapExists bool) error {
 	ownerRef.ApplyTo(cm)
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	generatedConfig, err := generateOAuthConfig(ctx, client, cm.Namespace, params)
+	generatedConfig, err := generateOAuthConfig(ctx, client, cm.Namespace, params, caBundleConfigMapExists)
 	if err != nil {
 		return fmt.Errorf("failed to generate oauth config: %w", err)
 	}
@@ -50,7 +50,7 @@ func ReconcileOAuthServerConfig(ctx context.Context, cm *corev1.ConfigMap, owner
 	return nil
 }
 
-func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace string, params *OAuthConfigParams) (*osinv1.OsinServerConfig, error) {
+func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace string, params *OAuthConfigParams, caBundleConfigMapExists bool) (*osinv1.OsinServerConfig, error) {
 	var identityProviders []osinv1.IdentityProvider
 	identityProviders, _, err := convertIdentityProviders(ctx, params.IdentityProviders, params.OauthConfigOverrides, client, namespace)
 	if err != nil {
@@ -62,7 +62,16 @@ func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace 
 		return path.Join(dir, file)
 	}
 
-	caCertPath := cpath(oauthVolumeMasterCABundle().Name, certs.CASignerCertMapKey)
+	// For backwards compatibility, add this config option depending on the existance of CA bundle configmap.
+	caCertPath := ""
+	if caBundleConfigMapExists {
+		// This is the new way of doing it.
+		caCertPath = cpath(oauthVolumeMasterCABundle().Name, certs.CASignerCertMapKey)
+	} else {
+		if _, hasCA := params.ServingCert.Data[certs.CASignerCertMapKey]; hasCA {
+			caCertPath = cpath(oauthVolumeServingCert().Name, certs.CASignerCertMapKey)
+		}
+	}
 	serverConfig := &osinv1.OsinServerConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "OsinServerConfig",
