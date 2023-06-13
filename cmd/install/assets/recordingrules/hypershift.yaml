@@ -75,3 +75,9 @@ groups:
     
   - record: platform:hypershift_nodepools:max
     expr: max by(platform) (hypershift_nodepools)
+
+  - record: hypershift:nodepools:size
+    expr: max by(name, platform) (hypershift_nodepools_size)
+
+  - record: hypershift:nodepools:available_replicas
+    expr: max by(name, platform) (hypershift_nodepools_available_replicas)

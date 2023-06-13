@@ -696,6 +696,10 @@ objects:
         record: platform:hypershift_hostedclusters:max
       - expr: max by(platform) (hypershift_nodepools)
         record: platform:hypershift_nodepools:max
+      - expr: max by(name, platform) (hypershift_nodepools_size)
+        record: hypershift:nodepools:size
+      - expr: max by(name, platform) (hypershift_nodepools_available_replicas)
+        record: hypershift:nodepools:available_replicas
 - apiVersion: apiextensions.k8s.io/v1
   kind: CustomResourceDefinition
   metadata:
