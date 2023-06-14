@@ -240,23 +240,6 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		return nil, fmt.Errorf("failed to extract templates from image: %w", err)
 	}
 
-	// Write out the feature gate manifest to the MCC dir.
-	// Use the feature gate from the hosted control plane which should reflect the feature gate of the cluster.
-	if err := func() error {
-		featureGateBytes, err := os.ReadFile(p.FeatureGateManifest)
-		if err != nil {
-			return fmt.Errorf("failed to read feature gate: %w", err)
-		}
-
-		if err := os.WriteFile(filepath.Join(mccBaseDir, "99_feature-gate.yaml"), featureGateBytes, 0644); err != nil {
-			return fmt.Errorf("failed to write feature gate: %w", err)
-		}
-
-		return nil
-	}(); err != nil {
-		return nil, fmt.Errorf("failed to extract feature gate: %w", err)
-	}
-
 	// Extract binaries from the MCO image into the bin directory
 	err = func() error {
 		start := time.Now()
@@ -276,6 +259,28 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 				return fmt.Errorf("failed to close file: %w", err)
 			}
 		}
+
+		component := "cluster-config-operator"
+		clusterConfigOperatorImage, ok := imageProvider.ImageExist(component)
+		if !ok {
+			return fmt.Errorf("release image does not contain cluster-config-operator (images: %v)", imageProvider.ComponentImages())
+		}
+		log.Info("discovered cluster config operator image", "image", clusterConfigOperatorImage)
+
+		file, err := os.Create(filepath.Join(binDir, component))
+		if err != nil {
+			return fmt.Errorf("failed to create file: %w", err)
+		}
+		if err := file.Chmod(0777); err != nil {
+			return fmt.Errorf("failed to chmod file: %w", err)
+		}
+		if err := p.ImageFileCache.extractImageFile(ctx, clusterConfigOperatorImage, pullSecret, filepath.Join("usr/bin/", component), file); err != nil {
+			return fmt.Errorf("failed to extract image file: %w", err)
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("failed to close file: %w", err)
+		}
+
 		log.Info("downloaded binaries", "time", time.Since(start).Round(time.Second).String())
 		return nil
 	}()
@@ -286,6 +291,31 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	payloadVersion, err := semver.Parse(imageProvider.Version())
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse payload version: %w", err)
+	}
+
+	featureGateBytes, err := os.ReadFile(p.FeatureGateManifest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read feature gate: %w", err)
+	}
+
+	err = func() error {
+		start := time.Now()
+
+		args := []string{
+			"-c",
+			invokeFeatureGateRenderScript(filepath.Join(binDir, "cluster-config-operator"), filepath.Join(workDir, "cco"), mccBaseDir, payloadVersion, string(featureGateBytes)),
+		}
+
+		cmd := exec.CommandContext(ctx, "/bin/bash", args...)
+		out, err := cmd.CombinedOutput()
+		log.Info("cluster-config-operator process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
+		if err != nil {
+			return fmt.Errorf("cluster-config-operator process failed: %s: %w", string(out), err)
+		}
+		return nil
+	}()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute cluster-config-operator: %w", err)
 	}
 
 	// First, run the MCO using templates and image refs as input. This generates
@@ -677,4 +707,51 @@ func findMatchingManifest(imageRef string, deserializedManifestList *manifestlis
 	}
 
 	return "", fmt.Errorf("imageRef is an unknown format to parse, imageRef: %s", imageRef)
+}
+
+func invokeFeatureGateRenderScript(binary, workDir, outputDir string, payloadVersion semver.Version, featureGateYAML string) string {
+	var script = `#!/bin/bash
+set -e
+mkdir -p %[2]s
+
+cd %[2]s
+mkdir -p input output manifests
+
+touch %[2]s/manifests/99_feature-gate.yaml
+cat <<EOF >%[2]s/manifests/99_feature-gate.yaml
+%[5]s
+EOF
+
+%[1]s render \
+   --config-output-file config \
+   --asset-input-dir %[2]s/input \
+   --asset-output-dir %[2]s/output \
+   --rendered-manifest-files=%[2]s/manifests \
+   --payload-version=%[4]s 
+cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
+`
+
+	// Depending on the version, we need different args.
+	if payloadVersion.Minor < 14 {
+		script = `#!/bin/bash
+set -e
+mkdir -p %[2]s
+
+cd %[2]s
+mkdir -p input output manifests
+
+touch %[2]s/manifests/99_feature-gate.yaml
+cat <<EOF >%[2]s/manifests/99_feature-gate.yaml
+%[5]s
+EOF
+
+%[1]s render \
+   --config-output-file config \
+   --asset-input-dir %[2]s/input \
+   --asset-output-dir %[2]s/output
+cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
+`
+	}
+
+	return fmt.Sprintf(script, binary, workDir, outputDir, payloadVersion, featureGateYAML)
 }
