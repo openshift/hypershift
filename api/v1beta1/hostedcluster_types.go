@@ -687,6 +687,7 @@ type KubevirtPlatformCredentials struct {
 	// +immutable
 	// +kubebuilder:validation:Required
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="infraKubeConfigSecret is immutable"
 	InfraKubeConfigSecret *KubeconfigSecretRef `json:"infraKubeConfigSecret,omitempty"`
 
 	// InfraNamespace defines the namespace on the external infra cluster that is used to host the KubeVirt
@@ -697,6 +698,7 @@ type KubevirtPlatformCredentials struct {
 	// +immutable
 	// +kubebuilder:validation:Required
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="infraNamespace is immutable"
 	InfraNamespace string `json:"infraNamespace"`
 }
 
@@ -726,6 +728,7 @@ type KubevirtPlatformSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="baseDomainPassthrough is immutable"
 	BaseDomainPassthrough *bool `json:"baseDomainPassthrough,omitempty"`
 
 	// GenerateID is used to uniquely apply a name suffix to resources associated with

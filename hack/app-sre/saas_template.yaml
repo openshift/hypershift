@@ -29969,6 +29969,9 @@ objects:
                             Cluster: guest.apps.mgmt-cluster.example.com Apps: *.apps.guest.apps.mgmt-cluster.example.com
                             \n This is possible using OCP wildcard routes"
                           type: boolean
+                          x-kubernetes-validations:
+                          - message: baseDomainPassthrough is immutable
+                            rule: self == oldSelf
                         credentials:
                           description: "Credentials defines the client credentials
                             used when creating KubeVirt virtual machines. Defining
@@ -29993,6 +29996,9 @@ objects:
                               - key
                               - name
                               type: object
+                              x-kubernetes-validations:
+                              - message: infraKubeConfigSecret is immutable
+                                rule: self == oldSelf
                             infraNamespace:
                               description: InfraNamespace defines the namespace on
                                 the external infra cluster that is used to host the
@@ -30002,6 +30008,9 @@ objects:
                                 access to manage the required resources within this
                                 namespace.
                               type: string
+                              x-kubernetes-validations:
+                              - message: infraNamespace is immutable
+                                rule: self == oldSelf
                           required:
                           - infraNamespace
                           type: object
@@ -33749,6 +33758,9 @@ objects:
                             Cluster: guest.apps.mgmt-cluster.example.com Apps: *.apps.guest.apps.mgmt-cluster.example.com
                             \n This is possible using OCP wildcard routes"
                           type: boolean
+                          x-kubernetes-validations:
+                          - message: baseDomainPassthrough is immutable
+                            rule: self == oldSelf
                         credentials:
                           description: "Credentials defines the client credentials
                             used when creating KubeVirt virtual machines. Defining
@@ -33773,6 +33785,9 @@ objects:
                               - key
                               - name
                               type: object
+                              x-kubernetes-validations:
+                              - message: infraKubeConfigSecret is immutable
+                                rule: self == oldSelf
                             infraNamespace:
                               description: InfraNamespace defines the namespace on
                                 the external infra cluster that is used to host the
@@ -33782,6 +33797,9 @@ objects:
                                 access to manage the required resources within this
                                 namespace.
                               type: string
+                              x-kubernetes-validations:
+                              - message: infraNamespace is immutable
+                                rule: self == oldSelf
                           required:
                           - infraNamespace
                           type: object
@@ -37656,6 +37674,9 @@ objects:
                             Cluster: guest.apps.mgmt-cluster.example.com Apps: *.apps.guest.apps.mgmt-cluster.example.com
                             \n This is possible using OCP wildcard routes"
                           type: boolean
+                          x-kubernetes-validations:
+                          - message: baseDomainPassthrough is immutable
+                            rule: self == oldSelf
                         credentials:
                           description: "Credentials defines the client credentials
                             used when creating KubeVirt virtual machines. Defining
@@ -37680,6 +37701,9 @@ objects:
                               - key
                               - name
                               type: object
+                              x-kubernetes-validations:
+                              - message: infraKubeConfigSecret is immutable
+                                rule: self == oldSelf
                             infraNamespace:
                               description: InfraNamespace defines the namespace on
                                 the external infra cluster that is used to host the
@@ -37689,6 +37713,9 @@ objects:
                                 access to manage the required resources within this
                                 namespace.
                               type: string
+                              x-kubernetes-validations:
+                              - message: infraNamespace is immutable
+                                rule: self == oldSelf
                           required:
                           - infraNamespace
                           type: object
@@ -41430,6 +41457,9 @@ objects:
                             Cluster: guest.apps.mgmt-cluster.example.com Apps: *.apps.guest.apps.mgmt-cluster.example.com
                             \n This is possible using OCP wildcard routes"
                           type: boolean
+                          x-kubernetes-validations:
+                          - message: baseDomainPassthrough is immutable
+                            rule: self == oldSelf
                         credentials:
                           description: "Credentials defines the client credentials
                             used when creating KubeVirt virtual machines. Defining
@@ -41454,6 +41484,9 @@ objects:
                               - key
                               - name
                               type: object
+                              x-kubernetes-validations:
+                              - message: infraKubeConfigSecret is immutable
+                                rule: self == oldSelf
                             infraNamespace:
                               description: InfraNamespace defines the namespace on
                                 the external infra cluster that is used to host the
@@ -41463,6 +41496,9 @@ objects:
                                 access to manage the required resources within this
                                 namespace.
                               type: string
+                              x-kubernetes-validations:
+                              - message: infraNamespace is immutable
+                                rule: self == oldSelf
                           required:
                           - infraNamespace
                           type: object
@@ -43530,6 +43566,9 @@ objects:
                               - key
                               - name
                               type: object
+                              x-kubernetes-validations:
+                              - message: infraKubeConfigSecret is immutable
+                                rule: self == oldSelf
                             infraNamespace:
                               description: InfraNamespace defines the namespace on
                                 the external infra cluster that is used to host the
@@ -43539,6 +43578,9 @@ objects:
                                 access to manage the required resources within this
                                 namespace.
                               type: string
+                              x-kubernetes-validations:
+                              - message: infraNamespace is immutable
+                                rule: self == oldSelf
                           required:
                           - infraNamespace
                           type: object
@@ -44443,6 +44485,9 @@ objects:
                               - key
                               - name
                               type: object
+                              x-kubernetes-validations:
+                              - message: infraKubeConfigSecret is immutable
+                                rule: self == oldSelf
                             infraNamespace:
                               description: InfraNamespace defines the namespace on
                                 the external infra cluster that is used to host the
@@ -44452,6 +44497,9 @@ objects:
                                 access to manage the required resources within this
                                 namespace.
                               type: string
+                              x-kubernetes-validations:
+                              - message: infraNamespace is immutable
+                                rule: self == oldSelf
                           required:
                           - infraNamespace
                           type: object
