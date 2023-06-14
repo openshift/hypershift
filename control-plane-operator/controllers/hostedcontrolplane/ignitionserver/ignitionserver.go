@@ -10,6 +10,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/certs"
@@ -34,7 +35,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 	createOrUpdate upsert.CreateOrUpdateFN,
 	releaseVersion string,
 	utilitiesImage string,
-	configOperatorImage string,
+	componentImages map[string]string,
 	hcp *hyperv1.HostedControlPlane,
 	defaultIngressDomain string,
 	hasHealthzHandler bool,
@@ -52,12 +53,28 @@ func ReconcileIgnitionServer(ctx context.Context,
 		return fmt.Errorf("Ignition service strategy not specified")
 	}
 
-	// Reconcile service
+	var routeServiceName string
 	ignitionServerService := ignitionserver.Service(controlPlaneNamespace)
-	if _, err := createOrUpdate(ctx, c, ignitionServerService, func() error {
-		return reconcileIgnitionServerService(ignitionServerService, serviceStrategy)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile ignition service: %w", err)
+	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+		if _, err := createOrUpdate(ctx, c, ignitionServerService, func() error {
+			return reconcileIgnitionServerServiceWithProxy(ignitionServerService, serviceStrategy)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ignition service: %w", err)
+		}
+		ignitionServerProxyService := ignitionserver.ProxyService(controlPlaneNamespace)
+		if _, err := createOrUpdate(ctx, c, ignitionServerProxyService, func() error {
+			return reconcileIgnitionServerProxyService(ignitionServerProxyService, serviceStrategy)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ignition proxy service: %w", err)
+		}
+		routeServiceName = ignitionServerProxyService.Name
+	} else {
+		if _, err := createOrUpdate(ctx, c, ignitionServerService, func() error {
+			return reconcileIgnitionServerService(ignitionServerService, serviceStrategy)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ignition service: %w", err)
+		}
+		routeServiceName = ignitionServerService.Name
 	}
 
 	var ignitionServerAddress string
@@ -67,7 +84,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace)
 		if util.IsPrivateHCP(hcp) {
 			if _, err := createOrUpdate(ctx, c, ignitionServerRoute, func() error {
-				err := reconcileInternalRoute(ignitionServerRoute, ownerRef)
+				err := reconcileInternalRoute(ignitionServerRoute, ownerRef, routeServiceName)
 				if err != nil {
 					return fmt.Errorf("failed to reconcile internal route in ignition server: %w", err)
 				}
@@ -81,7 +98,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 				if serviceStrategy.Route != nil {
 					hostname = serviceStrategy.Route.Hostname
 				}
-				err := reconcileExternalRoute(ignitionServerRoute, ownerRef, hostname, defaultIngressDomain)
+				err := reconcileExternalRoute(ignitionServerRoute, ownerRef, routeServiceName, hostname, defaultIngressDomain)
 				if err != nil {
 					return fmt.Errorf("failed to reconcile external route in ignition server: %w", err)
 				}
@@ -135,9 +152,9 @@ func ReconcileIgnitionServer(ctx context.Context,
 	if result, err := createOrUpdate(ctx, c, role, func() error {
 		return reconcileRole(role)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile ignition role: %w", err)
+		return fmt.Errorf("failed to reconcile ignition server role: %w", err)
 	} else {
-		log.Info("Reconciled ignition role", "result", result)
+		log.Info("Reconciled ignition server role", "result", result)
 	}
 
 	sa := ignitionserver.ServiceAccount(controlPlaneNamespace)
@@ -145,7 +162,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile controlplane operator service account: %w", err)
+		return fmt.Errorf("failed to reconcile ignition server service account: %w", err)
 	} else {
 		log.Info("Reconciled ignition server service account", "result", result)
 	}
@@ -154,16 +171,23 @@ func ReconcileIgnitionServer(ctx context.Context,
 	if result, err := createOrUpdate(ctx, c, roleBinding, func() error {
 		return reconcileRoleBinding(roleBinding, role, sa)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile ignition RoleBinding: %w", err)
+		return fmt.Errorf("failed to reconcile ignition server role binding: %w", err)
 	} else {
-		log.Info("Reconciled ignition server rolebinding", "result", result)
+		log.Info("Reconciled ignition server role binding", "result", result)
 	}
 
 	ignitionServerLabels := map[string]string{
 		"app":                         ignitionserver.ResourceName,
 		hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
 	}
-
+	configOperatorImage := componentImages["cluster-config-operator"]
+	if configOperatorImage == "" {
+		return fmt.Errorf("cluster-config-operator image not found in payload images")
+	}
+	servingCertSecretName := ignitionserver.IgnitionServingCertSecret("").Name
+	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+		servingCertSecretName = manifests.IgnitionServerCertSecret("").Name
+	}
 	ignitionServerDeployment := ignitionserver.Deployment(controlPlaneNamespace)
 	if result, err := createOrUpdate(ctx, c, ignitionServerDeployment, func() error {
 		return reconcileDeployment(ignitionServerDeployment,
@@ -176,7 +200,8 @@ func ReconcileIgnitionServer(ctx context.Context,
 			registryOverrides,
 			openShiftRegistryOverrides,
 			managementClusterHasCapabilitySecurityContextConstraint,
-			ignitionServerLabels)
+			ignitionServerLabels,
+			servingCertSecretName)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition deployment: %w", err)
 	} else {
@@ -196,12 +221,73 @@ func ReconcileIgnitionServer(ctx context.Context,
 		log.Info("Reconciled ignition server podmonitor", "result", result)
 	}
 
+	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+		role := ignitionserver.ProxyRole(controlPlaneNamespace)
+		if result, err := createOrUpdate(ctx, c, role, func() error {
+			return reconcileProxyRole(role)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ignition proxy role: %w", err)
+		} else {
+			log.Info("Reconciled ignition role", "result", result)
+		}
+
+		sa := ignitionserver.ProxyServiceAccount(controlPlaneNamespace)
+		if result, err := createOrUpdate(ctx, c, sa, func() error {
+			util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ignition proxy service account: %w", err)
+		} else {
+			log.Info("Reconciled ignition proxy service account", "result", result)
+		}
+
+		roleBinding := ignitionserver.ProxyRoleBinding(controlPlaneNamespace)
+		if result, err := createOrUpdate(ctx, c, roleBinding, func() error {
+			return reconcileRoleBinding(roleBinding, role, sa)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ignition proxy role binding: %w", err)
+		} else {
+			log.Info("Reconciled ignition server proxy role binding", "result", result)
+		}
+
+		haproxyImage := componentImages["haproxy-router"]
+		if haproxyImage == "" {
+			return fmt.Errorf("haproxy-router image not found in payload images")
+		}
+		ignitionServerProxyDeployment := ignitionserver.ProxyDeployment(controlPlaneNamespace)
+		if result, err := createOrUpdate(ctx, c, ignitionServerProxyDeployment, func() error {
+			return reconcileProxyDeployment(ignitionServerProxyDeployment,
+				hcp,
+				haproxyImage,
+				managementClusterHasCapabilitySecurityContextConstraint)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ignition proxy deployment: %w", err)
+		} else {
+			log.Info("Reconciled ignition server proxy deployment", "result", result)
+		}
+	}
+
 	return nil
 }
 
 func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
+	return reconcileIgnitionExternalService(svc, strategy, false)
+}
+
+func reconcileIgnitionServerProxyService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
+	return reconcileIgnitionExternalService(svc, strategy, true)
+}
+
+func reconcileIgnitionExternalService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, isProxy bool) error {
+	appLabel := ignitionserver.ResourceName
+	targetPort := intstr.FromInt(9090)
+	if isProxy {
+		appLabel = "ignition-server-proxy"
+		targetPort = intstr.FromInt(443)
+	}
+
 	svc.Spec.Selector = map[string]string{
-		"app": ignitionserver.ResourceName,
+		"app": appLabel,
 	}
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
@@ -212,7 +298,7 @@ func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.Servi
 	portSpec.Port = int32(443)
 	portSpec.Name = "https"
 	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(9090)
+	portSpec.TargetPort = targetPort
 	switch strategy.Type {
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
@@ -228,15 +314,31 @@ func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.Servi
 	return nil
 }
 
-func reconcileExternalRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string) error {
-	ownerRef.ApplyTo(route)
-	return util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, ignitionserver.Service(route.Namespace).Name)
+func reconcileIgnitionServerServiceWithProxy(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
+	svc.Spec.Selector = map[string]string{
+		"app": ignitionserver.ResourceName,
+	}
+	svc.Spec.Type = corev1.ServiceTypeClusterIP
+	svc.Spec.Ports = []corev1.ServicePort{
+		{
+			Port:       int32(443),
+			Name:       "https",
+			Protocol:   corev1.ProtocolTCP,
+			TargetPort: intstr.FromInt(9090),
+		},
+	}
+	return nil
 }
 
-func reconcileInternalRoute(route *routev1.Route, ownerRef config.OwnerRef) error {
+func reconcileExternalRoute(route *routev1.Route, ownerRef config.OwnerRef, svcName string, hostname string, defaultIngressDomain string) error {
+	ownerRef.ApplyTo(route)
+	return util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, svcName)
+}
+
+func reconcileInternalRoute(route *routev1.Route, ownerRef config.OwnerRef, svcName string) error {
 	ownerRef.ApplyTo(route)
 	// Assumes ownerRef is the HCP
-	return util.ReconcileInternalRoute(route, ownerRef.Reference.Name, ignitionserver.Service(route.Namespace).Name)
+	return util.ReconcileInternalRoute(route, ownerRef.Reference.Name, svcName)
 }
 
 func reconcileCACertSecret(caCertSecret *corev1.Secret) error {
@@ -321,6 +423,20 @@ func reconcileRole(role *rbacv1.Role) error {
 	return nil
 }
 
+func reconcileProxyRole(role *rbacv1.Role) error {
+	role.Rules = []rbacv1.PolicyRule{
+		{
+			// Copied from https://github.com/openshift/cluster-ingress-operator/blob/649fe5dfe2c6f795651592a045be901b00a1f93a/manifests/00-cluster-role.yaml#L173-L181
+			// Needed to allow PrivilegeEscalation: true
+			APIGroups:     []string{"security.openshift.io"},
+			ResourceNames: []string{"hostnetwork"},
+			Resources:     []string{"securitycontextconstraints"},
+			Verbs:         []string{"use"},
+		},
+	}
+	return nil
+}
+
 func reconcileRoleBinding(roleBinding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
 	roleBinding.RoleRef = rbacv1.RoleRef{
 		APIGroup: "rbac.authorization.k8s.io",
@@ -349,6 +465,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	openShiftRegistryOverrides string,
 	managementClusterHasCapabilitySecurityContextConstraint bool,
 	ignitionServerLabels map[string]string,
+	servingCertSecretName string,
 ) error {
 	var probeHandler corev1.ProbeHandler
 	if hasHealthzHandler {
@@ -409,7 +526,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 						Name: "serving-cert",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
-								SecretName:  ignitionserver.IgnitionServingCertSecret("").Name,
+								SecretName:  servingCertSecretName,
 								DefaultMode: utilpointer.Int32(0640),
 							},
 						},
@@ -555,6 +672,119 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	}
 	proxy.SetEnvVars(&deployment.Spec.Template.Spec.Containers[0].Env)
 
+	// set security context
+	if !managementClusterHasCapabilitySecurityContextConstraint {
+		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: utilpointer.Int64(config.DefaultSecurityContextUser),
+		}
+	}
+
+	deploymentConfig := config.DeploymentConfig{}
+	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+	deploymentConfig.SetDefaults(hcp, ignitionServerLabels, nil)
+	deploymentConfig.ApplyTo(deployment)
+
+	return nil
+}
+
+func reconcileProxyDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, haproxyImage string, managementClusterHasCapabilitySecurityContextConstraint bool) error {
+	commandScript := `#!/bin/bash
+set -e
+cat /etc/ssl/serving-cert/tls.crt /etc/ssl/serving-cert/tls.key > /tmp/tls.pem
+cat <<EOF > /tmp/haproxy.conf
+defaults
+  mode http
+  timeout connect 5s
+  timeout client 30s
+  timeout server 30s
+
+frontend ignition-server
+  bind *:443 ssl crt /tmp/tls.pem
+  default_backend ignition_servers
+
+backend ignition_servers
+  server ignition-server ignition-server:443 check ssl ca-file /etc/ssl/root-ca/ca.crt
+EOF
+haproxy -f /tmp/haproxy.conf
+`
+
+	deployment.Spec = appsv1.DeploymentSpec{
+		Selector: &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"app": "ignition-server-proxy",
+			},
+		},
+		Template: corev1.PodTemplateSpec{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{
+					"app": "ignition-server-proxy",
+				},
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name:            "haproxy",
+						Image:           haproxyImage,
+						ImagePullPolicy: corev1.PullIfNotPresent,
+						Command: []string{
+							"/bin/bash",
+						},
+						Args: []string{
+							"-c",
+							commandScript,
+						},
+
+						Ports: []corev1.ContainerPort{
+							{
+								Name:          "https",
+								ContainerPort: 443,
+							},
+						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("20Mi"),
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+							},
+						},
+						SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: utilpointer.Bool(true)},
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "serving-cert",
+								MountPath: "/etc/ssl/serving-cert",
+							},
+							{
+								Name:      "root-ca",
+								MountPath: "/etc/ssl/root-ca",
+							},
+						},
+					},
+				},
+				ServiceAccountName: ignitionserver.ProxyServiceAccount("").Name,
+				Volumes: []corev1.Volume{
+					{
+						Name: "serving-cert",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								SecretName:  ignitionserver.IgnitionServingCertSecret("").Name,
+								DefaultMode: utilpointer.Int32(0640),
+							},
+						},
+					},
+					{
+						Name: "root-ca",
+						VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{Name: manifests.RootCAConfigMap("").Name},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	proxy.SetEnvVars(&deployment.Spec.Template.Spec.Containers[0].Env)
+
 	if hcp.Spec.AdditionalTrustBundle != nil {
 		// Add trusted-ca mount with optional configmap
 		util.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
@@ -570,7 +800,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	deploymentConfig := config.DeploymentConfig{}
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	deploymentConfig.SetDefaults(hcp, ignitionServerLabels, nil)
+	deploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
 	deploymentConfig.ApplyTo(deployment)
 
 	return nil
