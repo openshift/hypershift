@@ -1,14 +1,22 @@
 ---
-title: NodePool Upgrades
+title: NodePool lifecycle
 ---
 
-# NodePool Upgrades
+# NodePool lifecycle
 
-NodePools enable the ability to express intent to configure the software running in the Nodes to a certain level by exposing `spec.release` and `spec.config`. Changing any of these fields will result in a new payload generation rolled out across all Nodes belonging to a NodePool, i.e. NodePool upgrade.
+NodePools represent homogeneous groups of Nodes with a common lifecycle management and upgrade cadence.
 
-Changes to any platform specific field, e.g. aws instance type, will also cause a rolling upgrade, which will result on a set of new instances with the new type. As well, some cluster config changes (e.g. proxy, certs) may also trigger a rolling upgrade if the change propagates to the node.
+## Upgrades and data propagation
 
-NodePools support two types of upgrades: Replace and InPlace, specified via [UpgradeType](../../reference/api.md#hypershift.openshift.io/v1alpha1.UpgradeType).
+There are three main areas that will trigger rolling upgrades across the Nodes when they are changed:
+
+- OCP Version dictated by `spec.release`.
+- Machine configuration via `spec.config`, a knob for `machineconfiguration.openshift.io`.
+- Platform specific changes via `.spec.platform`. Some fields might be immutable whereas other might allow changes e.g. aws instance type.
+
+Some cluster config changes (e.g. proxy, certs) may also trigger a rolling upgrade if the change needs to be propagated to the node.
+
+NodePools support two types of rolling upgrades: Replace and InPlace, specified via [UpgradeType](../../reference/api.md#hypershift.openshift.io/v1beta1.UpgradeType).
 
 !!! important
 
@@ -23,13 +31,21 @@ This will create new instances in the new version while removing old nodes in a 
 
 This will directly perform updates to the Operating System of the existing instances. This is usually a good choice for environments where the infrastructure constraints are higher e.g. bare metal.
 
-### Triggering Upgrades
+When you are using in place upgrades, Platform specific changes will only affect upcoming new Nodes.
 
-#### Upgrading to a new OCP version
+### Data propagation
+
+There some fields which will only propagate in place regardless of the upgrade strategy that is set.
+`.spec.nodeLabels` and `.spec.taints` will be propagated only to new upcoming machines.
+
+
+## Triggering Upgrades examples
+
+### Upgrading to a new OCP version
 
 These upgrades can be triggered via changing the `spec.release.image` of the NodePool. Note that you should only upgrade NodePools to the current version of the Hosted Control Plane.
 
-#### Adding a new MachineConfig
+### Adding a new MachineConfig
 
 You can create a MachineConfig inside a ConfigMap in the management cluster as follows:
 
