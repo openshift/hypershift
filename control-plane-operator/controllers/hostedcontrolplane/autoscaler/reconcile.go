@@ -204,6 +204,8 @@ func ReconcileAutoscalerRole(role *rbacv1.Role, owner config.OwnerRef) error {
 				"machines",
 				"machinesets",
 				"machinesets/scale",
+				"machinepools",
+				"machinepools/scale",
 			},
 			Verbs: []string{"*"},
 		},

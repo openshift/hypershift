@@ -2451,6 +2451,8 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 				"machines",
 				"machinesets",
 				"machinesets/scale",
+				"machinepools",
+				"machinepools/scale",
 			},
 			Verbs: []string{"*"},
 		},
