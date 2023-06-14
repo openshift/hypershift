@@ -4272,6 +4272,35 @@ func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hclu
 			},
 		},
 	}
+	nodeAddressesMap := make(map[string]bool)
+	for _, hcService := range hcluster.Spec.Services {
+		if hcService.Type != hyperv1.NodePort {
+			continue
+		}
+		nodeAddress := hcService.NodePort.Address
+		_, exists := nodeAddressesMap[nodeAddress]
+		if exists {
+			continue
+		}
+		nodeAddressesMap[nodeAddress] = true
+		var prefixLength int
+		if utilsnet.IsIPv4String(nodeAddress) {
+			prefixLength = 32
+		} else if utilsnet.IsIPv6String(nodeAddress) {
+			prefixLength = 128
+		} else {
+			return fmt.Errorf("could not determine if %s is an IPv4 or IPv6 address", nodeAddress)
+		}
+		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					IPBlock: &networkingv1.IPBlock{
+						CIDR: netip.PrefixFrom(netip.MustParseAddr(nodeAddress), prefixLength).String(),
+					},
+				},
+			},
+		})
+	}
 	return nil
 }
 
