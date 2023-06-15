@@ -125,3 +125,21 @@ func IngressDefaultIngressControllerCert() *corev1.Secret {
 		},
 	}
 }
+
+func IngressDefaultIngressCertCA() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "default-ingress-cert",
+			Namespace: "openshift-config-managed",
+		},
+	}
+}
+
+func IngressObservedDefaultIngressCertCA(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "observed-default-ingress-cert",
+			Namespace: ns,
+		},
+	}
+}
