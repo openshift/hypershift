@@ -162,12 +162,18 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 
 	// check for ImageContentSourcePolicy capability
 	hasICSPCap, err := isAPIResourceRegistered(client, operatorv1alpha1.GroupVersion, "imagecontentsourcepolicies")
+	if err != nil {
+		return nil, err
+	}
 	if hasICSPCap {
 		discoveredCapabilities[CapabilityICSP] = struct{}{}
 	}
 
 	// check for ImageDigestMirrorSet capability
 	hasIDMSCap, err := isAPIResourceRegistered(client, configv1.GroupVersion, "imagedigestmirrorsets")
+	if err != nil {
+		return nil, err
+	}
 	if hasIDMSCap {
 		discoveredCapabilities[CapabilityIDMS] = struct{}{}
 	}
