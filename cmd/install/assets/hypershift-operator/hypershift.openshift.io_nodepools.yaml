@@ -1007,6 +1007,9 @@ spec:
                 - arm64
                 - amd64
                 type: string
+                x-kubernetes-validations:
+                - message: Arch is immutable
+                  rule: self == oldSelf
               autoScaling:
                 description: Autoscaling specifies auto-scaling behavior for the NodePool.
                 properties:
@@ -1719,6 +1722,9 @@ spec:
             - platform
             - release
             type: object
+            x-kubernetes-validations:
+            - message: Arch is required once set
+              rule: '!has(oldSelf.arch) || has(self.arch)'
           status:
             description: Status is the latest observed status of the NodePool.
             properties:
