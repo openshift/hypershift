@@ -69,6 +69,7 @@ type NodePool struct {
 }
 
 // NodePoolSpec is the desired behavior of a NodePool.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.arch) || has(self.arch)", message="Arch is required once set"
 type NodePoolSpec struct {
 	// ClusterName is the name of the HostedCluster this NodePool belongs to.
 	//
@@ -164,6 +165,7 @@ type NodePoolSpec struct {
 	//
 	// +kubebuilder:default:=amd64
 	// +kubebuilder:validation:Enum=arm64;amd64
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Arch is immutable"
 	// +optional
 	Arch string `json:"arch,omitempty"`
 }
