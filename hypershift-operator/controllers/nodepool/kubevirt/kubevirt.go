@@ -70,11 +70,14 @@ func unsupportedOpenstackDefaultImage(releaseImage *releaseinfo.ReleaseImage) (s
 }
 
 func allowUnsupportedRHCOSVariants(nodePool *hyperv1.NodePool) bool {
-	val, exists := nodePool.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation]
-	if exists && strings.ToLower(val) == "true" {
-		return true
-	}
-	return false
+	// Temporary workaround is to use OpenStack image to unblock CI
+	// Tracking this issue here, https://issues.redhat.com/browse/COS-2271
+	//val, exists := nodePool.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation]
+	//if exists && strings.ToLower(val) == "true" {
+	//	return true
+	//}
+	//return false
+	return true
 }
 
 func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, hostedNamespace string) (BootImage, error) {
