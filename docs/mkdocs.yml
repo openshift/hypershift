@@ -59,7 +59,7 @@ nav:
   - 'Automated Machine Management':
     - how-to/automated-machine-management/index.md
     - how-to/automated-machine-management/scale-to-zero-dataplane.md
-    - how-to/automated-machine-management/nodepool-upgrades.md
+    - how-to/automated-machine-management/nodepool-lifecycle.md
     - how-to/automated-machine-management/node-tuning.md
   - "AWS":
     - how-to/aws/create-infra-iam-separately.md
