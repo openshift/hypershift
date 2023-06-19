@@ -18,7 +18,6 @@ const (
 )
 
 func TestGetOperatorImage(t *testing.T) {
-	t.Parallel()
 	testCases := []struct {
 		name            string
 		hypershiftPod   *corev1.Pod
