@@ -297,7 +297,7 @@ func ValidCredentials(hc *hyperv1.HostedCluster) bool {
 		return false
 	}
 	validIdentityProvider := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
-	if validIdentityProvider != nil && validIdentityProvider.Status == metav1.ConditionFalse {
+	if validIdentityProvider != nil && validIdentityProvider.Status != metav1.ConditionTrue {
 		return false
 	}
 	return true

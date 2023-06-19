@@ -4039,12 +4039,8 @@ func hasValidCloudCredentials(hcp *hyperv1.HostedControlPlane) (string, bool) {
 	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
 		return "", true
 	}
-	oidcConfigValid := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidOIDCConfiguration))
-	if oidcConfigValid != nil && oidcConfigValid.Status == metav1.ConditionFalse {
-		return "Invalid OIDC configuration", false
-	}
 	validIdentityProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
-	if validIdentityProvider != nil && validIdentityProvider.Status == metav1.ConditionFalse {
+	if validIdentityProvider != nil && validIdentityProvider.Status != metav1.ConditionTrue {
 		return "Invalid AWS identity provider", false
 	}
 	return "", true
