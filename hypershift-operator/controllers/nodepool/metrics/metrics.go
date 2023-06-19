@@ -5,6 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/prometheus/client_golang/prometheus"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -34,6 +35,13 @@ var (
 		Help: "Time in seconds it took from initial NodePool creation and rollout of initial version",
 		Name: NodePoolInitialRolloutDurationMetricName,
 	}, labelNames)
+
+	NodePoolTransitionSecondsMetricName = "hypershift_nodepools_transition_seconds"
+	nodePoolTransitionSeconds           = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    NodePoolTransitionSecondsMetricName,
+		Help:    "Time in seconds it took from NodePool creation until a given condition transitions to true",
+		Buckets: []float64{5, 10, 20, 30, 60, 90, 120, 180, 240, 300, 360, 480, 600},
+	}, []string{"condition"})
 )
 
 func init() {
@@ -42,6 +50,7 @@ func init() {
 		nodePoolAvailableReplicas,
 		nodePoolDeletionDuration,
 		nodePoolInitialRolloutDuration,
+		nodePoolTransitionSeconds,
 	)
 }
 
@@ -70,4 +79,13 @@ func RecordNodePoolDeletionDuration(nodePool *hyperv1.NodePool) {
 func RecordNodePoolInitialRolloutDuration(nodePool *hyperv1.NodePool) {
 	duration := time.Since(nodePool.CreationTimestamp.Time).Seconds()
 	nodePoolInitialRolloutDuration.With(labels(nodePool)).Set(duration)
+}
+
+func ObserveConditionTransitionDuration(nodePool *hyperv1.NodePool, newCondition, oldCondition *hyperv1.NodePoolCondition) {
+	if (oldCondition != nil && oldCondition.Status == newCondition.Status) || newCondition.Status != corev1.ConditionTrue {
+		return
+	}
+
+	duration := newCondition.LastTransitionTime.Sub(nodePool.CreationTimestamp.Time).Seconds()
+	nodePoolTransitionSeconds.With(prometheus.Labels{"condition": newCondition.Type}).Observe(duration)
 }
