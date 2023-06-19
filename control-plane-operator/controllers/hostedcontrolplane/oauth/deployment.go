@@ -150,7 +150,7 @@ func buildOAuthContainerMain(image string) func(c *corev1.Container) {
 			},
 			{
 				Name:  "NO_PROXY",
-				Value: manifests.KubeAPIServerService("").Name,
+				Value: fmt.Sprintf("%s,%s,%s", manifests.KubeAPIServerService("").Name, "iam.cloud.ibm.com", "iam.test.cloud.ibm.com"),
 			},
 		}
 	}
