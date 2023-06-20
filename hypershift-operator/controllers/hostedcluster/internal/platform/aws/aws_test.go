@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 )
@@ -86,6 +87,66 @@ func TestReconcileAWSCluster(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.initialAWSCluster, tc.expectedAWSCluster); diff != "" {
 				t.Errorf("reconciled AWS cluster differs from expcted AWS cluster: %s", diff)
+			}
+		})
+	}
+}
+
+func TestValidCredentials(t *testing.T) {
+	testCases := []struct {
+		name                                    string
+		ValidOIDCConfigurationConditionStatus   metav1.ConditionStatus
+		ValidAWSIdentityProviderConditionStatus metav1.ConditionStatus
+
+		expectedResult bool
+	}{
+		{
+			name:                                    "When ValidOIDCConfigurationCondition status False, return False",
+			ValidOIDCConfigurationConditionStatus:   metav1.ConditionFalse,
+			ValidAWSIdentityProviderConditionStatus: metav1.ConditionTrue,
+			expectedResult:                          false,
+		},
+		{
+			name:                                    "When ValidOIDCConfigurationCondition status Unknown, return True",
+			ValidOIDCConfigurationConditionStatus:   metav1.ConditionUnknown,
+			ValidAWSIdentityProviderConditionStatus: metav1.ConditionTrue,
+			expectedResult:                          true,
+		},
+		{
+			name:                                    "When ValidAWSIdentityProviderCondition status False, return False",
+			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
+			ValidAWSIdentityProviderConditionStatus: metav1.ConditionFalse,
+			expectedResult:                          false,
+		},
+		{
+			name:                                    "When ValidAWSIdentityProviderCondition status Unknown, return False",
+			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
+			ValidAWSIdentityProviderConditionStatus: metav1.ConditionUnknown,
+			expectedResult:                          false,
+		},
+		{
+			name:                                    "When both ValidAWSIdentityProviderCondition and ValidOIDCConfigurationCondition status True, return True",
+			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
+			ValidAWSIdentityProviderConditionStatus: metav1.ConditionTrue,
+			expectedResult:                          true,
+		},
+	}
+
+	hc := hyperv1.HostedCluster{}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+				Type:   string(hyperv1.ValidOIDCConfiguration),
+				Status: tc.ValidOIDCConfigurationConditionStatus,
+			})
+			meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+				Type:   string(hyperv1.ValidAWSIdentityProvider),
+				Status: tc.ValidAWSIdentityProviderConditionStatus,
+			})
+
+			result := ValidCredentials(&hc)
+			if tc.expectedResult != result {
+				t.Errorf("ValidCredentials returned %v, expected %v", result, tc.expectedResult)
 			}
 		})
 	}
