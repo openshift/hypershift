@@ -33,6 +33,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/scheduler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
 	"github.com/openshift/hypershift/pkg/version"
@@ -329,6 +330,20 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
+	// Start controllers to manage dedicated request serving isolation
+	nodeReaper := scheduler.DedicatedServingComponentNodeReaper{
+		Client: mgr.GetClient(),
+	}
+	if err := nodeReaper.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
+	}
+	hcScheduler := scheduler.DedicatedServingComponentScheduler{
+		Client: mgr.GetClient(),
+	}
+	if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
+		return fmt.Errorf("unable to create dedicated serving component scheduler controller: %w", err)
+	}
+
 	// The mgr and therefore the cache is not started yet, thus we have to construct a client that
 	// directly reads from the api.
 	apiReadingClient, err := crclient.NewDelegatingClient(crclient.NewDelegatingClientInput{
@@ -340,6 +355,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// If it exsists, block default ingress controller from admitting HCP private routes
+	// If it exists, block default ingress controller from admitting HCP private routes
 	ic := &operatorv1.IngressController{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "default",

@@ -96,6 +96,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSProcessors, "e2e.powervs-processors", "0.5", "Number of processors allocated. Default is 0.5")
 	flag.IntVar(&globalOpts.configurableClusterOptions.PowerVSMemory, "e2e.powervs-memory", 32, "Amount of memory allocated (in GB). Default is 32")
 	flag.BoolVar(&globalOpts.SkipAPIBudgetVerification, "e2e.skip-api-budget", false, "Bool to avoid send metrics to E2E Server on local test execution.")
+	flag.BoolVar(&globalOpts.RequestServingIsolation, "e2e.test-request-serving-isolation", false, "If set, TestCreate creates a cluster with request serving isolation topology")
 
 	flag.Parse()
 
@@ -318,6 +319,10 @@ type options struct {
 	// SkipAPIBudgetVerification implies that you are executing the e2e tests
 	// from local to verify that them works fine before push
 	SkipAPIBudgetVerification bool
+
+	// If set, the CreateCluster test will create a cluster with request serving
+	// isolation topology.
+	RequestServingIsolation bool
 }
 
 type configurableClusterOptions struct {

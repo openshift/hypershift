@@ -209,7 +209,7 @@ func TestSetLocation(t *testing.T) {
 			Effect:   corev1.TaintEffectNoSchedule,
 		},
 		{
-			Key:      clusterLabelTolerationKey,
+			Key:      hyperv1.HostedClusterLabel,
 			Operator: corev1.TolerationOpEqual,
 			Value:    hcp.Namespace,
 			Effect:   corev1.TaintEffectNoSchedule,
@@ -237,7 +237,7 @@ func TestSetLocation(t *testing.T) {
 					Preference: corev1.NodeSelectorTerm{
 						MatchExpressions: []corev1.NodeSelectorRequirement{
 							{
-								Key:      clusterLabelTolerationKey,
+								Key:      hyperv1.HostedClusterLabel,
 								Operator: corev1.NodeSelectorOpIn,
 								Values:   []string{hcp.Namespace},
 							},
