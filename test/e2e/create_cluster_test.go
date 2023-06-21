@@ -211,6 +211,7 @@ func validatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
+	e2eutil.EnsurePSANotPrivileged(t, ctx, guestClient)
 }
 
 func validatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
