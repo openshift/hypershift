@@ -1,12 +1,13 @@
 package cluster
 
 import (
-	"github.com/openshift/hypershift/api/v1beta1"
 	"github.com/spf13/cobra"
 
+	"github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/agent"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/product-cli/cmd/cluster/kubevirt"
 )
 
 func NewCreateCommands() *cobra.Command {
@@ -38,6 +39,7 @@ func NewCreateCommands() *cobra.Command {
 	}
 
 	cmd.AddCommand(agent.NewCreateCommand(opts))
+	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
 
 	return cmd
 }

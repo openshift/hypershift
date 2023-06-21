@@ -72,10 +72,10 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 }
 
 func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
-	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
+	return core.CreateCluster(ctx, opts, ApplyPlatformSpecificsValues)
 }
 
-func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
+func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
 	if opts.KubevirtPlatform.ServicePublishingStrategy != NodePortServicePublishingStrategy && opts.KubevirtPlatform.ServicePublishingStrategy != IngressServicePublishingStrategy {
 		return fmt.Errorf("service publish strategy %s is not supported, supported options: %s, %s", opts.KubevirtPlatform.ServicePublishingStrategy, IngressServicePublishingStrategy, NodePortServicePublishingStrategy)
 	}
