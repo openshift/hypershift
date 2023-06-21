@@ -3078,7 +3078,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 	}
 
 	trustedCABundle := manifests.TrustedCABundleConfigMap(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(trustedCABundle), trustedCABundle); err != nil {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(trustedCABundle), trustedCABundle); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to get trustedCABundle: %w", err)
 	}
 
