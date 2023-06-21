@@ -468,6 +468,7 @@ objects:
           - --enable-ocp-cluster-monitoring=false
           - --enable-ci-debug-output=false
           - --private-platform=AWS
+          - --cert-dir=/var/run/secrets/serving-cert
           - --oidc-storage-provider-s3-bucket-name=${OIDC_S3_NAME}
           - --oidc-storage-provider-s3-region=${OIDC_S3_REGION}
           - --oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/${OIDC_S3_CREDS_SECRET_KEY}
@@ -533,6 +534,8 @@ objects:
             seccompProfile:
               type: RuntimeDefault
           volumeMounts:
+          - mountPath: /var/run/secrets/serving-cert
+            name: serving-cert
           - mountPath: /etc/oidc-storage-provider-s3-creds
             name: oidc-storage-provider-s3-creds
           - mountPath: /etc/provider
@@ -545,6 +548,9 @@ objects:
         priorityClassName: hypershift-operator
         serviceAccountName: operator
         volumes:
+        - name: serving-cert
+          secret:
+            secretName: manager-serving-cert
         - name: oidc-storage-provider-s3-creds
           secret:
             secretName: ${OIDC_S3_CREDS_SECRET}
@@ -26848,10 +26854,23 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      service.beta.openshift.io/inject-cabundle: "true"
     creationTimestamp: null
     name: awsendpointservices.hypershift.openshift.io
   spec:
+    conversion:
+      strategy: Webhook
+      webhook:
+        clientConfig:
+          service:
+            name: operator
+            namespace: ${NAMESPACE}
+            path: /convert
+            port: 443
+        conversionReviewVersions:
+        - v1beta2
+        - v1beta1
+        - v1alpha1
     group: hypershift.openshift.io
     names:
       kind: AWSEndpointService
@@ -27022,7 +27041,7 @@ objects:
                   type: string
               type: object
           type: object
-      served: false
+      served: true
       storage: false
       subresources:
         status: {}
@@ -27199,10 +27218,23 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      service.beta.openshift.io/inject-cabundle: "true"
     creationTimestamp: null
     name: hostedclusters.hypershift.openshift.io
   spec:
+    conversion:
+      strategy: Webhook
+      webhook:
+        clientConfig:
+          service:
+            name: operator
+            namespace: ${NAMESPACE}
+            path: /convert
+            port: 443
+        conversionReviewVersions:
+        - v1beta2
+        - v1beta1
+        - v1alpha1
     group: hypershift.openshift.io
     names:
       kind: HostedCluster
@@ -31108,7 +31140,7 @@ objects:
                   type: object
               type: object
           type: object
-      served: false
+      served: true
       storage: false
       subresources:
         status: {}
@@ -34892,12 +34924,25 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      service.beta.openshift.io/inject-cabundle: "true"
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
     name: hostedcontrolplanes.hypershift.openshift.io
   spec:
+    conversion:
+      strategy: Webhook
+      webhook:
+        clientConfig:
+          service:
+            name: operator
+            namespace: ${NAMESPACE}
+            path: /convert
+            port: 443
+        conversionReviewVersions:
+        - v1beta2
+        - v1beta1
+        - v1alpha1
     group: hypershift.openshift.io
     names:
       categories:
@@ -38829,7 +38874,7 @@ objects:
               - ready
               type: object
           type: object
-      served: false
+      served: true
       storage: false
       subresources:
         status: {}
@@ -42601,10 +42646,23 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      service.beta.openshift.io/inject-cabundle: "true"
     creationTimestamp: null
     name: nodepools.hypershift.openshift.io
   spec:
+    conversion:
+      strategy: Webhook
+      webhook:
+        clientConfig:
+          service:
+            name: operator
+            namespace: ${NAMESPACE}
+            path: /convert
+            port: 443
+        conversionReviewVersions:
+        - v1beta2
+        - v1beta1
+        - v1alpha1
     group: hypershift.openshift.io
     names:
       kind: NodePool
@@ -43539,7 +43597,7 @@ objects:
                   type: string
               type: object
           type: object
-      served: false
+      served: true
       storage: false
       subresources:
         scale:
