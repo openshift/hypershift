@@ -9,12 +9,12 @@ options.
 ## Default Ingress and DNS Behavior
 
 Every OpenShift cluster comes setup with a default application ingress
-controller which is expected have an wildcard DNS record associated with it.
+controller which is expected to have an wildcard DNS record associated with it.
 By default, guest clusters created using the Hypershift KubeVirt provider
 will automatically become a subdomain of the underlying OCP cluster that
 the KubeVirt VMs run on.
 
-For example, if an OCP cluster cluster has a default ingress DNS entry of
+For example, if an OCP cluster has a default ingress DNS entry of
 `*.apps.mgmt-cluster.example.com`, then the default ingress of a KubeVirt
 guest cluster named `guest` running on that underlying OCP cluster will
 be `*.apps.guest.apps.mgmt-cluster.example.com`.

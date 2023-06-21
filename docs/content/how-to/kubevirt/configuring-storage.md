@@ -1,8 +1,8 @@
 # Configuring Storage
 
 By default, if no advanced configuration is provided, the default storageclass
-is used for the etcd volumes, the KubeVirt VM images, and the kubevirt csi
-mappings.
+is used for the the KubeVirt VM images, the kubevirt csi mapping, and the
+etcd volumes.
 
 ## KubeVirt CSI StorageClass Mapping
 
@@ -35,10 +35,10 @@ hypershift create cluster kubevirt \
 ```
 
 Once the guest cluster is created, the `guest-sc1` and `guest-sc2` storage
-classes will be visible within the guest cluster. When users creat a PVC within
-the guest cluster that utilizes one of these storage classes, KubeVirt CSI will
-facilitate provisioning that volume using the infra storage class mapping
-that was configured during cluster creation.
+classes will be visible within the guest cluster. When users create a PVC
+within the guest cluster that utilizes one of these storage classes, KubeVirt
+CSI will facilitate provisioning that volume using the infra storage class
+mapping that was configured during cluster creation.
 
 !!! note
 
@@ -54,7 +54,7 @@ configured using the `--root-volume-size` cli argument.
 
 Below is an example of setting a custom storage class and volume size for the
 KubeVirt VMs. The result will be a guest cluster with VMs hosted on 64Gi PVCs
-hosted by the ocs-storagecluster-ceph-rdb storage class
+hosted by the `ocs-storagecluster-ceph-rdb` storage class
 
 ```shell linenums="1"
 export CLUSTER_NAME=example
@@ -76,7 +76,7 @@ hypershift create cluster kubevirt \
 ## KubeVirt VM Image Caching
 
 KubeVirt VM image caching is an advanced feature that can be used to optimize
-both cluster startup times and storage utilization. This feature requires the
+both cluster startup time and storage utilization. This feature requires the
 usage of a storage class capable of [smart cloning](https://docs.openshift.com/container-platform/4.13/virt/virtual_machines/virtual_disks/virt-cloning-a-datavolume-using-smart-cloning.html) and the `ReadWriteMany`
 access mode.
 
@@ -130,8 +130,3 @@ hypershift create cluster kubevirt \
 --cores $CPU \
 --etcd-storage-class="local"
 ```
-
-
-
-
-
