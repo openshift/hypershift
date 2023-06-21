@@ -122,6 +122,14 @@ func KubevirtCSIDriverDefaultTenantStorageClass() *storagev1.StorageClass {
 	}
 }
 
+func KubevirtCSIDriverResource() *storagev1.CSIDriver {
+	return &storagev1.CSIDriver{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "csi.kubevirt.io",
+		},
+	}
+}
+
 func KubevirtCSIDriverDaemonSet(ns string) *appsv1.DaemonSet {
 	return &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{

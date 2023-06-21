@@ -192,6 +192,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&configv1.Image{},
 		&configv1.Project{},
 		&configv1.ClusterOperator{},
+		&configv1.OperatorHub{},
 		&appsv1.DaemonSet{},
 		&configv1.ClusterOperator{},
 		&configv1.ClusterVersion{},
@@ -631,11 +632,11 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy config: %w", err))
 	}
 
-	icsp := globalconfig.ImageContentSourcePolicy()
+	icsp := globalconfig.ImageDigestMirrorSet()
 	if _, err := r.CreateOrUpdate(ctx, r.client, icsp, func() error {
-		return globalconfig.ReconcileImageContentSourcePolicy(icsp, hcp)
+		return globalconfig.ReconcileImageDigestMirrors(icsp, hcp)
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile image content source policy: %w", err))
+		errs = append(errs, fmt.Errorf("failed to reconcile image digest mirror set: %w", err))
 	}
 
 	installConfigCM := manifests.InstallConfigConfigMap()
@@ -802,7 +803,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 	p := ingress.NewIngressParams(hcp)
 	ingressController := manifests.IngressDefaultIngressController()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
-		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate)
+		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate, p.AWSNLB)
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
 	}
@@ -1286,6 +1287,18 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 
 	p := olm.NewOperatorLifecycleManagerParams(hcp)
 
+	// Check if the defaultSources are disabled
+	operatorHub := &configv1.OperatorHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub); err != nil {
+		if !apierrors.IsNotFound(err) {
+			errs = append(errs, fmt.Errorf("failed to get OperatorHub %s: %w", client.ObjectKeyFromObject(operatorHub).String(), err))
+		}
+	}
+
 	catalogs := []struct {
 		manifest  func() *operatorsv1alpha1.CatalogSource
 		reconcile func(*operatorsv1alpha1.CatalogSource, *olm.OperatorLifecycleManagerParams)
@@ -1298,20 +1311,20 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 
 	for _, catalog := range catalogs {
 		cs := catalog.manifest()
-		if _, err := r.CreateOrUpdate(ctx, r.client, cs, func() error {
-			catalog.reconcile(cs, p)
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile catalog source %s/%s: %w", cs.Namespace, cs.Name, err))
+		if operatorHub.Spec.DisableAllDefaultSources {
+			if err := r.client.Delete(ctx, cs); err != nil {
+				if !apierrors.IsNotFound(err) {
+					errs = append(errs, fmt.Errorf("failed to delete catalogSource %s/%s: %w", cs.Namespace, cs.Name, err))
+				}
+			}
+		} else {
+			if _, err := r.CreateOrUpdate(ctx, r.client, cs, func() error {
+				catalog.reconcile(cs, p)
+				return nil
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile catalog source %s/%s: %w", cs.Namespace, cs.Name, err))
+			}
 		}
-	}
-
-	olmAlertRules := manifests.OLMAlertRules()
-	if _, err := r.CreateOrUpdate(ctx, r.client, olmAlertRules, func() error {
-		olm.ReconcileOLMAlertRules(olmAlertRules)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile olm alert rules: %w", err))
 	}
 
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)

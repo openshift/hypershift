@@ -342,15 +342,25 @@ func NewStartCommand() *cobra.Command {
 			componentImages[name] = image
 		}
 
-		releaseProvider := &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.StaticProviderDecorator{
-				Delegate: &releaseinfo.CachedProvider{
-					Inner: &releaseinfo.RegistryClientProvider{},
-					Cache: map[string]*releaseinfo.ReleaseImage{},
+		var imageRegistryOverrides map[string][]string
+
+		openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
+		if ok {
+			imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+		}
+
+		releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+				Delegate: &releaseinfo.StaticProviderDecorator{
+					Delegate: &releaseinfo.CachedProvider{
+						Inner: &releaseinfo.RegistryClientProvider{},
+						Cache: map[string]*releaseinfo.ReleaseImage{},
+					},
+					ComponentImages: componentImages,
 				},
-				ComponentImages: componentImages,
+				RegistryOverrides: registryOverrides,
 			},
-			RegistryOverrides: registryOverrides,
+			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		}
 
 		defaultIngressDomain := os.Getenv(config.DefaultIngressDomainEnvVar)

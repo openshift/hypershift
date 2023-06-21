@@ -69,6 +69,7 @@ type NodePool struct {
 }
 
 // NodePoolSpec is the desired behavior of a NodePool.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.arch) || has(self.arch)", message="Arch is required once set"
 type NodePoolSpec struct {
 	// ClusterName is the name of the HostedCluster this NodePool belongs to.
 	//
@@ -164,6 +165,7 @@ type NodePoolSpec struct {
 	//
 	// +kubebuilder:default:=amd64
 	// +kubebuilder:validation:Enum=arm64;amd64
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Arch is immutable"
 	// +optional
 	Arch string `json:"arch,omitempty"`
 }
@@ -845,9 +847,14 @@ type KubeVirtNodePoolStatus struct {
 	// +optional
 	CacheName string `json:"cacheName,omitempty"`
 
-	// RemoteNamespace holds the namespace of the remote infra cluster, if defined
+	// Credentials shows the client credentials used when creating KubeVirt virtual machines.
+	// This filed is only exists when the KubeVirt virtual machines are being placed
+	// on a cluster separate from the one hosting the Hosted Control Plane components.
+	//
+	// The default behavior when Credentials is not defined is for the KubeVirt VMs to be placed on
+	// the same cluster and namespace as the Hosted Control Plane.
 	// +optional
-	RemoteNamespace string `json:"remoteNamespace,omitempty"`
+	Credentials *KubevirtPlatformCredentials `json:"credentials,omitempty"`
 }
 
 // Taint is as v1 Core but without TimeAdded.

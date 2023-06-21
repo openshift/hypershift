@@ -277,6 +277,14 @@ func reconcileDefaultTenantStorageClass(sc *storagev1.StorageClass) error {
 	return nil
 }
 
+func reconcileDefaultTenantCSIDriverResource(csiDriver *storagev1.CSIDriver) error {
+	csiDriver.Spec.AttachRequired = utilpointer.Bool(true)
+	csiDriver.Spec.PodInfoOnMount = utilpointer.Bool(true)
+	fsPolicy := storagev1.ReadWriteOnceWithFSTypeFSGroupPolicy
+	csiDriver.Spec.FSGroupPolicy = &fsPolicy
+	return nil
+}
+
 func reconcileTenantNodeSA(sa *corev1.ServiceAccount) error {
 	return nil
 }
@@ -436,6 +444,14 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 	}
 
 	err = reconcileTenantStorageClasses(client, hcp, ctx, createOrUpdate)
+	if err != nil {
+		return err
+	}
+
+	csidriverResource := manifests.KubevirtCSIDriverResource()
+	_, err = createOrUpdate(ctx, client, csidriverResource, func() error {
+		return reconcileDefaultTenantCSIDriverResource(csidriverResource)
+	})
 	if err != nil {
 		return err
 	}

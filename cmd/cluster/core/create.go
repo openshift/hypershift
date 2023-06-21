@@ -56,6 +56,7 @@ type CreateOptions struct {
 	NodeDrainTimeout                 time.Duration
 	PullSecretFile                   string
 	ReleaseImage                     string
+	ReleaseStream                    string
 	Render                           bool
 	SSHKeyFile                       string
 	ServiceCIDR                      string
@@ -155,7 +156,7 @@ type AzurePlatformOptions struct {
 
 func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
 	if len(opts.ReleaseImage) == 0 {
-		defaultVersion, err := version.LookupDefaultOCPVersion()
+		defaultVersion, err := version.LookupDefaultOCPVersion(opts.ReleaseStream)
 		if err != nil {
 			return nil, fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)
 		}

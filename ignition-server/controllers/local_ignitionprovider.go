@@ -66,6 +66,11 @@ type LocalIgnitionProvider struct {
 	// deleted after use.
 	PreserveOutput bool
 
+	// FeatureGateManifest is the path to a rendered feature gate manifest.
+	// This must be copied into the MCC directory as it is required
+	// to render the ignition payload.
+	FeatureGateManifest string
+
 	ImageFileCache *imageFileCache
 
 	lock sync.Mutex
@@ -254,11 +259,63 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 				return fmt.Errorf("failed to close file: %w", err)
 			}
 		}
+
+		component := "cluster-config-operator"
+		clusterConfigOperatorImage, ok := imageProvider.ImageExist(component)
+		if !ok {
+			return fmt.Errorf("release image does not contain cluster-config-operator (images: %v)", imageProvider.ComponentImages())
+		}
+		log.Info("discovered cluster config operator image", "image", clusterConfigOperatorImage)
+
+		file, err := os.Create(filepath.Join(binDir, component))
+		if err != nil {
+			return fmt.Errorf("failed to create file: %w", err)
+		}
+		if err := file.Chmod(0777); err != nil {
+			return fmt.Errorf("failed to chmod file: %w", err)
+		}
+		if err := p.ImageFileCache.extractImageFile(ctx, clusterConfigOperatorImage, pullSecret, filepath.Join("usr/bin/", component), file); err != nil {
+			return fmt.Errorf("failed to extract image file: %w", err)
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("failed to close file: %w", err)
+		}
+
 		log.Info("downloaded binaries", "time", time.Since(start).Round(time.Second).String())
 		return nil
 	}()
 	if err != nil {
 		return nil, fmt.Errorf("failed to download binaries: %w", err)
+	}
+
+	payloadVersion, err := semver.Parse(imageProvider.Version())
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse payload version: %w", err)
+	}
+
+	featureGateBytes, err := os.ReadFile(p.FeatureGateManifest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read feature gate: %w", err)
+	}
+
+	err = func() error {
+		start := time.Now()
+
+		args := []string{
+			"-c",
+			invokeFeatureGateRenderScript(filepath.Join(binDir, "cluster-config-operator"), filepath.Join(workDir, "cco"), mccBaseDir, payloadVersion, string(featureGateBytes)),
+		}
+
+		cmd := exec.CommandContext(ctx, "/bin/bash", args...)
+		out, err := cmd.CombinedOutput()
+		log.Info("cluster-config-operator process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
+		if err != nil {
+			return fmt.Errorf("cluster-config-operator process failed: %s: %w", string(out), err)
+		}
+		return nil
+	}()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute cluster-config-operator: %w", err)
 	}
 
 	// First, run the MCO using templates and image refs as input. This generates
@@ -282,11 +339,6 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		}
 		if err = os.WriteFile(fmt.Sprintf("%s/pull-secret.yaml", configDir), []byte(serializedPullSecret), 0644); err != nil {
 			return fmt.Errorf("failed to write pull secret to config dir: %w", err)
-		}
-
-		payloadVersion, err := semver.Parse(imageProvider.Version())
-		if err != nil {
-			return fmt.Errorf("failed to parse payload version: %w", err)
 		}
 
 		// args contains the base args that have not changed over time.
@@ -400,12 +452,23 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	// for the MCS.
 	err = func() error {
 		start := time.Now()
-		cmd := exec.CommandContext(ctx, filepath.Join(binDir, "machine-config-controller"), "bootstrap",
+
+		args := []string{
+			"bootstrap",
 			fmt.Sprintf("--manifest-dir=%s", mccBaseDir),
 			fmt.Sprintf("--templates=%s", filepath.Join(mccBaseDir, "etc", "mcc", "templates")),
 			fmt.Sprintf("--pull-secret=%s/machineconfigcontroller-pull-secret", mccBaseDir),
 			fmt.Sprintf("--dest-dir=%s", mcsBaseDir),
-		)
+		}
+
+		// For 4.14 onwards there's a requirement to include the payload version flag.
+		if payloadVersion.Minor >= 14 {
+			args = append(args,
+				fmt.Sprintf("--payload-version=%s", imageProvider.Version()),
+			)
+		}
+
+		cmd := exec.CommandContext(ctx, filepath.Join(binDir, "machine-config-controller"), args...)
 		out, err := cmd.CombinedOutput()
 		log.Info("machine-config-controller process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
 		if err != nil {
@@ -447,18 +510,28 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			return nil, fmt.Errorf("failed to generate certificates: %w", err)
 		}
 
-		// Spin up the MCS process and ensure it's signaled to terminate when
-		// the function returns
-		mcsCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		cmd := exec.CommandContext(mcsCtx, filepath.Join(binDir, "machine-config-server"), "bootstrap",
+		args := []string{
+			"bootstrap",
 			fmt.Sprintf("--server-basedir=%s", mcsBaseDir),
 			fmt.Sprintf("--bootstrap-kubeconfig=%s/kubeconfig", mcsBaseDir),
 			fmt.Sprintf("--cert=%s/tls.crt", mcsBaseDir),
 			fmt.Sprintf("--key=%s/tls.key", mcsBaseDir),
-			"--secure-port=22623",
-			"--insecure-port=22624",
-		)
+			"--secure-port=22625",
+			"--insecure-port=22626",
+		}
+
+		// For 4.14 onwards there's a requirement to include the payload version flag.
+		if payloadVersion.Minor >= 14 {
+			args = append(args,
+				fmt.Sprintf("--payload-version=%s", imageProvider.Version()),
+			)
+		}
+
+		// Spin up the MCS process and ensure it's signaled to terminate when
+		// the function returns
+		mcsCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		cmd := exec.CommandContext(mcsCtx, filepath.Join(binDir, "machine-config-server"), args...)
 		go func() {
 			out, err := cmd.CombinedOutput()
 			log.Info("machine-config-server process exited", "output", string(out), "error", err)
@@ -471,7 +544,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		}
 		var payload []byte
 		err = wait.PollUntilWithContext(ctx, 1*time.Second, func(ctx context.Context) (bool, error) {
-			req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:22624/config/master", nil)
+			req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:22626/config/master", nil)
 			if err != nil {
 				return false, fmt.Errorf("error building http request: %w", err)
 			}
@@ -634,4 +707,51 @@ func findMatchingManifest(imageRef string, deserializedManifestList *manifestlis
 	}
 
 	return "", fmt.Errorf("imageRef is an unknown format to parse, imageRef: %s", imageRef)
+}
+
+func invokeFeatureGateRenderScript(binary, workDir, outputDir string, payloadVersion semver.Version, featureGateYAML string) string {
+	var script = `#!/bin/bash
+set -e
+mkdir -p %[2]s
+
+cd %[2]s
+mkdir -p input output manifests
+
+touch %[2]s/manifests/99_feature-gate.yaml
+cat <<EOF >%[2]s/manifests/99_feature-gate.yaml
+%[5]s
+EOF
+
+%[1]s render \
+   --config-output-file config \
+   --asset-input-dir %[2]s/input \
+   --asset-output-dir %[2]s/output \
+   --rendered-manifest-files=%[2]s/manifests \
+   --payload-version=%[4]s 
+cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
+`
+
+	// Depending on the version, we need different args.
+	if payloadVersion.Minor < 14 {
+		script = `#!/bin/bash
+set -e
+mkdir -p %[2]s
+
+cd %[2]s
+mkdir -p input output manifests
+
+touch %[2]s/manifests/99_feature-gate.yaml
+cat <<EOF >%[2]s/manifests/99_feature-gate.yaml
+%[5]s
+EOF
+
+%[1]s render \
+   --config-output-file config \
+   --asset-input-dir %[2]s/input \
+   --asset-output-dir %[2]s/output
+cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
+`
+	}
+
+	return fmt.Sprintf(script, binary, workDir, outputDir, payloadVersion, featureGateYAML)
 }

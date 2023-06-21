@@ -152,7 +152,7 @@ type HostedControlPlaneReconciler struct {
 	SetDefaultSecurityContext bool
 
 	Log                           logr.Logger
-	ReleaseProvider               releaseinfo.ProviderWithRegistryOverrides
+	ReleaseProvider               releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
 	createOrUpdate                func(hcp *hyperv1.HostedControlPlane) upsert.CreateOrUpdateFN
 	EnableCIDebugOutput           bool
 	OperateOnReleaseImage         string
@@ -723,7 +723,8 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 			return fmt.Errorf("failed to get kube apiserver service: %w", err)
 		}
-		if len(svc.Status.LoadBalancer.Ingress) == 0 || svc.Status.LoadBalancer.Ingress[0].Hostname == "" {
+		if len(svc.Status.LoadBalancer.Ingress) == 0 ||
+			svc.Status.LoadBalancer.Ingress[0].Hostname == "" && svc.Status.LoadBalancer.Ingress[0].IP == "" {
 			return fmt.Errorf("APIServer load balancer is not provisioned")
 		}
 		return healthCheckKASEndpoint(svc.Status.LoadBalancer.Ingress[0].Hostname, p.APIServerPort, hcp)
@@ -900,13 +901,16 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	if err := ignitionserver.ReconcileIgnitionServer(ctx,
 		r.Client,
 		createOrUpdate,
+		releaseImageProvider.Version(),
 		releaseImageProvider.GetImage(util.CPOImageName),
+		releaseImageProvider.GetImage("cluster-config-operator"),
 		hostedControlPlane,
 		r.DefaultIngressDomain,
 		// The healthz handler was added before the CPO started to manage the ignition server, and it's the same binary,
 		// so we know it always exists here.
 		true,
 		r.ReleaseProvider.GetRegistryOverrides(),
+		util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
 		r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
 		config.OwnerRefFrom(hostedControlPlane),
 	); err != nil {
@@ -2664,7 +2668,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 
 	deployment := manifests.OAuthServerDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, oauthConfig, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, util.APIPort(hcp), p.NamedCertificates(), p.Socks5ProxyImage)
+		return oauth.ReconcileDeployment(ctx, r, deployment, p.OwnerRef, oauthConfig, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, util.APIPort(hcp), p.NamedCertificates(), p.Socks5ProxyImage, p.NoProxy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
@@ -3229,29 +3233,29 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		return fmt.Errorf("failed to reconcile ssh key ignition config: %w", err)
 	}
 
-	imageContentSourceIgnitionConfig := manifests.ImageContentSourcePolicyIgnitionConfig(hcp.GetNamespace())
-	if !p.HasImageContentSourcePolicy {
-		// ensure the icsp configmap has been removed if no longer needed
-		err := r.Get(ctx, client.ObjectKeyFromObject(imageContentSourceIgnitionConfig), imageContentSourceIgnitionConfig)
+	imageSourceMirrorsIgnitionConfig := manifests.ImageContentPolicyIgnitionConfig(hcp.GetNamespace())
+	if !p.HasImageMirrorPolicies {
+		// ensure the imageDigestMirrorSet configmap has been removed if no longer needed
+		err := r.Get(ctx, client.ObjectKeyFromObject(imageSourceMirrorsIgnitionConfig), imageSourceMirrorsIgnitionConfig)
 		if err != nil {
 			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("failed to check whether image content source policy configuration configmap exists: %w", err)
 			}
 		} else {
-			if err := r.Delete(ctx, imageContentSourceIgnitionConfig); err != nil {
+			if err := r.Delete(ctx, imageSourceMirrorsIgnitionConfig); err != nil {
 				return fmt.Errorf("failed to delete image content source policy configuration configmap: %w", err)
 			}
 		}
 		return nil
 	}
 
-	icsp := globalconfig.ImageContentSourcePolicy()
-	if err := globalconfig.ReconcileImageContentSourcePolicy(icsp, hcp); err != nil {
-		return fmt.Errorf("failed to reconcile image content source policy: %w", err)
+	imageDigestMirrorSet := globalconfig.ImageDigestMirrorSet()
+	if err := globalconfig.ReconcileImageDigestMirrors(imageDigestMirrorSet, hcp); err != nil {
+		return fmt.Errorf("failed to reconcile image content policy: %w", err)
 	}
 
-	if _, err := createOrUpdate(ctx, r, imageContentSourceIgnitionConfig, func() error {
-		return ignition.ReconcileImageContentSourcePolicyIgnitionConfig(imageContentSourceIgnitionConfig, p.OwnerRef, icsp)
+	if _, err := createOrUpdate(ctx, r, imageSourceMirrorsIgnitionConfig, func() error {
+		return ignition.ReconcileImageSourceMirrorsIgnitionConfig(imageSourceMirrorsIgnitionConfig, p.OwnerRef, imageDigestMirrorSet)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile image content source policy ignition config: %w", err)
 	}
@@ -4139,12 +4143,8 @@ func hasValidCloudCredentials(hcp *hyperv1.HostedControlPlane) (string, bool) {
 	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
 		return "", true
 	}
-	oidcConfigValid := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidOIDCConfiguration))
-	if oidcConfigValid != nil && oidcConfigValid.Status == metav1.ConditionFalse {
-		return "Invalid OIDC configuration", false
-	}
 	validIdentityProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
-	if validIdentityProvider != nil && validIdentityProvider.Status == metav1.ConditionFalse {
+	if validIdentityProvider != nil && validIdentityProvider.Status != metav1.ConditionTrue {
 		return "Invalid AWS identity provider", false
 	}
 	return "", true

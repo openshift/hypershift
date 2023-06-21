@@ -824,7 +824,7 @@ func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
 }
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
-	releaseImage, _ := version.LookupDefaultOCPVersion()
+	releaseImage, _ := version.LookupDefaultOCPVersion("")
 	hostedClusters := []*hyperv1.HostedCluster{
 		{
 			ObjectMeta: metav1.ObjectMeta{Name: "agent"},
@@ -3051,7 +3051,7 @@ func newKVInfraMapMock(objects []crclient.Object) kvinfra.KubevirtInfraClientMap
 	}
 }
 
-func (k *kubevirtInfraClientMapMock) DiscoverKubevirtClusterClient(_ context.Context, _ crclient.Client, _ string, _ *hyperv1.HostedCluster, _ string) (*kvinfra.KubevirtInfraClient, error) {
+func (k *kubevirtInfraClientMapMock) DiscoverKubevirtClusterClient(_ context.Context, _ crclient.Client, _ string, _ *hyperv1.KubevirtPlatformCredentials, _ string, _ string) (*kvinfra.KubevirtInfraClient, error) {
 	return k.cluster, nil
 }
 

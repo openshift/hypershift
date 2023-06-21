@@ -105,6 +105,24 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	}
 	deployment.Labels[ManagedByLabel] = "control-plane-operator"
 
+	// adding annotation for EmptyDir volume safe-eviction
+	if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+		deployment.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+	}
+
+	localStorageVolumes := make([]string, 0)
+
+	for _, volume := range deployment.Spec.Template.Spec.Volumes {
+		if volume.EmptyDir != nil || volume.HostPath != nil {
+			localStorageVolumes = append(localStorageVolumes, volume.Name)
+		}
+	}
+
+	if len(localStorageVolumes) > 0 {
+		annotationsVolumes := strings.Join(localStorageVolumes, ",")
+		deployment.Spec.Template.ObjectMeta.Annotations[PodSafeToEvictLocalVolumesKey] = annotationsVolumes
+	}
+
 	c.Scheduling.ApplyTo(&deployment.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&deployment.Spec.Template.ObjectMeta)
 	c.SecurityContexts.ApplyTo(&deployment.Spec.Template.Spec)

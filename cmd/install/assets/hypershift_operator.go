@@ -276,6 +276,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 
 type HyperShiftOperatorDeployment struct {
 	AdditionalTrustBundle          *corev1.ConfigMap
+	OpenShiftTrustBundle           *corev1.ConfigMap
 	Namespace                      *corev1.Namespace
 	OperatorImage                  string
 	Images                         map[string]string
@@ -580,6 +581,23 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	if o.AdditionalTrustBundle != nil {
 		// Add trusted-ca mount with optional configmap
 		util.DeploymentAddTrustBundleVolume(&corev1.LocalObjectReference{Name: o.AdditionalTrustBundle.Name}, deployment)
+	}
+
+	if o.OpenShiftTrustBundle != nil {
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "openshift-config-managed-trusted-ca-bundle",
+			MountPath: "/etc/pki/ca-trust/extracted/pem",
+			ReadOnly:  true,
+		})
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: "openshift-config-managed-trusted-ca-bundle",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: o.OpenShiftTrustBundle.Name},
+					Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"}},
+				},
+			},
+		})
 	}
 
 	return deployment

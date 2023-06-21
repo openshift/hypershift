@@ -16,6 +16,7 @@ const (
 )
 
 const configTemplate = `[Global]
+DisableStrictZoneCheck = true
 Zone = %s
 VPC = %s
 KubernetesClusterID = %s

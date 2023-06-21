@@ -209,12 +209,10 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	// run test validations
 	nodePoolTest.Run(t, *nodePool, nodes)
 
-	if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		validateAWSNodePoolConditions(t, ctx, mgmtClient, nodePool)
-	}
+	validateNodePoolConditions(t, ctx, mgmtClient, nodePool)
 }
 
-func validateAWSNodePoolConditions(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool) {
+func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool) {
 	expectedConditions := conditions.ExpectedNodePoolConditions()
 
 	if nodePool.Spec.AutoScaling != nil {
@@ -227,6 +225,10 @@ func validateAWSNodePoolConditions(t *testing.T, ctx context.Context, client crc
 		expectedConditions[hyperv1.NodePoolAutorepairEnabledConditionType] = corev1.ConditionTrue
 	} else {
 		expectedConditions[hyperv1.NodePoolAutorepairEnabledConditionType] = corev1.ConditionFalse
+	}
+
+	if nodePool.Spec.Arch != "" && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+		expectedConditions[hyperv1.NodePoolValidArchPlatform] = corev1.ConditionFalse
 	}
 
 	start := time.Now()

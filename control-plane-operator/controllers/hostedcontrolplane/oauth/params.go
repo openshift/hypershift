@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	osinv1 "github.com/openshift/api/osin/v1"
@@ -13,6 +14,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -41,19 +43,21 @@ type OAuthServerParams struct {
 	AvailabilityProberImage string `json:"availabilityProberImage"`
 	Availability            hyperv1.AvailabilityPolicy
 	Socks5ProxyImage        string
+	NoProxy                 []string
 }
 
 type OAuthConfigParams struct {
-	ExternalAPIHost          string
-	ExternalAPIPort          int32
-	ExternalHost             string
-	ExternalPort             int32
-	ServingCert              *corev1.Secret
-	NamedCertificates        []configv1.APIServerNamedServingCert
-	CipherSuites             []string
-	MinTLSVersion            string
-	IdentityProviders        []configv1.IdentityProvider
-	AccessTokenMaxAgeSeconds int32
+	ExternalAPIHost              string
+	ExternalAPIPort              int32
+	ExternalHost                 string
+	ExternalPort                 int32
+	ServingCert                  *corev1.Secret
+	NamedCertificates            []configv1.APIServerNamedServingCert
+	CipherSuites                 []string
+	MinTLSVersion                string
+	IdentityProviders            []configv1.IdentityProvider
+	AccessTokenMaxAgeSeconds     int32
+	AccessTokenInactivityTimeout *metav1.Duration
 	// OauthConfigOverrides contains a mapping from provider name to the config overrides specified for the provider.
 	// The only supported use case of using this is for the IBMCloud IAM OIDC provider.
 	OauthConfigOverrides map[string]*ConfigOverride
@@ -84,6 +88,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 		Socks5ProxyImage:        releaseImageProvider.GetImage("socks5-proxy"),
+		NoProxy:                 []string{manifests.KubeAPIServerService("").Name},
 	}
 	if hcp.Spec.Configuration != nil {
 		p.APIServer = hcp.Spec.Configuration.APIServer
@@ -154,6 +159,10 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 
 	p.SetDefaultSecurityContext = setDefaultSecurityContext
 
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		p.NoProxy = append(p.NoProxy, "iam.cloud.ibm.com", "iam.test.cloud.ibm.com")
+	}
+
 	return p
 }
 
@@ -179,6 +188,13 @@ func (p *OAuthServerParams) AccessTokenMaxAgeSeconds() int32 {
 	return defaultAccessTokenMaxAgeSeconds
 }
 
+func (p *OAuthServerParams) AccessTokenInactivityTimeout() *metav1.Duration {
+	if p.OAuth != nil {
+		return p.OAuth.TokenConfig.AccessTokenInactivityTimeout
+	}
+	return nil
+}
+
 func (p *OAuthServerParams) MinTLSVersion() string {
 	if p.APIServer != nil {
 		return config.MinTLSVersion(p.APIServer.TLSSecurityProfile)
@@ -195,18 +211,19 @@ func (p *OAuthServerParams) CipherSuites() []string {
 
 func (p *OAuthServerParams) ConfigParams(servingCert *corev1.Secret) *OAuthConfigParams {
 	return &OAuthConfigParams{
-		ExternalHost:             p.ExternalHost,
-		ExternalPort:             p.ExternalPort,
-		ExternalAPIHost:          p.ExternalAPIHost,
-		ExternalAPIPort:          p.ExternalAPIPort,
-		ServingCert:              servingCert,
-		CipherSuites:             p.CipherSuites(),
-		MinTLSVersion:            p.MinTLSVersion(),
-		IdentityProviders:        p.IdentityProviders(),
-		AccessTokenMaxAgeSeconds: p.AccessTokenMaxAgeSeconds(),
-		OauthConfigOverrides:     p.OauthConfigOverrides,
-		LoginURLOverride:         p.LoginURLOverride,
-		NamedCertificates:        p.NamedCertificates(),
+		ExternalHost:                 p.ExternalHost,
+		ExternalPort:                 p.ExternalPort,
+		ExternalAPIHost:              p.ExternalAPIHost,
+		ExternalAPIPort:              p.ExternalAPIPort,
+		ServingCert:                  servingCert,
+		CipherSuites:                 p.CipherSuites(),
+		MinTLSVersion:                p.MinTLSVersion(),
+		IdentityProviders:            p.IdentityProviders(),
+		AccessTokenMaxAgeSeconds:     p.AccessTokenMaxAgeSeconds(),
+		AccessTokenInactivityTimeout: p.AccessTokenInactivityTimeout(),
+		OauthConfigOverrides:         p.OauthConfigOverrides,
+		LoginURLOverride:             p.LoginURLOverride,
+		NamedCertificates:            p.NamedCertificates(),
 	}
 }
 

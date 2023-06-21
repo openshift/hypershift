@@ -115,8 +115,9 @@ func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace 
 				Error:             cpath(oauthVolumeErrorTemplate().Name, ErrorsTemplateKey),
 			},
 			TokenConfig: osinv1.TokenConfig{
-				AccessTokenMaxAgeSeconds:    params.AccessTokenMaxAgeSeconds,
-				AuthorizeTokenMaxAgeSeconds: defaultAuthorizeTokenMaxAgeSeconds,
+				AccessTokenMaxAgeSeconds:     params.AccessTokenMaxAgeSeconds,
+				AccessTokenInactivityTimeout: params.AccessTokenInactivityTimeout,
+				AuthorizeTokenMaxAgeSeconds:  defaultAuthorizeTokenMaxAgeSeconds,
 			},
 			IdentityProviders: identityProviders,
 		},

@@ -12,7 +12,21 @@ import (
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
+)
+
+var (
+	LocalStorageVolumes = []string{
+		"private",
+		"public",
+		"sockets",
+		"virt-bin-share-dir",
+		"libvirt-runtime",
+		"ephemeral-disks",
+		"container-disks",
+		"hotplug-disks",
+	}
 )
 
 func defaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
@@ -34,8 +48,38 @@ func defaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error
 	return containerImage, split[1], nil
 }
 
+func unsupportedOpenstackDefaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
+	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+	if !foundArch {
+		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
+	}
+	openStack, exists := arch.Artifacts["openstack"]
+	if !exists {
+		return "", "", fmt.Errorf("couldn't find OS metadata for openstack")
+	}
+	artifact, exists := openStack.Formats["qcow2.gz"]
+	if !exists {
+		return "", "", fmt.Errorf("couldn't find OS metadata for openstack qcow2.gz")
+	}
+	disk, exists := artifact["disk"]
+	if !exists {
+		return "", "", fmt.Errorf("couldn't find OS metadata for the openstack qcow2.gz disk")
+	}
+
+	return disk.Location, disk.SHA256, nil
+}
+
+func allowUnsupportedRHCOSVariants(nodePool *hyperv1.NodePool) bool {
+	val, exists := nodePool.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation]
+	if exists && strings.ToLower(val) == "true" {
+		return true
+	}
+	return false
+}
+
 func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, hostedNamespace string) (BootImage, error) {
 	var rootVolume *hyperv1.KubevirtRootVolume
+	isHTTP := false
 	if nodePool.Spec.Platform.Kubevirt != nil {
 		rootVolume = nodePool.Spec.Platform.Kubevirt.RootVolume
 	}
@@ -46,20 +90,26 @@ func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage
 
 		imageName := *nodePool.Spec.Platform.Kubevirt.RootVolume.Image.ContainerDiskImage
 
-		return newContainerBootImage(imageName), nil
+		return newBootImage(imageName, isHTTP), nil
 	}
 
 	imageName, imageHash, err := defaultImage(releaseImage)
-	if err != nil {
+	if err != nil && allowUnsupportedRHCOSVariants(nodePool) {
+		imageName, imageHash, err = unsupportedOpenstackDefaultImage(releaseImage)
+		if err != nil {
+			return nil, err
+		}
+		isHTTP = true
+	} else if err != nil {
 		return nil, err
 	}
 
 	// KubeVirt Caching is disabled by default
 	if rootVolume != nil && rootVolume.CacheStrategy != nil && rootVolume.CacheStrategy.Type == hyperv1.KubevirtCachingStrategyPVC {
-		return newCachedContainerBootImage(imageName, imageHash, hostedNamespace), nil
+		return newCachedBootImage(imageName, imageHash, hostedNamespace, isHTTP), nil
 	}
 
-	return newContainerBootImage(imageName), nil
+	return newBootImage(imageName, isHTTP), nil
 }
 
 func PlatformValidation(nodePool *hyperv1.NodePool) error {
@@ -230,6 +280,15 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, bootImage BootImage, hclust
 
 	vmTemplate.ObjectMeta.Labels[hyperv1.NodePoolNameLabel] = nodePool.Name
 	vmTemplate.ObjectMeta.Labels[hyperv1.InfraIDLabel] = hcluster.Spec.InfraID
+
+	// Adding volumes for safe-eviction by clusterAutoscaler when it comes in action.
+	// The volumes that should be included in the annotation are the emptyDir and hostPath ones
+
+	if vmTemplate.Spec.Template.ObjectMeta.Annotations == nil {
+		vmTemplate.Spec.Template.ObjectMeta.Annotations = make(map[string]string)
+	}
+
+	vmTemplate.Spec.Template.ObjectMeta.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey] = strings.Join(LocalStorageVolumes, ",")
 
 	if hcluster.Spec.Platform.Kubevirt != nil && hcluster.Spec.Platform.Kubevirt.Credentials != nil {
 		vmTemplate.ObjectMeta.Namespace = hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace

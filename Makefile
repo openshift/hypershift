@@ -43,7 +43,7 @@ all: build e2e
 
 pre-commit: all verify test
 
-build: hypershift-operator control-plane-operator hypershift
+build: hypershift-operator control-plane-operator hypershift product-cli
 
 .PHONY: update
 update: deps api api-docs app-sre-saas-template
@@ -78,6 +78,10 @@ control-plane-operator:
 .PHONY: hypershift
 hypershift:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift .
+
+.PHONY: product-cli
+product-cli:
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hcp ./product-cli
 
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.

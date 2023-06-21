@@ -49,6 +49,155 @@ func TestCompressDecompress(t *testing.T) {
 	}
 }
 
+func TestConvertRegistryOverridesToCommandLineFlag(t *testing.T) {
+	testCases := []struct {
+		name              string
+		registryOverrides map[string]string
+		expectedFlag      string
+	}{
+		{
+			name:         "No registry overrides",
+			expectedFlag: "=",
+		},
+		{
+			name: "Registry overrides with single mirrors",
+			registryOverrides: map[string]string{
+				"registry1": "mirror1.1",
+				"registry2": "mirror2.1",
+				"registry3": "mirror3.1",
+			},
+			expectedFlag: "registry1=mirror1.1,registry2=mirror2.1,registry3=mirror3.1",
+		},
+	}
+
+	t.Parallel()
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			result := ConvertRegistryOverridesToCommandLineFlag(testCase.registryOverrides)
+			g.Expect(result).To(Equal(testCase.expectedFlag))
+		})
+	}
+}
+
+func TestConvertOpenShiftImageRegistryOverridesToCommandLineFlag(t *testing.T) {
+	testCases := []struct {
+		name              string
+		registryOverrides map[string][]string
+		expectedFlag      string
+	}{
+		{
+			name:         "No registry overrides",
+			expectedFlag: "=",
+		},
+		{
+			name: "Registry overrides with single mirrors",
+			registryOverrides: map[string][]string{
+				"registry1": {
+					"mirror1.1",
+				},
+				"registry2": {
+					"mirror2.1",
+				},
+				"registry3": {
+					"mirror3.1",
+				},
+			},
+			expectedFlag: "registry1=mirror1.1,registry2=mirror2.1,registry3=mirror3.1",
+		},
+		{
+			name: "Registry overrides with multiple mirrors",
+			registryOverrides: map[string][]string{
+				"registry1": {
+					"mirror1.1",
+					"mirror1.2",
+					"mirror1.3",
+				},
+				"registry2": {
+					"mirror2.1",
+					"mirror2.2",
+				},
+				"registry3": {
+					"mirror3.1",
+				},
+			},
+			expectedFlag: "registry1=mirror1.1,registry1=mirror1.2,registry1=mirror1.3,registry2=mirror2.1,registry2=mirror2.2,registry3=mirror3.1",
+		},
+	}
+
+	t.Parallel()
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			result := ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(testCase.registryOverrides)
+			g.Expect(result).To(Equal(testCase.expectedFlag))
+		})
+	}
+}
+
+func TestConvertImageRegistryOverrideStringToMap(t *testing.T) {
+	testCases := []struct {
+		name           string
+		expectedOutput map[string][]string
+		input          string
+	}{
+		{
+			name:  "No registry overrides",
+			input: "=",
+			//expectedOutput: make(map[string][]string),
+		},
+		{
+			name: "Registry overrides with single mirrors",
+			expectedOutput: map[string][]string{
+				"registry1": {
+					"mirror1.1",
+				},
+				"registry2": {
+					"mirror2.1",
+				},
+				"registry3": {
+					"mirror3.1",
+				},
+			},
+
+			input: "registry1=mirror1.1,registry2=mirror2.1,registry3=mirror3.1",
+		},
+		{
+			name: "Registry overrides with multiple mirrors",
+			expectedOutput: map[string][]string{
+				"registry1": {
+					"mirror1.1",
+					"mirror1.2",
+					"mirror1.3",
+				},
+				"registry2": {
+					"mirror2.1",
+					"mirror2.2",
+				},
+				"registry3": {
+					"mirror3.1",
+				},
+			},
+			input: "registry1=mirror1.1,registry1=mirror1.2,registry1=mirror1.3,registry2=mirror2.1,registry2=mirror2.2,registry3=mirror3.1",
+		},
+	}
+
+	t.Parallel()
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			result := ConvertImageRegistryOverrideStringToMap(testCase.input)
+			g.Expect(result).To(Equal(testCase.expectedOutput))
+		})
+	}
+}
+
 // Tests that a given input can be expected and encoded without errors.
 func testCompressFunc(t *testing.T, payload, expected []byte) {
 	t.Helper()

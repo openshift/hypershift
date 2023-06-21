@@ -152,6 +152,12 @@ const (
 	// RouteVisibilityPrivate is a value for RouteVisibilityLabel that will result
 	// in the labeled route being ignored by external-dns
 	RouteVisibilityPrivate = "private"
+
+	// AllowUnsupportedKubeVirtRHCOSVariantsAnnotation allows a NodePool to use image sources
+	// other than the official rhcos kubevirt variant, such as the openstack variant. This
+	// allows the creation of guest clusters <= 4.13, which are before the rhcos kubevirt
+	// variant was released.
+	AllowUnsupportedKubeVirtRHCOSVariantsAnnotation = "hypershift.openshift.io/allow-unsupported-kubevirt-rhcos-variants"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
@@ -681,6 +687,7 @@ type KubevirtPlatformCredentials struct {
 	// +immutable
 	// +kubebuilder:validation:Required
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="infraKubeConfigSecret is immutable"
 	InfraKubeConfigSecret *KubeconfigSecretRef `json:"infraKubeConfigSecret,omitempty"`
 
 	// InfraNamespace defines the namespace on the external infra cluster that is used to host the KubeVirt
@@ -691,6 +698,7 @@ type KubevirtPlatformCredentials struct {
 	// +immutable
 	// +kubebuilder:validation:Required
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="infraNamespace is immutable"
 	InfraNamespace string `json:"infraNamespace"`
 }
 
@@ -720,6 +728,7 @@ type KubevirtPlatformSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="baseDomainPassthrough is immutable"
 	BaseDomainPassthrough *bool `json:"baseDomainPassthrough,omitempty"`
 
 	// GenerateID is used to uniquely apply a name suffix to resources associated with

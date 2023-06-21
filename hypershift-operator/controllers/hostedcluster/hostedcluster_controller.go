@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"reflect"
 	"sort"
@@ -86,6 +87,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
+	utilsnet "k8s.io/utils/net"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2" // Need this dep atm to satisfy IBM provider dep.
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
@@ -138,7 +140,7 @@ type HostedClusterReconciler struct {
 	HypershiftOperatorImage string
 
 	// ReleaseProvider looks up the OCP version for the release images in HostedClusters
-	ReleaseProvider releaseinfo.ProviderWithRegistryOverrides
+	ReleaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
 
 	// SetDefaultSecurityContext is used to configure Security Context for containers
 	SetDefaultSecurityContext bool
@@ -326,7 +328,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Bubble up ValidIdentityProvider condition from the hostedControlPlane.
 	// We set this condition even if the HC is being deleted. Otherwise, a hostedCluster with a conflicted identity provider
 	// would fail to complete deletion forever with no clear signal for consumers.
-	{
+	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		freshCondition := &metav1.Condition{
 			Type:               string(hyperv1.ValidAWSIdentityProvider),
 			Status:             metav1.ConditionUnknown,
@@ -576,7 +578,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.InfrastructureReady,
 			hyperv1.ExternalDNSReachable,
 			hyperv1.ValidHostedControlPlaneConfiguration,
-			hyperv1.ValidAWSKMSConfig,
 			hyperv1.ValidReleaseInfo,
 		}
 
@@ -607,12 +608,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Copy the AWSDefaultSecurityGroupCreated condition from the hostedcontrolplane
-	{
+	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if hcp != nil {
 			sgCreated := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupCreated))
 			if sgCreated != nil {
 				sgCreated.ObservedGeneration = hcluster.Generation
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *sgCreated)
+			}
+
+			validKMSConfig := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSKMSConfig))
+			if validKMSConfig != nil {
+				validKMSConfig.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *validKMSConfig)
 			}
 		}
 	}
@@ -654,7 +661,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	reportClusterVersionRolloutTime(hcluster)
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
-	{
+	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 		var awsEndpointServiceList hyperv1.AWSEndpointServiceList
 		if err := r.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
@@ -1500,14 +1507,28 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the Ignition server
 	if !controlplaneOperatorManagesIgnitionServer {
+		configOperatorImage, releaseVersion, err := func() (string, string, error) {
+			releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
+			if err != nil {
+				return "", "", fmt.Errorf("failed to lookup release image: %w", err)
+			}
+			return releaseInfo.ComponentImages()["cluster-config-operator"], releaseInfo.Version(), nil
+		}()
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get cli image: %w", err)
+		}
+
 		if err := ignitionserverreconciliation.ReconcileIgnitionServer(ctx,
 			r.Client,
 			createOrUpdate,
+			releaseVersion,
 			utilitiesImage,
+			configOperatorImage,
 			hcp,
 			defaultIngressDomain,
 			ignitionServerHasHealthzHandler,
 			r.ReleaseProvider.GetRegistryOverrides(),
+			hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
 			r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
 			config.MutatingOwnerRefFromHCP(hcp, releaseImageVersion),
 		); err != nil {
@@ -1941,7 +1962,20 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	// Reconcile operator deployment
 	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(controlPlaneOperatorDeployment, hcluster, hostedControlPlane, controlPlaneOperatorImage, utilitiesImage, r.SetDefaultSecurityContext, controlPlaneOperatorServiceAccount, r.EnableCIDebugOutput, convertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()), defaultIngressDomain, cpoHasUtilities, r.MetricsSet)
+		return reconcileControlPlaneOperatorDeployment(
+			controlPlaneOperatorDeployment,
+			hcluster,
+			hostedControlPlane,
+			controlPlaneOperatorImage,
+			utilitiesImage,
+			r.SetDefaultSecurityContext,
+			controlPlaneOperatorServiceAccount,
+			r.EnableCIDebugOutput,
+			hyperutil.ConvertRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetRegistryOverrides()),
+			hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
+			defaultIngressDomain,
+			cpoHasUtilities,
+			r.MetricsSet)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -1973,18 +2007,6 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 
 	return nil
-}
-
-func convertRegistryOverridesToCommandLineFlag(registryOverrides map[string]string) string {
-	commandLineFlagArray := []string{}
-	for registrySource, registryReplacement := range registryOverrides {
-		commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
-	}
-	if len(commandLineFlagArray) > 0 {
-		return strings.Join(commandLineFlagArray, ",")
-	}
-	// this is the equivalent of null on a StringToString command line variable.
-	return "="
 }
 
 func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
@@ -2048,7 +2070,21 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	return hypershiftOperatorImage, nil
 }
 
-func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, cpoImage, utilitiesImage string, setDefaultSecurityContext bool, sa *corev1.ServiceAccount, enableCIDebugOutput bool, registryOverrideCommandLine, defaultIngressDomain string, cpoHasUtilities bool, metricsSet metrics.MetricsSet) error {
+func reconcileControlPlaneOperatorDeployment(
+	deployment *appsv1.Deployment,
+	hc *hyperv1.HostedCluster,
+	hcp *hyperv1.HostedControlPlane,
+	cpoImage,
+	utilitiesImage string,
+	setDefaultSecurityContext bool,
+	sa *corev1.ServiceAccount,
+	enableCIDebugOutput bool,
+	registryOverrideCommandLine string,
+	openShiftRegistryOverrides string,
+	defaultIngressDomain string,
+	cpoHasUtilities bool,
+	metricsSet metrics.MetricsSet) error {
+
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("80Mi"),
@@ -2125,6 +2161,10 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 							{
 								Name:  "OPERATE_ON_RELEASE_IMAGE",
 								Value: hc.Spec.Release.Image,
+							},
+							{
+								Name:  "OPENSHIFT_IMG_OVERRIDES",
+								Value: openShiftRegistryOverrides,
 							},
 							metrics.MetricsSetToEnv(metricsSet),
 						},
@@ -2411,6 +2451,8 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 				"machines",
 				"machinesets",
 				"machinesets/scale",
+				"machinepools",
+				"machinepools/scale",
 			},
 			Verbs: []string{"*"},
 		},
@@ -2605,7 +2647,6 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 							},
 						},
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
-							"--alsologtostderr",
 							"--v=4",
 							"--leader-elect=true",
 							fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
@@ -3428,13 +3469,16 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
 	} else if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
-		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcileVirtLauncherNetworkPolicy(policy, hcluster)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
+		if hcluster.Spec.Platform.Kubevirt.Credentials == nil {
+			// network policy is being set on centralized infra only, not on external infra
+			policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
+			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+				return reconcileVirtLauncherNetworkPolicy(policy, hcluster, managementClusterNetwork)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
+			}
 		}
-		kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hcluster.Spec.InfraID, hcluster, hcp.Namespace)
+		kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hcluster.Spec.InfraID, hcluster.Spec.Platform.Kubevirt.Credentials, hcp.Namespace, hcluster.Namespace)
 		if err != nil {
 			return err
 		}
@@ -4123,10 +4167,37 @@ func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolic
 	return nil
 }
 
-func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func addToBlockedNetworks(network string, blockedIPv4Networks []string, blockedIPv6Networks []string) ([]string, []string) {
+	if utilsnet.IsIPv6CIDRString(network) {
+		blockedIPv6Networks = append(blockedIPv6Networks, network)
+	} else {
+		blockedIPv4Networks = append(blockedIPv4Networks, network)
+	}
+	return blockedIPv4Networks, blockedIPv6Networks
+}
+
+func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, managementClusterNetwork *configv1.Network) error {
 	protocolTCP := corev1.ProtocolTCP
 	protocolUDP := corev1.ProtocolUDP
 	protocolSCTP := corev1.ProtocolSCTP
+
+	blockedIPv4Networks := []string{}
+	blockedIPv6Networks := []string{}
+	for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
+		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network.CIDR, blockedIPv4Networks, blockedIPv6Networks)
+	}
+
+	for _, network := range managementClusterNetwork.Spec.ServiceNetwork {
+		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network, blockedIPv4Networks, blockedIPv6Networks)
+	}
+
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			hyperv1.InfraIDLabel: hcluster.Spec.InfraID,
+			"kubevirt.io":        "virt-launcher",
+		},
+	}
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			Ports: []networkingv1.NetworkPolicyPort{
@@ -4136,10 +4207,99 @@ func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hclu
 			},
 		},
 	}
-	policy.Spec.PodSelector = metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"kubevirt.io": "virt-launcher",
+	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+		{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					// Allow access towards outside the cluster for the virtual machines (guest nodes),
+					// But deny access to other cluster's pods and services with the exceptions below
+					// IPv4
+					IPBlock: &networkingv1.IPBlock{
+						CIDR:   netip.PrefixFrom(netip.IPv4Unspecified(), 0).String(), // 0.0.0.0/0
+						Except: blockedIPv4Networks,
+					},
+				},
+				{
+					// IPv6
+					IPBlock: &networkingv1.IPBlock{
+						CIDR:   netip.PrefixFrom(netip.IPv6Unspecified(), 0).String(), // ::/0
+						Except: blockedIPv6Networks,
+					},
+				},
+				{
+					// Allow the guest nodes to communicate between each other
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							hyperv1.InfraIDLabel: hcluster.Spec.InfraID,
+							"kubevirt.io":        "virt-launcher",
+						},
+					},
+				},
+				{
+					// Allow access to the cluster's DNS server for name resolution
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"dns.operator.openshift.io/daemonset-dns": "default",
+						},
+					},
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"kubernetes.io/metadata.name": "openshift-dns",
+						},
+					},
+				},
+				{
+					// Allow access to the guest cluster API server
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"hypershift.openshift.io/control-plane-component": "kube-apiserver",
+						},
+					},
+				},
+				{
+					// Allow access to the management cluster ingress (for ignition server)
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"ingresscontroller.operator.openshift.io/deployment-ingresscontroller": "default",
+						},
+					},
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"name": "openshift-ingress",
+						},
+					},
+				},
+			},
 		},
+	}
+	nodeAddressesMap := make(map[string]bool)
+	for _, hcService := range hcluster.Spec.Services {
+		if hcService.Type != hyperv1.NodePort {
+			continue
+		}
+		nodeAddress := hcService.NodePort.Address
+		_, exists := nodeAddressesMap[nodeAddress]
+		if exists {
+			continue
+		}
+		nodeAddressesMap[nodeAddress] = true
+		var prefixLength int
+		if utilsnet.IsIPv4String(nodeAddress) {
+			prefixLength = 32
+		} else if utilsnet.IsIPv6String(nodeAddress) {
+			prefixLength = 128
+		} else {
+			return fmt.Errorf("could not determine if %s is an IPv4 or IPv6 address", nodeAddress)
+		}
+		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					IPBlock: &networkingv1.IPBlock{
+						CIDR: netip.PrefixFrom(netip.MustParseAddr(nodeAddress), prefixLength).String(),
+					},
+				},
+			},
+		})
 	}
 	return nil
 }
@@ -4573,7 +4733,7 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 	// auto generate the basedomain by retrieving the default ingress *.apps dns.
 	if hc.Spec.Platform.Kubevirt.BaseDomainPassthrough != nil && *hc.Spec.Platform.Kubevirt.BaseDomainPassthrough {
 		if hc.Spec.DNS.BaseDomain == "" {
-			kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hc.Spec.InfraID, hc, hc.Namespace)
+			kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hc.Spec.InfraID, hc.Spec.Platform.Kubevirt.Credentials, hc.Namespace, hc.Namespace)
 			if err != nil {
 				return err
 			}

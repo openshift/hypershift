@@ -7,6 +7,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
+	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
@@ -56,6 +57,7 @@ func init() {
 	hyperv1beta1.AddToScheme(Scheme)
 	capiv1.AddToScheme(Scheme)
 	configv1.AddToScheme(Scheme)
+	operatorv1alpha1.AddToScheme(Scheme)
 	operatorv1.AddToScheme(Scheme)
 	securityv1.AddToScheme(Scheme)
 	routev1.AddToScheme(Scheme)

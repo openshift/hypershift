@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
@@ -57,6 +59,7 @@ type DumpOptions struct {
 	AgentNamespace string
 
 	DumpGuestCluster bool
+	ImpersonateAs    string
 
 	Log logr.Logger
 }
@@ -78,6 +81,7 @@ func NewDumpCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace of the hostedcluster to dump")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the hostedcluster to dump")
+	cmd.Flags().StringVar(&opts.ImpersonateAs, "as", opts.ImpersonateAs, "The user or service account to impersonate to and used to execute the cluster dump command")
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
 	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
 	cmd.Flags().BoolVar(&opts.DumpGuestCluster, "dump-guest-cluster", opts.DumpGuestCluster, "If the guest cluster contents should also be dumped")
@@ -85,6 +89,7 @@ func NewDumpCommand() *cobra.Command {
 	cmd.MarkFlagRequired("artifact-dir")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		rand.Seed(time.Now().UnixNano())
 		if err := DumpCluster(cmd.Context(), opts); err != nil {
 			opts.Log.Error(err, "Error")
 			return err
@@ -104,32 +109,18 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
 		return fmt.Errorf("failed to get hosted cluster %s/%s: %w", opts.Namespace, opts.Name, err)
 	}
-
 	cpNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name).Name
-	localhostKubeconfigSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "localhost-kubeconfig",
-			Namespace: cpNamespace,
-		},
-	}
-	if err := c.Get(ctx, client.ObjectKeyFromObject(localhostKubeconfigSecret), localhostKubeconfigSecret); err != nil {
-		return fmt.Errorf("failed to get hostedcluster %s/%s kubeconfig: %w", opts.Namespace, opts.Name, err)
-	}
-	kubeconfigFile, err := os.CreateTemp(os.TempDir(), "kubeconfig-")
+	localPort := rand.Intn(45000-32767) + 32767
+	kubeconfigFileName, err := createGuestKubeconfig(ctx, c, cpNamespace, localPort, opts.Log)
 	if err != nil {
-		return fmt.Errorf("failed to create tempfile for kubeconfig: %w", err)
+		return err
 	}
 	defer func() {
-		if err := kubeconfigFile.Close(); err != nil {
-			opts.Log.Error(err, "Failed to close kubeconfig file")
-		}
-		if err := os.Remove(kubeconfigFile.Name()); err != nil {
+		if err := os.Remove(kubeconfigFileName); err != nil {
 			opts.Log.Error(err, "Failed to cleanup temporary kubeconfig")
 		}
 	}()
-	if _, err := kubeconfigFile.Write(localhostKubeconfigSecret.Data["kubeconfig"]); err != nil {
-		return fmt.Errorf("failed to write kubeconfig data: %w", err)
-	}
+
 	target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
 
 	kubeAPIServerPodList := &corev1.PodList{}
@@ -166,13 +157,13 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	}
 	podPort := supportutil.BindAPIPortWithDefaultFromHostedCluster(hostedCluster, config.DefaultAPIServerPort)
 	forwarderStop := make(chan struct{})
-	if err := forwarder.ForwardPorts([]string{fmt.Sprintf("%d", podPort)}, forwarderStop); err != nil {
+	if err := forwarder.ForwardPorts([]string{fmt.Sprintf("%d:%d", localPort, podPort)}, forwarderStop); err != nil {
 		return fmt.Errorf("cannot forward kube apiserver port: %w, output: %s", err, forwarderOutput.String())
 	}
 	defer close(forwarderStop)
 
 	opts.Log.Info("Dumping guestcluster", "target", target)
-	if err := DumpGuestCluster(ctx, opts.Log, kubeconfigFile.Name(), target); err != nil {
+	if err := DumpGuestCluster(ctx, opts.Log, kubeconfigFileName, target); err != nil {
 		return fmt.Errorf("failed to dump guest cluster: %w", err)
 	}
 	opts.Log.Info("Successfully dumped guest cluster", "duration", time.Since(start).String())
@@ -180,7 +171,54 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	return nil
 }
 
+func createGuestKubeconfig(ctx context.Context, c client.Client, cpNamespace string, localPort int, log logr.Logger) (string, error) {
+
+	localhostKubeconfigSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "localhost-kubeconfig",
+			Namespace: cpNamespace,
+		},
+	}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(localhostKubeconfigSecret), localhostKubeconfigSecret); err != nil {
+		return "", fmt.Errorf("failed to get hostedcluster localhost kubeconfig: %w", err)
+	}
+	kubeconfigFile, err := os.CreateTemp(os.TempDir(), "kubeconfig-")
+	if err != nil {
+		return "", fmt.Errorf("failed to create tempfile for kubeconfig: %w", err)
+	}
+	defer func() {
+		if err := kubeconfigFile.Sync(); err != nil {
+			log.Error(err, "Failed to sync temporary kubeconfig file")
+		}
+		if err := kubeconfigFile.Close(); err != nil {
+			log.Error(err, "Failed to close temporary kubeconfig file")
+		}
+	}()
+	localhostKubeconfig, err := clientcmd.Load(localhostKubeconfigSecret.Data["kubeconfig"])
+	if err != nil {
+		return "", fmt.Errorf("failed to parse localhost kubeconfig: %w", err)
+	}
+	if len(localhostKubeconfig.Clusters) == 0 {
+		return "", fmt.Errorf("no clusters found in localhost kubeconfig")
+	}
+
+	for k := range localhostKubeconfig.Clusters {
+		localhostKubeconfig.Clusters[k].Server = fmt.Sprintf("https://localhost:%d", localPort)
+	}
+	localhostKubeconfigYaml, err := clientcmd.Write(*localhostKubeconfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize localhost kubeconfig: %w", err)
+	}
+	if _, err := kubeconfigFile.Write(localhostKubeconfigYaml); err != nil {
+		return "", fmt.Errorf("failed to write kubeconfig data: %w", err)
+	}
+	return kubeconfigFile.Name(), nil
+}
+
 func DumpCluster(ctx context.Context, opts *DumpOptions) error {
+	var c client.Client
+	var err error
+
 	ocCommand, err := exec.LookPath("oc")
 	if err != nil || len(ocCommand) == 0 {
 		return fmt.Errorf("cannot find oc command")
@@ -189,9 +227,21 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	if err != nil {
 		return err
 	}
-	c, err := util.GetClient()
-	if err != nil {
-		return err
+
+	if len(opts.ImpersonateAs) > 0 {
+		cfg.Impersonate = restclient.ImpersonationConfig{
+			UserName: opts.ImpersonateAs,
+		}
+
+		c, err = util.GetImpersonatedClient(opts.ImpersonateAs)
+		if err != nil {
+			return err
+		}
+	} else {
+		c, err = util.GetClient()
+		if err != nil {
+			return err
+		}
 	}
 	allNodePools := &hyperv1.NodePoolList{}
 	if err = c.List(ctx, allNodePools, client.InNamespace(opts.Namespace)); err != nil {
@@ -209,6 +259,11 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		agentNamespace: opts.AgentNamespace,
 		log:            opts.Log,
 	}
+
+	if len(opts.ImpersonateAs) > 0 {
+		cmd.impersonate = opts.ImpersonateAs
+	}
+
 	objectNames := make([]string, 0, len(nodePools)+1)
 	objectNames = append(objectNames, typedName(&hyperv1.HostedCluster{}, opts.Name))
 	for _, nodePool := range nodePools {
@@ -393,6 +448,7 @@ type OCAdmInspect struct {
 	namespace      string
 	kubeconfig     string
 	agentNamespace string
+	impersonate    string
 	log            logr.Logger
 }
 
@@ -409,6 +465,9 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	}
 	if len(i.kubeconfig) > 0 {
 		allArgs = append(allArgs, "--kubeconfig", i.kubeconfig)
+	}
+	if len(i.impersonate) > 0 {
+		allArgs = append(allArgs, "--as", i.impersonate)
 	}
 	allArgs = append(allArgs, cmdArgs...)
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)

@@ -127,7 +127,6 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 						Command: []string{"/manager"},
 						Args: []string{
 							"--namespace", "$(MY_NAMESPACE)",
-							"--alsologtostderr",
 							"--v=4",
 							"--leader-elect=true",
 						},
