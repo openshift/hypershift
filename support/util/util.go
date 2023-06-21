@@ -245,3 +245,18 @@ func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string 
 
 	return imageRegistryOverrides
 }
+
+// IsIPv4 function parse the CIDR and get the IPNet struct if the IPNet.IP cannot be converted to 4bytes format,
+// the function returns nil, if it's an IPv6 it will return nil.
+func IsIPv4(cidr string) (bool, error) {
+	_, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return false, fmt.Errorf("error validating the ClusterNetworkCIDR from HostedCluster: %v", err)
+	}
+
+	if ipnet.IP.To4() != nil {
+		return true, nil
+	} else {
+		return false, nil
+	}
+}
