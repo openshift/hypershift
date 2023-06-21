@@ -1732,6 +1732,10 @@ func (r *reconciler) ensureServiceLoadBalancersRemoved(ctx context.Context) (boo
 		if _, hasAnnotation := svc.Annotations["ingresscontroller.operator.openshift.io/owning-ingresscontroller"]; hasAnnotation {
 			return false
 		}
+		// The router-default from openshift-ingress namespace it has the same but as a label
+		if _, hasLabel := svc.Labels["ingresscontroller.operator.openshift.io/owning-ingresscontroller"]; hasLabel {
+			return false
+		}
 		return true
 	}, false)
 	if err != nil {
