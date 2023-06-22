@@ -3,8 +3,10 @@ package hostedcluster
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/netip"
 
+	"github.com/blang/semver"
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -22,7 +24,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+const (
+	NeedManagementKASAccessLabel = "hypershift.openshift.io/need-management-kas-access"
+)
+
+func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 
 	// Reconcile openshift-ingress Network Policy
@@ -54,6 +60,24 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		return reconcileKASNetworkPolicy(policy, hcluster, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
+	}
+
+	// Reconcile management KAS network policy
+	kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint); err != nil {
+		return fmt.Errorf("failed to get management cluster network config: %w", err)
+	}
+
+	// ManagementKASNetworkPolicy restricts traffic for pods unless they have a known annotation.
+	// TODO (alberto): Once the annotation is back-ported we can let the policy be applied to those versions.
+	if version.Major == 4 && version.Minor >= 14 && hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		policy = networkpolicy.ManagementKASNetworkPolicy(controlPlaneNamespaceName)
+		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+			return reconcileManagementKASNetworkPolicy(policy, managementClusterNetwork, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS))
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
+		}
+
 	}
 
 	// Reconcile openshift-monitoring Network Policy
@@ -540,5 +564,126 @@ func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) err
 	}
 	policy.Spec.PodSelector = metav1.LabelSelector{}
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+// reconcileManagementKASNetworkPolicy selects pods excluding the ones having NeedManagementKASAccessLabel and specific operands.
+// It denies egress traffic to the management cluster clusterNetwork and to the KAS endpoints.
+func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, managementClusterNetwork *configv1.Network, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool) error {
+	// Allow traffic to same namespace
+	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+		{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					PodSelector: &metav1.LabelSelector{},
+				},
+			},
+		},
+	}
+
+	clusterNetworks := make([]string, 0)
+	// In vanilla kube management cluster this would be nil.
+	if managementClusterNetwork != nil {
+		for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
+			clusterNetworks = append(clusterNetworks, network.CIDR)
+		}
+	}
+
+	kasCIDRs := make([]string, 0)
+	for _, subset := range kubernetesEndpoint.Subsets {
+		for _, address := range subset.Addresses {
+			// Get the CIDR string representation.
+			ip := net.ParseIP(address.IP)
+			mask := net.CIDRMask(32, 32)
+			// Convert IP and mask to CIDR notation
+			ipNet := &net.IPNet{
+				IP:   ip,
+				Mask: mask,
+			}
+
+			kasCIDRs = append(kasCIDRs, ipNet.String())
+		}
+	}
+
+	// Allow to any destination not on the management cluster service network
+	// i.e. block all inter-namespace egress not allowed by other rules.
+	// Also do not allow Kubernetes endpoint IPs explicitly
+	// i.e. block access to management cluster KAS.
+	exceptions := append(kasCIDRs, clusterNetworks...)
+	policy.Spec.Egress = append(policy.Spec.Egress,
+		networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					IPBlock: &networkingv1.IPBlock{
+						CIDR:   "0.0.0.0/0",
+						Except: exceptions,
+					},
+				},
+			},
+		})
+
+	if isOpenShiftDNS {
+		// Allow traffic to openshift-dns namespace
+		dnsUDPPort := intstr.FromInt(5353)
+		dnsUDPProtocol := corev1.ProtocolUDP
+		dnsTCPPort := intstr.FromInt(5353)
+		dnsTCPProtocol := corev1.ProtocolTCP
+		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"kubernetes.io/metadata.name": "openshift-dns",
+						},
+					},
+				},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &dnsUDPPort,
+					Protocol: &dnsUDPProtocol,
+				},
+				{
+					Port:     &dnsTCPPort,
+					Protocol: &dnsTCPProtocol,
+				},
+			},
+		})
+	} else {
+		// All traffic to any destination on port 53 for both TCP and UDP
+		dnsUDPPort := intstr.FromInt(53)
+		dnsUDPProtocol := corev1.ProtocolUDP
+		dnsTCPPort := intstr.FromInt(53)
+		dnsTCPProtocol := corev1.ProtocolTCP
+		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &dnsUDPPort,
+					Protocol: &dnsUDPProtocol,
+				},
+				{
+					Port:     &dnsTCPPort,
+					Protocol: &dnsTCPProtocol,
+				},
+			},
+		})
+	}
+
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeEgress}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchExpressions: []metav1.LabelSelectorRequirement{
+			{
+				Key:      NeedManagementKASAccessLabel,
+				Operator: "DoesNotExist",
+				Values:   nil,
+			},
+			{
+				Key:      "name",
+				Operator: "NotIn",
+				Values:   []string{"aws-ebs-csi-driver-operator"},
+			},
+		},
+	}
+
 	return nil
 }

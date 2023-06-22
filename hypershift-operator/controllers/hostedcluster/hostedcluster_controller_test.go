@@ -934,6 +934,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "none"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ibm"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubevirt"}},
+		&corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}},
 	}
 	for _, cluster := range hostedClusters {
 		cluster.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{

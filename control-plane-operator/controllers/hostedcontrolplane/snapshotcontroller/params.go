@@ -46,6 +46,9 @@ func NewParams(
 	params.DeploymentConfig.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,
 	}
+	params.DeploymentConfig.AdditionalLabels = map[string]string{
+		config.NeedManagementKASAccessLabel: "true",
+	}
 	params.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 

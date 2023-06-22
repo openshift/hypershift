@@ -17,3 +17,12 @@ func (l AdditionalLabels) ApplyTo(podMeta *metav1.ObjectMeta) {
 		podMeta.Labels[k] = v
 	}
 }
+
+func CopyStringMap(source map[string]string) map[string]string {
+	copy := map[string]string{}
+	for i := range source {
+		copy[i] = source[i]
+	}
+
+	return copy
+}
