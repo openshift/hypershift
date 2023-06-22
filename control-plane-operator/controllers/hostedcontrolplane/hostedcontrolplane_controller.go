@@ -864,10 +864,10 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	}
 
 	// Reconcile kube apiserver
-	r.Log.Info("Reconciling Kube API Server")
-	if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImage, infraStatus.APIHost, infraStatus.APIPort, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile kube apiserver: %w", err)
-	}
+	// r.Log.Info("Reconciling Kube API Server")
+	// if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImage, infraStatus.APIHost, infraStatus.APIPort, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate); err != nil {
+	// 	return fmt.Errorf("failed to reconcile kube apiserver: %w", err)
+	// }
 
 	// Block until kube apiserver is fully ready to enforce upgrade order of version skew policy
 	// https://kubernetes.io/releases/version-skew-policy/#supported-component-upgrade-order
