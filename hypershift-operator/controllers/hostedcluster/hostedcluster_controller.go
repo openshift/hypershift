@@ -2107,6 +2107,11 @@ func reconcileControlPlaneOperatorDeployment(
 			"--token-minter-image", utilitiesImage,
 		)
 	}
+	if imageOverrides := hc.Annotations[hyperv1.ImageOverridesAnnotation]; imageOverrides != "" {
+		args = append(args,
+			"--image-overrides", imageOverrides,
+		)
+	}
 
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{

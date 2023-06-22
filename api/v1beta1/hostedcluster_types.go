@@ -158,6 +158,11 @@ const (
 	// allows the creation of guest clusters <= 4.13, which are before the rhcos kubevirt
 	// variant was released.
 	AllowUnsupportedKubeVirtRHCOSVariantsAnnotation = "hypershift.openshift.io/allow-unsupported-kubevirt-rhcos-variants"
+
+	// ImageOverridesAnnotation is passed as a flag to the CPO to allow overriding release images.
+	// The format of the annotation value is a commma-separated list of image=ref pairs like:
+	// cluster-network-operator=example.com/cno:latest,ovn-kubernetes=example.com/ovnkube:latest
+	ImageOverridesAnnotation = "hypershift.openshift.io/image-overrides"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
