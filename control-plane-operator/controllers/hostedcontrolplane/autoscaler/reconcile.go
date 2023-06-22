@@ -180,6 +180,9 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, util.APIPort(hcp)), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	deploymentConfig := config.DeploymentConfig{
+		AdditionalLabels: map[string]string{
+			config.NeedManagementKASAccessLabel: "true",
+		},
 		Scheduling: config.Scheduling{
 			PriorityClass: config.DefaultPriorityClass,
 		},

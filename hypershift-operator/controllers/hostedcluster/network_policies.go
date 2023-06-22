@@ -3,8 +3,9 @@ package hostedcluster
 import (
 	"context"
 	"fmt"
-	"net/netip"
+	"net"
 
+	"github.com/blang/semver"
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -18,11 +19,14 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilsnet "k8s.io/utils/net"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
+const (
+	NeedManagementKASAccessLabel = "hypershift.openshift.io/need-management-kas-access"
+)
+
+func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 
 	// Reconcile openshift-ingress Network Policy
@@ -56,6 +60,23 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
 	}
 
+	// Reconcile management KAS network policy
+	kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
+	if err := r.Get(ctx, client.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint); err != nil {
+		return fmt.Errorf("failed to get management cluster network config: %w", err)
+	}
+
+	// ManagementKASNetworkPolicy restricts traffic for pods unless they have a known annotation.
+	if controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel && hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		policy = networkpolicy.ManagementKASNetworkPolicy(controlPlaneNamespaceName)
+		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+			return reconcileManagementKASNetworkPolicy(policy, managementClusterNetwork, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS))
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
+		}
+
+	}
+
 	// Reconcile openshift-monitoring Network Policy
 	policy = networkpolicy.OpenshiftMonitoringNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
@@ -73,21 +94,14 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
 	} else if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		if hcluster.Spec.Platform.Kubevirt.Credentials == nil {
-			// network policy is being set on centralized infra only, not on external infra
-			policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
-			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-				return reconcileVirtLauncherNetworkPolicy(policy, hcluster, managementClusterNetwork)
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
-			}
+		policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
+		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+			return reconcileVirtLauncherNetworkPolicy(policy, hcluster)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
 		}
-		kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hcluster.Spec.InfraID, hcluster.Spec.Platform.Kubevirt.Credentials, hcp.Namespace, hcluster.Namespace)
-		if err != nil {
-			return err
-		}
-		egressFirewall := egressfirewall.VirtLauncherEgressFirewall(kvInfraCluster.Namespace)
-		if _, err := createOrUpdate(ctx, kvInfraCluster.Client, egressFirewall, func() error {
+		egressFirewall := egressfirewall.VirtLauncherEgressFirewall(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, egressFirewall, func() error {
 			return reconcileVirtLauncherEgressFirewall(egressFirewall)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile firewall to deny metadata server egress: %w", err)
@@ -372,37 +386,10 @@ func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolic
 	return nil
 }
 
-func addToBlockedNetworks(network string, blockedIPv4Networks []string, blockedIPv6Networks []string) ([]string, []string) {
-	if utilsnet.IsIPv6CIDRString(network) {
-		blockedIPv6Networks = append(blockedIPv6Networks, network)
-	} else {
-		blockedIPv4Networks = append(blockedIPv4Networks, network)
-	}
-	return blockedIPv4Networks, blockedIPv6Networks
-}
-
-func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, managementClusterNetwork *configv1.Network) error {
+func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
 	protocolTCP := corev1.ProtocolTCP
 	protocolUDP := corev1.ProtocolUDP
 	protocolSCTP := corev1.ProtocolSCTP
-
-	blockedIPv4Networks := []string{}
-	blockedIPv6Networks := []string{}
-	for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
-		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network.CIDR, blockedIPv4Networks, blockedIPv6Networks)
-	}
-
-	for _, network := range managementClusterNetwork.Spec.ServiceNetwork {
-		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network, blockedIPv4Networks, blockedIPv6Networks)
-	}
-
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}
-	policy.Spec.PodSelector = metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			hyperv1.InfraIDLabel: hcluster.Spec.InfraID,
-			"kubevirt.io":        "virt-launcher",
-		},
-	}
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			Ports: []networkingv1.NetworkPolicyPort{
@@ -412,99 +399,10 @@ func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hclu
 			},
 		},
 	}
-	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
-		{
-			To: []networkingv1.NetworkPolicyPeer{
-				{
-					// Allow access towards outside the cluster for the virtual machines (guest nodes),
-					// But deny access to other cluster's pods and services with the exceptions below
-					// IPv4
-					IPBlock: &networkingv1.IPBlock{
-						CIDR:   netip.PrefixFrom(netip.IPv4Unspecified(), 0).String(), // 0.0.0.0/0
-						Except: blockedIPv4Networks,
-					},
-				},
-				{
-					// IPv6
-					IPBlock: &networkingv1.IPBlock{
-						CIDR:   netip.PrefixFrom(netip.IPv6Unspecified(), 0).String(), // ::/0
-						Except: blockedIPv6Networks,
-					},
-				},
-				{
-					// Allow the guest nodes to communicate between each other
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							hyperv1.InfraIDLabel: hcluster.Spec.InfraID,
-							"kubevirt.io":        "virt-launcher",
-						},
-					},
-				},
-				{
-					// Allow access to the cluster's DNS server for name resolution
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"dns.operator.openshift.io/daemonset-dns": "default",
-						},
-					},
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"kubernetes.io/metadata.name": "openshift-dns",
-						},
-					},
-				},
-				{
-					// Allow access to the guest cluster API server
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"hypershift.openshift.io/control-plane-component": "kube-apiserver",
-						},
-					},
-				},
-				{
-					// Allow access to the management cluster ingress (for ignition server)
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"ingresscontroller.operator.openshift.io/deployment-ingresscontroller": "default",
-						},
-					},
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"name": "openshift-ingress",
-						},
-					},
-				},
-			},
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"kubevirt.io": "virt-launcher",
 		},
-	}
-	nodeAddressesMap := make(map[string]bool)
-	for _, hcService := range hcluster.Spec.Services {
-		if hcService.Type != hyperv1.NodePort {
-			continue
-		}
-		nodeAddress := hcService.NodePort.Address
-		_, exists := nodeAddressesMap[nodeAddress]
-		if exists {
-			continue
-		}
-		nodeAddressesMap[nodeAddress] = true
-		var prefixLength int
-		if utilsnet.IsIPv4String(nodeAddress) {
-			prefixLength = 32
-		} else if utilsnet.IsIPv6String(nodeAddress) {
-			prefixLength = 128
-		} else {
-			return fmt.Errorf("could not determine if %s is an IPv4 or IPv6 address", nodeAddress)
-		}
-		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
-			To: []networkingv1.NetworkPolicyPeer{
-				{
-					IPBlock: &networkingv1.IPBlock{
-						CIDR: netip.PrefixFrom(netip.MustParseAddr(nodeAddress), prefixLength).String(),
-					},
-				},
-			},
-		})
 	}
 	return nil
 }
@@ -540,5 +438,126 @@ func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) err
 	}
 	policy.Spec.PodSelector = metav1.LabelSelector{}
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+// reconcileManagementKASNetworkPolicy selects pods excluding the ones having NeedManagementKASAccessLabel and specific operands.
+// It denies egress traffic to the management cluster clusterNetwork and to the KAS endpoints.
+func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, managementClusterNetwork *configv1.Network, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool) error {
+	// Allow traffic to same namespace
+	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+		{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					PodSelector: &metav1.LabelSelector{},
+				},
+			},
+		},
+	}
+
+	clusterNetworks := make([]string, 0)
+	// In vanilla kube management cluster this would be nil.
+	if managementClusterNetwork != nil {
+		for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
+			clusterNetworks = append(clusterNetworks, network.CIDR)
+		}
+	}
+
+	kasCIDRs := make([]string, 0)
+	for _, subset := range kubernetesEndpoint.Subsets {
+		for _, address := range subset.Addresses {
+			// Get the CIDR string representation.
+			ip := net.ParseIP(address.IP)
+			mask := net.CIDRMask(32, 32)
+			// Convert IP and mask to CIDR notation
+			ipNet := &net.IPNet{
+				IP:   ip,
+				Mask: mask,
+			}
+
+			kasCIDRs = append(kasCIDRs, ipNet.String())
+		}
+	}
+
+	// Allow to any destination not on the management cluster service network
+	// i.e. block all inter-namespace egress not allowed by other rules.
+	// Also do not allow Kubernetes endpoint IPs explicitly
+	// i.e. block access to management cluster KAS.
+	exceptions := append(kasCIDRs, clusterNetworks...)
+	policy.Spec.Egress = append(policy.Spec.Egress,
+		networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					IPBlock: &networkingv1.IPBlock{
+						CIDR:   "0.0.0.0/0",
+						Except: exceptions,
+					},
+				},
+			},
+		})
+
+	if isOpenShiftDNS {
+		// Allow traffic to openshift-dns namespace
+		dnsUDPPort := intstr.FromInt(5353)
+		dnsUDPProtocol := corev1.ProtocolUDP
+		dnsTCPPort := intstr.FromInt(5353)
+		dnsTCPProtocol := corev1.ProtocolTCP
+		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"kubernetes.io/metadata.name": "openshift-dns",
+						},
+					},
+				},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &dnsUDPPort,
+					Protocol: &dnsUDPProtocol,
+				},
+				{
+					Port:     &dnsTCPPort,
+					Protocol: &dnsTCPProtocol,
+				},
+			},
+		})
+	} else {
+		// All traffic to any destination on port 53 for both TCP and UDP
+		dnsUDPPort := intstr.FromInt(53)
+		dnsUDPProtocol := corev1.ProtocolUDP
+		dnsTCPPort := intstr.FromInt(53)
+		dnsTCPProtocol := corev1.ProtocolTCP
+		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &dnsUDPPort,
+					Protocol: &dnsUDPProtocol,
+				},
+				{
+					Port:     &dnsTCPPort,
+					Protocol: &dnsTCPProtocol,
+				},
+			},
+		})
+	}
+
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeEgress}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchExpressions: []metav1.LabelSelectorRequirement{
+			{
+				Key:      NeedManagementKASAccessLabel,
+				Operator: "DoesNotExist",
+				Values:   nil,
+			},
+			{
+				Key:      "name",
+				Operator: "NotIn",
+				Values:   []string{"aws-ebs-csi-driver-operator"},
+			},
+		},
+	}
+
 	return nil
 }

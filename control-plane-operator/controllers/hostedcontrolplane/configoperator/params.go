@@ -78,6 +78,9 @@ func NewHostedClusterConfigOperatorParams(ctx context.Context, hcp *hyperv1.Host
 		},
 	}
 
+	params.DeploymentConfig.AdditionalLabels = map[string]string{
+		config.NeedManagementKASAccessLabel: "true",
+	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.IntPtr(1))
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
