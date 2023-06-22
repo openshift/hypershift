@@ -1,6 +1,10 @@
 package config
 
 const (
+	// NeedManagementKASAccessLabel is used by network policies
+	// to prevent any pod which doesn't contain the label from accessing the management cluster KAS.
+	NeedManagementKASAccessLabel = "hypershift.openshift.io/need-management-kas-access"
+
 	// EtcdPriorityClass is for etcd pods.
 	EtcdPriorityClass = "hypershift-etcd"
 

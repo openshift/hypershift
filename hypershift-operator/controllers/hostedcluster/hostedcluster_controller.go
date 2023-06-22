@@ -1455,17 +1455,15 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
-	// Get release image version, if needed
+	// Get release image version
 	var releaseImageVersion semver.Version
-	if !controlPlaneOperatorManagesMachineAutoscaler || !controlPlaneOperatorManagesMachineApprover || !controlplaneOperatorManagesIgnitionServer {
-		releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
-		}
-		releaseImageVersion, err = semver.Parse(releaseInfo.Version())
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
-		}
+	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+	releaseImageVersion, err = semver.Parse(releaseInfo.Version())
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
 	}
 
 	// In >= 4.11 We want to move most of the components reconciliation down to the CPO https://issues.redhat.com/browse/HOSTEDCP-375.
@@ -1531,7 +1529,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the network policies
-	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster, hcp); err != nil {
+	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster, hcp, releaseImageVersion); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
 	}
 
@@ -1835,11 +1833,27 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 	// Reconcile CAPI provider deployment
 	deployment := clusterapi.CAPIProviderDeployment(controlPlaneNamespace.Name)
-	labels := map[string]string{
+	selectorLabels := map[string]string{
 		"control-plane":               "capi-provider-controller-manager",
 		"app":                         "capi-provider-controller-manager",
 		hyperv1.ControlPlaneComponent: "capi-provider-controller-manager",
 	}
+
+	// Before this change we did
+	// 		Selector: &metav1.LabelSelector{
+	//			MatchLabels: labels,
+	//		},
+	//		Template: corev1.PodTemplateSpec{
+	//			ObjectMeta: metav1.ObjectMeta{
+	//				Labels: labels,
+	//			}
+	// As a consequence of using the same memory address for both MatchLabels and Labels, when setColocation set the colocationLabelKey in additionalLabels
+	// it got also silently included in MatchLabels. This made any additional additionalLabel to break reconciliation because MatchLabels is an immutable field.
+	// So now we leave Selector.MatchLabels if it has something already and use a different var from .Labels so the former is not impacted by additionalLabels changes.
+	if deployment.Spec.Selector != nil && deployment.Spec.Selector.MatchLabels != nil {
+		selectorLabels = deployment.Spec.Selector.MatchLabels
+	}
+
 	_, err = createOrUpdate(ctx, r.Client, deployment, func() error {
 		// Enforce provider specifics.
 		deployment.Spec = *capiProviderDeploymentSpec
@@ -1851,9 +1865,13 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 		// Enforce labels.
 		deployment.Spec.Selector = &metav1.LabelSelector{
-			MatchLabels: labels,
+			MatchLabels: selectorLabels,
 		}
-		deployment.Spec.Template.Labels = labels
+		// We copy the map here, otherwise this .Labels would point to the same address that .MatchLabels
+		// Then when additionalLabels are applied it silently modifies .MatchLabels.
+		// We could also change additionalLabels.ApplyTo but that might have a bigger impact.
+		// TODO (alberto): Refactor support.config package and gate all components definition on the library.
+		deployment.Spec.Template.Labels = config.CopyStringMap(selectorLabels)
 
 		// Enforce ServiceAccount.
 		deployment.Spec.Template.Spec.ServiceAccountName = capiProviderServiceAccount.Name
@@ -1863,6 +1881,9 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 				PriorityClass: config.DefaultPriorityClass,
 			},
 			SetDefaultSecurityContext: r.SetDefaultSecurityContext,
+			AdditionalLabels: map[string]string{
+				config.NeedManagementKASAccessLabel: "true",
+			},
 		}
 		if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 			deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
@@ -2329,6 +2350,9 @@ func reconcileControlPlaneOperatorDeployment(
 			PriorityClass: config.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
+		AdditionalLabels: map[string]string{
+			config.NeedManagementKASAccessLabel: "true",
+		},
 	}
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
@@ -2712,6 +2736,9 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 			PriorityClass: config.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
+		AdditionalLabels: map[string]string{
+			config.NeedManagementKASAccessLabel: "true",
+		},
 	}
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
