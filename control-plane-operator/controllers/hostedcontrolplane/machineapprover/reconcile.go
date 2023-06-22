@@ -206,6 +206,9 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 			PriorityClass: config.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
+		AdditionalLabels: map[string]string{
+			config.NeedManagementKASAccessLabel: "true",
+		},
 	}
 
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))

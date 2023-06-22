@@ -99,6 +99,9 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 			},
 		},
 	}
+	params.DeploymentConfig.AdditionalLabels = map[string]string{
+		config.NeedManagementKASAccessLabel: "true",
+	}
 	params.DeploymentConfig.SetDefaults(hcp, kcmLabels(), nil)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
