@@ -9,7 +9,7 @@ import (
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	platformOpts := &hyperShiftKubeVirt.KubevirtPlatformCreateOptions{
-		Memory:             "4Gi",
+		Memory:             "8Gi",
 		Cores:              2,
 		ContainerDiskImage: "",
 		CacheStrategyType:  "",

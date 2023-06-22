@@ -20,7 +20,6 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := &core.CreateNodePoolOptions{
-		Name:            "example",
 		Namespace:       "clusters",
 		ClusterName:     "example",
 		NodeCount:       2,
@@ -36,8 +35,9 @@ func NewCreateCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The release image for nodes. If empty, defaults to the same release image as the HostedCluster.")
 	cmd.PersistentFlags().Var(&opts.NodeUpgradeType, "node-upgrade-type", "The NodePool upgrade strategy for how nodes should behave when upgraded. Supported options: Replace, InPlace")
 	cmd.PersistentFlags().StringVar(&opts.Arch, "arch", opts.Arch, "The processor architecture for the NodePool (e.g. arm64, amd64)")
-
 	cmd.PersistentFlags().BoolVar(&opts.Render, "render", false, "Render output as YAML to stdout instead of applying")
+
+	_ = cmd.MarkPersistentFlagRequired("name")
 
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
 
