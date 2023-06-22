@@ -40,7 +40,7 @@ func ReconcileMachineConfigServerConfig(cm *corev1.ConfigMap, p *MCSParams) erro
 		return err
 	}
 
-	if p.UserCA != nil {
+	if p.UserCA != nil && len(p.UserCA.Data) > 0 {
 		serializedUserCA, err := serialize(p.UserCA)
 		if err != nil {
 			return err
