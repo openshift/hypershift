@@ -1,8 +1,10 @@
 package create
 
 import (
-	"github.com/openshift/hypershift/product-cli/cmd/cluster"
 	"github.com/spf13/cobra"
+
+	"github.com/openshift/hypershift/product-cli/cmd/cluster"
+	"github.com/openshift/hypershift/product-cli/cmd/nodepool"
 )
 
 func NewCommand() *cobra.Command {
@@ -13,6 +15,7 @@ func NewCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(cluster.NewCreateCommands())
+	cmd.AddCommand(nodepool.NewCreateCommand())
 
 	return cmd
 }
