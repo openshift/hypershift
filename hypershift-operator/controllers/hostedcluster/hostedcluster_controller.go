@@ -1507,23 +1507,16 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the Ignition server
 	if !controlplaneOperatorManagesIgnitionServer {
-		configOperatorImage, releaseVersion, err := func() (string, string, error) {
-			releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
-			if err != nil {
-				return "", "", fmt.Errorf("failed to lookup release image: %w", err)
-			}
-			return releaseInfo.ComponentImages()["cluster-config-operator"], releaseInfo.Version(), nil
-		}()
+		releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get cli image: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
 		}
-
 		if err := ignitionserverreconciliation.ReconcileIgnitionServer(ctx,
 			r.Client,
 			createOrUpdate,
-			releaseVersion,
+			releaseInfo.Version(),
 			utilitiesImage,
-			configOperatorImage,
+			releaseInfo.ComponentImages(),
 			hcp,
 			defaultIngressDomain,
 			ignitionServerHasHealthzHandler,

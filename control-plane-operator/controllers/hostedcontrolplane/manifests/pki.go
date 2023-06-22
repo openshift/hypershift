@@ -246,6 +246,10 @@ func ClusterVersionOperatorServerCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "cvo-server")
 }
 
+func IgnitionServerCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "ignition-server")
+}
+
 func AWSPodIdentityWebhookServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "aws-pod-identity-webhook-serving-cert")
 }

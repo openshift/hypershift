@@ -34,6 +34,15 @@ func Service(namespace string) *corev1.Service {
 	}
 }
 
+func ProxyService(namespace string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      ResourceName + "-proxy",
+		},
+	}
+}
+
 func PodMonitor(controlPlaneNamespace string) *prometheusoperatorv1.PodMonitor {
 	return &prometheusoperatorv1.PodMonitor{
 		ObjectMeta: metav1.ObjectMeta{
@@ -48,6 +57,15 @@ func Deployment(namespace string) *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      ResourceName,
+		},
+	}
+}
+
+func ProxyDeployment(namespace string) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      ResourceName + "-proxy",
 		},
 	}
 }
@@ -79,6 +97,15 @@ func ServiceAccount(namespace string) *corev1.ServiceAccount {
 	}
 }
 
+func ProxyServiceAccount(namespace string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      ResourceName + "-proxy",
+		},
+	}
+}
+
 func Role(namespace string) *rbacv1.Role {
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
@@ -88,11 +115,29 @@ func Role(namespace string) *rbacv1.Role {
 	}
 }
 
+func ProxyRole(namespace string) *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      ResourceName + "-proxy",
+		},
+	}
+}
+
 func RoleBinding(namespace string) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      ResourceName,
+		},
+	}
+}
+
+func ProxyRoleBinding(namespace string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      ResourceName + "-proxy",
 		},
 	}
 }
