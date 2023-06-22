@@ -13,6 +13,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+func ImageContentSourcePolicy() *operatorv1alpha1.ImageContentSourcePolicy {
+	return &operatorv1alpha1.ImageContentSourcePolicy{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ImageContentSourcePolicy",
+			APIVersion: operatorv1alpha1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+}
+
 // ImageContentSourcePolicyList returns an initialized ImageContentSourcePolicyList pointer
 func ImageContentSourcePolicyList() *operatorv1alpha1.ImageContentSourcePolicyList {
 	return &operatorv1alpha1.ImageContentSourcePolicyList{
@@ -44,10 +56,28 @@ func ImageDigestMirrorSetList() *configv1.ImageDigestMirrorSetList {
 	}
 }
 
+// ReconcileImageContentSourcePolicy reconciles the ImageContentSources from the HCP spec into an ImageContentSourcePolicy
+func ReconcileImageContentSourcePolicy(icsp *operatorv1alpha1.ImageContentSourcePolicy, hcp *hyperv1.HostedControlPlane) error {
+	if icsp.Labels == nil {
+		icsp.Labels = map[string]string{}
+	}
+	icsp.Labels["machineconfiguration.openshift.io/role"] = "worker"
+	icsp.Spec.RepositoryDigestMirrors = []operatorv1alpha1.RepositoryDigestMirrors{}
+	for _, imageContentSourceEntry := range hcp.Spec.ImageContentSources {
+		icsp.Spec.RepositoryDigestMirrors = append(icsp.Spec.RepositoryDigestMirrors, operatorv1alpha1.RepositoryDigestMirrors{
+			Source:  imageContentSourceEntry.Source,
+			Mirrors: imageContentSourceEntry.Mirrors,
+		})
+	}
+	return nil
+}
+
+// ReconcileImageDigestMirrors reconciles the ImageContentSources from the HCP spec into an ImageDigestMirrorSet
 func ReconcileImageDigestMirrors(idms *configv1.ImageDigestMirrorSet, hcp *hyperv1.HostedControlPlane) error {
 	if idms.Labels == nil {
 		idms.Labels = map[string]string{}
 	}
+
 	idms.Labels["machineconfiguration.openshift.io/role"] = "worker"
 	idms.Spec.ImageDigestMirrors = []configv1.ImageDigestMirrors{}
 	for _, source := range hcp.Spec.ImageContentSources {

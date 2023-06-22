@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -32,11 +31,16 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
@@ -63,7 +67,6 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
-	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 )
 
 const (
@@ -289,7 +292,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling guest cluster global configuration")
-	if err := r.reconcileConfig(ctx, hcp); err != nil {
+	if err := r.reconcileConfig(ctx, hcp, releaseImage); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile global configuration: %w", err))
 	}
 
@@ -574,7 +577,7 @@ func (r *reconciler) reconcileCRDs(ctx context.Context) error {
 	return errors.NewAggregate(errs)
 }
 
-func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
 	var errs []error
 
 	apiServerAddress := hcp.Status.ControlPlaneEndpoint.Host
@@ -639,11 +642,9 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy config: %w", err))
 	}
 
-	icsp := globalconfig.ImageDigestMirrorSet()
-	if _, err := r.CreateOrUpdate(ctx, r.client, icsp, func() error {
-		return globalconfig.ReconcileImageDigestMirrors(icsp, hcp)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile image digest mirror set: %w", err))
+	err := r.reconcileImageContentPolicyType(ctx, hcp, releaseImage)
+	if err != nil {
+		errs = append(errs, err)
 	}
 
 	installConfigCM := manifests.InstallConfigConfigMap()
@@ -2009,4 +2010,39 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 		}
 	}
 	return errs
+}
+
+// reconcileImageContentPolicyType reconciles the image content policy based on the release image version.
+// ImageDigestMirrorSets are used for versions >= 4.13 and ImageContentSourcePolicy for all other versions.
+// TODO the 'else' branch portion needs to be removed after this ticket is backported to 4.13 - HOSTEDCP-1102
+func (r *reconciler) reconcileImageContentPolicyType(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	icsp := globalconfig.ImageContentSourcePolicy()
+	version, err := semver.Parse(releaseImage.Version())
+	if err != nil {
+		return fmt.Errorf("failed to determine release image version: %w", err)
+	}
+
+	// ImageDigestMirrorSet is only applicable for release image versions greater than or equal to 4.13
+	if version.Minor >= 13 {
+		// First, delete any current ImageContentSourcePolicy
+		_, err = util.DeleteIfNeeded(ctx, r.client, icsp)
+		if err != nil {
+			return fmt.Errorf("failed to delete image content source policy configuration configmap: %w", err)
+		}
+
+		// Next, reconcile the ImageDigestMirrorSet
+		idms := globalconfig.ImageDigestMirrorSet()
+		if _, err = r.CreateOrUpdate(ctx, r.client, idms, func() error {
+			return globalconfig.ReconcileImageDigestMirrors(idms, hcp)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile image digest mirror set: %w", err)
+		}
+	} else {
+		if _, err = r.CreateOrUpdate(ctx, r.client, icsp, func() error {
+			return globalconfig.ReconcileImageContentSourcePolicy(icsp, hcp)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile image content source policy: %w", err)
+		}
+	}
+	return nil
 }
