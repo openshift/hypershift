@@ -157,6 +157,7 @@ func NewCommand() *cobra.Command {
 	var opts Options
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
 	opts.MetricsSet = metrics.DefaultMetricsSet
+	opts.EnableConversionWebhook = true // default to enabling the conversion webhook
 	opts.ExternalDNSImage = ExternalDNSImage
 
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
@@ -164,7 +165,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
 	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.PersistentFlags().MarkDeprecated("enable-validating-webhook", "This field is deprecated and has no effect")
-	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", false, "Enable webhook for converting hypershift API types")
+	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", true, "Enable webhook for converting hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", false, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
@@ -205,7 +206,7 @@ func NewCommand() *cobra.Command {
 			return err
 		}
 
-		err = apply(cmd.Context(), opts, objects)
+		err = apply(cmd.Context(), objects)
 		if err != nil {
 			return err
 		}
@@ -224,7 +225,7 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-func apply(ctx context.Context, opts Options, objects []crclient.Object) error {
+func apply(ctx context.Context, objects []crclient.Object) error {
 	client, err := util.GetClient()
 	if err != nil {
 		return err
@@ -248,59 +249,15 @@ func apply(ctx context.Context, opts Options, objects []crclient.Object) error {
 			} else {
 				fmt.Printf("created %s %s/%s\n", "PriorityClass", object.GetNamespace(), object.GetName())
 			}
-			continue
-		}
-
-		// if the CRD already installed and have converion webhook enabled, server-side apply will fail to remove spec.conversion.webhook.clientConfig field
-		// which is injected with the annotation service.beta.openshift.io/inject-cabundle, we need to maunally remove and patch it first.
-		if !opts.EnableConversionWebhook {
-			if err := patchHyperShiftCRDManagedFields(object, client, ctx); err != nil {
-				return err
+		} else {
+			if err := client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift")); err != nil {
+				errs = append(errs, err)
 			}
+			fmt.Printf("applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
 		}
-
-		if err := client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift")); err != nil {
-			errs = append(errs, err)
-		}
-		fmt.Printf("applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
 	}
 
 	return errors.NewAggregate(errs)
-}
-
-func patchHyperShiftCRDManagedFields(object crclient.Object, client crclient.Client, ctx context.Context) error {
-	if object.GetObjectKind().GroupVersionKind().Kind != "CustomResourceDefinition" || !strings.Contains(object.GetName(), "hypershift.openshift.io") {
-		return nil
-	}
-
-	crd := &apiextensionsv1.CustomResourceDefinition{}
-	if err := client.Get(ctx, crclient.ObjectKeyFromObject(object), crd); err != nil {
-		// CRD is not installed, return
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return err
-	}
-
-	if crd.Spec.Conversion != nil && crd.Spec.Conversion.Strategy == apiextensionsv1.WebhookConverter {
-		original := crd.DeepCopy()
-
-		// remove fields managed by `service-ca-operator` or `cainjector` (i.e. spec.conversion.webhook.clientConfig)
-		var managedFields []metav1.ManagedFieldsEntry
-		for _, field := range crd.ObjectMeta.ManagedFields {
-			if field.Manager == "service-ca-operator" || field.Manager == "cainjector" {
-				continue
-			}
-			managedFields = append(managedFields, field)
-		}
-
-		crd.ObjectMeta.ManagedFields = managedFields
-		if err := client.Patch(ctx, crd, crclient.MergeFrom(original)); err != nil {
-			return fmt.Errorf("failed to patch CRD %s: %v", crd.Name, err)
-		}
-	}
-
-	return nil
 }
 
 func waitUntilAvailable(ctx context.Context, opts Options) error {
@@ -650,15 +607,6 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	}, func(crd *apiextensionsv1.CustomResourceDefinition) {
 		if crd.Spec.Group == "hypershift.openshift.io" {
 			if !opts.EnableConversionWebhook {
-				var versions []apiextensionsv1.CustomResourceDefinitionVersion
-				for _, version := range crd.Spec.Versions {
-					// disable v1alpha1 version
-					if version.Name == "v1alpha1" {
-						version.Served = false
-					}
-					versions = append(versions, version)
-				}
-				crd.Spec.Versions = versions
 				return
 			}
 			if crd.Annotations != nil {
