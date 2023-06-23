@@ -67,8 +67,9 @@ import (
 )
 
 const (
-	ControllerName       = "resources"
-	SecretHashAnnotation = "hypershift.openshift.io/kubeadmin-secret-hash"
+	ControllerName             = "resources"
+	SecretHashAnnotation       = "hypershift.openshift.io/kubeadmin-secret-hash"
+	disableReconcileAnnotation = "hypershift.openshift.io/disable-reconcile"
 )
 
 var (
@@ -414,8 +415,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	for _, ns := range manifests.PullSecretTargetNamespaces() {
 		secret := manifests.PullSecret(ns)
 		if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
-			secret.Data = pullSecret.Data
-			secret.Type = pullSecret.Type
+			// this allows users to disable data collection in sensitive environments
+			// solves https://issues.redhat.com/browse/OCPBUGS-12208
+			if _, exists := secret.ObjectMeta.Annotations[disableReconcileAnnotation]; !exists {
+				secret.Data = pullSecret.Data
+				secret.Type = pullSecret.Type
+			}
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile pull secret at namespace %s: %w", ns, err))
