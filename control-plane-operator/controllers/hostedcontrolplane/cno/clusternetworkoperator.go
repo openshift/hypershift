@@ -76,7 +76,7 @@ type Params struct {
 func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, defaultIngressDomain string) Params {
 	p := Params{
 		Images: Images{
-			NetworkOperator:              "quay.io/jtanenba/cno:hypershift-build620-6",
+			NetworkOperator:              "quay.io/jtanenba/cno:hypershift:build623-1",
 			SDN:                          releaseImageProvider.GetImage("sdn"),
 			KubeProxy:                    releaseImageProvider.GetImage("kube-proxy"),
 			KubeRBACProxy:                releaseImageProvider.GetImage("kube-rbac-proxy"),
