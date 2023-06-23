@@ -11,7 +11,7 @@ import (
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "kubevirt",
-		Short:        "Destroys a HostedCluster and its associated infrastructure on Kubevirt platform.",
+		Short:        "Destroys a HostedCluster and its associated infrastructure on KubeVirt platform.",
 		SilenceUsage: true,
 	}
 
