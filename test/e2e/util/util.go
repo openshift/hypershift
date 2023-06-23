@@ -32,6 +32,7 @@ import (
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	kapierror "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -556,6 +557,42 @@ func EnsureMachineDeploymentGeneration(t *testing.T, ctx context.Context, hostCl
 			if machineDeployment.Generation != expectedGeneration {
 				t.Errorf("machineDeployment %s does not have expected generation %d but %d", crclient.ObjectKeyFromObject(&machineDeployment), expectedGeneration, machineDeployment.Generation)
 			}
+		}
+	})
+}
+
+func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, guestClient crclient.Client) {
+	t.Run("EnsurePSANotPrivileged", func(t *testing.T) {
+		testNamespaceName := "e2e-psa-check"
+		namespace := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNamespaceName,
+			},
+		}
+		if err := guestClient.Create(ctx, namespace); err != nil {
+			t.Fatalf("failed to create namespace: %v", err)
+		}
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-pod",
+				Namespace: testNamespaceName,
+			},
+			Spec: corev1.PodSpec{
+				NodeSelector: map[string]string{
+					"e2e.openshift.io/unschedulable": "should-not-run",
+				},
+				Containers: []corev1.Container{
+					{Name: "first", Image: "something-innocuous"},
+				},
+				HostPID: true, // enforcement of restricted or baseline policy should reject this
+			},
+		}
+		err := guestClient.Create(ctx, pod)
+		if err == nil {
+			t.Errorf("pod admitted when rejection was expected")
+		}
+		if !kapierror.IsForbidden(err) {
+			t.Errorf("forbidden error expected, got %s", err)
 		}
 	})
 }
