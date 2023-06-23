@@ -582,7 +582,7 @@ func (r *Reconciler) nodeToMachineSet(o client.Object) []reconcile.Request {
 			Name:      machineName,
 		},
 	}
-	if err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(machine), machine); err != nil {
+	if err := r.client.Get(context.Background(), client.ObjectKeyFromObject(machine), machine); err != nil {
 		return nil
 	}
 

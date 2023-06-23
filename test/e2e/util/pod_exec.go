@@ -84,7 +84,7 @@ func (p *PodExecOptions) Validate() error {
 }
 
 // Run executes a validated remote execution against a pod.
-func (p *PodExecOptions) Run() error {
+func (p *PodExecOptions) Run(ctx context.Context) error {
 	err := p.Validate()
 	if err != nil {
 		return err
@@ -95,7 +95,7 @@ func (p *PodExecOptions) Run() error {
 		return err
 	}
 
-	pod, err := client.Pods(p.Namespace).Get(context.TODO(), p.PodName, metav1.GetOptions{})
+	pod, err := client.Pods(p.Namespace).Get(ctx, p.PodName, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}

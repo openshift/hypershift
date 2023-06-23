@@ -421,7 +421,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("failed to get ingress controller: %w", err)
 	}
 
-	if err := setupMetrics(mgr); err != nil {
+	if err := setupMetrics(ctx, mgr); err != nil {
 		return fmt.Errorf("failed to setup metrics: %w", err)
 	}
 

@@ -146,7 +146,7 @@ func (m *hypershiftMetrics) collect(ctx context.Context) error {
 	return nil
 }
 
-func setupMetrics(mgr manager.Manager) error {
+func setupMetrics(ctx context.Context, mgr manager.Manager) error {
 	var hypershiftImage ImageInfo
 
 	// We need to create a new client because the manager one still does not have the cache started
@@ -155,7 +155,7 @@ func setupMetrics(mgr manager.Manager) error {
 		return fmt.Errorf("error creating a temporary client: %w", err)
 	}
 	// Grabbing the Image and ImageID from Operator
-	if hypershiftImage.image, hypershiftImage.imageId, err = getOperatorImage(tmpClient); err != nil {
+	if hypershiftImage.image, hypershiftImage.imageId, err = getOperatorImage(ctx, tmpClient); err != nil {
 		if apierrors.IsNotFound(err) {
 			log := mgr.GetLogger()
 			log.Error(err, "pod not found, reporting empty image")
@@ -359,8 +359,7 @@ func (m *hypershiftMetrics) observeNodePools(ctx context.Context, nodePools *hyp
 	return nil
 }
 
-func getOperatorImage(client crclient.Client) (string, string, error) {
-	ctx := context.TODO()
+func getOperatorImage(ctx context.Context, client crclient.Client) (string, string, error) {
 	var image, imageId string
 	hypershiftNamespace := os.Getenv("MY_NAMESPACE")
 	hypershiftPodName := os.Getenv("MY_NAME")

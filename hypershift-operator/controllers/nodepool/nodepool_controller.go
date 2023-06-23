@@ -945,6 +945,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		md := machineDeployment(nodePool, controlPlaneNamespace)
 		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
 			return r.reconcileMachineDeployment(
+				ctx,
 				log,
 				md, nodePool,
 				userDataSecret,
@@ -1388,7 +1389,8 @@ func reconcileTokenSecret(tokenSecret *corev1.Secret, nodePool *hyperv1.NodePool
 	return nil
 }
 
-func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
+func (r *NodePoolReconciler) reconcileMachineDeployment(ctx context.Context,
+	log logr.Logger,
 	machineDeployment *capiv1.MachineDeployment,
 	nodePool *hyperv1.NodePool,
 	userDataSecret *corev1.Secret,
@@ -1469,7 +1471,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	// TODO(Alberto): drop this an rely on core in-place propagation once CAPI 1.4.0 https://github.com/kubernetes-sigs/cluster-api/releases comes through the payload.
 	// https://issues.redhat.com/browse/HOSTEDCP-971
 	machineList := &capiv1.MachineList{}
-	if err := r.List(context.TODO(), machineList, client.InNamespace(machineDeployment.Namespace)); err != nil {
+	if err = r.List(ctx, machineList, client.InNamespace(machineDeployment.Namespace)); err != nil {
 		return err
 	}
 
@@ -1485,7 +1487,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 			machine.Labels = make(map[string]string)
 		}
 
-		if result, err := controllerutil.CreateOrPatch(context.TODO(), r.Client, &machine, func() error {
+		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, &machine, func() error {
 			// Propagate labels.
 			for k, v := range nodePool.Spec.NodeLabels {
 				// Propagated managed labels down to Machines with a known hardcoded prefix

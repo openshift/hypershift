@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -73,7 +74,7 @@ func TestGetOperatorImage(t *testing.T) {
 			t.Setenv("MY_NAME", fakePodName)
 			g := NewWithT(t)
 			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hypershiftPod).Build()
-			image, imageId, err := getOperatorImage(client)
+			image, imageId, err := getOperatorImage(context.TODO(), client)
 			if tc.expectedError {
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
