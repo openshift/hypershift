@@ -25,9 +25,9 @@ import (
 const Description string = `
 This command renders kubeconfigs for HostedClusters.
 
-If a single cluster is identified, the kubeconfig is printed to stdout.
+If a single cluster is specified, the kubeconfig is printed to stdout.
 
-If no clusters are identified, this command renders a kubeconfig with a context
+If no clusters are specified, this command renders a kubeconfig with a context
 for every HostedCluster resource. The contexts are named based on the
 HostedCluster following the pattern:
 
@@ -52,17 +52,16 @@ func NewCreateCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts := options{}
+	opts := options{
+		namespace: "clusters",
+	}
 
-	cmd.Flags().StringVar(&opts.namespace, "namespace", opts.namespace, "A HostedCluster namespace. Will default to 'clusters' if a --name is supplied")
-	cmd.Flags().StringVar(&opts.name, "name", opts.name, "A HostedCluster name")
+	cmd.Flags().StringVar(&opts.namespace, "namespace", opts.namespace, "A HostedCluster namespace. Defaults to 'clusters'.")
+	cmd.Flags().StringVar(&opts.name, "name", opts.name, "A HostedCluster name.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if opts.name != "" && opts.namespace == "" {
-			opts.namespace = "clusters"
-		}
 		if err := Render(cmd.Context(), opts.namespace, opts.name); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "%s\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 			return err
 		}
 		return nil

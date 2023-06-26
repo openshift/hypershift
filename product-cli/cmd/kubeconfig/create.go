@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	hyperShiftKubeConfig "github.com/openshift/hypershift/cmd/kubeconfig"
+	hypershiftkubeconfig "github.com/openshift/hypershift/cmd/kubeconfig"
 )
 
 type options struct {
@@ -20,21 +20,20 @@ func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "kubeconfig",
 		Short:        "Renders kubeconfigs for HostedCluster resources.",
-		Long:         hyperShiftKubeConfig.Description,
+		Long:         hypershiftkubeconfig.Description,
 		SilenceUsage: true,
 	}
 
-	opts := options{}
+	opts := options{
+		namespace: "clusters",
+	}
 
-	cmd.Flags().StringVar(&opts.namespace, "namespace", opts.namespace, "A HostedCluster namespace. Will default to 'clusters' if a --name is supplied")
-	cmd.Flags().StringVar(&opts.name, "name", opts.name, "A HostedCluster name")
+	cmd.Flags().StringVar(&opts.namespace, "namespace", opts.namespace, "A HostedCluster namespace. Defaults to 'clusters'.")
+	cmd.Flags().StringVar(&opts.name, "name", opts.name, "A HostedCluster name.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if opts.name != "" && opts.namespace == "" {
-			opts.namespace = "clusters"
-		}
-		if err := hyperShiftKubeConfig.Render(cmd.Context(), opts.namespace, opts.name); err != nil {
-			_, _ = fmt.Fprintf(os.Stderr, "%s\n", err)
+		if err := hypershiftkubeconfig.Render(cmd.Context(), opts.namespace, opts.name); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 			return err
 		}
 		return nil
