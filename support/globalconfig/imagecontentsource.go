@@ -62,8 +62,8 @@ func ReconcileImageDigestMirrors(idms *configv1.ImageDigestMirrorSet, hcp *hyper
 	return nil
 }
 
-// GetAllImageRegistryMirrors returns all image registry mirrors from any ImageContentSourcePolicy and
-// ImageDigestMirrorSet in an OpenShift management cluster (other management cluster types will not have these policies)
+// GetAllImageRegistryMirrors returns any image registry mirrors from any ImageDigestMirrorSet or ImageContentSourcePolicy
+// in an OpenShift management cluster (other management cluster types will not have these policies).
 // ImageContentSourcePolicy will be deprecated and removed in 4.17 according to the following Jira ticket and PR
 // description in favor of ImageDigestMirrorSet. We will need to look for both policy types in the cluster.
 //
@@ -71,9 +71,56 @@ func ReconcileImageDigestMirrors(idms *configv1.ImageDigestMirrorSet, hcp *hyper
 //	    https://github.com/openshift/hypershift/pull/1776
 func GetAllImageRegistryMirrors(ctx context.Context, client client.Client, mgmtClusterHasIDMSCapability bool) (map[string][]string, error) {
 	var mgmtClusterRegistryOverrides = make(map[string][]string)
+	var err, err2 error
 
-	// Retrieve any ImageContentSourcePolicy from the management cluster
+	// First, try to find any IDMS CRs in the management cluster
+	if mgmtClusterHasIDMSCapability {
+		mgmtClusterRegistryOverrides, err = getImageDigestMirrorSets(ctx, client)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Next, if no IDMS CRs were found, look for ICSP CRs
+	if len(mgmtClusterRegistryOverrides) == 0 {
+		mgmtClusterRegistryOverrides, err2 = getImageContentSourcePolicies(ctx, client)
+		if err2 != nil {
+			return nil, err2
+		}
+	}
+
+	return mgmtClusterRegistryOverrides, nil
+}
+
+// getImageDigestMirrorSets retrieves any IDMS CRs from an OpenShift management cluster
+func getImageDigestMirrorSets(ctx context.Context, client client.Client) (map[string][]string, error) {
+	var idmsRegistryOverrides = make(map[string][]string)
+	var imageDigestMirrorSets = ImageDigestMirrorSetList()
+
+	err := client.List(ctx, imageDigestMirrorSets)
+	if err != nil {
+		return nil, err
+	}
+
+	// For each image digest mirror set in the management cluster, map the source with each of its mirrors
+	for _, item := range imageDigestMirrorSets.Items {
+		for _, imageDigestMirror := range item.Spec.ImageDigestMirrors {
+			source := imageDigestMirror.Source
+
+			for n := range imageDigestMirror.Mirrors {
+				idmsRegistryOverrides[source] = append(idmsRegistryOverrides[source], string(imageDigestMirror.Mirrors[n]))
+			}
+		}
+	}
+
+	return idmsRegistryOverrides, nil
+}
+
+// getImageContentSourcePolicies retrieves any ICSP CRs from an OpenShift management cluster
+func getImageContentSourcePolicies(ctx context.Context, client client.Client) (map[string][]string, error) {
+	var icspRegistryOverrides = make(map[string][]string)
 	var imageContentSourcePolicies = ImageContentSourcePolicyList()
+
 	err := client.List(ctx, imageContentSourcePolicies)
 	if err != nil {
 		return nil, err
@@ -85,30 +132,10 @@ func GetAllImageRegistryMirrors(ctx context.Context, client client.Client, mgmtC
 			source := mirror.Source
 
 			for n := range mirror.Mirrors {
-				mgmtClusterRegistryOverrides[source] = append(mgmtClusterRegistryOverrides[source], mirror.Mirrors[n])
+				icspRegistryOverrides[source] = append(icspRegistryOverrides[source], mirror.Mirrors[n])
 			}
 		}
 	}
 
-	if mgmtClusterHasIDMSCapability {
-		// Retrieve any ImageDigestMirrorSet from the management cluster
-		var imageDigestMirrorSets = ImageDigestMirrorSetList()
-		err = client.List(ctx, imageDigestMirrorSets)
-		if err != nil {
-			return nil, err
-		}
-
-		// For each image digest mirror set in the management cluster, map the source with each of its mirrors
-		for _, item := range imageDigestMirrorSets.Items {
-			for _, imageDigestMirror := range item.Spec.ImageDigestMirrors {
-				source := imageDigestMirror.Source
-
-				for n := range imageDigestMirror.Mirrors {
-					mgmtClusterRegistryOverrides[source] = append(mgmtClusterRegistryOverrides[source], string(imageDigestMirror.Mirrors[n]))
-				}
-			}
-		}
-	}
-
-	return mgmtClusterRegistryOverrides, nil
+	return icspRegistryOverrides, nil
 }

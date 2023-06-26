@@ -267,6 +267,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	// Populate registry overrides with any ICSP and IDMS from a OpenShift management cluster
 	var imageRegistryOverrides map[string][]string
 	if mgmtClusterCaps.Has(capabilities.CapabilityICSP) || mgmtClusterCaps.Has(capabilities.CapabilityIDMS) {
+		// Warn the user this CR will be deprecated in the future
+		if mgmtClusterCaps.Has(capabilities.CapabilityICSP) {
+			log.Info("Detected ImageContentSourcePolicy Custom Resources. ImageContentSourcePolicy will be deprecated in favor of ImageDigestMirrorSet. See https://issues.redhat.com/browse/OCPNODE-1258 for more details.")
+		}
+
 		imageRegistryOverrides, err = globalconfig.GetAllImageRegistryMirrors(ctx, apiReadingClient, mgmtClusterCaps.Has(capabilities.CapabilityIDMS))
 		if err != nil {
 			return fmt.Errorf("failed to populate image registry overrides: %w", err)
