@@ -315,7 +315,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		fmt.Sprintf("--kubeconfig=%s", kubeConfigPath),
 		fmt.Sprintf("--authentication-kubeconfig=%s", kubeConfigPath),
 		fmt.Sprintf("--authorization-kubeconfig=%s", kubeConfigPath),
-		"--allocate-node-cidrs=true",
+		"--allocate-node-cidrs=false",
 	}
 	if providerConfig := cloudProviderConfig(p.CloudProvider, p.CloudProviderConfig); providerConfig != "" {
 		args = append(args, fmt.Sprintf("--cloud-config=%s", providerConfig))
