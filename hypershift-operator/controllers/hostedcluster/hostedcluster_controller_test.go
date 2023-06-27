@@ -937,10 +937,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	}
 	for _, cluster := range hostedClusters {
 		cluster.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
-			{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-				Type:  hyperv1.Route,
-				Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"}},
-			},
+			{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
 			{Service: hyperv1.Konnectivity, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
 			{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
 			{Service: hyperv1.Ignition, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
@@ -1118,22 +1115,6 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 				},
 			}},
 			expectedResult:                errors.New(`service type OAuthServer can't be published with the same hostname api.example.com as service type APIServer`),
-			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
-		},
-		{
-			name: "APIServer service with publishing strategy Route doen't have hostname field set, error",
-			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
-				Services: []hyperv1.ServicePublishingStrategyMapping{
-					{
-						Service: hyperv1.APIServer,
-						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-							Type:  hyperv1.Route,
-							Route: &hyperv1.RoutePublishingStrategy{},
-						},
-					},
-				},
-			}},
-			expectedResult:                errors.New(`hostname field is required for service type APIServer with publishing strategy Route`),
 			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		},
 	}
