@@ -22,12 +22,12 @@ import (
 
 // TODO: NEXT: incorporate into an fzf workflow
 
-const description string = `
+const Description string = `
 This command renders kubeconfigs for HostedClusters.
 
-If a single cluster is identified, the kubeconfig is printed to stdout.
+If a single cluster is specified, the kubeconfig is printed to stdout.
 
-If no clusters is identified, this command renders a kubeconfig with a context
+If no clusters are specified, this command renders a kubeconfig with a context
 for every HostedCluster resource. The contexts are named based on the
 HostedCluster following the pattern:
 
@@ -37,9 +37,9 @@ The kubeconfig for each cluster is based on the secret referenced by the status
 of the HostedCluster itself.
 `
 
-type Options struct {
-	Namespace string
-	Name      string
+type options struct {
+	namespace string
+	name      string
 }
 
 // NewCreateCommand returns a command which can render kubeconfigs for HostedCluster
@@ -47,22 +47,21 @@ type Options struct {
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "kubeconfig",
-		Short:        "Renders kubeconfigs for hostedcluster resources.",
-		Long:         description,
+		Short:        "Renders kubeconfigs for HostedCluster resources.",
+		Long:         Description,
 		SilenceUsage: true,
 	}
 
-	opts := Options{}
+	opts := options{
+		namespace: "clusters",
+	}
 
-	cmd.Flags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A hostedcluster namespace. Will default to 'clusters' if a --name is supplied")
-	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A hostedcluster name")
+	cmd.Flags().StringVar(&opts.namespace, "namespace", opts.namespace, "A HostedCluster namespace. Defaults to 'clusters'.")
+	cmd.Flags().StringVar(&opts.name, "name", opts.name, "A HostedCluster name.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if opts.Name != "" && opts.Namespace == "" {
-			opts.Namespace = "clusters"
-		}
-		if err := render(cmd.Context(), opts); err != nil {
-			fmt.Fprintf(os.Stderr, "%s\n", err)
+		if err := Render(cmd.Context(), opts.namespace, opts.name); err != nil {
+			_, _ = fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 			return err
 		}
 		return nil
@@ -71,8 +70,8 @@ func NewCreateCommand() *cobra.Command {
 	return cmd
 }
 
-// render builds the kubeconfig and prints it to stdout.
-func render(ctx context.Context, opts Options) error {
+// Render builds the kubeconfig and prints it to stdout.
+func Render(ctx context.Context, namespace string, name string) error {
 	scheme := runtime.NewScheme()
 	if err := clientcmdapiv1.AddToScheme(scheme); err != nil {
 		return fmt.Errorf("failed to set up scheme: %w", err)
@@ -88,8 +87,8 @@ func render(ctx context.Context, opts Options) error {
 
 	var kubeConfig *clientcmdapiv1.Config
 	switch {
-	case len(opts.Name) == 0:
-		config, err := buildCombinedConfig(ctx, c, opts.Namespace)
+	case len(name) == 0:
+		config, err := buildCombinedConfig(ctx, c, namespace)
 		if err != nil {
 			return fmt.Errorf("failed to make kubeconfig: %w", err)
 		}
@@ -97,7 +96,7 @@ func render(ctx context.Context, opts Options) error {
 		return serializer.Encode(kubeConfig, os.Stdout)
 	default:
 		var cluster hyperv1.HostedCluster
-		if err := c.Get(ctx, types.NamespacedName{Namespace: opts.Namespace, Name: opts.Name}, &cluster); err != nil {
+		if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: name}, &cluster); err != nil {
 			return err
 		}
 		if cluster.Status.KubeConfig == nil {
@@ -195,7 +194,7 @@ func buildCombinedConfig(ctx context.Context, c client.Client, namespace string)
 // auth, and context fields according to the given NamedConfig name which is
 // assumed to be a unique name representing the HostedCluster.
 //
-// This function assumes the the first element of the cluster and auth fields
+// This function assumes the first element of the cluster and auth fields
 // combined represent an admin context for the cluster.
 func mergeClusterKubeConfigs(clusterConfigs []NamedConfig) *clientcmdapiv1.Config {
 	merged := clientcmdapiv1.Config{
