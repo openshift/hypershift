@@ -16,24 +16,24 @@ import (
 	"github.com/openshift/hypershift/support/oidc"
 )
 
-const (
-	KMS_KEY_ALIAS = "alias/hypershift-ci"
-)
+func GetKMSKeyArn(awsCreds, awsRegion, alias string) (*string, error) {
+	if alias == "" {
+		return aws.String(""), nil
+	}
 
-func GetKMSKeyArn(awsCreds, awsRegion string) (*string, error) {
 	awsSession := awsutil.NewSession("e2e-kms", awsCreds, "", "", awsRegion)
 	awsConfig := awsutil.NewConfig()
 	kmsClient := kms.New(awsSession, awsConfig)
 
 	input := &kms.DescribeKeyInput{
-		KeyId: aws.String(KMS_KEY_ALIAS),
+		KeyId: aws.String(alias),
 	}
 	out, err := kmsClient.DescribeKey(input)
 	if err != nil {
 		return nil, err
 	}
 	if out.KeyMetadata == nil {
-		return nil, fmt.Errorf("KMS key with alias %v doesn't exist", KMS_KEY_ALIAS)
+		return nil, fmt.Errorf("KMS key with alias %v doesn't exist", alias)
 	}
 
 	return out.KeyMetadata.Arn, nil

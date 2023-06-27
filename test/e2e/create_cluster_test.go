@@ -65,7 +65,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
 	// find kms key ARN using alias
-	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to retrieve kms key arn")
 	g.Expect(kmsKeyArn).NotTo(BeNil(), "failed to retrieve kms key arn")
 

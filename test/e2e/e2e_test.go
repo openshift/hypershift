@@ -5,6 +5,7 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -32,7 +33,7 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap/zapcore"
-	"k8s.io/apimachinery/pkg/util/errors"
+	apierr "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -55,10 +56,6 @@ var (
 	}))
 )
 
-const (
-	oidcBucketName = "hypershift-ci-oidc"
-)
-
 func init() {
 	rand.Seed(time.Now().UnixNano())
 }
@@ -70,6 +67,8 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
 	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.aws-zones", "Deprecated, use -e2e.availability-zones instead")
 	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.availability-zones", "Availability zones for clusters")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AWSOidcS3BucketName, "e2e.aws-oidc-s3-bucket-name", "", "AWS S3 Bucket Name to setup the OIDC provider in")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AWSKmsKeyAlias, "e2e.aws-kms-key-alias", "", "AWS KMS Key Alias to use when creating encrypted nodepools, when empty the default EBS KMS Key will be used")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
 	flag.StringVar(&globalOpts.configurableClusterOptions.ExternalDNSDomain, "e2e.external-dns-domain", "", "domain that external-dns will use to create DNS records for HCP endpoints")
@@ -165,11 +164,15 @@ func main(m *testing.M) int {
 
 // setup a shared OIDC provider to be used by all HostedClusters
 func setupSharedOIDCProvider() error {
+	if globalOpts.configurableClusterOptions.AWSOidcS3BucketName == "" {
+		return errors.New("please supply a public S3 bucket name with --e2e.aws-oidc-s3-bucket-name")
+	}
+
 	iamClient := e2eutil.GetIAMClient(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
 	s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
 
 	providerID := e2eutil.SimpleNameGenerator.GenerateName("e2e-oidc-provider-")
-	issuerURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", oidcBucketName, globalOpts.configurableClusterOptions.Region, providerID)
+	issuerURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", globalOpts.configurableClusterOptions.AWSOidcS3BucketName, globalOpts.configurableClusterOptions.Region, providerID)
 
 	key, err := certs.PrivateKey()
 	if err != nil {
@@ -200,11 +203,11 @@ func setupSharedOIDCProvider() error {
 		}
 		_, err = s3Client.PutObject(&s3.PutObjectInput{
 			Body:   bodyReader,
-			Bucket: aws.String(oidcBucketName),
+			Bucket: aws.String(globalOpts.configurableClusterOptions.AWSOidcS3BucketName),
 			Key:    aws.String(providerID + path),
 		})
 		if err != nil {
-			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, oidcBucketName)
+			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, globalOpts.configurableClusterOptions.AWSOidcS3BucketName)
 			if awsErr, ok := err.(awserr.Error); ok {
 				// Generally, the underlying message from AWS has unique per-request
 				// info not suitable for publishing as condition messages, so just
@@ -236,7 +239,7 @@ func cleanupSharedOIDCProvider() {
 	s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
 
 	e2eutil.DestroyOIDCProvider(log, iamClient, globalOpts.IssuerURL)
-	e2eutil.CleanupOIDCBucketObjects(log, s3Client, oidcBucketName, globalOpts.IssuerURL)
+	e2eutil.CleanupOIDCBucketObjects(log, s3Client, globalOpts.configurableClusterOptions.AWSOidcS3BucketName, globalOpts.IssuerURL)
 }
 
 // alertSLOs creates alert for our SLO/SLIs and log when firing.
@@ -361,6 +364,8 @@ type configurableClusterOptions struct {
 	BaseDomain                  string
 	ControlPlaneOperatorImage   string
 	AWSEndpointAccess           string
+	AWSOidcS3BucketName         string
+	AWSKmsKeyAlias              string
 	ExternalDNSDomain           string
 	KubeVirtContainerDiskImage  string
 	KubeVirtNodeMemory          string
@@ -538,7 +543,7 @@ func (o *options) Validate() error {
 		}
 	}
 
-	return errors.NewAggregate(errs)
+	return apierr.NewAggregate(errs)
 }
 
 var _ flag.Value = &stringSliceVar{}

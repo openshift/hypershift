@@ -40,13 +40,17 @@ func (k *KMSRootVolumeTest) Setup(t *testing.T) {
 	t.Log("Starting test KMSRootVolumeTest")
 
 	// find kms key ARN using alias
-	kmsKeyArn, err := e2eutil.GetKMSKeyArn(k.clusterOpts.AWSPlatform.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region)
+	kmsKeyArn, err := e2eutil.GetKMSKeyArn(k.clusterOpts.AWSPlatform.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
 	if err != nil || kmsKeyArn == nil {
 		t.Fatalf("failed to retrieve kms key arn")
 	}
 
 	k.EncryptionKey = *kmsKeyArn
-	t.Logf("retrieved kms arn: %s", k.EncryptionKey)
+	if k.EncryptionKey == "" {
+		t.Log("empty KMS ARN, using default EBS KMS Key")
+	} else {
+		t.Logf("retrieved KMS ARN: %s", k.EncryptionKey)
+	}
 }
 
 func (k *KMSRootVolumeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
@@ -62,6 +66,7 @@ func (k *KMSRootVolumeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePo
 	nodePool.Spec.Platform.AWS.RootVolume = &hyperv1.Volume{
 		Size:          k.clusterOpts.AWSPlatform.RootVolumeSize,
 		Type:          k.clusterOpts.AWSPlatform.RootVolumeType,
+		Encrypted:     aws.Bool(true),
 		EncryptionKey: k.EncryptionKey,
 	}
 
@@ -93,7 +98,18 @@ func (k *KMSRootVolumeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes [
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(output).NotTo(BeNil())
 	g.Expect(output.Volumes).NotTo(BeEmpty())
-
 	rootVolume := output.Volumes[0]
-	g.Expect(rootVolume.KmsKeyId).To(HaveValue(Equal(nodePool.Spec.Platform.AWS.RootVolume.EncryptionKey)))
+
+	if nodePool.Spec.Platform.AWS.RootVolume.EncryptionKey == "" {
+		resp, err := ec2client.GetEbsDefaultKmsKeyId(&ec2.GetEbsDefaultKmsKeyIdInput{})
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(resp).NotTo(BeNil())
+		g.Expect(resp.KmsKeyId).NotTo(BeNil())
+		g.Expect(resp.KmsKeyId).To(BeElementOf())
+		// When using a default EBS KMS Key, "alias/aws/ebs" will be returned if it hasn't been modified
+		// or the actual ID if the default EBS KMS Key is a custom KMS key
+		g.Expect(*resp.KmsKeyId).Should(BeElementOf("alias/aws/ebs", *rootVolume.KmsKeyId))
+	} else {
+		g.Expect(rootVolume.KmsKeyId).To(HaveValue(Equal(nodePool.Spec.Platform.AWS.RootVolume.EncryptionKey)))
+	}
 }
