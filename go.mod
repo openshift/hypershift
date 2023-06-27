@@ -16,7 +16,7 @@ require (
 	github.com/aws/aws-sdk-go v1.44.190
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.14.1
-	github.com/coreos/ignition/v2 v2.10.1
+	github.com/coreos/ignition/v2 v2.14.0
 	github.com/docker/distribution v2.8.1+incompatible
 	github.com/go-logr/logr v1.2.4
 	github.com/go-logr/zapr v1.2.0
@@ -95,7 +95,7 @@ require (
 	github.com/chai2010/gettext-go v0.0.0-20160711120539-c6fed771bfd5 // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
-	github.com/coreos/vcontext v0.0.0-20210407161507-4ee6c745c8bd // indirect
+	github.com/coreos/vcontext v0.0.0-20211021162308-f1dbbca7bef4 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
@@ -157,7 +157,7 @@ require (
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/russross/blackfriday v1.5.2 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace // indirect
 	github.com/xlab/treeprint v1.1.0 // indirect
 	go.mongodb.org/mongo-driver v1.10.0 // indirect
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5 // indirect
