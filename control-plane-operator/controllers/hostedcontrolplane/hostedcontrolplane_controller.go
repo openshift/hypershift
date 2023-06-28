@@ -882,6 +882,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		r.Client,
 		createOrUpdate,
 		releaseImage.ComponentImages()[util.CPOImageName],
+		releaseImage.ComponentImages(),
 		hostedControlPlane,
 		r.DefaultIngressDomain,
 		// The healthz handler was added before the CPO started to manage the ignition server, and it's the same binary,
@@ -1913,6 +1914,15 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return pki.ReconcileCSISnapshotWebhookTLS(csiSnapshotWebhookSecret, rootCASecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile CSI snapshot webhook cert: %w", err)
+	}
+
+	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+		igntionServerCert := manifests.IgnitionServerCertSecret(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, igntionServerCert, func() error {
+			return pki.ReconcileIgnitionServerCertSecret(igntionServerCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ignition server cert: %w", err)
+		}
 	}
 
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
