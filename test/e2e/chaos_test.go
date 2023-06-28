@@ -92,7 +92,12 @@ func testKillRandomMembers(parentCtx context.Context, client crclient.Client, cl
 			},
 			Data: map[string]string{"value": string(value)},
 		}
-		err := guestClient.Create(ctx, cm)
+		err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+			if err := guestClient.Create(ctx, cm); err != nil {
+				return false, nil
+			}
+			return true, nil
+		}, ctx.Done())
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create marker configmap")
 
 		// Find etcd pods in the control plane namespace
@@ -180,7 +185,12 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 			},
 			Data: map[string]string{"value": string(value)},
 		}
-		err := guestClient.Create(ctx, cm)
+		err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+			if err := guestClient.Create(ctx, cm); err != nil {
+				return false, nil
+			}
+			return true, nil
+		}, ctx.Done())
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create marker configmap")
 
 		// Find etcd pods in the control plane namespace
