@@ -20,6 +20,12 @@ const (
 	DisablePKIReconciliationAnnotation        = "hypershift.openshift.io/disable-pki-reconciliation"
 	IdentityProviderOverridesAnnotationPrefix = "idpoverrides.hypershift.openshift.io/"
 	OauthLoginURLOverrideAnnotation           = "oauth.hypershift.openshift.io/login-url-override"
+	// ControlPlanePriorityClass is for pods in the HyperShift Control Plane that are not API critical but still need elevated priority. E.g Cluster Version Operator.
+	ControlPlanePriorityClass = "hypershift.openshift.io/control-plane-priority-class"
+	// APICriticalPriorityClass is for pods that are required for API calls and resource admission to succeed. This includes pods like kube-apiserver, aggregated API servers, and webhooks.
+	APICriticalPriorityClass = "hypershift.openshift.io/api-critical-priority-class"
+	// EtcdPriorityClass is for etcd pods.
+	EtcdPriorityClass = "hypershift.openshift.io/etcd-priority-class"
 	// KonnectivityServerImageAnnotation is a temporary annotation that allows the specification of the konnectivity server image.
 	// This will be removed when Konnectivity is added to the Openshift release payload
 	KonnectivityServerImageAnnotation = "hypershift.openshift.io/konnectivity-server-image"

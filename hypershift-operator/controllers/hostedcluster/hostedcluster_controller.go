@@ -1592,6 +1592,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.DisableProfilingAnnotation,
 		hyperv1.PrivateIngressControllerAnnotation,
 		hyperv1.CleanupCloudResourcesAnnotation,
+		hyperv1.ControlPlanePriorityClass,
+		hyperv1.APICriticalPriorityClass,
+		hyperv1.EtcdPriorityClass,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
@@ -1865,7 +1868,9 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 			},
 			SetDefaultSecurityContext: r.SetDefaultSecurityContext,
 		}
-
+		if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+			deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
+		}
 		deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 		deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 		deploymentConfig.ApplyTo(deployment)
@@ -2329,7 +2334,9 @@ func reconcileControlPlaneOperatorDeployment(
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
-
+	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
+	}
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)
@@ -2710,7 +2717,9 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
-
+	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
+	}
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)

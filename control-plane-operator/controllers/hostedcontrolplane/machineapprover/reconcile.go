@@ -207,7 +207,9 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
-
+	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
+	}
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.ApplyTo(deployment)

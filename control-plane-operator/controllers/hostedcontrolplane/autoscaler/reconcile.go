@@ -185,6 +185,9 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
+	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
+	}
 
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)

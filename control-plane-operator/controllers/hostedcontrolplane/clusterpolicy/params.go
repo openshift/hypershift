@@ -41,7 +41,9 @@ func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, releaseIm
 			},
 		},
 	}
-
+	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+		params.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
+	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetDefaults(hcp, clusterPolicyControllerLabels, nil)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
