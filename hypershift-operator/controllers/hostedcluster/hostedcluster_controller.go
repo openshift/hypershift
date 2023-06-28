@@ -1430,10 +1430,15 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the Ignition server
 	if !controlplaneOperatorManagesIgnitionServer {
+		releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
+		}
 		if err := ignitionserverreconciliation.ReconcileIgnitionServer(ctx,
 			r.Client,
 			createOrUpdate,
 			utilitiesImage,
+			releaseInfo.ComponentImages(),
 			hcp,
 			defaultIngressDomain,
 			ignitionServerHasHealthzHandler,
