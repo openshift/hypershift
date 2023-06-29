@@ -20,7 +20,7 @@ type DestroyOptions struct {
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "agent",
-		Short:        "Destroys a HostedCluster and its associated infrastructure on Agent.",
+		Short:        "Destroys a HostedCluster and its associated infrastructure on Agent",
 		SilenceUsage: true,
 	}
 

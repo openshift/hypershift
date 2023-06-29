@@ -47,7 +47,7 @@ type options struct {
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "kubeconfig",
-		Short:        "Renders kubeconfigs for HostedCluster resources.",
+		Short:        "Renders kubeconfigs for HostedCluster resources",
 		Long:         Description,
 		SilenceUsage: true,
 	}
