@@ -41,6 +41,7 @@ func NewCreateCommands() *cobra.Command {
 		SilenceUsage: true,
 	}
 
+	cmd.AddCommand(agent.NewCreateCommand(opts))
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
 
 	return cmd
