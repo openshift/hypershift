@@ -10,12 +10,15 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
+	"strings"
 
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/docker/distribution/registry/client/transport"
 	"github.com/opencontainers/go-digest"
 	"k8s.io/client-go/rest"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	dockerarchive "github.com/openshift/hypershift/support/thirdparty/docker/pkg/archive"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
@@ -310,8 +313,8 @@ func GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distr
 	return digestsManifest, nil
 }
 
-// IsMultiArchManifestList determines whether an image is a manifest listed image and contains manifests the following processor architectures: amd64, arm64, s390x, ppc64le
-func IsMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []byte) (bool, error) {
+// isMultiArchManifestList determines whether an image is a manifest listed image and contains manifests the following processor architectures: amd64, arm64, s390x, ppc64le
+func isMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []byte) (bool, error) {
 	srcManifest, err := GetManifest(ctx, imageRef, pullSecret)
 	if err != nil {
 		return false, fmt.Errorf("failed to retrieve manifest %s: %w", imageRef, err)
@@ -345,4 +348,100 @@ func IsMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []
 		return true, nil
 	}
 	return false, nil
+}
+
+// findImageRefByArch finds the appropriate image reference in a multi-arch manifest image based on the current platform's OS and processor architecture
+func findImageRefByArch(ctx context.Context, imageRef string, pullSecret []byte, osToFind string, archToFind string) (manifestImageRef string, err error) {
+	manifestList, err := GetManifest(ctx, imageRef, pullSecret)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve manifest from image ref, %s: %w", imageRef, err)
+	}
+
+	_, payload, err := manifestList.Payload()
+	if err != nil {
+		return "", fmt.Errorf("failed to get manifest payload: %w", err)
+	}
+
+	deserializedManifestList := new(manifestlist.DeserializedManifestList)
+	if err = deserializedManifestList.UnmarshalJSON(payload); err != nil {
+		return "", fmt.Errorf("failed to get unmarshalled manifest list: %w", err)
+	}
+
+	matchingManifestForArch, err := findMatchingManifest(ctx, imageRef, deserializedManifestList, osToFind, archToFind)
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve matching manifest for os/arch, %s/%s: %w", osToFind, archToFind, err)
+	}
+
+	return matchingManifestForArch, nil
+}
+
+// findMatchingManifest looks to find a manifest matching the current platform's OS and processor architecture from a deserialized manifest list from an image's payload
+func findMatchingManifest(ctx context.Context, imageRef string, deserializedManifestList *manifestlist.DeserializedManifestList, osToFind string, archToFind string) (string, error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	var foundManifestDesc *manifestlist.ManifestDescriptor
+	for _, manifestDesc := range deserializedManifestList.ManifestList.Manifests {
+		if osToFind == manifestDesc.Platform.OS && archToFind == manifestDesc.Platform.Architecture {
+			foundManifestDesc = &manifestDesc
+			break
+		}
+	}
+
+	if foundManifestDesc == nil {
+		return "", fmt.Errorf("not found")
+	}
+
+	// Multi-arch image references look like either:
+	//	quay.io/openshift-release-dev/ocp-release@sha256:1a101ef5215da468cea8bd2eb47114e85b2b64a6b230d5882f845701f55d057f
+	//	quay.io/openshift-release-dev/ocp-release:4.11.0-0.nightly-multi-2022-07-12-131716
+	if strings.Contains(imageRef, "@sha") {
+		splitSHA := strings.Split(imageRef, "@")
+		if len(splitSHA) != 2 {
+			return "", fmt.Errorf("failed to parse imageRef %s", imageRef)
+		}
+
+		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Descriptor.Digest)
+		log.Info("Found matching manifest for: " + matchingManifestForArch)
+		return matchingManifestForArch, nil
+	}
+
+	if strings.Contains(imageRef, "ocp-release:") {
+		splitSHA := strings.Split(imageRef, ":")
+		if len(splitSHA) != 2 {
+			return "", fmt.Errorf("failed to parse imageRef %s", imageRef)
+		}
+
+		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Descriptor.Digest)
+		log.Info("Found matching manifest for: " + matchingManifestForArch)
+		return matchingManifestForArch, nil
+	}
+
+	return "", fmt.Errorf("imageRef is an unknown format to parse, imageRef: %s", imageRef)
+}
+
+// GetCorrectArchImage returns the appropriate image related to the system os/arch if the image reference is manifest
+// listed, else returns the original image reference
+func GetCorrectArchImage(ctx context.Context, component string, imageRef string, pullSecret []byte) (manifestImageRef string, err error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	isMultiArchImage, err := isMultiArchManifestList(ctx, imageRef, pullSecret)
+	if err != nil {
+		return "", fmt.Errorf("failed to determine if image is manifest listed: %w", err)
+	}
+
+	if isMultiArchImage {
+		operatingSystem := runtime.GOOS
+		arch := runtime.GOARCH
+		log.Info(component + " image is a manifest listed image; extracting manifest for os/arch: " + operatingSystem + "/" + arch)
+
+		// Verify MF Image has the right os/arch image
+		imageRef, err = findImageRefByArch(ctx, imageRef, pullSecret, operatingSystem, arch)
+		if err != nil {
+			return "", fmt.Errorf("failed to extract appropriate os/arch manifest from %s: %w", imageRef, err)
+		}
+
+		return imageRef, nil
+	}
+
+	return imageRef, nil
 }
