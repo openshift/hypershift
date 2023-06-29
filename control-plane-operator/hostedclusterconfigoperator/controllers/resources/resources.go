@@ -409,13 +409,20 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network operator: %w", err))
 	}
-
+	// this allows users to disable data collection in sensitive environments
+	// solves https://issues.redhat.com/browse/OCPBUGS-12208
+	ensureExistsReconcilationStrategy := false
+	if _, exists := hcp.Annotations[hyperv1.EnsureExistsPullSecretReconciliation]; exists {
+		ensureExistsReconcilationStrategy = true
+	}
 	log.Info("reconciling pull secret")
 	for _, ns := range manifests.PullSecretTargetNamespaces() {
 		secret := manifests.PullSecret(ns)
 		if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
-			secret.Data = pullSecret.Data
-			secret.Type = pullSecret.Type
+			if !ensureExistsReconcilationStrategy || len(secret.Data) == 0 {
+				secret.Data = pullSecret.Data
+				secret.Type = pullSecret.Type
+			}
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile pull secret at namespace %s: %w", ns, err))
