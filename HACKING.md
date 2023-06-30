@@ -42,15 +42,40 @@ Then update the operator ServiceAccount in the hypershift namespace:
 
 ### How to run the e2e tests
 
-1. Install HyperShift.
+1. Complete [Prerequisites](https://hypershift-docs.netlify.app/getting-started/#prerequisites) with a public Route53
+Hosted Zone, for example with the following environment variables:
+
+   ```shell
+   BASE_DOMAIN="my.hypershift.dev"
+   BUCKET_NAME="my-oidc-bucket"
+   AWS_REGION="us-east-2"
+   AWS_CREDS="my/aws-credentials"
+   PULL_SECRET="/my/pull-secret"
+   HYPERSHIFT_IMAGE="quay.io/my/hypershift:latest"
+   ```
+
+2. Install the HyperShift Operator on a cluster, filling in variables such as the S3 bucket name and region based on
+what was done in the prerequisites phase and potentially supplying a custom image.
+
+   ```shell
+   bin/hypershift install \
+   --oidc-storage-provider-s3-bucket-name "${BUCKET_NAME}" \
+   --oidc-storage-provider-s3-credentials "${AWS_CREDS}" \
+   --oidc-storage-provider-s3-region "${AWS_REGION}" \
+   --hypershift-image "${HYPERSHIFT_IMAGE}"
+   ```
+
 2. Run the tests.
 
    ```shell
         $ make e2e
         $ bin/test-e2e -test.v -test.timeout 0 \
-          --e2e.aws-credentials-file /my/aws-credentials \
-          --e2e.pull-secret-file /my/pull-secret \
-          --e2e.base-domain my-basedomain
+          --e2e.aws-credentials-file "${AWS_CREDS}" \
+          --e2e.pull-secret-file "${PULL_SECRET}" \
+          --e2e.aws-region "${AWS_REGION}" \
+          --e2e.availability-zones "${AWS_REGION}a,${AWS_REGION}b,${AWS_REGION}c" \
+          --e2e.aws-oidc-s3-bucket-name "${BUCKET_NAME}" \
+          --e2e.base-domain "${BASE_DOMAIN}"
    ```
 
 ### How to visualize the Go dependency graph
