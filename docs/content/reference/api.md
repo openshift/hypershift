@@ -1855,7 +1855,8 @@ string
 &ldquo;ec2:DescribeLaunchTemplates&rdquo;,
 &ldquo;ec2:DescribeLaunchTemplateVersions&rdquo;,
 &ldquo;ec2:DeleteLaunchTemplate&rdquo;,
-&ldquo;ec2:DeleteLaunchTemplateVersions&rdquo;
+&ldquo;ec2:DeleteLaunchTemplateVersions&rdquo;,
+&ldquo;ec2:DescribeInstanceTypes&rdquo;
 ],
 &ldquo;Resource&rdquo;: [
 &ldquo;<em>&rdquo;

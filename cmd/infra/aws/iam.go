@@ -219,7 +219,8 @@ const (
         "ec2:DescribeLaunchTemplates",
         "ec2:DescribeLaunchTemplateVersions",
         "ec2:DeleteLaunchTemplate",
-        "ec2:DeleteLaunchTemplateVersions"
+        "ec2:DeleteLaunchTemplateVersions",
+        "ec2:DescribeInstanceTypes"
       ],
       "Resource": [
         "*"
