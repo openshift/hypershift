@@ -333,6 +333,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	}
 
 	var volumeMounts []corev1.VolumeMount
+	var initVolumeMounts []corev1.VolumeMount
 	var volumes []corev1.Volume
 	envVars := []corev1.EnvVar{
 		{
@@ -525,6 +526,19 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					},
 					PriorityClassName:  HypershiftOperatorPriortyClass,
 					ServiceAccountName: o.ServiceAccount.Name,
+					InitContainers: []corev1.Container{
+						{
+							Name:            "init-environment",
+							Image:           image,
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Command:         []string{"/usr/bin/hypershift-operator"},
+							Args:            []string{"init"},
+							SecurityContext: &corev1.SecurityContext{
+								RunAsUser: k8sutilspointer.Int64(1000),
+							},
+							VolumeMounts: initVolumeMounts,
+						},
+					},
 					Containers: []corev1.Container{
 						{
 							Name: HypershiftOperatorName,
@@ -613,9 +627,9 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	}
 
 	if o.OpenShiftTrustBundle != nil {
-		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+		deployment.Spec.Template.Spec.InitContainers[0].VolumeMounts = append(deployment.Spec.Template.Spec.InitContainers[0].VolumeMounts, corev1.VolumeMount{
 			Name:      "openshift-config-managed-trusted-ca-bundle",
-			MountPath: "/etc/pki/ca-trust/extracted/pem",
+			MountPath: "/var/run/ca-trust",
 			ReadOnly:  true,
 		})
 		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
@@ -624,7 +638,24 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{Name: o.OpenShiftTrustBundle.Name},
 					Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"}},
+					Optional:             k8sutilspointer.Bool(true),
 				},
+			},
+		})
+
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "trusted-ca-bundle",
+			MountPath: "/etc/pki/ca-trust/extracted/pem",
+			ReadOnly:  true,
+		})
+		deployment.Spec.Template.Spec.InitContainers[0].VolumeMounts = append(deployment.Spec.Template.Spec.InitContainers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "trusted-ca-bundle",
+			MountPath: "/trust-bundle",
+		})
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: "trusted-ca-bundle",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
 		})
 	}
