@@ -169,6 +169,11 @@ const (
 	// The format of the annotation value is a commma-separated list of image=ref pairs like:
 	// cluster-network-operator=example.com/cno:latest,ovn-kubernetes=example.com/ovnkube:latest
 	ImageOverridesAnnotation = "hypershift.openshift.io/image-overrides"
+
+	// EnsureExistsPullSecretReconciliation enables a reconciliation behavior on in cluster pull secret
+	// resources that enables user modifications to the resources while ensuring they do exist. This
+	// allows users to execute workflows like disabling insights operator
+	EnsureExistsPullSecretReconciliation = "hypershift.openshift.io/ensureexists-pullsecret-reconcile"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
