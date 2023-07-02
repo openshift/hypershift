@@ -7,6 +7,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
@@ -239,6 +240,11 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		}
 	}
 	template.Spec.DataVolumeTemplates = []kubevirtv1.DataVolumeTemplateSpec{dataVolume}
+
+	if kvPlatform.NetworkInterfaceMultiQueue != nil &&
+		*nodePool.Spec.Platform.Kubevirt.NetworkInterfaceMultiQueue == hyperv1.MultiQueueEnable {
+		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = pointer.Bool(true)
+	}
 
 	return template
 }

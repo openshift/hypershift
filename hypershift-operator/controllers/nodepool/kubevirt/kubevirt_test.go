@@ -16,6 +16,7 @@ import (
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/pointer"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
@@ -33,6 +34,11 @@ const (
 	hostedClusterNamespace = "hostedClusterNamespace"
 	bootImageName          = "https://rhcos.mirror.openshift.com/art/storage/releases/rhcos-4.12/412.86.202209302317-0/x86_64/rhcos-412.86.202209302317-0-openstack.x86_64.qcow2.gz"
 	imageHash              = "imageHash"
+)
+
+var (
+	multiQueueEnable  = hyperv1.MultiQueueEnable
+	multiQueueDisable = hyperv1.MultiQueueDisable
 )
 
 func TestKubevirtMachineTemplate(t *testing.T) {
@@ -57,7 +63,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					AutoScaling: nil,
 					Platform: hyperv1.NodePoolPlatform{
 						Type:     hyperv1.KubevirtPlatform,
-						Kubevirt: generateKubevirtPlatform("5Gi", 4, "testimage", "32Gi"),
+						Kubevirt: generateKubevirtPlatform("5Gi", 4, "testimage", "32Gi", nil),
 					},
 					Release: hyperv1.Release{},
 				},
@@ -75,7 +81,83 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
-						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "32Gi"),
+						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "32Gi", false),
+					},
+				},
+			},
+		},
+		{
+			name: "NetworkInterfaceMultiQueue is Disable",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type:     hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform("5Gi", 4, "testimage", "32Gi", &multiQueueDisable),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "32Gi", false),
+					},
+				},
+			},
+		},
+		{
+			name: "NetworkInterfaceMultiQueue is Enable",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type:     hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform("5Gi", 4, "testimage", "32Gi", &multiQueueEnable),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "32Gi", true),
 					},
 				},
 			},
@@ -109,7 +191,7 @@ func TestCacheImage(t *testing.T) {
 			AutoScaling: nil,
 			Platform: hyperv1.NodePoolPlatform{
 				Type:     hyperv1.KubevirtPlatform,
-				Kubevirt: generateKubevirtPlatform("5Gi", 4, "testimage", "32Gi"),
+				Kubevirt: generateKubevirtPlatform("5Gi", 4, "testimage", "32Gi", nil),
 			},
 			Release: hyperv1.Release{},
 		},
@@ -243,7 +325,7 @@ func assertDV(g Gomega, dvs []v1beta1.DataVolume, expectedDVNamePrefix string, b
 	g.ExpectWithOffset(1, bootImage.dvName).Should(Equal(dvs[0].Name), "failed to set the dvName filed in the cacheImage object")
 }
 
-func generateKubevirtPlatform(memory string, cores uint32, image string, volumeSize string) *hyperv1.KubevirtNodePoolPlatform {
+func generateKubevirtPlatform(memory string, cores uint32, image string, volumeSize string, multiQueue *hyperv1.MultiQueueSetting) *hyperv1.KubevirtNodePoolPlatform {
 	memoryQuantity := apiresource.MustParse(memory)
 	volumeSizeQuantity := apiresource.MustParse(volumeSize)
 
@@ -264,14 +346,19 @@ func generateKubevirtPlatform(memory string, cores uint32, image string, volumeS
 			Memory: &memoryQuantity,
 			Cores:  &cores,
 		},
+		NetworkInterfaceMultiQueue: multiQueue,
 	}
 
 	return exampleTemplate
 }
 
-func generateNodeTemplate(memory string, cpu uint32, volumeSize string) *capikubevirt.VirtualMachineTemplateSpec {
+func generateNodeTemplate(memory string, cpu uint32, volumeSize string, NetworkInterfaceMultiQueue bool) *capikubevirt.VirtualMachineTemplateSpec {
 	runAlways := kubevirtv1.RunStrategyAlways
 	guestQuantity := apiresource.MustParse(memory)
+	var multiQueue *bool
+	if NetworkInterfaceMultiQueue {
+		multiQueue = pointer.Bool(true)
+	}
 
 	return &capikubevirt.VirtualMachineTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
@@ -361,6 +448,7 @@ func generateNodeTemplate(memory string, cpu uint32, volumeSize string) *capikub
 									},
 								},
 							},
+							NetworkInterfaceMultiQueue: multiQueue,
 						},
 					},
 

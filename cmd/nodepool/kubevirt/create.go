@@ -13,21 +13,23 @@ import (
 )
 
 type KubevirtPlatformCreateOptions struct {
-	Memory                 string
-	Cores                  uint32
-	ContainerDiskImage     string
-	RootVolumeSize         uint32
-	RootVolumeStorageClass string
-	RootVolumeAccessModes  string
-	CacheStrategyType      string
+	Memory                     string
+	Cores                      uint32
+	ContainerDiskImage         string
+	RootVolumeSize             uint32
+	RootVolumeStorageClass     string
+	RootVolumeAccessModes      string
+	CacheStrategyType          string
+	NetworkInterfaceMultiQueue string
 }
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	platformOpts := &KubevirtPlatformCreateOptions{
-		Memory:             "4Gi",
-		Cores:              2,
-		ContainerDiskImage: "",
-		CacheStrategyType:  "",
+		Memory:                     "4Gi",
+		Cores:                      2,
+		ContainerDiskImage:         "",
+		CacheStrategyType:          "",
+		NetworkInterfaceMultiQueue: "",
 	}
 	cmd := &cobra.Command{
 		Use:          "kubevirt",
@@ -42,6 +44,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().StringVar(&platformOpts.RootVolumeAccessModes, "root-volume-access-modes", platformOpts.RootVolumeAccessModes, "The access modes of the root volume to use for machines in the NodePool (comma-delimited list)")
 	cmd.Flags().StringVar(&platformOpts.ContainerDiskImage, "containerdisk", platformOpts.ContainerDiskImage, "A reference to docker image with the embedded disk to be used to create the machines")
 	cmd.Flags().StringVar(&platformOpts.CacheStrategyType, "root-volume-cache-strategy", platformOpts.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
+	cmd.Flags().StringVar(&platformOpts.NetworkInterfaceMultiQueue, "network-multiqueue", platformOpts.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Disable"`)
 
 	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
@@ -55,14 +58,25 @@ func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePo
 		return fmt.Errorf(`wrong value for the --root-volume-cache-strategy parameter. May be only "None" or "PVC"`)
 	}
 
+	var multiQueue *hyperv1.MultiQueueSetting
+	switch o.NetworkInterfaceMultiQueue {
+	case "": // do nothing; value is nil
+	case string(hyperv1.MultiQueueEnable), string(hyperv1.MultiQueueDisable):
+		value := hyperv1.MultiQueueSetting(o.NetworkInterfaceMultiQueue)
+		multiQueue = &value
+	default:
+		return fmt.Errorf(`wrong value for the --network-multiqueue parameter. May be only "Enable" or "Disable"`)
+	}
+
 	nodePool.Spec.Platform.Kubevirt = fixtures.ExampleKubeVirtTemplate(&fixtures.ExampleKubevirtOptions{
-		Memory:                 o.Memory,
-		Cores:                  o.Cores,
-		Image:                  o.ContainerDiskImage,
-		RootVolumeSize:         o.RootVolumeSize,
-		RootVolumeStorageClass: o.RootVolumeStorageClass,
-		RootVolumeAccessModes:  o.RootVolumeAccessModes,
-		CacheStrategyType:      o.CacheStrategyType,
+		Memory:                     o.Memory,
+		Cores:                      o.Cores,
+		Image:                      o.ContainerDiskImage,
+		RootVolumeSize:             o.RootVolumeSize,
+		RootVolumeStorageClass:     o.RootVolumeStorageClass,
+		RootVolumeAccessModes:      o.RootVolumeAccessModes,
+		CacheStrategyType:          o.CacheStrategyType,
+		NetworkInterfaceMultiQueue: multiQueue,
 	})
 	return nil
 }

@@ -644,6 +644,13 @@ type KubevirtDiskImage struct {
 	ContainerDiskImage *string `json:"containerDiskImage,omitempty"`
 }
 
+type MultiQueueSetting string
+
+const (
+	MultiQueueEnable  MultiQueueSetting = "Enable"
+	MultiQueueDisable MultiQueueSetting = "Disable"
+)
+
 // KubevirtNodePoolPlatform specifies the configuration of a NodePool when operating
 // on KubeVirt platform.
 type KubevirtNodePoolPlatform struct {
@@ -655,6 +662,14 @@ type KubevirtNodePoolPlatform struct {
 	// +optional
 	// +kubebuilder:default={memory: "4Gi", cores: 2}
 	Compute *KubevirtCompute `json:"compute"`
+
+	// NetworkInterfaceMultiQueue If set to "Enable", virtual network interfaces configured with a virtio bus will also
+	// enable the vhost multiqueue feature for network devices. The number of queues created depends on additional
+	// factors of the VirtualMachineInstance, like the number of guest CPUs.
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=Enable;Disable
+	NetworkInterfaceMultiQueue *MultiQueueSetting `json:"networkInterfaceMultiqueue,omitempty"`
 }
 
 // AWSNodePoolPlatform specifies the configuration of a NodePool when operating

@@ -9,19 +9,20 @@ import (
 )
 
 type ExampleKubevirtOptions struct {
-	ServicePublishingStrategy string
-	APIServerAddress          string
-	Memory                    string
-	Cores                     uint32
-	Image                     string
-	RootVolumeSize            uint32
-	RootVolumeStorageClass    string
-	RootVolumeAccessModes     string
-	BaseDomainPassthrough     bool
-	InfraKubeConfig           []byte
-	InfraNamespace            string
-	CacheStrategyType         string
-	InfraStorageClassMappings []string
+	ServicePublishingStrategy  string
+	APIServerAddress           string
+	Memory                     string
+	Cores                      uint32
+	Image                      string
+	RootVolumeSize             uint32
+	RootVolumeStorageClass     string
+	RootVolumeAccessModes      string
+	BaseDomainPassthrough      bool
+	InfraKubeConfig            []byte
+	InfraNamespace             string
+	CacheStrategyType          string
+	InfraStorageClassMappings  []string
+	NetworkInterfaceMultiQueue *hyperv1.MultiQueueSetting
 }
 
 func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoolPlatform {
@@ -76,6 +77,10 @@ func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoo
 		exampleTemplate.RootVolume.CacheStrategy = &hyperv1.KubevirtCachingStrategy{
 			Type: strategyType,
 		}
+	}
+
+	if o.NetworkInterfaceMultiQueue != nil && *o.NetworkInterfaceMultiQueue == hyperv1.MultiQueueEnable {
+		exampleTemplate.NetworkInterfaceMultiQueue = o.NetworkInterfaceMultiQueue
 	}
 
 	return exampleTemplate

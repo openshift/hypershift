@@ -28,14 +28,15 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	opts.KubevirtPlatform = core.KubevirtPlatformCreateOptions{
-		ServicePublishingStrategy: IngressServicePublishingStrategy,
-		APIServerAddress:          "",
-		Memory:                    "8Gi",
-		Cores:                     2,
-		ContainerDiskImage:        "",
-		RootVolumeSize:            32,
-		InfraKubeConfigFile:       "",
-		CacheStrategyType:         "",
+		ServicePublishingStrategy:  IngressServicePublishingStrategy,
+		APIServerAddress:           "",
+		Memory:                     "8Gi",
+		Cores:                      2,
+		ContainerDiskImage:         "",
+		RootVolumeSize:             32,
+		InfraKubeConfigFile:        "",
+		CacheStrategyType:          "",
+		NetworkInterfaceMultiQueue: "",
 	}
 
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.APIServerAddress, "api-server-address", opts.KubevirtPlatform.APIServerAddress, "The API server address that should be used for components outside the control plane")
@@ -50,6 +51,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.InfraNamespace, "infra-namespace", opts.KubevirtPlatform.InfraNamespace, "The namespace in the external infra cluster that is used to host the KubeVirt virtual machines. The namespace must exist prior to creating the HostedCluster")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.CacheStrategyType, "root-volume-cache-strategy", opts.KubevirtPlatform.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
 	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.InfraStorageClassMappings, "infra-storage-class-mapping", opts.KubevirtPlatform.InfraStorageClassMappings, "KubeVirt CSI napping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb")
+	cmd.Flags().StringVar(&opts.KubevirtPlatform.NetworkInterfaceMultiQueue, "network-multiqueue", opts.KubevirtPlatform.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Disable"`)
 
 	cmd.MarkPersistentFlagRequired("pull-secret")
 
@@ -135,19 +137,30 @@ func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		return fmt.Errorf(`wrong value for the --root-volume-cache-strategy parameter. May be only "None" or "PVC"`)
 	}
 
+	var multiQueue *hyperv1.MultiQueueSetting
+	switch opts.KubevirtPlatform.NetworkInterfaceMultiQueue {
+	case "": // do nothing; value is nil
+	case string(hyperv1.MultiQueueEnable), string(hyperv1.MultiQueueDisable):
+		value := hyperv1.MultiQueueSetting(opts.KubevirtPlatform.NetworkInterfaceMultiQueue)
+		multiQueue = &value
+	default:
+		return fmt.Errorf(`wrong value for the --network-multiqueue parameter. May be only "enable" or "disable"`)
+	}
+
 	exampleOptions.Kubevirt = &apifixtures.ExampleKubevirtOptions{
-		ServicePublishingStrategy: opts.KubevirtPlatform.ServicePublishingStrategy,
-		APIServerAddress:          opts.KubevirtPlatform.APIServerAddress,
-		Memory:                    opts.KubevirtPlatform.Memory,
-		Cores:                     opts.KubevirtPlatform.Cores,
-		Image:                     opts.KubevirtPlatform.ContainerDiskImage,
-		RootVolumeSize:            opts.KubevirtPlatform.RootVolumeSize,
-		RootVolumeStorageClass:    opts.KubevirtPlatform.RootVolumeStorageClass,
-		RootVolumeAccessModes:     opts.KubevirtPlatform.RootVolumeAccessModes,
-		InfraKubeConfig:           infraKubeConfigContents,
-		InfraNamespace:            opts.KubevirtPlatform.InfraNamespace,
-		CacheStrategyType:         opts.KubevirtPlatform.CacheStrategyType,
-		InfraStorageClassMappings: opts.KubevirtPlatform.InfraStorageClassMappings,
+		ServicePublishingStrategy:  opts.KubevirtPlatform.ServicePublishingStrategy,
+		APIServerAddress:           opts.KubevirtPlatform.APIServerAddress,
+		Memory:                     opts.KubevirtPlatform.Memory,
+		Cores:                      opts.KubevirtPlatform.Cores,
+		Image:                      opts.KubevirtPlatform.ContainerDiskImage,
+		RootVolumeSize:             opts.KubevirtPlatform.RootVolumeSize,
+		RootVolumeStorageClass:     opts.KubevirtPlatform.RootVolumeStorageClass,
+		RootVolumeAccessModes:      opts.KubevirtPlatform.RootVolumeAccessModes,
+		InfraKubeConfig:            infraKubeConfigContents,
+		InfraNamespace:             opts.KubevirtPlatform.InfraNamespace,
+		CacheStrategyType:          opts.KubevirtPlatform.CacheStrategyType,
+		InfraStorageClassMappings:  opts.KubevirtPlatform.InfraStorageClassMappings,
+		NetworkInterfaceMultiQueue: multiQueue,
 	}
 
 	if opts.BaseDomain != "" {
