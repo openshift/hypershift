@@ -17,7 +17,7 @@ require (
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.14.1
 	github.com/coreos/ignition/v2 v2.14.0
-	github.com/docker/distribution v2.8.1+incompatible
+	github.com/docker/distribution v2.8.2+incompatible
 	github.com/go-logr/logr v1.2.4
 	github.com/go-logr/zapr v1.2.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
