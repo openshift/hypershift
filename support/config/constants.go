@@ -23,6 +23,8 @@ const (
 	RecommendedLeaseDuration     = "137s"
 	RecommendedRenewDeadline     = "107s"
 	RecommendedRetryPeriod       = "26s"
+	KCMRecommendedRenewDeadline  = "12s"
+	KCMRecommendedRetryPeriod    = "3s"
 
 	DefaultIngressDomainEnvVar = "DEFAULT_INGRESS_DOMAIN"
 )
