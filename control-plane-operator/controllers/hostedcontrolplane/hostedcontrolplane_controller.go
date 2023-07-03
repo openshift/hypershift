@@ -762,13 +762,20 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 			svc.Status.LoadBalancer.Ingress[0].Hostname == "" && svc.Status.LoadBalancer.Ingress[0].IP == "" {
 			return fmt.Errorf("APIServer load balancer is not provisioned")
 		}
-		return healthCheckKASEndpoint(svc.Status.LoadBalancer.Ingress[0].Hostname, p.APIServerPort, hcp)
+		LBIngress := svc.Status.LoadBalancer.Ingress[0]
+		ingressPoint := ""
+		if LBIngress.Hostname != "" {
+			ingressPoint = LBIngress.Hostname
+		} else if LBIngress.IP != "" {
+			ingressPoint = LBIngress.IP
+		}
+		return healthCheckKASEndpoint(ingressPoint, p.APIServerPort, hcp)
 	}
 	return nil
 }
 
-func healthCheckKASEndpoint(hostname string, port int, hcp *hyperv1.HostedControlPlane) error {
-	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz", hostname, port)
+func healthCheckKASEndpoint(ingressPoint string, port int, hcp *hyperv1.HostedControlPlane) error {
+	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz", ingressPoint, port)
 
 	httpClient := util.InsecureHTTPClient()
 	httpClient.Timeout = 10 * time.Second
@@ -778,7 +785,7 @@ func healthCheckKASEndpoint(hostname string, port int, hcp *hyperv1.HostedContro
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("APIServer endpoint %s is not healthy", hostname)
+		return fmt.Errorf("APIServer endpoint %s is not healthy", ingressPoint)
 	}
 	return nil
 }
