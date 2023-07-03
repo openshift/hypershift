@@ -2430,7 +2430,12 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 
 	rootCAConfigMap := manifests.RootCAConfigMap(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCAConfigMap), rootCAConfigMap); err != nil {
-		return fmt.Errorf("failed to fetch combined ca configmap: %w", err)
+		return fmt.Errorf("failed to fetch root ca configmap: %w", err)
+	}
+
+	totalClientCAConfigMap := manifests.TotalClientCABundle(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(totalClientCAConfigMap), totalClientCAConfigMap); err != nil {
+		return fmt.Errorf("failed to fetch total client ca configmap: %w", err)
 	}
 
 	serviceServingCA := manifests.ServiceServingCA(hcp.Namespace)
@@ -2484,7 +2489,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 	}
 
 	if _, err := createOrUpdate(ctx, r, kcmDeployment, func() error {
-		return kcm.ReconcileDeployment(kcmDeployment, kcmConfig, rootCAConfigMap, serviceServingCA, p, util.APIPort(hcp))
+		return kcm.ReconcileDeployment(kcmDeployment, kcmConfig, totalClientCAConfigMap, serviceServingCA, p, util.APIPort(hcp))
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kcm deployment: %w", err)
 	}
