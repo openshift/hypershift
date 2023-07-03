@@ -2707,7 +2707,13 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 
 func (r *HostedControlPlaneReconciler) reconcileOpenShiftRouteControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := routecm.NewOpenShiftRouteControllerManagerParams(hcp, observedConfig, releaseImageProvider, r.SetDefaultSecurityContext)
-	config := manifests.OpenShiftControllerManagerConfig(hcp.Namespace)
+	config := manifests.OpenShiftRouteControllerManagerConfig(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, config, func() error {
+		return routecm.ReconcileOpenShiftRouteControllerManagerConfig(config, p.OwnerRef, p.MinTLSVersion(), p.CipherSuites(), p.Network)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile openshift route controller manager config: %w", err)
+	}
+
 	if err := r.Get(ctx, client.ObjectKeyFromObject(config), config); err != nil {
 		return fmt.Errorf("failed to get openshift controller manager config: %w", err)
 	}

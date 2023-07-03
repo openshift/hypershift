@@ -14,6 +14,7 @@ import (
 type OpenShiftRouteControllerManagerParams struct {
 	OpenShiftControllerManagerImage string
 	APIServer                       *configv1.APIServerSpec
+	Network                         *configv1.NetworkSpec
 
 	DeploymentConfig config.DeploymentConfig
 	config.OwnerRef
@@ -25,6 +26,7 @@ func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, o
 	}
 	if hcp.Spec.Configuration != nil {
 		params.APIServer = hcp.Spec.Configuration.APIServer
+		params.Network = hcp.Spec.Configuration.Network
 	}
 
 	params.DeploymentConfig = config.DeploymentConfig{
@@ -49,4 +51,18 @@ func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, o
 
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params
+}
+
+func (p *OpenShiftRouteControllerManagerParams) MinTLSVersion() string {
+	if p.APIServer != nil {
+		return config.MinTLSVersion(p.APIServer.TLSSecurityProfile)
+	}
+	return config.MinTLSVersion(nil)
+}
+
+func (p *OpenShiftRouteControllerManagerParams) CipherSuites() []string {
+	if p.APIServer != nil {
+		return config.CipherSuites(p.APIServer.TLSSecurityProfile)
+	}
+	return config.CipherSuites(nil)
 }
