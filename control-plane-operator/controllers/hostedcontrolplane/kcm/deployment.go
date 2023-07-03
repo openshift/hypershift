@@ -27,6 +27,7 @@ const (
 	configHashAnnotation     = "kube-controller-manager.hypershift.openshift.io/config-hash"
 	serviceCAHashAnnotation  = "kube-controller-manager.hypershift.openshift.io/service-ca-hash"
 	rootCAHashAnnotation     = "kube-controller-manager.hypershift.openshift.io/root-ca-hash"
+	combinedCAHashAnnotation = "kube-controller-manager.hypershift.openshift.io/combined-ca-hash"
 )
 
 var (
@@ -53,6 +54,11 @@ var (
 			kcmVolumeCloudConfig().Name: "/etc/kubernetes/cloud",
 		},
 	}
+	combinedCAMount = util.PodVolumeMounts{
+		kcmContainerMain().Name: {
+			kcmVolumeCombinedCA().Name: "/etc/kubernetes/certs/combined-ca",
+		},
+	}
 )
 
 func kcmLabels() map[string]string {
@@ -62,7 +68,7 @@ func kcmLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceServingCA *corev1.ConfigMap, p *KubeControllerManagerParams, apiPort *int32) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, combinedCA, serviceServingCA *corev1.ConfigMap, p *KubeControllerManagerParams, apiPort *int32) error {
 	// preserve existing resource requirements for main KCM container
 	mainContainer := util.FindContainer(kcmContainerMain().Name, deployment.Spec.Template.Spec.Containers)
 	if mainContainer != nil {
@@ -74,10 +80,14 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceS
 			MatchLabels: kcmLabels(),
 		}
 	}
+	combinedCADefined := false
+	if _, exists := combinedCA.Data[certs.CASignerCertMapKey]; exists {
+		combinedCADefined = true
+	}
 	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
 	maxSurge := intstr.FromInt(3)
 	maxUnavailable := intstr.FromInt(1)
-	args := kcmArgs(p)
+	args := kcmArgs(p, combinedCADefined)
 	deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
 		MaxSurge:       &maxSurge,
 		MaxUnavailable: &maxUnavailable,
@@ -98,7 +108,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceS
 	}
 	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
 	deployment.Spec.Template.ObjectMeta.Annotations[rootCAHashAnnotation] = util.HashStruct(rootCA.Data)
-
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.Bool(false),
 		Containers: []corev1.Container{
@@ -115,6 +124,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceS
 			util.BuildVolume(kcmVolumeServerCert(), buildKCMVolumeServerCert),
 			util.BuildVolume(kcmVolumeRecyclerConfig(), buildKCMVolumeRecyclerConfigMap),
 		},
+	}
+	if combinedCADefined {
+		deployment.Spec.Template.ObjectMeta.Annotations[combinedCAHashAnnotation] = util.HashStruct(combinedCA.Data)
+		applyCombinedCAVolume(&deployment.Spec.Template.Spec)
 	}
 	p.DeploymentConfig.ApplyTo(deployment)
 	if serviceServingCA != nil {
@@ -186,6 +199,27 @@ func kcmVolumeWorkLogs() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "logs",
 	}
+}
+
+func applyCombinedCAVolume(ps *corev1.PodSpec) {
+	ps.Volumes = append(ps.Volumes, util.BuildVolume(kcmVolumeCombinedCA(), buildKCMVolumeCombinedCA))
+	container := util.FindContainer(kcmContainerMain().Name, ps.Containers)
+	if container == nil {
+		panic("did not find the main kcm container in pod spec")
+	}
+	container.VolumeMounts = append(container.VolumeMounts, combinedCAMount.ContainerMounts(kcmContainerMain().Name)...)
+}
+
+func kcmVolumeCombinedCA() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "combined-ca",
+	}
+}
+
+func buildKCMVolumeCombinedCA(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.CombinedCAConfigMap("").Name
+	v.ConfigMap.DefaultMode = pointer.Int32(420)
 }
 
 func buildKCMVolumeWorkLogs(v *corev1.Volume) {
@@ -305,9 +339,12 @@ func applyServingCAVolume(ps *corev1.PodSpec, cm *corev1.ConfigMap) {
 	container.VolumeMounts = append(container.VolumeMounts, serviceServingCAMount.ContainerMounts(kcmContainerMain().Name)...)
 }
 
-func kcmArgs(p *KubeControllerManagerParams) []string {
+func kcmArgs(p *KubeControllerManagerParams, useCombinedCA bool) []string {
 	cpath := func(vol, file string) string {
 		return path.Join(volumeMounts.Path(kcmContainerMain().Name, vol), file)
+	}
+	combinedCAcpath := func(vol, file string) string {
+		return path.Join(combinedCAMount.Path(kcmContainerMain().Name, vol), file)
 	}
 	kubeConfigPath := cpath(kcmVolumeKubeconfig().Name, kas.KubeconfigKey)
 	args := []string{
@@ -350,7 +387,6 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		"--leader-elect-resource-lock=leases",
 		"--leader-elect=true",
 		"--leader-elect-retry-period=3s",
-		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeRootCA().Name, certs.CASignerCertMapKey)),
 		fmt.Sprintf("--secure-port=%d", DefaultPort),
 		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),
 		fmt.Sprintf("--service-cluster-ip-range=%s", p.ServiceCIDR),
@@ -359,6 +395,11 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		fmt.Sprintf("--tls-cert-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSCertKey)),
 		fmt.Sprintf("--tls-private-key-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSPrivateKeyKey)),
 	}...)
+	if useCombinedCA {
+		args = append(args, fmt.Sprintf("--root-ca-file=%s", combinedCAcpath(kcmVolumeCombinedCA().Name, certs.CASignerCertMapKey)))
+	} else {
+		args = append(args, fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeRootCA().Name, certs.CASignerCertMapKey)))
+	}
 	for _, f := range p.FeatureGates() {
 		args = append(args, fmt.Sprintf("--feature-gates=%s", f))
 	}

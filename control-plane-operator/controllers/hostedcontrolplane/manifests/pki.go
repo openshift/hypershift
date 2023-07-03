@@ -83,6 +83,15 @@ func UserCAConfigMap(ns string) *corev1.ConfigMap {
 	}
 }
 
+func CombinedCAConfigMap(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "combined-ca",
+			Namespace: ns,
+		},
+	}
+}
+
 func TrustedCABundleConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
