@@ -2,6 +2,7 @@ package kcm
 
 import (
 	"fmt"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"path"
 	"strings"
 
@@ -32,14 +33,14 @@ const (
 var (
 	volumeMounts = util.PodVolumeMounts{
 		kcmContainerMain().Name: {
-			kcmVolumeConfig().Name:        "/etc/kubernetes/config",
-			kcmVolumeRootCA().Name:        "/etc/kubernetes/certs/root-ca",
-			kcmVolumeWorkLogs().Name:      "/var/log/kube-controller-manager",
-			kcmVolumeKubeconfig().Name:    "/etc/kubernetes/secrets/svc-kubeconfig",
-			kcmVolumeCertDir().Name:       "/var/run/kubernetes",
-			kcmVolumeClusterSigner().Name: "/etc/kubernetes/certs/cluster-signer",
-			kcmVolumeServiceSigner().Name: "/etc/kubernetes/certs/service-signer",
-			kcmVolumeServerCert().Name:    "/etc/kubernetes/certs/server",
+			kcmVolumeConfig().Name:            "/etc/kubernetes/config",
+			common.VolumeTotalClientCA().Name: "/etc/kubernetes/certs/total-client-ca",
+			kcmVolumeWorkLogs().Name:          "/var/log/kube-controller-manager",
+			kcmVolumeKubeconfig().Name:        "/etc/kubernetes/secrets/svc-kubeconfig",
+			kcmVolumeCertDir().Name:           "/var/run/kubernetes",
+			kcmVolumeClusterSigner().Name:     "/etc/kubernetes/certs/cluster-signer",
+			kcmVolumeServiceSigner().Name:     "/etc/kubernetes/certs/service-signer",
+			kcmVolumeServerCert().Name:        "/etc/kubernetes/certs/server",
 		},
 	}
 	serviceServingCAMount = util.PodVolumeMounts{
@@ -105,7 +106,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceS
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(kcmVolumeConfig(), buildKCMVolumeConfig),
-			util.BuildVolume(kcmVolumeRootCA(), buildKCMVolumeRootCA),
+			util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
 			util.BuildVolume(kcmVolumeWorkLogs(), buildKCMVolumeWorkLogs),
 			util.BuildVolume(kcmVolumeKubeconfig(), buildKCMVolumeKubeconfig),
 			util.BuildVolume(kcmVolumeClusterSigner(), buildKCMVolumeClusterSigner),
@@ -166,18 +167,6 @@ func buildKCMVolumeConfig(v *corev1.Volume) {
 			Name: manifests.KCMConfig("").Name,
 		},
 	}
-}
-
-func kcmVolumeRootCA() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "root-ca",
-	}
-}
-
-func buildKCMVolumeRootCA(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.Name = manifests.RootCAConfigMap("").Name
-	v.ConfigMap.DefaultMode = pointer.Int32Ptr(420)
 }
 
 func kcmVolumeWorkLogs() *corev1.Volume {
@@ -337,7 +326,7 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		"--leader-elect-resource-lock=configmapsleases",
 		"--leader-elect=true",
 		"--leader-elect-retry-period=3s",
-		fmt.Sprintf("--root-ca-file=%s", cpath(kcmVolumeRootCA().Name, certs.CASignerCertMapKey)),
+		fmt.Sprintf("--root-ca-file=%s", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey)),
 		fmt.Sprintf("--secure-port=%d", DefaultPort),
 		fmt.Sprintf("--service-account-private-key-file=%s", cpath(kcmVolumeServiceSigner().Name, pki.ServiceSignerPrivateKey)),
 		fmt.Sprintf("--service-cluster-ip-range=%s", p.ServiceCIDR),

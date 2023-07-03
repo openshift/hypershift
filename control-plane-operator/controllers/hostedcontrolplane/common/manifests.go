@@ -4,6 +4,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilpointer "k8s.io/utils/pointer"
 )
 
 func PullSecret(ns string) *corev1.Secret {
@@ -42,6 +43,7 @@ func VolumeTotalClientCA() *corev1.Volume {
 func BuildVolumeTotalClientCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	v.ConfigMap.Name = manifests.TotalClientCABundle("").Name
+	v.ConfigMap.DefaultMode = utilpointer.Int32(420)
 }
 
 func VolumeAggregatorCA() *corev1.Volume {
