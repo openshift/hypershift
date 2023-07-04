@@ -576,11 +576,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	SetStatusCondition(&nodePool.Status.Conditions, *condition)
 
+	oldReachedIgnitionEndpointCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReachedIgnitionEndpoint)
 	reachedIgnitionEndpointCondition, err := r.createReachedIgnitionEndpointCondition(ctx, tokenSecret, nodePool.Generation)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("error setting IgnitionReached condition: %w", err)
 	}
 	SetStatusCondition(&nodePool.Status.Conditions, *reachedIgnitionEndpointCondition)
+
+	metrics.ObserveConditionTransitionDuration(nodePool, reachedIgnitionEndpointCondition, oldReachedIgnitionEndpointCondition)
 
 	// Validate tuningConfig input.
 	tuningConfig, err := r.getTuningConfig(ctx, nodePool)
@@ -695,13 +698,17 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		message = hyperv1.AllIsWellMessage
 	}
 
-	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+	oldAllMachinesReadyCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAllMachinesReadyConditionType)
+	allMachinesReadyCondition := &hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolAllMachinesReadyConditionType,
 		Status:             status,
 		Reason:             reason,
 		Message:            message,
 		ObservedGeneration: nodePool.Generation,
-	})
+	}
+	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesReadyCondition)
+
+	metrics.ObserveConditionTransitionDuration(nodePool, allMachinesReadyCondition, oldAllMachinesReadyCondition)
 
 	// Set AllNodesHealthyCondition.
 	status = corev1.ConditionTrue
@@ -727,13 +734,17 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		message = hyperv1.AllIsWellMessage
 	}
 
-	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+	oldAllMachinesHealthyCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAllNodesHealthyConditionType)
+	allMachinesHealthyCondition := &hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolAllNodesHealthyConditionType,
 		Status:             status,
 		Reason:             reason,
 		Message:            message,
 		ObservedGeneration: nodePool.Generation,
-	})
+	}
+	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesHealthyCondition)
+
+	metrics.ObserveConditionTransitionDuration(nodePool, allMachinesHealthyCondition, oldAllMachinesHealthyCondition)
 
 	// 2. - Reconcile towards expected state of the world.
 	compressedConfig, err := supportutil.CompressAndEncode([]byte(config))
