@@ -174,6 +174,25 @@ const (
 	// resources that enables user modifications to the resources while ensuring they do exist. This
 	// allows users to execute workflows like disabling insights operator
 	EnsureExistsPullSecretReconciliation = "hypershift.openshift.io/ensureexists-pullsecret-reconcile"
+
+	// HostedClusterLabel is used as a label on nodes that are dedicated to a specific hosted cluster
+	HostedClusterLabel = "hypershift.openshift.io/cluster"
+
+	// RequestServingComponentLabel is used as a label on pods and nodes for dedicated serving components.
+	RequestServingComponentLabel = "hypershift.openshift.io/request-serving-component"
+
+	// TopologyAnnotation indicates the type of topology that should take effect for the
+	// hosted cluster's control plane workloads. Currently the only value supported is "dedicated-request-serving-components".
+	// We implicitly support shared and dedicated.
+	TopologyAnnotation = "hypershift.openshift.io/topology"
+
+	// HostedClusterScheduledAnnotation indicates that a hosted cluster with dedicated request serving components
+	// has been assigned dedicated nodes. If not present, the hosted cluster needs scheduling.
+	HostedClusterScheduledAnnotation = "hypershift.openshift.io/cluster-scheduled"
+
+	// DedicatedRequestServingComponentsTopology indicates that control plane request serving
+	// components should be scheduled on dedicated nodes in the management cluster.
+	DedicatedRequestServingComponentsTopology = "dedicated-request-serving-components"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

@@ -79,7 +79,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.ServerDeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
-	p.ServerDeploymentConfig.SetDefaults(hcp, nil, pointer.Int(1))
+	p.ServerDeploymentConfig.SetRequestServingDefaults(hcp, nil, pointer.Int(1))
 	p.ServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	p.AgentDeploymentConfig.Resources = config.ResourcesSpec{

@@ -211,7 +211,7 @@ func TestSetLocation(t *testing.T) {
 			Effect:   corev1.TaintEffectNoSchedule,
 		},
 		{
-			Key:      clusterLabelTolerationKey,
+			Key:      hyperv1.HostedClusterLabel,
 			Operator: corev1.TolerationOpEqual,
 			Value:    hcp.Namespace,
 			Effect:   corev1.TaintEffectNoSchedule,
@@ -239,7 +239,7 @@ func TestSetLocation(t *testing.T) {
 					Preference: corev1.NodeSelectorTerm{
 						MatchExpressions: []corev1.NodeSelectorRequirement{
 							{
-								Key:      clusterLabelTolerationKey,
+								Key:      hyperv1.HostedClusterLabel,
 								Operator: corev1.NodeSelectorOpIn,
 								Values:   []string{hcp.Namespace},
 							},
@@ -404,7 +404,7 @@ func TestApplyTo(t *testing.T) {
 		{
 			name: "if 3 volumes provided and 2 valids for safe annotation, it should only annotate the deployment with these 2 volume names",
 			volumes: []corev1.Volume{
-				corev1.Volume{
+				{
 					Name: "test-hostpath",
 					VolumeSource: corev1.VolumeSource{
 						HostPath: &corev1.HostPathVolumeSource{
@@ -412,7 +412,7 @@ func TestApplyTo(t *testing.T) {
 						},
 					},
 				},
-				corev1.Volume{
+				{
 					Name: "test-emptydir",
 					VolumeSource: corev1.VolumeSource{
 						EmptyDir: &corev1.EmptyDirVolumeSource{
@@ -420,7 +420,7 @@ func TestApplyTo(t *testing.T) {
 						},
 					},
 				},
-				corev1.Volume{
+				{
 					Name: "test-volume",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
@@ -434,7 +434,7 @@ func TestApplyTo(t *testing.T) {
 		{
 			name: "no hostpath or emptydir volumes provided, no safe eviction annotation",
 			volumes: []corev1.Volume{
-				corev1.Volume{
+				{
 					Name: "test-volume",
 					VolumeSource: corev1.VolumeSource{
 						Secret: &corev1.SecretVolumeSource{
