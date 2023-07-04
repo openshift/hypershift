@@ -73,6 +73,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -162,6 +163,7 @@ type HostedControlPlaneReconciler struct {
 	ec2Client                     ec2iface.EC2API
 	awsSession                    *session.Session
 	reconcileInfrastructureStatus func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error)
+	NameServerIP                  string
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -3057,27 +3059,27 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	// no need to run heap collection in IBM Cloud
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		collectProfilesConfigMap := manifests.CollectProfilesConfigMap(hcp.Namespace)
-		if err := deleteIfExists(ctx, r, collectProfilesConfigMap); err != nil {
+		if _, err := util.DeleteIfNeeded(ctx, r, collectProfilesConfigMap); err != nil {
 			return fmt.Errorf("failed to remove collect profiles config map: %w", err)
 		}
 		collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
-		if err := deleteIfExists(ctx, r, collectProfilesCronJob); err != nil {
+		if _, err := util.DeleteIfNeeded(ctx, r, collectProfilesCronJob); err != nil {
 			return fmt.Errorf("failed to remove collect profiles cronjob: %w", err)
 		}
 		collectProfilesRole := manifests.CollectProfilesRole(hcp.Namespace)
-		if err := deleteIfExists(ctx, r, collectProfilesRole); err != nil {
+		if _, err := util.DeleteIfNeeded(ctx, r, collectProfilesRole); err != nil {
 			return fmt.Errorf("failed to remove collect profiles role: %w", err)
 		}
 		collectProfilesRoleBinding := manifests.CollectProfilesRoleBinding(hcp.Namespace)
-		if err := deleteIfExists(ctx, r, collectProfilesRoleBinding); err != nil {
+		if _, err := util.DeleteIfNeeded(ctx, r, collectProfilesRoleBinding); err != nil {
 			return fmt.Errorf("failed to remove collect profiles role binding: %w", err)
 		}
 		collectProfilesSecret := manifests.CollectProfilesSecret(hcp.Namespace)
-		if err := deleteIfExists(ctx, r, collectProfilesSecret); err != nil {
+		if _, err := util.DeleteIfNeeded(ctx, r, collectProfilesSecret); err != nil {
 			return fmt.Errorf("failed to remove collect profiles secret: %w", err)
 		}
 		collectProfilesServiceAccount := manifests.CollectProfilesServiceAccount(hcp.Namespace)
-		if err := deleteIfExists(ctx, r, collectProfilesServiceAccount); err != nil {
+		if _, err := util.DeleteIfNeeded(ctx, r, collectProfilesServiceAccount); err != nil {
 			return fmt.Errorf("failed to remove collect profiles serviceaccount: %w", err)
 		}
 		return nil
@@ -3281,57 +3283,49 @@ func (r *HostedControlPlaneReconciler) reconcilePrivateIngressController(ctx con
 }
 
 func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, exposeKASThroughRouter bool, privateRouterHost, externalRouterHost string) error {
-	sa := manifests.RouterServiceAccount(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
-		return ingress.ReconcileRouterServiceAccount(sa, config.OwnerRefFrom(hcp))
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile router service account: %w", err)
-	}
-	role := manifests.RouterRole(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, role, func() error {
-		return ingress.ReconcileRouterRole(role, config.OwnerRefFrom(hcp))
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile router role: %w", err)
-	}
-	rb := manifests.RouterRoleBinding(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, rb, func() error {
-		return ingress.ReconcileRouterRoleBinding(rb, config.OwnerRefFrom(hcp))
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile router rolebinding: %w", err)
+	routeList := &routev1.RouteList{}
+	if err := r.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
+		return fmt.Errorf("failed to list routes: %w", err)
 	}
 
-	// Calculate router canonical hostname
-	var canonicalHostname string
-	if util.IsPublicHCP(hcp) {
-		canonicalHostname = externalRouterHost
-	} else if util.IsPrivateHCP(hcp) {
-		canonicalHostname = privateRouterHost
-	}
-
-	// If the KAS is a route we need to tweak the default template.
-	if exposeKASThroughRouter {
-		routerTemplate := manifests.RouterTemplateConfigMap(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r.Client, routerTemplate, func() error {
-			ingress.ReconcileRouterTemplateConfigmap(routerTemplate)
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile router template configmap: %w", err)
-		}
-	}
-
+	// reconcile the router's configuration
 	if util.IsPrivateHCP(hcp) || exposeKASThroughRouter {
+		kasParams := kas.NewKubeAPIServerServiceParams(hcp)
+		routerConfig := manifests.RouterConfigurationConfigMap(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, routerConfig, func() error {
+			return ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(hcp), routerConfig, int32(kasParams.APIServerPort), routeList, r.NameServerIP)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile router configuration: %w", err)
+		}
+
 		deployment := manifests.RouterDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
 			return ingress.ReconcileRouterDeployment(deployment,
 				config.OwnerRefFrom(hcp),
 				ingress.HCPRouterConfig(hcp, r.SetDefaultSecurityContext),
 				releaseImageProvider.GetImage(ingress.PrivateRouterImage),
-				canonicalHostname,
-				exposeKASThroughRouter,
-				!util.IsPublicHCP(hcp),
+				routerConfig,
 			)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router deployment: %w", err)
+		}
+	}
+
+	// "Admit" routes that we manage so that other code depending on routes continues
+	// to work as before.
+	for i := range routeList.Items {
+		route := &routeList.Items[i]
+		if _, hasHCPLabel := route.Labels[util.HCPRouteLabel]; !hasHCPLabel {
+			// If the hypershift.openshift.io/hosted-control-plane label is not present,
+			// then it means the route should be fulfilled by the management cluster's router.
+			continue
+		}
+		originalRoute := route.DeepCopy()
+		ingress.ReconcileRouteStatus(route, externalRouterHost, privateRouterHost)
+		if !equality.Semantic.DeepEqual(originalRoute.Status, route.Status) {
+			if err := r.Status().Patch(ctx, route, client.MergeFrom(originalRoute)); err != nil {
+				return fmt.Errorf("failed to update route %s status: %w", route.Name, err)
+			}
 		}
 	}
 
@@ -3340,26 +3334,17 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 		&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
 		&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
 		&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
+		manifests.RouterTemplateConfigMap(hcp.Namespace),
+		manifests.RouterServiceAccount(hcp.Namespace),
+		manifests.RouterRole(hcp.Namespace),
+		manifests.RouterRoleBinding(hcp.Namespace),
 	}
 	for _, resource := range oldRouterResources {
-		if err := deleteIfExists(ctx, r.Client, resource); err != nil {
+		if _, err := util.DeleteIfNeeded(ctx, r.Client, resource); err != nil {
 			return fmt.Errorf("failed to delete %T %s: %w", resource, resource.GetName(), err)
 		}
 	}
 
-	return nil
-}
-
-func deleteIfExists(ctx context.Context, c client.Client, o client.Object) error {
-	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		}
-		return fmt.Errorf("failed to get object: %w", err)
-	}
-	if err := c.Delete(ctx, o); err != nil {
-		return fmt.Errorf("failed to delete object: %w", err)
-	}
 	return nil
 }
 
@@ -3392,7 +3377,7 @@ func removeServiceCAAnnotationAndSecret(ctx context.Context, c client.Client, se
 	} else {
 		_, ok := secret.Annotations["service.beta.openshift.io/originating-service-name"]
 		if ok {
-			err := deleteIfExists(ctx, c, secret)
+			_, err := util.DeleteIfNeeded(ctx, c, secret)
 			if err != nil {
 				return fmt.Errorf("failed to delete secret generated by service-ca: %w", err)
 			}

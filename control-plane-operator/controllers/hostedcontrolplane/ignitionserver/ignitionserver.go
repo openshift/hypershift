@@ -222,34 +222,6 @@ func ReconcileIgnitionServer(ctx context.Context,
 	}
 
 	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
-		role := ignitionserver.ProxyRole(controlPlaneNamespace)
-		if result, err := createOrUpdate(ctx, c, role, func() error {
-			return reconcileProxyRole(role)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile ignition proxy role: %w", err)
-		} else {
-			log.Info("Reconciled ignition role", "result", result)
-		}
-
-		sa := ignitionserver.ProxyServiceAccount(controlPlaneNamespace)
-		if result, err := createOrUpdate(ctx, c, sa, func() error {
-			util.EnsurePullSecret(sa, controlplaneoperator.PullSecret("").Name)
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile ignition proxy service account: %w", err)
-		} else {
-			log.Info("Reconciled ignition proxy service account", "result", result)
-		}
-
-		roleBinding := ignitionserver.ProxyRoleBinding(controlPlaneNamespace)
-		if result, err := createOrUpdate(ctx, c, roleBinding, func() error {
-			return reconcileRoleBinding(roleBinding, role, sa)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile ignition proxy role binding: %w", err)
-		} else {
-			log.Info("Reconciled ignition server proxy role binding", "result", result)
-		}
-
 		haproxyImage := componentImages["haproxy-router"]
 		if haproxyImage == "" {
 			return fmt.Errorf("haproxy-router image not found in payload images")
@@ -264,6 +236,16 @@ func ReconcileIgnitionServer(ctx context.Context,
 			return fmt.Errorf("failed to reconcile ignition proxy deployment: %w", err)
 		} else {
 			log.Info("Reconciled ignition server proxy deployment", "result", result)
+		}
+
+		role := ignitionserver.ProxyRole(controlPlaneNamespace)
+		sa := ignitionserver.ProxyServiceAccount(controlPlaneNamespace)
+		roleBinding := ignitionserver.ProxyRoleBinding(controlPlaneNamespace)
+
+		for _, resource := range []client.Object{role, sa, roleBinding} {
+			if _, err := util.DeleteIfNeeded(ctx, c, resource); err != nil {
+				log.Error(err, "Failed to delete deprecated resource", "resource", client.ObjectKeyFromObject(resource).String())
+			}
 		}
 	}
 
@@ -283,7 +265,7 @@ func reconcileIgnitionExternalService(svc *corev1.Service, strategy *hyperv1.Ser
 	targetPort := intstr.FromInt(9090)
 	if isProxy {
 		appLabel = "ignition-server-proxy"
-		targetPort = intstr.FromInt(443)
+		targetPort = intstr.FromString("https")
 	}
 
 	svc.Spec.Selector = map[string]string{
@@ -418,20 +400,6 @@ func reconcileRole(role *rbacv1.Role) error {
 				"hostedcontrolplanes/status",
 			},
 			Verbs: []string{"*"},
-		},
-	}
-	return nil
-}
-
-func reconcileProxyRole(role *rbacv1.Role) error {
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			// Copied from https://github.com/openshift/cluster-ingress-operator/blob/649fe5dfe2c6f795651592a045be901b00a1f93a/manifests/00-cluster-role.yaml#L173-L181
-			// Needed to allow PrivilegeEscalation: true
-			APIGroups:     []string{"security.openshift.io"},
-			ResourceNames: []string{"hostnetwork"},
-			Resources:     []string{"securitycontextconstraints"},
-			Verbs:         []string{"use"},
 		},
 	}
 	return nil
@@ -724,7 +692,7 @@ defaults
   timeout server 30s
 
 frontend ignition-server
-  bind *:443 ssl crt /tmp/tls.pem
+  bind *:8443 ssl crt /tmp/tls.pem
   default_backend ignition_servers
 
 backend ignition_servers
@@ -746,6 +714,7 @@ haproxy -f /tmp/haproxy.conf
 				},
 			},
 			Spec: corev1.PodSpec{
+				AutomountServiceAccountToken: utilpointer.Bool(false),
 				Containers: []corev1.Container{
 					{
 						Name:            "haproxy",
@@ -762,7 +731,7 @@ haproxy -f /tmp/haproxy.conf
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          "https",
-								ContainerPort: 443,
+								ContainerPort: 8443,
 							},
 						},
 						Resources: corev1.ResourceRequirements{
@@ -771,7 +740,13 @@ haproxy -f /tmp/haproxy.conf
 								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},
-						SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: utilpointer.Bool(true)},
+						SecurityContext: &corev1.SecurityContext{
+							Capabilities: &corev1.Capabilities{
+								Add: []corev1.Capability{
+									"NET_BIND_SERVICE",
+								},
+							},
+						},
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "serving-cert",
@@ -784,7 +759,6 @@ haproxy -f /tmp/haproxy.conf
 						},
 					},
 				},
-				ServiceAccountName: ignitionserver.ProxyServiceAccount("").Name,
 				Volumes: []corev1.Volume{
 					{
 						Name: "serving-cert",
@@ -827,7 +801,7 @@ haproxy -f /tmp/haproxy.conf
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	deploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	deploymentConfig.SetRequestServingDefaults(hcp, nil, utilpointer.Int(1))
 	deploymentConfig.ApplyTo(deployment)
 
 	return nil

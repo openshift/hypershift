@@ -372,6 +372,12 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("Using metrics set", "set", metricsSet.String())
 
+		nameServerIP, err := util.NameServerIP()
+		if err != nil {
+			setupLog.Error(err, "cannot determine nameserver IP")
+			os.Exit(1)
+		}
+
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                        mgr.GetClient(),
 			ManagementClusterCapabilities: mgmtClusterCaps,
@@ -380,6 +386,7 @@ func NewStartCommand() *cobra.Command {
 			OperateOnReleaseImage:         os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 			DefaultIngressDomain:          defaultIngressDomain,
 			MetricsSet:                    metricsSet,
+			NameServerIP:                  nameServerIP,
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)
