@@ -430,13 +430,13 @@ func (p *PowerVSNodePoolProcType) Type() string {
 
 const (
 	// PowerVSNodePoolDedicatedProcType defines dedicated processor type
-	PowerVSNodePoolDedicatedProcType = PowerVSNodePoolProcType("dedicated")
+	PowerVSNodePoolDedicatedProcType = PowerVSNodePoolProcType("Dedicated")
 
 	// PowerVSNodePoolSharedProcType defines shared processor type
-	PowerVSNodePoolSharedProcType = PowerVSNodePoolProcType("shared")
+	PowerVSNodePoolSharedProcType = PowerVSNodePoolProcType("Shared")
 
 	// PowerVSNodePoolCappedProcType defines capped processor type
-	PowerVSNodePoolCappedProcType = PowerVSNodePoolProcType("capped")
+	PowerVSNodePoolCappedProcType = PowerVSNodePoolProcType("Capped")
 )
 
 // PowerVSNodePoolStorageType defines storage type to be used for PowerVSNodePoolPlatform
@@ -471,8 +471,8 @@ type PowerVSNodePoolPlatform struct {
 	// When omitted, this means that the user has no opinion and the platform is left to choose a
 	// reasonable default. The current default is Shared.
 	//
-	// +kubebuilder:default=shared
-	// +kubebuilder:validation:Enum=dedicated;shared;capped
+	// +kubebuilder:default=Shared
+	// +kubebuilder:validation:Enum=Dedicated;Shared;Capped
 	// +optional
 	ProcessorType PowerVSNodePoolProcType `json:"processorType,omitempty"`
 

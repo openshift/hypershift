@@ -1570,7 +1570,7 @@ spec:
                         format: int32
                         type: integer
                       processorType:
-                        default: shared
+                        default: Shared
                         description: "ProcessorType is the VM instance processor type.
                           It must be set to one of the following values: Dedicated,
                           Capped or Shared. \n Dedicated: resources are allocated
@@ -1585,9 +1585,9 @@ spec:
                           the platform is left to choose a reasonable default. The
                           current default is Shared."
                         enum:
-                        - dedicated
-                        - shared
-                        - capped
+                        - Dedicated
+                        - Shared
+                        - Capped
                         type: string
                       processors:
                         anyOf:
