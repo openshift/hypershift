@@ -115,6 +115,11 @@ func UUIDPtr(literal strfmt.UUID) *strfmt.UUID {
 	return &literal
 }
 
+// ByteArrayPtr returns a pointer to []byte literal.
+func ByteArrayPtr(literal []byte) *[]byte {
+	return &literal
+}
+
 // IsJSONMimeType Returns true iff the specified mimeType value represents a
 // "JSON" mimetype.
 func IsJSONMimeType(mimeType string) bool {

@@ -1,6 +1,6 @@
 package core
 
-// (C) Copyright IBM Corp. 2021.
+// (C) Copyright IBM Corp. 2021, 2023.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -33,8 +33,8 @@ import (
 // automatically by the compute resource provider (VPC).
 // The resulting IAM access token is then added to outbound requests in an Authorization header
 // of the form:
-// 		Authorization: Bearer <access-token>
 //
+//	Authorization: Bearer <access-token>
 type VpcInstanceAuthenticator struct {
 
 	// [optional] The CRN of the linked trusted IAM profile to be used as the identity of the compute resource.
@@ -71,7 +71,7 @@ const (
 	vpcauthOperationPathCreateAccessToken = "/instance_identity/v1/token"
 	vpcauthOperationPathCreateIamToken    = "/instance_identity/v1/iam_token"
 	vpcauthMetadataFlavor                 = "ibm"
-	vpcauthMetadataServiceVersion         = "2021-09-20"
+	vpcauthMetadataServiceVersion         = "2022-03-01"
 	vpcauthInstanceIdentityTokenLifetime  = 300
 	vpcauthDefaultTimeout                 = time.Second * 30
 )
@@ -169,8 +169,7 @@ func (*VpcInstanceAuthenticator) AuthenticationType() string {
 //
 // The IAM access token will be added to the request's headers in the form:
 //
-// 		Authorization: Bearer <access-token>
-//
+//	Authorization: Bearer <access-token>
 func (authenticator *VpcInstanceAuthenticator) Authenticate(request *http.Request) error {
 	token, err := authenticator.GetToken()
 	if err != nil {
