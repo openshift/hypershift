@@ -33,6 +33,9 @@ const (
 	// ExcludeNodeDrainingAnnotation annotation explicitly skips node draining if set.
 	ExcludeNodeDrainingAnnotation = "machine.cluster.x-k8s.io/exclude-node-draining"
 
+	// ExcludeWaitForNodeVolumeDetachAnnotation annotation explicitly skips the waiting for node volume detaching if set.
+	ExcludeWaitForNodeVolumeDetachAnnotation = "machine.cluster.x-k8s.io/exclude-wait-for-node-volume-detach"
+
 	// MachineSetLabelName is the label set on machines if they're controlled by MachineSet.
 	// Note: The value of this label may be a hash if the MachineSet name is longer than 63 characters.
 	MachineSetLabelName = "cluster.x-k8s.io/set-name"
@@ -55,6 +58,12 @@ const (
 	// to pause reconciliation of deletion. These hooks will prevent removal of
 	// an instance from an infrastructure provider until all are removed.
 	PreTerminateDeleteHookAnnotationPrefix = "pre-terminate.delete.hook.machine.cluster.x-k8s.io"
+
+	// MachineCertificatesExpiryDateAnnotation annotation specifies the expiry date of the machine certificates in RFC3339 format.
+	// This annotation can be used on control plane machines to trigger rollout before certificates expire.
+	// This annotation can be set on BootstrapConfig or Machine objects. The value set on the Machine object takes precedence.
+	// This annotation can only be used on Control Plane Machines.
+	MachineCertificatesExpiryDateAnnotation = "machine.cluster.x-k8s.io/certificates-expiry"
 )
 
 // ANCHOR: MachineSpec
@@ -101,6 +110,11 @@ type MachineSpec struct {
 	// NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
 	// +optional
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
+
+	// NodeVolumeDetachTimeout is the total amount of time that the controller will spend on waiting for all volumes
+	// to be detached. The default value is 0, meaning that the volumes can be detached without any time limitations.
+	// +optional
+	NodeVolumeDetachTimeout *metav1.Duration `json:"nodeVolumeDetachTimeout,omitempty"`
 
 	// NodeDeletionTimeout defines how long the controller will attempt to delete the Node that the Machine
 	// hosts after the Machine is marked for deletion. A duration of 0 will retry deletion indefinitely.
@@ -175,6 +189,11 @@ type MachineStatus struct {
 	// E.g. Pending, Running, Terminating, Failed etc.
 	// +optional
 	Phase string `json:"phase,omitempty"`
+
+	// CertificatesExpiryDate is the expiry date of the machine certificates.
+	// This value is only set for control plane machines.
+	// +optional
+	CertificatesExpiryDate *metav1.Time `json:"certificatesExpiryDate,omitempty"`
 
 	// BootstrapReady is the state of the bootstrap provider.
 	// +optional
