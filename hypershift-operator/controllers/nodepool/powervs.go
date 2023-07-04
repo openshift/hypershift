@@ -2,13 +2,11 @@ package nodepool
 
 import (
 	"fmt"
-	"strconv"
-
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
+	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
@@ -66,10 +64,10 @@ func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hy
 				Image:             image,
 				ImageRef:          imageRef,
 				Network:           subnet,
-				SysType:           nodePool.Spec.Platform.PowerVS.SystemType,
-				ProcType:          string(nodePool.Spec.Platform.PowerVS.ProcessorType),
-				Processors:        nodePool.Spec.Platform.PowerVS.Processors.String(),
-				Memory:            strconv.Itoa(int(nodePool.Spec.Platform.PowerVS.MemoryGiB)),
+				SystemType:        nodePool.Spec.Platform.PowerVS.SystemType,
+				ProcessorType:     nodePool.Spec.Platform.PowerVS.ProcessorType.CastToCAPIPowerVSProcessorType(),
+				Processors:        nodePool.Spec.Platform.PowerVS.Processors,
+				MemoryGiB:         nodePool.Spec.Platform.PowerVS.MemoryGiB,
 			},
 		},
 	}

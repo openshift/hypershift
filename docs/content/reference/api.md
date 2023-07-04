@@ -6727,7 +6727,7 @@ Shared: Shared among other clients.
 Capped: Shared, but resources do not expand beyond those that are requested, the amount of CPU time is Capped to the value specified for the entitlement.</p>
 <p>if the processorType is selected as Dedicated, then Processors value cannot be fractional.
 When omitted, this means that the user has no opinion and the platform is left to choose a
-reasonable default. The current default is Shared.</p>
+reasonable default. The current default is shared.</p>
 </td>
 </tr>
 <tr>
