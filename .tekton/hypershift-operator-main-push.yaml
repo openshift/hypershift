@@ -47,7 +47,7 @@ spec:
       - name: build-task-status
         value: $(tasks.build-container.status)
       taskRef:
-        bundle: quay.io/redhat-appstudio-tekton-catalog/task-summary:0.1@sha256:b1b68a5203e66e7f2d0b9fe7996364cac26aa43f95825f7d88f699acd0ab6ec4
+        bundle: quay.io/redhat-appstudio-tekton-catalog/task-summary:0.1@sha256:bd6a2285974541df01260deca99a84b3b48a6b40759049e7e41e96b4942d83d3
         name: summary
     params:
     - description: Source Repository URL
@@ -191,7 +191,7 @@ spec:
       runAfter:
       - prefetch-dependencies
       taskRef:
-        bundle: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.1@sha256:50c52333fdf719dc9fe016e5214191f9cfe694262972f4c08f13b3fe62fb3640
+        bundle: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.1@sha256:9cec47762c7fb80f2d0662f8ed979a89d64687880339bcbe20c271cf01c90e49
         name: buildah
       when:
       - input: $(tasks.init.results.build)
@@ -258,7 +258,7 @@ spec:
       - name: BASE_IMAGES_DIGESTS
         value: $(tasks.build-container.results.BASE_IMAGES_DIGESTS)
       taskRef:
-        bundle: quay.io/redhat-appstudio-tekton-catalog/task-deprecated-image-check:0.2@sha256:e88ef1cff874783306aaa38c861d8e2b49ed9cfd80360b025c73cdd9ef43d7b3
+        bundle: quay.io/redhat-appstudio-tekton-catalog/task-deprecated-image-check:0.2@sha256:82c9fa69ac8d25de99346222c4a29123f54f1051e03e226849df2210bf3f6330
         name: deprecated-image-check
       when:
       - input: $(params.skip-checks)
