@@ -6,6 +6,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	hyperShiftKubeVirt "github.com/openshift/hypershift/cmd/nodepool/kubevirt"
+	"github.com/openshift/hypershift/product-cli/cmd/nodepool/agent"
 	"github.com/openshift/hypershift/product-cli/cmd/nodepool/kubevirt"
 )
 
@@ -39,6 +40,7 @@ func NewCreateCommand() *cobra.Command {
 
 	_ = cmd.MarkPersistentFlagRequired("name")
 
+	cmd.AddCommand(agent.NewCreateCommand(opts))
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
 
 	return cmd
