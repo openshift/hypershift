@@ -15,7 +15,7 @@
  */
 
 /*
- * IBM OpenAPI SDK Code Generator Version: 3.47.0-60650593-20220330-200002
+ * IBM OpenAPI SDK Code Generator Version: 3.62.0-a2a22f95-20221115-162524
  */
 
 // Package iamidentityv1 : Operations and models for the IamIdentityV1 service
@@ -163,9 +163,9 @@ func (iamIdentity *IamIdentityV1) DisableRetries() {
 
 // ListAPIKeys : Get API keys for a given service or user IAM ID and account ID
 // Returns the list of API key details for a given service or user IAM ID and account ID. Users can manage user API keys
-// for themself, or service ID API keys for  service IDs that are bound to an entity they have access to. In case of
-// service IDs and their API keys, a user must be either an account owner,  a IBM Cloud org manager or IBM Cloud space
-// developer in order to manage  service IDs of the entity.
+// for themself, or service ID API keys for service IDs that are bound to an entity they have access to. In case of
+// service IDs and their API keys, a user must be either an account owner, a IBM Cloud org manager or IBM Cloud space
+// developer in order to manage service IDs of the entity.
 func (iamIdentity *IamIdentityV1) ListAPIKeys(listAPIKeysOptions *ListAPIKeysOptions) (result *APIKeyList, response *core.DetailedResponse, err error) {
 	return iamIdentity.ListAPIKeysWithContext(context.Background(), listAPIKeysOptions)
 }
@@ -246,7 +246,7 @@ func (iamIdentity *IamIdentityV1) ListAPIKeysWithContext(ctx context.Context, li
 
 // CreateAPIKey : Create an API key
 // Creates an API key for a UserID or service ID. Users can manage user API keys for themself, or service ID API keys
-// for  service IDs that are bound to an entity they have access to.
+// for service IDs that are bound to an entity they have access to.
 func (iamIdentity *IamIdentityV1) CreateAPIKey(createAPIKeyOptions *CreateAPIKeyOptions) (result *APIKey, response *core.DetailedResponse, err error) {
 	return iamIdentity.CreateAPIKeyWithContext(context.Background(), createAPIKeyOptions)
 }
@@ -390,10 +390,9 @@ func (iamIdentity *IamIdentityV1) GetAPIKeysDetailsWithContext(ctx context.Conte
 }
 
 // GetAPIKey : Get details of an API key
-// Returns the details of an API key. Users can manage user API keys for themself, or service ID API keys for  service
-// IDs that are bound to an entity they have access to. In case of  service IDs and their API keys, a user must be
-// either an account owner,  a IBM Cloud org manager or IBM Cloud space developer in order to manage  service IDs of the
-// entity.
+// Returns the details of an API key. Users can manage user API keys for themself, or service ID API keys for service
+// IDs that are bound to an entity they have access to. In case of service IDs and their API keys, a user must be either
+// an account owner, a IBM Cloud org manager or IBM Cloud space developer in order to manage service IDs of the entity.
 func (iamIdentity *IamIdentityV1) GetAPIKey(getAPIKeyOptions *GetAPIKeyOptions) (result *APIKey, response *core.DetailedResponse, err error) {
 	return iamIdentity.GetAPIKeyWithContext(context.Background(), getAPIKeyOptions)
 }
@@ -540,7 +539,7 @@ func (iamIdentity *IamIdentityV1) UpdateAPIKeyWithContext(ctx context.Context, u
 
 // DeleteAPIKey : Deletes an API key
 // Deletes an API key. Existing tokens will remain valid until expired. Users can manage user API keys for themself, or
-// service ID API  keys for service IDs that are bound to an entity they have access  to.
+// service ID API keys for service IDs that are bound to an entity they have access to.
 func (iamIdentity *IamIdentityV1) DeleteAPIKey(deleteAPIKeyOptions *DeleteAPIKeyOptions) (response *core.DetailedResponse, err error) {
 	return iamIdentity.DeleteAPIKeyWithContext(context.Background(), deleteAPIKeyOptions)
 }
@@ -689,8 +688,8 @@ func (iamIdentity *IamIdentityV1) UnlockAPIKeyWithContext(ctx context.Context, u
 
 // ListServiceIds : List service IDs
 // Returns a list of service IDs. Users can manage user API keys for themself, or service ID API keys for service IDs
-// that are bound to an entity they have access to. Note: apikey details are only included in the response when
-// creating a Service ID with an api key.
+// that are bound to an entity they have access to. Note: apikey details are only included in the response when creating
+// a Service ID with an api key.
 func (iamIdentity *IamIdentityV1) ListServiceIds(listServiceIdsOptions *ListServiceIdsOptions) (result *ServiceIDList, response *core.DetailedResponse, err error) {
 	return iamIdentity.ListServiceIdsWithContext(context.Background(), listServiceIdsOptions)
 }
@@ -918,8 +917,8 @@ func (iamIdentity *IamIdentityV1) GetServiceIDWithContext(ctx context.Context, g
 // Updates properties of a service ID. This does NOT affect existing access tokens. Their token content will stay
 // unchanged until the access token is refreshed. To update a service ID, pass the property to be modified. To delete
 // one property's value, pass the property with an empty value "".Users can manage user API keys for themself, or
-// service ID API keys for service IDs that are bound to an entity they have access to.   Note: apikey details are only
-// included in the response when creating a  Service ID with an apikey.
+// service ID API keys for service IDs that are bound to an entity they have access to. Note: apikey details are only
+// included in the response when creating a Service ID with an apikey.
 func (iamIdentity *IamIdentityV1) UpdateServiceID(updateServiceIDOptions *UpdateServiceIDOptions) (result *ServiceID, response *core.DetailedResponse, err error) {
 	return iamIdentity.UpdateServiceIDWithContext(context.Background(), updateServiceIDOptions)
 }
@@ -2151,8 +2150,8 @@ func (iamIdentity *IamIdentityV1) GetAccountSettingsWithContext(ctx context.Cont
 }
 
 // UpdateAccountSettings : Update account configurations
-// Allows a user to configure settings on their account with regards to MFA, session lifetimes,  access control for
-// creating new identities, and enforcing IP restrictions on  token creation.
+// Allows a user to configure settings on their account with regards to MFA, session lifetimes, access control for
+// creating new identities, and enforcing IP restrictions on token creation.
 func (iamIdentity *IamIdentityV1) UpdateAccountSettings(updateAccountSettingsOptions *UpdateAccountSettingsOptions) (result *AccountSettingsResponse, response *core.DetailedResponse, err error) {
 	return iamIdentity.UpdateAccountSettingsWithContext(context.Background(), updateAccountSettingsOptions)
 }
@@ -2207,6 +2206,9 @@ func (iamIdentity *IamIdentityV1) UpdateAccountSettingsWithContext(ctx context.C
 	if updateAccountSettingsOptions.Mfa != nil {
 		body["mfa"] = updateAccountSettingsOptions.Mfa
 	}
+	if updateAccountSettingsOptions.UserMfa != nil {
+		body["user_mfa"] = updateAccountSettingsOptions.UserMfa
+	}
 	if updateAccountSettingsOptions.SessionExpirationInSeconds != nil {
 		body["session_expiration_in_seconds"] = updateAccountSettingsOptions.SessionExpirationInSeconds
 	}
@@ -2215,6 +2217,12 @@ func (iamIdentity *IamIdentityV1) UpdateAccountSettingsWithContext(ctx context.C
 	}
 	if updateAccountSettingsOptions.MaxSessionsPerIdentity != nil {
 		body["max_sessions_per_identity"] = updateAccountSettingsOptions.MaxSessionsPerIdentity
+	}
+	if updateAccountSettingsOptions.SystemAccessTokenExpirationInSeconds != nil {
+		body["system_access_token_expiration_in_seconds"] = updateAccountSettingsOptions.SystemAccessTokenExpirationInSeconds
+	}
+	if updateAccountSettingsOptions.SystemRefreshTokenExpirationInSeconds != nil {
+		body["system_refresh_token_expiration_in_seconds"] = updateAccountSettingsOptions.SystemRefreshTokenExpirationInSeconds
 	}
 	_, err = builder.SetBodyContentJSON(body)
 	if err != nil {
@@ -2242,8 +2250,9 @@ func (iamIdentity *IamIdentityV1) UpdateAccountSettingsWithContext(ctx context.C
 	return
 }
 
-// CreateReport : Trigger activity report across on account scope
-// Trigger activity report across on account scope for a given accountid.
+// CreateReport : Trigger activity report for the account
+// Trigger activity report for the account by specifying the account ID. It can take a few minutes to generate the
+// report for retrieval.
 func (iamIdentity *IamIdentityV1) CreateReport(createReportOptions *CreateReportOptions) (result *ReportReference, response *core.DetailedResponse, err error) {
 	return iamIdentity.CreateReportWithContext(context.Background(), createReportOptions)
 }
@@ -2309,8 +2318,9 @@ func (iamIdentity *IamIdentityV1) CreateReportWithContext(ctx context.Context, c
 	return
 }
 
-// GetReport : Get activity report across on account scope
-// Get activity report across on account scope for a given accountid.
+// GetReport : Get activity report for the account
+// Get activity report for the account by specifying the account ID and the reference that is generated by triggering
+// the report. Reports older than a day are deleted when generating a new report.
 func (iamIdentity *IamIdentityV1) GetReport(getReportOptions *GetReportOptions) (result *Report, response *core.DetailedResponse, err error) {
 	return iamIdentity.GetReportWithContext(context.Background(), getReportOptions)
 }
@@ -2405,6 +2415,9 @@ type AccountSettingsResponse struct {
 	//   * LEVEL3 - U2F MFA for all users.
 	Mfa *string `json:"mfa" validate:"required"`
 
+	// List of users that are exempted from the MFA requirement of the account.
+	UserMfa []AccountSettingsUserMfa `json:"user_mfa" validate:"required"`
+
 	// History of the Account Settings.
 	History []EnityHistoryRecord `json:"history,omitempty"`
 
@@ -2413,7 +2426,7 @@ type AccountSettingsResponse struct {
 	//   * NOT_SET - To unset account setting and use service default.
 	SessionExpirationInSeconds *string `json:"session_expiration_in_seconds" validate:"required"`
 
-	// Defines the period of time in seconds in which a session will be invalidated due  to inactivity. Valid values:
+	// Defines the period of time in seconds in which a session will be invalidated due to inactivity. Valid values:
 	//   * Any whole number between '900' and '7200'
 	//   * NOT_SET - To unset account setting and use service default.
 	SessionInvalidationInSeconds *string `json:"session_invalidation_in_seconds" validate:"required"`
@@ -2422,6 +2435,16 @@ type AccountSettingsResponse struct {
 	//   * Any whole number greater than 0
 	//   * NOT_SET - To unset account setting and use service default.
 	MaxSessionsPerIdentity *string `json:"max_sessions_per_identity" validate:"required"`
+
+	// Defines the access token expiration in seconds. Valid values:
+	//   * Any whole number between '900' and '3600'
+	//   * NOT_SET - To unset account setting and use service default.
+	SystemAccessTokenExpirationInSeconds *string `json:"system_access_token_expiration_in_seconds" validate:"required"`
+
+	// Defines the refresh token expiration in seconds. Valid values:
+	//   * Any whole number between '900' and '2592000'
+	//   * NOT_SET - To unset account setting and use service default.
+	SystemRefreshTokenExpirationInSeconds *string `json:"system_refresh_token_expiration_in_seconds" validate:"required"`
 }
 
 // Constants associated with the AccountSettingsResponse.RestrictCreateServiceID property.
@@ -2494,6 +2517,10 @@ func UnmarshalAccountSettingsResponse(m map[string]json.RawMessage, result inter
 	if err != nil {
 		return
 	}
+	err = core.UnmarshalModel(m, "user_mfa", &obj.UserMfa, UnmarshalAccountSettingsUserMfa)
+	if err != nil {
+		return
+	}
 	err = core.UnmarshalModel(m, "history", &obj.History, UnmarshalEnityHistoryRecord)
 	if err != nil {
 		return
@@ -2507,6 +2534,71 @@ func UnmarshalAccountSettingsResponse(m map[string]json.RawMessage, result inter
 		return
 	}
 	err = core.UnmarshalPrimitive(m, "max_sessions_per_identity", &obj.MaxSessionsPerIdentity)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "system_access_token_expiration_in_seconds", &obj.SystemAccessTokenExpirationInSeconds)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "system_refresh_token_expiration_in_seconds", &obj.SystemRefreshTokenExpirationInSeconds)
+	if err != nil {
+		return
+	}
+	reflect.ValueOf(result).Elem().Set(reflect.ValueOf(obj))
+	return
+}
+
+// AccountSettingsUserMfa : AccountSettingsUserMfa struct
+type AccountSettingsUserMfa struct {
+	// The iam_id of the user.
+	IamID *string `json:"iam_id" validate:"required"`
+
+	// Defines the MFA requirement for the user. Valid values:
+	//   * NONE - No MFA trait set
+	//   * TOTP - For all non-federated IBMId users
+	//   * TOTP4ALL - For all users
+	//   * LEVEL1 - Email-based MFA for all users
+	//   * LEVEL2 - TOTP-based MFA for all users
+	//   * LEVEL3 - U2F MFA for all users.
+	Mfa *string `json:"mfa" validate:"required"`
+}
+
+// Constants associated with the AccountSettingsUserMfa.Mfa property.
+// Defines the MFA requirement for the user. Valid values:
+//   * NONE - No MFA trait set
+//   * TOTP - For all non-federated IBMId users
+//   * TOTP4ALL - For all users
+//   * LEVEL1 - Email-based MFA for all users
+//   * LEVEL2 - TOTP-based MFA for all users
+//   * LEVEL3 - U2F MFA for all users.
+const (
+	AccountSettingsUserMfaMfaLevel1Const   = "LEVEL1"
+	AccountSettingsUserMfaMfaLevel2Const   = "LEVEL2"
+	AccountSettingsUserMfaMfaLevel3Const   = "LEVEL3"
+	AccountSettingsUserMfaMfaNoneConst     = "NONE"
+	AccountSettingsUserMfaMfaTotpConst     = "TOTP"
+	AccountSettingsUserMfaMfaTotp4allConst = "TOTP4ALL"
+)
+
+// NewAccountSettingsUserMfa : Instantiate AccountSettingsUserMfa (Generic Model Constructor)
+func (*IamIdentityV1) NewAccountSettingsUserMfa(iamID string, mfa string) (_model *AccountSettingsUserMfa, err error) {
+	_model = &AccountSettingsUserMfa{
+		IamID: core.StringPtr(iamID),
+		Mfa:   core.StringPtr(mfa),
+	}
+	err = core.ValidateStruct(_model, "required parameters")
+	return
+}
+
+// UnmarshalAccountSettingsUserMfa unmarshals an instance of AccountSettingsUserMfa from the specified map of raw messages.
+func UnmarshalAccountSettingsUserMfa(m map[string]json.RawMessage, result interface{}) (err error) {
+	obj := new(AccountSettingsUserMfa)
+	err = core.UnmarshalPrimitive(m, "iam_id", &obj.IamID)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "mfa", &obj.Mfa)
 	if err != nil {
 		return
 	}
@@ -2983,7 +3075,7 @@ type CreateClaimRuleOptions struct {
 	// ID of the trusted profile to create a claim rule.
 	ProfileID *string `json:"profile-id" validate:"required,ne="`
 
-	// Type of the calim rule, either 'Profile-SAML' or 'Profile-CR'.
+	// Type of the claim rule, either 'Profile-SAML' or 'Profile-CR'.
 	Type *string `json:"type" validate:"required"`
 
 	// Conditions of this claim rule.
@@ -3225,11 +3317,11 @@ type CreateReportOptions struct {
 	// ID of the account.
 	AccountID *string `json:"account_id" validate:"required,ne="`
 
-	// Optional report type, supported value is 'inactive' - List all identities that have not authenticated within the
+	// Optional report type. The supported value is 'inactive'. List all identities that have not authenticated within the
 	// time indicated by duration.
 	Type *string `json:"type,omitempty"`
 
-	// Optional duration of the report, supported unit of duration is hours.
+	// Optional duration of the report. The supported unit of duration is hours.
 	Duration *string `json:"duration,omitempty"`
 
 	// Allows users to set headers on API requests
@@ -3906,12 +3998,12 @@ func (options *GetServiceIDOptions) SetHeaders(param map[string]string) *GetServ
 
 // ListAPIKeysOptions : The ListAPIKeys options.
 type ListAPIKeysOptions struct {
-	// Account ID of the API keys to query. If a service IAM ID is specified in iam_id then account_id must match the
+	// Account ID of the API keys(s) to query. If a service IAM ID is specified in iam_id then account_id must match the
 	// account of the IAM ID. If a user IAM ID is specified in iam_id then then account_id must match the account of the
 	// Authorization token.
 	AccountID *string `json:"account_id,omitempty"`
 
-	// IAM ID of the API keys to be queried. The IAM ID may be that of a user or a service. For a user IAM ID iam_id must
+	// IAM ID of the API key(s) to be queried. The IAM ID may be that of a user or a service. For a user IAM ID iam_id must
 	// match the Authorization token.
 	IamID *string `json:"iam_id,omitempty"`
 
@@ -3921,10 +4013,10 @@ type ListAPIKeysOptions struct {
 	// Optional Prev or Next page token returned from a previous query execution. Default is start with first page.
 	Pagetoken *string `json:"pagetoken,omitempty"`
 
-	// Optional parameter to define the scope of the queried API keys. Can be 'entity' (default) or 'account'.
+	// Optional parameter to define the scope of the queried API Keys. Can be 'entity' (default) or 'account'.
 	Scope *string `json:"scope,omitempty"`
 
-	// Optional parameter to filter the type of the queried API keys. Can be 'user' or 'serviceid'.
+	// Optional parameter to filter the type of the queried API Keys. Can be 'user' or 'serviceid'.
 	Type *string `json:"type,omitempty"`
 
 	// Optional sort property, valid values are name, description, created_at and created_by. If specified, the items are
@@ -3942,14 +4034,14 @@ type ListAPIKeysOptions struct {
 }
 
 // Constants associated with the ListAPIKeysOptions.Scope property.
-// Optional parameter to define the scope of the queried API keys. Can be 'entity' (default) or 'account'.
+// Optional parameter to define the scope of the queried API Keys. Can be 'entity' (default) or 'account'.
 const (
 	ListAPIKeysOptionsScopeAccountConst = "account"
 	ListAPIKeysOptionsScopeEntityConst  = "entity"
 )
 
 // Constants associated with the ListAPIKeysOptions.Type property.
-// Optional parameter to filter the type of the queried API keys. Can be 'user' or 'serviceid'.
+// Optional parameter to filter the type of the queried API Keys. Can be 'user' or 'serviceid'.
 const (
 	ListAPIKeysOptionsTypeServiceidConst = "serviceid"
 	ListAPIKeysOptionsTypeUserConst      = "user"
@@ -4334,7 +4426,7 @@ type ProfileClaimRule struct {
 	// The optional claim rule name.
 	Name *string `json:"name,omitempty"`
 
-	// Type of the Calim rule, either 'Profile-SAML' or 'Profile-CR'.
+	// Type of the claim rule, either 'Profile-SAML' or 'Profile-CR'.
 	Type *string `json:"type" validate:"required"`
 
 	// The realm name of the Idp this claim rule applies to.
@@ -4399,7 +4491,8 @@ func UnmarshalProfileClaimRule(m map[string]json.RawMessage, result interface{})
 
 // ProfileClaimRuleConditions : ProfileClaimRuleConditions struct
 type ProfileClaimRuleConditions struct {
-	// The claim to evaluate against.
+	// The claim to evaluate against. [Learn
+	// more](/docs/account?topic=account-iam-condition-properties&interface=ui#cr-attribute-names).
 	Claim *string `json:"claim" validate:"required"`
 
 	// The operation to perform on the claim. valid values are EQUALS, NOT_EQUALS, EQUALS_IGNORE_CASE,
@@ -5155,9 +5248,9 @@ func (options *UnlockServiceIDOptions) SetHeaders(param map[string]string) *Unlo
 
 // UpdateAccountSettingsOptions : The UpdateAccountSettings options.
 type UpdateAccountSettingsOptions struct {
-	// Version of the account settings to be updated. Specify the version that you  retrieved as entity_tag (ETag header)
-	// when reading the account. This value helps  identifying parallel usage of this API. Pass * to indicate to update any
-	// version  available. This might result in stale updates.
+	// Version of the account settings to be updated. Specify the version that you retrieved as entity_tag (ETag header)
+	// when reading the account. This value helps identifying parallel usage of this API. Pass * to indicate to update any
+	// version available. This might result in stale updates.
 	IfMatch *string `json:"If-Match" validate:"required"`
 
 	// The id of the account to update the settings for.
@@ -5187,12 +5280,15 @@ type UpdateAccountSettingsOptions struct {
 	//   * LEVEL3 - U2F MFA for all users.
 	Mfa *string `json:"mfa,omitempty"`
 
+	// List of users that are exempted from the MFA requirement of the account.
+	UserMfa []AccountSettingsUserMfa `json:"user_mfa,omitempty"`
+
 	// Defines the session expiration in seconds for the account. Valid values:
 	//   * Any whole number between between '900' and '86400'
 	//   * NOT_SET - To unset account setting and use service default.
 	SessionExpirationInSeconds *string `json:"session_expiration_in_seconds,omitempty"`
 
-	// Defines the period of time in seconds in which a session will be invalidated due  to inactivity. Valid values:
+	// Defines the period of time in seconds in which a session will be invalidated due to inactivity. Valid values:
 	//   * Any whole number between '900' and '7200'
 	//   * NOT_SET - To unset account setting and use service default.
 	SessionInvalidationInSeconds *string `json:"session_invalidation_in_seconds,omitempty"`
@@ -5201,6 +5297,16 @@ type UpdateAccountSettingsOptions struct {
 	//   * Any whole number greater than 0
 	//   * NOT_SET - To unset account setting and use service default.
 	MaxSessionsPerIdentity *string `json:"max_sessions_per_identity,omitempty"`
+
+	// Defines the access token expiration in seconds. Valid values:
+	//   * Any whole number between '900' and '3600'
+	//   * NOT_SET - To unset account setting and use service default.
+	SystemAccessTokenExpirationInSeconds *string `json:"system_access_token_expiration_in_seconds,omitempty"`
+
+	// Defines the refresh token expiration in seconds. Valid values:
+	//   * Any whole number between '900' and '2592000'
+	//   * NOT_SET - To unset account setting and use service default.
+	SystemRefreshTokenExpirationInSeconds *string `json:"system_refresh_token_expiration_in_seconds,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -5289,6 +5395,12 @@ func (_options *UpdateAccountSettingsOptions) SetMfa(mfa string) *UpdateAccountS
 	return _options
 }
 
+// SetUserMfa : Allow user to set UserMfa
+func (_options *UpdateAccountSettingsOptions) SetUserMfa(userMfa []AccountSettingsUserMfa) *UpdateAccountSettingsOptions {
+	_options.UserMfa = userMfa
+	return _options
+}
+
 // SetSessionExpirationInSeconds : Allow user to set SessionExpirationInSeconds
 func (_options *UpdateAccountSettingsOptions) SetSessionExpirationInSeconds(sessionExpirationInSeconds string) *UpdateAccountSettingsOptions {
 	_options.SessionExpirationInSeconds = core.StringPtr(sessionExpirationInSeconds)
@@ -5304,6 +5416,18 @@ func (_options *UpdateAccountSettingsOptions) SetSessionInvalidationInSeconds(se
 // SetMaxSessionsPerIdentity : Allow user to set MaxSessionsPerIdentity
 func (_options *UpdateAccountSettingsOptions) SetMaxSessionsPerIdentity(maxSessionsPerIdentity string) *UpdateAccountSettingsOptions {
 	_options.MaxSessionsPerIdentity = core.StringPtr(maxSessionsPerIdentity)
+	return _options
+}
+
+// SetSystemAccessTokenExpirationInSeconds : Allow user to set SystemAccessTokenExpirationInSeconds
+func (_options *UpdateAccountSettingsOptions) SetSystemAccessTokenExpirationInSeconds(systemAccessTokenExpirationInSeconds string) *UpdateAccountSettingsOptions {
+	_options.SystemAccessTokenExpirationInSeconds = core.StringPtr(systemAccessTokenExpirationInSeconds)
+	return _options
+}
+
+// SetSystemRefreshTokenExpirationInSeconds : Allow user to set SystemRefreshTokenExpirationInSeconds
+func (_options *UpdateAccountSettingsOptions) SetSystemRefreshTokenExpirationInSeconds(systemRefreshTokenExpirationInSeconds string) *UpdateAccountSettingsOptions {
+	_options.SystemRefreshTokenExpirationInSeconds = core.StringPtr(systemRefreshTokenExpirationInSeconds)
 	return _options
 }
 
@@ -5381,12 +5505,12 @@ type UpdateClaimRuleOptions struct {
 	// ID of the claim rule to update.
 	RuleID *string `json:"rule-id" validate:"required,ne="`
 
-	// Version of the claim rule to be updated.  Specify the version that you retrived when reading list of claim rules.
+	// Version of the claim rule to be updated. Specify the version that you retrived when reading list of claim rules.
 	// This value helps to identify any parallel usage of claim rule. Pass * to indicate to update any version available.
 	// This might result in stale updates.
 	IfMatch *string `json:"If-Match" validate:"required"`
 
-	// Type of the calim rule, either 'Profile-SAML' or 'Profile-CR'.
+	// Type of the claim rule, either 'Profile-SAML' or 'Profile-CR'.
 	Type *string `json:"type" validate:"required"`
 
 	// Conditions of this claim rule.
@@ -5495,7 +5619,7 @@ type UpdateProfileOptions struct {
 	// ID of the trusted profile to be updated.
 	ProfileID *string `json:"profile-id" validate:"required,ne="`
 
-	// Version of the trusted profile to be updated.  Specify the version that you retrived when reading list of trusted
+	// Version of the trusted profile to be updated. Specify the version that you retrived when reading list of trusted
 	// profiles. This value helps to identify any parallel usage of trusted profile. Pass * to indicate to update any
 	// version available. This might result in stale updates.
 	IfMatch *string `json:"If-Match" validate:"required"`

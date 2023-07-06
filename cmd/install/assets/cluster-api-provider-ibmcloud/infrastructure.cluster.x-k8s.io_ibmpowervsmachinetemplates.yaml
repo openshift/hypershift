@@ -14,7 +14,7 @@ spec:
     singular: ibmpowervsmachinetemplate
   scope: Namespaced
   versions:
-  - name: v1beta1
+  - name: v1beta2
     schema:
       openAPIV3Schema:
         description: IBMPowerVSMachineTemplate is the Schema for the ibmpowervsmachinetemplates
@@ -45,8 +45,10 @@ spec:
                       IBMPowerVSMachine.
                     properties:
                       image:
-                        description: Image is the reference to the Image from which
-                          to create the machine instance.
+                        description: Image the reference to the image which is used
+                          to create the instance. supported image identifier in IBMPowerVSResourceReference
+                          are Name and ID and that can be obtained from IBM Cloud
+                          UI or IBM Cloud cli.
                         properties:
                           id:
                             description: ID of resource
@@ -74,12 +76,24 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
-                      memory:
-                        description: Memory is Amount of memory allocated (in GB)
-                        type: string
+                      memoryGiB:
+                        description: memoryGiB is the size of a virtual machine's
+                          memory, in GiB. maximum value for the MemoryGiB depends
+                          on the selected SystemType. when SystemType is set to e880
+                          maximum MemoryGiB value is 7463 GiB. when SystemType is
+                          set to e980 maximum MemoryGiB value is 15307 GiB. when SystemType
+                          is set to s922 maximum MemoryGiB value is 942 GiB. The minimum
+                          memory is 2 GiB. When omitted, this means the user has no
+                          opinion and the platform is left to choose a reasonable
+                          default, which is subject to change over time. The current
+                          default is 2.
+                        format: int32
+                        type: integer
                       network:
                         description: Network is the reference to the Network to use
-                          for this instance.
+                          for this instance. supported network identifier in IBMPowerVSResourceReference
+                          are Name, ID and RegEx and that can be obtained from IBM
+                          Cloud UI or IBM Cloud cli.
                         properties:
                           id:
                             description: ID of resource
@@ -96,14 +110,47 @@ spec:
                             minLength: 1
                             type: string
                         type: object
-                      procType:
-                        description: 'ProcType is the processor type, e.g: dedicated,
-                          shared, capped'
+                      processorType:
+                        description: 'processorType is the VM instance processor type.
+                          It must be set to one of the following values: Dedicated,
+                          Capped or Shared. Dedicated: resources are allocated for
+                          a specific client, The hypervisor makes a 1:1 binding of
+                          a partition’s processor to a physical processor core. Shared:
+                          Shared among other clients. Capped: Shared, but resources
+                          do not expand beyond those that are requested, the amount
+                          of CPU time is Capped to the value specified for the entitlement.
+                          if the processorType is selected as Dedicated, then processors
+                          value cannot be fractional. When omitted, this means that
+                          the user has no opinion and the platform is left to choose
+                          a reasonable default, which is subject to change over time.
+                          The current default is Shared.'
+                        enum:
+                        - Dedicated
+                        - Shared
+                        - Capped
+                        - ""
                         type: string
                       processors:
-                        description: Processors is Number of processors allocated.
-                        pattern: ^\d+(\.)?(\d)?(\d)?$
-                        type: string
+                        anyOf:
+                        - type: integer
+                        - type: string
+                        description: processors is the number of virtual processors
+                          in a virtual machine. when the processorType is selected
+                          as Dedicated the processors value cannot be fractional.
+                          maximum value for the Processors depends on the selected
+                          SystemType. when SystemType is set to e880 or e980 maximum
+                          Processors value is 143. when SystemType is set to s922
+                          maximum Processors value is 15. minimum value for Processors
+                          depends on the selected ProcessorType. when ProcessorType
+                          is set as Shared or Capped, The minimum processors is 0.25.
+                          when ProcessorType is set as Dedicated, The minimum processors
+                          is 1. When omitted, this means that the user has no opinion
+                          and the platform is left to choose a reasonable default,
+                          which is subject to change over time. The default is set
+                          based on the selected ProcessorType. when ProcessorType
+                          selected as Dedicated, the default is set to 1. when ProcessorType
+                          selected as Shared or Capped, the default is set to 0.25.
+                        x-kubernetes-int-or-string: true
                       providerID:
                         description: ProviderID is the unique identifier as specified
                           by the cloud provider.
@@ -117,8 +164,21 @@ spec:
                         description: SSHKey is the name of the SSH key pair provided
                           to the vsi for authenticating users.
                         type: string
-                      sysType:
-                        description: SysType is the System type used to host the vsi.
+                      systemType:
+                        description: systemType is the System type used to host the
+                          instance. systemType determines the number of cores and
+                          memory that is available. Few of the supported SystemTypes
+                          are s922,e880,e980. e880 systemType available only in Dallas
+                          Datacenters. e980 systemType available in Datacenters except
+                          Dallas and Washington. When omitted, this means that the
+                          user has no opinion and the platform is left to choose a
+                          reasonable default, which is subject to change over time.
+                          The current default is s922 which is generally available.
+                        enum:
+                        - s922
+                        - e880
+                        - e980
+                        - ""
                         type: string
                     required:
                     - network
