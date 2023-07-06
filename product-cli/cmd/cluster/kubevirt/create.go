@@ -39,8 +39,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.InfraStorageClassMappings, "infra-storage-class-mapping", opts.KubevirtPlatform.InfraStorageClassMappings, "KubeVirt CSI napping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.NetworkInterfaceMultiQueue, "network-multiqueue", opts.KubevirtPlatform.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Disable"`)
 
-	_ = cmd.MarkPersistentFlagRequired("pull-secret")
-
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if opts.Timeout > 0 {

@@ -44,6 +44,8 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().Int32Var(&opts.NodePoolReplicas, "node-pool-replicas", opts.NodePoolReplicas, "If 0 or greater, creates a nodepool with that many replicas; else if less than 0, does not create a nodepool.")
 	cmd.PersistentFlags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
 
+	_ = cmd.MarkPersistentFlagRequired("pull-secret")
+
 	cmd.AddCommand(agent.NewCreateCommand(opts))
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
 
