@@ -23,13 +23,18 @@ const (
 	ServiceSignerPublicKey  = "service-account.pub"
 )
 
-func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress, internalAPIAddress, serviceCIDR string) error {
+func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress, internalAPIAddress string, serviceCIDRs []string) error {
 	svc := manifests.KubeAPIServerService(secret.Namespace)
-	_, serviceIPNet, err := net.ParseCIDR(serviceCIDR)
-	if err != nil {
-		return fmt.Errorf("cannot parse service CIDR: %w", err)
+	svcAddresses := make([]string, 0)
+
+	for _, serviceCIDR := range serviceCIDRs {
+		serviceIP, err := util.FirstUsableIP(serviceCIDR)
+		if err != nil {
+			return fmt.Errorf("cannot get the first usable IP from CIDR %s: %w", serviceIP, err)
+		}
+		svcAddresses = append(svcAddresses, serviceIP)
 	}
-	serviceIP := firstIP(serviceIPNet)
+
 	dnsNames := []string{
 		"localhost",
 		"kubernetes",
@@ -42,8 +47,10 @@ func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.Own
 	}
 	apiServerIPs := []string{
 		"127.0.0.1",
-		serviceIP.String(),
+		"0:0:0:0:0:0:0:1",
 	}
+	apiServerIPs = append(apiServerIPs, svcAddresses...)
+
 	if isNumericIP(externalAPIAddress) {
 		apiServerIPs = append(apiServerIPs, externalAPIAddress)
 	} else {
@@ -89,22 +96,6 @@ func ReconcileServiceAccountKubeconfig(secret, csrSigner *corev1.Secret, ca *cor
 	svcURL := inClusterKASURL(hcp.Namespace, util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort))
 
 	return ReconcileKubeConfig(secret, secret, ca, svcURL, "", manifests.KubeconfigScopeLocal, config.OwnerRef{})
-}
-
-func nextIP(ip net.IP) net.IP {
-	nextIP := net.IP(make([]byte, len(ip)))
-	copy(nextIP, ip)
-	for j := len(nextIP) - 1; j >= 0; j-- {
-		nextIP[j]++
-		if nextIP[j] > 0 {
-			break
-		}
-	}
-	return nextIP
-}
-
-func firstIP(network *net.IPNet) net.IP {
-	return nextIP(network.IP)
 }
 
 func isNumericIP(s string) bool {

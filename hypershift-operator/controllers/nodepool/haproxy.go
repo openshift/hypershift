@@ -62,6 +62,8 @@ func (r *NodePoolReconciler) isHAProxyIgnitionConfigManaged(ctx context.Context,
 func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context, componentImages map[string]string, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage string) (cfg string, missing bool, err error) {
 	var apiServerExternalAddress string
 	var apiServerExternalPort int32
+	var apiServerInternalAddress string
+
 	if util.IsPrivateHC(hcluster) {
 		apiServerExternalAddress = fmt.Sprintf("api.%s.hypershift.local", hcluster.Name)
 		apiServerExternalPort = util.InternalAPIPortFromHostedClusterWithDefault(hcluster, config.DefaultAPIServerPort)
@@ -97,7 +99,19 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 		return "", true, fmt.Errorf("release image doesn't have a %s image", haProxyRouterImageName)
 	}
 
-	apiServerInternalAddress := config.DefaultAdvertiseAddress
+	// This provides support for HTTP Proxy on IPv6 scenarios
+	ipv4, err := util.IsIPv4(hcluster.Spec.Networking.ServiceNetwork[0].CIDR.String())
+	if err != nil {
+		return "", true, fmt.Errorf("error checking the stack in the first ServiceNetworkCIDR %s: %w", hcluster.Spec.Networking.ServiceNetwork[0].CIDR.String(), err)
+	}
+
+	// Set the default
+	if ipv4 {
+		apiServerInternalAddress = config.DefaultAdvertiseIPv4Address
+	} else {
+		apiServerInternalAddress = config.DefaultAdvertiseIPv6Address
+	}
+
 	//TODO: in order to prevent periodic kube-apiserver network blimps in the LoadBalancer
 	//publish strategy this should change.
 	//However: will need API changes for service publishing strategy. Best function to call:

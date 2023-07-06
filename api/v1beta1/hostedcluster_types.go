@@ -613,7 +613,8 @@ type CIDRBlock string
 type APIServerNetworking struct {
 	// AdvertiseAddress is the address that nodes will use to talk to the API
 	// server. This is an address associated with the loopback adapter of each
-	// node. If not specified, 172.20.0.1 is used.
+	// node. If not specified, the controller will take default values.
+	// The default values will be set as 172.20.0.1 or fd00::1.
 	AdvertiseAddress *string `json:"advertiseAddress,omitempty"`
 
 	// Port is the port at which the APIServer is exposed inside a node. Other

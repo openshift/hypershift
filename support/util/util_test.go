@@ -295,3 +295,49 @@ func TestIsIPv4(t *testing.T) {
 		})
 	}
 }
+
+func TestFirstUsableIP(t *testing.T) {
+	tests := []struct {
+		name    string
+		cidr    string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "Given IPv4 CIDR, it should return the first ip of the network range",
+			cidr:    "192.168.1.0/24",
+			want:    "192.168.1.1",
+			wantErr: false,
+		},
+		{
+			name:    "Given IPv6 CIDR, it should return the first ip of the network range",
+			cidr:    "2000::/3",
+			want:    "2000::1",
+			wantErr: false,
+		},
+		{
+			name:    "Given a malformed IPv4 CIDR, it should return empty string and err",
+			cidr:    "192.168.1.35.53/24",
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name:    "Given a malformed IPv6 CIDR, it should return empty string and err",
+			cidr:    "2001::44444444444444/17",
+			want:    "",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FirstUsableIP(tt.cidr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("FirstUsableIP() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("FirstUsableIP() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
