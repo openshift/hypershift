@@ -52,12 +52,10 @@ func NewServiceBrokerHardwareplatformsGetParamsWithHTTPClient(client *http.Clien
 	}
 }
 
-/*
-ServiceBrokerHardwareplatformsGetParams contains all the parameters to send to the API endpoint
+/* ServiceBrokerHardwareplatformsGetParams contains all the parameters to send to the API endpoint
+   for the service broker hardwareplatforms get operation.
 
-	for the service broker hardwareplatforms get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type ServiceBrokerHardwareplatformsGetParams struct {
 

@@ -31,7 +31,8 @@ import (
 // and adds the access token to requests via an Authorization header
 // of the form:
 //
-//	Authorization: Bearer <access-token>
+// 		Authorization: Bearer <access-token>
+//
 type IamAuthenticator struct {
 
 	// The apikey used to fetch the bearer token from the IAM token server.
@@ -235,7 +236,8 @@ func (*IamAuthenticator) AuthenticationType() string {
 //
 // The IAM bearer token will be added to the request's headers in the form:
 //
-//	Authorization: Bearer <bearer-token>
+// 		Authorization: Bearer <bearer-token>
+//
 func (authenticator *IamAuthenticator) Authenticate(request *http.Request) error {
 	token, err := authenticator.GetToken()
 	if err != nil {

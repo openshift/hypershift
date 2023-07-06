@@ -52,12 +52,10 @@ func NewServiceBrokerOpenstacksGetParamsWithHTTPClient(client *http.Client) *Ser
 	}
 }
 
-/*
-ServiceBrokerOpenstacksGetParams contains all the parameters to send to the API endpoint
+/* ServiceBrokerOpenstacksGetParams contains all the parameters to send to the API endpoint
+   for the service broker openstacks get operation.
 
-	for the service broker openstacks get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type ServiceBrokerOpenstacksGetParams struct {
 	timeout    time.Duration

@@ -52,12 +52,10 @@ func NewPcloudIkepoliciesGetParamsWithHTTPClient(client *http.Client) *PcloudIke
 	}
 }
 
-/*
-PcloudIkepoliciesGetParams contains all the parameters to send to the API endpoint
+/* PcloudIkepoliciesGetParams contains all the parameters to send to the API endpoint
+   for the pcloud ikepolicies get operation.
 
-	for the pcloud ikepolicies get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudIkepoliciesGetParams struct {
 

@@ -71,7 +71,7 @@ func shouldNotError(key client.ObjectKey) bool {
 	return false
 }
 
-func (c *testClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+func (c *testClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
 	if c.randomGetErrors && !shouldNotError(key) {
 		if randomSource.Int()%3 == 0 {
 			c.getErrorCount++

@@ -52,12 +52,10 @@ func NewBluemixServiceInstanceGetParamsWithHTTPClient(client *http.Client) *Blue
 	}
 }
 
-/*
-BluemixServiceInstanceGetParams contains all the parameters to send to the API endpoint
+/* BluemixServiceInstanceGetParams contains all the parameters to send to the API endpoint
+   for the bluemix service instance get operation.
 
-	for the bluemix service instance get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type BluemixServiceInstanceGetParams struct {
 

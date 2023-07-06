@@ -47,12 +47,6 @@ func (o *PcloudCloudinstancesImagesPostReader) ReadResponse(response runtime.Cli
 			return nil, err
 		}
 		return nil, result
-	case 403:
-		result := NewPcloudCloudinstancesImagesPostForbidden()
-		if err := result.readResponse(response, consumer, o.formats); err != nil {
-			return nil, err
-		}
-		return nil, result
 	case 409:
 		result := NewPcloudCloudinstancesImagesPostConflict()
 		if err := result.readResponse(response, consumer, o.formats); err != nil {
@@ -81,8 +75,7 @@ func NewPcloudCloudinstancesImagesPostOK() *PcloudCloudinstancesImagesPostOK {
 	return &PcloudCloudinstancesImagesPostOK{}
 }
 
-/*
-PcloudCloudinstancesImagesPostOK describes a response with status code 200, with default header values.
+/* PcloudCloudinstancesImagesPostOK describes a response with status code 200, with default header values.
 
 OK
 */
@@ -90,39 +83,9 @@ type PcloudCloudinstancesImagesPostOK struct {
 	Payload *models.Image
 }
 
-// IsSuccess returns true when this pcloud cloudinstances images post o k response has a 2xx status code
-func (o *PcloudCloudinstancesImagesPostOK) IsSuccess() bool {
-	return true
-}
-
-// IsRedirect returns true when this pcloud cloudinstances images post o k response has a 3xx status code
-func (o *PcloudCloudinstancesImagesPostOK) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud cloudinstances images post o k response has a 4xx status code
-func (o *PcloudCloudinstancesImagesPostOK) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this pcloud cloudinstances images post o k response has a 5xx status code
-func (o *PcloudCloudinstancesImagesPostOK) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud cloudinstances images post o k response a status code equal to that given
-func (o *PcloudCloudinstancesImagesPostOK) IsCode(code int) bool {
-	return code == 200
-}
-
 func (o *PcloudCloudinstancesImagesPostOK) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostOK  %+v", 200, o.Payload)
 }
-
-func (o *PcloudCloudinstancesImagesPostOK) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostOK  %+v", 200, o.Payload)
-}
-
 func (o *PcloudCloudinstancesImagesPostOK) GetPayload() *models.Image {
 	return o.Payload
 }
@@ -144,8 +107,7 @@ func NewPcloudCloudinstancesImagesPostCreated() *PcloudCloudinstancesImagesPostC
 	return &PcloudCloudinstancesImagesPostCreated{}
 }
 
-/*
-PcloudCloudinstancesImagesPostCreated describes a response with status code 201, with default header values.
+/* PcloudCloudinstancesImagesPostCreated describes a response with status code 201, with default header values.
 
 Created
 */
@@ -153,39 +115,9 @@ type PcloudCloudinstancesImagesPostCreated struct {
 	Payload *models.Image
 }
 
-// IsSuccess returns true when this pcloud cloudinstances images post created response has a 2xx status code
-func (o *PcloudCloudinstancesImagesPostCreated) IsSuccess() bool {
-	return true
-}
-
-// IsRedirect returns true when this pcloud cloudinstances images post created response has a 3xx status code
-func (o *PcloudCloudinstancesImagesPostCreated) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud cloudinstances images post created response has a 4xx status code
-func (o *PcloudCloudinstancesImagesPostCreated) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this pcloud cloudinstances images post created response has a 5xx status code
-func (o *PcloudCloudinstancesImagesPostCreated) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud cloudinstances images post created response a status code equal to that given
-func (o *PcloudCloudinstancesImagesPostCreated) IsCode(code int) bool {
-	return code == 201
-}
-
 func (o *PcloudCloudinstancesImagesPostCreated) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostCreated  %+v", 201, o.Payload)
 }
-
-func (o *PcloudCloudinstancesImagesPostCreated) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostCreated  %+v", 201, o.Payload)
-}
-
 func (o *PcloudCloudinstancesImagesPostCreated) GetPayload() *models.Image {
 	return o.Payload
 }
@@ -207,8 +139,7 @@ func NewPcloudCloudinstancesImagesPostBadRequest() *PcloudCloudinstancesImagesPo
 	return &PcloudCloudinstancesImagesPostBadRequest{}
 }
 
-/*
-PcloudCloudinstancesImagesPostBadRequest describes a response with status code 400, with default header values.
+/* PcloudCloudinstancesImagesPostBadRequest describes a response with status code 400, with default header values.
 
 Bad Request
 */
@@ -216,39 +147,9 @@ type PcloudCloudinstancesImagesPostBadRequest struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud cloudinstances images post bad request response has a 2xx status code
-func (o *PcloudCloudinstancesImagesPostBadRequest) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud cloudinstances images post bad request response has a 3xx status code
-func (o *PcloudCloudinstancesImagesPostBadRequest) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud cloudinstances images post bad request response has a 4xx status code
-func (o *PcloudCloudinstancesImagesPostBadRequest) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud cloudinstances images post bad request response has a 5xx status code
-func (o *PcloudCloudinstancesImagesPostBadRequest) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud cloudinstances images post bad request response a status code equal to that given
-func (o *PcloudCloudinstancesImagesPostBadRequest) IsCode(code int) bool {
-	return code == 400
-}
-
 func (o *PcloudCloudinstancesImagesPostBadRequest) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostBadRequest  %+v", 400, o.Payload)
 }
-
-func (o *PcloudCloudinstancesImagesPostBadRequest) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostBadRequest  %+v", 400, o.Payload)
-}
-
 func (o *PcloudCloudinstancesImagesPostBadRequest) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -270,8 +171,7 @@ func NewPcloudCloudinstancesImagesPostUnauthorized() *PcloudCloudinstancesImages
 	return &PcloudCloudinstancesImagesPostUnauthorized{}
 }
 
-/*
-PcloudCloudinstancesImagesPostUnauthorized describes a response with status code 401, with default header values.
+/* PcloudCloudinstancesImagesPostUnauthorized describes a response with status code 401, with default header values.
 
 Unauthorized
 */
@@ -279,39 +179,9 @@ type PcloudCloudinstancesImagesPostUnauthorized struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud cloudinstances images post unauthorized response has a 2xx status code
-func (o *PcloudCloudinstancesImagesPostUnauthorized) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud cloudinstances images post unauthorized response has a 3xx status code
-func (o *PcloudCloudinstancesImagesPostUnauthorized) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud cloudinstances images post unauthorized response has a 4xx status code
-func (o *PcloudCloudinstancesImagesPostUnauthorized) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud cloudinstances images post unauthorized response has a 5xx status code
-func (o *PcloudCloudinstancesImagesPostUnauthorized) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud cloudinstances images post unauthorized response a status code equal to that given
-func (o *PcloudCloudinstancesImagesPostUnauthorized) IsCode(code int) bool {
-	return code == 401
-}
-
 func (o *PcloudCloudinstancesImagesPostUnauthorized) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostUnauthorized  %+v", 401, o.Payload)
 }
-
-func (o *PcloudCloudinstancesImagesPostUnauthorized) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostUnauthorized  %+v", 401, o.Payload)
-}
-
 func (o *PcloudCloudinstancesImagesPostUnauthorized) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -328,76 +198,12 @@ func (o *PcloudCloudinstancesImagesPostUnauthorized) readResponse(response runti
 	return nil
 }
 
-// NewPcloudCloudinstancesImagesPostForbidden creates a PcloudCloudinstancesImagesPostForbidden with default headers values
-func NewPcloudCloudinstancesImagesPostForbidden() *PcloudCloudinstancesImagesPostForbidden {
-	return &PcloudCloudinstancesImagesPostForbidden{}
-}
-
-/*
-PcloudCloudinstancesImagesPostForbidden describes a response with status code 403, with default header values.
-
-Forbidden
-*/
-type PcloudCloudinstancesImagesPostForbidden struct {
-	Payload *models.Error
-}
-
-// IsSuccess returns true when this pcloud cloudinstances images post forbidden response has a 2xx status code
-func (o *PcloudCloudinstancesImagesPostForbidden) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud cloudinstances images post forbidden response has a 3xx status code
-func (o *PcloudCloudinstancesImagesPostForbidden) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud cloudinstances images post forbidden response has a 4xx status code
-func (o *PcloudCloudinstancesImagesPostForbidden) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud cloudinstances images post forbidden response has a 5xx status code
-func (o *PcloudCloudinstancesImagesPostForbidden) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud cloudinstances images post forbidden response a status code equal to that given
-func (o *PcloudCloudinstancesImagesPostForbidden) IsCode(code int) bool {
-	return code == 403
-}
-
-func (o *PcloudCloudinstancesImagesPostForbidden) Error() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostForbidden  %+v", 403, o.Payload)
-}
-
-func (o *PcloudCloudinstancesImagesPostForbidden) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostForbidden  %+v", 403, o.Payload)
-}
-
-func (o *PcloudCloudinstancesImagesPostForbidden) GetPayload() *models.Error {
-	return o.Payload
-}
-
-func (o *PcloudCloudinstancesImagesPostForbidden) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
-
-	o.Payload = new(models.Error)
-
-	// response payload
-	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
-		return err
-	}
-
-	return nil
-}
-
 // NewPcloudCloudinstancesImagesPostConflict creates a PcloudCloudinstancesImagesPostConflict with default headers values
 func NewPcloudCloudinstancesImagesPostConflict() *PcloudCloudinstancesImagesPostConflict {
 	return &PcloudCloudinstancesImagesPostConflict{}
 }
 
-/*
-PcloudCloudinstancesImagesPostConflict describes a response with status code 409, with default header values.
+/* PcloudCloudinstancesImagesPostConflict describes a response with status code 409, with default header values.
 
 Conflict
 */
@@ -405,39 +211,9 @@ type PcloudCloudinstancesImagesPostConflict struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud cloudinstances images post conflict response has a 2xx status code
-func (o *PcloudCloudinstancesImagesPostConflict) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud cloudinstances images post conflict response has a 3xx status code
-func (o *PcloudCloudinstancesImagesPostConflict) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud cloudinstances images post conflict response has a 4xx status code
-func (o *PcloudCloudinstancesImagesPostConflict) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud cloudinstances images post conflict response has a 5xx status code
-func (o *PcloudCloudinstancesImagesPostConflict) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud cloudinstances images post conflict response a status code equal to that given
-func (o *PcloudCloudinstancesImagesPostConflict) IsCode(code int) bool {
-	return code == 409
-}
-
 func (o *PcloudCloudinstancesImagesPostConflict) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostConflict  %+v", 409, o.Payload)
 }
-
-func (o *PcloudCloudinstancesImagesPostConflict) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostConflict  %+v", 409, o.Payload)
-}
-
 func (o *PcloudCloudinstancesImagesPostConflict) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -459,8 +235,7 @@ func NewPcloudCloudinstancesImagesPostUnprocessableEntity() *PcloudCloudinstance
 	return &PcloudCloudinstancesImagesPostUnprocessableEntity{}
 }
 
-/*
-PcloudCloudinstancesImagesPostUnprocessableEntity describes a response with status code 422, with default header values.
+/* PcloudCloudinstancesImagesPostUnprocessableEntity describes a response with status code 422, with default header values.
 
 Unprocessable Entity
 */
@@ -468,39 +243,9 @@ type PcloudCloudinstancesImagesPostUnprocessableEntity struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud cloudinstances images post unprocessable entity response has a 2xx status code
-func (o *PcloudCloudinstancesImagesPostUnprocessableEntity) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud cloudinstances images post unprocessable entity response has a 3xx status code
-func (o *PcloudCloudinstancesImagesPostUnprocessableEntity) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud cloudinstances images post unprocessable entity response has a 4xx status code
-func (o *PcloudCloudinstancesImagesPostUnprocessableEntity) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud cloudinstances images post unprocessable entity response has a 5xx status code
-func (o *PcloudCloudinstancesImagesPostUnprocessableEntity) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud cloudinstances images post unprocessable entity response a status code equal to that given
-func (o *PcloudCloudinstancesImagesPostUnprocessableEntity) IsCode(code int) bool {
-	return code == 422
-}
-
 func (o *PcloudCloudinstancesImagesPostUnprocessableEntity) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostUnprocessableEntity  %+v", 422, o.Payload)
 }
-
-func (o *PcloudCloudinstancesImagesPostUnprocessableEntity) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostUnprocessableEntity  %+v", 422, o.Payload)
-}
-
 func (o *PcloudCloudinstancesImagesPostUnprocessableEntity) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -522,8 +267,7 @@ func NewPcloudCloudinstancesImagesPostInternalServerError() *PcloudCloudinstance
 	return &PcloudCloudinstancesImagesPostInternalServerError{}
 }
 
-/*
-PcloudCloudinstancesImagesPostInternalServerError describes a response with status code 500, with default header values.
+/* PcloudCloudinstancesImagesPostInternalServerError describes a response with status code 500, with default header values.
 
 Internal Server Error
 */
@@ -531,39 +275,9 @@ type PcloudCloudinstancesImagesPostInternalServerError struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud cloudinstances images post internal server error response has a 2xx status code
-func (o *PcloudCloudinstancesImagesPostInternalServerError) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud cloudinstances images post internal server error response has a 3xx status code
-func (o *PcloudCloudinstancesImagesPostInternalServerError) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud cloudinstances images post internal server error response has a 4xx status code
-func (o *PcloudCloudinstancesImagesPostInternalServerError) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this pcloud cloudinstances images post internal server error response has a 5xx status code
-func (o *PcloudCloudinstancesImagesPostInternalServerError) IsServerError() bool {
-	return true
-}
-
-// IsCode returns true when this pcloud cloudinstances images post internal server error response a status code equal to that given
-func (o *PcloudCloudinstancesImagesPostInternalServerError) IsCode(code int) bool {
-	return code == 500
-}
-
 func (o *PcloudCloudinstancesImagesPostInternalServerError) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostInternalServerError  %+v", 500, o.Payload)
 }
-
-func (o *PcloudCloudinstancesImagesPostInternalServerError) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/images][%d] pcloudCloudinstancesImagesPostInternalServerError  %+v", 500, o.Payload)
-}
-
 func (o *PcloudCloudinstancesImagesPostInternalServerError) GetPayload() *models.Error {
 	return o.Payload
 }

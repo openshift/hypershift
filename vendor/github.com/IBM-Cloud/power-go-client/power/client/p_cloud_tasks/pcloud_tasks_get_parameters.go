@@ -52,12 +52,10 @@ func NewPcloudTasksGetParamsWithHTTPClient(client *http.Client) *PcloudTasksGetP
 	}
 }
 
-/*
-PcloudTasksGetParams contains all the parameters to send to the API endpoint
+/* PcloudTasksGetParams contains all the parameters to send to the API endpoint
+   for the pcloud tasks get operation.
 
-	for the pcloud tasks get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudTasksGetParams struct {
 

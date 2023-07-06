@@ -52,12 +52,10 @@ func NewServiceBrokerAuthDeviceTokenPostParamsWithHTTPClient(client *http.Client
 	}
 }
 
-/*
-ServiceBrokerAuthDeviceTokenPostParams contains all the parameters to send to the API endpoint
+/* ServiceBrokerAuthDeviceTokenPostParams contains all the parameters to send to the API endpoint
+   for the service broker auth device token post operation.
 
-	for the service broker auth device token post operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type ServiceBrokerAuthDeviceTokenPostParams struct {
 

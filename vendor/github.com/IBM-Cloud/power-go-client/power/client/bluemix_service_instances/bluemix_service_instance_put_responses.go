@@ -45,8 +45,7 @@ func NewBluemixServiceInstancePutOK() *BluemixServiceInstancePutOK {
 	return &BluemixServiceInstancePutOK{}
 }
 
-/*
-BluemixServiceInstancePutOK describes a response with status code 200, with default header values.
+/* BluemixServiceInstancePutOK describes a response with status code 200, with default header values.
 
 OK
 */
@@ -54,39 +53,9 @@ type BluemixServiceInstancePutOK struct {
 	Payload *models.ServiceInstance
 }
 
-// IsSuccess returns true when this bluemix service instance put o k response has a 2xx status code
-func (o *BluemixServiceInstancePutOK) IsSuccess() bool {
-	return true
-}
-
-// IsRedirect returns true when this bluemix service instance put o k response has a 3xx status code
-func (o *BluemixServiceInstancePutOK) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this bluemix service instance put o k response has a 4xx status code
-func (o *BluemixServiceInstancePutOK) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this bluemix service instance put o k response has a 5xx status code
-func (o *BluemixServiceInstancePutOK) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this bluemix service instance put o k response a status code equal to that given
-func (o *BluemixServiceInstancePutOK) IsCode(code int) bool {
-	return code == 200
-}
-
 func (o *BluemixServiceInstancePutOK) Error() string {
 	return fmt.Sprintf("[PUT /bluemix_v1/service_instances/{instance_id}][%d] bluemixServiceInstancePutOK  %+v", 200, o.Payload)
 }
-
-func (o *BluemixServiceInstancePutOK) String() string {
-	return fmt.Sprintf("[PUT /bluemix_v1/service_instances/{instance_id}][%d] bluemixServiceInstancePutOK  %+v", 200, o.Payload)
-}
-
 func (o *BluemixServiceInstancePutOK) GetPayload() *models.ServiceInstance {
 	return o.Payload
 }
@@ -108,8 +77,7 @@ func NewBluemixServiceInstancePutBadRequest() *BluemixServiceInstancePutBadReque
 	return &BluemixServiceInstancePutBadRequest{}
 }
 
-/*
-BluemixServiceInstancePutBadRequest describes a response with status code 400, with default header values.
+/* BluemixServiceInstancePutBadRequest describes a response with status code 400, with default header values.
 
 Bad Request
 */
@@ -117,39 +85,9 @@ type BluemixServiceInstancePutBadRequest struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this bluemix service instance put bad request response has a 2xx status code
-func (o *BluemixServiceInstancePutBadRequest) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this bluemix service instance put bad request response has a 3xx status code
-func (o *BluemixServiceInstancePutBadRequest) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this bluemix service instance put bad request response has a 4xx status code
-func (o *BluemixServiceInstancePutBadRequest) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this bluemix service instance put bad request response has a 5xx status code
-func (o *BluemixServiceInstancePutBadRequest) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this bluemix service instance put bad request response a status code equal to that given
-func (o *BluemixServiceInstancePutBadRequest) IsCode(code int) bool {
-	return code == 400
-}
-
 func (o *BluemixServiceInstancePutBadRequest) Error() string {
 	return fmt.Sprintf("[PUT /bluemix_v1/service_instances/{instance_id}][%d] bluemixServiceInstancePutBadRequest  %+v", 400, o.Payload)
 }
-
-func (o *BluemixServiceInstancePutBadRequest) String() string {
-	return fmt.Sprintf("[PUT /bluemix_v1/service_instances/{instance_id}][%d] bluemixServiceInstancePutBadRequest  %+v", 400, o.Payload)
-}
-
 func (o *BluemixServiceInstancePutBadRequest) GetPayload() *models.Error {
 	return o.Payload
 }

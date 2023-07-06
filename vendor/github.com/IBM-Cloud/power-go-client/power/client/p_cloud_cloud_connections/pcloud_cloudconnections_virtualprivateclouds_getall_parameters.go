@@ -52,12 +52,10 @@ func NewPcloudCloudconnectionsVirtualprivatecloudsGetallParamsWithHTTPClient(cli
 	}
 }
 
-/*
-PcloudCloudconnectionsVirtualprivatecloudsGetallParams contains all the parameters to send to the API endpoint
+/* PcloudCloudconnectionsVirtualprivatecloudsGetallParams contains all the parameters to send to the API endpoint
+   for the pcloud cloudconnections virtualprivateclouds getall operation.
 
-	for the pcloud cloudconnections virtualprivateclouds getall operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudCloudconnectionsVirtualprivatecloudsGetallParams struct {
 

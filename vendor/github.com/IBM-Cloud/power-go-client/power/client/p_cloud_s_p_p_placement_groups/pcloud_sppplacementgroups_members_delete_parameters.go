@@ -52,12 +52,10 @@ func NewPcloudSppplacementgroupsMembersDeleteParamsWithHTTPClient(client *http.C
 	}
 }
 
-/*
-PcloudSppplacementgroupsMembersDeleteParams contains all the parameters to send to the API endpoint
+/* PcloudSppplacementgroupsMembersDeleteParams contains all the parameters to send to the API endpoint
+   for the pcloud sppplacementgroups members delete operation.
 
-	for the pcloud sppplacementgroups members delete operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudSppplacementgroupsMembersDeleteParams struct {
 

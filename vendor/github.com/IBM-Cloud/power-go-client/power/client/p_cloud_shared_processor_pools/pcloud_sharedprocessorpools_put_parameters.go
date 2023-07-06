@@ -54,12 +54,10 @@ func NewPcloudSharedprocessorpoolsPutParamsWithHTTPClient(client *http.Client) *
 	}
 }
 
-/*
-PcloudSharedprocessorpoolsPutParams contains all the parameters to send to the API endpoint
+/* PcloudSharedprocessorpoolsPutParams contains all the parameters to send to the API endpoint
+   for the pcloud sharedprocessorpools put operation.
 
-	for the pcloud sharedprocessorpools put operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudSharedprocessorpoolsPutParams struct {
 

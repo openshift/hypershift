@@ -36,8 +36,7 @@ func MustFormatValue(str string) string {
 		return str
 	}
 	hasher := fnv.New32a()
-	_, err := hasher.Write([]byte(str))
-	if err != nil {
+	if _, err := hasher.Write([]byte(str)); err != nil {
 		// At time of writing the implementation of fnv's Write function can never return an error.
 		// If this changes in a future go version this function will panic.
 		panic(err)

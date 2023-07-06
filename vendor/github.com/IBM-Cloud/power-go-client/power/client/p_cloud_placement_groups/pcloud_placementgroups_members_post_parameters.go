@@ -54,12 +54,10 @@ func NewPcloudPlacementgroupsMembersPostParamsWithHTTPClient(client *http.Client
 	}
 }
 
-/*
-PcloudPlacementgroupsMembersPostParams contains all the parameters to send to the API endpoint
+/* PcloudPlacementgroupsMembersPostParams contains all the parameters to send to the API endpoint
+   for the pcloud placementgroups members post operation.
 
-	for the pcloud placementgroups members post operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudPlacementgroupsMembersPostParams struct {
 

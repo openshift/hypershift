@@ -51,8 +51,7 @@ func NewPcloudDhcpGetallOK() *PcloudDhcpGetallOK {
 	return &PcloudDhcpGetallOK{}
 }
 
-/*
-PcloudDhcpGetallOK describes a response with status code 200, with default header values.
+/* PcloudDhcpGetallOK describes a response with status code 200, with default header values.
 
 OK
 */
@@ -60,39 +59,9 @@ type PcloudDhcpGetallOK struct {
 	Payload models.DHCPServers
 }
 
-// IsSuccess returns true when this pcloud dhcp getall o k response has a 2xx status code
-func (o *PcloudDhcpGetallOK) IsSuccess() bool {
-	return true
-}
-
-// IsRedirect returns true when this pcloud dhcp getall o k response has a 3xx status code
-func (o *PcloudDhcpGetallOK) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud dhcp getall o k response has a 4xx status code
-func (o *PcloudDhcpGetallOK) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this pcloud dhcp getall o k response has a 5xx status code
-func (o *PcloudDhcpGetallOK) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud dhcp getall o k response a status code equal to that given
-func (o *PcloudDhcpGetallOK) IsCode(code int) bool {
-	return code == 200
-}
-
 func (o *PcloudDhcpGetallOK) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/services/dhcp][%d] pcloudDhcpGetallOK  %+v", 200, o.Payload)
 }
-
-func (o *PcloudDhcpGetallOK) String() string {
-	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/services/dhcp][%d] pcloudDhcpGetallOK  %+v", 200, o.Payload)
-}
-
 func (o *PcloudDhcpGetallOK) GetPayload() models.DHCPServers {
 	return o.Payload
 }
@@ -112,8 +81,7 @@ func NewPcloudDhcpGetallForbidden() *PcloudDhcpGetallForbidden {
 	return &PcloudDhcpGetallForbidden{}
 }
 
-/*
-PcloudDhcpGetallForbidden describes a response with status code 403, with default header values.
+/* PcloudDhcpGetallForbidden describes a response with status code 403, with default header values.
 
 Forbidden
 */
@@ -121,39 +89,9 @@ type PcloudDhcpGetallForbidden struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud dhcp getall forbidden response has a 2xx status code
-func (o *PcloudDhcpGetallForbidden) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud dhcp getall forbidden response has a 3xx status code
-func (o *PcloudDhcpGetallForbidden) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud dhcp getall forbidden response has a 4xx status code
-func (o *PcloudDhcpGetallForbidden) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud dhcp getall forbidden response has a 5xx status code
-func (o *PcloudDhcpGetallForbidden) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud dhcp getall forbidden response a status code equal to that given
-func (o *PcloudDhcpGetallForbidden) IsCode(code int) bool {
-	return code == 403
-}
-
 func (o *PcloudDhcpGetallForbidden) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/services/dhcp][%d] pcloudDhcpGetallForbidden  %+v", 403, o.Payload)
 }
-
-func (o *PcloudDhcpGetallForbidden) String() string {
-	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/services/dhcp][%d] pcloudDhcpGetallForbidden  %+v", 403, o.Payload)
-}
-
 func (o *PcloudDhcpGetallForbidden) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -175,8 +113,7 @@ func NewPcloudDhcpGetallInternalServerError() *PcloudDhcpGetallInternalServerErr
 	return &PcloudDhcpGetallInternalServerError{}
 }
 
-/*
-PcloudDhcpGetallInternalServerError describes a response with status code 500, with default header values.
+/* PcloudDhcpGetallInternalServerError describes a response with status code 500, with default header values.
 
 Internal Server Error
 */
@@ -184,39 +121,9 @@ type PcloudDhcpGetallInternalServerError struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud dhcp getall internal server error response has a 2xx status code
-func (o *PcloudDhcpGetallInternalServerError) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud dhcp getall internal server error response has a 3xx status code
-func (o *PcloudDhcpGetallInternalServerError) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud dhcp getall internal server error response has a 4xx status code
-func (o *PcloudDhcpGetallInternalServerError) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this pcloud dhcp getall internal server error response has a 5xx status code
-func (o *PcloudDhcpGetallInternalServerError) IsServerError() bool {
-	return true
-}
-
-// IsCode returns true when this pcloud dhcp getall internal server error response a status code equal to that given
-func (o *PcloudDhcpGetallInternalServerError) IsCode(code int) bool {
-	return code == 500
-}
-
 func (o *PcloudDhcpGetallInternalServerError) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/services/dhcp][%d] pcloudDhcpGetallInternalServerError  %+v", 500, o.Payload)
 }
-
-func (o *PcloudDhcpGetallInternalServerError) String() string {
-	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/services/dhcp][%d] pcloudDhcpGetallInternalServerError  %+v", 500, o.Payload)
-}
-
 func (o *PcloudDhcpGetallInternalServerError) GetPayload() *models.Error {
 	return o.Payload
 }

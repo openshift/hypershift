@@ -54,12 +54,10 @@ func NewPcloudCloudinstancesImagesExportPostParamsWithHTTPClient(client *http.Cl
 	}
 }
 
-/*
-PcloudCloudinstancesImagesExportPostParams contains all the parameters to send to the API endpoint
+/* PcloudCloudinstancesImagesExportPostParams contains all the parameters to send to the API endpoint
+   for the pcloud cloudinstances images export post operation.
 
-	for the pcloud cloudinstances images export post operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudCloudinstancesImagesExportPostParams struct {
 

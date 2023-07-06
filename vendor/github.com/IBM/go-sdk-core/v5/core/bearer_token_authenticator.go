@@ -22,7 +22,8 @@ import (
 // BearerTokenAuthenticator will take a user-supplied bearer token and adds
 // it to requests via an Authorization header of the form:
 //
-//	Authorization: Bearer <bearer-token>
+// 		Authorization: Bearer <bearer-token>
+//
 type BearerTokenAuthenticator struct {
 
 	// The bearer token value to be used to authenticate request [required].
@@ -58,7 +59,8 @@ func (BearerTokenAuthenticator) AuthenticationType() string {
 //
 // The bearer token will be added to the request's headers in the form:
 //
-//	Authorization: Bearer <bearer-token>
+// 		Authorization: Bearer <bearer-token>
+//
 func (this *BearerTokenAuthenticator) Authenticate(request *http.Request) error {
 	request.Header.Set("Authorization", fmt.Sprintf(`Bearer %s`, this.BearerToken))
 	return nil

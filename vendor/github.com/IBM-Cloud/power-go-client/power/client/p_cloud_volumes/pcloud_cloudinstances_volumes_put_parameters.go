@@ -54,12 +54,10 @@ func NewPcloudCloudinstancesVolumesPutParamsWithHTTPClient(client *http.Client) 
 	}
 }
 
-/*
-PcloudCloudinstancesVolumesPutParams contains all the parameters to send to the API endpoint
+/* PcloudCloudinstancesVolumesPutParams contains all the parameters to send to the API endpoint
+   for the pcloud cloudinstances volumes put operation.
 
-	for the pcloud cloudinstances volumes put operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudCloudinstancesVolumesPutParams struct {
 

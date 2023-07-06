@@ -52,12 +52,10 @@ func NewPcloudNetworksDeleteParamsWithHTTPClient(client *http.Client) *PcloudNet
 	}
 }
 
-/*
-PcloudNetworksDeleteParams contains all the parameters to send to the API endpoint
+/* PcloudNetworksDeleteParams contains all the parameters to send to the API endpoint
+   for the pcloud networks delete operation.
 
-	for the pcloud networks delete operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudNetworksDeleteParams struct {
 

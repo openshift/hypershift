@@ -52,12 +52,10 @@ func NewPcloudPvminstancesConsolePostParamsWithHTTPClient(client *http.Client) *
 	}
 }
 
-/*
-PcloudPvminstancesConsolePostParams contains all the parameters to send to the API endpoint
+/* PcloudPvminstancesConsolePostParams contains all the parameters to send to the API endpoint
+   for the pcloud pvminstances console post operation.
 
-	for the pcloud pvminstances console post operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudPvminstancesConsolePostParams struct {
 

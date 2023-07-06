@@ -52,12 +52,10 @@ func NewInternalV1PowervsLocationsTransitgatewayGetParamsWithHTTPClient(client *
 	}
 }
 
-/*
-InternalV1PowervsLocationsTransitgatewayGetParams contains all the parameters to send to the API endpoint
+/* InternalV1PowervsLocationsTransitgatewayGetParams contains all the parameters to send to the API endpoint
+   for the internal v1 powervs locations transitgateway get operation.
 
-	for the internal v1 powervs locations transitgateway get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type InternalV1PowervsLocationsTransitgatewayGetParams struct {
 	timeout    time.Duration

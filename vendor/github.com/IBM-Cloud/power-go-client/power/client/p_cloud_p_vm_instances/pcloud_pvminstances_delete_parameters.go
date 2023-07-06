@@ -53,12 +53,10 @@ func NewPcloudPvminstancesDeleteParamsWithHTTPClient(client *http.Client) *Pclou
 	}
 }
 
-/*
-PcloudPvminstancesDeleteParams contains all the parameters to send to the API endpoint
+/* PcloudPvminstancesDeleteParams contains all the parameters to send to the API endpoint
+   for the pcloud pvminstances delete operation.
 
-	for the pcloud pvminstances delete operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudPvminstancesDeleteParams struct {
 

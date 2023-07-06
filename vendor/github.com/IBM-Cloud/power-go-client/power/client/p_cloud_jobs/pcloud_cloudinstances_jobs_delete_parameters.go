@@ -52,12 +52,10 @@ func NewPcloudCloudinstancesJobsDeleteParamsWithHTTPClient(client *http.Client) 
 	}
 }
 
-/*
-PcloudCloudinstancesJobsDeleteParams contains all the parameters to send to the API endpoint
+/* PcloudCloudinstancesJobsDeleteParams contains all the parameters to send to the API endpoint
+   for the pcloud cloudinstances jobs delete operation.
 
-	for the pcloud cloudinstances jobs delete operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudCloudinstancesJobsDeleteParams struct {
 

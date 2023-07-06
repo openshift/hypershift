@@ -52,12 +52,10 @@ func NewPcloudTenantsGetParamsWithHTTPClient(client *http.Client) *PcloudTenants
 	}
 }
 
-/*
-PcloudTenantsGetParams contains all the parameters to send to the API endpoint
+/* PcloudTenantsGetParams contains all the parameters to send to the API endpoint
+   for the pcloud tenants get operation.
 
-	for the pcloud tenants get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudTenantsGetParams struct {
 

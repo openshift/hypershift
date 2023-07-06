@@ -30,32 +30,28 @@ func SingularizeWithSize(s string, i int) string {
 //	data = datum
 //	people = person
 func (i Ident) Singularize() Ident {
-	s := i.LastPart()
+	s := i.Original
 	if len(s) == 0 {
 		return i
 	}
 
 	singularMoot.RLock()
 	defer singularMoot.RUnlock()
-
 	ls := strings.ToLower(s)
 	if p, ok := pluralToSingle[ls]; ok {
-		if s == Capitalize(s) {
-			p = Capitalize(p)
-		}
-		return i.ReplaceSuffix(s, p)
+		return New(p)
 	}
 	if _, ok := singleToPlural[ls]; ok {
 		return i
 	}
 	for _, r := range singularRules {
 		if strings.HasSuffix(ls, r.suffix) {
-			return i.ReplaceSuffix(s, r.fn(s))
+			return New(r.fn(s))
 		}
 	}
 
 	if strings.HasSuffix(s, "s") {
-		return i.ReplaceSuffix("s", "")
+		return New(s[:len(s)-1])
 	}
 	return i
 }

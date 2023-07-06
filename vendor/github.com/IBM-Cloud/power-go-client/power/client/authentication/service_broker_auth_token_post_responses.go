@@ -63,8 +63,7 @@ func NewServiceBrokerAuthTokenPostOK() *ServiceBrokerAuthTokenPostOK {
 	return &ServiceBrokerAuthTokenPostOK{}
 }
 
-/*
-ServiceBrokerAuthTokenPostOK describes a response with status code 200, with default header values.
+/* ServiceBrokerAuthTokenPostOK describes a response with status code 200, with default header values.
 
 OK
 */
@@ -72,39 +71,9 @@ type ServiceBrokerAuthTokenPostOK struct {
 	Payload *models.Token
 }
 
-// IsSuccess returns true when this service broker auth token post o k response has a 2xx status code
-func (o *ServiceBrokerAuthTokenPostOK) IsSuccess() bool {
-	return true
-}
-
-// IsRedirect returns true when this service broker auth token post o k response has a 3xx status code
-func (o *ServiceBrokerAuthTokenPostOK) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this service broker auth token post o k response has a 4xx status code
-func (o *ServiceBrokerAuthTokenPostOK) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this service broker auth token post o k response has a 5xx status code
-func (o *ServiceBrokerAuthTokenPostOK) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this service broker auth token post o k response a status code equal to that given
-func (o *ServiceBrokerAuthTokenPostOK) IsCode(code int) bool {
-	return code == 200
-}
-
 func (o *ServiceBrokerAuthTokenPostOK) Error() string {
 	return fmt.Sprintf("[POST /auth/v1/token][%d] serviceBrokerAuthTokenPostOK  %+v", 200, o.Payload)
 }
-
-func (o *ServiceBrokerAuthTokenPostOK) String() string {
-	return fmt.Sprintf("[POST /auth/v1/token][%d] serviceBrokerAuthTokenPostOK  %+v", 200, o.Payload)
-}
-
 func (o *ServiceBrokerAuthTokenPostOK) GetPayload() *models.Token {
 	return o.Payload
 }
@@ -126,8 +95,7 @@ func NewServiceBrokerAuthTokenPostBadRequest() *ServiceBrokerAuthTokenPostBadReq
 	return &ServiceBrokerAuthTokenPostBadRequest{}
 }
 
-/*
-ServiceBrokerAuthTokenPostBadRequest describes a response with status code 400, with default header values.
+/* ServiceBrokerAuthTokenPostBadRequest describes a response with status code 400, with default header values.
 
 Authorization pending
 */
@@ -135,39 +103,9 @@ type ServiceBrokerAuthTokenPostBadRequest struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this service broker auth token post bad request response has a 2xx status code
-func (o *ServiceBrokerAuthTokenPostBadRequest) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this service broker auth token post bad request response has a 3xx status code
-func (o *ServiceBrokerAuthTokenPostBadRequest) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this service broker auth token post bad request response has a 4xx status code
-func (o *ServiceBrokerAuthTokenPostBadRequest) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this service broker auth token post bad request response has a 5xx status code
-func (o *ServiceBrokerAuthTokenPostBadRequest) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this service broker auth token post bad request response a status code equal to that given
-func (o *ServiceBrokerAuthTokenPostBadRequest) IsCode(code int) bool {
-	return code == 400
-}
-
 func (o *ServiceBrokerAuthTokenPostBadRequest) Error() string {
 	return fmt.Sprintf("[POST /auth/v1/token][%d] serviceBrokerAuthTokenPostBadRequest  %+v", 400, o.Payload)
 }
-
-func (o *ServiceBrokerAuthTokenPostBadRequest) String() string {
-	return fmt.Sprintf("[POST /auth/v1/token][%d] serviceBrokerAuthTokenPostBadRequest  %+v", 400, o.Payload)
-}
-
 func (o *ServiceBrokerAuthTokenPostBadRequest) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -189,8 +127,7 @@ func NewServiceBrokerAuthTokenPostForbidden() *ServiceBrokerAuthTokenPostForbidd
 	return &ServiceBrokerAuthTokenPostForbidden{}
 }
 
-/*
-ServiceBrokerAuthTokenPostForbidden describes a response with status code 403, with default header values.
+/* ServiceBrokerAuthTokenPostForbidden describes a response with status code 403, with default header values.
 
 User refused grant
 */
@@ -198,39 +135,9 @@ type ServiceBrokerAuthTokenPostForbidden struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this service broker auth token post forbidden response has a 2xx status code
-func (o *ServiceBrokerAuthTokenPostForbidden) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this service broker auth token post forbidden response has a 3xx status code
-func (o *ServiceBrokerAuthTokenPostForbidden) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this service broker auth token post forbidden response has a 4xx status code
-func (o *ServiceBrokerAuthTokenPostForbidden) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this service broker auth token post forbidden response has a 5xx status code
-func (o *ServiceBrokerAuthTokenPostForbidden) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this service broker auth token post forbidden response a status code equal to that given
-func (o *ServiceBrokerAuthTokenPostForbidden) IsCode(code int) bool {
-	return code == 403
-}
-
 func (o *ServiceBrokerAuthTokenPostForbidden) Error() string {
 	return fmt.Sprintf("[POST /auth/v1/token][%d] serviceBrokerAuthTokenPostForbidden  %+v", 403, o.Payload)
 }
-
-func (o *ServiceBrokerAuthTokenPostForbidden) String() string {
-	return fmt.Sprintf("[POST /auth/v1/token][%d] serviceBrokerAuthTokenPostForbidden  %+v", 403, o.Payload)
-}
-
 func (o *ServiceBrokerAuthTokenPostForbidden) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -252,8 +159,7 @@ func NewServiceBrokerAuthTokenPostTooManyRequests() *ServiceBrokerAuthTokenPostT
 	return &ServiceBrokerAuthTokenPostTooManyRequests{}
 }
 
-/*
-ServiceBrokerAuthTokenPostTooManyRequests describes a response with status code 429, with default header values.
+/* ServiceBrokerAuthTokenPostTooManyRequests describes a response with status code 429, with default header values.
 
 Polling too frequently
 */
@@ -261,39 +167,9 @@ type ServiceBrokerAuthTokenPostTooManyRequests struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this service broker auth token post too many requests response has a 2xx status code
-func (o *ServiceBrokerAuthTokenPostTooManyRequests) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this service broker auth token post too many requests response has a 3xx status code
-func (o *ServiceBrokerAuthTokenPostTooManyRequests) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this service broker auth token post too many requests response has a 4xx status code
-func (o *ServiceBrokerAuthTokenPostTooManyRequests) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this service broker auth token post too many requests response has a 5xx status code
-func (o *ServiceBrokerAuthTokenPostTooManyRequests) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this service broker auth token post too many requests response a status code equal to that given
-func (o *ServiceBrokerAuthTokenPostTooManyRequests) IsCode(code int) bool {
-	return code == 429
-}
-
 func (o *ServiceBrokerAuthTokenPostTooManyRequests) Error() string {
 	return fmt.Sprintf("[POST /auth/v1/token][%d] serviceBrokerAuthTokenPostTooManyRequests  %+v", 429, o.Payload)
 }
-
-func (o *ServiceBrokerAuthTokenPostTooManyRequests) String() string {
-	return fmt.Sprintf("[POST /auth/v1/token][%d] serviceBrokerAuthTokenPostTooManyRequests  %+v", 429, o.Payload)
-}
-
 func (o *ServiceBrokerAuthTokenPostTooManyRequests) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -315,8 +191,7 @@ func NewServiceBrokerAuthTokenPostInternalServerError() *ServiceBrokerAuthTokenP
 	return &ServiceBrokerAuthTokenPostInternalServerError{}
 }
 
-/*
-ServiceBrokerAuthTokenPostInternalServerError describes a response with status code 500, with default header values.
+/* ServiceBrokerAuthTokenPostInternalServerError describes a response with status code 500, with default header values.
 
 Internal Server Error
 */
@@ -324,39 +199,9 @@ type ServiceBrokerAuthTokenPostInternalServerError struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this service broker auth token post internal server error response has a 2xx status code
-func (o *ServiceBrokerAuthTokenPostInternalServerError) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this service broker auth token post internal server error response has a 3xx status code
-func (o *ServiceBrokerAuthTokenPostInternalServerError) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this service broker auth token post internal server error response has a 4xx status code
-func (o *ServiceBrokerAuthTokenPostInternalServerError) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this service broker auth token post internal server error response has a 5xx status code
-func (o *ServiceBrokerAuthTokenPostInternalServerError) IsServerError() bool {
-	return true
-}
-
-// IsCode returns true when this service broker auth token post internal server error response a status code equal to that given
-func (o *ServiceBrokerAuthTokenPostInternalServerError) IsCode(code int) bool {
-	return code == 500
-}
-
 func (o *ServiceBrokerAuthTokenPostInternalServerError) Error() string {
 	return fmt.Sprintf("[POST /auth/v1/token][%d] serviceBrokerAuthTokenPostInternalServerError  %+v", 500, o.Payload)
 }
-
-func (o *ServiceBrokerAuthTokenPostInternalServerError) String() string {
-	return fmt.Sprintf("[POST /auth/v1/token][%d] serviceBrokerAuthTokenPostInternalServerError  %+v", 500, o.Payload)
-}
-
 func (o *ServiceBrokerAuthTokenPostInternalServerError) GetPayload() *models.Error {
 	return o.Payload
 }

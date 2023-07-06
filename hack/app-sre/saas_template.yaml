@@ -1149,7 +1149,6 @@ objects:
                             over MaxUnhealthy. Eg. "[3-5]" - This means that remediation
                             will be allowed only when: (a) there are at least 3 unhealthy
                             machines (and) (b) there are at most 5 unhealthy machines'
-                          pattern: ^\[[0-9]+-[0-9]+\]$
                           type: string
                       type: object
                     machineInfrastructure:
@@ -1227,28 +1226,6 @@ objects:
                             More info: http://kubernetes.io/docs/user-guide/labels'
                           type: object
                       type: object
-                    nodeDeletionTimeout:
-                      description: 'NodeDeletionTimeout defines how long the controller
-                        will attempt to delete the Node that the Machine hosts after
-                        the Machine is marked for deletion. A duration of 0 will retry
-                        deletion indefinitely. Defaults to 10 seconds. NOTE: This
-                        value can be overridden while defining a Cluster.Topology.'
-                      type: string
-                    nodeDrainTimeout:
-                      description: 'NodeDrainTimeout is the total amount of time that
-                        the controller will spend on draining a node. The default
-                        value is 0, meaning that the node can be drained without any
-                        time limitations. NOTE: NodeDrainTimeout is different from
-                        `kubectl drain --timeout` NOTE: This value can be overridden
-                        while defining a Cluster.Topology.'
-                      type: string
-                    nodeVolumeDetachTimeout:
-                      description: 'NodeVolumeDetachTimeout is the total amount of
-                        time that the controller will spend on waiting for all volumes
-                        to be detached. The default value is 0, meaning that the volumes
-                        can be detached without any time limitations. NOTE: This value
-                        can be overridden while defining a Cluster.Topology.'
-                      type: string
                     ref:
                       description: Ref is a required reference to a custom resource
                         offered by a provider.
@@ -1637,13 +1614,6 @@ objects:
                                   array must be unique. NOTE: Can only be set if type
                                   is array.'
                                 type: boolean
-                              x-kubernetes-preserve-unknown-fields:
-                                description: XPreserveUnknownFields allows setting
-                                  fields in a variable object which are not defined
-                                  in the variable schema. This affects fields recursively,
-                                  except if nested properties or additionalProperties
-                                  are specified in the schema.
-                                type: boolean
                             required:
                             - type
                             type: object
@@ -1674,13 +1644,6 @@ objects:
                               in the cluster, this name MUST be unique within a ClusterClass
                               and can be referenced in the Cluster to create a managed
                               MachineDeployment.
-                            type: string
-                          failureDomain:
-                            description: 'FailureDomain is the failure domain the
-                              machines will be created in. Must match a key in the
-                              FailureDomains map stored on the cluster object. NOTE:
-                              This value can be overridden while defining a Cluster.Topology
-                              using this MachineDeploymentClass.'
                             type: string
                           machineHealthCheck:
                             description: MachineHealthCheck defines a MachineHealthCheck
@@ -1786,109 +1749,6 @@ objects:
                                   - This means that remediation will be allowed only
                                   when: (a) there are at least 3 unhealthy machines
                                   (and) (b) there are at most 5 unhealthy machines'
-                                pattern: ^\[[0-9]+-[0-9]+\]$
-                                type: string
-                            type: object
-                          minReadySeconds:
-                            description: 'Minimum number of seconds for which a newly
-                              created machine should be ready. Defaults to 0 (machine
-                              will be considered available as soon as it is ready)
-                              NOTE: This value can be overridden while defining a
-                              Cluster.Topology using this MachineDeploymentClass.'
-                            format: int32
-                            type: integer
-                          nodeDeletionTimeout:
-                            description: 'NodeDeletionTimeout defines how long the
-                              controller will attempt to delete the Node that the
-                              Machine hosts after the Machine is marked for deletion.
-                              A duration of 0 will retry deletion indefinitely. Defaults
-                              to 10 seconds. NOTE: This value can be overridden while
-                              defining a Cluster.Topology using this MachineDeploymentClass.'
-                            type: string
-                          nodeDrainTimeout:
-                            description: 'NodeDrainTimeout is the total amount of
-                              time that the controller will spend on draining a node.
-                              The default value is 0, meaning that the node can be
-                              drained without any time limitations. NOTE: NodeDrainTimeout
-                              is different from `kubectl drain --timeout` NOTE: This
-                              value can be overridden while defining a Cluster.Topology
-                              using this MachineDeploymentClass.'
-                            type: string
-                          nodeVolumeDetachTimeout:
-                            description: 'NodeVolumeDetachTimeout is the total amount
-                              of time that the controller will spend on waiting for
-                              all volumes to be detached. The default value is 0,
-                              meaning that the volumes can be detached without any
-                              time limitations. NOTE: This value can be overridden
-                              while defining a Cluster.Topology using this MachineDeploymentClass.'
-                            type: string
-                          strategy:
-                            description: 'The deployment strategy to use to replace
-                              existing machines with new ones. NOTE: This value can
-                              be overridden while defining a Cluster.Topology using
-                              this MachineDeploymentClass.'
-                            properties:
-                              rollingUpdate:
-                                description: Rolling update config params. Present
-                                  only if MachineDeploymentStrategyType = RollingUpdate.
-                                properties:
-                                  deletePolicy:
-                                    description: DeletePolicy defines the policy used
-                                      by the MachineDeployment to identify nodes to
-                                      delete when downscaling. Valid values are "Random,
-                                      "Newest", "Oldest" When no value is supplied,
-                                      the default DeletePolicy of MachineSet is used
-                                    enum:
-                                    - Random
-                                    - Newest
-                                    - Oldest
-                                    type: string
-                                  maxSurge:
-                                    anyOf:
-                                    - type: integer
-                                    - type: string
-                                    description: 'The maximum number of machines that
-                                      can be scheduled above the desired number of
-                                      machines. Value can be an absolute number (ex:
-                                      5) or a percentage of desired machines (ex:
-                                      10%). This can not be 0 if MaxUnavailable is
-                                      0. Absolute number is calculated from percentage
-                                      by rounding up. Defaults to 1. Example: when
-                                      this is set to 30%, the new MachineSet can be
-                                      scaled up immediately when the rolling update
-                                      starts, such that the total number of old and
-                                      new machines do not exceed 130% of desired machines.
-                                      Once old machines have been killed, new MachineSet
-                                      can be scaled up further, ensuring that total
-                                      number of machines running at any time during
-                                      the update is at most 130% of desired machines.'
-                                    x-kubernetes-int-or-string: true
-                                  maxUnavailable:
-                                    anyOf:
-                                    - type: integer
-                                    - type: string
-                                    description: 'The maximum number of machines that
-                                      can be unavailable during the update. Value
-                                      can be an absolute number (ex: 5) or a percentage
-                                      of desired machines (ex: 10%). Absolute number
-                                      is calculated from percentage by rounding down.
-                                      This can not be 0 if MaxSurge is 0. Defaults
-                                      to 0. Example: when this is set to 30%, the
-                                      old MachineSet can be scaled down to 70% of
-                                      desired machines immediately when the rolling
-                                      update starts. Once new machines are ready,
-                                      old MachineSet can be scaled down further, followed
-                                      by scaling up the new MachineSet, ensuring that
-                                      the total number of machines available at all
-                                      times during the update is at least 70% of desired
-                                      machines.'
-                                    x-kubernetes-int-or-string: true
-                                type: object
-                              type:
-                                description: Type of deployment. Default is RollingUpdate.
-                                enum:
-                                - RollingUpdate
-                                - OnDelete
                                 type: string
                             type: object
                           template:
@@ -2043,61 +1903,10 @@ objects:
                       type: array
                   type: object
               type: object
-            status:
-              description: ClusterClassStatus defines the observed state of the ClusterClass.
-              properties:
-                conditions:
-                  description: Conditions defines current observed state of the ClusterClass.
-                  items:
-                    description: Condition defines an observation of a Cluster API
-                      resource operational state.
-                    properties:
-                      lastTransitionTime:
-                        description: Last time the condition transitioned from one
-                          status to another. This should be when the underlying condition
-                          changed. If that is not known, then using the time when
-                          the API field changed is acceptable.
-                        format: date-time
-                        type: string
-                      message:
-                        description: A human readable message indicating details about
-                          the transition. This field may be empty.
-                        type: string
-                      reason:
-                        description: The reason for the condition's last transition
-                          in CamelCase. The specific API may choose whether or not
-                          this field is considered a guaranteed API. This field may
-                          not be empty.
-                        type: string
-                      severity:
-                        description: Severity provides an explicit classification
-                          of Reason code, so the users or machines can immediately
-                          understand the current situation and act accordingly. The
-                          Severity field MUST be set only when Status=False.
-                        type: string
-                      status:
-                        description: Status of the condition, one of True, False,
-                          Unknown.
-                        type: string
-                      type:
-                        description: Type of condition in CamelCase or in foo.example.com/CamelCase.
-                          Many .condition.type values are consistent across resources
-                          like Available, but because arbitrary conditions can be
-                          useful (see .node.status.conditions), the ability to deconflict
-                          is important.
-                        type: string
-                    required:
-                    - lastTransitionTime
-                    - status
-                    - type
-                    type: object
-                  type: array
-              type: object
           type: object
       served: true
       storage: true
-      subresources:
-        status: {}
+      subresources: {}
   status:
     acceptedNames:
       kind: ""
@@ -2302,121 +2111,6 @@ objects:
                     controlPlane:
                       description: ControlPlane describes the cluster control plane.
                       properties:
-                        machineHealthCheck:
-                          description: MachineHealthCheck allows to enable, disable
-                            and override the MachineHealthCheck configuration in the
-                            ClusterClass for this control plane.
-                          properties:
-                            enable:
-                              description: "Enable controls if a MachineHealthCheck
-                                should be created for the target machines. \n If false:
-                                No MachineHealthCheck will be created. \n If not set(default):
-                                A MachineHealthCheck will be created if it is defined
-                                here or in the associated ClusterClass. If no MachineHealthCheck
-                                is defined then none will be created. \n If true:
-                                A MachineHealthCheck is guaranteed to be created.
-                                Cluster validation will block if `enable` is true
-                                and no MachineHealthCheck definition is available."
-                              type: boolean
-                            maxUnhealthy:
-                              anyOf:
-                              - type: integer
-                              - type: string
-                              description: Any further remediation is only allowed
-                                if at most "MaxUnhealthy" machines selected by "selector"
-                                are not healthy.
-                              x-kubernetes-int-or-string: true
-                            nodeStartupTimeout:
-                              description: Machines older than this duration without
-                                a node will be considered to have failed and will
-                                be remediated. If you wish to disable this feature,
-                                set the value explicitly to 0.
-                              type: string
-                            remediationTemplate:
-                              description: "RemediationTemplate is a reference to
-                                a remediation template provided by an infrastructure
-                                provider. \n This field is completely optional, when
-                                filled, the MachineHealthCheck controller creates
-                                a new object from the template referenced and hands
-                                off remediation of the machine to a controller that
-                                lives outside of Cluster API."
-                              properties:
-                                apiVersion:
-                                  description: API version of the referent.
-                                  type: string
-                                fieldPath:
-                                  description: 'If referring to a piece of an object
-                                    instead of an entire object, this string should
-                                    contain a valid JSON/Go field access statement,
-                                    such as desiredState.manifest.containers[2]. For
-                                    example, if the object reference is to a container
-                                    within a pod, this would take on a value like:
-                                    "spec.containers{name}" (where "name" refers to
-                                    the name of the container that triggered the event)
-                                    or if no container name is specified "spec.containers[2]"
-                                    (container with index 2 in this pod). This syntax
-                                    is chosen only to have some well-defined way of
-                                    referencing a part of an object. TODO: this design
-                                    is not final and this field is subject to change
-                                    in the future.'
-                                  type: string
-                                kind:
-                                  description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-                                  type: string
-                                name:
-                                  description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
-                                  type: string
-                                namespace:
-                                  description: 'Namespace of the referent. More info:
-                                    https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
-                                  type: string
-                                resourceVersion:
-                                  description: 'Specific resourceVersion to which
-                                    this reference is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
-                                  type: string
-                                uid:
-                                  description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
-                                  type: string
-                              type: object
-                              x-kubernetes-map-type: atomic
-                            unhealthyConditions:
-                              description: UnhealthyConditions contains a list of
-                                the conditions that determine whether a node is considered
-                                unhealthy. The conditions are combined in a logical
-                                OR, i.e. if any of the conditions is met, the node
-                                is unhealthy.
-                              items:
-                                description: UnhealthyCondition represents a Node
-                                  condition type and value with a timeout specified
-                                  as a duration.  When the named condition has been
-                                  in the given status for at least the timeout value,
-                                  a node is considered unhealthy.
-                                properties:
-                                  status:
-                                    minLength: 1
-                                    type: string
-                                  timeout:
-                                    type: string
-                                  type:
-                                    minLength: 1
-                                    type: string
-                                required:
-                                - status
-                                - timeout
-                                - type
-                                type: object
-                              type: array
-                            unhealthyRange:
-                              description: 'Any further remediation is only allowed
-                                if the number of machines selected by "selector" as
-                                not healthy is within the range of "UnhealthyRange".
-                                Takes precedence over MaxUnhealthy. Eg. "[3-5]" -
-                                This means that remediation will be allowed only when:
-                                (a) there are at least 3 unhealthy machines (and)
-                                (b) there are at most 5 unhealthy machines'
-                              pattern: ^\[[0-9]+-[0-9]+\]$
-                              type: string
-                          type: object
                         metadata:
                           description: "Metadata is the metadata applied to the machines
                             of the ControlPlane. At runtime this metadata is merged
@@ -2443,24 +2137,12 @@ objects:
                                 and services. More info: http://kubernetes.io/docs/user-guide/labels'
                               type: object
                           type: object
-                        nodeDeletionTimeout:
-                          description: NodeDeletionTimeout defines how long the controller
-                            will attempt to delete the Node that the Machine hosts
-                            after the Machine is marked for deletion. A duration of
-                            0 will retry deletion indefinitely. Defaults to 10 seconds.
-                          type: string
                         nodeDrainTimeout:
                           description: 'NodeDrainTimeout is the total amount of time
                             that the controller will spend on draining a node. The
                             default value is 0, meaning that the node can be drained
                             without any time limitations. NOTE: NodeDrainTimeout is
                             different from `kubectl drain --timeout`'
-                          type: string
-                        nodeVolumeDetachTimeout:
-                          description: NodeVolumeDetachTimeout is the total amount
-                            of time that the controller will spend on waiting for
-                            all volumes to be detached. The default value is 0, meaning
-                            that the volumes can be detached without any time limitations.
                           type: string
                         replicas:
                           description: Replicas is the number of control plane nodes.
@@ -2534,129 +2216,6 @@ objects:
                                   machines will be created in. Must match a key in
                                   the FailureDomains map stored on the cluster object.
                                 type: string
-                              machineHealthCheck:
-                                description: MachineHealthCheck allows to enable,
-                                  disable and override the MachineHealthCheck configuration
-                                  in the ClusterClass for this MachineDeployment.
-                                properties:
-                                  enable:
-                                    description: "Enable controls if a MachineHealthCheck
-                                      should be created for the target machines. \n
-                                      If false: No MachineHealthCheck will be created.
-                                      \n If not set(default): A MachineHealthCheck
-                                      will be created if it is defined here or in
-                                      the associated ClusterClass. If no MachineHealthCheck
-                                      is defined then none will be created. \n If
-                                      true: A MachineHealthCheck is guaranteed to
-                                      be created. Cluster validation will block if
-                                      `enable` is true and no MachineHealthCheck definition
-                                      is available."
-                                    type: boolean
-                                  maxUnhealthy:
-                                    anyOf:
-                                    - type: integer
-                                    - type: string
-                                    description: Any further remediation is only allowed
-                                      if at most "MaxUnhealthy" machines selected
-                                      by "selector" are not healthy.
-                                    x-kubernetes-int-or-string: true
-                                  nodeStartupTimeout:
-                                    description: Machines older than this duration
-                                      without a node will be considered to have failed
-                                      and will be remediated. If you wish to disable
-                                      this feature, set the value explicitly to 0.
-                                    type: string
-                                  remediationTemplate:
-                                    description: "RemediationTemplate is a reference
-                                      to a remediation template provided by an infrastructure
-                                      provider. \n This field is completely optional,
-                                      when filled, the MachineHealthCheck controller
-                                      creates a new object from the template referenced
-                                      and hands off remediation of the machine to
-                                      a controller that lives outside of Cluster API."
-                                    properties:
-                                      apiVersion:
-                                        description: API version of the referent.
-                                        type: string
-                                      fieldPath:
-                                        description: 'If referring to a piece of an
-                                          object instead of an entire object, this
-                                          string should contain a valid JSON/Go field
-                                          access statement, such as desiredState.manifest.containers[2].
-                                          For example, if the object reference is
-                                          to a container within a pod, this would
-                                          take on a value like: "spec.containers{name}"
-                                          (where "name" refers to the name of the
-                                          container that triggered the event) or if
-                                          no container name is specified "spec.containers[2]"
-                                          (container with index 2 in this pod). This
-                                          syntax is chosen only to have some well-defined
-                                          way of referencing a part of an object.
-                                          TODO: this design is not final and this
-                                          field is subject to change in the future.'
-                                        type: string
-                                      kind:
-                                        description: 'Kind of the referent. More info:
-                                          https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-                                        type: string
-                                      name:
-                                        description: 'Name of the referent. More info:
-                                          https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
-                                        type: string
-                                      namespace:
-                                        description: 'Namespace of the referent. More
-                                          info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
-                                        type: string
-                                      resourceVersion:
-                                        description: 'Specific resourceVersion to
-                                          which this reference is made, if any. More
-                                          info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
-                                        type: string
-                                      uid:
-                                        description: 'UID of the referent. More info:
-                                          https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
-                                        type: string
-                                    type: object
-                                    x-kubernetes-map-type: atomic
-                                  unhealthyConditions:
-                                    description: UnhealthyConditions contains a list
-                                      of the conditions that determine whether a node
-                                      is considered unhealthy. The conditions are
-                                      combined in a logical OR, i.e. if any of the
-                                      conditions is met, the node is unhealthy.
-                                    items:
-                                      description: UnhealthyCondition represents a
-                                        Node condition type and value with a timeout
-                                        specified as a duration.  When the named condition
-                                        has been in the given status for at least
-                                        the timeout value, a node is considered unhealthy.
-                                      properties:
-                                        status:
-                                          minLength: 1
-                                          type: string
-                                        timeout:
-                                          type: string
-                                        type:
-                                          minLength: 1
-                                          type: string
-                                      required:
-                                      - status
-                                      - timeout
-                                      - type
-                                      type: object
-                                    type: array
-                                  unhealthyRange:
-                                    description: 'Any further remediation is only
-                                      allowed if the number of machines selected by
-                                      "selector" as not healthy is within the range
-                                      of "UnhealthyRange". Takes precedence over MaxUnhealthy.
-                                      Eg. "[3-5]" - This means that remediation will
-                                      be allowed only when: (a) there are at least
-                                      3 unhealthy machines (and) (b) there are at
-                                      most 5 unhealthy machines'
-                                    pattern: ^\[[0-9]+-[0-9]+\]$
-                                    type: string
-                                type: object
                               metadata:
                                 description: Metadata is the metadata applied to the
                                   machines of the MachineDeployment. At runtime this
@@ -2683,13 +2242,6 @@ objects:
                                       http://kubernetes.io/docs/user-guide/labels'
                                     type: object
                                 type: object
-                              minReadySeconds:
-                                description: Minimum number of seconds for which a
-                                  newly created machine should be ready. Defaults
-                                  to 0 (machine will be considered available as soon
-                                  as it is ready)
-                                format: int32
-                                type: integer
                               name:
                                 description: Name is the unique identifier for this
                                   MachineDeploymentTopology. The value is used with
@@ -2698,13 +2250,6 @@ objects:
                                   is greater than the allowed maximum length, the
                                   values are hashed together.
                                 type: string
-                              nodeDeletionTimeout:
-                                description: NodeDeletionTimeout defines how long
-                                  the controller will attempt to delete the Node that
-                                  the Machine hosts after the Machine is marked for
-                                  deletion. A duration of 0 will retry deletion indefinitely.
-                                  Defaults to 10 seconds.
-                                type: string
                               nodeDrainTimeout:
                                 description: 'NodeDrainTimeout is the total amount
                                   of time that the controller will spend on draining
@@ -2712,13 +2257,6 @@ objects:
                                   node can be drained without any time limitations.
                                   NOTE: NodeDrainTimeout is different from `kubectl
                                   drain --timeout`'
-                                type: string
-                              nodeVolumeDetachTimeout:
-                                description: NodeVolumeDetachTimeout is the total
-                                  amount of time that the controller will spend on
-                                  waiting for all volumes to be detached. The default
-                                  value is 0, meaning that the volumes can be detached
-                                  without any time limitations.
                                 type: string
                               replicas:
                                 description: Replicas is the number of worker nodes
@@ -2729,77 +2267,6 @@ objects:
                                   is responsible for the management of this value.
                                 format: int32
                                 type: integer
-                              strategy:
-                                description: The deployment strategy to use to replace
-                                  existing machines with new ones.
-                                properties:
-                                  rollingUpdate:
-                                    description: Rolling update config params. Present
-                                      only if MachineDeploymentStrategyType = RollingUpdate.
-                                    properties:
-                                      deletePolicy:
-                                        description: DeletePolicy defines the policy
-                                          used by the MachineDeployment to identify
-                                          nodes to delete when downscaling. Valid
-                                          values are "Random, "Newest", "Oldest" When
-                                          no value is supplied, the default DeletePolicy
-                                          of MachineSet is used
-                                        enum:
-                                        - Random
-                                        - Newest
-                                        - Oldest
-                                        type: string
-                                      maxSurge:
-                                        anyOf:
-                                        - type: integer
-                                        - type: string
-                                        description: 'The maximum number of machines
-                                          that can be scheduled above the desired
-                                          number of machines. Value can be an absolute
-                                          number (ex: 5) or a percentage of desired
-                                          machines (ex: 10%). This can not be 0 if
-                                          MaxUnavailable is 0. Absolute number is
-                                          calculated from percentage by rounding up.
-                                          Defaults to 1. Example: when this is set
-                                          to 30%, the new MachineSet can be scaled
-                                          up immediately when the rolling update starts,
-                                          such that the total number of old and new
-                                          machines do not exceed 130% of desired machines.
-                                          Once old machines have been killed, new
-                                          MachineSet can be scaled up further, ensuring
-                                          that total number of machines running at
-                                          any time during the update is at most 130%
-                                          of desired machines.'
-                                        x-kubernetes-int-or-string: true
-                                      maxUnavailable:
-                                        anyOf:
-                                        - type: integer
-                                        - type: string
-                                        description: 'The maximum number of machines
-                                          that can be unavailable during the update.
-                                          Value can be an absolute number (ex: 5)
-                                          or a percentage of desired machines (ex:
-                                          10%). Absolute number is calculated from
-                                          percentage by rounding down. This can not
-                                          be 0 if MaxSurge is 0. Defaults to 0. Example:
-                                          when this is set to 30%, the old MachineSet
-                                          can be scaled down to 70% of desired machines
-                                          immediately when the rolling update starts.
-                                          Once new machines are ready, old MachineSet
-                                          can be scaled down further, followed by
-                                          scaling up the new MachineSet, ensuring
-                                          that the total number of machines available
-                                          at all times during the update is at least
-                                          70% of desired machines.'
-                                        x-kubernetes-int-or-string: true
-                                    type: object
-                                  type:
-                                    description: Type of deployment. Default is RollingUpdate.
-                                    enum:
-                                    - RollingUpdate
-                                    - OnDelete
-                                    type: string
-                                type: object
                               variables:
                                 description: Variables can be used to customize the
                                   MachineDeployment through patches.
@@ -3323,12 +2790,6 @@ objects:
                             default value is 0, meaning that the node can be drained
                             without any time limitations. NOTE: NodeDrainTimeout is
                             different from `kubectl drain --timeout`'
-                          type: string
-                        nodeVolumeDetachTimeout:
-                          description: NodeVolumeDetachTimeout is the total amount
-                            of time that the controller will spend on waiting for
-                            all volumes to be detached. The default value is 0, meaning
-                            that the volumes can be detached without any time limitations.
                           type: string
                         providerID:
                           description: ProviderID is the identification ID of the
@@ -4017,12 +3478,6 @@ objects:
                             without any time limitations. NOTE: NodeDrainTimeout is
                             different from `kubectl drain --timeout`'
                           type: string
-                        nodeVolumeDetachTimeout:
-                          description: NodeVolumeDetachTimeout is the total amount
-                            of time that the controller will spend on waiting for
-                            all volumes to be detached. The default value is 0, meaning
-                            that the volumes can be detached without any time limitations.
-                          type: string
                         providerID:
                           description: ProviderID is the identification ID of the
                             machine provided by the provider. This field must match
@@ -4413,12 +3868,6 @@ objects:
                     is 0, meaning that the node can be drained without any time limitations.
                     NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`'
                   type: string
-                nodeVolumeDetachTimeout:
-                  description: NodeVolumeDetachTimeout is the total amount of time
-                    that the controller will spend on waiting for all volumes to be
-                    detached. The default value is 0, meaning that the volumes can
-                    be detached without any time limitations.
-                  type: string
                 providerID:
                   description: ProviderID is the identification ID of the machine
                     provided by the provider. This field must match the provider ID
@@ -4470,11 +3919,6 @@ objects:
                 bootstrapReady:
                   description: BootstrapReady is the state of the bootstrap provider.
                   type: boolean
-                certificatesExpiryDate:
-                  description: CertificatesExpiryDate is the expiry date of the machine
-                    certificates. This value is only set for control plane machines.
-                  format: date-time
-                  type: string
                 conditions:
                   description: Conditions defines current service state of the Machine.
                   items:
@@ -4823,7 +4267,7 @@ objects:
                 template:
                   description: Template is the object that describes the machine that
                     will be created if insufficient replicas are detected. Object
-                    references to custom resources are treated as templates.
+                    references to custom resources resources are treated as templates.
                   properties:
                     metadata:
                       description: 'Standard object''s metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata'
@@ -4968,12 +4412,6 @@ objects:
                             default value is 0, meaning that the node can be drained
                             without any time limitations. NOTE: NodeDrainTimeout is
                             different from `kubectl drain --timeout`'
-                          type: string
-                        nodeVolumeDetachTimeout:
-                          description: NodeVolumeDetachTimeout is the total amount
-                            of time that the controller will spend on waiting for
-                            all volumes to be detached. The default value is 0, meaning
-                            that the volumes can be detached without any time limitations.
                           type: string
                         providerID:
                           description: ProviderID is the identification ID of the
@@ -16497,7 +15935,7 @@ objects:
       controller-gen.kubebuilder.io/version: v0.12.0
     creationTimestamp: null
     labels:
-      cluster.x-k8s.io/v1beta1: v1beta2
+      cluster.x-k8s.io/v1beta1: v1beta1
     name: ibmpowervsclusters.infrastructure.cluster.x-k8s.io
   spec:
     group: infrastructure.cluster.x-k8s.io
@@ -16531,7 +15969,7 @@ objects:
         name: Port
         priority: 1
         type: string
-      name: v1beta2
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: IBMPowerVSCluster is the Schema for the ibmpowervsclusters
@@ -16624,145 +16062,8 @@ objects:
     annotations:
       controller-gen.kubebuilder.io/version: v0.12.0
     creationTimestamp: null
-    name: ibmpowervsclustertemplates.infrastructure.cluster.x-k8s.io
-  spec:
-    group: infrastructure.cluster.x-k8s.io
-    names:
-      categories:
-      - cluster-api
-      kind: IBMPowerVSClusterTemplate
-      listKind: IBMPowerVSClusterTemplateList
-      plural: ibmpowervsclustertemplates
-      shortNames:
-      - ibmpowervsct
-      singular: ibmpowervsclustertemplate
-    scope: Namespaced
-    versions:
-    - additionalPrinterColumns:
-      - description: Time duration since creation of IBMPowerVSClusterTemplate
-        jsonPath: .metadata.creationTimestamp
-        name: Age
-        type: date
-      name: v1beta2
-      schema:
-        openAPIV3Schema:
-          description: IBMPowerVSClusterTemplate is the schema for IBM Power VS Kubernetes
-            Cluster Templates.
-          properties:
-            apiVersion:
-              description: 'APIVersion defines the versioned schema of this representation
-                of an object. Servers should convert recognized schemas to the latest
-                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-              type: string
-            kind:
-              description: 'Kind is a string value representing the REST resource
-                this object represents. Servers may infer this from the endpoint the
-                client submits requests to. Cannot be updated. In CamelCase. More
-                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-              type: string
-            metadata:
-              type: object
-            spec:
-              description: IBMPowerVSClusterTemplateSpec defines the desired state
-                of IBMPowerVSClusterTemplate.
-              properties:
-                template:
-                  description: IBMPowerVSClusterTemplateResource describes the data
-                    needed to create an IBMPowerVSCluster from a template.
-                  properties:
-                    metadata:
-                      description: 'Standard object''s metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata'
-                      properties:
-                        annotations:
-                          additionalProperties:
-                            type: string
-                          description: 'Annotations is an unstructured key value map
-                            stored with a resource that may be set by external tools
-                            to store and retrieve arbitrary metadata. They are not
-                            queryable and should be preserved when modifying objects.
-                            More info: http://kubernetes.io/docs/user-guide/annotations'
-                          type: object
-                        labels:
-                          additionalProperties:
-                            type: string
-                          description: 'Map of string keys and values that can be
-                            used to organize and categorize (scope and select) objects.
-                            May match selectors of replication controllers and services.
-                            More info: http://kubernetes.io/docs/user-guide/labels'
-                          type: object
-                      type: object
-                    spec:
-                      description: IBMPowerVSClusterSpec defines the desired state
-                        of IBMPowerVSCluster.
-                      properties:
-                        controlPlaneEndpoint:
-                          description: ControlPlaneEndpoint represents the endpoint
-                            used to communicate with the control plane.
-                          properties:
-                            host:
-                              description: The hostname on which the API server is
-                                serving.
-                              type: string
-                            port:
-                              description: The port on which the API server is serving.
-                              format: int32
-                              type: integer
-                          required:
-                          - host
-                          - port
-                          type: object
-                        network:
-                          description: Network is the reference to the Network to
-                            use for this cluster.
-                          properties:
-                            id:
-                              description: ID of resource
-                              minLength: 1
-                              type: string
-                            name:
-                              description: Name of resource
-                              minLength: 1
-                              type: string
-                            regex:
-                              description: Regular expression to match resource, In
-                                case of multiple resources matches the provided regular
-                                expression the first matched resource will be selected
-                              minLength: 1
-                              type: string
-                          type: object
-                        serviceInstanceID:
-                          description: ServiceInstanceID is the id of the power cloud
-                            instance where the vsi instance will get deployed.
-                          minLength: 1
-                          type: string
-                      required:
-                      - network
-                      - serviceInstanceID
-                      type: object
-                  required:
-                  - spec
-                  type: object
-              required:
-              - template
-              type: object
-          type: object
-      served: true
-      storage: true
-      subresources: {}
-  status:
-    acceptedNames:
-      kind: ""
-      plural: ""
-    conditions: null
-    storedVersions: null
-- apiVersion: apiextensions.k8s.io/v1
-  kind: CustomResourceDefinition
-  metadata:
-    annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
-    creationTimestamp: null
     labels:
-      cluster.x-k8s.io/v1beta1: v1beta2
+      cluster.x-k8s.io/v1beta1: v1beta1
     name: ibmpowervsimages.infrastructure.cluster.x-k8s.io
   spec:
     group: infrastructure.cluster.x-k8s.io
@@ -16782,7 +16083,7 @@ objects:
         jsonPath: .status.ready
         name: Ready
         type: string
-      name: v1beta2
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: IBMPowerVSImage is the Schema for the ibmpowervsimages API.
@@ -16924,7 +16225,7 @@ objects:
       controller-gen.kubebuilder.io/version: v0.12.0
     creationTimestamp: null
     labels:
-      cluster.x-k8s.io/v1beta1: v1beta2
+      cluster.x-k8s.io/v1beta1: v1beta1
     name: ibmpowervsmachines.infrastructure.cluster.x-k8s.io
   spec:
     group: infrastructure.cluster.x-k8s.io
@@ -16971,7 +16272,7 @@ objects:
         jsonPath: .status.health
         name: Health
         type: string
-      name: v1beta2
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: IBMPowerVSMachine is the Schema for the ibmpowervsmachines
@@ -16994,10 +16295,8 @@ objects:
               description: IBMPowerVSMachineSpec defines the desired state of IBMPowerVSMachine.
               properties:
                 image:
-                  description: Image the reference to the image which is used to create
-                    the instance. supported image identifier in IBMPowerVSResourceReference
-                    are Name and ID and that can be obtained from IBM Cloud UI or
-                    IBM Cloud cli.
+                  description: Image is the reference to the Image from which to create
+                    the machine instance.
                   properties:
                     id:
                       description: ID of resource
@@ -17025,23 +16324,12 @@ objects:
                       type: string
                   type: object
                   x-kubernetes-map-type: atomic
-                memoryGiB:
-                  description: memoryGiB is the size of a virtual machine's memory,
-                    in GiB. maximum value for the MemoryGiB depends on the selected
-                    SystemType. when SystemType is set to e880 maximum MemoryGiB value
-                    is 7463 GiB. when SystemType is set to e980 maximum MemoryGiB
-                    value is 15307 GiB. when SystemType is set to s922 maximum MemoryGiB
-                    value is 942 GiB. The minimum memory is 2 GiB. When omitted, this
-                    means the user has no opinion and the platform is left to choose
-                    a reasonable default, which is subject to change over time. The
-                    current default is 2.
-                  format: int32
-                  type: integer
+                memory:
+                  description: Memory is Amount of memory allocated (in GB)
+                  type: string
                 network:
                   description: Network is the reference to the Network to use for
-                    this instance. supported network identifier in IBMPowerVSResourceReference
-                    are Name, ID and RegEx and that can be obtained from IBM Cloud
-                    UI or IBM Cloud cli.
+                    this instance.
                   properties:
                     id:
                       description: ID of resource
@@ -17058,45 +16346,14 @@ objects:
                       minLength: 1
                       type: string
                   type: object
-                processorType:
-                  description: 'processorType is the VM instance processor type. It
-                    must be set to one of the following values: Dedicated, Capped
-                    or Shared. Dedicated: resources are allocated for a specific client,
-                    The hypervisor makes a 1:1 binding of a partition’s processor
-                    to a physical processor core. Shared: Shared among other clients.
-                    Capped: Shared, but resources do not expand beyond those that
-                    are requested, the amount of CPU time is Capped to the value specified
-                    for the entitlement. if the processorType is selected as Dedicated,
-                    then processors value cannot be fractional. When omitted, this
-                    means that the user has no opinion and the platform is left to
-                    choose a reasonable default, which is subject to change over time.
-                    The current default is Shared.'
-                  enum:
-                  - Dedicated
-                  - Shared
-                  - Capped
-                  - ""
+                procType:
+                  description: 'ProcType is the processor type, e.g: dedicated, shared,
+                    capped'
                   type: string
                 processors:
-                  anyOf:
-                  - type: integer
-                  - type: string
-                  description: processors is the number of virtual processors in a
-                    virtual machine. when the processorType is selected as Dedicated
-                    the processors value cannot be fractional. maximum value for the
-                    Processors depends on the selected SystemType. when SystemType
-                    is set to e880 or e980 maximum Processors value is 143. when SystemType
-                    is set to s922 maximum Processors value is 15. minimum value for
-                    Processors depends on the selected ProcessorType. when ProcessorType
-                    is set as Shared or Capped, The minimum processors is 0.25. when
-                    ProcessorType is set as Dedicated, The minimum processors is 1.
-                    When omitted, this means that the user has no opinion and the
-                    platform is left to choose a reasonable default, which is subject
-                    to change over time. The default is set based on the selected
-                    ProcessorType. when ProcessorType selected as Dedicated, the default
-                    is set to 1. when ProcessorType selected as Shared or Capped,
-                    the default is set to 0.25.
-                  x-kubernetes-int-or-string: true
+                  description: Processors is Number of processors allocated.
+                  pattern: ^\d+(\.)?(\d)?(\d)?$
+                  type: string
                 providerID:
                   description: ProviderID is the unique identifier as specified by
                     the cloud provider.
@@ -17110,20 +16367,8 @@ objects:
                   description: SSHKey is the name of the SSH key pair provided to
                     the vsi for authenticating users.
                   type: string
-                systemType:
-                  description: systemType is the System type used to host the instance.
-                    systemType determines the number of cores and memory that is available.
-                    Few of the supported SystemTypes are s922,e880,e980. e880 systemType
-                    available only in Dallas Datacenters. e980 systemType available
-                    in Datacenters except Dallas and Washington. When omitted, this
-                    means that the user has no opinion and the platform is left to
-                    choose a reasonable default, which is subject to change over time.
-                    The current default is s922 which is generally available.
-                  enum:
-                  - s922
-                  - e880
-                  - e980
-                  - ""
+                sysType:
+                  description: SysType is the System type used to host the vsi.
                   type: string
               required:
               - network
@@ -17266,7 +16511,7 @@ objects:
       controller-gen.kubebuilder.io/version: v0.12.0
     creationTimestamp: null
     labels:
-      cluster.x-k8s.io/v1beta1: v1beta2
+      cluster.x-k8s.io/v1beta1: v1beta1
     name: ibmpowervsmachinetemplates.infrastructure.cluster.x-k8s.io
   spec:
     group: infrastructure.cluster.x-k8s.io
@@ -17277,7 +16522,7 @@ objects:
       singular: ibmpowervsmachinetemplate
     scope: Namespaced
     versions:
-    - name: v1beta2
+    - name: v1beta1
       schema:
         openAPIV3Schema:
           description: IBMPowerVSMachineTemplate is the Schema for the ibmpowervsmachinetemplates
@@ -17309,10 +16554,8 @@ objects:
                         of IBMPowerVSMachine.
                       properties:
                         image:
-                          description: Image the reference to the image which is used
-                            to create the instance. supported image identifier in
-                            IBMPowerVSResourceReference are Name and ID and that can
-                            be obtained from IBM Cloud UI or IBM Cloud cli.
+                          description: Image is the reference to the Image from which
+                            to create the machine instance.
                           properties:
                             id:
                               description: ID of resource
@@ -17340,24 +16583,12 @@ objects:
                               type: string
                           type: object
                           x-kubernetes-map-type: atomic
-                        memoryGiB:
-                          description: memoryGiB is the size of a virtual machine's
-                            memory, in GiB. maximum value for the MemoryGiB depends
-                            on the selected SystemType. when SystemType is set to
-                            e880 maximum MemoryGiB value is 7463 GiB. when SystemType
-                            is set to e980 maximum MemoryGiB value is 15307 GiB. when
-                            SystemType is set to s922 maximum MemoryGiB value is 942
-                            GiB. The minimum memory is 2 GiB. When omitted, this means
-                            the user has no opinion and the platform is left to choose
-                            a reasonable default, which is subject to change over
-                            time. The current default is 2.
-                          format: int32
-                          type: integer
+                        memory:
+                          description: Memory is Amount of memory allocated (in GB)
+                          type: string
                         network:
                           description: Network is the reference to the Network to
-                            use for this instance. supported network identifier in
-                            IBMPowerVSResourceReference are Name, ID and RegEx and
-                            that can be obtained from IBM Cloud UI or IBM Cloud cli.
+                            use for this instance.
                           properties:
                             id:
                               description: ID of resource
@@ -17374,48 +16605,14 @@ objects:
                               minLength: 1
                               type: string
                           type: object
-                        processorType:
-                          description: 'processorType is the VM instance processor
-                            type. It must be set to one of the following values: Dedicated,
-                            Capped or Shared. Dedicated: resources are allocated for
-                            a specific client, The hypervisor makes a 1:1 binding
-                            of a partition’s processor to a physical processor core.
-                            Shared: Shared among other clients. Capped: Shared, but
-                            resources do not expand beyond those that are requested,
-                            the amount of CPU time is Capped to the value specified
-                            for the entitlement. if the processorType is selected
-                            as Dedicated, then processors value cannot be fractional.
-                            When omitted, this means that the user has no opinion
-                            and the platform is left to choose a reasonable default,
-                            which is subject to change over time. The current default
-                            is Shared.'
-                          enum:
-                          - Dedicated
-                          - Shared
-                          - Capped
-                          - ""
+                        procType:
+                          description: 'ProcType is the processor type, e.g: dedicated,
+                            shared, capped'
                           type: string
                         processors:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          description: processors is the number of virtual processors
-                            in a virtual machine. when the processorType is selected
-                            as Dedicated the processors value cannot be fractional.
-                            maximum value for the Processors depends on the selected
-                            SystemType. when SystemType is set to e880 or e980 maximum
-                            Processors value is 143. when SystemType is set to s922
-                            maximum Processors value is 15. minimum value for Processors
-                            depends on the selected ProcessorType. when ProcessorType
-                            is set as Shared or Capped, The minimum processors is
-                            0.25. when ProcessorType is set as Dedicated, The minimum
-                            processors is 1. When omitted, this means that the user
-                            has no opinion and the platform is left to choose a reasonable
-                            default, which is subject to change over time. The default
-                            is set based on the selected ProcessorType. when ProcessorType
-                            selected as Dedicated, the default is set to 1. when ProcessorType
-                            selected as Shared or Capped, the default is set to 0.25.
-                          x-kubernetes-int-or-string: true
+                          description: Processors is Number of processors allocated.
+                          pattern: ^\d+(\.)?(\d)?(\d)?$
+                          type: string
                         providerID:
                           description: ProviderID is the unique identifier as specified
                             by the cloud provider.
@@ -17429,22 +16626,9 @@ objects:
                           description: SSHKey is the name of the SSH key pair provided
                             to the vsi for authenticating users.
                           type: string
-                        systemType:
-                          description: systemType is the System type used to host
-                            the instance. systemType determines the number of cores
-                            and memory that is available. Few of the supported SystemTypes
-                            are s922,e880,e980. e880 systemType available only in
-                            Dallas Datacenters. e980 systemType available in Datacenters
-                            except Dallas and Washington. When omitted, this means
-                            that the user has no opinion and the platform is left
-                            to choose a reasonable default, which is subject to change
-                            over time. The current default is s922 which is generally
-                            available.
-                          enum:
-                          - s922
-                          - e880
-                          - e980
-                          - ""
+                        sysType:
+                          description: SysType is the System type used to host the
+                            vsi.
                           type: string
                       required:
                       - network
@@ -17490,7 +16674,7 @@ objects:
       controller-gen.kubebuilder.io/version: v0.12.0
     creationTimestamp: null
     labels:
-      cluster.x-k8s.io/v1beta1: v1beta2
+      cluster.x-k8s.io/v1beta1: v1alpha4
     name: ibmvpcclusters.infrastructure.cluster.x-k8s.io
   spec:
     group: infrastructure.cluster.x-k8s.io
@@ -17512,7 +16696,7 @@ objects:
         jsonPath: .status.ready
         name: Ready
         type: string
-      name: v1beta2
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: IBMVPCCluster is the Schema for the ibmvpcclusters API.
@@ -17554,8 +16738,8 @@ objects:
                   properties:
                     name:
                       description: Name sets the name of the VPC load balancer.
-                      maxLength: 63
-                      pattern: ^([a-z]|[a-z][-a-z0-9]*[a-z0-9])$
+                      maxLength: 64
+                      pattern: ^[A-Za-z0-9]([A-Za-z0-9]{0,31}|[-A-Za-z0-9]{0,30}[A-Za-z0-9])$
                       type: string
                   type: object
                 region:
@@ -17709,7 +16893,7 @@ objects:
         jsonPath: .status.ready
         name: Ready
         type: string
-      name: v1beta2
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: IBMVPCMachine is the Schema for the ibmvpcmachines API.
@@ -17730,65 +16914,12 @@ objects:
             spec:
               description: IBMVPCMachineSpec defines the desired state of IBMVPCMachine.
               properties:
-                bootVolume:
-                  description: BootVolume contains machines's boot volume configurations
-                    like size, iops etc..
-                  properties:
-                    deleteVolumeOnInstanceDelete:
-                      default: true
-                      description: DeleteVolumeOnInstanceDelete If set to true, when
-                        deleting the instance the volume will also be deleted. Default
-                        is set as true
-                      type: boolean
-                    encryptionKeyCRN:
-                      description: EncryptionKey is the root key to use to wrap the
-                        data encryption key for the volume and this points to the
-                        CRN and possible values are as follows. The CRN of the [Key
-                        Protect Root Key](https://cloud.ibm.com/docs/key-protect?topic=key-protect-getting-started-tutorial)
-                        or [Hyper Protect Crypto Service Root Key](https://cloud.ibm.com/docs/hs-crypto?topic=hs-crypto-get-started)
-                        for this resource. If unspecified, the `encryption` type for
-                        the volume will be `provider_managed`.
-                      type: string
-                    iops:
-                      description: Iops is the maximum I/O operations per second (IOPS)
-                        to use for the volume. Applicable only to volumes using a
-                        profile family of `custom`.
-                      format: int64
-                      type: integer
-                    name:
-                      description: Name is the unique user-defined name for this volume.
-                        Default will be autogenerated
-                      type: string
-                    profile:
-                      default: general-purpose
-                      description: Profile is the volume profile for the bootdisk,
-                        refer https://cloud.ibm.com/docs/vpc?topic=vpc-block-storage-profiles
-                        for more information. Default to general-purpose
-                      enum:
-                      - general-purpose
-                      - 5iops-tier
-                      - 10iops-tier
-                      - custom
-                      type: string
-                    sizeGiB:
-                      description: SizeGiB is the size of the virtual server's boot
-                        disk in GiB. Default to the size of the image's `minimum_provisioned_size`.
-                      format: int64
-                      type: integer
-                  type: object
                 image:
-                  description: Image is the OS image which would be install on the
-                    instance. ID will take higher precedence over Name if both specified.
-                  properties:
-                    id:
-                      description: ID of resource
-                      minLength: 1
-                      type: string
-                    name:
-                      description: Name of resource
-                      minLength: 1
-                      type: string
-                  type: object
+                  description: 'Image is the id of OS image which would be install
+                    on the instance. Example: r134-ed3f775f-ad7e-4e37-ae62-7199b4988b00
+                    TODO: allow user to specify a image name is much reasonable. Example:
+                    ibm-ubuntu-18-04-1-minimal-amd64-2'
+                  type: string
                 name:
                   description: Name of the instance.
                   type: string
@@ -17810,21 +16941,9 @@ objects:
                   type: string
                 sshKeys:
                   description: SSHKeys is the SSH pub keys that will be used to access
-                    VM. ID will take higher precedence over Name if both specified.
+                    VM.
                   items:
-                    description: IBMVPCResourceReference is a reference to a specific
-                      VPC resource by ID or Name Only one of ID or Name may be specified.
-                      Specifying more than one will result in a validation error.
-                    properties:
-                      id:
-                        description: ID of resource
-                        minLength: 1
-                        type: string
-                      name:
-                        description: Name of resource
-                        minLength: 1
-                        type: string
-                    type: object
+                    type: string
                   type: array
                 zone:
                   description: 'Zone is the place where the instance should be created.
@@ -17894,7 +17013,7 @@ objects:
       singular: ibmvpcmachinetemplate
     scope: Namespaced
     versions:
-    - name: v1beta2
+    - name: v1beta1
       schema:
         openAPIV3Schema:
           description: IBMVPCMachineTemplate is the Schema for the ibmvpcmachinetemplates
@@ -17925,67 +17044,12 @@ objects:
                       description: Spec is the specification of the desired behavior
                         of the machine.
                       properties:
-                        bootVolume:
-                          description: BootVolume contains machines's boot volume
-                            configurations like size, iops etc..
-                          properties:
-                            deleteVolumeOnInstanceDelete:
-                              default: true
-                              description: DeleteVolumeOnInstanceDelete If set to
-                                true, when deleting the instance the volume will also
-                                be deleted. Default is set as true
-                              type: boolean
-                            encryptionKeyCRN:
-                              description: EncryptionKey is the root key to use to
-                                wrap the data encryption key for the volume and this
-                                points to the CRN and possible values are as follows.
-                                The CRN of the [Key Protect Root Key](https://cloud.ibm.com/docs/key-protect?topic=key-protect-getting-started-tutorial)
-                                or [Hyper Protect Crypto Service Root Key](https://cloud.ibm.com/docs/hs-crypto?topic=hs-crypto-get-started)
-                                for this resource. If unspecified, the `encryption`
-                                type for the volume will be `provider_managed`.
-                              type: string
-                            iops:
-                              description: Iops is the maximum I/O operations per
-                                second (IOPS) to use for the volume. Applicable only
-                                to volumes using a profile family of `custom`.
-                              format: int64
-                              type: integer
-                            name:
-                              description: Name is the unique user-defined name for
-                                this volume. Default will be autogenerated
-                              type: string
-                            profile:
-                              default: general-purpose
-                              description: Profile is the volume profile for the bootdisk,
-                                refer https://cloud.ibm.com/docs/vpc?topic=vpc-block-storage-profiles
-                                for more information. Default to general-purpose
-                              enum:
-                              - general-purpose
-                              - 5iops-tier
-                              - 10iops-tier
-                              - custom
-                              type: string
-                            sizeGiB:
-                              description: SizeGiB is the size of the virtual server's
-                                boot disk in GiB. Default to the size of the image's
-                                `minimum_provisioned_size`.
-                              format: int64
-                              type: integer
-                          type: object
                         image:
-                          description: Image is the OS image which would be install
-                            on the instance. ID will take higher precedence over Name
-                            if both specified.
-                          properties:
-                            id:
-                              description: ID of resource
-                              minLength: 1
-                              type: string
-                            name:
-                              description: Name of resource
-                              minLength: 1
-                              type: string
-                          type: object
+                          description: 'Image is the id of OS image which would be
+                            install on the instance. Example: r134-ed3f775f-ad7e-4e37-ae62-7199b4988b00
+                            TODO: allow user to specify a image name is much reasonable.
+                            Example: ibm-ubuntu-18-04-1-minimal-amd64-2'
+                          type: string
                         name:
                           description: Name of the instance.
                           type: string
@@ -18008,23 +17072,9 @@ objects:
                           type: string
                         sshKeys:
                           description: SSHKeys is the SSH pub keys that will be used
-                            to access VM. ID will take higher precedence over Name
-                            if both specified.
+                            to access VM.
                           items:
-                            description: IBMVPCResourceReference is a reference to
-                              a specific VPC resource by ID or Name Only one of ID
-                              or Name may be specified. Specifying more than one will
-                              result in a validation error.
-                            properties:
-                              id:
-                                description: ID of resource
-                                minLength: 1
-                                type: string
-                              name:
-                                description: Name of resource
-                                minLength: 1
-                                type: string
-                            type: object
+                            type: string
                           type: array
                         zone:
                           description: 'Zone is the place where the instance should
@@ -45196,7 +44246,7 @@ objects:
                           format: int32
                           type: integer
                         processorType:
-                          default: Shared
+                          default: shared
                           description: "ProcessorType is the VM instance processor
                             type. It must be set to one of the following values: Dedicated,
                             Capped or Shared. \n Dedicated: resources are allocated
@@ -45211,9 +44261,9 @@ objects:
                             and the platform is left to choose a reasonable default.
                             The current default is Shared."
                           enum:
-                          - Dedicated
-                          - Shared
-                          - Capped
+                          - dedicated
+                          - shared
+                          - capped
                           type: string
                         processors:
                           anyOf:
