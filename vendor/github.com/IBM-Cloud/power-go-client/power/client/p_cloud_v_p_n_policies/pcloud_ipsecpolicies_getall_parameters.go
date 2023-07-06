@@ -52,12 +52,10 @@ func NewPcloudIpsecpoliciesGetallParamsWithHTTPClient(client *http.Client) *Pclo
 	}
 }
 
-/*
-PcloudIpsecpoliciesGetallParams contains all the parameters to send to the API endpoint
+/* PcloudIpsecpoliciesGetallParams contains all the parameters to send to the API endpoint
+   for the pcloud ipsecpolicies getall operation.
 
-	for the pcloud ipsecpolicies getall operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudIpsecpoliciesGetallParams struct {
 

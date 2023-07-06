@@ -52,12 +52,10 @@ func NewPcloudVolumegroupsDeleteParamsWithHTTPClient(client *http.Client) *Pclou
 	}
 }
 
-/*
-PcloudVolumegroupsDeleteParams contains all the parameters to send to the API endpoint
+/* PcloudVolumegroupsDeleteParams contains all the parameters to send to the API endpoint
+   for the pcloud volumegroups delete operation.
 
-	for the pcloud volumegroups delete operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudVolumegroupsDeleteParams struct {
 

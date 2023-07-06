@@ -52,12 +52,10 @@ func NewPcloudCloudinstancesVolumesFlashCopyMappingsGetParamsWithHTTPClient(clie
 	}
 }
 
-/*
-PcloudCloudinstancesVolumesFlashCopyMappingsGetParams contains all the parameters to send to the API endpoint
+/* PcloudCloudinstancesVolumesFlashCopyMappingsGetParams contains all the parameters to send to the API endpoint
+   for the pcloud cloudinstances volumes flash copy mappings get operation.
 
-	for the pcloud cloudinstances volumes flash copy mappings get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudCloudinstancesVolumesFlashCopyMappingsGetParams struct {
 

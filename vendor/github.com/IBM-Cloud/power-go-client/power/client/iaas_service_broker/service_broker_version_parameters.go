@@ -52,12 +52,10 @@ func NewServiceBrokerVersionParamsWithHTTPClient(client *http.Client) *ServiceBr
 	}
 }
 
-/*
-ServiceBrokerVersionParams contains all the parameters to send to the API endpoint
+/* ServiceBrokerVersionParams contains all the parameters to send to the API endpoint
+   for the service broker version operation.
 
-	for the service broker version operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type ServiceBrokerVersionParams struct {
 	timeout    time.Duration

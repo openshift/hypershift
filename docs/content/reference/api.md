@@ -6790,13 +6790,13 @@ retain: delete the image from the openshift but retain in the infrastructure.</p
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;Capped&#34;</p></td>
+<tbody><tr><td><p>&#34;capped&#34;</p></td>
 <td><p>PowerVSNodePoolCappedProcType defines capped processor type</p>
 </td>
-</tr><tr><td><p>&#34;Dedicated&#34;</p></td>
+</tr><tr><td><p>&#34;dedicated&#34;</p></td>
 <td><p>PowerVSNodePoolDedicatedProcType defines dedicated processor type</p>
 </td>
-</tr><tr><td><p>&#34;Shared&#34;</p></td>
+</tr><tr><td><p>&#34;shared&#34;</p></td>
 <td><p>PowerVSNodePoolSharedProcType defines shared processor type</p>
 </td>
 </tr></tbody>

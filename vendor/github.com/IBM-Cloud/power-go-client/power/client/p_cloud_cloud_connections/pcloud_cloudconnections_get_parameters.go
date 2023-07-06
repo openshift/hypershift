@@ -52,12 +52,10 @@ func NewPcloudCloudconnectionsGetParamsWithHTTPClient(client *http.Client) *Pclo
 	}
 }
 
-/*
-PcloudCloudconnectionsGetParams contains all the parameters to send to the API endpoint
+/* PcloudCloudconnectionsGetParams contains all the parameters to send to the API endpoint
+   for the pcloud cloudconnections get operation.
 
-	for the pcloud cloudconnections get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudCloudconnectionsGetParams struct {
 

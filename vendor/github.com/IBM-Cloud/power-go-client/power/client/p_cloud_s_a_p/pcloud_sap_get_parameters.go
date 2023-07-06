@@ -52,12 +52,10 @@ func NewPcloudSapGetParamsWithHTTPClient(client *http.Client) *PcloudSapGetParam
 	}
 }
 
-/*
-PcloudSapGetParams contains all the parameters to send to the API endpoint
+/* PcloudSapGetParams contains all the parameters to send to the API endpoint
+   for the pcloud sap get operation.
 
-	for the pcloud sap get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudSapGetParams struct {
 

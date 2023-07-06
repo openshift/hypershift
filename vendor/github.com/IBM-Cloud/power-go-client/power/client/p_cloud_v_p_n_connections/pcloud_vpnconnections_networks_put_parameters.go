@@ -54,12 +54,10 @@ func NewPcloudVpnconnectionsNetworksPutParamsWithHTTPClient(client *http.Client)
 	}
 }
 
-/*
-PcloudVpnconnectionsNetworksPutParams contains all the parameters to send to the API endpoint
+/* PcloudVpnconnectionsNetworksPutParams contains all the parameters to send to the API endpoint
+   for the pcloud vpnconnections networks put operation.
 
-	for the pcloud vpnconnections networks put operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudVpnconnectionsNetworksPutParams struct {
 

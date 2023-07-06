@@ -69,8 +69,7 @@ func NewPcloudTasksDeleteOK() *PcloudTasksDeleteOK {
 	return &PcloudTasksDeleteOK{}
 }
 
-/*
-PcloudTasksDeleteOK describes a response with status code 200, with default header values.
+/* PcloudTasksDeleteOK describes a response with status code 200, with default header values.
 
 OK
 */
@@ -78,39 +77,9 @@ type PcloudTasksDeleteOK struct {
 	Payload models.Object
 }
 
-// IsSuccess returns true when this pcloud tasks delete o k response has a 2xx status code
-func (o *PcloudTasksDeleteOK) IsSuccess() bool {
-	return true
-}
-
-// IsRedirect returns true when this pcloud tasks delete o k response has a 3xx status code
-func (o *PcloudTasksDeleteOK) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud tasks delete o k response has a 4xx status code
-func (o *PcloudTasksDeleteOK) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this pcloud tasks delete o k response has a 5xx status code
-func (o *PcloudTasksDeleteOK) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud tasks delete o k response a status code equal to that given
-func (o *PcloudTasksDeleteOK) IsCode(code int) bool {
-	return code == 200
-}
-
 func (o *PcloudTasksDeleteOK) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/tasks/{task_id}][%d] pcloudTasksDeleteOK  %+v", 200, o.Payload)
 }
-
-func (o *PcloudTasksDeleteOK) String() string {
-	return fmt.Sprintf("[DELETE /pcloud/v1/tasks/{task_id}][%d] pcloudTasksDeleteOK  %+v", 200, o.Payload)
-}
-
 func (o *PcloudTasksDeleteOK) GetPayload() models.Object {
 	return o.Payload
 }
@@ -130,8 +99,7 @@ func NewPcloudTasksDeleteBadRequest() *PcloudTasksDeleteBadRequest {
 	return &PcloudTasksDeleteBadRequest{}
 }
 
-/*
-PcloudTasksDeleteBadRequest describes a response with status code 400, with default header values.
+/* PcloudTasksDeleteBadRequest describes a response with status code 400, with default header values.
 
 Bad Request
 */
@@ -139,39 +107,9 @@ type PcloudTasksDeleteBadRequest struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud tasks delete bad request response has a 2xx status code
-func (o *PcloudTasksDeleteBadRequest) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud tasks delete bad request response has a 3xx status code
-func (o *PcloudTasksDeleteBadRequest) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud tasks delete bad request response has a 4xx status code
-func (o *PcloudTasksDeleteBadRequest) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud tasks delete bad request response has a 5xx status code
-func (o *PcloudTasksDeleteBadRequest) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud tasks delete bad request response a status code equal to that given
-func (o *PcloudTasksDeleteBadRequest) IsCode(code int) bool {
-	return code == 400
-}
-
 func (o *PcloudTasksDeleteBadRequest) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/tasks/{task_id}][%d] pcloudTasksDeleteBadRequest  %+v", 400, o.Payload)
 }
-
-func (o *PcloudTasksDeleteBadRequest) String() string {
-	return fmt.Sprintf("[DELETE /pcloud/v1/tasks/{task_id}][%d] pcloudTasksDeleteBadRequest  %+v", 400, o.Payload)
-}
-
 func (o *PcloudTasksDeleteBadRequest) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -193,8 +131,7 @@ func NewPcloudTasksDeleteUnauthorized() *PcloudTasksDeleteUnauthorized {
 	return &PcloudTasksDeleteUnauthorized{}
 }
 
-/*
-PcloudTasksDeleteUnauthorized describes a response with status code 401, with default header values.
+/* PcloudTasksDeleteUnauthorized describes a response with status code 401, with default header values.
 
 Unauthorized
 */
@@ -202,39 +139,9 @@ type PcloudTasksDeleteUnauthorized struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud tasks delete unauthorized response has a 2xx status code
-func (o *PcloudTasksDeleteUnauthorized) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud tasks delete unauthorized response has a 3xx status code
-func (o *PcloudTasksDeleteUnauthorized) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud tasks delete unauthorized response has a 4xx status code
-func (o *PcloudTasksDeleteUnauthorized) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud tasks delete unauthorized response has a 5xx status code
-func (o *PcloudTasksDeleteUnauthorized) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud tasks delete unauthorized response a status code equal to that given
-func (o *PcloudTasksDeleteUnauthorized) IsCode(code int) bool {
-	return code == 401
-}
-
 func (o *PcloudTasksDeleteUnauthorized) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/tasks/{task_id}][%d] pcloudTasksDeleteUnauthorized  %+v", 401, o.Payload)
 }
-
-func (o *PcloudTasksDeleteUnauthorized) String() string {
-	return fmt.Sprintf("[DELETE /pcloud/v1/tasks/{task_id}][%d] pcloudTasksDeleteUnauthorized  %+v", 401, o.Payload)
-}
-
 func (o *PcloudTasksDeleteUnauthorized) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -256,8 +163,7 @@ func NewPcloudTasksDeleteNotFound() *PcloudTasksDeleteNotFound {
 	return &PcloudTasksDeleteNotFound{}
 }
 
-/*
-PcloudTasksDeleteNotFound describes a response with status code 404, with default header values.
+/* PcloudTasksDeleteNotFound describes a response with status code 404, with default header values.
 
 Not Found
 */
@@ -265,39 +171,9 @@ type PcloudTasksDeleteNotFound struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud tasks delete not found response has a 2xx status code
-func (o *PcloudTasksDeleteNotFound) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud tasks delete not found response has a 3xx status code
-func (o *PcloudTasksDeleteNotFound) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud tasks delete not found response has a 4xx status code
-func (o *PcloudTasksDeleteNotFound) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud tasks delete not found response has a 5xx status code
-func (o *PcloudTasksDeleteNotFound) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud tasks delete not found response a status code equal to that given
-func (o *PcloudTasksDeleteNotFound) IsCode(code int) bool {
-	return code == 404
-}
-
 func (o *PcloudTasksDeleteNotFound) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/tasks/{task_id}][%d] pcloudTasksDeleteNotFound  %+v", 404, o.Payload)
 }
-
-func (o *PcloudTasksDeleteNotFound) String() string {
-	return fmt.Sprintf("[DELETE /pcloud/v1/tasks/{task_id}][%d] pcloudTasksDeleteNotFound  %+v", 404, o.Payload)
-}
-
 func (o *PcloudTasksDeleteNotFound) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -319,8 +195,7 @@ func NewPcloudTasksDeleteGone() *PcloudTasksDeleteGone {
 	return &PcloudTasksDeleteGone{}
 }
 
-/*
-PcloudTasksDeleteGone describes a response with status code 410, with default header values.
+/* PcloudTasksDeleteGone describes a response with status code 410, with default header values.
 
 Gone
 */
@@ -328,39 +203,9 @@ type PcloudTasksDeleteGone struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud tasks delete gone response has a 2xx status code
-func (o *PcloudTasksDeleteGone) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud tasks delete gone response has a 3xx status code
-func (o *PcloudTasksDeleteGone) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud tasks delete gone response has a 4xx status code
-func (o *PcloudTasksDeleteGone) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud tasks delete gone response has a 5xx status code
-func (o *PcloudTasksDeleteGone) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud tasks delete gone response a status code equal to that given
-func (o *PcloudTasksDeleteGone) IsCode(code int) bool {
-	return code == 410
-}
-
 func (o *PcloudTasksDeleteGone) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/tasks/{task_id}][%d] pcloudTasksDeleteGone  %+v", 410, o.Payload)
 }
-
-func (o *PcloudTasksDeleteGone) String() string {
-	return fmt.Sprintf("[DELETE /pcloud/v1/tasks/{task_id}][%d] pcloudTasksDeleteGone  %+v", 410, o.Payload)
-}
-
 func (o *PcloudTasksDeleteGone) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -382,8 +227,7 @@ func NewPcloudTasksDeleteInternalServerError() *PcloudTasksDeleteInternalServerE
 	return &PcloudTasksDeleteInternalServerError{}
 }
 
-/*
-PcloudTasksDeleteInternalServerError describes a response with status code 500, with default header values.
+/* PcloudTasksDeleteInternalServerError describes a response with status code 500, with default header values.
 
 Internal Server Error
 */
@@ -391,39 +235,9 @@ type PcloudTasksDeleteInternalServerError struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud tasks delete internal server error response has a 2xx status code
-func (o *PcloudTasksDeleteInternalServerError) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud tasks delete internal server error response has a 3xx status code
-func (o *PcloudTasksDeleteInternalServerError) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud tasks delete internal server error response has a 4xx status code
-func (o *PcloudTasksDeleteInternalServerError) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this pcloud tasks delete internal server error response has a 5xx status code
-func (o *PcloudTasksDeleteInternalServerError) IsServerError() bool {
-	return true
-}
-
-// IsCode returns true when this pcloud tasks delete internal server error response a status code equal to that given
-func (o *PcloudTasksDeleteInternalServerError) IsCode(code int) bool {
-	return code == 500
-}
-
 func (o *PcloudTasksDeleteInternalServerError) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/tasks/{task_id}][%d] pcloudTasksDeleteInternalServerError  %+v", 500, o.Payload)
 }
-
-func (o *PcloudTasksDeleteInternalServerError) String() string {
-	return fmt.Sprintf("[DELETE /pcloud/v1/tasks/{task_id}][%d] pcloudTasksDeleteInternalServerError  %+v", 500, o.Payload)
-}
-
 func (o *PcloudTasksDeleteInternalServerError) GetPayload() *models.Error {
 	return o.Payload
 }

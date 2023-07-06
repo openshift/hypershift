@@ -69,8 +69,7 @@ func NewPcloudVolumegroupsStorageDetailsGetOK() *PcloudVolumegroupsStorageDetail
 	return &PcloudVolumegroupsStorageDetailsGetOK{}
 }
 
-/*
-PcloudVolumegroupsStorageDetailsGetOK describes a response with status code 200, with default header values.
+/* PcloudVolumegroupsStorageDetailsGetOK describes a response with status code 200, with default header values.
 
 OK
 */
@@ -78,39 +77,9 @@ type PcloudVolumegroupsStorageDetailsGetOK struct {
 	Payload *models.VolumeGroupStorageDetails
 }
 
-// IsSuccess returns true when this pcloud volumegroups storage details get o k response has a 2xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetOK) IsSuccess() bool {
-	return true
-}
-
-// IsRedirect returns true when this pcloud volumegroups storage details get o k response has a 3xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetOK) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud volumegroups storage details get o k response has a 4xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetOK) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this pcloud volumegroups storage details get o k response has a 5xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetOK) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud volumegroups storage details get o k response a status code equal to that given
-func (o *PcloudVolumegroupsStorageDetailsGetOK) IsCode(code int) bool {
-	return code == 200
-}
-
 func (o *PcloudVolumegroupsStorageDetailsGetOK) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetOK  %+v", 200, o.Payload)
 }
-
-func (o *PcloudVolumegroupsStorageDetailsGetOK) String() string {
-	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetOK  %+v", 200, o.Payload)
-}
-
 func (o *PcloudVolumegroupsStorageDetailsGetOK) GetPayload() *models.VolumeGroupStorageDetails {
 	return o.Payload
 }
@@ -132,8 +101,7 @@ func NewPcloudVolumegroupsStorageDetailsGetBadRequest() *PcloudVolumegroupsStora
 	return &PcloudVolumegroupsStorageDetailsGetBadRequest{}
 }
 
-/*
-PcloudVolumegroupsStorageDetailsGetBadRequest describes a response with status code 400, with default header values.
+/* PcloudVolumegroupsStorageDetailsGetBadRequest describes a response with status code 400, with default header values.
 
 Bad Request
 */
@@ -141,39 +109,9 @@ type PcloudVolumegroupsStorageDetailsGetBadRequest struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud volumegroups storage details get bad request response has a 2xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetBadRequest) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud volumegroups storage details get bad request response has a 3xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetBadRequest) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud volumegroups storage details get bad request response has a 4xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetBadRequest) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud volumegroups storage details get bad request response has a 5xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetBadRequest) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud volumegroups storage details get bad request response a status code equal to that given
-func (o *PcloudVolumegroupsStorageDetailsGetBadRequest) IsCode(code int) bool {
-	return code == 400
-}
-
 func (o *PcloudVolumegroupsStorageDetailsGetBadRequest) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetBadRequest  %+v", 400, o.Payload)
 }
-
-func (o *PcloudVolumegroupsStorageDetailsGetBadRequest) String() string {
-	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetBadRequest  %+v", 400, o.Payload)
-}
-
 func (o *PcloudVolumegroupsStorageDetailsGetBadRequest) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -195,8 +133,7 @@ func NewPcloudVolumegroupsStorageDetailsGetForbidden() *PcloudVolumegroupsStorag
 	return &PcloudVolumegroupsStorageDetailsGetForbidden{}
 }
 
-/*
-PcloudVolumegroupsStorageDetailsGetForbidden describes a response with status code 403, with default header values.
+/* PcloudVolumegroupsStorageDetailsGetForbidden describes a response with status code 403, with default header values.
 
 Forbidden
 */
@@ -204,39 +141,9 @@ type PcloudVolumegroupsStorageDetailsGetForbidden struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud volumegroups storage details get forbidden response has a 2xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetForbidden) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud volumegroups storage details get forbidden response has a 3xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetForbidden) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud volumegroups storage details get forbidden response has a 4xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetForbidden) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud volumegroups storage details get forbidden response has a 5xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetForbidden) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud volumegroups storage details get forbidden response a status code equal to that given
-func (o *PcloudVolumegroupsStorageDetailsGetForbidden) IsCode(code int) bool {
-	return code == 403
-}
-
 func (o *PcloudVolumegroupsStorageDetailsGetForbidden) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetForbidden  %+v", 403, o.Payload)
 }
-
-func (o *PcloudVolumegroupsStorageDetailsGetForbidden) String() string {
-	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetForbidden  %+v", 403, o.Payload)
-}
-
 func (o *PcloudVolumegroupsStorageDetailsGetForbidden) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -258,8 +165,7 @@ func NewPcloudVolumegroupsStorageDetailsGetNotFound() *PcloudVolumegroupsStorage
 	return &PcloudVolumegroupsStorageDetailsGetNotFound{}
 }
 
-/*
-PcloudVolumegroupsStorageDetailsGetNotFound describes a response with status code 404, with default header values.
+/* PcloudVolumegroupsStorageDetailsGetNotFound describes a response with status code 404, with default header values.
 
 Not Found
 */
@@ -267,39 +173,9 @@ type PcloudVolumegroupsStorageDetailsGetNotFound struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud volumegroups storage details get not found response has a 2xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetNotFound) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud volumegroups storage details get not found response has a 3xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetNotFound) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud volumegroups storage details get not found response has a 4xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetNotFound) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud volumegroups storage details get not found response has a 5xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetNotFound) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud volumegroups storage details get not found response a status code equal to that given
-func (o *PcloudVolumegroupsStorageDetailsGetNotFound) IsCode(code int) bool {
-	return code == 404
-}
-
 func (o *PcloudVolumegroupsStorageDetailsGetNotFound) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetNotFound  %+v", 404, o.Payload)
 }
-
-func (o *PcloudVolumegroupsStorageDetailsGetNotFound) String() string {
-	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetNotFound  %+v", 404, o.Payload)
-}
-
 func (o *PcloudVolumegroupsStorageDetailsGetNotFound) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -321,8 +197,7 @@ func NewPcloudVolumegroupsStorageDetailsGetTooManyRequests() *PcloudVolumegroups
 	return &PcloudVolumegroupsStorageDetailsGetTooManyRequests{}
 }
 
-/*
-PcloudVolumegroupsStorageDetailsGetTooManyRequests describes a response with status code 429, with default header values.
+/* PcloudVolumegroupsStorageDetailsGetTooManyRequests describes a response with status code 429, with default header values.
 
 Too Many Requests
 */
@@ -330,39 +205,9 @@ type PcloudVolumegroupsStorageDetailsGetTooManyRequests struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud volumegroups storage details get too many requests response has a 2xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetTooManyRequests) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud volumegroups storage details get too many requests response has a 3xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetTooManyRequests) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud volumegroups storage details get too many requests response has a 4xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetTooManyRequests) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud volumegroups storage details get too many requests response has a 5xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetTooManyRequests) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud volumegroups storage details get too many requests response a status code equal to that given
-func (o *PcloudVolumegroupsStorageDetailsGetTooManyRequests) IsCode(code int) bool {
-	return code == 429
-}
-
 func (o *PcloudVolumegroupsStorageDetailsGetTooManyRequests) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetTooManyRequests  %+v", 429, o.Payload)
 }
-
-func (o *PcloudVolumegroupsStorageDetailsGetTooManyRequests) String() string {
-	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetTooManyRequests  %+v", 429, o.Payload)
-}
-
 func (o *PcloudVolumegroupsStorageDetailsGetTooManyRequests) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -384,8 +229,7 @@ func NewPcloudVolumegroupsStorageDetailsGetInternalServerError() *PcloudVolumegr
 	return &PcloudVolumegroupsStorageDetailsGetInternalServerError{}
 }
 
-/*
-PcloudVolumegroupsStorageDetailsGetInternalServerError describes a response with status code 500, with default header values.
+/* PcloudVolumegroupsStorageDetailsGetInternalServerError describes a response with status code 500, with default header values.
 
 Internal Server Error
 */
@@ -393,39 +237,9 @@ type PcloudVolumegroupsStorageDetailsGetInternalServerError struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud volumegroups storage details get internal server error response has a 2xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetInternalServerError) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud volumegroups storage details get internal server error response has a 3xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetInternalServerError) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud volumegroups storage details get internal server error response has a 4xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetInternalServerError) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this pcloud volumegroups storage details get internal server error response has a 5xx status code
-func (o *PcloudVolumegroupsStorageDetailsGetInternalServerError) IsServerError() bool {
-	return true
-}
-
-// IsCode returns true when this pcloud volumegroups storage details get internal server error response a status code equal to that given
-func (o *PcloudVolumegroupsStorageDetailsGetInternalServerError) IsCode(code int) bool {
-	return code == 500
-}
-
 func (o *PcloudVolumegroupsStorageDetailsGetInternalServerError) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetInternalServerError  %+v", 500, o.Payload)
 }
-
-func (o *PcloudVolumegroupsStorageDetailsGetInternalServerError) String() string {
-	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetInternalServerError  %+v", 500, o.Payload)
-}
-
 func (o *PcloudVolumegroupsStorageDetailsGetInternalServerError) GetPayload() *models.Error {
 	return o.Payload
 }

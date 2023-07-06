@@ -54,12 +54,10 @@ func NewPcloudPvminstancesSnapshotsRestorePostParamsWithHTTPClient(client *http.
 	}
 }
 
-/*
-PcloudPvminstancesSnapshotsRestorePostParams contains all the parameters to send to the API endpoint
+/* PcloudPvminstancesSnapshotsRestorePostParams contains all the parameters to send to the API endpoint
+   for the pcloud pvminstances snapshots restore post operation.
 
-	for the pcloud pvminstances snapshots restore post operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudPvminstancesSnapshotsRestorePostParams struct {
 

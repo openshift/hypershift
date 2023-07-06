@@ -48,6 +48,9 @@ type SAPCreate struct {
 	// Required: true
 	ProfileID *string `json:"profileID"`
 
+	// The shared processor pool for server deployment
+	SharedProcessorPool string `json:"sharedProcessorPool,omitempty"`
+
 	// The name of the SSH Key to provide to the server for authenticating
 	SSHKeyName string `json:"sshKeyName,omitempty"`
 

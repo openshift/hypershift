@@ -54,12 +54,10 @@ func NewPcloudCloudconnectionsPostParamsWithHTTPClient(client *http.Client) *Pcl
 	}
 }
 
-/*
-PcloudCloudconnectionsPostParams contains all the parameters to send to the API endpoint
+/* PcloudCloudconnectionsPostParams contains all the parameters to send to the API endpoint
+   for the pcloud cloudconnections post operation.
 
-	for the pcloud cloudconnections post operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudCloudconnectionsPostParams struct {
 

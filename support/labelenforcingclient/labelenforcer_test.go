@@ -77,7 +77,7 @@ type labelselectingReadClient struct {
 	selector labels.Selector
 }
 
-func (l *labelselectingReadClient) Get(ctx context.Context, key crclient.ObjectKey, obj crclient.Object, opt ...crclient.GetOption) error {
+func (l *labelselectingReadClient) Get(ctx context.Context, key crclient.ObjectKey, obj crclient.Object) error {
 	initialObj := obj.DeepCopyObject()
 	if err := l.Client.Get(ctx, key, obj); err != nil {
 		return err

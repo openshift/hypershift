@@ -52,12 +52,10 @@ func NewInternalV1PowervsInstancesGetParamsWithHTTPClient(client *http.Client) *
 	}
 }
 
-/*
-InternalV1PowervsInstancesGetParams contains all the parameters to send to the API endpoint
+/* InternalV1PowervsInstancesGetParams contains all the parameters to send to the API endpoint
+   for the internal v1 powervs instances get operation.
 
-	for the internal v1 powervs instances get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type InternalV1PowervsInstancesGetParams struct {
 

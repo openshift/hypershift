@@ -53,12 +53,10 @@ func NewServiceInstanceDeprovisionParamsWithHTTPClient(client *http.Client) *Ser
 	}
 }
 
-/*
-ServiceInstanceDeprovisionParams contains all the parameters to send to the API endpoint
+/* ServiceInstanceDeprovisionParams contains all the parameters to send to the API endpoint
+   for the service instance deprovision operation.
 
-	for the service instance deprovision operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type ServiceInstanceDeprovisionParams struct {
 

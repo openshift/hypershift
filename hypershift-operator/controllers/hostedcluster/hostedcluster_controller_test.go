@@ -42,7 +42,7 @@ import (
 	clocktesting "k8s.io/utils/clock/testing"
 	"k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
 	"sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"

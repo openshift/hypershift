@@ -55,12 +55,10 @@ func NewServiceInstanceProvisionParamsWithHTTPClient(client *http.Client) *Servi
 	}
 }
 
-/*
-ServiceInstanceProvisionParams contains all the parameters to send to the API endpoint
+/* ServiceInstanceProvisionParams contains all the parameters to send to the API endpoint
+   for the service instance provision operation.
 
-	for the service instance provision operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type ServiceInstanceProvisionParams struct {
 

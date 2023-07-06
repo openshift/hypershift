@@ -52,12 +52,10 @@ func NewInternalV1TransitgatewayGetParamsWithHTTPClient(client *http.Client) *In
 	}
 }
 
-/*
-InternalV1TransitgatewayGetParams contains all the parameters to send to the API endpoint
+/* InternalV1TransitgatewayGetParams contains all the parameters to send to the API endpoint
+   for the internal v1 transitgateway get operation.
 
-	for the internal v1 transitgateway get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type InternalV1TransitgatewayGetParams struct {
 

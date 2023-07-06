@@ -75,8 +75,7 @@ func NewPcloudIkepoliciesPostOK() *PcloudIkepoliciesPostOK {
 	return &PcloudIkepoliciesPostOK{}
 }
 
-/*
-PcloudIkepoliciesPostOK describes a response with status code 200, with default header values.
+/* PcloudIkepoliciesPostOK describes a response with status code 200, with default header values.
 
 OK
 */
@@ -84,39 +83,9 @@ type PcloudIkepoliciesPostOK struct {
 	Payload *models.IKEPolicy
 }
 
-// IsSuccess returns true when this pcloud ikepolicies post o k response has a 2xx status code
-func (o *PcloudIkepoliciesPostOK) IsSuccess() bool {
-	return true
-}
-
-// IsRedirect returns true when this pcloud ikepolicies post o k response has a 3xx status code
-func (o *PcloudIkepoliciesPostOK) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud ikepolicies post o k response has a 4xx status code
-func (o *PcloudIkepoliciesPostOK) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this pcloud ikepolicies post o k response has a 5xx status code
-func (o *PcloudIkepoliciesPostOK) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud ikepolicies post o k response a status code equal to that given
-func (o *PcloudIkepoliciesPostOK) IsCode(code int) bool {
-	return code == 200
-}
-
 func (o *PcloudIkepoliciesPostOK) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostOK  %+v", 200, o.Payload)
 }
-
-func (o *PcloudIkepoliciesPostOK) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostOK  %+v", 200, o.Payload)
-}
-
 func (o *PcloudIkepoliciesPostOK) GetPayload() *models.IKEPolicy {
 	return o.Payload
 }
@@ -138,8 +107,7 @@ func NewPcloudIkepoliciesPostBadRequest() *PcloudIkepoliciesPostBadRequest {
 	return &PcloudIkepoliciesPostBadRequest{}
 }
 
-/*
-PcloudIkepoliciesPostBadRequest describes a response with status code 400, with default header values.
+/* PcloudIkepoliciesPostBadRequest describes a response with status code 400, with default header values.
 
 Bad Request
 */
@@ -147,39 +115,9 @@ type PcloudIkepoliciesPostBadRequest struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud ikepolicies post bad request response has a 2xx status code
-func (o *PcloudIkepoliciesPostBadRequest) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud ikepolicies post bad request response has a 3xx status code
-func (o *PcloudIkepoliciesPostBadRequest) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud ikepolicies post bad request response has a 4xx status code
-func (o *PcloudIkepoliciesPostBadRequest) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud ikepolicies post bad request response has a 5xx status code
-func (o *PcloudIkepoliciesPostBadRequest) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud ikepolicies post bad request response a status code equal to that given
-func (o *PcloudIkepoliciesPostBadRequest) IsCode(code int) bool {
-	return code == 400
-}
-
 func (o *PcloudIkepoliciesPostBadRequest) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostBadRequest  %+v", 400, o.Payload)
 }
-
-func (o *PcloudIkepoliciesPostBadRequest) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostBadRequest  %+v", 400, o.Payload)
-}
-
 func (o *PcloudIkepoliciesPostBadRequest) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -201,8 +139,7 @@ func NewPcloudIkepoliciesPostUnauthorized() *PcloudIkepoliciesPostUnauthorized {
 	return &PcloudIkepoliciesPostUnauthorized{}
 }
 
-/*
-PcloudIkepoliciesPostUnauthorized describes a response with status code 401, with default header values.
+/* PcloudIkepoliciesPostUnauthorized describes a response with status code 401, with default header values.
 
 Unauthorized
 */
@@ -210,39 +147,9 @@ type PcloudIkepoliciesPostUnauthorized struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud ikepolicies post unauthorized response has a 2xx status code
-func (o *PcloudIkepoliciesPostUnauthorized) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud ikepolicies post unauthorized response has a 3xx status code
-func (o *PcloudIkepoliciesPostUnauthorized) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud ikepolicies post unauthorized response has a 4xx status code
-func (o *PcloudIkepoliciesPostUnauthorized) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud ikepolicies post unauthorized response has a 5xx status code
-func (o *PcloudIkepoliciesPostUnauthorized) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud ikepolicies post unauthorized response a status code equal to that given
-func (o *PcloudIkepoliciesPostUnauthorized) IsCode(code int) bool {
-	return code == 401
-}
-
 func (o *PcloudIkepoliciesPostUnauthorized) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostUnauthorized  %+v", 401, o.Payload)
 }
-
-func (o *PcloudIkepoliciesPostUnauthorized) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostUnauthorized  %+v", 401, o.Payload)
-}
-
 func (o *PcloudIkepoliciesPostUnauthorized) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -264,8 +171,7 @@ func NewPcloudIkepoliciesPostForbidden() *PcloudIkepoliciesPostForbidden {
 	return &PcloudIkepoliciesPostForbidden{}
 }
 
-/*
-PcloudIkepoliciesPostForbidden describes a response with status code 403, with default header values.
+/* PcloudIkepoliciesPostForbidden describes a response with status code 403, with default header values.
 
 Forbidden
 */
@@ -273,39 +179,9 @@ type PcloudIkepoliciesPostForbidden struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud ikepolicies post forbidden response has a 2xx status code
-func (o *PcloudIkepoliciesPostForbidden) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud ikepolicies post forbidden response has a 3xx status code
-func (o *PcloudIkepoliciesPostForbidden) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud ikepolicies post forbidden response has a 4xx status code
-func (o *PcloudIkepoliciesPostForbidden) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud ikepolicies post forbidden response has a 5xx status code
-func (o *PcloudIkepoliciesPostForbidden) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud ikepolicies post forbidden response a status code equal to that given
-func (o *PcloudIkepoliciesPostForbidden) IsCode(code int) bool {
-	return code == 403
-}
-
 func (o *PcloudIkepoliciesPostForbidden) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostForbidden  %+v", 403, o.Payload)
 }
-
-func (o *PcloudIkepoliciesPostForbidden) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostForbidden  %+v", 403, o.Payload)
-}
-
 func (o *PcloudIkepoliciesPostForbidden) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -327,8 +203,7 @@ func NewPcloudIkepoliciesPostConflict() *PcloudIkepoliciesPostConflict {
 	return &PcloudIkepoliciesPostConflict{}
 }
 
-/*
-PcloudIkepoliciesPostConflict describes a response with status code 409, with default header values.
+/* PcloudIkepoliciesPostConflict describes a response with status code 409, with default header values.
 
 Conflict
 */
@@ -336,39 +211,9 @@ type PcloudIkepoliciesPostConflict struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud ikepolicies post conflict response has a 2xx status code
-func (o *PcloudIkepoliciesPostConflict) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud ikepolicies post conflict response has a 3xx status code
-func (o *PcloudIkepoliciesPostConflict) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud ikepolicies post conflict response has a 4xx status code
-func (o *PcloudIkepoliciesPostConflict) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud ikepolicies post conflict response has a 5xx status code
-func (o *PcloudIkepoliciesPostConflict) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud ikepolicies post conflict response a status code equal to that given
-func (o *PcloudIkepoliciesPostConflict) IsCode(code int) bool {
-	return code == 409
-}
-
 func (o *PcloudIkepoliciesPostConflict) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostConflict  %+v", 409, o.Payload)
 }
-
-func (o *PcloudIkepoliciesPostConflict) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostConflict  %+v", 409, o.Payload)
-}
-
 func (o *PcloudIkepoliciesPostConflict) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -390,8 +235,7 @@ func NewPcloudIkepoliciesPostUnprocessableEntity() *PcloudIkepoliciesPostUnproce
 	return &PcloudIkepoliciesPostUnprocessableEntity{}
 }
 
-/*
-PcloudIkepoliciesPostUnprocessableEntity describes a response with status code 422, with default header values.
+/* PcloudIkepoliciesPostUnprocessableEntity describes a response with status code 422, with default header values.
 
 Unprocessable Entity
 */
@@ -399,39 +243,9 @@ type PcloudIkepoliciesPostUnprocessableEntity struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud ikepolicies post unprocessable entity response has a 2xx status code
-func (o *PcloudIkepoliciesPostUnprocessableEntity) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud ikepolicies post unprocessable entity response has a 3xx status code
-func (o *PcloudIkepoliciesPostUnprocessableEntity) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud ikepolicies post unprocessable entity response has a 4xx status code
-func (o *PcloudIkepoliciesPostUnprocessableEntity) IsClientError() bool {
-	return true
-}
-
-// IsServerError returns true when this pcloud ikepolicies post unprocessable entity response has a 5xx status code
-func (o *PcloudIkepoliciesPostUnprocessableEntity) IsServerError() bool {
-	return false
-}
-
-// IsCode returns true when this pcloud ikepolicies post unprocessable entity response a status code equal to that given
-func (o *PcloudIkepoliciesPostUnprocessableEntity) IsCode(code int) bool {
-	return code == 422
-}
-
 func (o *PcloudIkepoliciesPostUnprocessableEntity) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostUnprocessableEntity  %+v", 422, o.Payload)
 }
-
-func (o *PcloudIkepoliciesPostUnprocessableEntity) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostUnprocessableEntity  %+v", 422, o.Payload)
-}
-
 func (o *PcloudIkepoliciesPostUnprocessableEntity) GetPayload() *models.Error {
 	return o.Payload
 }
@@ -453,8 +267,7 @@ func NewPcloudIkepoliciesPostInternalServerError() *PcloudIkepoliciesPostInterna
 	return &PcloudIkepoliciesPostInternalServerError{}
 }
 
-/*
-PcloudIkepoliciesPostInternalServerError describes a response with status code 500, with default header values.
+/* PcloudIkepoliciesPostInternalServerError describes a response with status code 500, with default header values.
 
 Internal Server Error
 */
@@ -462,39 +275,9 @@ type PcloudIkepoliciesPostInternalServerError struct {
 	Payload *models.Error
 }
 
-// IsSuccess returns true when this pcloud ikepolicies post internal server error response has a 2xx status code
-func (o *PcloudIkepoliciesPostInternalServerError) IsSuccess() bool {
-	return false
-}
-
-// IsRedirect returns true when this pcloud ikepolicies post internal server error response has a 3xx status code
-func (o *PcloudIkepoliciesPostInternalServerError) IsRedirect() bool {
-	return false
-}
-
-// IsClientError returns true when this pcloud ikepolicies post internal server error response has a 4xx status code
-func (o *PcloudIkepoliciesPostInternalServerError) IsClientError() bool {
-	return false
-}
-
-// IsServerError returns true when this pcloud ikepolicies post internal server error response has a 5xx status code
-func (o *PcloudIkepoliciesPostInternalServerError) IsServerError() bool {
-	return true
-}
-
-// IsCode returns true when this pcloud ikepolicies post internal server error response a status code equal to that given
-func (o *PcloudIkepoliciesPostInternalServerError) IsCode(code int) bool {
-	return code == 500
-}
-
 func (o *PcloudIkepoliciesPostInternalServerError) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostInternalServerError  %+v", 500, o.Payload)
 }
-
-func (o *PcloudIkepoliciesPostInternalServerError) String() string {
-	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies][%d] pcloudIkepoliciesPostInternalServerError  %+v", 500, o.Payload)
-}
-
 func (o *PcloudIkepoliciesPostInternalServerError) GetPayload() *models.Error {
 	return o.Payload
 }

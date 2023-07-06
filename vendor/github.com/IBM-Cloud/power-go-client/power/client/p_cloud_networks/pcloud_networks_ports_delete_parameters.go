@@ -52,12 +52,10 @@ func NewPcloudNetworksPortsDeleteParamsWithHTTPClient(client *http.Client) *Pclo
 	}
 }
 
-/*
-PcloudNetworksPortsDeleteParams contains all the parameters to send to the API endpoint
+/* PcloudNetworksPortsDeleteParams contains all the parameters to send to the API endpoint
+   for the pcloud networks ports delete operation.
 
-	for the pcloud networks ports delete operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudNetworksPortsDeleteParams struct {
 

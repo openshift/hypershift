@@ -52,12 +52,10 @@ func NewServiceBrokerAuthLogoutParamsWithHTTPClient(client *http.Client) *Servic
 	}
 }
 
-/*
-ServiceBrokerAuthLogoutParams contains all the parameters to send to the API endpoint
+/* ServiceBrokerAuthLogoutParams contains all the parameters to send to the API endpoint
+   for the service broker auth logout operation.
 
-	for the service broker auth logout operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type ServiceBrokerAuthLogoutParams struct {
 	timeout    time.Duration

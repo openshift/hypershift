@@ -52,12 +52,10 @@ func NewPcloudLocationsDisasterrecoveryGetallParamsWithHTTPClient(client *http.C
 	}
 }
 
-/*
-PcloudLocationsDisasterrecoveryGetallParams contains all the parameters to send to the API endpoint
+/* PcloudLocationsDisasterrecoveryGetallParams contains all the parameters to send to the API endpoint
+   for the pcloud locations disasterrecovery getall operation.
 
-	for the pcloud locations disasterrecovery getall operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudLocationsDisasterrecoveryGetallParams struct {
 	timeout    time.Duration

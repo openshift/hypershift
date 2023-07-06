@@ -54,12 +54,10 @@ func NewPcloudV2PvminstancesVolumesPostParamsWithHTTPClient(client *http.Client)
 	}
 }
 
-/*
-PcloudV2PvminstancesVolumesPostParams contains all the parameters to send to the API endpoint
+/* PcloudV2PvminstancesVolumesPostParams contains all the parameters to send to the API endpoint
+   for the pcloud v2 pvminstances volumes post operation.
 
-	for the pcloud v2 pvminstances volumes post operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudV2PvminstancesVolumesPostParams struct {
 

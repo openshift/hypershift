@@ -54,12 +54,10 @@ func NewPcloudPvminstancesClonePostParamsWithHTTPClient(client *http.Client) *Pc
 	}
 }
 
-/*
-PcloudPvminstancesClonePostParams contains all the parameters to send to the API endpoint
+/* PcloudPvminstancesClonePostParams contains all the parameters to send to the API endpoint
+   for the pcloud pvminstances clone post operation.
 
-	for the pcloud pvminstances clone post operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type PcloudPvminstancesClonePostParams struct {
 

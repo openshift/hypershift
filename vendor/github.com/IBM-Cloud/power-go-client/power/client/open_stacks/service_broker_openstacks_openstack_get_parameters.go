@@ -52,12 +52,10 @@ func NewServiceBrokerOpenstacksOpenstackGetParamsWithHTTPClient(client *http.Cli
 	}
 }
 
-/*
-ServiceBrokerOpenstacksOpenstackGetParams contains all the parameters to send to the API endpoint
+/* ServiceBrokerOpenstacksOpenstackGetParams contains all the parameters to send to the API endpoint
+   for the service broker openstacks openstack get operation.
 
-	for the service broker openstacks openstack get operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type ServiceBrokerOpenstacksOpenstackGetParams struct {
 

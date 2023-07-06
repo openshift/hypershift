@@ -52,12 +52,10 @@ func NewServiceBrokerAuthDeviceCodePostParamsWithHTTPClient(client *http.Client)
 	}
 }
 
-/*
-ServiceBrokerAuthDeviceCodePostParams contains all the parameters to send to the API endpoint
+/* ServiceBrokerAuthDeviceCodePostParams contains all the parameters to send to the API endpoint
+   for the service broker auth device code post operation.
 
-	for the service broker auth device code post operation.
-
-	Typically these are written to a http.Request.
+   Typically these are written to a http.Request.
 */
 type ServiceBrokerAuthDeviceCodePostParams struct {
 	timeout    time.Duration
