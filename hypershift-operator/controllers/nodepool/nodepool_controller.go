@@ -531,6 +531,20 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 	}
 
+	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		// For dual stack kubevirt need some special customizations to work with
+		// ovn-kubernetes live migration feature
+		kubevirtIgnitionWorkerConfigMap := kubevirt.IgnitionWorkerConfigMap(nodePool.Namespace, nodePool.Name)
+
+		if result, err := r.CreateOrUpdate(ctx, r.Client, kubevirtIgnitionWorkerConfigMap, func() error {
+			return kubevirt.ReconcileIgnitionWorkerConfigMap(kubevirtIgnitionWorkerConfigMap, nodePool)
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile kubevirt ignition worker ConfigMap: %w", err)
+		} else {
+			log.Info("Reconciled kubevirt ignition worker ConfigMap", "result", result)
+		}
+	}
+
 	// Validate config input.
 	// 3 generic core config resources: fips, ssh and haproxy.
 	// TODO (alberto): consider moving the expectedCoreConfigResources check
@@ -903,7 +917,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			log.Info("Reconciled IBMPowerVSImage", "result", result)
 		}
 	}
-
 	// Reconcile (Platform)MachineTemplate.
 	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, powervsBootImage, kubevirtBootImage, cpoCapabilities.CreateDefaultAWSSecurityGroup)
 	if err != nil {
@@ -1799,6 +1812,15 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 		configs = append(configs, *configConfigMap)
 	}
 
+	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		kubevirtIgnitionWorkerConfigMap := kubevirt.IgnitionWorkerConfigMap(nodePool.Namespace, nodePool.Name)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(kubevirtIgnitionWorkerConfigMap), kubevirtIgnitionWorkerConfigMap); err != nil {
+			errors = append(errors, err)
+		} else {
+			configs = append(configs, *kubevirtIgnitionWorkerConfigMap)
+		}
+	}
+
 	// Look for NTO generated MachineConfigs from the hosted control plane namespace
 	nodeTuningGeneratedConfigs := &corev1.ConfigMapList{}
 	if err := r.List(ctx, nodeTuningGeneratedConfigs, client.MatchingLabels{
@@ -2404,6 +2426,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 			return nil
 		}
+
 	case hyperv1.AzurePlatform:
 		template = &capiazure.AzureMachineTemplate{}
 		mutateTemplate = func(object client.Object) error {

@@ -1,19 +1,33 @@
 package kubevirt
 
 import (
+	"bytes"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/pointer"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 
+	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
+	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
+
+	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
+)
+
+const (
+	ignitionConfigKey = "config"
+	ignitionVersion   = "3.2.0"
 )
 
 var (
@@ -301,4 +315,97 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, bootImage BootImage, hclust
 			},
 		},
 	}
+}
+
+func ReconcileIgnitionWorkerConfigMap(cm *corev1.ConfigMap, nodePool *hyperv1.NodePool) error {
+	machineConfig := WorkerMachineConfig()
+	serializedConfig, err := workerDualSackConfig()
+	if err != nil {
+		return fmt.Errorf("failed to serialize ignition config: %w", err)
+	}
+	machineConfig.Spec.Config.Raw = serializedConfig
+	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, config.OwnerRefFrom(nodePool))
+
+	return nil
+}
+
+func workerDualSackConfig() ([]byte, error) {
+	configureDHCP := `
+capture:
+  ethernet-nics: interfaces.type=="ethernet"
+desiredState:
+  interfaces:
+  - name: "{{ capture.ethernet-nics.interfaces.0.name }}"
+    type: ethernet
+    state: up
+    ipv6:
+      enabled: true
+      dhcp: true
+      autoconf: false
+`
+
+	configureIPv6GW := `
+capture:
+  ethernet-nics: interfaces.type=="ethernet"
+desiredState:
+  routes:
+    config:
+    - destination: ::/0
+      next-hop-interface: "{{ capture.ethernet-nics.interfaces.0.name }}"
+      next-hop-address: d7b:6b4d:7b25:d22f::1
+`
+
+	config := &igntypes.Config{}
+	config.Ignition.Version = ignitionVersion
+	config.Storage = igntypes.Storage{
+		Files: []igntypes.File{
+			{
+				Node: igntypes.Node{
+					Path: "/etc/nmstate/001-dual-stack-dhcp.yml",
+				},
+				FileEmbedded1: igntypes.FileEmbedded1{
+					Contents: igntypes.Resource{
+						Source: pointer.String(convertToRFC2397(configureDHCP)),
+					},
+				},
+			},
+			{
+				Node: igntypes.Node{
+					Path: "/etc/nmstate/002-dual-sack-ipv6-gw.yml",
+				},
+				FileEmbedded1: igntypes.FileEmbedded1{
+					Contents: igntypes.Resource{
+						Source: pointer.String(convertToRFC2397(configureIPv6GW)),
+					},
+				},
+			},
+		},
+	}
+	jsonBytes, err := json.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling ignition config: %w", err)
+	}
+	return jsonBytes, nil
+}
+
+func convertToRFC2397(data string) string {
+	return fmt.Sprintf("data:;base64,%s", base64.StdEncoding.EncodeToString([]byte(data)))
+}
+
+func reconcileMachineConfigIgnitionConfigMap(cm *corev1.ConfigMap, mc *mcfgv1.MachineConfig, ownerRef config.OwnerRef) error {
+	buf := &bytes.Buffer{}
+	mc.APIVersion = mcfgv1.SchemeGroupVersion.String()
+	mc.Kind = "MachineConfig"
+	if err := api.YamlSerializer.Encode(mc, buf); err != nil {
+		return fmt.Errorf("failed to serialize machine config %s: %w", cm.Name, err)
+	}
+	return ReconcileIgnitionConfigMap(cm, buf.String(), ownerRef)
+}
+
+func ReconcileIgnitionConfigMap(cm *corev1.ConfigMap, content string, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(cm)
+	cm.Data = map[string]string{
+		ignitionConfigKey: content,
+	}
+	return nil
 }
