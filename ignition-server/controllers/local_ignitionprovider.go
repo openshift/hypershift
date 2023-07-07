@@ -11,13 +11,11 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/blang/semver"
-	"github.com/docker/distribution/manifest/manifestlist"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -139,11 +137,17 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		return nil, fmt.Errorf("failed to get component images: %v", err)
 	}
 
-	mcoImage, hasMcoImage := imageProvider.ImageExist("machine-config-operator")
+	component := "machine-config-operator"
+	mcoImage, hasMcoImage := imageProvider.ImageExist(component)
 	if !hasMcoImage {
 		return nil, fmt.Errorf("release image does not contain machine-config-operator (images: %v)", imageProvider.ComponentImages())
 	}
-	log.Info("discovered mco image", "image", mcoImage)
+
+	mcoImage, err = registryclient.GetCorrectArchImage(ctx, component, mcoImage, pullSecret)
+	if err != nil {
+		return nil, err
+	}
+	log.Info("discovered machine-config-operator image", "image", mcoImage)
 
 	// Set up the base working directory
 	workDir, err := os.MkdirTemp(p.WorkDir, "get-payload")
@@ -210,23 +214,6 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		}
 	}
 
-	isMultiArchManifestList, err := registryclient.IsMultiArchManifestList(ctx, mcoImage, pullSecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine if image is manifest listed: %w", err)
-	}
-
-	if isMultiArchManifestList {
-		os := runtime.GOOS
-		arch := runtime.GOARCH
-		log.Info("mco image is a manifest listed image; extracting manifest for os/arch: " + os + "/" + arch)
-
-		// Verify MF Image has the right os/arch image
-		mcoImage, err = findImageRefByArch(ctx, mcoImage, pullSecret, os, arch)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract appropriate os/arch manifest from %s: %w", mcoImage, err)
-		}
-	}
-
 	// Extract template files from the MCO image to the MCC input directory
 	err = func() error {
 		start := time.Now()
@@ -260,11 +247,17 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			}
 		}
 
-		component := "cluster-config-operator"
+		component = "cluster-config-operator"
 		clusterConfigOperatorImage, ok := imageProvider.ImageExist(component)
 		if !ok {
 			return fmt.Errorf("release image does not contain cluster-config-operator (images: %v)", imageProvider.ComponentImages())
 		}
+
+		clusterConfigOperatorImage, err = registryclient.GetCorrectArchImage(ctx, component, clusterConfigOperatorImage, pullSecret)
+		if err != nil {
+			return err
+		}
+
 		log.Info("discovered cluster config operator image", "image", clusterConfigOperatorImage)
 
 		file, err := os.Create(filepath.Join(binDir, component))
@@ -640,73 +633,6 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return os.Chmod(dst, srcinfo.Mode())
-}
-
-// findImageRefByArch finds the appropriate image reference in a multi-arch manifest image based on the current platform's OS and processor architecture
-func findImageRefByArch(ctx context.Context, imageRef string, pullSecret []byte, osToFind string, archToFind string) (manifestImageRef string, err error) {
-	manifestList, err := registryclient.GetManifest(ctx, imageRef, pullSecret)
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve manifest from image ref, %s: %w", imageRef, err)
-	}
-
-	_, payload, err := manifestList.Payload()
-	if err != nil {
-		return "", fmt.Errorf("failed to get manifest payload: %w", err)
-	}
-
-	deserializedManifestList := new(manifestlist.DeserializedManifestList)
-	if err = deserializedManifestList.UnmarshalJSON(payload); err != nil {
-		return "", fmt.Errorf("failed to get unmarshalled manifest list: %w", err)
-	}
-
-	matchingManifestForArch, err := findMatchingManifest(imageRef, deserializedManifestList, osToFind, archToFind)
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve matching manifest for os/arch, %s/%s: %w", osToFind, archToFind, err)
-	}
-
-	return matchingManifestForArch, nil
-}
-
-// findMatchingManifest looks to find a manifest matching the current platform's OS and processor architecture from a deserialized manifest list from an image's payload
-func findMatchingManifest(imageRef string, deserializedManifestList *manifestlist.DeserializedManifestList, osToFind string, archToFind string) (string, error) {
-	var foundManifestDesc *manifestlist.ManifestDescriptor
-	for _, manifestDesc := range deserializedManifestList.ManifestList.Manifests {
-		if osToFind == manifestDesc.Platform.OS && archToFind == manifestDesc.Platform.Architecture {
-			foundManifestDesc = &manifestDesc
-			break
-		}
-	}
-
-	if foundManifestDesc == nil {
-		return "", fmt.Errorf("not found")
-	}
-
-	// Multi-arch image references look like either:
-	//	quay.io/openshift-release-dev/ocp-release@sha256:1a101ef5215da468cea8bd2eb47114e85b2b64a6b230d5882f845701f55d057f
-	//	quay.io/openshift-release-dev/ocp-release:4.11.0-0.nightly-multi-2022-07-12-131716
-	if strings.Contains(imageRef, "@sha") {
-		splitSHA := strings.Split(imageRef, "@")
-		if len(splitSHA) != 2 {
-			return "", fmt.Errorf("failed to parse imageRef %s", imageRef)
-		}
-
-		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Descriptor.Digest)
-		log.Info("Found matching manifest of os/arch: " + matchingManifestForArch)
-		return matchingManifestForArch, nil
-	}
-
-	if strings.Contains(imageRef, "ocp-release:") {
-		splitSHA := strings.Split(imageRef, ":")
-		if len(splitSHA) != 2 {
-			return "", fmt.Errorf("failed to parse imageRef %s", imageRef)
-		}
-
-		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Descriptor.Digest)
-		log.Info("Found matching manifest of os/arch: " + matchingManifestForArch)
-		return matchingManifestForArch, nil
-	}
-
-	return "", fmt.Errorf("imageRef is an unknown format to parse, imageRef: %s", imageRef)
 }
 
 func invokeFeatureGateRenderScript(binary, workDir, outputDir string, payloadVersion semver.Version, featureGateYAML string) string {

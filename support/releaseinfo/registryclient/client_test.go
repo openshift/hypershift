@@ -1,6 +1,7 @@
-package controllers
+package registryclient
 
 import (
+	"context"
 	"testing"
 
 	"github.com/docker/distribution"
@@ -9,14 +10,10 @@ import (
 )
 
 const (
-	ReleaseImage1       = "quay.io/openshift-release-dev/ocp-release@sha256:1a101ef5215da468cea8bd2eb47114e85b2b64a6b230d5882f845701f55d057f"
-	ReleaseImage2       = "quay.io/openshift-release-dev/ocp-release:4.11.0-0.nightly-multi-2022-07-12-131716"
-	ManifestMediaType   = "application/vnd.docker.distribution.manifest.v2+json"
-	LinuxOS             = "linux"
-	ArchitectureAMD64   = "amd64"
-	ArchitectureS390X   = "s390x"
-	ArchitecturePPC64LE = "ppc64le"
-	ArchitectureARM64   = "arm64"
+	ReleaseImage1     = "quay.io/openshift-release-dev/ocp-release@sha256:1a101ef5215da468cea8bd2eb47114e85b2b64a6b230d5882f845701f55d057f"
+	ReleaseImage2     = "quay.io/openshift-release-dev/ocp-release:4.11.0-0.nightly-multi-2022-07-12-131716"
+	ManifestMediaType = "application/vnd.docker.distribution.manifest.v2+json"
+	LinuxOS           = "linux"
 )
 
 func TestFindMatchingManifest(t *testing.T) {
@@ -192,7 +189,7 @@ func TestFindMatchingManifest(t *testing.T) {
 		t.Run(tc.testName, func(t *testing.T) {
 			g := NewWithT(t)
 
-			imageRef, err := findMatchingManifest(tc.releaseImage, tc.deserializedManifestList, tc.osToFind, tc.archToFind)
+			imageRef, err := findMatchingManifest(context.TODO(), tc.releaseImage, tc.deserializedManifestList, tc.osToFind, tc.archToFind)
 			g.Expect(err).To(BeNil())
 			g.Expect(imageRef).To(Equal(tc.expectedImageRef))
 		})
