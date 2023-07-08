@@ -5003,6 +5003,22 @@ KubevirtCompute
 <p>Compute contains values representing the virtual hardware requested for the VM</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>networkInterfaceMultiqueue</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MultiQueueSetting">
+MultiQueueSetting
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NetworkInterfaceMultiQueue If set to &ldquo;Enable&rdquo;, virtual network interfaces configured with a virtio bus will also
+enable the vhost multiqueue feature for network devices. The number of queues created depends on additional
+factors of the VirtualMachineInstance, like the number of guest CPUs.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubevirtPersistentVolume { #hypershift.openshift.io/v1beta1.KubevirtPersistentVolume }
@@ -5622,6 +5638,26 @@ is empty.</p>
 <tbody><tr><td><p>&#34;PersistentVolume&#34;</p></td>
 <td><p>PersistentVolumeEtcdStorage uses PersistentVolumes for etcd storage.</p>
 </td>
+</tr></tbody>
+</table>
+###MultiQueueSetting { #hypershift.openshift.io/v1beta1.MultiQueueSetting }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtNodePoolPlatform">KubevirtNodePoolPlatform</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Disable&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Enable&#34;</p></td>
+<td></td>
 </tr></tbody>
 </table>
 ###NetworkType { #hypershift.openshift.io/v1beta1.NetworkType }

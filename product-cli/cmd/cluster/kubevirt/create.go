@@ -17,14 +17,15 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	opts.KubevirtPlatform = core.KubevirtPlatformCreateOptions{
-		ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
-		APIServerAddress:          "",
-		Memory:                    "8Gi",
-		Cores:                     2,
-		ContainerDiskImage:        "",
-		RootVolumeSize:            32,
-		InfraKubeConfigFile:       "",
-		CacheStrategyType:         "",
+		ServicePublishingStrategy:  kubevirt.IngressServicePublishingStrategy,
+		APIServerAddress:           "",
+		Memory:                     "8Gi",
+		Cores:                      2,
+		ContainerDiskImage:         "",
+		RootVolumeSize:             32,
+		InfraKubeConfigFile:        "",
+		CacheStrategyType:          "",
+		NetworkInterfaceMultiQueue: "",
 	}
 
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.Memory, "memory", opts.KubevirtPlatform.Memory, "The amount of memory which is visible inside the Guest OS (type BinarySI, e.g. 5Gi, 100Mi)")
@@ -36,6 +37,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.InfraNamespace, "infra-namespace", opts.KubevirtPlatform.InfraNamespace, "The namespace in the external infra cluster that is used to host the KubeVirt virtual machines. The namespace must exist prior to creating the HostedCluster")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.CacheStrategyType, "root-volume-cache-strategy", opts.KubevirtPlatform.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
 	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.InfraStorageClassMappings, "infra-storage-class-mapping", opts.KubevirtPlatform.InfraStorageClassMappings, "KubeVirt CSI napping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb")
+	cmd.Flags().StringVar(&opts.KubevirtPlatform.NetworkInterfaceMultiQueue, "network-multiqueue", opts.KubevirtPlatform.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Disable"`)
 
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
