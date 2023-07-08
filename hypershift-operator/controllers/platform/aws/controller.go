@@ -525,10 +525,10 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	if err != nil {
 		log.Info("failed to delete endpoint service, attempting to reject connections", "serviceID", serviceID)
 		if rejectErr := r.rejectVpcEndpointConnections(ctx, serviceID); err != nil {
-			return false, unwrapError(rejectErr)
+			return false, unwrapError(log, rejectErr)
 		}
 
-		return false, unwrapError(err)
+		return false, unwrapError(log, err)
 	}
 
 	// DeleteVpcEndpointServiceConfigurations doesn't return errors directly when a VPC Endpoint Service doesn't exist
@@ -545,7 +545,7 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 			case "ExistingVpcEndpointConnections":
 				log.Info("endpoint service has existing connections", "serviceID", serviceID)
 				if err := r.rejectVpcEndpointConnections(ctx, serviceID); err != nil {
-					return false, unwrapError(err)
+					return false, unwrapError(log, err)
 				}
 			}
 		}
@@ -572,7 +572,7 @@ func (r *AWSEndpointServiceReconciler) rejectVpcEndpointConnections(ctx context.
 		},
 	})
 	if describeConnectionsErr != nil {
-		return unwrapError(describeConnectionsErr)
+		return unwrapError(log, describeConnectionsErr)
 	}
 	var existingEndpointIDs []*string
 	for _, conn := range existingConnectionsResult.VpcEndpointConnections {
@@ -588,15 +588,16 @@ func (r *AWSEndpointServiceReconciler) rejectVpcEndpointConnections(ctx context.
 			ServiceId:      aws.String(serviceID),
 			VpcEndpointIds: existingEndpointIDs,
 		}); rejectEndpointsErr != nil {
-			return unwrapError(rejectEndpointsErr)
+			return unwrapError(log, rejectEndpointsErr)
 		}
 	}
 
 	return nil
 }
 
-func unwrapError(err error) error {
+func unwrapError(log logr.Logger, err error) error {
 	if awsErr, ok := err.(awserr.Error); ok {
+		log.Info("AWS Error", "code", awsErr.Code(), "message", awsErr.Message())
 		return fmt.Errorf("error code: %s", awsErr.Code())
 	}
 	return err
