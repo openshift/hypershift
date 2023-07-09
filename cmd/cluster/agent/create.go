@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	apifixtures "github.com/openshift/hypershift/api/fixtures"
+	"github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/util"
 )
@@ -26,10 +26,10 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		AgentNamespace:   "",
 	}
 
-	cmd.Flags().StringVar(&opts.AgentPlatform.APIServerAddress, "api-server-address", opts.AgentPlatform.APIServerAddress, "The API server address that should be used for components outside the control plane")
+	cmd.Flags().StringVar(&opts.AgentPlatform.APIServerAddress, "api-server-address", opts.AgentPlatform.APIServerAddress, "The API server address is the IP address for Kubernetes API communication")
 	cmd.Flags().StringVar(&opts.AgentPlatform.AgentNamespace, "agent-namespace", opts.AgentPlatform.AgentNamespace, "The namespace in which to search for Agents")
-	cmd.MarkFlagRequired("agent-namespace")
-	cmd.MarkPersistentFlagRequired("pull-secret")
+	_ = cmd.MarkFlagRequired("agent-namespace")
+	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -39,7 +39,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := CreateCluster(ctx, opts); err != nil {
+		if err := createCluster(ctx, opts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -49,11 +49,11 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	return cmd
 }
 
-func CreateCluster(ctx context.Context, opts *core.CreateOptions) error {
-	return core.CreateCluster(ctx, opts, applyPlatformSpecificsValues)
+func createCluster(ctx context.Context, opts *core.CreateOptions) error {
+	return core.CreateCluster(ctx, opts, ApplyPlatformSpecificsValues)
 }
 
-func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
+func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *fixtures.ExampleOptions, opts *core.CreateOptions) (err error) {
 	if opts.AgentPlatform.APIServerAddress == "" {
 		opts.AgentPlatform.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log)
 		if err != nil {
@@ -68,7 +68,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		exampleOptions.BaseDomain = "example.com"
 	}
 
-	exampleOptions.Agent = &apifixtures.ExampleAgentOptions{
+	exampleOptions.Agent = &fixtures.ExampleAgentOptions{
 		APIServerAddress: opts.AgentPlatform.APIServerAddress,
 		AgentNamespace:   opts.AgentPlatform.AgentNamespace,
 	}
