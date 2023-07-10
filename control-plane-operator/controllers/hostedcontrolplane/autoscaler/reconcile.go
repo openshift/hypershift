@@ -329,6 +329,8 @@ const (
 
 func GetIgnoreLabels() []string {
 	return []string{
+		// Hypershift
+		"hypershift.openshift.io/nodePool",
 		// AWS
 		AwsIgnoredLabelEbsCsiZone,
 		// Azure
