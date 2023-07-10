@@ -736,10 +736,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				log.Error(fmt.Errorf("nodeport metadata not specified for ignition service"), "")
 				return ctrl.Result{}, nil
 			}
-			ignitionService := ignitionserver.Service(controlPlaneNamespace.GetName())
-			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
+			ignitionService := ignitionserver.ProxyService(controlPlaneNamespace.GetName())
+			if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
 				if !apierrors.IsNotFound(err) {
-					return ctrl.Result{}, fmt.Errorf("failed to get ignition service: %w", err)
+					return ctrl.Result{}, fmt.Errorf("failed to get ignition proxy service: %w", err)
+				} else {
+					// ignition-server-proxy service not found, possible IBM platform or older CPO that doesn't create the service
+					ignitionService = ignitionserver.Service(controlPlaneNamespace.GetName())
+					if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
+						if !apierrors.IsNotFound(err) {
+							return ctrl.Result{}, fmt.Errorf("failed to get ignition service: %w", err)
+						}
+					}
 				}
 			}
 			if err == nil && serviceFirstNodePortAvailable(ignitionService) {
