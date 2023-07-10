@@ -26,8 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/validation/field"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -50,6 +48,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/egressfirewall"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -69,7 +68,6 @@ import (
 	ini "gopkg.in/ini.v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -82,6 +80,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -209,7 +208,6 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 		&capiv1.Cluster{},
 		&appsv1.Deployment{},
 		&prometheusoperatorv1.PodMonitor{},
-		&networkingv1.NetworkPolicy{},
 		&rbacv1.ClusterRole{},
 		&rbacv1.ClusterRoleBinding{},
 		&rbacv1.Role{},
@@ -1528,9 +1526,19 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine config server: %w", err)
 	}
 
-	// Reconcile the network policies
-	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster, hcp, releaseImageVersion); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
+	// Network policy reconciliation is driven by the CPO.
+	// We just keep this here since the kvInfraCluster needs the HC namespace.
+	if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hcluster.Spec.InfraID, hcp.Spec.Platform.Kubevirt.Credentials, hcp.Namespace, hcluster.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		egressFirewall := egressfirewall.VirtLauncherEgressFirewall(kvInfraCluster.Namespace)
+		if _, err := createOrUpdate(ctx, kvInfraCluster.Client, egressFirewall, func() error {
+			return reconcileVirtLauncherEgressFirewall(egressFirewall)
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile firewall to deny metadata server egress: %w", err)
+		}
 	}
 
 	// Reconcile the AWS OIDC discovery
@@ -1563,6 +1571,26 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	log.Info("successfully reconciled")
 	return ctrl.Result{}, nil
+}
+
+func reconcileVirtLauncherEgressFirewall(egressFirewall *unstructured.Unstructured) error {
+	egressFirewall.Object["spec"] = map[string]interface{}{
+		"egress": []interface{}{
+			map[string]interface{}{
+				"to": map[string]interface{}{
+					"cidrSelector": "169.254.169.254/32",
+				},
+				"type": "Deny",
+				"ports": []interface{}{
+					map[string]interface{}{
+						"port":     int64(80),
+						"protocol": "TCP",
+					},
+				},
+			},
+		},
+	}
+	return nil
 }
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
@@ -2374,6 +2402,11 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			Verbs:     []string{"*"},
 		},
 		{
+			APIGroups: []string{"networking.k8s.io"},
+			Resources: []string{"networkpolicies"},
+			Verbs:     []string{"*"},
+		},
+		{
 			APIGroups: []string{
 				"bootstrap.cluster.x-k8s.io",
 				"controlplane.cluster.x-k8s.io",
@@ -2517,6 +2550,11 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			Verbs: []string{
 				"update",
 			},
+		},
+		{
+			APIGroups: []string{"config.openshift.io"},
+			Resources: []string{"networks"},
+			Verbs:     []string{"get", "list", "watch"},
 		},
 	}
 	return nil
@@ -3813,26 +3851,6 @@ type ClusterMachineApproverConfig struct {
 }
 type NodeClientCert struct {
 	Disabled bool `json:"disabled,omitempty"`
-}
-
-func reconcileVirtLauncherEgressFirewall(egressFirewall *unstructured.Unstructured) error {
-	egressFirewall.Object["spec"] = map[string]interface{}{
-		"egress": []interface{}{
-			map[string]interface{}{
-				"to": map[string]interface{}{
-					"cidrSelector": "169.254.169.254/32",
-				},
-				"type": "Deny",
-				"ports": []interface{}{
-					map[string]interface{}{
-						"port":     int64(80),
-						"protocol": "TCP",
-					},
-				},
-			},
-		},
-	}
-	return nil
 }
 
 const (

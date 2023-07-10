@@ -83,6 +83,18 @@ func BindAPIPortWithDefaultFromHostedCluster(hc *hyperv1.HostedCluster, defaultV
 	return defaultValue
 }
 
+// BindAPIPortWithDefaultFromHostedControlPlane will retrieve the port the kube-apiserver binds on locally in the pod
+func BindAPIPortWithDefaultFromHostedControlPlane(hcp *hyperv1.HostedControlPlane, defaultValue int32) int32 {
+	for _, svc := range hcp.Spec.Services {
+		if svc.Service == hyperv1.APIServer {
+			if svc.Type == hyperv1.NodePort && hcp.Spec.Networking.APIServer != nil && hcp.Spec.Networking.APIServer.Port != nil {
+				return *hcp.Spec.Networking.APIServer.Port
+			}
+		}
+	}
+	return defaultValue
+}
+
 // InternalAPIPortWithDefault will retrieve the port to use to contact the APIServer over the Kubernetes service domain
 // kube-apiserver.NAMESPACE.svc.cluster.local:INTERNAL_API_PORT
 func InternalAPIPortWithDefault(hcp *hyperv1.HostedControlPlane, defaultValue int32) int32 {

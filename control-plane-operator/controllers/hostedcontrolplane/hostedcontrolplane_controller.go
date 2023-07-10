@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	networkingv1 "k8s.io/api/networking/v1"
+
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 
@@ -262,6 +264,7 @@ func (r *HostedControlPlaneReconciler) eventHandlers() []eventHandler {
 		{obj: &prometheusoperatorv1.PrometheusRule{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
 		{obj: &rbacv1.Role{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
 		{obj: &rbacv1.RoleBinding{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
+		{obj: &networkingv1.NetworkPolicy{}, handler: handler.EnqueueRequestsFromMapFunc(r.hostedControlPlaneInNamespace)},
 	}
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		handlers = append(handlers, eventHandler{obj: &routev1.Route{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}})
@@ -836,6 +839,11 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	if !infraStatus.IsReady() {
 		r.Log.Info("Waiting for infrastructure to be ready before proceeding")
 		return reconcile.Result{RequeueAfter: time.Minute}, nil
+	}
+
+	// Reconcile the network policies
+	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hostedControlPlane); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
 	}
 
 	return ctrl.Result{}, r.reconcile(ctx, hostedControlPlane, createOrUpdate, imageprovider.New(releaseImage), infraStatus)
