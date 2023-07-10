@@ -49,6 +49,9 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		OwnerRef:       config.OwnerRefFrom(hcp),
 	}
 
+	p.DeploymentConfig.AdditionalLabels = map[string]string{
+		config.NeedManagementKASAccessLabel: "true",
+	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {

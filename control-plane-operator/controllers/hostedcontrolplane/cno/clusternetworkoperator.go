@@ -110,6 +110,9 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		DefaultIngressDomain:    defaultIngressDomain,
 	}
 
+	p.DeploymentConfig.AdditionalLabels = map[string]string{
+		config.NeedManagementKASAccessLabel: "true",
+	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	// No support for multus-admission-controller at the moment. TODO: add support after https://issues.redhat.com/browse/OCPBUGS-7942 is resolved.
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {

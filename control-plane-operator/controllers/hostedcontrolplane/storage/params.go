@@ -39,7 +39,11 @@ func NewParams(
 		ImageReplacer:           ir,
 		APIPort:                 util.APIPort(hcp),
 	}
-
+	params.DeploymentConfig = config.DeploymentConfig{
+		AdditionalLabels: map[string]string{
+			config.NeedManagementKASAccessLabel: "true",
+		},
+	}
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	// Run only one replica of the operator
 	params.DeploymentConfig.Scheduling = config.Scheduling{
