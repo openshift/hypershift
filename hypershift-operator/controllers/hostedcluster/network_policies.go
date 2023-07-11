@@ -28,7 +28,7 @@ const (
 	NeedManagementKASAccessLabel = "hypershift.openshift.io/need-management-kas-access"
 )
 
-func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version) error {
+func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
 
 	// Reconcile openshift-ingress Network Policy
@@ -69,8 +69,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	}
 
 	// ManagementKASNetworkPolicy restricts traffic for pods unless they have a known annotation.
-	// TODO (alberto): Once the annotation is back-ported we can let the policy be applied to those versions.
-	if version.Major == 4 && version.Minor >= 14 && hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+	if controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel && hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		policy = networkpolicy.ManagementKASNetworkPolicy(controlPlaneNamespaceName)
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 			return reconcileManagementKASNetworkPolicy(policy, managementClusterNetwork, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS))

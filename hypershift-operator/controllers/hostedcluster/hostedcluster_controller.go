@@ -115,9 +115,10 @@ const (
 	controlPlaneOperatorSubcommandsLabel = "io.openshift.hypershift.control-plane-operator-subcommands"
 	ignitionServerHealthzHandlerLabel    = "io.openshift.hypershift.ignition-server-healthz-handler"
 
-	controlplaneOperatorManagesIgnitionServerLabel = "io.openshift.hypershift.control-plane-operator-manages-ignition-server"
-	controlPlaneOperatorManagesMachineApprover     = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
-	controlPlaneOperatorManagesMachineAutoscaler   = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
+	controlplaneOperatorManagesIgnitionServerLabel             = "io.openshift.hypershift.control-plane-operator-manages-ignition-server"
+	controlPlaneOperatorManagesMachineApprover                 = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
+	controlPlaneOperatorManagesMachineAutoscaler               = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
+	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -1011,6 +1012,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	_, controlplaneOperatorManagesIgnitionServer := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
 	_, controlPlaneOperatorManagesMachineAutoscaler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]
 	_, controlPlaneOperatorManagesMachineApprover := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]
+	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
 
 	p, err := platform.GetPlatform(ctx, hcluster, r.ReleaseProvider, utilitiesImage, pullSecretBytes)
 	if err != nil {
@@ -1537,7 +1539,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the network policies
-	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster, hcp, releaseImageVersion); err != nil {
+	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster, hcp, releaseImageVersion, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
 	}
 
