@@ -256,37 +256,34 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	// Populate registry overrides with any ICSP and IDMS from a OpenShift management cluster
 	var imageRegistryOverrides map[string][]string
 	if mgmtClusterCaps.Has(capabilities.CapabilityICSP) || mgmtClusterCaps.Has(capabilities.CapabilityIDMS) {
-		// Warn the user this CR will be deprecated in the future
-		if mgmtClusterCaps.Has(capabilities.CapabilityICSP) {
-			log.Info("Detected ImageContentSourcePolicy Custom Resources. ImageContentSourcePolicy will be deprecated in favor of ImageDigestMirrorSet. See https://issues.redhat.com/browse/OCPNODE-1258 for more details.")
-		}
-
 		imageRegistryOverrides, err = globalconfig.GetAllImageRegistryMirrors(ctx, apiReadingClient, mgmtClusterCaps.Has(capabilities.CapabilityIDMS))
 		if err != nil {
 			return fmt.Errorf("failed to populate image registry overrides: %w", err)
 		}
 	}
 
+	releaseProviderWithOpenShiftImageRegistryOverrides := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			RegistryOverrides: opts.RegistryOverrides,
+		},
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
 	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
 		Client:                        mgr.GetClient(),
 		ManagementClusterCapabilities: mgmtClusterCaps,
 		HypershiftOperatorImage:       operatorImage,
-		ReleaseProvider: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-				Delegate: &releaseinfo.CachedProvider{
-					Inner: &releaseinfo.RegistryClientProvider{},
-					Cache: map[string]*releaseinfo.ReleaseImage{},
-				},
-				RegistryOverrides: opts.RegistryOverrides,
-			},
-			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-		},
-		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
-		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
-		ImageMetadataProvider:      &hyperutil.RegistryClientImageMetadataProvider{},
-		MetricsSet:                 metricsSet,
-		OperatorNamespace:          opts.Namespace,
-		SREConfigHash:              sreConfigHash,
+		ReleaseProvider:               releaseProviderWithOpenShiftImageRegistryOverrides,
+		EnableOCPClusterMonitoring:    opts.EnableOCPClusterMonitoring,
+		EnableCIDebugOutput:           opts.EnableCIDebugOutput,
+		ImageMetadataProvider:         &hyperutil.RegistryClientImageMetadataProvider{},
+		MetricsSet:                    metricsSet,
+		OperatorNamespace:             opts.Namespace,
+		SREConfigHash:                 sreConfigHash,
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
@@ -305,17 +302,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	if err := (&nodepool.NodePoolReconciler{
-		Client: mgr.GetClient(),
-		ReleaseProvider: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-				Delegate: &releaseinfo.CachedProvider{
-					Inner: &releaseinfo.RegistryClientProvider{},
-					Cache: map[string]*releaseinfo.ReleaseImage{},
-				},
-				RegistryOverrides: opts.RegistryOverrides,
-			},
-			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-		},
+		Client:                  mgr.GetClient(),
+		ReleaseProvider:         releaseProviderWithOpenShiftImageRegistryOverrides,
 		CreateOrUpdateProvider:  createOrUpdate,
 		HypershiftOperatorImage: operatorImage,
 		ImageMetadataProvider:   &hyperutil.RegistryClientImageMetadataProvider{},
@@ -390,7 +378,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 		log.Info("reconciled default ingress controller")
 	}
-	if err != nil {
+	if err != nil && apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to get ingress controller: %w", err)
 	}
 

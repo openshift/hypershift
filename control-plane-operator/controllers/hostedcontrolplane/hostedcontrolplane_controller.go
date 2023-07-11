@@ -3160,19 +3160,14 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		return fmt.Errorf("failed to reconcile ssh key ignition config: %w", err)
 	}
 
-	imageSourceMirrorsIgnitionConfig := manifests.ImageContentPolicyIgnitionConfig(hcp.GetNamespace())
+	// Ensure the imageDigestMirrorSet configmap has been removed if no longer needed
+	imageContentPolicyIgnitionConfig := manifests.ImageContentPolicyIgnitionConfig(hcp.GetNamespace())
 	if !p.HasImageMirrorPolicies {
-		// ensure the imageDigestMirrorSet configmap has been removed if no longer needed
-		err := r.Get(ctx, client.ObjectKeyFromObject(imageSourceMirrorsIgnitionConfig), imageSourceMirrorsIgnitionConfig)
+		_, err := util.DeleteIfNeeded(ctx, r.Client, imageContentPolicyIgnitionConfig)
 		if err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to check whether image content source policy configuration configmap exists: %w", err)
-			}
-		} else {
-			if err := r.Delete(ctx, imageSourceMirrorsIgnitionConfig); err != nil {
-				return fmt.Errorf("failed to delete image content source policy configuration configmap: %w", err)
-			}
+			return fmt.Errorf("failed to delete image content source policy configuration configmap: %w", err)
 		}
+
 		return nil
 	}
 
@@ -3181,8 +3176,8 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		return fmt.Errorf("failed to reconcile image content policy: %w", err)
 	}
 
-	if _, err := createOrUpdate(ctx, r, imageSourceMirrorsIgnitionConfig, func() error {
-		return ignition.ReconcileImageSourceMirrorsIgnitionConfig(imageSourceMirrorsIgnitionConfig, p.OwnerRef, imageDigestMirrorSet)
+	if _, err := createOrUpdate(ctx, r, imageContentPolicyIgnitionConfig, func() error {
+		return ignition.ReconcileImageSourceMirrorsIgnitionConfig(imageContentPolicyIgnitionConfig, p.OwnerRef, imageDigestMirrorSet)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile image content source policy ignition config: %w", err)
 	}
