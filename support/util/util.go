@@ -251,7 +251,7 @@ func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string 
 func IsIPv4(cidr string) (bool, error) {
 	_, ipnet, err := net.ParseCIDR(cidr)
 	if err != nil {
-		return false, fmt.Errorf("error validating the ClusterNetworkCIDR from HostedCluster: %v", err)
+		return false, fmt.Errorf("error validating the incoming CIDR %s: %v", cidr, err)
 	}
 
 	if ipnet.IP.To4() != nil {
