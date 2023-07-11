@@ -193,6 +193,9 @@ const (
 	// DedicatedRequestServingComponentsTopology indicates that control plane request serving
 	// components should be scheduled on dedicated nodes in the management cluster.
 	DedicatedRequestServingComponentsTopology = "dedicated-request-serving-components"
+
+	//Disable deployments related to machine management that includes cluster-api, cluster-autoscaler, machine-approver.
+	DisableMachineManagement = "hypershift.openshift.io/disable-machine-management"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

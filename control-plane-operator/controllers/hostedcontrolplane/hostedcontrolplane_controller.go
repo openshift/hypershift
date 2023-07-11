@@ -1118,14 +1118,17 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		}
 	}
 
-	r.Log.Info("Reconciling autoscaler")
-	if err := r.reconcileAutoscaler(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile autoscaler: %w", err)
-	}
+	// Disable machine management components if enabled
+	if _, exists := hostedControlPlane.Annotations[hyperv1.DisableMachineManagement]; !exists {
+		r.Log.Info("Reconciling autoscaler")
+		if err := r.reconcileAutoscaler(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile autoscaler: %w", err)
+		}
 
-	r.Log.Info("Reconciling machine approver")
-	if err := r.reconcileMachineApprover(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile machine approver: %w", err)
+		r.Log.Info("Reconciling machine approver")
+		if err := r.reconcileMachineApprover(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile machine approver: %w", err)
+		}
 	}
 
 	r.Log.Info("Reconciling default security group")
