@@ -58,7 +58,7 @@ func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace 
 	}
 
 	cpath := func(volume, file string) string {
-		dir := volumeMounts.Path(oauthContainerMain().Name, volume)
+		dir := volumeMountsCABundle.Path(oauthContainerMain().Name, volume)
 		return path.Join(dir, file)
 	}
 
