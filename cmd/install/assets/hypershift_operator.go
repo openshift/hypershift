@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/pkg/version"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -302,31 +303,32 @@ func (o MonitoringDashboardTemplate) Build() *corev1.ConfigMap {
 }
 
 type HyperShiftOperatorDeployment struct {
-	AdditionalTrustBundle          *corev1.ConfigMap
-	OpenShiftTrustBundle           *corev1.ConfigMap
-	Namespace                      *corev1.Namespace
-	OperatorImage                  string
-	Images                         map[string]string
-	ServiceAccount                 *corev1.ServiceAccount
-	Replicas                       int32
-	EnableOCPClusterMonitoring     bool
-	EnableCIDebugOutput            bool
-	EnableWebhook                  bool
-	EnableValidatingWebhook        bool
-	PrivatePlatform                string
-	AWSPrivateSecret               *corev1.Secret
-	AWSPrivateSecretKey            string
-	AWSPrivateRegion               string
-	OIDCBucketName                 string
-	OIDCBucketRegion               string
-	OIDCStorageProviderS3Secret    *corev1.Secret
-	OIDCStorageProviderS3SecretKey string
-	MetricsSet                     metrics.MetricsSet
-	IncludeVersion                 bool
-	UWMTelemetry                   bool
-	RHOBSMonitoring                bool
-	MonitoringDashboards           bool
-	CertRotationScale              time.Duration
+	AdditionalTrustBundle                   *corev1.ConfigMap
+	OpenShiftTrustBundle                    *corev1.ConfigMap
+	Namespace                               *corev1.Namespace
+	OperatorImage                           string
+	Images                                  map[string]string
+	ServiceAccount                          *corev1.ServiceAccount
+	Replicas                                int32
+	EnableOCPClusterMonitoring              bool
+	EnableCIDebugOutput                     bool
+	EnableWebhook                           bool
+	EnableValidatingWebhook                 bool
+	PrivatePlatform                         string
+	AWSPrivateSecret                        *corev1.Secret
+	AWSPrivateSecretKey                     string
+	AWSPrivateRegion                        string
+	OIDCBucketName                          string
+	OIDCBucketRegion                        string
+	OIDCStorageProviderS3Secret             *corev1.Secret
+	OIDCStorageProviderS3SecretKey          string
+	MetricsSet                              metrics.MetricsSet
+	IncludeVersion                          bool
+	UWMTelemetry                            bool
+	RHOBSMonitoring                         bool
+	MonitoringDashboards                    bool
+	CertRotationScale                       time.Duration
+	EnableCVOManagementClusterMetricsAccess bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -412,6 +414,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 
 	if o.UWMTelemetry {
 		args = append(args, "--enable-uwm-telemetry-remote-write")
+	}
+
+	if o.EnableCVOManagementClusterMetricsAccess {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  config.EnableCVOManagementClusterMetricsAccessEnvVar,
+			Value: "1",
+		})
 	}
 
 	image := o.OperatorImage
@@ -823,7 +832,9 @@ func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
 	return sa
 }
 
-type HyperShiftOperatorClusterRole struct{}
+type HyperShiftOperatorClusterRole struct {
+	EnableCVOManagementClusterMetricsAccess bool
+}
 
 func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 	role := &rbacv1.ClusterRole{
@@ -1010,6 +1021,14 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				ResourceNames: []string{hyperv1.GroupVersion.Group},
 			},
 		},
+	}
+	if o.EnableCVOManagementClusterMetricsAccess {
+		role.Rules = append(role.Rules,
+			rbacv1.PolicyRule{
+				APIGroups: []string{"metrics.k8s.io"},
+				Resources: []string{"pods"},
+				Verbs:     []string{"get"},
+			})
 	}
 	return role
 }

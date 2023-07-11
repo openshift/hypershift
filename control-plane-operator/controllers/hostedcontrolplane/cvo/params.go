@@ -23,7 +23,7 @@ type CVOParams struct {
 	PlatformType            hyperv1.PlatformType
 }
 
-func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *CVOParams {
+func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext, enableCVOManagementClusterMetricsAccess bool) *CVOParams {
 	p := &CVOParams{
 		CLIImage:                releaseImageProvider.GetImage("cli"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
@@ -32,6 +32,11 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imagepr
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ClusterID:               hcp.Spec.ClusterID,
 		PlatformType:            hcp.Spec.Platform.Type,
+	}
+	if enableCVOManagementClusterMetricsAccess {
+		p.DeploymentConfig.AdditionalLabels = map[string]string{
+			config.NeedMetricsServerAccessLabel: "true",
+		}
 	}
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		cvoContainerPrepPayload().Name: {

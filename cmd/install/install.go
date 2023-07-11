@@ -86,6 +86,7 @@ type Options struct {
 	ExternalDNSImage                          string
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
+	EnableCVOManagementClusterMetricsAccess   bool
 	MetricsSet                                metrics.MetricsSet
 	WaitUntilAvailable                        bool
 	RHOBSMonitoring                           bool
@@ -140,6 +141,9 @@ func (o *Options) Validate() error {
 		errs = append(errs, fmt.Errorf("cannot set --cert-rotation-scale longer than 24h, invalid value: %s", o.CertRotationScale.String()))
 	}
 
+	if o.RHOBSMonitoring && o.EnableCVOManagementClusterMetricsAccess {
+		errs = append(errs, fmt.Errorf("when invoking this command with the --rhobs-monitoring flag, the --enable-cvo-management-cluster-metrics-access flag is not supported "))
+	}
 	return errors.NewAggregate(errs)
 }
 
@@ -198,6 +202,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
 	cmd.PersistentFlags().Var(&opts.MetricsSet, "metrics-set", "The set of metrics to produce for each HyperShift control plane. Valid values are: Telemetry, SRE, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, HyperShift operator ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
+	cmd.PersistentFlags().BoolVar(&opts.EnableCVOManagementClusterMetricsAccess, "enable-cvo-management-cluster-metrics-access", opts.EnableCVOManagementClusterMetricsAccess, "If true, the hosted CVO will have access to the management cluster metrics server to evaluate conditional updates (supported for OpenShift management clusters)")
 	cmd.Flags().BoolVar(&opts.WaitUntilAvailable, "wait-until-available", opts.WaitUntilAvailable, "If true, pauses installation until hypershift operator has been rolled out and its webhook service is available (if installing the webhook)")
 	cmd.PersistentFlags().BoolVar(&opts.RHOBSMonitoring, "rhobs-monitoring", opts.RHOBSMonitoring, "If true, HyperShift will generate and use the RHOBS version of monitoring resources (ServiceMonitors, PodMonitors, etc)")
 	cmd.PersistentFlags().BoolVar(&opts.SLOsAlerts, "slos-alerts", opts.SLOsAlerts, "If true, HyperShift will generate and use the prometheus alerts for monitoring HostedCluster and NodePools")
@@ -405,7 +410,9 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	}.Build()
 	objects = append(objects, operatorServiceAccount)
 
-	operatorClusterRole := assets.HyperShiftOperatorClusterRole{}.Build()
+	operatorClusterRole := assets.HyperShiftOperatorClusterRole{
+		EnableCVOManagementClusterMetricsAccess: opts.EnableCVOManagementClusterMetricsAccess,
+	}.Build()
 	objects = append(objects, operatorClusterRole)
 
 	operatorClusterRoleBinding := assets.HyperShiftOperatorClusterRoleBinding{
@@ -571,31 +578,32 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	}
 
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
-		AdditionalTrustBundle:          userCABundleCM,
-		OpenShiftTrustBundle:           trustedCABundle,
-		Namespace:                      operatorNamespace,
-		OperatorImage:                  opts.HyperShiftImage,
-		ServiceAccount:                 operatorServiceAccount,
-		Replicas:                       opts.HyperShiftOperatorReplicas,
-		EnableOCPClusterMonitoring:     opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
-		EnableCIDebugOutput:            opts.EnableCIDebugOutput,
-		EnableWebhook:                  opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook,
-		EnableValidatingWebhook:        opts.EnableValidatingWebhook,
-		PrivatePlatform:                opts.PrivatePlatform,
-		AWSPrivateRegion:               opts.AWSPrivateRegion,
-		AWSPrivateSecret:               operatorCredentialsSecret,
-		AWSPrivateSecretKey:            opts.AWSPrivateCredentialsSecretKey,
-		OIDCBucketName:                 opts.OIDCStorageProviderS3BucketName,
-		OIDCBucketRegion:               opts.OIDCStorageProviderS3Region,
-		OIDCStorageProviderS3Secret:    oidcSecret,
-		OIDCStorageProviderS3SecretKey: opts.OIDCStorageProviderS3CredentialsSecretKey,
-		Images:                         images,
-		MetricsSet:                     opts.MetricsSet,
-		IncludeVersion:                 !opts.Template,
-		UWMTelemetry:                   opts.EnableUWMTelemetryRemoteWrite,
-		RHOBSMonitoring:                opts.RHOBSMonitoring,
-		MonitoringDashboards:           opts.MonitoringDashboards,
-		CertRotationScale:              opts.CertRotationScale,
+		AdditionalTrustBundle:                   userCABundleCM,
+		OpenShiftTrustBundle:                    trustedCABundle,
+		Namespace:                               operatorNamespace,
+		OperatorImage:                           opts.HyperShiftImage,
+		ServiceAccount:                          operatorServiceAccount,
+		Replicas:                                opts.HyperShiftOperatorReplicas,
+		EnableOCPClusterMonitoring:              opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
+		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
+		EnableWebhook:                           opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook,
+		EnableValidatingWebhook:                 opts.EnableValidatingWebhook,
+		PrivatePlatform:                         opts.PrivatePlatform,
+		AWSPrivateRegion:                        opts.AWSPrivateRegion,
+		AWSPrivateSecret:                        operatorCredentialsSecret,
+		AWSPrivateSecretKey:                     opts.AWSPrivateCredentialsSecretKey,
+		OIDCBucketName:                          opts.OIDCStorageProviderS3BucketName,
+		OIDCBucketRegion:                        opts.OIDCStorageProviderS3Region,
+		OIDCStorageProviderS3Secret:             oidcSecret,
+		OIDCStorageProviderS3SecretKey:          opts.OIDCStorageProviderS3CredentialsSecretKey,
+		Images:                                  images,
+		MetricsSet:                              opts.MetricsSet,
+		IncludeVersion:                          !opts.Template,
+		UWMTelemetry:                            opts.EnableUWMTelemetryRemoteWrite,
+		RHOBSMonitoring:                         opts.RHOBSMonitoring,
+		MonitoringDashboards:                    opts.MonitoringDashboards,
+		CertRotationScale:                       opts.CertRotationScale,
+		EnableCVOManagementClusterMetricsAccess: opts.EnableCVOManagementClusterMetricsAccess,
 	}.Build()
 	objects = append(objects, operatorDeployment)
 
