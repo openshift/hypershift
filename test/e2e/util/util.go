@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -36,14 +41,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sort"
-	"strings"
-	"testing"
-	"time"
 )
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -762,163 +762,6 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 			}
 		}
 	})
-}
-
-func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-		t.Skip()
-	}
-
-	t.Run("EnsureNetworkPolicies", func(t *testing.T) {
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
-		t.Run("EnsureComponentsHaveNeedManagementKASAccessLabel", func(t *testing.T) {
-			// Check for all components expected to have NeedManagementKASAccessLabel.
-			want := []string{
-				"cluster-network-operator",
-				"ignition-server",
-				"cluster-storage-operator",
-				"csi-snapshot-controller-operator",
-				"machine-approver",
-				"cluster-autoscaler",
-				"cluster-node-tuning-operator",
-				"capi-provider-controller-manager",
-				"cluster-api",
-				"control-plane-operator",
-				"hosted-cluster-config-operator",
-				"cloud-controller-manager",
-			}
-			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-				want = append(want, "private-router")
-			}
-
-			g := NewWithT(t)
-			err := checkPodsHaveLabel(ctx, c, want, hcpNamespace, client.MatchingLabels{suppconfig.NeedManagementKASAccessLabel: "true"})
-			g.Expect(err).ToNot(HaveOccurred())
-		})
-
-		t.Run("EnsureEgressTrafficToManagementKAS", func(t *testing.T) {
-			g := NewWithT(t)
-
-			kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
-			err := c.Get(ctx, client.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint)
-			g.Expect(err).ToNot(HaveOccurred())
-
-			kasAddress := ""
-			for _, subset := range kubernetesEndpoint.Subsets {
-				if len(subset.Addresses) > 0 && len(subset.Ports) > 0 {
-					kasAddress = fmt.Sprintf("https://%s:%v", subset.Addresses[0].IP, subset.Ports[0].Port)
-					break
-				}
-			}
-			t.Logf("Connecting to kubernetes endpoint on: %s", kasAddress)
-
-			command := []string{
-				"curl",
-				"--connect-timeout",
-				"2",
-				"-Iks",
-				// Default KAS advertised address.
-				kasAddress,
-			}
-			stdOut, err := RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator")
-			g.Expect(err).To(HaveOccurred())
-
-			// Expect curl to timeout https://curl.se/docs/manpage.html (exit code 28).
-			if err != nil && !strings.Contains(err.Error(), "command terminated with exit code 28") {
-				t.Errorf("cluster version pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
-			}
-
-			stdOut, err = RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager")
-			// Expect curl return a 403 from the KAS.
-			if !strings.Contains(stdOut, "HTTP/2 403") || err != nil {
-				t.Errorf("cluster api pod was unexpectedly not allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
-			}
-		})
-	})
-}
-
-func checkPodsHaveLabel(ctx context.Context, c crclient.Client, components []string, namespace string, labels map[string]string) error {
-	// Get all Pods with wanted label.
-	podList := &corev1.PodList{}
-	err := c.List(ctx, podList, client.InNamespace(namespace), client.MatchingLabels(labels))
-	if err != nil {
-		return fmt.Errorf("failed to list pods: %w", err)
-	}
-
-	// Create a slice with app/name as the value for every pod.
-	got := make([]string, 0)
-	for _, pod := range podList.Items {
-		if pod.Labels["app"] != "" {
-			got = append(got, pod.Labels["app"])
-			continue
-		}
-
-		if pod.Labels["name"] != "" {
-			got = append(got, pod.Labels["name"])
-			continue
-		}
-
-		got = append(got, pod.Name)
-	}
-
-	// Remove duplicates from got. This might be the case when e.g. running HA.
-	processed := make(map[string]bool, 0)
-	gotWithoutDuplicates := make([]string, 0)
-	for i := range got {
-		if processed[got[i]] {
-			continue
-		}
-
-		gotWithoutDuplicates = append(gotWithoutDuplicates, got[i])
-		processed[got[i]] = true
-	}
-
-	// This Transformer sorts a []string.
-	trans := cmp.Transformer("Sort", func(in []string) []string {
-		out := append([]string(nil), in...) // Copy input to avoid mutating it
-		sort.Strings(out)
-		return out
-	})
-
-	if diff := cmp.Diff(components, gotWithoutDuplicates, trans); diff != "" {
-		return fmt.Errorf("not all expected components have NeedManagementKASAccessLabel: %s", cmp.Diff(components, gotWithoutDuplicates, trans))
-	}
-	return nil
-}
-
-func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespace string, command []string, containerName string) (string, error) {
-	podList := &corev1.PodList{}
-	if err := c.List(ctx, podList,
-		client.InNamespace(namespace),
-		client.MatchingLabels{"app": component}); err != nil {
-		return "", fmt.Errorf("failed to list Pods: %w", err)
-	}
-	if len(podList.Items) < 1 {
-		return "", fmt.Errorf("pods for component %q not found", component)
-	}
-
-	restConfig, err := GetConfig()
-	if err != nil {
-		return "", fmt.Errorf("failed to get restConfig; %w", err)
-	}
-
-	stdOut := new(bytes.Buffer)
-	podExecuter := PodExecOptions{
-		StreamOptions: StreamOptions{
-			IOStreams: genericclioptions.IOStreams{
-				Out:    stdOut,
-				ErrOut: os.Stderr,
-			},
-		},
-		Command:       command,
-		Namespace:     namespace,
-		PodName:       podList.Items[0].Name,
-		Config:        restConfig,
-		ContainerName: containerName,
-	}
-
-	err = podExecuter.Run()
-	return stdOut.String(), err
 }
 
 func getPrometheusToken(ctx context.Context, secretName string, client crclient.Client) ([]byte, error) {

@@ -28,7 +28,6 @@ spec:
       labels:
         app: csi-snapshot-controller-operator
         hypershift.openshift.io/hosted-control-plane: test-namespace
-        hypershift.openshift.io/need-management-kas-access: "true"
     spec:
       affinity:
         nodeAffinity:
