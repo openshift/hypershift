@@ -504,33 +504,13 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 		deployment.Annotations = map[string]string{}
 	}
 
-	// Before this change we did
-	// 		Selector: &metav1.LabelSelector{
-	//			MatchLabels: ignitionServerLabels,
-	//		},
-	//		Template: corev1.PodTemplateSpec{
-	//			ObjectMeta: metav1.ObjectMeta{
-	//				Labels: ignitionServerLabels,
-	//			}
-	// As a consequence of using the same memory address for both MatchLabels and Labels, when setColocation set the colocationLabelKey in additionalLabels
-	// it got also silently included in MatchLabels. This made any additional additionalLabel to break reconciliation because MatchLabels is an immutable field.
-	// So now we leave Selector.MatchLabels if it has something already and use a different var from .Labels so the former is not impacted by additionalLabels changes.
-	selectorLabels := ignitionServerLabels
-	if deployment.Spec.Selector != nil && deployment.Spec.Selector.MatchLabels != nil {
-		selectorLabels = deployment.Spec.Selector.MatchLabels
-	}
-
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: selectorLabels,
+			MatchLabels: ignitionServerLabels,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				// We copy the map here, otherwise this .Labels would point to the same address that .MatchLabels
-				// Then when additionalLabels are applied it silently modifies .MatchLabels.
-				// We could also change additionalLabels.ApplyTo but that might have a bigger impact.
-				// TODO (alberto): Refactor support.config package and gate all components definition on the library.
-				Labels: config.CopyStringMap(ignitionServerLabels),
+				Labels: ignitionServerLabels,
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName:            ignitionserver.ServiceAccount("").Name,
@@ -699,11 +679,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 		}
 	}
 
-	deploymentConfig := config.DeploymentConfig{
-		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
-		},
-	}
+	deploymentConfig := config.DeploymentConfig{}
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.SetDefaults(hcp, ignitionServerLabels, nil)
