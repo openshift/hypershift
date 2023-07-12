@@ -229,18 +229,38 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, config *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference, hcp *hyperv1.HostedControlPlane) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, deploymentConfig *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference, hcp *hyperv1.HostedControlPlane) error {
+	// Before this change we did
+	// 		Selector: &metav1.LabelSelector{
+	//			MatchLabels: hccLabels,
+	//		},
+	//		Template: corev1.PodTemplateSpec{
+	//			ObjectMeta: metav1.ObjectMeta{
+	//				Labels: hccLabels,
+	//			}
+	// As a consequence of using the same memory address for both MatchLabels and Labels, when setColocation set the colocationLabelKey in additionalLabels
+	// it got also silently included in MatchLabels. This made any additional additionalLabel to break reconciliation because MatchLabels is an immutable field.
+	// So now we leave Selector.MatchLabels if it has something already and use a different var from .Labels so the former is not impacted by additionalLabels changes.
+	selectorLabels := hccLabels
+	if deployment.Spec.Selector != nil && deployment.Spec.Selector.MatchLabels != nil {
+		selectorLabels = deployment.Spec.Selector.MatchLabels
+	}
+
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: hccLabels,
+			MatchLabels: selectorLabels,
 		},
 		Strategy: appsv1.DeploymentStrategy{
 			Type: appsv1.RecreateDeploymentStrategyType,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: hccLabels,
+				// We copy the map here, otherwise this .Labels would point to the same address that .MatchLabels
+				// Then when additionalLabels are applied it silently modifies .MatchLabels.
+				// We could also change additionalLabels.ApplyTo but that might have a bigger impact.
+				// TODO (alberto): Refactor support.config package and gate all components definition on the library.
+				Labels: config.CopyStringMap(hccLabels),
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
@@ -263,7 +283,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 		util.DeploymentAddKubevirtInfraCredentials(deployment)
 	}
 
-	config.ApplyTo(deployment)
+	deploymentConfig.ApplyTo(deployment)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiInternalPort), availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
 		o.KubeconfigVolumeName = "kubeconfig"
 		o.RequiredAPIs = []schema.GroupVersionKind{
