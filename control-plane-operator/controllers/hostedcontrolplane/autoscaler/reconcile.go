@@ -37,6 +37,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
 		fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
 		fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
+		"--balance-similar-node-groups=true",
 		"--v=4",
 	}
 
@@ -315,6 +316,8 @@ const (
 
 func GetIgnoreLabels() []string {
 	return []string{
+		// Hypershift
+		"hypershift.openshift.io/nodePool",
 		// AWS
 		AwsIgnoredLabelEbsCsiZone,
 		// Azure
