@@ -2,11 +2,14 @@ package globalconfig
 
 import (
 	"context"
+
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -118,12 +121,18 @@ func getImageDigestMirrorSets(ctx context.Context, client client.Client) (map[st
 
 // getImageContentSourcePolicies retrieves any ICSP CRs from an OpenShift management cluster
 func getImageContentSourcePolicies(ctx context.Context, client client.Client) (map[string][]string, error) {
+	log := ctrl.LoggerFrom(ctx)
 	var icspRegistryOverrides = make(map[string][]string)
 	var imageContentSourcePolicies = ImageContentSourcePolicyList()
 
 	err := client.List(ctx, imageContentSourcePolicies)
 	if err != nil {
 		return nil, err
+	}
+
+	// Warn the user this CR will be deprecated in the future
+	if len(imageContentSourcePolicies.Items) > 0 {
+		log.Info("Detected ImageContentSourcePolicy Custom Resources. ImageContentSourcePolicy will be deprecated in favor of ImageDigestMirrorSet. See https://issues.redhat.com/browse/OCPNODE-1258 for more details.")
 	}
 
 	// For each image content source policy in the management cluster, map the source with each of its mirrors
