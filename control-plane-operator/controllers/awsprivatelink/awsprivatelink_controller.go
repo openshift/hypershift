@@ -743,6 +743,13 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		if fqdn != "" && zoneID != "" {
 			record, err := findRecord(ctx, route53Client, zoneID, fqdn)
 			if err != nil {
+				if awsErr, ok := err.(awserr.Error); ok {
+					if awsErr.Code() == route53.ErrCodeNoSuchHostedZone {
+						log.Info("Hosted Zone not found", "hostedzone", zoneID)
+						return true, nil
+					}
+				}
+
 				return false, err
 			}
 			if record != nil {
