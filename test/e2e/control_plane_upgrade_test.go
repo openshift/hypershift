@@ -55,6 +55,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 		hostedCluster.Annotations = make(map[string]string)
 	}
 	hostedCluster.Annotations[hyperv1.ForceUpgradeToAnnotation] = globalOpts.LatestReleaseImage
+	hostedCluster.Annotations[hyperv1.DisablePKIReconciliationAnnotation] = "true"
 	err = client.Patch(ctx, hostedCluster, crclient.MergeFrom(original))
 	g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
 
