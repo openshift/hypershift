@@ -196,6 +196,7 @@ const (
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.imageContentSources) || has(self.imageContentSources)", message="ImageContentSources is required once set"
 type HostedClusterSpec struct {
 	// Release specifies the desired OCP release payload for the hosted cluster.
 	//
@@ -347,6 +348,8 @@ type HostedClusterSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ImageContentSources is immutable"
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
 	// AdditionalTrustBundle is a reference to a ConfigMap containing a
