@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/registryclient"
 	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest"
 	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest/dockercredentials"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 var (
@@ -24,7 +25,7 @@ var (
 )
 
 type ImageMetadataProvider interface {
-	ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error)
+	ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte, imageContentSources []hyperv1.ImageContentSource) (*dockerv1client.DockerImageConfig, error)
 }
 
 type RegistryClientImageMetadataProvider struct{}
@@ -38,11 +39,23 @@ type RegistryClientImageMetadataProvider struct{}
 // tag is referring to could have changed. Once a digest is obtained, the cache is checked so that
 // no further fetching occurs. Only if both cache lookups fail, the image metadata is fetched and
 // stored in the cache.
-func (*RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error) {
+func (*RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte, imageContentSource []hyperv1.ImageContentSource) (*dockerv1client.DockerImageConfig, error) {
 
 	ref, err := reference.Parse(imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
+	}
+
+	// Check if we should override the image for another disconneceted image
+	if len(imageContentSource) > 0 {
+		overridedImageRef, err := GetRegistryOverrides(ctx, ref, imageContentSource)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check registry overrides for image reference %q: %w", imageRef, err)
+		}
+
+		if overridedImageRef != nil {
+			ref = *overridedImageRef
+		}
 	}
 
 	// If the image reference contains a digest, immediately look it up in the cache
@@ -101,6 +114,28 @@ func HCControlPlaneReleaseImage(hcluster *hyperv1.HostedCluster) string {
 		return hcluster.Spec.ControlPlaneRelease.Image
 	}
 	return hcluster.Spec.Release.Image
+}
+
+func GetRegistryOverrides(ctx context.Context, ref reference.DockerImageReference, imageContentSources []hyperv1.ImageContentSource) (*reference.DockerImageReference, error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	for _, imageContentSource := range imageContentSources {
+		sourceRef, err := reference.Parse(imageContentSource.Source)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse source image reference %q: %w", imageContentSource.Source, err)
+		}
+
+		if sourceRef == ref {
+			log.Info("registry override coincidence found", "original", fmt.Sprintf("%s/%s/%s", ref.Registry, ref.Namespace, ref.Name), "mirror", imageContentSource.Mirrors[0])
+			mirrorRef, err := reference.Parse(imageContentSource.Mirrors[0])
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse mirror image reference %q: %w", mirrorRef.Name, err)
+			}
+			return &mirrorRef, nil
+		}
+	}
+	log.Info("registry override coincidence not found", "image", ref.Name)
+	return &ref, nil
 }
 
 func GetPayloadImage(ctx context.Context, releaseImageProvider releaseinfo.Provider, hc *hyperv1.HostedCluster, component string, pullSecret []byte) (string, error) {
