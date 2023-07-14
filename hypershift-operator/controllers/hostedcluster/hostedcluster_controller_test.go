@@ -1736,12 +1736,7 @@ func TestIsUpgradeable(t *testing.T) {
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
-					Version: &hyperv1.ClusterVersionStatus{
-						Desired: configv1.Release{
-							Image:   releaseImageFrom,
-							Version: "4.12.0",
-						},
-					},
+					Version: &hyperv1.ClusterVersionStatus{},
 					Conditions: []metav1.Condition{
 						{
 							Type:   string(hyperv1.ClusterVersionUpgradeable),

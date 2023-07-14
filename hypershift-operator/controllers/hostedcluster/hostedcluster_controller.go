@@ -4053,6 +4053,17 @@ func isUpgradeable(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.Re
 		return true, "", nil
 	}
 
+	// Check if the upgrade is being forced
+	upgradeImage, exists := hcluster.Annotations[hyperv1.ForceUpgradeToAnnotation]
+	if exists {
+		if upgradeImage != hcluster.Spec.Release.Image {
+			return true, "", fmt.Errorf("force upgrade annotation is present but does not match desired release image")
+		} else {
+			return true, "upgrade is forced by annotation", nil
+		}
+	}
+
+	// Check if upgrade is a z-stream upgrade.  These are allowed even when Upgradeable is false
 	currentTargetVersion, err := semver.Parse(hcluster.Status.Version.Desired.Version)
 	if err != nil {
 		return true, "", fmt.Errorf("cluster is %s=%s (%s: %s), and failed to parse the current target %s as a Semantic Version: %w", upgradeable.Type, upgradeable.Status, upgradeable.Reason, upgradeable.Message, hcluster.Status.Version.Desired.Version, err)
@@ -4066,14 +4077,9 @@ func isUpgradeable(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.Re
 		return true, "", nil
 	}
 
-	upgradeImage, exists := hcluster.Annotations[hyperv1.ForceUpgradeToAnnotation]
-	if !exists {
-		return true, "", fmt.Errorf("cluster version is not upgradeable")
-	} else if upgradeImage != hcluster.Spec.Release.Image {
-		return true, "", fmt.Errorf("cluster version is not upgradeable, force annotation is present but does not match desired release image")
-	} else {
-		return true, "cluster version is not upgradeable, upgrade is forced by annotation", nil
-	}
+	// Upgradeable is false and no exception criteria were met, cluster is not upgradable
+	return true, "", fmt.Errorf("cluster version is not upgradeable")
+
 }
 
 // defaultAPIPortIfNeeded defaults the apiserver port on Azure management clusters as a workaround
