@@ -3,6 +3,7 @@ package routecm
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -48,5 +49,33 @@ func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, o
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.OwnerRef = config.OwnerRefFrom(hcp)
+
+	params.DeploymentConfig.LivenessProbes = config.LivenessProbes{
+		routeOCMContainerMain().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromInt(int(servingPort)),
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+			InitialDelaySeconds: 30,
+			TimeoutSeconds:      5,
+		},
+	}
+	params.DeploymentConfig.ReadinessProbes = config.ReadinessProbes{
+		routeOCMContainerMain().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz/ready",
+					Port:   intstr.FromInt(int(servingPort)),
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+			FailureThreshold: 10,
+			TimeoutSeconds:   5,
+		},
+	}
+
 	return params
 }
