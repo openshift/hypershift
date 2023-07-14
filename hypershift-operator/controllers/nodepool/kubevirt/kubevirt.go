@@ -138,7 +138,12 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		cores  uint32
 	)
 
+	var networkSource kubevirtv1.NetworkSource
+	var network string
+
 	dvSource := bootImage.getDVSourceForVMTemplate()
+
+	network = "default"
 
 	runAlways := kubevirtv1.RunStrategyAlways
 	kvPlatform := nodePool.Spec.Platform.Kubevirt
@@ -150,6 +155,15 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		if kvPlatform.Compute.Cores != nil {
 			cores = *kvPlatform.Compute.Cores
 		}
+		if kvPlatform.Compute.Network != nil {
+			network = *kvPlatform.Compute.Network
+		}
+	}
+
+	if network != "default" {
+		networkSource = kubevirtv1.NetworkSource{Multus: &kubevirtv1.MultusNetwork{NetworkName: network}}
+	} else {
+		networkSource = kubevirtv1.NetworkSource{Pod: &kubevirtv1.PodNetwork{}}
 	}
 
 	template := &capikubevirt.VirtualMachineTemplateSpec{
@@ -168,7 +182,7 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 						Devices: kubevirtv1.Devices{
 							Interfaces: []kubevirtv1.Interface{
 								{
-									Name: "default",
+									Name: network,
 									InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
 										Bridge: &kubevirtv1.InterfaceBridge{},
 									},
@@ -178,10 +192,8 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 					},
 					Networks: []kubevirtv1.Network{
 						{
-							Name: "default",
-							NetworkSource: kubevirtv1.NetworkSource{
-								Pod: &kubevirtv1.PodNetwork{},
-							},
+							Name:          network,
+							NetworkSource: networkSource,
 						},
 					},
 				},

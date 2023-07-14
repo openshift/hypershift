@@ -551,6 +551,12 @@ type KubevirtCompute struct {
 	// +optional
 	// +kubebuilder:default=2
 	Cores *uint32 `json:"cores"`
+
+	// Network represents network where to attach guest VM
+	//
+	// +optional
+	// +kubebuilder:default=default
+	Network string `json:"network,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=ReadWriteOnce;ReadWriteMany;ReadOnly;ReadWriteOncePod
