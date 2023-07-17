@@ -2523,18 +2523,38 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 
 func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool) error {
 	defaultMode := int32(0640)
-	capiManagerLabels := map[string]string{
+	selectorLabels := map[string]string{
 		"name":                        "cluster-api",
 		"app":                         "cluster-api",
 		hyperv1.ControlPlaneComponent: "cluster-api",
 	}
+
+	// Before this change we did
+	// 		Selector: &metav1.LabelSelector{
+	//			MatchLabels: labels,
+	//		},
+	//		Template: corev1.PodTemplateSpec{
+	//			ObjectMeta: metav1.ObjectMeta{
+	//				Labels: labels,
+	//			}
+	// As a consequence of using the same memory address for both MatchLabels and Labels, when setColocation set the colocationLabelKey in additionalLabels
+	// it got also silently included in MatchLabels. This made any additional additionalLabel to break reconciliation because MatchLabels is an immutable field.
+	// So now we leave Selector.MatchLabels if it has something already and use a different var from .Labels so the former is not impacted by additionalLabels changes.
+	if deployment.Spec.Selector != nil && deployment.Spec.Selector.MatchLabels != nil {
+		selectorLabels = deployment.Spec.Selector.MatchLabels
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: capiManagerLabels,
+			MatchLabels: selectorLabels,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: capiManagerLabels,
+				// We copy the map here, otherwise this .Labels would point to the same address that .MatchLabels
+				// Then when additionalLabels are applied it silently modifies .MatchLabels.
+				// We could also change additionalLabels.ApplyTo but that might have a bigger impact.
+				// TODO (alberto): Refactor support.config package and gate all components definition on the library.
+				Labels: config.CopyStringMap(selectorLabels),
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName: sa.Name,
