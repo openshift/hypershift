@@ -30,3 +30,4 @@ LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler=
 LABEL io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config=true
 LABEL io.openshift.hypershift.control-plane-operator-creates-aws-sg=true
 LABEL io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label=true
+LABEL io.openshift.hypershift.restricted-psa=true

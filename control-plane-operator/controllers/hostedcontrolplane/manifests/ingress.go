@@ -8,6 +8,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
+	routev1 "github.com/openshift/api/route/v1"
 )
 
 func IngressDefaultIngressControllerWorkerManifest(ns string) *corev1.ConfigMap {
@@ -91,6 +92,15 @@ func RouterPublicService(ns string) *corev1.Service {
 	}
 }
 
+func RouterConfigurationConfigMap(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "router",
+			Namespace: ns,
+		},
+	}
+}
+
 func RouterTemplateConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -139,6 +149,15 @@ func IngressObservedDefaultIngressCertCA(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "observed-default-ingress-cert",
+			Namespace: ns,
+		},
+	}
+}
+
+func MetricsForwarderRoute(ns string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "metrics-forwarder",
 			Namespace: ns,
 		},
 	}

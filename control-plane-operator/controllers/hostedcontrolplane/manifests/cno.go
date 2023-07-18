@@ -1,6 +1,7 @@
 package manifests
 
 import (
+	routev1 "github.com/openshift/api/route/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -51,6 +52,15 @@ func MultusAdmissionControllerDeployment(namespace string) *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      multusAdmissionController,
+		},
+	}
+}
+
+func OVNKubeSBDBRoute(namespace string) *routev1.Route {
+	return &routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "ovnkube-sbdb",
 		},
 	}
 }

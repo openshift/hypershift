@@ -992,6 +992,12 @@ func TestReconcileRouter(t *testing.T) {
 	t.Parallel()
 
 	const namespace = "test"
+	routerCfg := manifests.RouterConfigurationConfigMap(namespace)
+	ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+		Name:      "hcp",
+		Namespace: namespace,
+	}}), routerCfg, 6443, &routev1.RouteList{}, "172.30.0.10")
+
 	testCases := []struct {
 		name                         string
 		endpointAccess               hyperv1.AWSEndpointAccessType
@@ -1017,9 +1023,7 @@ func TestReconcileRouter(t *testing.T) {
 						}}),
 						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
-						"publicRouterHost",
-						true,
-						false,
+						routerCfg,
 					)
 
 					return *dep
@@ -1044,9 +1048,7 @@ func TestReconcileRouter(t *testing.T) {
 						}}),
 						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
-						"publicRouterHost",
-						true,
-						false,
+						routerCfg,
 					)
 
 					return *dep
@@ -1072,9 +1074,7 @@ func TestReconcileRouter(t *testing.T) {
 						}}),
 						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
-						"privateRouterHost",
-						true,
-						true,
+						routerCfg,
 					)
 
 					return *dep
@@ -1103,9 +1103,7 @@ func TestReconcileRouter(t *testing.T) {
 						}}),
 						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
-						"publicRouterHost",
-						false,
-						false,
+						routerCfg,
 					)
 
 					return *dep
@@ -1129,9 +1127,7 @@ func TestReconcileRouter(t *testing.T) {
 						}}),
 						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
-						"privateRouterHost",
-						false,
-						true,
+						routerCfg,
 					)
 
 					return *dep
@@ -1161,9 +1157,7 @@ func TestReconcileRouter(t *testing.T) {
 						}}),
 						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
-						"publicRouterHost",
-						true,
-						false,
+						routerCfg,
 					)
 
 					return *dep
@@ -1193,9 +1187,7 @@ func TestReconcileRouter(t *testing.T) {
 						}}),
 						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
 						"",
-						"publicRouterHost",
-						false,
-						false,
+						routerCfg,
 					)
 
 					return *dep
@@ -1225,8 +1217,9 @@ func TestReconcileRouter(t *testing.T) {
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(tc.existingObjects, hcp)...).Build()
 
 			r := HostedControlPlaneReconciler{
-				Client: c,
-				Log:    ctrl.LoggerFrom(ctx),
+				Client:       c,
+				Log:          ctrl.LoggerFrom(ctx),
+				NameServerIP: "172.30.0.10",
 			}
 
 			releaseInfo := &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}

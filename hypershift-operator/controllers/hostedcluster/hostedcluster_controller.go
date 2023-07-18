@@ -119,6 +119,7 @@ const (
 	controlPlaneOperatorManagesMachineApprover                 = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
 	controlPlaneOperatorManagesMachineAutoscaler               = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
+	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -957,33 +958,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	createOrUpdate := r.createOrUpdate(req)
 
-	// Reconcile the hosted cluster namespace
-	_, err = createOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
-		if controlPlaneNamespace.Labels == nil {
-			controlPlaneNamespace.Labels = make(map[string]string)
-		}
-		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = "true"
-
-		// Set pod security labels on HCP namespace
-		controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
-		controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = "privileged"
-		controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "privileged"
-		controlPlaneNamespace.Labels["security.openshift.io/scc.podSecurityLabelSync"] = "false"
-
-		// Enable monitoring for hosted control plane namespaces
-		if r.EnableOCPClusterMonitoring {
-			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
-		}
-
-		// Enable observability operator monitoring
-		metrics.EnableOBOMonitoring(controlPlaneNamespace)
-
-		return nil
-	})
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
-	}
-
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
@@ -1013,6 +987,40 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	_, controlPlaneOperatorManagesMachineAutoscaler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]
 	_, controlPlaneOperatorManagesMachineApprover := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
+	_, useRestrictedPSA := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[useRestrictedPodSecurityLabel]
+
+	// Reconcile the hosted cluster namespace
+	_, err = createOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
+		if controlPlaneNamespace.Labels == nil {
+			controlPlaneNamespace.Labels = make(map[string]string)
+		}
+		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = "true"
+
+		// Set pod security labels on HCP namespace
+		if useRestrictedPSA {
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = "restricted"
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = "restricted"
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "restricted"
+		} else {
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = "privileged"
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "privileged"
+		}
+		controlPlaneNamespace.Labels["security.openshift.io/scc.podSecurityLabelSync"] = "false"
+
+		// Enable monitoring for hosted control plane namespaces
+		if r.EnableOCPClusterMonitoring {
+			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
+		}
+
+		// Enable observability operator monitoring
+		metrics.EnableOBOMonitoring(controlPlaneNamespace)
+
+		return nil
+	})
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
+	}
 
 	p, err := platform.GetPlatform(ctx, hcluster, r.ReleaseProvider, utilitiesImage, pullSecretBytes)
 	if err != nil {
