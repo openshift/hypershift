@@ -1543,7 +1543,10 @@ type AzurePlatformSpec struct {
 type Release struct {
 	// Image is the image pullspec of an OCP release payload image.
 	//
-	// +kubebuilder:validation:Pattern=^(\w+\S+)$
+	// If no image is explicilty defined, this will default to the latest
+	// OCP release supported by the hypershift operator.
+	//
+	// +optional
 	Image string `json:"image"`
 }
 

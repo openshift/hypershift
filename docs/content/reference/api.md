@@ -7195,7 +7195,10 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>Image is the image pullspec of an OCP release payload image.</p>
+<p>If no image is explicilty defined, this will default to the latest
+OCP release supported by the hypershift operator.</p>
 </td>
 </tr>
 </tbody>

@@ -415,6 +415,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
+	if err := r.defaultReleaseImageIfNeeded(ctx, hcluster); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Part zero: fix up conversion
 	originalSpec := hcluster.Spec.DeepCopy()
 
@@ -4163,6 +4167,25 @@ func (r *HostedClusterReconciler) defaultIngressDomain(ctx context.Context) (str
 		return "", fmt.Errorf("failed to retrieve ingress: %w", err)
 	}
 	return ingress.Spec.Domain, nil
+}
+
+func (r *HostedClusterReconciler) defaultReleaseImageIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	if hcluster.Spec.Release.Image != "" {
+		return nil
+	}
+
+	if hcluster.Spec.Release.Image == "" {
+		pullSpec, err := supportedversion.LookupLatestSupportedRelease(ctx)
+		if err != nil {
+			return fmt.Errorf("unable to find default release image: %w", err)
+		}
+		hcluster.Spec.Release.Image = pullSpec
+	}
+
+	if err := r.Update(ctx, hcluster); err != nil {
+		return fmt.Errorf("failed to update hostedcluster after defaulting Release Image: %w", err)
+	}
+	return nil
 }
 
 func (r *HostedClusterReconciler) defaultClusterIDsIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {

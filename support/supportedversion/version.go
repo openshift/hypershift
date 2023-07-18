@@ -1,7 +1,11 @@
 package supportedversion
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 
 	"github.com/blang/semver"
@@ -75,4 +79,44 @@ func IsValidReleaseVersion(version, currentVersion, latestVersionSupported, minS
 	}
 
 	return nil
+}
+
+type ocpVersion struct {
+	Name        string `json:"name"`
+	PullSpec    string `json:"pullSpec"`
+	DownloadURL string `json:"downloadURL"`
+}
+
+func LookupLatestSupportedRelease(ctx context.Context) (string, error) {
+	prefix := "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi/latest"
+	filter := fmt.Sprintf("in=>4.%d.%d+<+4.%d.0",
+		MinSupportedVersion.Minor, MinSupportedVersion.Patch, LatestSupportedVersion.Minor+1)
+
+	releaseURL := fmt.Sprintf("%s?%s", prefix, filter)
+
+	var version ocpVersion
+
+	req, err := http.NewRequestWithContext(ctx, "GET", releaseURL, nil)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Unexpected status code: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	err = json.Unmarshal(body, &version)
+	if err != nil {
+		return "", err
+	}
+	return version.PullSpec, nil
+
 }

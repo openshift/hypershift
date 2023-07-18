@@ -30276,12 +30276,11 @@ objects:
                     be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy."
                   properties:
                     image:
-                      description: Image is the image pullspec of an OCP release payload
-                        image.
-                      pattern: ^(\w+\S+)$
+                      description: "Image is the image pullspec of an OCP release
+                        payload image. \n If no image is explicilty defined, this
+                        will default to the latest OCP release supported by the hypershift
+                        operator."
                       type: string
-                  required:
-                  - image
                   type: object
                 secretEncryption:
                   description: SecretEncryption specifies a Kubernetes secret encryption
@@ -34068,12 +34067,11 @@ objects:
                     be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy."
                   properties:
                     image:
-                      description: Image is the image pullspec of an OCP release payload
-                        image.
-                      pattern: ^(\w+\S+)$
+                      description: "Image is the image pullspec of an OCP release
+                        payload image. \n If no image is explicilty defined, this
+                        will default to the latest OCP release supported by the hypershift
+                        operator."
                       type: string
-                  required:
-                  - image
                   type: object
                 secretEncryption:
                   description: SecretEncryption specifies a Kubernetes secret encryption
@@ -43435,12 +43433,11 @@ objects:
                     the AWS platform).
                   properties:
                     image:
-                      description: Image is the image pullspec of an OCP release payload
-                        image.
-                      pattern: ^(\w+\S+)$
+                      description: "Image is the image pullspec of an OCP release
+                        payload image. \n If no image is explicilty defined, this
+                        will default to the latest OCP release supported by the hypershift
+                        operator."
                       type: string
-                  required:
-                  - image
                   type: object
                 replicas:
                   description: Replicas is the desired number of nodes the pool should
@@ -44367,12 +44364,11 @@ objects:
                     the AWS platform).
                   properties:
                     image:
-                      description: Image is the image pullspec of an OCP release payload
-                        image.
-                      pattern: ^(\w+\S+)$
+                      description: "Image is the image pullspec of an OCP release
+                        payload image. \n If no image is explicilty defined, this
+                        will default to the latest OCP release supported by the hypershift
+                        operator."
                       type: string
-                  required:
-                  - image
                   type: object
                 replicas:
                   description: Replicas is the desired number of nodes the pool should
