@@ -5883,9 +5883,6 @@ spec:
                   - source
                   type: object
                 type: array
-                x-kubernetes-validations:
-                - message: ImageContentSources is immutable
-                  rule: self == oldSelf
               infraID:
                 description: InfraID is a globally unique identifier for the cluster.
                   This identifier will be used to associate various cloud resources
@@ -7034,9 +7031,6 @@ spec:
             - services
             - sshKey
             type: object
-            x-kubernetes-validations:
-            - message: ImageContentSources is required once set
-              rule: '!has(oldSelf.imageContentSources) || has(self.imageContentSources)'
           status:
             description: Status is the latest observed status of the HostedCluster.
             properties:
