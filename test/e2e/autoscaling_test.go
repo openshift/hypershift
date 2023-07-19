@@ -6,7 +6,9 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -15,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/pointer"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -27,63 +30,91 @@ func TestAutoscaling(t *testing.T) {
 	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	// create one nodePool with 1 replica in each AZ
+	zones := strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ",")
+	clusterOpts.AWSPlatform.Zones = zones
+	clusterOpts.NodePoolReplicas = 1
+
+	numNodePools := len(zones)
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-		// Get the newly created NodePool
+		// list the newly created NodePools
 		nodepools := &hyperv1.NodePoolList{}
 		if err := mgtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
 			t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
 		}
-		if len(nodepools.Items) != 1 {
-			t.Fatalf("expected exactly one nodepool, got %d", len(nodepools.Items))
+		if len(nodepools.Items) != numNodePools {
+			t.Fatalf("expected %d nodepool, got %d", numNodePools, len(nodepools.Items))
 		}
-		nodepool := &nodepools.Items[0]
-
-		// Perform some very basic assertions about the guest cluster
-		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
-		// TODO (alberto): have ability to label and get Nodes by NodePool. NodePool.Status.Nodes?
-		numNodes := clusterOpts.NodePoolReplicas
-		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 		// Enable autoscaling.
-		err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
-
-		min := numNodes
-		max := min + 1
-		original := nodepool.DeepCopy()
-		nodepool.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
-			Min: min,
-			Max: max,
+		min := int32(1)
+		max := int32(3)
+		mutateFunc := func(nodepool *hyperv1.NodePool) {
+			nodepool.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+				Min: min,
+				Max: max,
+			}
+			nodepool.Spec.Replicas = nil
 		}
-		nodepool.Spec.Replicas = nil
-		err = mgtClient.Patch(ctx, nodepool, crclient.MergeFrom(original))
-		g.Expect(err).NotTo(HaveOccurred(), "failed to update NodePool")
-		t.Logf("Enabled autoscaling. Namespace: %s, name: %s, min: %v, max: %v", nodepool.Namespace, nodepool.Name, min, max)
 
-		// TODO (alberto): check autoscalingEnabled condition.
+		for _, nodepool := range nodepools.Items {
+			err := e2eutil.UpdateObject(t, ctx, mgtClient, &nodepool, mutateFunc)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to update NodePool %s", nodepool.Name)
 
-		// Generate workload.
-		memCapacity := nodes[0].Status.Allocatable[corev1.ResourceMemory]
+			validateNodePoolConditions(t, ctx, mgtClient, &nodepool)
+		}
+		t.Logf("Enabled autoscaling for all nodePools in namespace: %s, min: %v, max: %v", hostedCluster.Namespace, min, max)
+
+		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+		nodes := &corev1.NodeList{}
+		err := guestClient.List(ctx, nodes)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to list nodes")
+		g.Expect(nodes.Items).ToNot(BeEmpty())
+
+		numNodes := len(nodes.Items)
+
+		memCapacity := nodes.Items[0].Status.Allocatable[corev1.ResourceMemory]
 		g.Expect(memCapacity).ShouldNot(BeNil())
 		g.Expect(memCapacity.String()).ShouldNot(BeEmpty())
 		bytes, ok := memCapacity.AsInt64()
 		g.Expect(ok).Should(BeTrue())
 
-		// Enforce max nodes creation.
 		// 60% - enough that the existing and new nodes will
 		// be used, not enough to have more than 1 pod per
 		// node.
 		workloadMemRequest := resource.MustParse(fmt.Sprintf("%v", 0.6*float32(bytes)))
-		workload := newWorkLoad(max, workloadMemRequest, "", globalOpts.LatestReleaseImage)
+
+		// force the cluster to double its size. the cluster autoscaler should
+		// place 1 more node in each of the the nodepools created.
+		jobReplicas := int32(numNodes * 2)
+		workload := newWorkLoad(jobReplicas, workloadMemRequest, "", globalOpts.LatestReleaseImage)
 		err = guestClient.Create(ctx, workload)
 		g.Expect(err).NotTo(HaveOccurred())
-		t.Logf("Created workload. Node: %s, memcapacity: %s", nodes[0].Name, memCapacity.String())
+		t.Logf("Created workload with memcapacity: %s", memCapacity.String())
 
-		// Wait for one more node.
-		// TODO (alberto): have ability for NodePool to label Nodes and let workload target specific Nodes.
-		numNodes = numNodes + 1
-		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+		// Validate nodepools are scaled out and balanced.
+		// Each nodepool should have 1 more node.
+		// we only check that machineDeployments replicas are as expected to avoid timeout waiting for Ready condition on the nodes.
+		expectedReplicas := min + 1
+		for _, nodepool := range nodepools.Items {
+			var currentReplicas int32
+			err := wait.PollImmediateWithContext(ctx, 5*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+				md, err := e2eutil.MachineDeploymentByNodepool(ctx, mgtClient, hostedCluster, nodepool.Name)
+				if err != nil {
+					return false, fmt.Errorf("failed to get machindeDeployment for nodePool %s: %v", nodepool.Name, err)
+				}
+
+				currentReplicas = *md.Spec.Replicas
+				if currentReplicas != expectedReplicas {
+					return false, nil
+				}
+
+				return true, nil
+			})
+
+			g.Expect(err).ToNot(HaveOccurred(), "machineDeployment %s replicas doesn't match the expected value, has: %d, expected: %d", nodepool.Name, currentReplicas, expectedReplicas)
+		}
 
 		// Delete workload.
 		cascadeDelete := metav1.DeletePropagationForeground
@@ -93,9 +124,8 @@ func TestAutoscaling(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred())
 		t.Logf("Deleted workload")
 
-		// Wait for one less node.
-		numNodes = numNodes - 1
-		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+		// Wait for the cluster to scale down again to the original nodes number.
+		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, int32(numNodes), hostedCluster.Spec.Platform.Type)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
 }

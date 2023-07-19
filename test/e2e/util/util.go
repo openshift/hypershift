@@ -273,6 +273,21 @@ func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crcl
 	return nodesFromNodePool
 }
 
+func MachineDeploymentByNodepool(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, nodepoolName string) (*capiv1.MachineDeployment, error) {
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+	md := &capiv1.MachineDeployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      nodepoolName,
+			Namespace: hcpNamespace,
+		},
+	}
+
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(md), md); err != nil {
+		return nil, err
+	}
+	return md, nil
+}
+
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
 	start := time.Now()
 	g := NewWithT(t)

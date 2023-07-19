@@ -5,6 +5,7 @@ import (
 	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 var (
@@ -19,4 +20,5 @@ func init() {
 	operatorsv1.AddToScheme(scheme)
 	operatorsv1alpha1.AddToScheme(scheme)
 	capikubevirt.AddToScheme(scheme)
+	capiv1.AddToScheme(scheme)
 }
