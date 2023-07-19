@@ -201,24 +201,56 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 		}
 
 		if len(managementClusterNetwork.Spec.ClusterNetwork) > 0 {
-			clusterNetworks := []string{}
-			for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
-				clusterNetworks = append(clusterNetworks, network.CIDR)
-			}
+			ipv4CIDRs := make([]string, 0)
+			ipv6CIDRs := make([]string, 0)
 
 			// Allow to any destination not on the management cluster service network
 			// i.e. block all inter-namespace egress from KAS not allowed by other rules
-			policy.Spec.Egress = append(policy.Spec.Egress,
-				networkingv1.NetworkPolicyEgressRule{
-					To: []networkingv1.NetworkPolicyPeer{
-						{
-							IPBlock: &networkingv1.IPBlock{
-								CIDR:   "0.0.0.0/0",
-								Except: clusterNetworks,
+			for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
+				ipv4, err := hyperutil.IsIPv4(network.CIDR)
+				if err != nil {
+					return fmt.Errorf("error checking the ClusterNetworkCIDR: %v", err)
+				}
+
+				if ipv4 {
+					ipv4CIDRs = append(ipv4CIDRs, network.CIDR)
+
+				} else {
+					ipv6CIDRs = append(ipv6CIDRs, network.CIDR)
+				}
+
+			}
+
+			if len(ipv4CIDRs) > 0 {
+				policy.Spec.Egress = append(policy.Spec.Egress,
+					networkingv1.NetworkPolicyEgressRule{
+						To: []networkingv1.NetworkPolicyPeer{
+							{
+								IPBlock: &networkingv1.IPBlock{
+									CIDR:   "0.0.0.0/0",
+									Except: ipv4CIDRs,
+								},
 							},
 						},
 					},
-				})
+				)
+			}
+
+			if len(ipv6CIDRs) > 0 {
+				policy.Spec.Egress = append(policy.Spec.Egress,
+					networkingv1.NetworkPolicyEgressRule{
+						To: []networkingv1.NetworkPolicyPeer{
+							{
+								IPBlock: &networkingv1.IPBlock{
+									CIDR:   "::/0",
+									Except: ipv6CIDRs,
+								},
+							},
+						},
+					},
+				)
+			}
+
 		}
 
 		if isOpenShiftDNS {
