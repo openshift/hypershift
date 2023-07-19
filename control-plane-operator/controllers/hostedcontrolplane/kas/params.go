@@ -298,7 +298,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, kasLabels(), nil)
+	params.DeploymentConfig.SetRequestServingDefaults(hcp, kasLabels(), nil)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	return params

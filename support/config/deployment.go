@@ -21,7 +21,6 @@ const (
 
 	// There are used by NodeAffinity to prefer/tolerate Nodes.
 	controlPlaneLabelTolerationKey = "hypershift.openshift.io/control-plane"
-	clusterLabelTolerationKey      = "hypershift.openshift.io/cluster"
 
 	// colocationLabelKey is used by PodAffinity to prefer colocating pods that belong to the same hosted cluster.
 	colocationLabelKey = "hypershift.openshift.io/hosted-control-plane"
@@ -34,17 +33,18 @@ const (
 )
 
 type DeploymentConfig struct {
-	Replicas                  int                   `json:"replicas"`
-	Scheduling                Scheduling            `json:"scheduling"`
-	AdditionalLabels          AdditionalLabels      `json:"additionalLabels"`
-	AdditionalAnnotations     AdditionalAnnotations `json:"additionalAnnotations"`
-	SecurityContexts          SecurityContextSpec   `json:"securityContexts"`
-	SetDefaultSecurityContext bool                  `json:"setDefaultSecurityContext"`
-	LivenessProbes            LivenessProbes        `json:"livenessProbes"`
-	ReadinessProbes           ReadinessProbes       `json:"readinessProbes"`
-	Resources                 ResourcesSpec         `json:"resources"`
-	DebugDeployments          sets.String           `json:"debugDeployments"`
-	ResourceRequestOverrides  ResourceOverrides     `json:"resourceRequestOverrides"`
+	Replicas                  int
+	Scheduling                Scheduling
+	AdditionalLabels          AdditionalLabels
+	AdditionalAnnotations     AdditionalAnnotations
+	SecurityContexts          SecurityContextSpec
+	SetDefaultSecurityContext bool
+	LivenessProbes            LivenessProbes
+	ReadinessProbes           ReadinessProbes
+	Resources                 ResourcesSpec
+	DebugDeployments          sets.String
+	ResourceRequestOverrides  ResourceOverrides
+	IsolateAsRequestServing   bool
 }
 
 func (c *DeploymentConfig) SetContainerResourcesIfPresent(container *corev1.Container) {
@@ -209,11 +209,19 @@ func (c *DeploymentConfig) setControlPlaneIsolation(hcp *hyperv1.HostedControlPl
 			Effect:   corev1.TaintEffectNoSchedule,
 		},
 		{
-			Key:      clusterLabelTolerationKey,
+			Key:      hyperv1.HostedClusterLabel,
 			Operator: corev1.TolerationOpEqual,
 			Value:    clusterKey(hcp),
 			Effect:   corev1.TaintEffectNoSchedule,
 		},
+	}
+	if c.IsolateAsRequestServing {
+		c.Scheduling.Tolerations = append(c.Scheduling.Tolerations, corev1.Toleration{
+			Key:      hyperv1.RequestServingComponentLabel,
+			Operator: corev1.TolerationOpEqual,
+			Value:    "true",
+			Effect:   corev1.TaintEffectNoSchedule,
+		})
 	}
 
 	if c.Scheduling.Affinity == nil {
@@ -240,7 +248,7 @@ func (c *DeploymentConfig) setControlPlaneIsolation(hcp *hyperv1.HostedControlPl
 			Preference: corev1.NodeSelectorTerm{
 				MatchExpressions: []corev1.NodeSelectorRequirement{
 					{
-						Key:      clusterLabelTolerationKey,
+						Key:      hyperv1.HostedClusterLabel,
 						Operator: corev1.NodeSelectorOpIn,
 						Values:   []string{clusterKey(hcp)},
 					},
@@ -248,6 +256,28 @@ func (c *DeploymentConfig) setControlPlaneIsolation(hcp *hyperv1.HostedControlPl
 			},
 		},
 	}
+
+	if c.IsolateAsRequestServing {
+		c.Scheduling.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution = &corev1.NodeSelector{
+			NodeSelectorTerms: []corev1.NodeSelectorTerm{
+				{
+					MatchExpressions: []corev1.NodeSelectorRequirement{
+						{
+							Key:      hyperv1.RequestServingComponentLabel,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{"true"},
+						},
+						{
+							Key:      hyperv1.HostedClusterLabel,
+							Operator: corev1.NodeSelectorOpIn,
+							Values:   []string{clusterKey(hcp)},
+						},
+					},
+				},
+			},
+		}
+	}
+
 }
 
 // setNodeSelector sets a nodeSelector passed through the API.
@@ -272,10 +302,28 @@ func (c *DeploymentConfig) setLocation(hcp *hyperv1.HostedControlPlane, multiZon
 func (c *DeploymentConfig) setReplicas(availability hyperv1.AvailabilityPolicy) {
 	switch availability {
 	case hyperv1.HighlyAvailable:
-		c.Replicas = 3
+		if c.IsolateAsRequestServing {
+			c.Replicas = 2
+		} else {
+			c.Replicas = 3
+		}
 	default:
 		c.Replicas = 1
 	}
+}
+
+// SetRequestServingDefaults wraps the call to SetDefaults. It is meant to be invoked by request serving components so that their sheduling
+// attributes can be modified accordingly.
+func (c *DeploymentConfig) SetRequestServingDefaults(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string, replicas *int) {
+	if hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
+		c.IsolateAsRequestServing = true
+	}
+	c.SetDefaults(hcp, multiZoneSpreadLabels, replicas)
+	if c.AdditionalLabels == nil {
+		c.AdditionalLabels = map[string]string{}
+	}
+	c.AdditionalLabels[hyperv1.RequestServingComponentLabel] = "true"
+
 }
 
 // SetDefaults populates opinionated default DeploymentConfig for any Deployment.

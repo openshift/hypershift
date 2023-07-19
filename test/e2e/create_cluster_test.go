@@ -5,6 +5,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -39,6 +40,11 @@ func TestCreateCluster(t *testing.T) {
 		clusterOpts.NodePoolReplicas = 1
 	}
 
+	if globalOpts.RequestServingIsolation {
+		clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
+		clusterOpts.Annotations = append(clusterOpts.Annotations, fmt.Sprintf("%s=%s", hyperv1.TopologyAnnotation, hyperv1.DedicatedRequestServingComponentsTopology))
+	}
+
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
 	validatePublicCluster(t, ctx, client, hostedCluster, &clusterOpts)
@@ -65,6 +71,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	g.Expect(kmsKeyArn).NotTo(BeNil(), "failed to retrieve kms key arn")
 
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
+
 	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
 	g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
