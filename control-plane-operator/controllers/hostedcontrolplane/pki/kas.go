@@ -23,6 +23,11 @@ const (
 	ServiceSignerPublicKey  = "service-account.pub"
 )
 
+func ReconcileDummySecret(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	ownerRef.ApplyTo(secret)
+	return nil
+}
+
 func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress, internalAPIAddress, serviceCIDR string) error {
 	svc := manifests.KubeAPIServerService(secret.Namespace)
 	_, serviceIPNet, err := net.ParseCIDR(serviceCIDR)

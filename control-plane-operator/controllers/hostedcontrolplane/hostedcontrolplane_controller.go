@@ -1780,6 +1780,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile kas server secret: %w", err)
 	}
 
+	//dummy secret for testing
+	kasDummySecret := manifests.DummySecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kasDummySecret, func() error {
+		return pki.ReconcileDummySecret(kasDummySecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile dummy kas server secret: %w", err)
+	}
+
 	if err := r.setupKASClientSigners(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
 		return err
 	}

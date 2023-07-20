@@ -58,6 +58,7 @@ var (
 			kasVolumeKubeletClientCA().Name:        "/etc/kubernetes/certs/kubelet-ca",
 			kasVolumeKonnectivityClientCert().Name: "/etc/kubernetes/certs/konnectivity-client",
 			kasVolumeEgressSelectorConfig().Name:   "/etc/kubernetes/egress-selector",
+			kasDummySecret().Name:                  "/etc/kubernetes/dummy",
 		},
 	}
 
@@ -212,6 +213,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeKonnectivityClientCert(), buildKASVolumeKonnectivityClientCert),
 				util.BuildVolume(kasVolumeEgressSelectorConfig(), buildKASVolumeEgressSelectorConfig),
 				util.BuildVolume(kasVolumeKubeconfig(), buildKASVolumeKubeconfig),
+				util.BuildVolume(kasDummySecret(), buildDummySecretVolume),
 			},
 		},
 	}
@@ -580,6 +582,20 @@ func buildKASVolumeServiceAccountKey(v *corev1.Volume) {
 	}
 	v.Secret.DefaultMode = pointer.Int32(0640)
 	v.Secret.SecretName = manifests.ServiceAccountSigningKeySecret("").Name
+}
+
+func kasDummySecret() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "dummy-volume",
+	}
+}
+
+func buildDummySecretVolume(v *corev1.Volume) {
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
+	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.SecretName = manifests.DummySecret("").Name
 }
 
 func kasVolumeKubeletClientCert() *corev1.Volume {
