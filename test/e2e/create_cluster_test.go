@@ -26,13 +26,9 @@ import (
 // vs upgrading to the code under test as TestUpgradeControlPlane does.
 func TestCreateCluster(t *testing.T) {
 	t.Parallel()
-	g := NewWithT(t)
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
-
-	client, err := e2eutil.GetClient()
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	zones := strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ",")
@@ -49,9 +45,9 @@ func TestCreateCluster(t *testing.T) {
 		clusterOpts.Annotations = append(clusterOpts.Annotations, fmt.Sprintf("%s=%s", hyperv1.TopologyAnnotation, hyperv1.DedicatedRequestServingComponentsTopology))
 	}
 
-	hostedCluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
-
-	validatePublicCluster(t, ctx, client, hostedCluster, &clusterOpts)
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		t.Logf("All good, nothing to do!")
+	}).CreateCluster(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 func TestCreateClusterCustomConfig(t *testing.T) {

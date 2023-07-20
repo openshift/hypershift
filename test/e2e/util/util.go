@@ -18,9 +18,12 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+	support "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/library-go/test/library/metrics"
 	promapi "github.com/prometheus/client_golang/api"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -1305,4 +1308,125 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 		}
 
 	})
+}
+
+func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) {
+	g := NewWithT(t)
+
+	// Sanity check the cluster by waiting for the nodes to report ready
+	t.Logf("Waiting for guest client to become available")
+	guestClient := WaitForGuestClient(t, ctx, client, hostedCluster)
+
+	// Wait for Nodes to be Ready
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+
+	// Wait for the rollout to be complete
+	t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
+	WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+
+	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+
+	serviceStrategy := util.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
+	g.Expect(serviceStrategy).ToNot(BeNil())
+	if serviceStrategy.Type == hyperv1.Route && serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
+		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).To(Equal(serviceStrategy.Route.Hostname))
+	} else {
+		// sanity check
+		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
+	}
+
+	validateHostedClusterConditions(t, ctx, client, hostedCluster)
+
+	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
+	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	EnsureNodeCommunication(t, ctx, client, hostedCluster)
+	EnsurePSANotPrivileged(t, ctx, guestClient)
+}
+
+func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) {
+	g := NewWithT(t)
+
+	_, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
+
+	// Ensure NodePools have all Nodes ready.
+	WaitForNodePoolDesiredNodes(t, ctx, client, hostedCluster)
+
+	// Wait for the rollout to be complete
+	t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
+	WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+
+	serviceStrategy := util.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
+	g.Expect(serviceStrategy).ToNot(BeNil())
+	// Private clusters should always use Route
+	g.Expect(serviceStrategy.Type).To(Equal(hyperv1.Route))
+	if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
+		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).To(Equal(serviceStrategy.Route.Hostname))
+	} else {
+		// sanity check
+		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
+	}
+
+	validateHostedClusterConditions(t, ctx, client, hostedCluster)
+
+	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+}
+
+func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	expectedConditions := conditions.ExpectedHCConditions()
+
+	if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
+		// AWS KMS is not configured
+		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionUnknown
+	} else {
+		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionTrue
+	}
+
+	kasExternalHostname := support.ServiceExternalDNSHostnameByHC(hostedCluster, hyperv1.APIServer)
+	if kasExternalHostname == "" {
+		// ExternalDNS is not configured
+		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionUnknown
+	} else {
+		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionTrue
+	}
+
+	start := time.Now()
+	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (bool, error) {
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+			t.Logf("Failed to get hostedcluster: %v", err)
+			return false, nil
+		}
+
+		for _, condition := range hostedCluster.Status.Conditions {
+			if condition.Type == string(hyperv1.ClusterVersionUpgradeable) {
+				// ClusterVersionUpgradeable condition status is not always guranteed to be true, skip.
+				t.Logf("observed condition %s status [%s]", condition.Type, condition.Status)
+				continue
+			}
+
+			expectedStatus, known := expectedConditions[hyperv1.ConditionType(condition.Type)]
+			if !known {
+				return false, fmt.Errorf("unknown condition %s", condition.Type)
+			}
+
+			if condition.Status != expectedStatus {
+				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
+				return false, nil
+			}
+			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
+		}
+
+		return true, nil
+	})
+	duration := time.Since(start).Round(time.Second)
+
+	if err != nil {
+		t.Fatalf("Failed to validate HostedCluster conditions in %s: %v", duration, err)
+	}
+	t.Logf("Successfully validated all expected HostedCluster conditions in %s", duration)
 }

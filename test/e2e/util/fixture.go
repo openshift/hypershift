@@ -215,7 +215,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 	t.Run("DeleteTestNamespace", func(t *testing.T) {
 		deleteTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
 		defer cancel()
-		err := DeleteNamespace(t, deleteTimeout, client, hc.Name)
+		err := DeleteNamespace(t, deleteTimeout, client, hc.Namespace)
 		if err != nil {
 			t.Errorf("Failed to delete test namespace: %v", err)
 			err := dumpCluster(ctx, t, false)
