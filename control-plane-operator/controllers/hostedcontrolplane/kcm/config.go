@@ -42,7 +42,11 @@ func generateConfig(serviceServingCA *corev1.ConfigMap) (string, error) {
 			Kind:       "KubeControllerManagerConfig",
 			APIVersion: kcpv1.GroupVersion.String(),
 		},
-		ExtendedArguments: map[string]kcpv1.Arguments{},
+		ExtendedArguments: map[string]kcpv1.Arguments{
+			"leader-elect":                []string{"true"},
+			"leader-elect-renew-deadline": []string{config.KCMRecommendedRenewDeadline},
+			"leader-elect-retry-period":   []string{config.KCMRecommendedRetryPeriod},
+		},
 		ServiceServingCert: kcpv1.ServiceServingCert{
 			CertFile: serviceServingCAPath,
 		},
