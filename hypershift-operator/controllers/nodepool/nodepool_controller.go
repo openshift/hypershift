@@ -15,10 +15,12 @@ import (
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/operator/v1alpha1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
+
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
@@ -33,6 +35,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
+
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -47,6 +50,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
@@ -1835,8 +1839,9 @@ func validateManagement(nodePool *hyperv1.NodePool) error {
 
 func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 	scheme := runtime.NewScheme()
-	mcfgv1.Install(scheme)
-	v1alpha1.Install(scheme)
+	_ = mcfgv1.Install(scheme)
+	_ = v1alpha1.Install(scheme)
+	_ = configv1.Install(scheme)
 
 	YamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
@@ -1860,6 +1865,7 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 		}
 		manifest = buff.Bytes()
 	case *v1alpha1.ImageContentSourcePolicy:
+	case *configv1.ImageDigestMirrorSet:
 	case *mcfgv1.KubeletConfig:
 	case *mcfgv1.ContainerRuntimeConfig:
 	default:
