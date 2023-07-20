@@ -66,7 +66,6 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the duration of the wait (Examples: 30s, 1h30m45s, etc.) 0 means no timeout.")
 	cmd.PersistentFlags().BoolVar(&opts.Wait, "wait", opts.Wait, "If true, the create command will block until the HostedCluster is up. Requires at least one NodePool with at least one node.")
 
-	_ = cmd.MarkPersistentFlagRequired("name")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
 	cmd.AddCommand(agent.NewCreateCommand(opts))
