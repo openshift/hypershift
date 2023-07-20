@@ -47,9 +47,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/egressfirewall"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -112,9 +110,10 @@ const (
 	controlPlaneOperatorSubcommandsLabel = "io.openshift.hypershift.control-plane-operator-subcommands"
 	ignitionServerHealthzHandlerLabel    = "io.openshift.hypershift.ignition-server-healthz-handler"
 
-	controlplaneOperatorManagesIgnitionServerLabel = "io.openshift.hypershift.control-plane-operator-manages-ignition-server"
-	controlPlaneOperatorManagesMachineApprover     = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
-	controlPlaneOperatorManagesMachineAutoscaler   = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
+	controlplaneOperatorManagesIgnitionServerLabel             = "io.openshift.hypershift.control-plane-operator-manages-ignition-server"
+	controlPlaneOperatorManagesMachineApprover                 = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
+	controlPlaneOperatorManagesMachineAutoscaler               = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
+	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -998,6 +997,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	_, controlplaneOperatorManagesIgnitionServer := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
 	_, controlPlaneOperatorManagesMachineAutoscaler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]
 	_, controlPlaneOperatorManagesMachineApprover := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]
+	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
 
 	p, err := platform.GetPlatform(ctx, hcluster, r.ReleaseProvider, utilitiesImage, pullSecretBytes)
 	if err != nil {
@@ -1450,17 +1450,15 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
-	// Get release image version, if needed
+	// Get release image version
 	var releaseImageVersion semver.Version
-	if !controlPlaneOperatorManagesMachineAutoscaler || !controlPlaneOperatorManagesMachineApprover || !controlplaneOperatorManagesIgnitionServer {
-		releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
-		}
-		releaseImageVersion, err = semver.Parse(releaseInfo.Version())
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
-		}
+	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+	releaseImageVersion, err = semver.Parse(releaseInfo.Version())
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
 	}
 
 	// In >= 4.11 We want to move most of the components reconciliation down to the CPO https://issues.redhat.com/browse/HOSTEDCP-375.
@@ -1524,7 +1522,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the network policies
-	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster, hcp); err != nil {
+	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster, hcp, releaseImageVersion, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
 	}
 
@@ -1826,11 +1824,27 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 	// Reconcile CAPI provider deployment
 	deployment := clusterapi.CAPIProviderDeployment(controlPlaneNamespace.Name)
-	labels := map[string]string{
+	selectorLabels := map[string]string{
 		"control-plane":               "capi-provider-controller-manager",
 		"app":                         "capi-provider-controller-manager",
 		hyperv1.ControlPlaneComponent: "capi-provider-controller-manager",
 	}
+
+	// Before this change we did
+	// 		Selector: &metav1.LabelSelector{
+	//			MatchLabels: labels,
+	//		},
+	//		Template: corev1.PodTemplateSpec{
+	//			ObjectMeta: metav1.ObjectMeta{
+	//				Labels: labels,
+	//			}
+	// As a consequence of using the same memory address for both MatchLabels and Labels, when setColocation set the colocationLabelKey in additionalLabels
+	// it got also silently included in MatchLabels. This made any additional additionalLabel to break reconciliation because MatchLabels is an immutable field.
+	// So now we leave Selector.MatchLabels if it has something already and use a different var from .Labels so the former is not impacted by additionalLabels changes.
+	if deployment.Spec.Selector != nil && deployment.Spec.Selector.MatchLabels != nil {
+		selectorLabels = deployment.Spec.Selector.MatchLabels
+	}
+
 	_, err = createOrUpdate(ctx, r.Client, deployment, func() error {
 		// Enforce provider specifics.
 		deployment.Spec = *capiProviderDeploymentSpec
@@ -1842,9 +1856,13 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 		// Enforce labels.
 		deployment.Spec.Selector = &metav1.LabelSelector{
-			MatchLabels: labels,
+			MatchLabels: selectorLabels,
 		}
-		deployment.Spec.Template.Labels = labels
+		// We copy the map here, otherwise this .Labels would point to the same address that .MatchLabels
+		// Then when additionalLabels are applied it silently modifies .MatchLabels.
+		// We could also change additionalLabels.ApplyTo but that might have a bigger impact.
+		// TODO (alberto): Refactor support.config package and gate all components definition on the library.
+		deployment.Spec.Template.Labels = config.CopyStringMap(selectorLabels)
 
 		// Enforce ServiceAccount.
 		deployment.Spec.Template.Spec.ServiceAccountName = capiProviderServiceAccount.Name
@@ -1854,6 +1872,9 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 				PriorityClass: config.DefaultPriorityClass,
 			},
 			SetDefaultSecurityContext: r.SetDefaultSecurityContext,
+			AdditionalLabels: map[string]string{
+				config.NeedManagementKASAccessLabel: "true",
+			},
 		}
 
 		deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
@@ -2294,6 +2315,9 @@ func reconcileControlPlaneOperatorDeployment(deployment *appsv1.Deployment, hc *
 			PriorityClass: config.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
+		AdditionalLabels: map[string]string{
+			config.NeedManagementKASAccessLabel: "true",
+		},
 	}
 
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
@@ -2566,18 +2590,38 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 
 func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool) error {
 	defaultMode := int32(0640)
-	capiManagerLabels := map[string]string{
+	selectorLabels := map[string]string{
 		"name":                        "cluster-api",
 		"app":                         "cluster-api",
 		hyperv1.ControlPlaneComponent: "cluster-api",
 	}
+
+	// Before this change we did
+	// 		Selector: &metav1.LabelSelector{
+	//			MatchLabels: labels,
+	//		},
+	//		Template: corev1.PodTemplateSpec{
+	//			ObjectMeta: metav1.ObjectMeta{
+	//				Labels: labels,
+	//			}
+	// As a consequence of using the same memory address for both MatchLabels and Labels, when setColocation set the colocationLabelKey in additionalLabels
+	// it got also silently included in MatchLabels. This made any additional additionalLabel to break reconciliation because MatchLabels is an immutable field.
+	// So now we leave Selector.MatchLabels if it has something already and use a different var from .Labels so the former is not impacted by additionalLabels changes.
+	if deployment.Spec.Selector != nil && deployment.Spec.Selector.MatchLabels != nil {
+		selectorLabels = deployment.Spec.Selector.MatchLabels
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
-			MatchLabels: capiManagerLabels,
+			MatchLabels: selectorLabels,
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: capiManagerLabels,
+				// We copy the map here, otherwise this .Labels would point to the same address that .MatchLabels
+				// Then when additionalLabels are applied it silently modifies .MatchLabels.
+				// We could also change additionalLabels.ApplyTo but that might have a bigger impact.
+				// TODO (alberto): Refactor support.config package and gate all components definition on the library.
+				Labels: config.CopyStringMap(selectorLabels),
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName: sa.Name,
@@ -2673,6 +2717,9 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 			PriorityClass: config.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
+		AdditionalLabels: map[string]string{
+			config.NeedManagementKASAccessLabel: "true",
+		},
 	}
 
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
@@ -3378,109 +3425,6 @@ func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, 
 	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
 }
 
-func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) error {
-	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
-
-	// Reconcile openshift-ingress Network Policy
-	policy := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileOpenshiftIngressNetworkPolicy(policy)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile ingress network policy: %w", err)
-	}
-
-	// Reconcile same-namespace Network Policy
-	policy = networkpolicy.SameNamespaceNetworkPolicy(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileSameNamespaceNetworkPolicy(policy)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile same namespace network policy: %w", err)
-	}
-
-	// Reconcile KAS Network Policy
-	var managementClusterNetwork *configv1.Network
-	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityNetworks) {
-		managementClusterNetwork = &configv1.Network{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(managementClusterNetwork), managementClusterNetwork); err != nil {
-			return fmt.Errorf("failed to get management cluster network config: %w", err)
-		}
-	}
-	policy = networkpolicy.KASNetworkPolicy(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileKASNetworkPolicy(policy, hcluster, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
-	}
-
-	// Reconcile openshift-monitoring Network Policy
-	policy = networkpolicy.OpenshiftMonitoringNetworkPolicy(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileOpenshiftMonitoringNetworkPolicy(policy, hcluster)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
-	}
-
-	// Reconcile private-router Network Policy
-	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		policy = networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
-		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcilePrivateRouterNetworkPolicy(policy, hcluster)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
-		}
-	} else if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
-		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcileVirtLauncherNetworkPolicy(policy, hcluster)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
-		}
-		egressFirewall := egressfirewall.VirtLauncherEgressFirewall(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r.Client, egressFirewall, func() error {
-			return reconcileVirtLauncherEgressFirewall(egressFirewall)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile firewall to deny metadata server egress: %w", err)
-		}
-	}
-
-	for _, svc := range hcluster.Spec.Services {
-		switch svc.Service {
-		case hyperv1.OAuthServer:
-			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
-				// Reconcile nodeport-oauth Network Policy
-				policy = networkpolicy.NodePortOauthNetworkPolicy(controlPlaneNamespaceName)
-				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortOauthNetworkPolicy(policy, hcluster)
-				}); err != nil {
-					return fmt.Errorf("failed to reconcile oauth server nodeport network policy: %w", err)
-				}
-			}
-		case hyperv1.Ignition:
-			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
-				// Reconcile nodeport-ignition Network Policy
-				policy = networkpolicy.NodePortIgnitionNetworkPolicy(controlPlaneNamespaceName)
-				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortIgnitionNetworkPolicy(policy, hcluster)
-				}); err != nil {
-					return fmt.Errorf("failed to reconcile ignition nodeport network policy: %w", err)
-				}
-			}
-		case hyperv1.Konnectivity:
-			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
-				// Reconcile nodeport-konnectivity Network Policy
-				policy = networkpolicy.NodePortKonnectivityNetworkPolicy(controlPlaneNamespaceName)
-				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-					return reconcileNodePortKonnectivityNetworkPolicy(policy, hcluster)
-				}); err != nil {
-					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
 func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hc *hyperv1.HostedCluster) error {
 	var errs []error
 	for _, svc := range hc.Spec.Services {
@@ -3800,301 +3744,6 @@ type ClusterMachineApproverConfig struct {
 }
 type NodeClientCert struct {
 	Disabled bool `json:"disabled,omitempty"`
-}
-
-func reconcileOpenshiftIngressNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
-	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
-		{
-			From: []networkingv1.NetworkPolicyPeer{
-				{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"network.openshift.io/policy-group": "ingress",
-						},
-					},
-				},
-			},
-		},
-	}
-	policy.Spec.PodSelector = metav1.LabelSelector{}
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
-	return nil
-}
-
-func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
-	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
-		{
-			From: []networkingv1.NetworkPolicyPeer{
-				{
-					PodSelector: &metav1.LabelSelector{},
-				},
-			},
-		},
-	}
-	policy.Spec.PodSelector = metav1.LabelSelector{}
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
-	return nil
-}
-
-func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
-	port := intstr.FromInt(int(hyperutil.BindAPIPortWithDefaultFromHostedCluster(hcluster, config.DefaultAPIServerPort)))
-	protocol := corev1.ProtocolTCP
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
-	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
-		{
-			From: []networkingv1.NetworkPolicyPeer{},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{
-					Port:     &port,
-					Protocol: &protocol,
-				},
-			},
-		},
-	}
-	// We have to keep this in order to support 4.11 clusters where the KAS listen port == the external port
-	if hcluster.Spec.Networking.APIServer != nil && hcluster.Spec.Networking.APIServer.Port != nil {
-		externalPort := intstr.FromInt(int(*hcluster.Spec.Networking.APIServer.Port))
-		if port.IntValue() != externalPort.IntValue() {
-			policy.Spec.Ingress = append(policy.Spec.Ingress, networkingv1.NetworkPolicyIngressRule{
-				From: []networkingv1.NetworkPolicyPeer{},
-				Ports: []networkingv1.NetworkPolicyPort{
-					{
-						Port:     &externalPort,
-						Protocol: &protocol,
-					},
-				},
-			})
-		}
-	}
-
-	// NetworkPolicy egress is broken for 4.11 on OpenShiftSDN, this is a workaround
-	// https://issues.redhat.com/browse/OCPBUGS-2105
-	if managementClusterNetwork != nil && managementClusterNetwork.Spec.NetworkType != "OpenShiftSDN" {
-		// Allow traffic to same namespace
-		policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
-			{
-				To: []networkingv1.NetworkPolicyPeer{
-					{
-						PodSelector: &metav1.LabelSelector{},
-					},
-				},
-			},
-		}
-
-		if len(managementClusterNetwork.Spec.ClusterNetwork) > 0 {
-			clusterNetworks := []string{}
-			for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
-				clusterNetworks = append(clusterNetworks, network.CIDR)
-			}
-
-			// Allow to any destination not on the management cluster service network
-			// i.e. block all inter-namespace egress from KAS not allowed by other rules
-			policy.Spec.Egress = append(policy.Spec.Egress,
-				networkingv1.NetworkPolicyEgressRule{
-					To: []networkingv1.NetworkPolicyPeer{
-						{
-							IPBlock: &networkingv1.IPBlock{
-								CIDR:   "0.0.0.0/0",
-								Except: clusterNetworks,
-							},
-						},
-					},
-				})
-		}
-
-		if isOpenShiftDNS {
-			// Allow traffic to openshift-dns namespace
-			dnsUDPPort := intstr.FromInt(5353)
-			dnsUDPProtocol := corev1.ProtocolUDP
-			dnsTCPPort := intstr.FromInt(5353)
-			dnsTCPProtocol := corev1.ProtocolTCP
-			policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
-				To: []networkingv1.NetworkPolicyPeer{
-					{
-						NamespaceSelector: &metav1.LabelSelector{
-							MatchLabels: map[string]string{
-								"kubernetes.io/metadata.name": "openshift-dns",
-							},
-						},
-					},
-				},
-				Ports: []networkingv1.NetworkPolicyPort{
-					{
-						Port:     &dnsUDPPort,
-						Protocol: &dnsUDPProtocol,
-					},
-					{
-						Port:     &dnsTCPPort,
-						Protocol: &dnsTCPProtocol,
-					},
-				},
-			})
-		} else {
-			// All traffic to any destination on port 53 for both TCP and UDP
-			dnsUDPPort := intstr.FromInt(53)
-			dnsUDPProtocol := corev1.ProtocolUDP
-			dnsTCPPort := intstr.FromInt(53)
-			dnsTCPProtocol := corev1.ProtocolTCP
-			policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
-				Ports: []networkingv1.NetworkPolicyPort{
-					{
-						Port:     &dnsUDPPort,
-						Protocol: &dnsUDPProtocol,
-					},
-					{
-						Port:     &dnsTCPPort,
-						Protocol: &dnsTCPProtocol,
-					},
-				},
-			})
-		}
-		policy.Spec.PolicyTypes = append(policy.Spec.PolicyTypes, networkingv1.PolicyTypeEgress)
-	}
-
-	policy.Spec.PodSelector = metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"app": "kube-apiserver",
-		},
-	}
-
-	return nil
-}
-
-func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
-	httpPort := intstr.FromInt(8080)
-	httpsPort := intstr.FromInt(8443)
-	protocol := corev1.ProtocolTCP
-	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
-		{
-			From: []networkingv1.NetworkPolicyPeer{},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{
-					Port:     &httpPort,
-					Protocol: &protocol,
-				},
-				{
-					Port:     &httpsPort,
-					Protocol: &protocol,
-				},
-			},
-		},
-	}
-	policy.Spec.PodSelector = metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"app": "private-router",
-		},
-	}
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
-	return nil
-}
-
-func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
-	port := intstr.FromInt(6443)
-	protocol := corev1.ProtocolTCP
-	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
-		{
-			From: []networkingv1.NetworkPolicyPeer{},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{
-					Port:     &port,
-					Protocol: &protocol,
-				},
-			},
-		},
-	}
-	policy.Spec.PodSelector = metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"app": "oauth-openshift",
-		},
-	}
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
-	return nil
-}
-
-func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
-	port := intstr.FromInt(9090)
-	protocol := corev1.ProtocolTCP
-	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
-		{
-			From: []networkingv1.NetworkPolicyPeer{},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{
-					Port:     &port,
-					Protocol: &protocol,
-				},
-			},
-		},
-	}
-	policy.Spec.PodSelector = metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"app": "ignition-server",
-		},
-	}
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
-	return nil
-}
-
-func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
-	port := intstr.FromInt(8091)
-	protocol := corev1.ProtocolTCP
-	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
-		{
-			From: []networkingv1.NetworkPolicyPeer{},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{
-					Port:     &port,
-					Protocol: &protocol,
-				},
-			},
-		},
-	}
-	policy.Spec.PodSelector = metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"app": "konnectivity-server",
-		},
-	}
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
-	return nil
-}
-
-func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
-	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
-		{
-			From: []networkingv1.NetworkPolicyPeer{
-				{
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"network.openshift.io/policy-group": "monitoring",
-						},
-					},
-				},
-			},
-		},
-	}
-	policy.Spec.PodSelector = metav1.LabelSelector{}
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
-	return nil
-}
-
-func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
-	protocolTCP := corev1.ProtocolTCP
-	protocolUDP := corev1.ProtocolUDP
-	protocolSCTP := corev1.ProtocolSCTP
-	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
-		{
-			Ports: []networkingv1.NetworkPolicyPort{
-				{Protocol: &protocolTCP},
-				{Protocol: &protocolUDP},
-				{Protocol: &protocolSCTP},
-			},
-		},
-	}
-	policy.Spec.PodSelector = metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"kubevirt.io": "virt-launcher",
-		},
-	}
-	return nil
 }
 
 func reconcileVirtLauncherEgressFirewall(egressFirewall *unstructured.Unstructured) error {

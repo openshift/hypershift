@@ -81,6 +81,12 @@ func TestWebhookAllowsHostedClusterReconcilerUpdates(t *testing.T) {
 						NetworkType: "OVNKubernetes",
 					},
 				},
+				&corev1.Endpoints{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kubernetes",
+						Namespace: "default",
+					},
+				},
 			},
 		},
 	}
