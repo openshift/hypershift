@@ -623,10 +623,12 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 
 	networkConfig := globalconfig.NetworkConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, networkConfig, func() error {
-		globalconfig.ReconcileNetworkConfig(networkConfig, hcp)
+		if err := globalconfig.ReconcileNetworkConfig(networkConfig, hcp); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile network config: %w", err))
+		}
 		return nil
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile network config: %w", err))
+		errs = append(errs, fmt.Errorf("failed to create network config: %w", err))
 	}
 
 	// Copy proxy trustedCA to guest cluster.

@@ -3177,7 +3177,10 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 		return fmt.Errorf("failed to get root kubelet client CA: %w", err)
 	}
 
-	p := mcs.NewMCSParams(hcp, rootCA, pullSecret, trustedCABundle, kubeletClientCA)
+	p, err := mcs.NewMCSParams(hcp, rootCA, pullSecret, trustedCABundle, kubeletClientCA)
+	if err != nil {
+		return fmt.Errorf("failed to initialise machine config server parameters config: %w", err)
+	}
 
 	cm := manifests.MachineConfigServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, cm, func() error {
