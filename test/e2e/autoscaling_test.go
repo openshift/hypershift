@@ -71,8 +71,32 @@ func TestAutoscaling(t *testing.T) {
 		err := guestClient.List(ctx, nodes)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to list nodes")
 		g.Expect(nodes.Items).ToNot(BeEmpty())
-
 		numNodes := len(nodes.Items)
+
+		// wait until the new nodes have the same resource keys before progressing, otherwise the balance will not work.
+		t.Logf("Waiting for the new Nodes to have similar resources")
+		err = wait.PollImmediateWithContext(ctx, 5*time.Second, 10*time.Minute, func(ctx context.Context) (done bool, err error) {
+			if err := guestClient.List(ctx, nodes); err != nil {
+				return false, err
+			}
+
+			// add the resources from each node's capacity, counting the number of each
+			resources := map[corev1.ResourceName]int{}
+			for _, n := range nodes.Items {
+				for k := range n.Status.Capacity {
+					resources[k] += 1
+				}
+			}
+
+			for _, value := range resources {
+				if value != numNodes {
+					return false, nil
+				}
+			}
+
+			return true, nil
+		})
+		g.Expect(err).ToNot(HaveOccurred(), "Node capacity resources did not match")
 
 		memCapacity := nodes.Items[0].Status.Allocatable[corev1.ResourceMemory]
 		g.Expect(memCapacity).ShouldNot(BeNil())
@@ -91,7 +115,7 @@ func TestAutoscaling(t *testing.T) {
 		workload := newWorkLoad(jobReplicas, workloadMemRequest, "", globalOpts.LatestReleaseImage)
 		err = guestClient.Create(ctx, workload)
 		g.Expect(err).NotTo(HaveOccurred())
-		t.Logf("Created workload with memcapacity: %s", memCapacity.String())
+		t.Logf("Created workload with memory request: %s", workloadMemRequest.String())
 
 		// Validate nodepools are scaled out and balanced.
 		// Each nodepool should have 1 more node.
@@ -104,7 +128,6 @@ func TestAutoscaling(t *testing.T) {
 				if err != nil {
 					return false, fmt.Errorf("failed to get machindeDeployment for nodePool %s: %v", nodepool.Name, err)
 				}
-
 				currentReplicas = *md.Spec.Replicas
 				if currentReplicas != expectedReplicas {
 					return false, nil
