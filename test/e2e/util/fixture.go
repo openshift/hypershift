@@ -20,22 +20,13 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	nodepoolmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-var (
-	// Metrics
-	// TODO (jparrill): We need to separate the metrics.go from the main pkg in the hypershift-operator.
-	//     Delete these references when it's done and import it from there
-	HypershiftOperatorInfoName = "hypershift_operator_info"
 )
 
 // CreateCluster creates a new namespace and a HostedCluster in that namespace
@@ -51,7 +42,7 @@ var (
 //
 // This function is intended (for now) to be the preferred default way of
 // creating a hosted cluster during a test.
-func CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, opts *core.CreateOptions, platform hyperv1.PlatformType, artifactDir string, serviceAccountSigningKey []byte) *hyperv1.HostedCluster {
+func _CreateCluster(t *testing.T, ctx context.Context, client crclient.Client, opts *core.CreateOptions, platform hyperv1.PlatformType, artifactDir string, serviceAccountSigningKey []byte) *hyperv1.HostedCluster {
 	g := NewWithT(t)
 	start := time.Now()
 
@@ -225,73 +216,7 @@ func teardown(ctx context.Context, t *testing.T, client crclient.Client, hc *hyp
 		}
 	})
 
-	t.Run("ValidateMetricsAreExposed", func(t *testing.T) {
-		// TODO (alberto) this test should pass in None.
-		// https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/artifacts/e2e-aws/run-e2e/artifacts/TestNoneCreateCluster_PreTeardownClusterDump/
-		// https://storage.googleapis.com/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/build-log.txt
-		// https://prow.ci.openshift.org/view/gs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032
-		if hc.Spec.Platform.Type == hyperv1.NonePlatform {
-			t.Skip()
-		}
-
-		g := NewWithT(t)
-
-		prometheusClient, err := NewPrometheusClient(ctx)
-		g.Expect(err).ToNot(HaveOccurred())
-
-		// Polling to prevent races with prometheus scrape interval.
-		err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
-			for _, metricName := range []string{
-				hcmetrics.DeletionDurationMetricName,
-				hcmetrics.GuestCloudResourcesDeletionDurationMetricName,
-				hcmetrics.AvailableDurationName,
-				hcmetrics.InitialRolloutDurationName,
-				hcmetrics.ClusterUpgradeDurationMetricName,
-				hcmetrics.ProxyName,
-				hcmetrics.SilenceAlertsName,
-				hcmetrics.LimitedSupportEnabledName,
-				HypershiftOperatorInfoName,
-				nodepoolmetrics.NodePoolSizeMetricName,
-				nodepoolmetrics.NodePoolAvailableReplicasMetricName,
-				nodepoolmetrics.NodePoolDeletionDurationMetricName,
-				nodepoolmetrics.NodePoolInitialRolloutDurationMetricName,
-			} {
-				// Query fo HC specific metrics by hc.name.
-				query := fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name)
-				if metricName == HypershiftOperatorInfoName {
-					// Query HO info metric
-					query = HypershiftOperatorInfoName
-				}
-				if strings.HasPrefix(metricName, "hypershift_nodepools") {
-					query = fmt.Sprintf("%v{cluster_name=\"%s\"}", metricName, hc.Name)
-				}
-				// upgrade metric is only available for TestUpgradeControlPlane
-				if metricName == hcmetrics.ClusterUpgradeDurationMetricName && !strings.HasPrefix("TestUpgradeControlPlane", t.Name()) {
-					continue
-				}
-
-				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, query, time.Now())
-				if err != nil {
-					return false, err
-				}
-
-				if len(result.Data.Result) < 1 {
-					t.Logf("Metric not found: %q", metricName)
-					return false, nil
-				}
-				for _, series := range result.Data.Result {
-					t.Logf("Found metric: %v", series.String())
-				}
-			}
-			return true, nil
-		})
-		if err != nil {
-			t.Errorf("Failed to validate that all metrics are exposed")
-		} else {
-			t.Logf("Destroyed cluster. Namespace: %s, name: %s", hc.Namespace, hc.Name)
-		}
-	})
-
+	ValidateMetrics(t, ctx, hc)
 }
 
 // createClusterOpts mutates the cluster creation options according to the

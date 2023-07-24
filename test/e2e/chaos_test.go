@@ -28,44 +28,37 @@ import (
 // of chaotic etcd tests which ensure no data is lost in the chaos.
 func TestHAEtcdChaos(t *testing.T) {
 	t.Parallel()
-	g := NewWithT(t)
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
-
-	client, err := e2eutil.GetClient()
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.NodePoolReplicas = 0
 
-	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
-
-	t.Run("KillRandomMembers", testKillRandomMembers(ctx, client, cluster))
-	t.Run("KillAllMembers", testKillAllMembers(ctx, client, cluster))
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		t.Run("KillRandomMembers", testKillRandomMembers(ctx, mgtClient, hostedCluster))
+		t.Run("KillAllMembers", testKillAllMembers(ctx, mgtClient, hostedCluster))
+	}).CreateCluster(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 // TestEtcdChaos launches a SingleReplica control plane and executes a suite of
 // chaotic etcd tests which ensure no data is lost in the chaos.
 func TestEtcdChaos(t *testing.T) {
 	t.Parallel()
-	g := NewWithT(t)
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
-
-	client, err := e2eutil.GetClient()
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.NodePoolReplicas = 0
 
-	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		t.Run("KillAllMembers", testKillAllMembers(ctx, mgtClient, hostedCluster))
+	}).CreateCluster(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
-	t.Run("KillAllMembers", testKillAllMembers(ctx, client, cluster))
 }
 
 // testKillRandomMembers ensures that data is preserved following a period where

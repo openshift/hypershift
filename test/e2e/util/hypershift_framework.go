@@ -74,8 +74,6 @@ func (h *hypershiftTest) CreateCluster(opts *core.CreateOptions, platform hyperv
 			h.test(t, h.client, hostedCluster)
 		})
 	}
-
-	h.after(hostedCluster)
 }
 
 // runs before each test.
@@ -85,33 +83,24 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *core
 	}
 
 	h.Run("Validate", func(t *testing.T) {
-		if hostedCluster.Spec.Platform.AWS.EndpointAccess == hyperv1.Private {
-			ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts)
-		} else {
-			ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)
+		if platform == hyperv1.AWSPlatform {
+			if hostedCluster.Spec.Platform.AWS.EndpointAccess == hyperv1.Private {
+				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts)
+			} else {
+				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)
+			}
 		}
+
+		hcpNs := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+
+		EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(h.T, context.Background(), h.client, hcpNs)
+		EnsureAllContainersHavePullPolicyIfNotPresent(h.T, context.Background(), h.client, hostedCluster)
+		EnsureHCPContainersHaveResourceRequests(h.T, context.Background(), h.client, hostedCluster)
+		EnsureNoPodsWithTooHighPriority(h.T, context.Background(), h.client, hostedCluster)
+		NoticePreemptionOrFailedScheduling(h.T, context.Background(), h.client, hostedCluster)
+		EnsureAllRoutesUseHCPRouter(h.T, context.Background(), h.client, hostedCluster)
+		EnsureNetworkPolicies(h.T, context.Background(), h.client, hostedCluster)
 	})
-}
-
-// runs after each test is completed.
-func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster) {
-	// don't run if test has already failed
-	if h.Failed() {
-		h.Logf("skipping after()")
-		return
-	}
-
-	h.Logf("after()")
-
-	hcpNs := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
-
-	EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(h.T, context.Background(), h.client, hcpNs)
-	EnsureAllContainersHavePullPolicyIfNotPresent(h.T, context.Background(), h.client, hostedCluster)
-	EnsureHCPContainersHaveResourceRequests(h.T, context.Background(), h.client, hostedCluster)
-	EnsureNoPodsWithTooHighPriority(h.T, context.Background(), h.client, hostedCluster)
-	NoticePreemptionOrFailedScheduling(h.T, context.Background(), h.client, hostedCluster)
-	EnsureAllRoutesUseHCPRouter(h.T, context.Background(), h.client, hostedCluster)
-	EnsureNetworkPolicies(h.T, context.Background(), h.client, hostedCluster)
 }
 
 func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *core.CreateOptions, artifactDir string, cleanupPhase bool) {
