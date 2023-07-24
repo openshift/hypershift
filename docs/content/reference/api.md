@@ -100,6 +100,25 @@ and InfrastructureAvailabilityPolicy.</p>
 </tr>
 <tr>
 <td>
+<code>controlPlaneRelease</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Release">
+Release
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ControlPlaneRelease specifies the desired OCP release payload for
+control plane components running on the management cluster.
+Updating this field will trigger a rollout of the control plane. The
+behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+and InfrastructureAvailabilityPolicy.
+If not defined, Release is used</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>clusterID</code></br>
 <em>
 string
@@ -3216,6 +3235,25 @@ and InfrastructureAvailabilityPolicy.</p>
 </tr>
 <tr>
 <td>
+<code>controlPlaneRelease</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Release">
+Release
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ControlPlaneRelease specifies the desired OCP release payload for
+control plane components running on the management cluster.
+Updating this field will trigger a rollout of the control plane. The
+behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+and InfrastructureAvailabilityPolicy.
+If not defined, Release is used</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>clusterID</code></br>
 <em>
 string
@@ -3737,6 +3775,19 @@ string
 </td>
 <td>
 <p>ReleaseImage is the release image applied to the hosted control plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneReleaseImage</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ControlPlaneReleaseImage specifies the desired OCP release payload for
+control plane components running on the management cluster.
+If not defined, ReleaseImage is used</p>
 </td>
 </tr>
 <tr>

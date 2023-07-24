@@ -204,6 +204,15 @@ type HostedClusterSpec struct {
 	// and InfrastructureAvailabilityPolicy.
 	Release Release `json:"release"`
 
+	// ControlPlaneRelease specifies the desired OCP release payload for
+	// control plane components running on the management cluster.
+	// Updating this field will trigger a rollout of the control plane. The
+	// behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+	// and InfrastructureAvailabilityPolicy.
+	// If not defined, Release is used
+	// +optional
+	ControlPlaneRelease *Release `json:"controlPlaneRelease,omitempty"`
+
 	// ClusterID uniquely identifies this cluster. This is expected to be
 	// an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in
 	// hexadecimal values).

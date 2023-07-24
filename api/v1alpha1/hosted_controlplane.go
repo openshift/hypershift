@@ -27,6 +27,11 @@ type HostedControlPlaneSpec struct {
 	// ReleaseImage is the release image applied to the hosted control plane.
 	ReleaseImage string `json:"releaseImage"`
 
+	// ControlPlaneReleaseImage specifies the desired OCP release payload for
+	// control plane components running on the management cluster.
+	// If not defined, ReleaseImage is used
+	ControlPlaneReleaseImage *string `json:"controlPlaneReleaseImage,omitempty"`
+
 	// channel is an identifier for explicitly requesting that a non-default
 	// set of updates be applied to this cluster. The default channel will be
 	// contain stable updates that are appropriate for production clusters.
