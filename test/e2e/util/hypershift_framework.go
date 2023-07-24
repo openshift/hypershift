@@ -69,7 +69,7 @@ func (h *hypershiftTest) CreateCluster(opts *core.CreateOptions, platform hyperv
 	// validate cluster is operational
 	h.before(hostedCluster, opts, platform)
 
-	if h.test != nil {
+	if h.test != nil && !h.Failed() {
 		h.Run("Main", func(t *testing.T) {
 			h.test(t, h.client, hostedCluster)
 		})
@@ -78,10 +78,6 @@ func (h *hypershiftTest) CreateCluster(opts *core.CreateOptions, platform hyperv
 
 // runs before each test.
 func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *core.CreateOptions, platform hyperv1.PlatformType) {
-	if platform != hyperv1.AWSPlatform {
-		return
-	}
-
 	h.Run("Validate", func(t *testing.T) {
 		if platform == hyperv1.AWSPlatform {
 			if hostedCluster.Spec.Platform.AWS.EndpointAccess == hyperv1.Private {
