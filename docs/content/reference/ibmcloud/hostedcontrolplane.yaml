@@ -1,0 +1,262 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedControlPlane
+metadata:
+  annotations:
+    hypershift.openshift.io/cluster: master/cismlo21050nmreb5nhg
+    hypershift.openshift.io/disable-pki-reconciliation: "true"
+    hypershift.openshift.io/disable-profiling: kube-apiserver, kube-scheduler, kube-controller-manager
+    idpoverrides.hypershift.openshift.io/IAM: |
+      {"urls": {"authorize": "https://iam.test.cloud.ibm.com/identity/authorize", "userInfo": "https://iam.test.cloud.ibm.com/identity/userinfo", "token": "https://iam.test.cloud.ibm.com/identity/ACCOUNTID/token"}, "claims": {"id": ["iam_id"], "email": ["email"], "name": ["name"], "preferredUsername": ["preferred_username"]}, "challenge": true}
+    oauth.hypershift.openshift.io/login-url-override: https://sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud:31446
+  creationTimestamp: "2023-07-20T17:28:10Z"
+  finalizers:
+  - hypershift.openshift.io/finalizer
+  generation: 3
+  name: cismlo21050nmreb5nhg
+  namespace: master-cismlo21050nmreb5nhg
+  resourceVersion: "569642"
+  uid: c1d752eb-4ff1-4b60-ad65-13fc2c74187d
+spec:
+  autoscaling: {}
+  clusterID: 512f0876-573e-40b3-8a37-cb6f22b37e16
+  configuration:
+    apiServer:
+      audit:
+        profile: Default
+      clientCA:
+        name: ""
+      encryption: {}
+      servingCerts:
+        namedCertificates:
+        - names:
+          - sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud
+          servingCertificate:
+            name: ibm-named-certs
+      tlsSecurityProfile:
+        custom:
+          ciphers:
+          - ECDHE-ECDSA-AES128-GCM-SHA256
+          - ECDHE-RSA-AES128-GCM-SHA256
+          - ECDHE-ECDSA-AES256-GCM-SHA384
+          - ECDHE-RSA-AES256-GCM-SHA384
+          - ECDHE-ECDSA-CHACHA20-POLY1305
+          - ECDHE-RSA-CHACHA20-POLY1305
+          minTLSVersion: VersionTLS12
+        type: Custom
+    featureGate:
+      customNoUpgrade:
+        disabled:
+        - CSIMigrationAWS
+        - CSIMigrationGCE
+        - CSIMigrationAzureFile
+        - CSIMigrationvSphere
+        enabled:
+        - ExpandInUsePersistentVolumes
+        - RotateKubeletServerCertificate
+        - DownwardAPIHugePages
+      featureSet: CustomNoUpgrade
+    ingress:
+      domain: sat-e2e-16898731-9e37478581b5d9de33607f5926d1d18f-0000.us-south.prestg.stg.containers.appdomain.cloud
+      loadBalancer:
+        platform:
+          type: ""
+    oauth:
+      identityProviders:
+      - mappingMethod: lookup
+        name: IAM
+        openID:
+          ca:
+            name: ""
+          claims:
+            email:
+            - email
+            name:
+            - name
+            preferredUsername:
+            - preferred_username
+          clientID: CLIENTID
+          clientSecret:
+            name: hypershift-ibm-iam-clientsecret
+          issuer: https://iam.test.cloud.ibm.com/identity
+        type: OpenID
+      templates:
+        error:
+          name: ""
+        login:
+          name: ""
+        providerSelection:
+          name: ""
+      tokenConfig: {}
+  controllerAvailabilityPolicy: HighlyAvailable
+  dns:
+    baseDomain: sat-e2e-16898731-9e37478581b5d9de33607f5926d1d18f-0000.us-south.prestg.stg.containers.appdomain.cloud
+  etcd:
+    managementType: Unmanaged
+    unmanaged:
+      endpoint: https://etcd-cismlo21050nmreb5nhg-client:2379
+      tls:
+        clientSecret:
+          name: cismlo21050nmreb5nhg-etcd-client-tls
+  fips: false
+  imageContentSources:
+  - mirrors:
+    - us.icr.io/armada-master/ocp-release
+    source: quay.io/openshift-release-dev/ocp-release
+  - mirrors:
+    - us.icr.io/armada-master/ocp-release
+    source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+  infraID: cismlo21050nmreb5nhg
+  infrastructureAvailabilityPolicy: HighlyAvailable
+  issuerURL: https://kubernetes.default.svc
+  networking:
+    apiServer:
+      advertiseAddress: 172.20.0.1
+      port: 2040
+    clusterNetwork:
+    - cidr: 172.30.0.0/16
+    machineNetwork:
+    - cidr: 172.30.0.0/16
+    networkType: Calico
+    serviceNetwork:
+    - cidr: 172.21.0.0/16
+  olmCatalogPlacement: guest
+  platform:
+    ibmcloud:
+      providerType: UPI
+    type: IBMCloud
+  pullSecret:
+    name: pull-secret
+  releaseImage: us.icr.io/armada-master/ocp-release:4.11.45-x86_64
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      nodePort:
+        address: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-c000.us-south.satellite.test.appdomain.cloud
+        port: 31446
+      type: NodePort
+  - service: OAuthServer
+    servicePublishingStrategy:
+      nodePort:
+        address: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud
+        port: 32167
+      type: NodePort
+  - service: Konnectivity
+    servicePublishingStrategy:
+      nodePort:
+        address: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud
+        port: 31938
+      type: NodePort
+  - service: Ignition
+    servicePublishingStrategy:
+      nodePort:
+        address: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud
+        port: 30231
+      type: NodePort
+  sshKey: {}
+status:
+  conditions:
+  - lastTransitionTime: "2023-07-20T17:28:56Z"
+    message: Configuration passes validation
+    observedGeneration: 3
+    reason: HostedClusterAsExpected
+    status: "True"
+    type: ValidHostedControlPlaneConfiguration
+  - lastTransitionTime: "2023-07-20T17:28:56Z"
+    message: Etcd cluster is assumed to be running in unmanaged state
+    observedGeneration: 3
+    reason: EtcdRunning
+    status: "True"
+    type: EtcdAvailable
+  - lastTransitionTime: "2023-07-20T17:30:09Z"
+    message: Kube APIServer deployment is available
+    observedGeneration: 3
+    reason: AsExpected
+    status: "True"
+    type: KubeAPIServerAvailable
+  - lastTransitionTime: "2023-07-20T17:28:56Z"
+    message: ""
+    observedGeneration: 3
+    reason: AsExpected
+    status: "True"
+    type: InfrastructureReady
+  - lastTransitionTime: "2023-07-21T13:59:34Z"
+    message: Cluster version is 4.11.45
+    observedGeneration: 3
+    reason: AsExpected
+    status: "False"
+    type: ClusterVersionFailing
+  - lastTransitionTime: "2023-07-20T17:30:09Z"
+    message: ""
+    observedGeneration: 3
+    reason: AsExpected
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2023-07-20T17:28:58Z"
+    message: Reconciliation active on resource
+    observedGeneration: 2
+    reason: ReconciliationActive
+    status: "False"
+    type: ReconciliationPaused
+  - lastTransitionTime: "2023-07-21T18:14:52Z"
+    message: ""
+    observedGeneration: 3
+    reason: AsExpected
+    status: "False"
+    type: Degraded
+  - lastTransitionTime: "2023-07-21T18:00:04Z"
+    message: Reconciliation active on resource
+    observedGeneration: 3
+    reason: ReconciliationActive
+    status: "True"
+    type: ReconciliationActive
+  - lastTransitionTime: "2023-07-21T18:17:33Z"
+    message: Kubernetes 1.25 and therefore OpenShift 4.12 remove several APIs which
+      require admin consideration. Please see the knowledge article https://access.redhat.com/articles/6955381
+      for details and instructions.
+    observedGeneration: 3
+    reason: AdminAckRequired
+    status: "False"
+    type: ClusterVersionUpgradeable
+  - lastTransitionTime: "2023-07-21T18:12:16Z"
+    message: ""
+    reason: AsExpected
+    status: "False"
+    type: network.operator.openshift.io/ManagementStateDegraded
+  - lastTransitionTime: "2023-07-21T18:12:16Z"
+    message: ""
+    reason: AsExpected
+    status: "False"
+    type: network.operator.openshift.io/Degraded
+  - lastTransitionTime: "2023-07-21T18:12:16Z"
+    message: ""
+    reason: AsExpected
+    status: "True"
+    type: network.operator.openshift.io/Upgradeable
+  - lastTransitionTime: "2023-07-21T18:36:33Z"
+    message: |-
+      DaemonSet "/openshift-multus/multus" is not available (awaiting 1 nodes)
+      DaemonSet "/openshift-multus/multus-additional-cni-plugins" is not available (awaiting 1 nodes)
+      DaemonSet "/openshift-multus/network-metrics-daemon" is not available (awaiting 1 nodes)
+      DaemonSet "/openshift-kube-proxy/openshift-kube-proxy" is not available (awaiting 1 nodes)
+      DaemonSet "/openshift-network-diagnostics/network-check-target" is not available (awaiting 1 nodes)
+    reason: Deploying
+    status: "True"
+    type: network.operator.openshift.io/Progressing
+  - lastTransitionTime: "2023-07-21T18:12:16Z"
+    message: ""
+    reason: AsExpected
+    status: "True"
+    type: network.operator.openshift.io/Available
+  controlPlaneEndpoint:
+    host: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-c000.us-south.satellite.test.appdomain.cloud
+    port: 31446
+  externalManagedControlPlane: true
+  initialized: true
+  kubeConfig:
+    key: kubeconfig
+    name: admin-kubeconfig
+  lastReleaseImageTransitionTime: "2023-07-21T18:20:01Z"
+  oauthCallbackURLTemplate: https://sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud:32167/oauthcallback/[identity-provider-name]
+  ready: true
+  releaseImage: us.icr.io/armada-master/ocp-release:4.11.45-x86_64
+  version: 4.11.45

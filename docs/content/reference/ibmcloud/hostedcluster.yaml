@@ -1,0 +1,317 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  annotations:
+    hypershift.openshift.io/capi-manager-image: us.icr.io/armada-master/hypershift-cluster-api@sha256:dd610ea557e88156df3c04b293698defa3a8378f922f9abb2b098bc7495564f2
+    hypershift.openshift.io/disable-pki-reconciliation: "true"
+    hypershift.openshift.io/disable-profiling: kube-apiserver, kube-scheduler, kube-controller-manager
+    hypershift.openshift.io/force-upgrade-to: us.icr.io/armada-master/ocp-release:4.11.45-x86_64
+    idpoverrides.hypershift.openshift.io/IAM: |
+      {"urls": {"authorize": "https://iam.test.cloud.ibm.com/identity/authorize", "userInfo": "https://iam.test.cloud.ibm.com/identity/userinfo", "token": "https://iam.test.cloud.ibm.com/identity/ACCOUNTID/token"}, "claims": {"id": ["iam_id"], "email": ["email"], "name": ["name"], "preferredUsername": ["preferred_username"]}, "challenge": true}
+    oauth.hypershift.openshift.io/login-url-override: https://sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud:31446
+  creationTimestamp: "2023-07-20T17:28:01Z"
+  finalizers:
+  - hypershift.openshift.io/finalizer
+  generation: 4
+  labels:
+    clusterid: cismlo21050nmreb5nhg
+  name: cismlo21050nmreb5nhg
+  namespace: master
+  resourceVersion: "565317"
+  uid: 17b18f1d-a76f-46ea-ac3e-366ea9d28417
+spec:
+  autoscaling: {}
+  clusterID: 512f0876-573e-40b3-8a37-cb6f22b37e16
+  configuration:
+    apiServer:
+      audit:
+        profile: Default
+      clientCA:
+        name: ""
+      encryption: {}
+      servingCerts:
+        namedCertificates:
+        - names:
+          - sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud
+          servingCertificate:
+            name: ibm-named-certs
+      tlsSecurityProfile:
+        custom:
+          ciphers:
+          - ECDHE-ECDSA-AES128-GCM-SHA256
+          - ECDHE-RSA-AES128-GCM-SHA256
+          - ECDHE-ECDSA-AES256-GCM-SHA384
+          - ECDHE-RSA-AES256-GCM-SHA384
+          - ECDHE-ECDSA-CHACHA20-POLY1305
+          - ECDHE-RSA-CHACHA20-POLY1305
+          minTLSVersion: VersionTLS12
+        type: Custom
+    featureGate:
+      customNoUpgrade:
+        disabled:
+        - CSIMigrationAWS
+        - CSIMigrationGCE
+        - CSIMigrationAzureFile
+        - CSIMigrationvSphere
+        enabled:
+        - ExpandInUsePersistentVolumes
+        - RotateKubeletServerCertificate
+        - DownwardAPIHugePages
+      featureSet: CustomNoUpgrade
+    ingress:
+      domain: sat-e2e-16898731-9e37478581b5d9de33607f5926d1d18f-0000.us-south.prestg.stg.containers.appdomain.cloud
+      loadBalancer:
+        platform:
+          type: ""
+    oauth:
+      identityProviders:
+      - mappingMethod: lookup
+        name: IAM
+        openID:
+          claims:
+            email:
+            - email
+            name:
+            - name
+            preferredUsername:
+            - preferred_username
+          clientID: CLIENTID
+          clientSecret:
+            name: hypershift-ibm-iam-clientsecret
+          issuer: https://iam.test.cloud.ibm.com/identity
+        type: OpenID
+      templates:
+        error:
+          name: ""
+        login:
+          name: ""
+        providerSelection:
+          name: ""
+      tokenConfig: {}
+  controllerAvailabilityPolicy: HighlyAvailable
+  dns:
+    baseDomain: sat-e2e-16898731-9e37478581b5d9de33607f5926d1d18f-0000.us-south.prestg.stg.containers.appdomain.cloud
+  etcd:
+    managementType: Unmanaged
+    unmanaged:
+      endpoint: https://etcd-cismlo21050nmreb5nhg-client:2379
+      tls:
+        clientSecret:
+          name: cismlo21050nmreb5nhg-etcd-client-tls
+  fips: false
+  imageContentSources:
+  - mirrors:
+    - us.icr.io/armada-master/ocp-release
+    source: quay.io/openshift-release-dev/ocp-release
+  - mirrors:
+    - us.icr.io/armada-master/ocp-release
+    source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+  infraID: cismlo21050nmreb5nhg
+  infrastructureAvailabilityPolicy: HighlyAvailable
+  issuerURL: https://kubernetes.default.svc
+  networking:
+    apiServer:
+      advertiseAddress: 172.20.0.1
+      port: 2040
+    clusterNetwork:
+    - cidr: 172.30.0.0/16
+    machineNetwork:
+    - cidr: 172.30.0.0/16
+    networkType: Calico
+    serviceNetwork:
+    - cidr: 172.21.0.0/16
+  olmCatalogPlacement: guest
+  platform:
+    ibmcloud:
+      providerType: UPI
+    type: IBMCloud
+  pullSecret:
+    name: cismlo21050nmreb5nhg-pull-secret
+  release:
+    image: us.icr.io/armada-master/ocp-release:4.11.45-x86_64
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      nodePort:
+        address: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-c000.us-south.satellite.test.appdomain.cloud
+        port: 31446
+      type: NodePort
+  - service: OAuthServer
+    servicePublishingStrategy:
+      nodePort:
+        address: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud
+        port: 32167
+      type: NodePort
+  - service: Konnectivity
+    servicePublishingStrategy:
+      nodePort:
+        address: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud
+        port: 31938
+      type: NodePort
+  - service: Ignition
+    servicePublishingStrategy:
+      nodePort:
+        address: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud
+        port: 30231
+      type: NodePort
+  sshKey: {}
+status:
+  conditions:
+  - lastTransitionTime: "2023-07-20T17:28:02Z"
+    message: ""
+    observedGeneration: 1
+    reason: StatusUnknown
+    status: Unknown
+    type: ValidAWSIdentityProvider
+  - lastTransitionTime: "2023-07-20T17:28:03Z"
+    message: Condition not found in the CVO.
+    observedGeneration: 4
+    reason: StatusUnknown
+    status: Unknown
+    type: ClusterVersionReleaseAccepted
+  - lastTransitionTime: "2023-07-21T18:17:33Z"
+    message: Kubernetes 1.25 and therefore OpenShift 4.12 remove several APIs which
+      require admin consideration. Please see the knowledge article https://access.redhat.com/articles/6955381
+      for details and instructions.
+    observedGeneration: 4
+    reason: AdminAckRequired
+    status: "False"
+    type: ClusterVersionUpgradeable
+  - lastTransitionTime: "2023-07-20T17:28:03Z"
+    message: Condition not found in the CVO.
+    observedGeneration: 4
+    reason: StatusUnknown
+    status: Unknown
+    type: ClusterVersionAvailable
+  - lastTransitionTime: "2023-07-20T17:54:23Z"
+    message: Cluster version is 4.11.45
+    observedGeneration: 4
+    reason: AsExpected
+    status: "True"
+    type: ClusterVersionSucceeding
+  - lastTransitionTime: "2023-07-20T17:28:03Z"
+    message: Condition not found in the CVO.
+    observedGeneration: 4
+    reason: StatusUnknown
+    status: Unknown
+    type: ClusterVersionProgressing
+  - lastTransitionTime: "2023-07-21T18:14:52Z"
+    message: The hosted cluster is not degraded
+    observedGeneration: 4
+    reason: AsExpected
+    status: "False"
+    type: Degraded
+  - lastTransitionTime: "2023-07-20T17:28:56Z"
+    message: Etcd cluster is assumed to be running in unmanaged state
+    observedGeneration: 4
+    reason: EtcdRunning
+    status: "True"
+    type: EtcdAvailable
+  - lastTransitionTime: "2023-07-20T17:30:09Z"
+    message: Kube APIServer deployment is available
+    observedGeneration: 4
+    reason: AsExpected
+    status: "True"
+    type: KubeAPIServerAvailable
+  - lastTransitionTime: "2023-07-20T17:28:56Z"
+    message: ""
+    observedGeneration: 4
+    reason: AsExpected
+    status: "True"
+    type: InfrastructureReady
+  - lastTransitionTime: "2023-07-20T17:28:03Z"
+    message: The hosted control plane is not found
+    observedGeneration: 4
+    reason: StatusUnknown
+    status: Unknown
+    type: ExternalDNSReachable
+  - lastTransitionTime: "2023-07-20T17:28:03Z"
+    message: ""
+    reason: UnmanagedEtcdAsExpected
+    status: "True"
+    type: UnmanagedEtcdAvailable
+  - lastTransitionTime: "2023-07-20T17:31:08Z"
+    message: The hosted control plane is available
+    observedGeneration: 4
+    reason: AsExpected
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2023-07-20T17:28:03Z"
+    message: Configuration passes validation
+    observedGeneration: 4
+    reason: AsExpected
+    status: "True"
+    type: ValidConfiguration
+  - lastTransitionTime: "2023-07-20T17:28:03Z"
+    message: HostedCluster is supported by operator configuration
+    observedGeneration: 4
+    reason: AsExpected
+    status: "True"
+    type: SupportedHostedCluster
+  - lastTransitionTime: "2023-07-20T17:31:08Z"
+    message: Configuration passes validation
+    reason: HostedClusterAsExpected
+    status: "True"
+    type: ValidHostedControlPlaneConfiguration
+  - lastTransitionTime: "2023-07-20T17:31:08Z"
+    message: Ignition server deployment is available
+    observedGeneration: 4
+    reason: AsExpected
+    status: "True"
+    type: IgnitionEndpointAvailable
+  - lastTransitionTime: "2023-07-20T17:28:03Z"
+    message: Reconciliation active on resource
+    observedGeneration: 4
+    reason: AsExpected
+    status: "True"
+    type: ReconciliationActive
+  - lastTransitionTime: "2023-07-20T17:28:06Z"
+    message: Release image is valid
+    observedGeneration: 4
+    reason: AsExpected
+    status: "True"
+    type: ValidReleaseImage
+  - lastTransitionTime: "2023-07-20T17:28:06Z"
+    message: HostedCluster is at expected version
+    observedGeneration: 4
+    reason: AsExpected
+    status: "False"
+    type: Progressing
+  - lastTransitionTime: "2023-07-21T17:58:46Z"
+    message: Reconciliation completed succesfully
+    observedGeneration: 4
+    reason: ReconciliatonSucceeded
+    status: "True"
+    type: ReconciliationSucceeded
+  controlPlaneEndpoint:
+    host: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-c000.us-south.satellite.test.appdomain.cloud
+    port: 31446
+  ignitionEndpoint: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud:30231
+  kubeconfig:
+    name: cismlo21050nmreb5nhg-admin-kubeconfig
+  oauthCallbackURLTemplate: https://sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud:32167/oauthcallback/[identity-provider-name]
+  version:
+    availableUpdates: null
+    desired:
+      image: us.icr.io/armada-master/ocp-release:4.11.45-x86_64
+      version: ""
+    history:
+    - completionTime: "2023-07-21T18:20:01Z"
+      image: us.icr.io/armada-master/ocp-release:4.11.45-x86_64
+      startedTime: "2023-07-21T17:58:42Z"
+      state: Completed
+      verified: false
+      version: 4.11.45
+    - completionTime: "2023-07-21T14:20:15Z"
+      image: us.icr.io/armada-master/ocp-release:4.10.63-x86_64
+      startedTime: "2023-07-21T13:58:13Z"
+      state: Completed
+      verified: false
+      version: 4.10.63
+    - completionTime: "2023-07-20T17:56:38Z"
+      image: registry.ng.bluemix.net/armada-master/ocp-release:4.9.53-x86_64
+      startedTime: "2023-07-20T17:28:03Z"
+      state: Completed
+      verified: false
+      version: 4.9.53
+    observedGeneration: 4
