@@ -199,9 +199,7 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 		if err != nil {
 			return false, nil
 		}
-		if len(nodes.Items) == 0 {
-			return false, nil
-		}
+
 		var readyNodes []string
 		for _, node := range nodes.Items {
 			for _, cond := range node.Status.Conditions {
