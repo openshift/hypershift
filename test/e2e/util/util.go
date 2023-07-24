@@ -4,6 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -36,14 +42,9 @@ import (
 	"k8s.io/client-go/kubernetes"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sort"
-	"strings"
-	"testing"
-	"time"
 )
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -306,6 +307,9 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 
 		if rolloutIncompleteReason != "" {
 			t.Logf("Waiting for hostedcluster rollout. Image: %s: %s", image, rolloutIncompleteReason)
+			for i := range latest.Status.Conditions {
+				t.Logf("Latest condition is: %s, with message: %s", latest.Status.Conditions[i].Type, latest.Status.Conditions[i].Message)
+			}
 			return false, nil
 		}
 		return true, nil
