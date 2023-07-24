@@ -1,0 +1,210 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedControlPlane
+metadata:
+  annotations:
+    hypershift.openshift.io/cluster: master/cismlo21050nmreb5nhg
+    hypershift.openshift.io/disable-pki-reconciliation: "true"
+    hypershift.openshift.io/disable-profiling: kube-apiserver, kube-scheduler, kube-controller-manager
+    hypershift.openshift.io/konnectivity-agent-image: registry.ng.bluemix.net/armada-master/rh-apiserver-network-proxy@sha256:745511c3ed56aee521d018825b053c2310e3dd6d1af332e575bbd18789782c30
+    hypershift.openshift.io/konnectivity-server-image: registry.ng.bluemix.net/armada-master/rh-apiserver-network-proxy@sha256:745511c3ed56aee521d018825b053c2310e3dd6d1af332e575bbd18789782c30
+    idpoverrides.hypershift.openshift.io/IAM: |
+      {"urls": {"authorize": "https://iam.test.cloud.ibm.com/identity/authorize", "userInfo": "https://iam.test.cloud.ibm.com/identity/userinfo", "token": "https://iam.test.cloud.ibm.com/identity/ACCOUNTID/token"}, "claims": {"id": ["iam_id"], "email": ["email"], "name": ["name"], "preferredUsername": ["preferred_username"]}, "challenge": true}
+    oauth.hypershift.openshift.io/login-url-override: https://sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud:31446
+  creationTimestamp: "2023-07-20T17:28:10Z"
+  finalizers:
+  - hypershift.openshift.io/finalizer
+  generation: 1
+  name: cismlo21050nmreb5nhg
+  namespace: master-cismlo21050nmreb5nhg
+  resourceVersion: "41681"
+  uid: c1d752eb-4ff1-4b60-ad65-13fc2c74187d
+spec:
+  autoscaling: {}
+  clusterID: 512f0876-573e-40b3-8a37-cb6f22b37e16
+  configuration:
+    apiServer:
+      audit:
+        profile: Default
+      clientCA:
+        name: ""
+      encryption: {}
+      servingCerts:
+        namedCertificates:
+        - names:
+          - sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud
+          servingCertificate:
+            name: ibm-named-certs
+      tlsSecurityProfile:
+        custom:
+          ciphers:
+          - ECDHE-ECDSA-AES128-GCM-SHA256
+          - ECDHE-RSA-AES128-GCM-SHA256
+          - ECDHE-ECDSA-AES256-GCM-SHA384
+          - ECDHE-RSA-AES256-GCM-SHA384
+          - ECDHE-ECDSA-CHACHA20-POLY1305
+          - ECDHE-RSA-CHACHA20-POLY1305
+          minTLSVersion: VersionTLS12
+        type: Custom
+    featureGate:
+      customNoUpgrade:
+        disabled:
+        - ServiceLBNodePortControl
+        enabled:
+        - ExpandInUsePersistentVolumes
+        - RotateKubeletServerCertificate
+        - DownwardAPIHugePages
+      featureSet: CustomNoUpgrade
+    ingress:
+      domain: sat-e2e-16898731-9e37478581b5d9de33607f5926d1d18f-0000.us-south.prestg.stg.containers.appdomain.cloud
+      loadBalancer:
+        platform:
+          type: ""
+    oauth:
+      identityProviders:
+      - mappingMethod: lookup
+        name: IAM
+        openID:
+          ca:
+            name: ""
+          claims:
+            email:
+            - email
+            name:
+            - name
+            preferredUsername:
+            - preferred_username
+          clientID: CLIENTID
+          clientSecret:
+            name: hypershift-ibm-iam-clientsecret
+          issuer: https://iam.test.cloud.ibm.com/identity
+        type: OpenID
+      templates:
+        error:
+          name: ""
+        login:
+          name: ""
+        providerSelection:
+          name: ""
+      tokenConfig: {}
+  controllerAvailabilityPolicy: HighlyAvailable
+  dns:
+    baseDomain: sat-e2e-16898731-9e37478581b5d9de33607f5926d1d18f-0000.us-south.prestg.stg.containers.appdomain.cloud
+  etcd:
+    managementType: Unmanaged
+    unmanaged:
+      endpoint: https://etcd-cismlo21050nmreb5nhg-client:2379
+      tls:
+        clientSecret:
+          name: cismlo21050nmreb5nhg-etcd-client-tls
+  fips: false
+  imageContentSources:
+  - mirrors:
+    - us.icr.io/armada-master/ocp-release
+    source: quay.io/openshift-release-dev/ocp-release
+  - mirrors:
+    - us.icr.io/armada-master/ocp-release
+    source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+  infraID: cismlo21050nmreb5nhg
+  infrastructureAvailabilityPolicy: HighlyAvailable
+  issuerURL: https://kubernetes.default.svc
+  networking:
+    apiServer:
+      advertiseAddress: 172.20.0.1
+      port: 2040
+    clusterNetwork:
+    - cidr: 172.30.0.0/16
+    machineNetwork:
+    - cidr: 172.30.0.0/16
+    networkType: Calico
+    serviceNetwork:
+    - cidr: 172.21.0.0/16
+  olmCatalogPlacement: guest
+  platform:
+    ibmcloud:
+      providerType: UPI
+    type: IBMCloud
+  pullSecret:
+    name: pull-secret
+  releaseImage: registry.ng.bluemix.net/armada-master/ocp-release:4.9.53-x86_64
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      nodePort:
+        address: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-c000.us-south.satellite.test.appdomain.cloud
+        port: 31446
+      type: NodePort
+  - service: OAuthServer
+    servicePublishingStrategy:
+      nodePort:
+        address: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud
+        port: 32167
+      type: NodePort
+  - service: Konnectivity
+    servicePublishingStrategy:
+      nodePort:
+        address: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud
+        port: 31938
+      type: NodePort
+  - service: Ignition
+    servicePublishingStrategy:
+      nodePort:
+        address: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-ce00.us-south.satellite.test.appdomain.cloud
+        port: 30231
+      type: NodePort
+  sshKey: {}
+status:
+  conditions:
+  - lastTransitionTime: "2023-07-20T17:28:56Z"
+    message: Configuration passes validation
+    observedGeneration: 1
+    reason: HostedClusterAsExpected
+    status: "True"
+    type: ValidHostedControlPlaneConfiguration
+  - lastTransitionTime: "2023-07-20T17:28:56Z"
+    message: Etcd cluster is assumed to be running in unmanaged state
+    observedGeneration: 1
+    reason: EtcdRunning
+    status: "True"
+    type: EtcdAvailable
+  - lastTransitionTime: "2023-07-20T17:30:09Z"
+    message: ""
+    observedGeneration: 1
+    reason: AsExpected
+    status: "True"
+    type: KubeAPIServerAvailable
+  - lastTransitionTime: "2023-07-20T17:28:56Z"
+    message: ""
+    observedGeneration: 1
+    reason: AsExpected
+    status: "True"
+    type: InfrastructureReady
+  - lastTransitionTime: "2023-07-20T17:54:23Z"
+    message: ""
+    observedGeneration: 1
+    reason: AsExpected
+    status: "False"
+    type: ClusterVersionFailing
+  - lastTransitionTime: "2023-07-20T17:30:09Z"
+    message: ""
+    observedGeneration: 1
+    reason: AsExpected
+    status: "True"
+    type: Available
+  - lastTransitionTime: "2023-07-20T17:28:58Z"
+    message: Reconciliation active on resource
+    observedGeneration: 1
+    reason: ReconciliationActive
+    status: "False"
+    type: ReconciliationPaused
+  controlPlaneEndpoint:
+    host: sab980c9cc8c17f3e13fa-d603ff82e51c94176a53d44566df9d79-c000.us-south.satellite.test.appdomain.cloud
+    port: 31446
+  externalManagedControlPlane: true
+  initialized: true
+  kubeConfig:
+    key: kubeconfig
+    name: admin-kubeconfig
+  lastReleaseImageTransitionTime: "2023-07-20T17:56:38Z"
+  ready: true
+  releaseImage: registry.ng.bluemix.net/armada-master/ocp-release:4.9.53-x86_64
+  version: 4.9.53
