@@ -252,6 +252,12 @@ objects:
     verbs:
     - list
     - watch
+  - apiGroups:
+    - k8s.ovn.org
+    resources:
+    - egressfirewalls
+    verbs:
+    - '*'
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: ClusterRoleBinding
   metadata:

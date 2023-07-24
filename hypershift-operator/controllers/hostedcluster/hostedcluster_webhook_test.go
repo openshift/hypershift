@@ -73,6 +73,20 @@ func TestWebhookAllowsHostedClusterReconcilerUpdates(t *testing.T) {
 				},
 				&configv1.Ingress{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}},
 				&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "none-cluster"}},
+				&configv1.Network{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "cluster",
+					},
+					Spec: configv1.NetworkSpec{
+						NetworkType: "OVNKubernetes",
+					},
+				},
+				&corev1.Endpoints{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kubernetes",
+						Namespace: "default",
+					},
+				},
 			},
 		},
 	}

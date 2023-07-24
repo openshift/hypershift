@@ -34,6 +34,9 @@ func hcpRouterLabels() map[string]string {
 
 func HCPRouterConfig(hcp *hyperv1.HostedControlPlane, setDefaultSecurityContext bool) config.DeploymentConfig {
 	cfg := config.DeploymentConfig{
+		AdditionalLabels: map[string]string{
+			config.NeedManagementKASAccessLabel: "true",
+		},
 		Resources: config.ResourcesSpec{
 			hcpRouterContainerMain().Name: {
 				Requests: corev1.ResourceList{
