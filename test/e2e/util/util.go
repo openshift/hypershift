@@ -1416,7 +1416,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
-	validateHostedClusterConditions(t, ctx, client, hostedCluster)
+	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0)
 
 	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
@@ -1436,9 +1436,13 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	// Ensure NodePools have all Nodes ready.
 	WaitForNodePoolDesiredNodes(t, ctx, client, hostedCluster)
 
-	// Wait for the rollout to be complete
-	t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
-	WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	// rollout will not complete if there are no wroker nodes.
+	if numNodes > 0 {
+		// Wait for the rollout to be complete
+		t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
+		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+	}
 
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
@@ -1454,12 +1458,12 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
-	validateHostedClusterConditions(t, ctx, client, hostedCluster)
+	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0)
 
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 }
 
-func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool) {
 	expectedConditions := conditions.ExpectedHCConditions()
 
 	if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
@@ -1475,6 +1479,12 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionUnknown
 	} else {
 		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionTrue
+	}
+
+	if !hasWorkerNodes {
+		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
+		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
+		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
 	}
 
 	start := time.Now()
