@@ -6,6 +6,7 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 )
@@ -25,6 +26,13 @@ func TestNewEtcdParams(t *testing.T) {
 					Etcd: hyperv1.EtcdSpec{
 						ManagementType: hyperv1.Managed,
 						Managed:        nil,
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+							{
+								CIDR: *ipnet.MustParseCIDR("fd01::/48"),
+							},
+						},
 					},
 				},
 			},
@@ -47,6 +55,13 @@ func TestNewEtcdParams(t *testing.T) {
 							},
 						},
 					},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+							{
+								CIDR: *ipnet.MustParseCIDR("10.132.0.0/14"),
+							},
+						},
+					},
 				},
 			},
 			images: map[string]string{"etcd": "someimage"},
@@ -63,6 +78,13 @@ func TestNewEtcdParams(t *testing.T) {
 						Managed: &hyperv1.ManagedEtcdSpec{
 							Storage: hyperv1.ManagedEtcdStorageSpec{
 								RestoreSnapshotURL: []string{"arestoreurl"},
+							},
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+							{
+								CIDR: *ipnet.MustParseCIDR("fd01::/48"),
 							},
 						},
 					},
@@ -87,7 +109,8 @@ func TestNewEtcdParams(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			imageProvider := imageprovider.NewFromImages(tt.images)
 			g := NewGomegaWithT(t)
-			p := NewEtcdParams(tt.hcp, imageProvider)
+			p, err := NewEtcdParams(tt.hcp, imageProvider)
+			g.Expect(err).To(BeNil())
 			g.Expect(p).ToNot(BeNil())
 			g.Expect(p.EtcdImage).To(Equal(tt.images["etcd"]))
 			g.Expect(p.StorageSpec).To(Equal(tt.expectedStorageSpec))
