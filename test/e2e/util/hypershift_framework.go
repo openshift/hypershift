@@ -89,13 +89,13 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *core
 
 		hcpNs := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
 
-		EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(h.T, context.Background(), h.client, hcpNs)
-		EnsureAllContainersHavePullPolicyIfNotPresent(h.T, context.Background(), h.client, hostedCluster)
-		EnsureHCPContainersHaveResourceRequests(h.T, context.Background(), h.client, hostedCluster)
-		EnsureNoPodsWithTooHighPriority(h.T, context.Background(), h.client, hostedCluster)
-		NoticePreemptionOrFailedScheduling(h.T, context.Background(), h.client, hostedCluster)
-		EnsureAllRoutesUseHCPRouter(h.T, context.Background(), h.client, hostedCluster)
-		EnsureNetworkPolicies(h.T, context.Background(), h.client, hostedCluster)
+		EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t, context.Background(), h.client, hcpNs)
+		EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), h.client, hostedCluster)
+		EnsureHCPContainersHaveResourceRequests(t, context.Background(), h.client, hostedCluster)
+		EnsureNoPodsWithTooHighPriority(t, context.Background(), h.client, hostedCluster)
+		NoticePreemptionOrFailedScheduling(t, context.Background(), h.client, hostedCluster)
+		EnsureAllRoutesUseHCPRouter(t, context.Background(), h.client, hostedCluster)
+		EnsureNetworkPolicies(t, context.Background(), h.client, hostedCluster)
 	})
 }
 

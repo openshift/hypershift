@@ -771,11 +771,11 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 }
 
 func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-		t.Skip()
-	}
-
 	t.Run("EnsureNetworkPolicies", func(t *testing.T) {
+		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+			t.Skip()
+		}
+
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
 		t.Run("EnsureComponentsHaveNeedManagementKASAccessLabel", func(t *testing.T) {
 			// Check for all components expected to have NeedManagementKASAccessLabel.
@@ -1397,9 +1397,12 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
 	WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
-	// Wait for the rollout to be complete
-	t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
-	WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+	// rollout will not complete if there are no wroker nodes.
+	if numNodes > 0 {
+		// Wait for the rollout to be complete
+		t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
+		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+	}
 
 	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
@@ -1417,8 +1420,11 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 
 	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
-	EnsureNodeCommunication(t, ctx, client, hostedCluster)
 	EnsurePSANotPrivileged(t, ctx, guestClient)
+
+	if numNodes > 0 {
+		EnsureNodeCommunication(t, ctx, client, hostedCluster)
+	}
 }
 
 func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) {
