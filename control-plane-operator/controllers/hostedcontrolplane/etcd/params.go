@@ -1,6 +1,8 @@
 package etcd
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -9,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 
 	"github.com/openshift/hypershift/support/config"
+	hyputils "github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -21,6 +24,7 @@ type EtcdParams struct {
 
 	OwnerRef         config.OwnerRef `json:"ownerRef"`
 	DeploymentConfig config.DeploymentConfig
+	IPv6             bool
 
 	StorageSpec hyperv1.ManagedEtcdStorageSpec
 
@@ -33,12 +37,19 @@ func etcdPodSelector() map[string]string {
 	return map[string]string{"app": "etcd"}
 }
 
-func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider) *EtcdParams {
+func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider) (*EtcdParams, error) {
+
+	ipv4, err := hyputils.IsIPv4(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
+	if err != nil {
+		return nil, fmt.Errorf("error checking the ClusterNetworkCIDR: %v", err)
+	}
+
 	p := &EtcdParams{
 		EtcdImage:    releaseImageProvider.GetImage("etcd"),
 		CPOImage:     releaseImageProvider.GetImage("controlplane-operator"),
 		OwnerRef:     config.OwnerRefFrom(hcp),
 		Availability: hcp.Spec.ControllerAvailabilityPolicy,
+		IPv6:         !ipv4,
 	}
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		etcdContainer().Name: {
@@ -84,5 +95,5 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imagep
 		p.SnapshotRestored = meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
 	}
 
-	return p
+	return p, nil
 }

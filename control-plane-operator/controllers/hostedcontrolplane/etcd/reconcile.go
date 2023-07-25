@@ -183,15 +183,17 @@ func buildEnsureDNSContainer(p *EtcdParams, ns string) func(c *corev1.Container)
 
 func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
-		script := `
+		var podIP, allInterfaces string
+
+		scriptTemplate := `
 /usr/bin/etcd \
 --data-dir=/var/lib/data \
 --name=${HOSTNAME} \
 --initial-advertise-peer-urls=https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380 \
---listen-peer-urls=https://${POD_IP}:2380 \
---listen-client-urls=https://${POD_IP}:2379,https://localhost:2379 \
+--listen-peer-urls=https://%s:2380 \
+--listen-client-urls=https://%s:2379,https://localhost:2379 \
 --advertise-client-urls=https://${HOSTNAME}.etcd-client.${NAMESPACE}.svc:2379 \
---listen-metrics-urls=https://0.0.0.0:2382 \
+--listen-metrics-urls=https://%s:2382 \
 --initial-cluster-token=etcd-cluster \
 --initial-cluster=${INITIAL_CLUSTER} \
 --initial-cluster-state=new \
@@ -206,6 +208,17 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 --key-file=/etc/etcd/tls/server/server.key \
 --trusted-ca-file=/etc/etcd/tls/etcd-ca/ca.crt
 `
+
+		if p.IPv6 {
+			podIP = "[${POD_IP}]"
+			allInterfaces = "[::]"
+
+		} else {
+			podIP = "${POD_IP}"
+			allInterfaces = "0.0.0.0"
+		}
+
+		script := fmt.Sprintf(scriptTemplate, podIP, podIP, allInterfaces)
 
 		var members []string
 		for i := 0; i < p.DeploymentConfig.Replicas; i++ {
@@ -293,19 +306,31 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 
 func buildEtcdMetricsContainer(p *EtcdParams, namespace string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
-		script := `
-		etcd grpc-proxy start \
-          --endpoints https://localhost:2382 \
-          --metrics-addr https://0.0.0.0:2381 \
-          --listen-addr 127.0.0.1:2383 \
-          --advertise-client-url ""  \
-          --key /etc/etcd/tls/peer/peer.key \
-          --key-file /etc/etcd/tls/server/server.key \
-          --cert /etc/etcd/tls/peer/peer.crt \
-          --cert-file /etc/etcd/tls/server/server.crt \
-          --cacert /etc/etcd/tls/etcd-ca/ca.crt \
-          --trusted-ca-file /etc/etcd/tls/etcd-metrics-ca/ca.crt
-		`
+		var loInterface, allInterfaces string
+
+		scriptTemplate := `
+etcd grpc-proxy start \
+--endpoints https://localhost:2382 \
+--metrics-addr https://%s:2381 \
+--listen-addr %s:2383 \
+--advertise-client-url ""  \
+--key /etc/etcd/tls/peer/peer.key \
+--key-file /etc/etcd/tls/server/server.key \
+--cert /etc/etcd/tls/peer/peer.crt \
+--cert-file /etc/etcd/tls/server/server.crt \
+--cacert /etc/etcd/tls/etcd-ca/ca.crt \
+--trusted-ca-file /etc/etcd/tls/etcd-metrics-ca/ca.crt
+`
+
+		if p.IPv6 {
+			loInterface = "[::1]"
+			allInterfaces = "[::]"
+		} else {
+			loInterface = "127.0.0.1"
+			allInterfaces = "0.0.0.0"
+		}
+
+		script := fmt.Sprintf(scriptTemplate, allInterfaces, loInterface)
 
 		c.Image = p.EtcdImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
