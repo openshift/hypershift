@@ -31,22 +31,15 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "Cluster's region; inferred from the hosted cluster by default")
 	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomain, "base-domain", opts.AWSPlatform.BaseDomain, "Cluster's base domain; inferred from the hosted cluster by default")
 	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomainPrefix, "base-domain-prefix", opts.AWSPlatform.BaseDomainPrefix, "Cluster's base domain prefix; inferred from the hosted cluster by default")
-	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A kubernete's secret with a platform credential, pull-secret and base-domain. The secret must exist in the supplied \"--namespace\"")
+	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with a platform credential, pull-secret and base-domain. The secret must exist in the supplied \"--namespace\"")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if len(opts.CredentialSecretName) == 0 {
-			if err := isRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
-				return err
-			}
-		} else {
-			//Check the secret exists now, otherwise stop
-			opts.Log.Info("Retrieving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
-			if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
-				return err
-			}
+		err := ValidateCredentialInfo(opts)
+		if err != nil {
+			return err
 		}
 
-		if err := DestroyCluster(cmd.Context(), opts); err != nil {
+		if err = DestroyCluster(cmd.Context(), opts); err != nil {
 			log.Log.Error(err, "Failed to destroy cluster")
 			return err
 		}
@@ -109,7 +102,6 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 }
 
 func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
-
 	hostedCluster, err := core.GetCluster(ctx, o)
 	if err != nil {
 		return err
@@ -143,4 +135,22 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	}
 
 	return core.DestroyCluster(ctx, hostedCluster, o, destroyPlatformSpecifics)
+}
+
+// ValidateCredentialInfo validates if the credentials secret name is empty, the aws-creds is not empty; validates if
+// the credentials secret is not empty, that it can be retrieved.
+func ValidateCredentialInfo(opts *core.DestroyOptions) error {
+	if len(opts.CredentialSecretName) == 0 {
+		if err := IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
+			return err
+		}
+	} else {
+		//Check the secret exists now, otherwise stop
+		opts.Log.Info("Retrieving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
+		if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

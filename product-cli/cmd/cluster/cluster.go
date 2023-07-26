@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/product-cli/cmd/cluster/agent"
+	"github.com/openshift/hypershift/product-cli/cmd/cluster/aws"
 	"github.com/openshift/hypershift/product-cli/cmd/cluster/kubevirt"
 )
 
@@ -99,6 +100,7 @@ func NewDestroyCommands() *cobra.Command {
 	_ = cmd.MarkPersistentFlagRequired("name")
 
 	cmd.AddCommand(agent.NewDestroyCommand(opts))
+	cmd.AddCommand(aws.NewDestroyCommand(opts))
 	cmd.AddCommand(kubevirt.NewDestroyCommand(opts))
 
 	return cmd
