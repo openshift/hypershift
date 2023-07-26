@@ -109,11 +109,13 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		if err != nil {
 			return err
 		}
-		egressFirewall := egressfirewall.VirtLauncherEgressFirewall(kvInfraCluster.Namespace)
-		if _, err := createOrUpdate(ctx, kvInfraCluster.Client, egressFirewall, func() error {
-			return reconcileVirtLauncherEgressFirewall(egressFirewall)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile firewall to deny metadata server egress: %w", err)
+		if hcluster.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
+			egressFirewall := egressfirewall.VirtLauncherEgressFirewall(kvInfraCluster.Namespace)
+			if _, err := createOrUpdate(ctx, kvInfraCluster.Client, egressFirewall, func() error {
+				return reconcileVirtLauncherEgressFirewall(egressFirewall)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile firewall to deny metadata server egress: %w", err)
+			}
 		}
 	}
 
