@@ -692,7 +692,7 @@ defaults
   timeout server 30s
 
 frontend ignition-server
-  bind *:8443 ssl crt /tmp/tls.pem
+  bind :::8443 v4v6 ssl crt /tmp/tls.pem
   default_backend ignition_servers
 
 backend ignition_servers
