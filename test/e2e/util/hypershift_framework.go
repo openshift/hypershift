@@ -107,8 +107,6 @@ func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *co
 	}
 	h.hasBeenTornedDown = true
 
-	h.Logf("teardown(), cleanupPhase=%v", cleanupPhase)
-
 	// t.Run() is not supported in cleanup phase
 	if cleanupPhase {
 		h.teardownHostedCluster(context.Background(), hostedCluster, opts, artifactDir)
@@ -128,8 +126,6 @@ func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts
 	}
 
 	h.Run("PostTeardown", func(t *testing.T) {
-		t.Logf("postTeardown()")
-
 		// All clusters created during tests should ultimately conform to our API
 		// budget. This should be checked after deletion to ensure that API operations
 		// for the full lifecycle are accounted for.
@@ -137,6 +133,7 @@ func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts
 			EnsureAPIBudget(t, h.ctx, h.client, hostedCluster)
 		}
 
+		ValidateMetrics(t, h.ctx, hostedCluster)
 	})
 }
 
