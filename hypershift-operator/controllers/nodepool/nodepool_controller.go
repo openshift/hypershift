@@ -2411,7 +2411,7 @@ func (r *NodePoolReconciler) ensureMachineDeletion(nodePool *hyperv1.NodePool) e
 
 // getMachinesForNodePool get all Machines listed with the nodePoolAnnotation
 // within the control plane Namespace for that NodePool.
-func (r *NodePoolReconciler) getMachinesForNodePool(nodePool *hyperv1.NodePool) ([]capiv1.Machine, error) {
+func (r *NodePoolReconciler) getMachinesForNodePool(nodePool *hyperv1.NodePool) ([]*capiv1.Machine, error) {
 	machines := capiv1.MachineList{}
 	controlPlaneNamespace := fmt.Sprintf("%s-%s", nodePool.Namespace, strings.ReplaceAll(nodePool.Spec.ClusterName, ".", "-"))
 
@@ -2420,14 +2420,14 @@ func (r *NodePoolReconciler) getMachinesForNodePool(nodePool *hyperv1.NodePool) 
 	}
 
 	// Filter out only machines belonging to deleted NodePool
-	var machinesForNodePool []capiv1.Machine
+	var machinesForNodePool []*capiv1.Machine
 	for i, machine := range machines.Items {
 		if machine.Annotations[nodePoolAnnotation] == client.ObjectKeyFromObject(nodePool).String() {
-			machinesForNodePool = append(machinesForNodePool, machines.Items[i])
+			machinesForNodePool = append(machinesForNodePool, &machines.Items[i])
 		}
 	}
 
-	return machinesForNodePool, nil
+	return sortedByCreationTimestamp(machinesForNodePool), nil
 }
 
 // getPullSecretBytes retrieves the pull secret bytes from the hosted cluster
@@ -2452,4 +2452,22 @@ func (r *NodePoolReconciler) getPullSecretName(ctx context.Context, hostedCluste
 		return "", fmt.Errorf("pull secret %s/%s missing %q key when retrieving pull secret name", pullSecret.Namespace, pullSecret.Name, corev1.DockerConfigJsonKey)
 	}
 	return pullSecret.Name, nil
+}
+
+// machinesByCreationTimestamp sorts a list of Machine by creation timestamp, using their names as a tie breaker.
+type machinesByCreationTimestamp []*capiv1.Machine
+
+func (o machinesByCreationTimestamp) Len() int      { return len(o) }
+func (o machinesByCreationTimestamp) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
+func (o machinesByCreationTimestamp) Less(i, j int) bool {
+	if o[i].CreationTimestamp.Equal(&o[j].CreationTimestamp) {
+		return o[i].Name < o[j].Name
+	}
+	return o[i].CreationTimestamp.Before(&o[j].CreationTimestamp)
+}
+
+// SortedByCreationTimestamp returns the machines sorted by creation timestamp.
+func sortedByCreationTimestamp(machines []*capiv1.Machine) []*capiv1.Machine {
+	sort.Sort(machinesByCreationTimestamp(machines))
+	return machines
 }
