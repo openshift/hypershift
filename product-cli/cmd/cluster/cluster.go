@@ -70,6 +70,7 @@ func NewCreateCommands() *cobra.Command {
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
 	cmd.AddCommand(agent.NewCreateCommand(opts))
+	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))
 
 	return cmd

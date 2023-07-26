@@ -56,22 +56,12 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if len(opts.CredentialSecretName) == 0 {
-			if err := IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
-				return err
-			}
-			if err := IsRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
-				return err
-			}
-		} else {
-			//Check the secret exists now, otherwise stop.
-			opts.Log.Info("Retreiving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
-			if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
-				return err
-			}
+		err := ValidateCreateCredentialInfo(opts)
+		if err != nil {
+			return err
 		}
 
-		if err := CreateCluster(ctx, opts); err != nil {
+		if err = CreateCluster(ctx, opts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -253,5 +243,26 @@ func IsRequiredOption(flag string, value string) error {
 	if len(value) == 0 {
 		return fmt.Errorf("required flag(s) \"%s\" not set", flag)
 	}
+	return nil
+}
+
+// ValidateCreateCredentialInfo validates if the credentials secret name is empty that the aws-creds and pull-secret flags are
+// not empty; validates if the credentials secret is not empty, that it can be retrieved
+func ValidateCreateCredentialInfo(opts *core.CreateOptions) error {
+	if len(opts.CredentialSecretName) == 0 {
+		if err := IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
+			return err
+		}
+		if err := IsRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
+			return err
+		}
+	} else {
+		//Check the secret exists now, otherwise stop.
+		opts.Log.Info("Retrieving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
+		if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
