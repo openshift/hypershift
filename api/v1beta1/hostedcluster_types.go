@@ -1672,7 +1672,7 @@ type ManagedEtcdStorageSpec struct {
 	//
 	// +optional
 	// +immutable
-	RestoreSnapshotURL []string `json:"restoreSnapshotURL"`
+	RestoreSnapshotURL []string `json:"restoreSnapshotURL,omitempty"`
 }
 
 // PersistentVolumeEtcdStorageSpec is the configuration for PersistentVolume
