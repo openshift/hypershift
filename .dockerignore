@@ -1,0 +1,5 @@
+bin/
+.github/
+.tekton/
+.ci-operator.yaml
+.ko.yaml
