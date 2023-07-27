@@ -2526,7 +2526,7 @@ progress, or is failing.</p>
 <td>
 <code>desired</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1alpha1.Release">
+<a href="#hypershift.openshift.io/v1beta1.Release">
 Release
 </a>
 </em>
