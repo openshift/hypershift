@@ -35,7 +35,7 @@ func TestReconcileDeployment(t *testing.T) {
 	}
 	deployment := manifests.ImageRegistryOperatorDeployment("test-namespace")
 	imageProvider := imageprovider.NewFromImages(images)
-	params := NewParams(hcp, "1.0.0", imageProvider, true)
+	params := NewParams(hcp, "1.0.0", imageProvider, imageProvider, true)
 	if err := ReconcileDeployment(deployment, params); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

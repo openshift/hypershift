@@ -23,7 +23,7 @@ func TestEnvironmentReplacer(t *testing.T) {
 	}
 
 	er := newEnvironmentReplacer()
-	er.setOperatorImageReferences(images)
+	er.setOperatorImageReferences(images, images)
 	version := rand.String(10)
 	er.setVersions(version)
 
