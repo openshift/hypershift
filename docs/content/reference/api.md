@@ -895,7 +895,7 @@ private node communication with the control plane.</p>
 <a href="#hypershift.openshift.io/v1beta1.AWSKMSSpec">AWSKMSSpec</a>)
 </p>
 <p>
-<p>AWSKMSAuthSpec defines metadata about the management of credentials used to interact and encrypt data via AWS KMS key.</p>
+<p>AWSKMSAuthSpec defines metadata about the management of credentials used to interact with AWS KMS</p>
 </p>
 <table>
 <thead>
@@ -1777,7 +1777,7 @@ string
 &ldquo;ec2:ModifyVpcEndpoint&rdquo;,
 &ldquo;ec2:DeleteVpcEndpoints&rdquo;,
 &ldquo;ec2:CreateTags&rdquo;,
-&ldquo;route53:ListHostedZones&rdquo;,
+&ldquo;route53:ListHostedZones&rdquo;
 ],
 &ldquo;Resource&rdquo;: &ldquo;*&rdquo;
 },
@@ -2504,8 +2504,7 @@ how the APIServer is exposed inside a cluster node.</p>
 ###ClusterVersionStatus { #hypershift.openshift.io/v1beta1.ClusterVersionStatus }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
-<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>)
 </p>
 <p>
 <p>ClusterVersionStatus reports the status of the cluster versioning,
@@ -2593,16 +2592,19 @@ has been created for the specified NLB in the management VPC</p>
 </tr><tr><td><p>&#34;CVOScaledDown&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;CloudResourcesDestroyed&#34;</p></td>
-<td><p>CloudResourcesDestroyed bubbles up the same condition from HCP. It signals if the cloud provider infrastructure created by Kubernetes
-in the consumer cloud provider account was destroyed.
-A failure here may require external user intervention to resolve. E.g. cloud provider perms were corrupted. E.g. the guest cluster was broken
-and kube resource deletion that affects cloud infra like service type load balancer can&rsquo;t succeed.</p>
-</td>
+<td></td>
 </tr><tr><td><p>&#34;ClusterVersionAvailable&#34;</p></td>
 <td><p>ClusterVersionAvailable bubbles up Failing configv1.OperatorAvailable from the CVO.</p>
 </td>
 </tr><tr><td><p>&#34;ClusterVersionFailing&#34;</p></td>
-<td></td>
+<td><p>ClusterVersionFailing bubbles up Failing from the CVO.</p>
+</td>
+</tr><tr><td><p>&#34;ClusterVersionProgressing&#34;</p></td>
+<td><p>ClusterVersionProgressing bubbles up configv1.OperatorProgressing from the CVO.</p>
+</td>
+</tr><tr><td><p>&#34;ClusterVersionReleaseAccepted&#34;</p></td>
+<td><p>ClusterVersionReleaseAccepted bubbles up Failing ReleaseAccepted from the CVO.</p>
+</td>
 </tr><tr><td><p>&#34;ClusterVersionSucceeding&#34;</p></td>
 <td><p>ClusterVersionSucceeding indicates the current status of the desired release
 version of the HostedCluster as indicated by the Failing condition in the
@@ -2613,15 +2615,13 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 underlying cluster&rsquo;s ClusterVersion.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
-<td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
-A failure here often means a software bug or a non-stable cluster.</p>
+<td><p>EtcdAvailable bubbles up the same condition from HCP.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdSnapshotRestored&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>HostedClusterAvailable indicates whether the HostedCluster has a healthy
-control plane.
-When this is false for too long and there&rsquo;s no clear indication in the &ldquo;Reason&rdquo;, please check the remaining more granular conditions.</p>
+control plane.</p>
 </td>
 </tr><tr><td><p>&#34;Degraded&#34;</p></td>
 <td><p>HostedClusterDegraded indicates whether the HostedCluster is encountering
@@ -2629,8 +2629,7 @@ an error that may require user intervention to resolve.</p>
 </td>
 </tr><tr><td><p>&#34;Progressing&#34;</p></td>
 <td><p>HostedClusterProgressing indicates whether the HostedCluster is attempting
-an initial deployment or upgrade.
-When this is false for too long and there&rsquo;s no clear indication in the &ldquo;Reason&rdquo;, please check the remaining more granular conditions.</p>
+an initial deployment or upgrade.</p>
 </td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td></td>
@@ -2638,85 +2637,53 @@ When this is false for too long and there&rsquo;s no clear indication in the &ld
 <td></td>
 </tr><tr><td><p>&#34;IgnitionEndpointAvailable&#34;</p></td>
 <td><p>IgnitionEndpointAvailable indicates whether the ignition server for the
-HostedCluster is available to handle ignition requests.
-A failure here often means a software bug or a non-stable cluster.</p>
+HostedCluster is available to handle ignition requests.</p>
 </td>
 </tr><tr><td><p>&#34;InfrastructureReady&#34;</p></td>
-<td><p>InfrastructureReady bubbles up the same condition from HCP. It signals if the infrastructure for a control plane to be operational,
-e.g. load balancers were created successfully.
-A failure here may require external user intervention to resolve. E.g. hitting quotas on the cloud provider.</p>
+<td><p>InfrastructureReady bubbles up the same condition from HCP.</p>
 </td>
 </tr><tr><td><p>&#34;KubeAPIServerAvailable&#34;</p></td>
-<td><p>KubeAPIServerAvailable bubbles up the same condition from HCP. It signals if the kube API server is available.
-A failure here often means a software bug or a non-stable cluster.</p>
+<td><p>KubeAPIServerAvailable bubbles up the same condition from HCP.</p>
 </td>
 </tr><tr><td><p>&#34;PlatformCredentialsFound&#34;</p></td>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
-desired platform are valid.
-A failure here is unlikely to resolve without the changing user input.</p>
+desired platform are valid.</p>
 </td>
 </tr><tr><td><p>&#34;ReconciliationActive&#34;</p></td>
 <td><p>ReconciliationActive indicates if reconciliation of the HostedCluster is
-active or paused hostedCluster.spec.pausedUntil.</p>
+active or paused.</p>
 </td>
 </tr><tr><td><p>&#34;ReconciliationSucceeded&#34;</p></td>
 <td><p>ReconciliationSucceeded indicates if the HostedCluster reconciliation
-succeeded.
-A failure here often means a software bug or a non-stable cluster.</p>
+succeeded.</p>
 </td>
 </tr><tr><td><p>&#34;SupportedHostedCluster&#34;</p></td>
 <td><p>SupportedHostedCluster indicates whether a HostedCluster is supported by
 the current configuration of the hypershift-operator.
 e.g. If HostedCluster requests endpointAcess Private but the hypershift-operator
 is running on a management cluster outside AWS or is not configured with AWS
-credentials, the HostedCluster is not supported.
-A failure here is unlikely to resolve without the changing user input.</p>
+credentials, the HostedCluster is not supported.</p>
 </td>
 </tr><tr><td><p>&#34;UnmanagedEtcdAvailable&#34;</p></td>
 <td><p>UnmanagedEtcdAvailable indicates whether a user-managed etcd cluster is
 healthy.</p>
 </td>
-</tr><tr><td><p>&#34;ValidAWSIdentityProvider&#34;</p></td>
-<td><p>ValidAWSIdentityProvider indicates if the Identity Provider referenced
-in the cloud credentials is healthy. E.g. for AWS the idp ARN is referenced in the iam roles.
-&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
-&ldquo;Statement&rdquo;: [
-{
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Principal&rdquo;: {
-&ldquo;Federated&rdquo;: &ldquo;{{ .ProviderARN }}&rdquo;
-},
-&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
-&ldquo;Condition&rdquo;: {
-&ldquo;StringEquals&rdquo;: {
-&ldquo;{{ .ProviderName }}:sub&rdquo;: {{ .ServiceAccounts }}
-}
-}
-}
-]</p>
-<p>A failure here may require external user intervention to resolve.</p>
-</td>
 </tr><tr><td><p>&#34;ValidConfiguration&#34;</p></td>
-<td><p>ValidHostedClusterConfiguration signals if the hostedCluster input is valid and
-supported by the underlying management cluster.
-A failure here is unlikely to resolve without the changing user input.</p>
+<td><p>ValidHostedClusterConfiguration indicates (if status is true) that the
+ClusterConfiguration specified for the HostedCluster is valid.</p>
 </td>
 </tr><tr><td><p>&#34;ValidHostedControlPlaneConfiguration&#34;</p></td>
-<td><p>ValidHostedControlPlaneConfiguration bubbles up the same condition from HCP. It signals if the hostedControlPlane input is valid and
-supported by the underlying management cluster.
-A failure here is unlikely to resolve without the changing user input.</p>
+<td><p>ValidHostedControlPlaneConfiguration bubbles up the same condition from HCP.</p>
 </td>
 </tr><tr><td><p>&#34;ValidOIDCConfiguration&#34;</p></td>
 <td><p>ValidOIDCConfiguration indicates if an AWS cluster&rsquo;s OIDC condition is
-detected as invalid.
-A failure here may require external user intervention to resolve. E.g. oidc was deleted out of band.</p>
+detected as invalid.</p>
 </td>
 </tr><tr><td><p>&#34;ValidReleaseImage&#34;</p></td>
 <td><p>ValidReleaseImage indicates if the release image set in the spec is valid
 for the HostedCluster. For example, this can be set false if the
 HostedCluster itself attempts an unsupported version before 4.9 or an
-unsupported upgrade e.g y-stream upgrade before 4.11.
-A failure here is unlikely to resolve without the changing user input.</p>
+unsupported upgrade e.g y-stream upgrade before 4.11.</p>
 </td>
 </tr></tbody>
 </table>
@@ -4311,6 +4278,40 @@ specifications.</p>
 <p>InPlaceUpgrade specifies an upgrade strategy which upgrades nodes in-place
 without any new nodes being created or any old nodes being deleted.</p>
 </p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>maxUnavailable</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#intorstring-intstr-util">
+k8s.io/apimachinery/pkg/util/intstr.IntOrString
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>MaxUnavailable is the maximum number of nodes that can be unavailable
+during the update.</p>
+<p>Value can be an absolute number (ex: 5) or a percentage of desired nodes
+(ex: 10%).</p>
+<p>Absolute number is calculated from percentage by rounding down.</p>
+<p>Defaults to 1.</p>
+<p>Example: when this is set to 30%, a max of 30% of the nodes can be made
+unschedulable/unavailable immediately when the update starts. Once a set
+of nodes is updated, more nodes can be made unschedulable for update,
+ensuring that the total number of nodes schedulable at all times during
+the update is at least 70% of desired nodes.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###KMSProvider { #hypershift.openshift.io/v1beta1.KMSProvider }
 <p>
 (<em>Appears on:</em>
