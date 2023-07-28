@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -17,6 +18,7 @@ type ExampleKubevirtOptions struct {
 	RootVolumeSize             uint32
 	RootVolumeStorageClass     string
 	RootVolumeAccessModes      string
+	RootVolumeVolumeMode       string
 	BaseDomainPassthrough      bool
 	InfraKubeConfig            []byte
 	InfraNamespace             string
@@ -56,6 +58,11 @@ func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoo
 			},
 		},
 		Compute: &hyperv1.KubevirtCompute{},
+	}
+
+	if o.RootVolumeVolumeMode != "" {
+		vm := corev1.PersistentVolumeMode(o.RootVolumeVolumeMode)
+		exampleTemplate.RootVolume.KubevirtVolume.Persistent.VolumeMode = &vm
 	}
 
 	if o.Memory != "" {

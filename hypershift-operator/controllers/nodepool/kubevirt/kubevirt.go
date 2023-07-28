@@ -241,6 +241,10 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 				storageSpec.StorageClassName = kvPlatform.RootVolume.Persistent.StorageClass
 			}
 
+			if kvPlatform.RootVolume.Persistent.VolumeMode != nil {
+				storageSpec.VolumeMode = kvPlatform.RootVolume.Persistent.VolumeMode
+			}
+
 			dataVolume.Spec.Storage = storageSpec
 		}
 	}

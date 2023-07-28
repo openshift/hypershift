@@ -76,6 +76,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtNodeMemory, "e2e.kubevirt-node-memory", "8Gi", "the amount of memory to provide to each workload node")
 	flag.UintVar(&globalOpts.configurableClusterOptions.KubeVirtNodeCores, "e2e.kubevirt-node-cores", 2, "The number of cores provided to each workload node")
 	flag.UintVar(&globalOpts.configurableClusterOptions.KubeVirtRootVolumeSize, "e2e.kubevirt-root-volume-size", 32, "The root volume size in Gi")
+	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtRootVolumeVolumeMode, "e2e.kubevirt-root-volume-volume-mode", "Filesystem", "The root pvc volume mode")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtInfraKubeconfigFile, "e2e.kubevirt-infra-kubeconfig", "", "path to the kubeconfig file of the external infra cluster")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtInfraNamespace, "e2e.kubevirt-infra-namespace", "", "the namespace on the infra cluster the workers will be created on")
 	flag.IntVar(&globalOpts.configurableClusterOptions.NodePoolReplicas, "e2e.node-pool-replicas", 2, "the number of replicas for each node pool in the cluster")
@@ -360,36 +361,37 @@ type options struct {
 }
 
 type configurableClusterOptions struct {
-	AWSCredentialsFile          string
-	AzureCredentialsFile        string
-	AzureLocation               string
-	Region                      string
-	Zone                        stringSliceVar
-	PullSecretFile              string
-	BaseDomain                  string
-	ControlPlaneOperatorImage   string
-	AWSEndpointAccess           string
-	AWSOidcS3BucketName         string
-	AWSKmsKeyAlias              string
-	ExternalDNSDomain           string
-	KubeVirtContainerDiskImage  string
-	KubeVirtNodeMemory          string
-	KubeVirtRootVolumeSize      uint
-	KubeVirtNodeCores           uint
-	KubeVirtInfraKubeconfigFile string
-	KubeVirtInfraNamespace      string
-	NodePoolReplicas            int
-	SSHKeyFile                  string
-	NetworkType                 string
-	PowerVSResourceGroup        string
-	PowerVSRegion               string
-	PowerVSZone                 string
-	PowerVSVpcRegion            string
-	PowerVSSysType              string
-	PowerVSProcType             hyperv1.PowerVSNodePoolProcType
-	PowerVSProcessors           string
-	PowerVSMemory               int
-	EtcdStorageClass            string
+	AWSCredentialsFile           string
+	AzureCredentialsFile         string
+	AzureLocation                string
+	Region                       string
+	Zone                         stringSliceVar
+	PullSecretFile               string
+	BaseDomain                   string
+	ControlPlaneOperatorImage    string
+	AWSEndpointAccess            string
+	AWSOidcS3BucketName          string
+	AWSKmsKeyAlias               string
+	ExternalDNSDomain            string
+	KubeVirtContainerDiskImage   string
+	KubeVirtNodeMemory           string
+	KubeVirtRootVolumeSize       uint
+	KubeVirtRootVolumeVolumeMode string
+	KubeVirtNodeCores            uint
+	KubeVirtInfraKubeconfigFile  string
+	KubeVirtInfraNamespace       string
+	NodePoolReplicas             int
+	SSHKeyFile                   string
+	NetworkType                  string
+	PowerVSResourceGroup         string
+	PowerVSRegion                string
+	PowerVSZone                  string
+	PowerVSVpcRegion             string
+	PowerVSSysType               string
+	PowerVSProcType              hyperv1.PowerVSNodePoolProcType
+	PowerVSProcessors            string
+	PowerVSMemory                int
+	EtcdStorageClass             string
 }
 
 var nextAWSZoneIndex = 0
@@ -421,6 +423,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			InfraKubeConfigFile:       o.configurableClusterOptions.KubeVirtInfraKubeconfigFile,
 			InfraNamespace:            o.configurableClusterOptions.KubeVirtInfraNamespace,
 			RootVolumeSize:            uint32(o.configurableClusterOptions.KubeVirtRootVolumeSize),
+			RootVolumeVolumeMode:      o.configurableClusterOptions.KubeVirtRootVolumeVolumeMode,
 		},
 		AzurePlatform: core.AzurePlatformOptions{
 			CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
