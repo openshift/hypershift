@@ -17,7 +17,7 @@ else
 fi
 
 generate_junit() {
-  # propogate SIGTERM to the `test-e2e` process
+  # propagate SIGTERM to the `test-e2e` process
   for child in $( jobs -p ); do
     kill "${child}"
   done
