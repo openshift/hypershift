@@ -121,6 +121,7 @@ type KubevirtPlatformCreateOptions struct {
 	RootVolumeSize             uint32
 	RootVolumeStorageClass     string
 	RootVolumeAccessModes      string
+	RootVolumeVolumeMode       string
 	InfraKubeConfigFile        string
 	InfraNamespace             string
 	CacheStrategyType          string

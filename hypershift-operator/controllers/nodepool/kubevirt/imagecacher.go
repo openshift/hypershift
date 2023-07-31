@@ -265,6 +265,9 @@ func (qi *cachedBootImage) buildDVForCache(nodePool *hyperv1.NodePool, uid strin
 		if kvPlatform.RootVolume.Persistent.StorageClass != nil {
 			storageSpec.StorageClassName = kvPlatform.RootVolume.Persistent.StorageClass
 		}
+		if kvPlatform.RootVolume.Persistent.VolumeMode != nil {
+			storageSpec.VolumeMode = kvPlatform.RootVolume.Persistent.VolumeMode
+		}
 
 		for _, am := range kvPlatform.RootVolume.Persistent.AccessModes {
 			storageSpec.AccessModes = append(storageSpec.AccessModes, corev1.PersistentVolumeAccessMode(am))

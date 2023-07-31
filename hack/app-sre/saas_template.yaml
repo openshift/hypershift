@@ -43280,6 +43280,11 @@ objects:
                                   description: StorageClass is the storageClass used
                                     for the underlying PVC that hosts the volume
                                   type: string
+                                volumeMode:
+                                  description: VolumeMode defines what type of volume
+                                    is required by the claim. Value of Filesystem
+                                    is implied when not included in claim spec.
+                                  type: string
                               type: object
                             type:
                               default: Persistent
@@ -44214,6 +44219,11 @@ objects:
                                 storageClass:
                                   description: StorageClass is the storageClass used
                                     for the underlying PVC that hosts the volume
+                                  type: string
+                                volumeMode:
+                                  description: VolumeMode defines what type of volume
+                                    is required by the claim. Value of Filesystem
+                                    is implied when not included in claim spec.
                                   type: string
                               type: object
                             type:

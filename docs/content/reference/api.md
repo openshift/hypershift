@@ -5078,6 +5078,21 @@ string
 More info: <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes">https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes</a></p>
 </td>
 </tr>
+<tr>
+<td>
+<code>volumeMode</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#persistentvolumemode-v1-core">
+Kubernetes core/v1.PersistentVolumeMode
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>VolumeMode defines what type of volume is required by the claim.
+Value of Filesystem is implied when not included in claim spec.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubevirtPlatformCredentials { #hypershift.openshift.io/v1beta1.KubevirtPlatformCredentials }

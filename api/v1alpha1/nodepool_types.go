@@ -579,6 +579,10 @@ type KubevirtPersistentVolume struct {
 	//
 	// +optional
 	AccessModes []PersistentVolumeAccessMode `json:"accessModes,omitempty"`
+	// VolumeMode defines what type of volume is required by the claim.
+	// Value of Filesystem is implied when not included in claim spec.
+	// +optional
+	VolumeMode *corev1.PersistentVolumeMode `json:"volumeMode,omitempty"`
 }
 
 // KubevirtCachingStrategyType is the type of the boot image caching mechanism for the KubeVirt provider
