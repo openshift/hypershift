@@ -4,7 +4,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -79,7 +78,7 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.ServerDeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
-	p.ServerDeploymentConfig.SetRequestServingDefaults(hcp, nil, pointer.Int(1))
+	p.ServerDeploymentConfig.SetRequestServingDefaults(hcp, nil, nil)
 	p.ServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	p.AgentDeploymentConfig.Resources = config.ResourcesSpec{
