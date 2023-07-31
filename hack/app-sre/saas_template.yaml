@@ -43284,6 +43284,9 @@ objects:
                                   description: VolumeMode defines what type of volume
                                     is required by the claim. Value of Filesystem
                                     is implied when not included in claim spec.
+                                  enum:
+                                  - Filesystem
+                                  - Block
                                   type: string
                               type: object
                             type:
@@ -44224,6 +44227,9 @@ objects:
                                   description: VolumeMode defines what type of volume
                                     is required by the claim. Value of Filesystem
                                     is implied when not included in claim spec.
+                                  enum:
+                                  - Filesystem
+                                  - Block
                                   type: string
                               type: object
                             type:

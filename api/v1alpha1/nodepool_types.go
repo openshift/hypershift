@@ -582,6 +582,7 @@ type KubevirtPersistentVolume struct {
 	// VolumeMode defines what type of volume is required by the claim.
 	// Value of Filesystem is implied when not included in claim spec.
 	// +optional
+	// +kubebuilder:validation:Enum=Filesystem;Block
 	VolumeMode *corev1.PersistentVolumeMode `json:"volumeMode,omitempty"`
 }
 
