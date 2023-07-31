@@ -104,10 +104,10 @@ func TestAutoscaling(t *testing.T) {
 		bytes, ok := memCapacity.AsInt64()
 		g.Expect(ok).Should(BeTrue())
 
-		// 55% - enough that the existing and new nodes will
+		// 50% - enough that the existing and new nodes will
 		// be used, not enough to have more than 1 pod per
 		// node.
-		workloadMemRequest := resource.MustParse(fmt.Sprintf("%v", 0.55*float32(bytes)))
+		workloadMemRequest := resource.MustParse(fmt.Sprintf("%v", 0.50*float32(bytes)))
 
 		// force the cluster to double its size. the cluster autoscaler should
 		// place 1 more node in each of the the nodepools created.
