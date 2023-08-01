@@ -116,8 +116,9 @@ type NodePoolSpec struct {
 	// KubeletConfig
 	// ContainerRuntimeConfig
 	// MachineConfig
-	// or
 	// ImageContentSourcePolicy
+	// or
+	// ImageDigestMirrorSet
 	//
 	// +kubebuilder:validation:Optional
 	Config []corev1.LocalObjectReference `json:"config,omitempty"`
