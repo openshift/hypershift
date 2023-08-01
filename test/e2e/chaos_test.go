@@ -40,7 +40,7 @@ func TestHAEtcdChaos(t *testing.T) {
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		t.Run("KillRandomMembers", testKillRandomMembers(ctx, mgtClient, hostedCluster))
 		t.Run("KillAllMembers", testKillAllMembers(ctx, mgtClient, hostedCluster))
-	}).CreateCluster(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).CreateCluster(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 // TestEtcdChaos launches a SingleReplica control plane and executes a suite of
@@ -57,7 +57,7 @@ func TestEtcdChaos(t *testing.T) {
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		t.Run("KillAllMembers", testKillAllMembers(ctx, mgtClient, hostedCluster))
-	}).CreateCluster(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).CreateCluster(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 
 }
 
