@@ -33,6 +33,7 @@ func TestAutoscaling(t *testing.T) {
 	// create one nodePool with 1 replica in each AZ
 	zones := strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ",")
 	clusterOpts.AWSPlatform.Zones = zones
+	clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.NodePoolReplicas = 1
 
 	numNodePools := len(zones)
