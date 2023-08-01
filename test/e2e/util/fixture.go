@@ -284,11 +284,14 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 		return azure.DestroyCluster(ctx, opts)
 	case hyperv1.PowerVSPlatform:
 		opts.PowerVSPlatform = core.PowerVSPlatformDestroyOptions{
-			BaseDomain:    createOpts.BaseDomain,
-			ResourceGroup: createOpts.PowerVSPlatform.ResourceGroup,
-			Region:        createOpts.PowerVSPlatform.Region,
-			Zone:          createOpts.PowerVSPlatform.Zone,
-			VPCRegion:     createOpts.PowerVSPlatform.VPCRegion,
+			BaseDomain:      createOpts.BaseDomain,
+			ResourceGroup:   createOpts.PowerVSPlatform.ResourceGroup,
+			Region:          createOpts.PowerVSPlatform.Region,
+			Zone:            createOpts.PowerVSPlatform.Zone,
+			VPCRegion:       createOpts.PowerVSPlatform.VPCRegion,
+			CloudInstanceID: createOpts.PowerVSPlatform.CloudInstanceID,
+			CloudConnection: createOpts.PowerVSPlatform.CloudConnection,
+			VPC:             createOpts.PowerVSPlatform.VPC,
 		}
 		return powervs.DestroyCluster(ctx, opts)
 
