@@ -28,7 +28,7 @@ tools/bin
 
 .kube
 /kubeconfig
-.dockerignore
+vendor/**/.dockerignore
 .docker
 
 # ignore util binaries
