@@ -79,8 +79,8 @@ func (h *hypershiftTest) CreateCluster(opts *core.CreateOptions, platform hyperv
 // runs before each test.
 func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *core.CreateOptions, platform hyperv1.PlatformType) {
 	h.Run("Validate", func(t *testing.T) {
-		if platform == hyperv1.AWSPlatform {
-			if hostedCluster.Spec.Platform.AWS.EndpointAccess == hyperv1.Private {
+		if platform != hyperv1.NonePlatform {
+			if opts.AWSPlatform.EndpointAccess == string(hyperv1.Private) {
 				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts)
 			} else {
 				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)
