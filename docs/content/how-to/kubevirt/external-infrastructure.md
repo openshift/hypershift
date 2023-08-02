@@ -24,7 +24,7 @@ management and infrastructure clusters are distinctly different.
  * Creation of a namespace on the external infrastructure cluster for the KubeVirt worker nodes to be hosted in.
  * A kubeconfig for the external infrastructure cluster
 
-Once the prerequisites are met, the `hypershift` cli tool can be used to create
+Once the prerequisites are met, the `hcp` cli tool can be used to create
 the guest cluster. In order to place the KubeVirt worker VMs on the
 infrastructure cluster, use the `--infra-kubeconfig-file` and `--infra-namespace`
 arguments.
@@ -38,7 +38,7 @@ export MEM="6Gi"
 export CPU="2"
 export WORKER_COUNT="2"
 
-hypershift create cluster kubevirt \
+hcp create cluster kubevirt \
 --name $CLUSTER_NAME \
 --node-pool-replicas $WORKER_COUNT \
 --pull-secret $PULL_SECRET \
