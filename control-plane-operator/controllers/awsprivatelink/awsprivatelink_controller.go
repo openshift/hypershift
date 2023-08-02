@@ -363,7 +363,7 @@ func hasAWSConfig(platform *hyperv1.PlatformSpec) bool {
 		platform.AWS.CloudProviderConfig.Subnet != nil && platform.AWS.CloudProviderConfig.Subnet.ID != nil
 }
 
-func diffSubnetIDs(desired []string, existing []*string) (added, removed []*string) {
+func diffIDs(desired []string, existing []*string) (added, removed []*string) {
 	var found bool
 	for i, desiredID := range desired {
 		found = false
@@ -444,14 +444,24 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		log.Info("endpoint exists", "endpointID", endpointID)
 		endpointDNSEntries = output.VpcEndpoints[0].DnsEntries
 
-		// ensure endpoint has the right subnets
-		added, removed := diffSubnetIDs(awsEndpointService.Spec.SubnetIDs, output.VpcEndpoints[0].SubnetIds)
-		if added != nil || removed != nil {
-			log.Info("endpoint subnets have changed")
+		// Ensure endpoint has the right subnets.
+		addedSubnet, removedSubnet := diffIDs(awsEndpointService.Spec.SubnetIDs, output.VpcEndpoints[0].SubnetIds)
+
+		// Ensure endpoint has the right SG.
+		exitingSG := make([]*string, 0)
+		for _, group := range output.VpcEndpoints[0].Groups {
+			exitingSG = append(exitingSG, group.GroupId)
+		}
+		addedSG, removedSG := diffIDs([]string{hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID}, exitingSG)
+
+		if addedSubnet != nil || removedSubnet != nil || addedSG != nil || removedSG != nil {
+			log.Info("endpoint subnets or security groups have changed")
 			_, err := ec2Client.ModifyVpcEndpointWithContext(ctx, &ec2.ModifyVpcEndpointInput{
-				VpcEndpointId:   aws.String(endpointID),
-				AddSubnetIds:    added,
-				RemoveSubnetIds: removed,
+				VpcEndpointId:          aws.String(endpointID),
+				AddSubnetIds:           addedSubnet,
+				RemoveSubnetIds:        removedSubnet,
+				AddSecurityGroupIds:    addedSG,
+				RemoveSecurityGroupIds: removedSG,
 			})
 			if err != nil {
 				msg := err.Error()
