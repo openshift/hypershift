@@ -686,7 +686,7 @@ spec:
                           as Dedicated, then Processors value cannot be fractional.
                           When omitted, this means that the user has no opinion and
                           the platform is left to choose a reasonable default. The
-                          current default is Shared."
+                          current default is shared."
                         enum:
                         - dedicated
                         - shared
@@ -1616,7 +1616,7 @@ spec:
                           as Dedicated, then Processors value cannot be fractional.
                           When omitted, this means that the user has no opinion and
                           the platform is left to choose a reasonable default. The
-                          current default is Shared."
+                          current default is shared."
                         enum:
                         - dedicated
                         - shared

@@ -86,7 +86,7 @@ import (
 	"k8s.io/utils/clock"
 	k8sutilspointer "k8s.io/utils/pointer"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2" // Need this dep atm to satisfy IBM provider dep.
-	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
+	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"

@@ -143,6 +143,7 @@ spec:
                           over MaxUnhealthy. Eg. "[3-5]" - This means that remediation
                           will be allowed only when: (a) there are at least 3 unhealthy
                           machines (and) (b) there are at most 5 unhealthy machines'
+                        pattern: ^\[[0-9]+-[0-9]+\]$
                         type: string
                     type: object
                   machineInfrastructure:
@@ -218,6 +219,28 @@ spec:
                           More info: http://kubernetes.io/docs/user-guide/labels'
                         type: object
                     type: object
+                  nodeDeletionTimeout:
+                    description: 'NodeDeletionTimeout defines how long the controller
+                      will attempt to delete the Node that the Machine hosts after
+                      the Machine is marked for deletion. A duration of 0 will retry
+                      deletion indefinitely. Defaults to 10 seconds. NOTE: This value
+                      can be overridden while defining a Cluster.Topology.'
+                    type: string
+                  nodeDrainTimeout:
+                    description: 'NodeDrainTimeout is the total amount of time that
+                      the controller will spend on draining a node. The default value
+                      is 0, meaning that the node can be drained without any time
+                      limitations. NOTE: NodeDrainTimeout is different from `kubectl
+                      drain --timeout` NOTE: This value can be overridden while defining
+                      a Cluster.Topology.'
+                    type: string
+                  nodeVolumeDetachTimeout:
+                    description: 'NodeVolumeDetachTimeout is the total amount of time
+                      that the controller will spend on waiting for all volumes to
+                      be detached. The default value is 0, meaning that the volumes
+                      can be detached without any time limitations. NOTE: This value
+                      can be overridden while defining a Cluster.Topology.'
+                    type: string
                   ref:
                     description: Ref is a required reference to a custom resource
                       offered by a provider.
@@ -598,6 +621,13 @@ spec:
                               description: 'UniqueItems specifies if items in an array
                                 must be unique. NOTE: Can only be set if type is array.'
                               type: boolean
+                            x-kubernetes-preserve-unknown-fields:
+                              description: XPreserveUnknownFields allows setting fields
+                                in a variable object which are not defined in the
+                                variable schema. This affects fields recursively,
+                                except if nested properties or additionalProperties
+                                are specified in the schema.
+                              type: boolean
                           required:
                           - type
                           type: object
@@ -628,6 +658,13 @@ spec:
                             in the cluster, this name MUST be unique within a ClusterClass
                             and can be referenced in the Cluster to create a managed
                             MachineDeployment.
+                          type: string
+                        failureDomain:
+                          description: 'FailureDomain is the failure domain the machines
+                            will be created in. Must match a key in the FailureDomains
+                            map stored on the cluster object. NOTE: This value can
+                            be overridden while defining a Cluster.Topology using
+                            this MachineDeploymentClass.'
                           type: string
                         machineHealthCheck:
                           description: MachineHealthCheck defines a MachineHealthCheck
@@ -729,6 +766,107 @@ spec:
                                 This means that remediation will be allowed only when:
                                 (a) there are at least 3 unhealthy machines (and)
                                 (b) there are at most 5 unhealthy machines'
+                              pattern: ^\[[0-9]+-[0-9]+\]$
+                              type: string
+                          type: object
+                        minReadySeconds:
+                          description: 'Minimum number of seconds for which a newly
+                            created machine should be ready. Defaults to 0 (machine
+                            will be considered available as soon as it is ready) NOTE:
+                            This value can be overridden while defining a Cluster.Topology
+                            using this MachineDeploymentClass.'
+                          format: int32
+                          type: integer
+                        nodeDeletionTimeout:
+                          description: 'NodeDeletionTimeout defines how long the controller
+                            will attempt to delete the Node that the Machine hosts
+                            after the Machine is marked for deletion. A duration of
+                            0 will retry deletion indefinitely. Defaults to 10 seconds.
+                            NOTE: This value can be overridden while defining a Cluster.Topology
+                            using this MachineDeploymentClass.'
+                          type: string
+                        nodeDrainTimeout:
+                          description: 'NodeDrainTimeout is the total amount of time
+                            that the controller will spend on draining a node. The
+                            default value is 0, meaning that the node can be drained
+                            without any time limitations. NOTE: NodeDrainTimeout is
+                            different from `kubectl drain --timeout` NOTE: This value
+                            can be overridden while defining a Cluster.Topology using
+                            this MachineDeploymentClass.'
+                          type: string
+                        nodeVolumeDetachTimeout:
+                          description: 'NodeVolumeDetachTimeout is the total amount
+                            of time that the controller will spend on waiting for
+                            all volumes to be detached. The default value is 0, meaning
+                            that the volumes can be detached without any time limitations.
+                            NOTE: This value can be overridden while defining a Cluster.Topology
+                            using this MachineDeploymentClass.'
+                          type: string
+                        strategy:
+                          description: 'The deployment strategy to use to replace
+                            existing machines with new ones. NOTE: This value can
+                            be overridden while defining a Cluster.Topology using
+                            this MachineDeploymentClass.'
+                          properties:
+                            rollingUpdate:
+                              description: Rolling update config params. Present only
+                                if MachineDeploymentStrategyType = RollingUpdate.
+                              properties:
+                                deletePolicy:
+                                  description: DeletePolicy defines the policy used
+                                    by the MachineDeployment to identify nodes to
+                                    delete when downscaling. Valid values are "Random,
+                                    "Newest", "Oldest" When no value is supplied,
+                                    the default DeletePolicy of MachineSet is used
+                                  enum:
+                                  - Random
+                                  - Newest
+                                  - Oldest
+                                  type: string
+                                maxSurge:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: 'The maximum number of machines that
+                                    can be scheduled above the desired number of machines.
+                                    Value can be an absolute number (ex: 5) or a percentage
+                                    of desired machines (ex: 10%). This can not be
+                                    0 if MaxUnavailable is 0. Absolute number is calculated
+                                    from percentage by rounding up. Defaults to 1.
+                                    Example: when this is set to 30%, the new MachineSet
+                                    can be scaled up immediately when the rolling
+                                    update starts, such that the total number of old
+                                    and new machines do not exceed 130% of desired
+                                    machines. Once old machines have been killed,
+                                    new MachineSet can be scaled up further, ensuring
+                                    that total number of machines running at any time
+                                    during the update is at most 130% of desired machines.'
+                                  x-kubernetes-int-or-string: true
+                                maxUnavailable:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: 'The maximum number of machines that
+                                    can be unavailable during the update. Value can
+                                    be an absolute number (ex: 5) or a percentage
+                                    of desired machines (ex: 10%). Absolute number
+                                    is calculated from percentage by rounding down.
+                                    This can not be 0 if MaxSurge is 0. Defaults to
+                                    0. Example: when this is set to 30%, the old MachineSet
+                                    can be scaled down to 70% of desired machines
+                                    immediately when the rolling update starts. Once
+                                    new machines are ready, old MachineSet can be
+                                    scaled down further, followed by scaling up the
+                                    new MachineSet, ensuring that the total number
+                                    of machines available at all times during the
+                                    update is at least 70% of desired machines.'
+                                  x-kubernetes-int-or-string: true
+                              type: object
+                            type:
+                              description: Type of deployment. Default is RollingUpdate.
+                              enum:
+                              - RollingUpdate
+                              - OnDelete
                               type: string
                           type: object
                         template:
@@ -880,7 +1018,57 @@ spec:
                     type: array
                 type: object
             type: object
+          status:
+            description: ClusterClassStatus defines the observed state of the ClusterClass.
+            properties:
+              conditions:
+                description: Conditions defines current observed state of the ClusterClass.
+                items:
+                  description: Condition defines an observation of a Cluster API resource
+                    operational state.
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status
+                        to another. This should be when the underlying condition changed.
+                        If that is not known, then using the time when the API field
+                        changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: A human readable message indicating details about
+                        the transition. This field may be empty.
+                      type: string
+                    reason:
+                      description: The reason for the condition's last transition
+                        in CamelCase. The specific API may choose whether or not this
+                        field is considered a guaranteed API. This field may not be
+                        empty.
+                      type: string
+                    severity:
+                      description: Severity provides an explicit classification of
+                        Reason code, so the users or machines can immediately understand
+                        the current situation and act accordingly. The Severity field
+                        MUST be set only when Status=False.
+                      type: string
+                    status:
+                      description: Status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: Type of condition in CamelCase or in foo.example.com/CamelCase.
+                        Many .condition.type values are consistent across resources
+                        like Available, but because arbitrary conditions can be useful
+                        (see .node.status.conditions), the ability to deconflict is
+                        important.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - status
+                  - type
+                  type: object
+                type: array
+            type: object
         type: object
     served: true
     storage: true
-    subresources: {}
+    subresources:
+      status: {}

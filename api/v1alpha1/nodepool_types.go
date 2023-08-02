@@ -7,6 +7,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 )
 
 const (
@@ -446,6 +448,17 @@ const (
 	PowerVSNodePoolCappedProcType = PowerVSNodePoolProcType("capped")
 )
 
+func (p *PowerVSNodePoolProcType) CastToCAPIPowerVSProcessorType() capibmv1.PowerVSProcessorType {
+	switch *p {
+	case PowerVSNodePoolDedicatedProcType:
+		return capibmv1.PowerVSProcessorTypeDedicated
+	case PowerVSNodePoolCappedProcType:
+		return capibmv1.PowerVSProcessorTypeCapped
+	default:
+		return capibmv1.PowerVSProcessorTypeShared
+	}
+}
+
 // PowerVSNodePoolStorageType defines storage type to be used for PowerVSNodePoolPlatform
 type PowerVSNodePoolStorageType string
 
@@ -476,7 +489,7 @@ type PowerVSNodePoolPlatform struct {
 	//
 	// if the processorType is selected as Dedicated, then Processors value cannot be fractional.
 	// When omitted, this means that the user has no opinion and the platform is left to choose a
-	// reasonable default. The current default is Shared.
+	// reasonable default. The current default is shared.
 	//
 	// +kubebuilder:default=shared
 	// +kubebuilder:validation:Enum=dedicated;shared;capped

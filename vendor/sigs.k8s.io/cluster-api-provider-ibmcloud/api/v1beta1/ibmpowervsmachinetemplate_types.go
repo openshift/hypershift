@@ -44,7 +44,6 @@ type IBMPowerVSMachineTemplateStatus struct {
 
 //+kubebuilder:subresource:status
 //+kubebuilder:object:root=true
-//+kubebuilder:storageversion
 
 // IBMPowerVSMachineTemplate is the Schema for the ibmpowervsmachinetemplates API.
 type IBMPowerVSMachineTemplate struct {
