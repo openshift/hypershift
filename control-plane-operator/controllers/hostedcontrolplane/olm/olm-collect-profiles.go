@@ -21,6 +21,9 @@ var (
 func ReconcileCollectProfilesCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, olmImage, namespace string) {
 	ownerRef.ApplyTo(cronJob)
 	cronJob.Spec = olmCollectProfilesCronJob.DeepCopy().Spec
+	cronJob.Spec.JobTemplate.Spec.Template.ObjectMeta.Labels = map[string]string{
+		config.NeedManagementKASAccessLabel: "true",
+	}
 	cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Image = olmImage
 	for i, arg := range cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Args {
 		if arg == "OLM_NAMESPACE" {
