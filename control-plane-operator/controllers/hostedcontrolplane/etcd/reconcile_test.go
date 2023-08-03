@@ -19,7 +19,7 @@ const (
 --initial-advertise-peer-urls=https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380 \
 --listen-peer-urls=https://%s:2380 \
 --listen-client-urls=https://%s:2379,https://localhost:2379 \
---advertise-client-urls=https://${HOSTNAME}.etcd-client.${NAMESPACE}.svc:2379 \
+--advertise-client-urls=https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2379 \
 --listen-metrics-urls=https://%s:2382 \
 --initial-cluster-token=etcd-cluster \
 --initial-cluster=${INITIAL_CLUSTER} \
