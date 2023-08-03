@@ -75,7 +75,7 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observ
 		ocmContainerMain().Name: {
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz/ready",
+					Path:   "/healthz",
 					Port:   intstr.FromInt(int(servingPort)),
 					Scheme: corev1.URISchemeHTTPS,
 				},
