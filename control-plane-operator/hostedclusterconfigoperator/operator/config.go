@@ -27,6 +27,8 @@ import (
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 )
 
 const (
@@ -118,6 +120,8 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				&configv1.FeatureGate{}:     allSelector,
 				&configv1.ClusterOperator{}: allSelector,
 				&configv1.OperatorHub{}:     allSelector,
+				&admissionregistrationv1.ValidatingWebhookConfiguration{}: allSelector,
+				&admissionregistrationv1.MutatingWebhookConfiguration{}:   allSelector,
 
 				// Needed for inplace upgrader.
 				&corev1.Node{}: allSelector,

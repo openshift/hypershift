@@ -193,6 +193,10 @@ const (
 	// DedicatedRequestServingComponentsTopology indicates that control plane request serving
 	// components should be scheduled on dedicated nodes in the management cluster.
 	DedicatedRequestServingComponentsTopology = "dedicated-request-serving-components"
+
+	// AllowGuestWebhooksServiceLabel marks a service deployed in the control plane as a valid target
+	// for validating/mutating webhooks running in the guest cluster.
+	AllowGuestWebhooksServiceLabel = "hypershift.openshift.io/allow-guest-webhooks"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
