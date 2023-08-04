@@ -40,7 +40,7 @@ func TestCreateCluster(t *testing.T) {
 	}
 
 	e2eutil.NewHypershiftTest(t, ctx, nil).
-		CreateCluster(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 func TestCreateClusterCustomConfig(t *testing.T) {
@@ -70,7 +70,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		e2eutil.EnsureSecretEncryptedUsingKMS(t, ctx, hostedCluster, guestClient)
 		// test oauth with identity provider
 		e2eutil.EnsureOAuthWithIdentityProvider(t, ctx, mgtClient, hostedCluster)
-	}).CreateCluster(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 func TestNoneCreateCluster(t *testing.T) {
@@ -91,7 +91,7 @@ func TestNoneCreateCluster(t *testing.T) {
 
 		// etcd restarts for me once always and apiserver two times before running stable
 		// e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
-	}).CreateCluster(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 // TestCreateClusterProxy implements a test that creates a cluster behind a proxy with the code under test.
@@ -105,7 +105,7 @@ func TestCreateClusterProxy(t *testing.T) {
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 
 	e2eutil.NewHypershiftTest(t, ctx, nil).
-		CreateCluster(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 // TestCreateClusterPrivate implements a smoke test that creates a private cluster.
@@ -126,7 +126,7 @@ func TestCreateClusterPrivate(t *testing.T) {
 		t.Run("SwitchFromPrivateToPublic", testSwitchFromPrivateToPublic(ctx, mgtClient, hostedCluster, &clusterOpts))
 		// publicAndPrivate -> Private
 		t.Run("SwitchFromPublicToPrivate", testSwitchFromPublicToPrivate(ctx, mgtClient, hostedCluster, &clusterOpts))
-	}).CreateCluster(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 func testSwitchFromPrivateToPublic(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) func(t *testing.T) {

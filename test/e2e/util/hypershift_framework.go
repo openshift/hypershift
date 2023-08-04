@@ -18,17 +18,18 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+type hypershiftTestFunc func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
 type hypershiftTest struct {
 	*testing.T
 	ctx    context.Context
 	client crclient.Client
 
-	test func(*testing.T, crclient.Client, *hyperv1.HostedCluster)
+	test hypershiftTestFunc
 
 	hasBeenTornedDown bool
 }
 
-func NewHypershiftTest(t *testing.T, ctx context.Context, test func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)) *hypershiftTest {
+func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFunc) *hypershiftTest {
 	client, err := GetClient()
 	if err != nil {
 		t.Fatalf("failed to get k8s client: %v", err)
@@ -42,7 +43,7 @@ func NewHypershiftTest(t *testing.T, ctx context.Context, test func(t *testing.T
 	}
 }
 
-func (h *hypershiftTest) CreateCluster(opts *core.CreateOptions, platform hyperv1.PlatformType, artifactDir string, serviceAccountSigningKey []byte) {
+func (h *hypershiftTest) Execute(opts *core.CreateOptions, platform hyperv1.PlatformType, artifactDir string, serviceAccountSigningKey []byte) {
 	// create a hypershift cluster for the test
 	hostedCluster := h.createHostedCluster(opts, platform, artifactDir, serviceAccountSigningKey)
 	// if cluster creation failed, immediately try and clean up.
@@ -78,7 +79,7 @@ func (h *hypershiftTest) CreateCluster(opts *core.CreateOptions, platform hyperv
 
 // runs before each test.
 func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *core.CreateOptions, platform hyperv1.PlatformType) {
-	h.Run("Validate", func(t *testing.T) {
+	h.Run("ValidateHostedCluster", func(t *testing.T) {
 		if platform != hyperv1.NonePlatform {
 			if opts.AWSPlatform.EndpointAccess == string(hyperv1.Private) {
 				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts)

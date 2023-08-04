@@ -102,7 +102,7 @@ func TestOLM(t *testing.T) {
 		t.Run("Guest cluster catalogSources serve content", testGuestClusterCatalogReady(waitCtx, guestClient))
 		t.Run("Install operator from Red Hat operators catalogSource", testOperatorInstallationFromSource(waitCtx, guestClient, redhatOperatorsCatalogSourceName))
 		t.Run("Install operator from guest cluster catalogSource", testOperatorInstallationFromSource(waitCtx, guestClient, guestClusterCatalogSourceName))
-	}).CreateCluster(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 // testGuestClusterCatalogReady ensures that Catalog Operator is able to connect to the CatalogSource created on the guestCluster.
