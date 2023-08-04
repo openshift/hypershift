@@ -13,15 +13,21 @@ Install an OCP cluster running on VMs within a management OCP cluster
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
 * A valid [pull secret](https://console.redhat.com/openshift/install/platform-agnostic/user-provisioned) file for the `quay.io/openshift-release-dev` repository.
 
-## Installing HyperShift Operator and hypershift cli tool
+## Installing HyperShift Operator and cli tooling
 
-Before creating a guest cluster, the Hypershift operator and hypershift cli tool
-must be installed.
+Before creating a guest cluster, the hcp cli, hypershift cli, and HyperShift
+Operator must be installed.
 
-### Build the HyperShift CLI
+The `hypershift` cli tool is a development tool that is used to install
+developer builds of the HyperShift Operator.
 
-The command below builds latest hypershift cli tool from source and places the
-cli tool within the /usr/local/bin directory.
+The `hcp` cli tool is used to manage the creation and destruction of guest
+clusters.
+
+### Build the HyperShift and HCP CLI
+
+The command below builds latest hypershift and hcp cli tools from source and
+places the cli tool within the /usr/local/bin directory.
 
 !!! note
 
@@ -29,13 +35,17 @@ cli tool within the /usr/local/bin directory.
   
 ```shell
 podman run --rm --privileged -it -v \
-$PWD:/output docker.io/library/golang:1.18 /bin/bash -c \
+$PWD:/output docker.io/library/golang:1.20 /bin/bash -c \
 'git clone https://github.com/openshift/hypershift.git && \
 cd hypershift/ && \
-make hypershift && \
-mv bin/hypershift /output/hypershift
+make hypershift product-cli && \
+mv bin/hypershift /output/hypershift && \
+mv bin/hcp /output/hcp'
+
 sudo install -m 0755 -o root -g root $PWD/hypershift /usr/local/bin/hypershift
+sudo install -m 0755 -o root -g root $PWD/hcp /usr/local/bin/hcp
 rm $PWD/hypershift
+rm $PWD/hcp
 ```
 
 ## Deploy the HyperShift Operator
@@ -63,7 +73,7 @@ Once all the [prerequisites](#prerequisites) are met, and the HyperShift
 operator is installed, it is now possible to create a guest cluster.
 
 Below is an example of how to create a guest cluster using environment
-variables and the `hypershift` cli tool.
+variables and the `hcp` cli tool.
 
 !!! note
 
@@ -77,7 +87,7 @@ export MEM="6Gi"
 export CPU="2"
 export WORKER_COUNT="2"
 
-hypershift create cluster kubevirt \
+hcp create cluster kubevirt \
 --name $CLUSTER_NAME \
 --node-pool-replicas $WORKER_COUNT \
 --pull-secret $PULL_SECRET \
@@ -123,10 +133,10 @@ example         4.12.7    example-admin-kubeconfig         Completed  True      
 
 CLI access to the guest cluster is gained by retrieving the guest cluster's
 kubeconfig. Below is an example of how to retrieve the guest cluster's
-kubeconfig using the hypershift cli.
+kubeconfig using the hcp cli.
 
 ```shell
-hypershift create kubeconfig --name $CLUSTER_NAME > $CLUSTER_NAME-kubeconfig
+hcp create kubeconfig --name $CLUSTER_NAME > $CLUSTER_NAME-kubeconfig
 ```
 
 If we access the cluster, we will see we have two nodes.
@@ -186,7 +196,7 @@ export MEM="6Gi"
 export CPU="4"
 export DISK="16"
 
-hypershift create nodepool kubevirt \
+hcp create nodepool kubevirt \
   --cluster-name $CLUSTER_NAME \
   --name $NODEPOOL_NAME \
   --node-count $WORKER_COUNT \
@@ -236,6 +246,6 @@ example-extra-cpu         example         2               2               False 
 To delete a HostedCluster:
 
 ```shell
-hypershift destroy cluster kubevirt --name $CLUSTER_NAME
+hcp destroy cluster kubevirt --name $CLUSTER_NAME
 ```
 

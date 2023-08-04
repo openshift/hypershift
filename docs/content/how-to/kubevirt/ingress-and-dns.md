@@ -48,7 +48,7 @@ export CPU="2"
 export WORKER_COUNT="2"
 export BASE_DOMAIN=hypershift.lab
 
-hypershift create cluster kubevirt \
+hcp create cluster kubevirt \
 --name $CLUSTER_NAME \
 --node-pool-replicas $WORKER_COUNT \
 --pull-secret $PULL_SECRET \
@@ -71,7 +71,7 @@ example                   example-admin-kubeconfig         Partial    True      
 If we access the HostedCluster this is what we will see:
 
 ```shell
-hypershift create kubeconfig --name $CLUSTER_NAME > $CLUSTER_NAME-kubeconfig
+hcp create kubeconfig --name $CLUSTER_NAME > $CLUSTER_NAME-kubeconfig
 ```
 
 ```shell

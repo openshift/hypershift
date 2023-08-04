@@ -9,7 +9,7 @@ etcd volumes.
 KubeVirt CSI permits any infra storage class with the `ReadWriteMany` access
 mode to be exposed to the guest cluster. This mapping of infra cluster storage
 class to guest cluster storage class can be configured during cluster creation
-using the `hypershift` cli tool and the `--infra-storage-class-mapping` cli
+using the `hcp` cli tool and the `--infra-storage-class-mapping` cli
 argument.
 
 Below is an example of how to map two infra storage classes called `infra-sc1`
@@ -24,7 +24,7 @@ export MEM="6Gi"
 export CPU="2"
 export WORKER_COUNT="2"
 
-hypershift create cluster kubevirt \
+hcp create cluster kubevirt \
 --name $CLUSTER_NAME \
 --node-pool-replicas $WORKER_COUNT \
 --pull-secret $PULL_SECRET \
@@ -48,7 +48,7 @@ mapping that was configured during cluster creation.
 ## KubeVirt VM Root Volume Configuration
 
 The storage class used to host the KubeVirt Virtual Machine root volumes can be
-configured at cluster creation time using the `hypershift` cli tool and the
+configured at cluster creation time using the `hcp` cli tool and the
 `--root-volume-storage-class` argument. Likewise, the size of the volume can be
 configured using the `--root-volume-size` cli argument.
 
@@ -63,7 +63,7 @@ export MEM="6Gi"
 export CPU="2"
 export WORKER_COUNT="2"
 
-hypershift create cluster kubevirt \
+hcp create cluster kubevirt \
 --name $CLUSTER_NAME \
 --node-pool-replicas $WORKER_COUNT \
 --pull-secret $PULL_SECRET \
@@ -86,7 +86,7 @@ KubeVirt VM added as a worker node to the cluster. This reduces VM startup time
 by only requiring a single image import, and can further reduce overall cluster
 storage usage when the storage class supports copy on write cloning.
 
-Image caching can be enabled during cluster creation using the `hypershift` cli
+Image caching can be enabled during cluster creation using the `hcp` cli
 tool with the `--root-volume-cache-strategy=PVC` argument. Below is an example.
 
 
@@ -97,7 +97,7 @@ export MEM="6Gi"
 export CPU="2"
 export WORKER_COUNT="2"
 
-hypershift create cluster kubevirt \
+hcp create cluster kubevirt \
 --name $CLUSTER_NAME \
 --node-pool-replicas $WORKER_COUNT \
 --pull-secret $PULL_SECRET \
@@ -109,7 +109,7 @@ hypershift create cluster kubevirt \
 ## ETCD Storage Configuration
 
 The storage class used to host the etcd data can be customized at cluster
-creation time using the `hypershift` cli and the `--etcd-storage-class` cli
+creation time using the `hcp` cli and the `--etcd-storage-class` cli
 argument. When no `--etcd-storage-class` argument is provided, the default
 storage class will be used.
 
@@ -122,7 +122,7 @@ export MEM="6Gi"
 export CPU="2"
 export WORKER_COUNT="2"
 
-hypershift create cluster kubevirt \
+hcp create cluster kubevirt \
 --name $CLUSTER_NAME \
 --node-pool-replicas $WORKER_COUNT \
 --pull-secret $PULL_SECRET \
