@@ -9,18 +9,14 @@
 
 set -ex
 
-if command -v podman > /dev/null 2>&1
-then
-    ENGINE=podman
-elif command -v docker > /dev/null 2>&1
-then
-    ENGINE=docker
-else
-    echo "No container runtime found"
-    exit 1
-fi
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+readonly SCRIPT_DIR
+
+source "${SCRIPT_DIR}/utils.sh"
 
 IMAGE=docker.io/openshift/origin-release:golang-1.16
+
+ENGINE=$(get_container_engine)
 
 ENGINE_CMD="${ENGINE} run --rm -v $(pwd):/go/src/github.com/openshift/hypershift:Z  -w /go/src/github.com/openshift/hypershift $IMAGE"
 
