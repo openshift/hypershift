@@ -27,7 +27,6 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&opts.AWSPlatform.AWSCredentialsFile, "aws-creds", opts.AWSPlatform.AWSCredentialsFile, "Filepath to an AWS credentials file.")
-	cmd.Flags().StringVar(&opts.AWSPlatform.IAMJSON, "iam-json", opts.AWSPlatform.IAMJSON, "Filepath to a file containing IAM information for the cluster; if this is not specified, IAM will be automatically created.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.Region, "region", opts.AWSPlatform.Region, "The region to use for created AWS infrastructure.")
 	cmd.Flags().StringSliceVar(&opts.AWSPlatform.Zones, "zones", opts.AWSPlatform.Zones, "The availability zones in which NodePools will be created.")
 	cmd.Flags().StringVar(&opts.AWSPlatform.InstanceType, "instance-type", opts.AWSPlatform.InstanceType, "The instance type for the NodePool machines.")
