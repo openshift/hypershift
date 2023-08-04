@@ -4,6 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -23,6 +29,7 @@ import (
 	"github.com/prometheus/common/model"
 	prommodel "github.com/prometheus/common/model"
 	"go.uber.org/zap/zaptest"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -36,14 +43,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
+	"k8s.io/utils/pointer"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sort"
-	"strings"
-	"testing"
-	"time"
 )
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -1250,5 +1253,56 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 				}
 			}
 		}
+	})
+}
+
+func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient crclient.Client) {
+	t.Run("EnsureGuestWebhooksValidated", func(t *testing.T) {
+		guestWebhookConf := &admissionregistrationv1.ValidatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-webhook",
+				Namespace: "default",
+				Annotations: map[string]string{
+					"service.beta.openshift.io/inject-cabundle": "true",
+				},
+			},
+		}
+
+		sideEffectsNone := admissionregistrationv1.SideEffectClassNone
+		guestWebhookConf.Webhooks = []admissionregistrationv1.ValidatingWebhook{{
+			AdmissionReviewVersions: []string{"v1"},
+			Name:                    "etcd-client.example.com",
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{
+				URL: pointer.String("https://etcd-client:2379"),
+			},
+			Rules: []admissionregistrationv1.RuleWithOperations{{
+				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
+				Rule: admissionregistrationv1.Rule{
+					APIGroups:   []string{""},
+					APIVersions: []string{"v1"},
+					Resources:   []string{"pods"},
+				},
+			}},
+			SideEffects: &sideEffectsNone,
+		}}
+
+		if err := guestClient.Create(ctx, guestWebhookConf); err != nil {
+			t.Errorf("failed to create webhook: %v", err)
+		}
+
+		err := wait.PollImmediateWithContext(ctx, 5*time.Second, 1*time.Minute, func(ctx context.Context) (done bool, err error) {
+			webhook := &admissionregistrationv1.ValidatingWebhookConfiguration{}
+			if err := guestClient.Get(ctx, client.ObjectKeyFromObject(guestWebhookConf), webhook); err != nil && errors.IsNotFound(err) {
+				// webhook has been deleted
+				return true, nil
+			}
+
+			return false, nil
+		})
+
+		if err != nil {
+			t.Errorf("failed to ensure guest webhooks validated, violating webhook %s was not deleted: %v", guestWebhookConf.Name, err)
+		}
+
 	})
 }

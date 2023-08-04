@@ -218,6 +218,7 @@ func validatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
 	e2eutil.EnsurePSANotPrivileged(t, ctx, guestClient)
+	e2eutil.EnsureGuestWebhooksValidated(t, ctx, guestClient)
 }
 
 func validatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
