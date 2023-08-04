@@ -57,10 +57,10 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		}
 
 		if len(opts.CredentialSecretName) == 0 {
-			if err := isRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
+			if err := IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
 				return err
 			}
-			if err := isRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
+			if err := IsRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
 				return err
 			}
 		} else {
@@ -249,7 +249,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 }
 
 // IsRequiredOption returns a cobra style error message when the flag value is empty
-func isRequiredOption(flag string, value string) error {
+func IsRequiredOption(flag string, value string) error {
 	if len(value) == 0 {
 		return fmt.Errorf("required flag(s) \"%s\" not set", flag)
 	}
