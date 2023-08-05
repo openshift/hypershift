@@ -1932,6 +1932,22 @@ spec:
                       x-kubernetes-map-type: atomic
                     type: array
                 type: object
+              controlPlaneRelease:
+                description: ControlPlaneRelease specifies the desired OCP release
+                  payload for control plane components running on the management cluster.
+                  Updating this field will trigger a rollout of the control plane.
+                  The behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+                  and InfrastructureAvailabilityPolicy. If not defined, Release is
+                  used
+                properties:
+                  image:
+                    description: Image is the image pullspec of an OCP release payload
+                      image.
+                    pattern: ^(\w+\S+)$
+                    type: string
+                required:
+                - image
+                type: object
               controllerAvailabilityPolicy:
                 default: SingleReplica
                 description: ControllerAvailabilityPolicy specifies the availability
@@ -5712,6 +5728,22 @@ spec:
                         - NoScoring
                         type: string
                     type: object
+                type: object
+              controlPlaneRelease:
+                description: ControlPlaneRelease specifies the desired OCP release
+                  payload for control plane components running on the management cluster.
+                  Updating this field will trigger a rollout of the control plane.
+                  The behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+                  and InfrastructureAvailabilityPolicy. If not defined, Release is
+                  used
+                properties:
+                  image:
+                    description: Image is the image pullspec of an OCP release payload
+                      image.
+                    pattern: ^(\w+\S+)$
+                    type: string
+                required:
+                - image
                 type: object
               controllerAvailabilityPolicy:
                 default: SingleReplica

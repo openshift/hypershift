@@ -57,13 +57,22 @@ func newEnvironmentReplacer() *environmentReplacer {
 	return &environmentReplacer{values: map[string]string{}}
 }
 
-func (er *environmentReplacer) setOperatorImageReferences(images map[string]string) {
+func (er *environmentReplacer) setOperatorImageReferences(images map[string]string, userImages map[string]string) {
 	// `operatorImageRefs` is map from env. var name -> payload image name
 	// `images` is map from payload image name -> image URL
 	// Create map from env. var name -> image URL
 	for envVar, payloadName := range operatorImageRefs {
-		if imageURL, ok := images[payloadName]; ok {
-			er.values[envVar] = imageURL
+		// TODO: *_DRIVER_IMAGE and LIVENESS_PROBE_IMAGE for csi-driver-node should be separated
+		// from csi-driver-controller and looked up from the userImages
+		// strings.HasSuffix(envVar, "_DRIVER_IMAGE") || envVar == "LIVENESS_PROBE_IMAGE"
+		if envVar == "NODE_DRIVER_REGISTRAR_IMAGE" {
+			if imageURL, ok := userImages[payloadName]; ok {
+				er.values[envVar] = imageURL
+			}
+		} else {
+			if imageURL, ok := images[payloadName]; ok {
+				er.values[envVar] = imageURL
+			}
 		}
 	}
 }

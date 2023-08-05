@@ -99,15 +99,15 @@ type Params struct {
 	deploymentConfig config.DeploymentConfig
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	params := Params{
 		operatorImage:    releaseImageProvider.GetImage("cluster-image-registry-operator"),
 		tokenMinterImage: releaseImageProvider.GetImage("token-minter"),
 		platform:         hcp.Spec.Platform.Type,
 		issuerURL:        hcp.Spec.IssuerURL,
 		releaseVersion:   version,
-		registryImage:    releaseImageProvider.GetImage("docker-registry"),
-		prunerImage:      releaseImageProvider.GetImage("cli"),
+		registryImage:    userReleaseImageProvider.GetImage("docker-registry"),
+		prunerImage:      userReleaseImageProvider.GetImage("cli"),
 		deploymentConfig: config.DeploymentConfig{
 			Scheduling: config.Scheduling{
 				PriorityClass: config.DefaultPriorityClass,
@@ -172,7 +172,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		params.deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 	params.deploymentConfig.SetDefaults(hcp, selectorLabels(), pointer.Int(1))
-	params.deploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
+	params.deploymentConfig.SetReleaseImageAnnotation(util.HCPControlPlaneReleaseImage(hcp))
 	return params
 }
 

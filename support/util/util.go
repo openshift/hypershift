@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -65,6 +66,13 @@ func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exis
 	}
 
 	return true, nil
+}
+
+func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {
+	if hcp.Spec.ControlPlaneReleaseImage != nil {
+		return *hcp.Spec.ControlPlaneReleaseImage
+	}
+	return hcp.Spec.ReleaseImage
 }
 
 // CompressAndEncode compresses and base-64 encodes a given byte array. Ideal for loading an

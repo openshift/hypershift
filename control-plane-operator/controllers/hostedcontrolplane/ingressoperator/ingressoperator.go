@@ -32,6 +32,7 @@ const (
 
 type Params struct {
 	IngressOperatorImage    string
+	IngressCanaryImage      string
 	HAProxyRouterImage      string
 	KubeRBACProxyImage      string
 	ReleaseVersion          string
@@ -42,10 +43,11 @@ type Params struct {
 	DeploymentConfig        config.DeploymentConfig
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
 	p := Params{
 		IngressOperatorImage:    releaseImageProvider.GetImage("cluster-ingress-operator"),
-		HAProxyRouterImage:      releaseImageProvider.GetImage("haproxy-router"),
+		IngressCanaryImage:      userReleaseImageProvider.GetImage("cluster-ingress-operator"),
+		HAProxyRouterImage:      userReleaseImageProvider.GetImage("haproxy-router"),
 		ReleaseVersion:          version,
 		TokenMinterImage:        releaseImageProvider.GetImage("token-minter"),
 		Socks5ProxyImage:        releaseImageProvider.GetImage("socks5-proxy"),
@@ -131,7 +133,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, apiPort *int32) 
 		Env: []corev1.EnvVar{
 			{Name: "RELEASE_VERSION", Value: params.ReleaseVersion},
 			{Name: "IMAGE", Value: params.HAProxyRouterImage},
-			{Name: "CANARY_IMAGE", Value: params.IngressOperatorImage},
+			{Name: "CANARY_IMAGE", Value: params.IngressCanaryImage},
 			{Name: "KUBECONFIG", Value: "/etc/kubernetes/kubeconfig"},
 			{
 				Name:  "HTTP_PROXY",

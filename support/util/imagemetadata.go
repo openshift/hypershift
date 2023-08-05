@@ -96,8 +96,15 @@ func ImageLabels(metadata *dockerv1client.DockerImageConfig) map[string]string {
 	}
 }
 
+func HCControlPlaneReleaseImage(hcluster *hyperv1.HostedCluster) string {
+	if hcluster.Spec.ControlPlaneRelease != nil {
+		return hcluster.Spec.ControlPlaneRelease.Image
+	}
+	return hcluster.Spec.Release.Image
+}
+
 func GetPayloadImage(ctx context.Context, releaseImageProvider releaseinfo.Provider, hc *hyperv1.HostedCluster, component string, pullSecret []byte) (string, error) {
-	releaseImage, err := releaseImageProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecret)
+	releaseImage, err := releaseImageProvider.Lookup(ctx, HCControlPlaneReleaseImage(hc), pullSecret)
 	if err != nil {
 		return "", fmt.Errorf("failed to lookup release image: %w", err)
 	}
@@ -110,7 +117,7 @@ func GetPayloadImage(ctx context.Context, releaseImageProvider releaseinfo.Provi
 }
 
 func GetPayloadVersion(ctx context.Context, releaseImageProvider releaseinfo.Provider, hc *hyperv1.HostedCluster, pullSecret []byte) (*semver.Version, error) {
-	releaseImage, err := releaseImageProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecret)
+	releaseImage, err := releaseImageProvider.Lookup(ctx, HCControlPlaneReleaseImage(hc), pullSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup release image: %w", err)
 	}

@@ -1475,7 +1475,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Get release image version
 	var releaseImageVersion semver.Version
-	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
+	releaseInfo, err := r.lookupReleaseImage(ctx, hcluster)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
 	}
@@ -1519,7 +1519,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the Ignition server
 	if !controlplaneOperatorManagesIgnitionServer {
-		releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
+		releaseInfo, err := r.lookupReleaseImage(ctx, hcluster)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
 		}
@@ -1626,6 +1626,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 
 	hcp.Spec.Channel = hcluster.Spec.Channel
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
+	if hcluster.Spec.ControlPlaneRelease != nil {
+		hcp.Spec.ControlPlaneReleaseImage = &hcluster.Spec.ControlPlaneRelease.Image
+	}
 
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
 	if len(hcluster.Spec.SSHKey.Name) > 0 {
@@ -2085,7 +2088,7 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
 		return val, nil
 	}
-	releaseInfo, err := releaseProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecret)
+	releaseInfo, err := releaseProvider.Lookup(ctx, hyperutil.HCControlPlaneReleaseImage(hc), pullSecret)
 	if err != nil {
 		return "", err
 	}
@@ -2199,7 +2202,7 @@ func reconcileControlPlaneOperatorDeployment(
 							},
 							{
 								Name:  "OPERATE_ON_RELEASE_IMAGE",
-								Value: hc.Spec.Release.Image,
+								Value: hyperutil.HCControlPlaneReleaseImage(hc),
 							},
 							{
 								Name:  "OPENSHIFT_IMG_OVERRIDES",
@@ -2957,17 +2960,19 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 		return hcp.Status.VersionStatus
 	}
 
+	releaseImage := hyperutil.HCControlPlaneReleaseImage(hcluster)
+
 	// If there's no history, rebuild it from scratch.
 	if hcluster.Status.Version == nil || len(hcluster.Status.Version.History) == 0 {
 		return &hyperv1.ClusterVersionStatus{
 			Desired: configv1.Release{
-				Image: hcluster.Spec.Release.Image,
+				Image: releaseImage,
 			},
 			ObservedGeneration: hcluster.Generation,
 			History: []configv1.UpdateHistory{
 				{
 					State:       configv1.PartialUpdate,
-					Image:       hcluster.Spec.Release.Image,
+					Image:       releaseImage,
 					StartedTime: metav1.NewTime(clock.Now()),
 				},
 			},
@@ -2993,7 +2998,7 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 	// state. For now it assumes when status.releaseImage matches, that rollout
 	// is definitely done.
 	//lint:ignore SA1019 consume the deprecated property until we can drop compatability with HostedControlPlane controllers that do not populate hcp.Status.VersionStatus.
-	hcpRolloutComplete := (hcp.Spec.ReleaseImage == hcp.Status.ReleaseImage) && (version.Desired.Image == hcp.Status.ReleaseImage)
+	hcpRolloutComplete := (hyperutil.HCPControlPlaneReleaseImage(hcp) == hcp.Status.ReleaseImage) && (version.Desired.Image == hcp.Status.ReleaseImage)
 	if !hcpRolloutComplete {
 		return version
 	}
@@ -3010,15 +3015,15 @@ func computeClusterVersionStatus(clock clock.WithTickerAndDelayedExecution, hclu
 
 	// If a new rollout is needed, update the desired version and prepend a new
 	// partial history entry to unblock rollouts.
-	rolloutNeeded := hcluster.Spec.Release.Image != hcluster.Status.Version.Desired.Image
+	rolloutNeeded := releaseImage != hcluster.Status.Version.Desired.Image
 	if rolloutNeeded {
-		version.Desired.Image = hcluster.Spec.Release.Image
+		version.Desired.Image = releaseImage
 		version.ObservedGeneration = hcluster.Generation
 		// TODO: leaky
 		version.History = append([]configv1.UpdateHistory{
 			{
 				State:       configv1.PartialUpdate,
-				Image:       hcluster.Spec.Release.Image,
+				Image:       releaseImage,
 				StartedTime: metav1.NewTime(clock.Now()),
 			},
 		}, version.History...)
@@ -3568,7 +3573,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 		return fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
 
-	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hc.Spec.Release.Image, pullSecretBytes)
+	releaseInfo, err := r.lookupReleaseImage(ctx, hc)
 	if err != nil {
 		return fmt.Errorf("failed to lookup release image: %w", err)
 	}
@@ -3578,7 +3583,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 	}
 
 	var currentVersion *semver.Version
-	if hc.Status.Version != nil && hc.Status.Version.Desired.Image != hc.Spec.Release.Image {
+	if hc.Status.Version != nil && hc.Status.Version.Desired.Image != hyperutil.HCControlPlaneReleaseImage(hc) {
 		releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hc.Status.Version.Desired.Image, pullSecretBytes)
 		if err != nil {
 			return fmt.Errorf("failed to lookup release image: %w", err)
@@ -3613,7 +3618,7 @@ func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseI
 		}
 	}
 
-	if hc.Status.Version == nil || hc.Spec.Release.Image != hc.Status.Version.Desired.Image {
+	if hc.Status.Version == nil || hyperutil.HCControlPlaneReleaseImage(hc) != hc.Status.Version.Desired.Image {
 		// cluster is doing initial rollout or upgrading
 		return true, nil
 	}
@@ -4063,7 +4068,7 @@ func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hclust
 	if !ok {
 		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
-	return r.ReleaseProvider.Lookup(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
+	return r.ReleaseProvider.Lookup(ctx, hyperutil.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
 }
 
 // isUpgradeable returns
@@ -4071,7 +4076,7 @@ func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hclust
 // 2) non-error message about the condition of the upgrade
 // 3) error indicating that the upgrade is not allowed or we were not able to determine
 func isUpgradeable(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (bool, string, error) {
-	if hcluster.Status.Version == nil || hcluster.Status.Version.Desired.Image == hcluster.Spec.Release.Image {
+	if hcluster.Status.Version == nil || hcluster.Status.Version.Desired.Image == hyperutil.HCControlPlaneReleaseImage(hcluster) {
 		// cluster is either installing or at the version requested by the spec, no upgrade in progress
 		return false, "", nil
 	}
@@ -4084,11 +4089,16 @@ func isUpgradeable(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.Re
 	// Check if the upgrade is being forced
 	upgradeImage, exists := hcluster.Annotations[hyperv1.ForceUpgradeToAnnotation]
 	if exists {
-		if upgradeImage != hcluster.Spec.Release.Image {
+		if upgradeImage != hyperutil.HCControlPlaneReleaseImage(hcluster) {
 			return true, "", fmt.Errorf("force upgrade annotation is present but does not match desired release image")
 		} else {
 			return true, "upgrade is forced by annotation", nil
 		}
+	}
+
+	// Check if ControlPlaneRelease is set.  ControlPlaneRelease should be considered a forced upgrade.
+	if hcluster.Spec.ControlPlaneRelease != nil {
+		return true, "upgrade is forced by ControlPlaneRelease being set", nil
 	}
 
 	// Check if upgrade is a z-stream upgrade.  These are allowed even when Upgradeable is false

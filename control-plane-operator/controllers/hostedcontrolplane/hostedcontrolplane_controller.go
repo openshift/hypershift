@@ -335,8 +335,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != hostedControlPlane.Spec.ReleaseImage {
-		r.Log.Info("releaseImage is %s, but this operator is configured for %s, skipping reconciliation", hostedControlPlane.Spec.ReleaseImage, r.OperateOnReleaseImage)
+	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != util.HCPControlPlaneReleaseImage(hostedControlPlane) {
+		r.Log.Info("releaseImage is %s, but this operator is configured for %s, skipping reconciliation", util.HCPControlPlaneReleaseImage(hostedControlPlane), r.OperateOnReleaseImage)
 		return ctrl.Result{}, nil
 	}
 
@@ -808,7 +808,8 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	}
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer lookupCancel()
-	return r.ReleaseProvider.Lookup(lookupCtx, hcp.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+	return r.ReleaseProvider.Lookup(lookupCtx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
+
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) (reconcile.Result, error) {
@@ -861,6 +862,18 @@ func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool
 }
 
 func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider *imageprovider.ReleaseImageProvider, infraStatus InfrastructureStatus) error {
+	// releaseImage might be overriden by spec.controlPlaneReleaseImage
+	// User facing components should reflect the version from spec.releaseImage
+	pullSecret := common.PullSecret(hostedControlPlane.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return err
+	}
+	userReleaseImage, err := r.ReleaseProvider.Lookup(ctx, hostedControlPlane.Spec.ReleaseImage, pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return fmt.Errorf("failed to get lookup release image: %w", err)
+	}
+	userReleaseImageProvider := imageprovider.New(userReleaseImage)
+
 	// Reconcile default service account
 	r.Log.Info("Reconciling default service account")
 	if err := r.reconcileDefaultServiceAccount(ctx, hostedControlPlane, createOrUpdate); err != nil {
@@ -905,7 +918,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	// Reconcile kube apiserver
 	r.Log.Info("Reconciling Kube API Server")
 	kubeAPIServerDeployment := manifests.KASDeployment(hostedControlPlane.Namespace)
-	if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImageProvider, infraStatus.APIHost, infraStatus.APIPort, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate, kubeAPIServerDeployment); err != nil {
+	if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, infraStatus.APIHost, infraStatus.APIPort, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate, kubeAPIServerDeployment); err != nil {
 		return fmt.Errorf("failed to reconcile kube apiserver: %w", err)
 	}
 
@@ -1036,28 +1049,28 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	}
 
 	r.Log.Info("Reconciling ClusterNetworkOperator")
-	if err := r.reconcileClusterNetworkOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+	if err := r.reconcileClusterNetworkOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile cluster network operator: %w", err)
 	}
 
 	r.Log.Info("Reconciling Cluster Node Tuning Operator")
-	if err := r.reconcileClusterNodeTuningOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+	if err := r.reconcileClusterNodeTuningOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile cluster node tuning operator: %w", err)
 	}
 
 	r.Log.Info("Reconciling DNSOperator")
-	if err := r.reconcileDNSOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+	if err := r.reconcileDNSOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile DNS operator: %w", err)
 	}
 
 	r.Log.Info("Reconciling IngressOperator")
-	if err := r.reconcileIngressOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+	if err := r.reconcileIngressOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile ingress operator: %w", err)
 	}
 
 	// Reconcile hosted cluster config operator
 	r.Log.Info("Reconciling Hosted Cluster Config Operator")
-	if err := r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, releaseImageProvider, infraStatus, createOrUpdate); err != nil {
+	if err := r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, userReleaseImageProvider, infraStatus, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile hosted cluster config operator: %w", err)
 	}
 
@@ -1069,20 +1082,20 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 	// Reconcile OLM
 	r.Log.Info("Reconciling OLM")
-	if err := r.reconcileOperatorLifecycleManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+	if err := r.reconcileOperatorLifecycleManager(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile olm: %w", err)
 	}
 
 	// Reconcile image registry operator
 	r.Log.Info("Reconciling Image Registry Operator")
-	if err := r.reconcileImageRegistryOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+	if err := r.reconcileImageRegistryOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile image registry operator: %w", err)
 	}
 
 	if IsStorageAndCSIManaged(hostedControlPlane) {
 		// Reconcile cluster storage operator
 		r.Log.Info("Reconciling cluster storage operator")
-		if err := r.reconcileClusterStorageOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+		if err := r.reconcileClusterStorageOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile cluster storage operator: %w", err)
 		}
 	}
@@ -1115,7 +1128,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 		// Reconcile CSI snapshot controller operator
 		r.Log.Info("Reconciling CSI snapshot controller operator")
-		if err := r.reconcileCSISnapshotControllerOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+		if err := r.reconcileCSISnapshotControllerOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile CSI snapshot controller operator: %w", err)
 		}
 	}
@@ -2196,7 +2209,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
 	ocpVersion, err := semver.Parse(releaseImageProvider.Version())
 	if err != nil {
 		return fmt.Errorf("failed to parse release version: %w", err)
@@ -2420,7 +2433,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			aesCBCActiveKey,
 			aesCBCBackupKey,
 			p.APIServerPort,
-			releaseImageProvider.Version(),
+			userReleaseImageProvider.Version(),
 			p.FeatureGate,
 		)
 	}); err != nil {
@@ -2791,15 +2804,15 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.Image, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, util.APIPort(hcp), p.PlatformType)
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.ControlPlaneImage, p.Image, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, util.APIPort(hcp), p.PlatformType)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := cno.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext, r.DefaultIngressDomain)
+func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	p := cno.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, r.DefaultIngressDomain)
 
 	sa := manifests.ClusterNetworkOperatorServiceAccount(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
@@ -2838,8 +2851,8 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := nto.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
+func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	p := nto.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
 
 	metricsService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, metricsService, func() error {
@@ -2887,8 +2900,8 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx co
 
 // reconcileDNSOperator ensures that the management cluster has the expected DNS
 // operator deployment and kubeconfig secret for the hosted cluster.
-func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := dnsoperator.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
+func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	p := dnsoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
@@ -2917,8 +2930,8 @@ func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context,
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := ingressoperator.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext, hcp.Spec.Platform.Type)
+func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	p := ingressoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, hcp.Spec.Platform.Type)
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
 	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
@@ -2956,8 +2969,8 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImageProvider, releaseImageProvider.Version(), r.SetDefaultSecurityContext)
+func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImageProvider, userReleaseImageProvider.Version(), r.SetDefaultSecurityContext)
 
 	if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {
 		catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
@@ -3145,8 +3158,8 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	params := registryoperator.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
+func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	params := registryoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 	deployment := manifests.ImageRegistryOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
 		return registryoperator.ReconcileDeployment(deployment, params)
@@ -3791,8 +3804,8 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 	return false, nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	params := snapshotcontroller.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
+func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	params := snapshotcontroller.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
 
 	deployment := manifests.CSISnapshotControllerOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
@@ -3827,8 +3840,8 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	params := storage.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
+func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	params := storage.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
 	deployment := manifests.ClusterStorageOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {

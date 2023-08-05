@@ -1918,6 +1918,11 @@ spec:
                       x-kubernetes-map-type: atomic
                     type: array
                 type: object
+              controlPlaneReleaseImage:
+                description: ControlPlaneReleaseImage specifies the desired OCP release
+                  payload for control plane components running on the management cluster.
+                  If not defined, ReleaseImage is used
+                type: string
               controllerAvailabilityPolicy:
                 default: SingleReplica
                 description: ControllerAvailabilityPolicy specifies the availability
@@ -5704,6 +5709,11 @@ spec:
                         type: string
                     type: object
                 type: object
+              controlPlaneReleaseImage:
+                description: ControlPlaneReleaseImage specifies the desired OCP release
+                  payload for control plane components running on the management cluster.
+                  If not defined, ReleaseImage is used
+                type: string
               controllerAvailabilityPolicy:
                 default: SingleReplica
                 description: ControllerAvailabilityPolicy specifies the availability
