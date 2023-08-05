@@ -202,6 +202,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&apiregistrationv1.APIService{},
 		&operatorv1.Network{},
 		&admissionregistrationv1.MutatingWebhookConfiguration{},
+		&admissionregistrationv1.ValidatingWebhookConfiguration{},
 		&prometheusoperatorv1.PrometheusRule{},
 		&operatorv1.IngressController{},
 		&imageregistryv1.Config{},
@@ -515,6 +516,8 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
+
+	errs = append(errs, r.ensureGuestAdmissionWebhooksAreValid(ctx))
 
 	// Delete the DNS operator deployment in the hosted cluster, if it is
 	// present there.  A separate DNS operator deployment runs as part of
@@ -1656,6 +1659,71 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	}
 
 	return remaining, errors.NewAggregate(errs)
+}
+
+func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	cpServices := &corev1.ServiceList{}
+	if err := r.cpClient.List(ctx, cpServices, client.InNamespace(r.hcpNamespace)); err != nil {
+		return fmt.Errorf("failed to list control plane services: %w", err)
+	}
+
+	// disallow all urls tageting services in the hcp namespace by default unless 'hypershift.openshift.io/allow-guest-webhooks' label is present.
+	disallowedUrls := make([]string, 0)
+	for _, svc := range cpServices.Items {
+		if _, exist := svc.Labels[hyperv1.AllowGuestWebhooksServiceLabel]; exist {
+			continue
+		}
+
+		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s:", svc.Name))
+		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s.%s.svc", svc.Name, svc.Namespace))
+		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s.%s.svc.cluster.local", svc.Name, svc.Namespace))
+	}
+
+	validatingWebhookConfigurations := &admissionregistrationv1.ValidatingWebhookConfigurationList{}
+	if err := r.client.List(ctx, validatingWebhookConfigurations); err != nil {
+		return fmt.Errorf("failed to list validatingWebhookConfigurations: %w", err)
+	}
+
+	errs := make([]error, 0)
+	for _, configuration := range validatingWebhookConfigurations.Items {
+		for _, webhook := range configuration.Webhooks {
+			if webhook.ClientConfig.URL != nil && !isAllowedWebhookUrl(disallowedUrls, *webhook.ClientConfig.URL) {
+				log.Info("deleting validating webhook configuration with a disallowed url", "webhook_name", configuration.Name, "disallowed_url", *webhook.ClientConfig.URL)
+				errs = append(errs, r.client.Delete(ctx, &configuration))
+				break
+			}
+		}
+	}
+
+	mutatingWebhookConfigurations := &admissionregistrationv1.MutatingWebhookConfigurationList{}
+	if err := r.client.List(ctx, mutatingWebhookConfigurations); err != nil {
+		errs = append(errs, fmt.Errorf("failed to list mutatingWebhookConfigurations: %w", err))
+		return errors.NewAggregate(errs)
+	}
+
+	for _, configuration := range mutatingWebhookConfigurations.Items {
+		for _, webhook := range configuration.Webhooks {
+			if webhook.ClientConfig.URL != nil && !isAllowedWebhookUrl(disallowedUrls, *webhook.ClientConfig.URL) {
+				log.Info("deleting mutating webhook configuration with a disallowed url", "webhook_name", configuration.Name, "disallowed_url", *webhook.ClientConfig.URL)
+				errs = append(errs, r.client.Delete(ctx, &configuration))
+				break
+			}
+		}
+	}
+
+	return errors.NewAggregate(errs)
+}
+
+func isAllowedWebhookUrl(disallowedUrls []string, url string) bool {
+	for i := range disallowedUrls {
+		if strings.Contains(url, disallowedUrls[i]) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (r *reconciler) ensureResourceCreationIsBlocked(ctx context.Context) error {
