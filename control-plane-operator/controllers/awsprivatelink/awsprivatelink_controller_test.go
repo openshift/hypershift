@@ -9,7 +9,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func Test_diffSubnetIDs(t *testing.T) {
+func Test_diffIDs(t *testing.T) {
 	subnet1 := "1"
 	subnet2 := "2"
 	subnet3 := "3"
@@ -71,7 +71,7 @@ func Test_diffSubnetIDs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotAdded, gotRemoved := diffSubnetIDs(tt.args.desired, tt.args.existing)
+			gotAdded, gotRemoved := diffIDs(tt.args.desired, tt.args.existing)
 			if !reflect.DeepEqual(gotAdded, tt.wantAdded) {
 				t.Errorf("diffSubnetIDs() gotAdded = %v, want %v", gotAdded, tt.wantAdded)
 			}
