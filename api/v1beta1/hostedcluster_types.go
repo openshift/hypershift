@@ -197,6 +197,11 @@ const (
 	// AllowGuestWebhooksServiceLabel marks a service deployed in the control plane as a valid target
 	// for validating/mutating webhooks running in the guest cluster.
 	AllowGuestWebhooksServiceLabel = "hypershift.openshift.io/allow-guest-webhooks"
+
+	// PodSecurityAdmissionLabelOverrideAnnotation allows overriding the pod security admission label on
+	// hosted control plane namespacces. The default is 'Restricted'. Valid values are 'Restricted', 'Baseline', or 'Privileged'
+	// See https://github.com/openshift/enhancements/blob/master/enhancements/authentication/pod-security-admission.md
+	PodSecurityAdmissionLabelOverrideAnnotation = "hypershift.openshift.io/pod-security-admission-label-override"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
