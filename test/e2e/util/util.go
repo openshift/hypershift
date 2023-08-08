@@ -226,7 +226,10 @@ func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crcl
 	start := time.Now()
 
 	// waitTimeout for nodes to become Ready
-	waitTimeout := 30 * time.Minute
+	// NOTE: The upgrade times are originally 30 minutes each for all platforms except (KubevirtPlatform && PowerVSPlatform).
+	// Due to well-known reasons (https://issues.redhat.com/browse/SDN-4042), these numbers are increased to
+	// 45 minutes only for the 4.13->4.14 upgrades - for all platforms. This will be brought down in 4.15 release.
+	waitTimeout := 45 * time.Minute
 	switch platform {
 	case hyperv1.KubevirtPlatform:
 		waitTimeout = 45 * time.Minute
