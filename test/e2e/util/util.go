@@ -856,6 +856,10 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, components []str
 			continue
 		}
 
+		if strings.HasPrefix(pod.Labels["name"], "olm-collect-profiles") {
+			continue
+		}
+
 		if pod.Labels["name"] != "" {
 			got = append(got, pod.Labels["name"])
 			continue
