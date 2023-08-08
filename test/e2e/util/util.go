@@ -1421,6 +1421,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	EnsurePSANotPrivileged(t, ctx, guestClient)
+	EnsureGuestWebhooksValidated(t, ctx, guestClient)
 
 	if numNodes > 0 {
 		EnsureNodeCommunication(t, ctx, client, hostedCluster)
