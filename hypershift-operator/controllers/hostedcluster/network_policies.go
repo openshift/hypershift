@@ -91,7 +91,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		policy = networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcilePrivateRouterNetworkPolicy(policy, hcluster)
+			return reconcilePrivateRouterNetworkPolicy(policy, hcluster, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
@@ -313,7 +313,7 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 	return nil
 }
 
-func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
 	httpPort := intstr.FromInt(8080)
 	httpsPort := intstr.FromInt(8443)
 	protocol := corev1.ProtocolTCP
@@ -332,12 +332,106 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 			},
 		},
 	}
+
+	clusterNetworks := make([]string, 0)
+	// In vanilla kube management cluster this would be nil.
+	if managementClusterNetwork != nil {
+		for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
+			clusterNetworks = append(clusterNetworks, network.CIDR)
+		}
+	}
+
+	// Allow to any destination not on the management cluster service network
+	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+		{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					IPBlock: &networkingv1.IPBlock{
+						CIDR:   "0.0.0.0/0",
+						Except: clusterNetworks,
+					},
+				},
+			},
+		},
+	}
+
+	// Allow egress to request-serving pods.
+	policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+		To: []networkingv1.NetworkPolicyPeer{
+			{
+				PodSelector: &metav1.LabelSelector{
+					MatchExpressions: []metav1.LabelSelectorRequirement{
+						{
+							Key:      hyperv1.RequestServingComponentLabel,
+							Operator: metav1.LabelSelectorOpExists,
+						},
+					},
+				},
+			},
+			{
+				PodSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"app": "ovnkube-master",
+					},
+				},
+			},
+		},
+	})
+
+	if isOpenShiftDNS {
+		// Allow traffic to openshift-dns namespace
+		dnsUDPPort := intstr.FromInt(5353)
+		dnsUDPProtocol := corev1.ProtocolUDP
+		dnsTCPPort := intstr.FromInt(5353)
+		dnsTCPProtocol := corev1.ProtocolTCP
+		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"kubernetes.io/metadata.name": "openshift-dns",
+						},
+					},
+				},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &dnsUDPPort,
+					Protocol: &dnsUDPProtocol,
+				},
+				{
+					Port:     &dnsTCPPort,
+					Protocol: &dnsTCPProtocol,
+				},
+			},
+		})
+	} else {
+		// All traffic to any destination on port 53 for both TCP and UDP
+		dnsUDPPort := intstr.FromInt(53)
+		dnsUDPProtocol := corev1.ProtocolUDP
+		dnsTCPPort := intstr.FromInt(53)
+		dnsTCPProtocol := corev1.ProtocolTCP
+		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &dnsUDPPort,
+					Protocol: &dnsUDPProtocol,
+				},
+				{
+					Port:     &dnsTCPPort,
+					Protocol: &dnsTCPProtocol,
+				},
+			},
+		})
+	}
+
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"app": "private-router",
 		},
 	}
-	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}
+
 	return nil
 }
 
