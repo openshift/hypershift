@@ -13,6 +13,11 @@ import (
 
 const (
 	etcdScriptTemplate = `
+CLUSTER_STATE="new"
+if [[ -f /etc/etcd/clusterstate/existing ]]; then
+  CLUSTER_STATE="existing"
+fi
+
 /usr/bin/etcd \
 --data-dir=/var/lib/data \
 --name=${HOSTNAME} \
@@ -23,7 +28,7 @@ const (
 --listen-metrics-urls=https://%s:2382 \
 --initial-cluster-token=etcd-cluster \
 --initial-cluster=${INITIAL_CLUSTER} \
---initial-cluster-state=new \
+--initial-cluster-state=${CLUSTER_STATE} \
 --quota-backend-bytes=${QUOTA_BACKEND_BYTES} \
 --snapshot-count=10000 \
 --peer-client-cert-auth=true \
