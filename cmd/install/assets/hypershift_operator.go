@@ -11,7 +11,6 @@ import (
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -1434,84 +1433,4 @@ func (o HyperShiftReaderClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 		},
 	}
 	return binding
-}
-
-type HyperShiftMutatingWebhookConfiguration struct {
-	Namespace *corev1.Namespace
-}
-
-func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1.MutatingWebhookConfiguration {
-	scope := admissionregistrationv1.NamespacedScope
-	hcPath := "/mutate-hypershift-openshift-io-v1beta1-hostedcluster"
-	npPath := "/mutate-hypershift-openshift-io-v1beta1-nodepool"
-	sideEffects := admissionregistrationv1.SideEffectClassNone
-	timeout := int32(15)
-	mutatingWebhookConfiguration := &admissionregistrationv1.MutatingWebhookConfiguration{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "MutatingWebhookConfiguration",
-			APIVersion: admissionregistrationv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: o.Namespace.Name,
-			Name:      hyperv1.GroupVersion.Group,
-			Annotations: map[string]string{
-				"service.beta.openshift.io/inject-cabundle": "true",
-			},
-		},
-		Webhooks: []admissionregistrationv1.MutatingWebhook{
-			{
-				Name: "hostedclusters.hypershift.openshift.io",
-				Rules: []admissionregistrationv1.RuleWithOperations{
-					{
-						Operations: []admissionregistrationv1.OperationType{
-							admissionregistrationv1.Create,
-						},
-						Rule: admissionregistrationv1.Rule{
-							APIGroups:   []string{"hypershift.openshift.io"},
-							APIVersions: []string{"v1beta1"},
-							Resources:   []string{"hostedclusters"},
-							Scope:       &scope,
-						},
-					},
-				},
-				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					Service: &admissionregistrationv1.ServiceReference{
-						Namespace: "hypershift",
-						Name:      "operator",
-						Path:      &hcPath,
-					},
-				},
-				SideEffects:             &sideEffects,
-				AdmissionReviewVersions: []string{"v1"},
-				TimeoutSeconds:          &timeout,
-			},
-			{
-				Name: "nodepools.hypershift.openshift.io",
-				Rules: []admissionregistrationv1.RuleWithOperations{
-					{
-						Operations: []admissionregistrationv1.OperationType{
-							admissionregistrationv1.Create,
-						},
-						Rule: admissionregistrationv1.Rule{
-							APIGroups:   []string{"hypershift.openshift.io"},
-							APIVersions: []string{"v1beta1"},
-							Resources:   []string{"nodepools"},
-							Scope:       &scope,
-						},
-					},
-				},
-				ClientConfig: admissionregistrationv1.WebhookClientConfig{
-					Service: &admissionregistrationv1.ServiceReference{
-						Namespace: "hypershift",
-						Name:      "operator",
-						Path:      &npPath,
-					},
-				},
-				SideEffects:             &sideEffects,
-				AdmissionReviewVersions: []string{"v1"},
-				TimeoutSeconds:          &timeout,
-			},
-		},
-	}
-	return mutatingWebhookConfiguration
 }
