@@ -104,6 +104,10 @@ spec:
           value: quay.io/openshift/origin-powervs-block-csi-driver:latest
         - name: HYPERSHIFT_IMAGE
           value: quay.io/openshift/origin-control-plane:latest
+        - name: AWS_EBS_DRIVER_CONTROL_PLANE_IMAGE
+          value: quay.io/openshift/origin-aws-ebs-csi-driver:latest
+        - name: LIVENESS_PROBE_CONTROL_PLANE_IMAGE
+          value: quay.io/openshift/origin-csi-livenessprobe:latest
         image: quay.io/openshift/origin-cluster-storage-operator:latest
         imagePullPolicy: IfNotPresent
         name: cluster-storage-operator

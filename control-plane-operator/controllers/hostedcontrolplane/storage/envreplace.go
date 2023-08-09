@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"strings"
+
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -45,6 +47,8 @@ var (
 		"POWERVS_BLOCK_CSI_DRIVER_OPERATOR_IMAGE":         "powervs-block-csi-driver-operator",
 		"POWERVS_BLOCK_CSI_DRIVER_IMAGE":                  "powervs-block-csi-driver",
 		"HYPERSHIFT_IMAGE":                                "token-minter",
+		"AWS_EBS_DRIVER_CONTROL_PLANE_IMAGE":              "aws-ebs-csi-driver",
+		"LIVENESS_PROBE_CONTROL_PLANE_IMAGE":              "csi-livenessprobe",
 	}
 )
 
@@ -62,10 +66,7 @@ func (er *environmentReplacer) setOperatorImageReferences(images map[string]stri
 	// `images` is map from payload image name -> image URL
 	// Create map from env. var name -> image URL
 	for envVar, payloadName := range operatorImageRefs {
-		// TODO: *_DRIVER_IMAGE and LIVENESS_PROBE_IMAGE for csi-driver-node should be separated
-		// from csi-driver-controller and looked up from the userImages
-		// strings.HasSuffix(envVar, "_DRIVER_IMAGE") || envVar == "LIVENESS_PROBE_IMAGE"
-		if envVar == "NODE_DRIVER_REGISTRAR_IMAGE" {
+		if envVar == "NODE_DRIVER_REGISTRAR_IMAGE" || envVar == "LIVENESS_PROBE_IMAGE" || strings.HasSuffix(envVar, "_DRIVER_IMAGE") {
 			if imageURL, ok := userImages[payloadName]; ok {
 				er.values[envVar] = imageURL
 			}
