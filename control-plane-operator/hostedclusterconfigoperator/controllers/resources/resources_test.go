@@ -501,6 +501,19 @@ func TestDestroyCloudResources(t *testing.T) {
 		}
 	}
 
+	serviceLoadBalancerOwnedByIngressController := func(name string) client.Object {
+		return &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        name,
+				Namespace:   "default",
+				Annotations: map[string]string{"ingresscontroller.operator.openshift.io/owning-ingresscontroller": "default"},
+			},
+			Spec: corev1.ServiceSpec{
+				Type: corev1.ServiceTypeLoadBalancer,
+			},
+		}
+	}
+
 	clusterIPService := func(name string) client.Object {
 		return &corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
@@ -520,6 +533,12 @@ func TestDestroyCloudResources(t *testing.T) {
 		for _, svc := range services.Items {
 			g.Expect(svc.Spec.Type).ToNot(Equal(corev1.ServiceTypeLoadBalancer))
 		}
+	}
+
+	verifyServiceLoadBalancersOwnedByIngressControllerExists := func(name string, g *WithT, c client.Client) {
+		service := serviceLoadBalancerOwnedByIngressController(name)
+		err := c.Get(context.Background(), client.ObjectKeyFromObject(service), service)
+		g.Expect(err).ToNot(HaveOccurred())
 	}
 
 	verifyServiceExists := func(name string, g *WithT, c client.Client) {
@@ -633,6 +652,18 @@ func TestDestroyCloudResources(t *testing.T) {
 			},
 			verify: func(g *WithT, c, _ client.Client) {
 				verifyServiceLoadBalancersRemoved(g, c)
+				verifyServiceExists("baz", g, c)
+			},
+			verifyDoneCond: true,
+		},
+		{
+			name: "existing service load balancers owned by ingress controller",
+			existing: []client.Object{
+				serviceLoadBalancerOwnedByIngressController("bar"),
+				clusterIPService("baz"),
+			},
+			verify: func(g *WithT, c, _ client.Client) {
+				verifyServiceLoadBalancersOwnedByIngressControllerExists("bar", g, c)
 				verifyServiceExists("baz", g, c)
 			},
 		},

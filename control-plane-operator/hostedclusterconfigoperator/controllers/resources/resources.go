@@ -1906,7 +1906,7 @@ func (r *reconciler) ensureImageRegistryStorageRemoved(ctx context.Context) (boo
 }
 
 func (r *reconciler) ensureServiceLoadBalancersRemoved(ctx context.Context) (bool, error) {
-	found, err := cleanupResources(ctx, r.client, &corev1.ServiceList{}, func(obj client.Object) bool {
+	_, err := cleanupResources(ctx, r.client, &corev1.ServiceList{}, func(obj client.Object) bool {
 		svc := obj.(*corev1.Service)
 		if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
 			return false
@@ -1923,7 +1923,13 @@ func (r *reconciler) ensureServiceLoadBalancersRemoved(ctx context.Context) (boo
 	if err != nil {
 		return false, fmt.Errorf("failed to remove load balancer services: %w", err)
 	}
-	return !found, nil
+
+	removed, err := allLoadBalancersRemoved(ctx, r.client)
+	if err != nil {
+		return false, fmt.Errorf("error checking load balancer services: %w", err)
+	}
+
+	return removed, nil
 }
 
 func (r *reconciler) ensurePersistentVolumesRemoved(ctx context.Context) (bool, error) {
@@ -2115,4 +2121,23 @@ func (r *reconciler) reconcileImageContentPolicyType(ctx context.Context, hcp *h
 		}
 	}
 	return nil
+}
+
+// allLoadBalancersRemoved checks any service of type corev1.ServiceTypeLoadBalancer exists.
+// If any one service of type corev1.ServiceTypeLoadBalancer exists, will return false or else will return true.
+func allLoadBalancersRemoved(ctx context.Context, c client.Client) (bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+	list := &corev1.ServiceList{}
+	if err := c.List(ctx, list); err != nil {
+		return false, fmt.Errorf("cannot list %T: %w", list, err)
+	}
+
+	for _, svc := range list.Items {
+		if svc.Spec.Type == corev1.ServiceTypeLoadBalancer {
+			log.Info("Waiting on service of type LoadBalancer to be deleted", "name", svc.Name, "namespace", svc.Namespace)
+			return false, nil
+		}
+	}
+
+	return true, nil
 }
