@@ -32,8 +32,8 @@ func ReconcileEtcdServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerR
 	dnsNames := []string{
 		fmt.Sprintf("etcd-client.%s.svc", secret.Namespace),
 		fmt.Sprintf("etcd-client.%s.svc.cluster.local", secret.Namespace),
-		fmt.Sprintf("*.etcd-client.%s.svc", secret.Namespace),
-		fmt.Sprintf("*.etcd-client.%s.svc.cluster.local", secret.Namespace),
+		fmt.Sprintf("*.etcd-discovery.%s.svc", secret.Namespace),
+		fmt.Sprintf("*.etcd-discovery.%s.svc.cluster.local", secret.Namespace),
 		"etcd-client",
 		"localhost",
 	}
