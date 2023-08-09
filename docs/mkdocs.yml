@@ -74,6 +74,10 @@ nav:
     - how-to/azure/create-azure-cluster.md
   - 'Agent':
     - how-to/agent/create-agent-cluster.md
+  - 'Disconnected':
+    - how-to/disconnected/automatically-initialize-registry-overrides.md
+    - how-to/disconnected/image-content-sources.md
+    - how-to/disconnected/disconnected-workarounds.md
   - 'Kubevirt':
     - how-to/kubevirt/create-kubevirt-cluster.md
     - how-to/kubevirt/ingress-and-dns.md

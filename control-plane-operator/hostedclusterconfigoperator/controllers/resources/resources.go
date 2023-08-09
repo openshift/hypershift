@@ -31,7 +31,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -293,7 +292,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling guest cluster global configuration")
-	if err := r.reconcileConfig(ctx, hcp, releaseImage); err != nil {
+	if err := r.reconcileConfig(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile global configuration: %w", err))
 	}
 
@@ -580,7 +579,7 @@ func (r *reconciler) reconcileCRDs(ctx context.Context) error {
 	return errors.NewAggregate(errs)
 }
 
-func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
 
 	apiServerAddress := hcp.Status.ControlPlaneEndpoint.Host
@@ -647,7 +646,7 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy config: %w", err))
 	}
 
-	err := r.reconcileImageContentPolicyType(ctx, hcp, releaseImage)
+	err := r.reconcileImageContentPolicyType(ctx, hcp)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -2082,37 +2081,24 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 	return errs
 }
 
-// reconcileImageContentPolicyType reconciles the image content policy based on the release image version.
-// ImageDigestMirrorSets are used for versions >= 4.13 and ImageContentSourcePolicy for all other versions.
-// TODO the 'else' branch portion needs to be removed after this ticket is backported to 4.13 - HOSTEDCP-1102
-func (r *reconciler) reconcileImageContentPolicyType(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+// reconcileImageContentPolicyType deletes any existing ICSP since IDMS should be used for release versions >= 4.13,
+// then reconciles the ImageContentSources into an IDMS instance.
+func (r *reconciler) reconcileImageContentPolicyType(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	icsp := globalconfig.ImageContentSourcePolicy()
-	version, err := semver.Parse(releaseImage.Version())
+
+	// Delete any current ICSP
+	_, err := util.DeleteIfNeeded(ctx, r.client, icsp)
 	if err != nil {
-		return fmt.Errorf("failed to determine release image version: %w", err)
+		return fmt.Errorf("failed to delete image content source policy configuration configmap: %w", err)
 	}
 
-	// ImageDigestMirrorSet is only applicable for release image versions greater than or equal to 4.13
-	if version.Minor >= 13 {
-		// First, delete any current ImageContentSourcePolicy
-		_, err = util.DeleteIfNeeded(ctx, r.client, icsp)
-		if err != nil {
-			return fmt.Errorf("failed to delete image content source policy configuration configmap: %w", err)
-		}
-
-		// Next, reconcile the ImageDigestMirrorSet
-		idms := globalconfig.ImageDigestMirrorSet()
-		if _, err = r.CreateOrUpdate(ctx, r.client, idms, func() error {
-			return globalconfig.ReconcileImageDigestMirrors(idms, hcp)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile image digest mirror set: %w", err)
-		}
-	} else {
-		if _, err = r.CreateOrUpdate(ctx, r.client, icsp, func() error {
-			return globalconfig.ReconcileImageContentSourcePolicy(icsp, hcp)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile image content source policy: %w", err)
-		}
+	// Next, reconcile the ImageDigestMirrorSet
+	idms := globalconfig.ImageDigestMirrorSet()
+	if _, err = r.CreateOrUpdate(ctx, r.client, idms, func() error {
+		return globalconfig.ReconcileImageDigestMirrors(idms, hcp)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile image digest mirror set: %w", err)
 	}
+
 	return nil
 }
