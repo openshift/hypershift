@@ -60,7 +60,6 @@ type Options struct {
 	ImageRefsFile                             string
 	HyperShiftOperatorReplicas                int32
 	Development                               bool
-	EnableDefaultingWebhook                   bool
 	EnableValidatingWebhook                   bool
 	EnableConversionWebhook                   bool
 	Template                                  bool
@@ -141,7 +140,7 @@ func (o *Options) ApplyDefaults() {
 	switch {
 	case o.Development:
 		o.HyperShiftOperatorReplicas = 0
-	case o.EnableDefaultingWebhook || o.EnableConversionWebhook:
+	case o.EnableConversionWebhook:
 		o.HyperShiftOperatorReplicas = 2
 	default:
 		o.HyperShiftOperatorReplicas = 1
@@ -164,7 +163,6 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
 	cmd.PersistentFlags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
-	cmd.PersistentFlags().BoolVar(&opts.EnableDefaultingWebhook, "enable-defaulting-webhook", false, "Enable webhook for defaulting hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.PersistentFlags().MarkDeprecated("enable-validating-webhook", "This field is deprecated and has no effect")
 	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", true, "Enable webhook for converting hypershift API types")
@@ -417,13 +415,6 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	}.Build()
 	objects = append(objects, operatorRoleBinding)
 
-	if opts.EnableDefaultingWebhook {
-		mutatingWebhookConfiguration := assets.HyperShiftMutatingWebhookConfiguration{
-			Namespace: operatorNamespace,
-		}.Build()
-		objects = append(objects, mutatingWebhookConfiguration)
-	}
-
 	var oidcSecret *corev1.Secret
 	if opts.OIDCStorageProviderS3Credentials != "" {
 		oidcCreds, err := os.ReadFile(opts.OIDCStorageProviderS3Credentials)
@@ -557,7 +548,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		Replicas:                       opts.HyperShiftOperatorReplicas,
 		EnableOCPClusterMonitoring:     opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
 		EnableCIDebugOutput:            opts.EnableCIDebugOutput,
-		EnableWebhook:                  opts.EnableDefaultingWebhook || opts.EnableConversionWebhook,
+		EnableWebhook:                  opts.EnableConversionWebhook,
 		PrivatePlatform:                opts.PrivatePlatform,
 		AWSPrivateRegion:               opts.AWSPrivateRegion,
 		AWSPrivateSecret:               operatorCredentialsSecret,
