@@ -248,8 +248,18 @@ func NewStartCommand() *cobra.Command {
 				if err := mgr.GetAPIReader().Get(ctx, crclient.ObjectKeyFromObject(me), me); err != nil {
 					return "", fmt.Errorf("failed to get operator pod %s: %w", crclient.ObjectKeyFromObject(me), err)
 				}
-				// Use the container status to make sure we get the sha256 reference rather than a potentially
-				// floating tag.
+
+				// If CPO container image is a sha256 reference, use it
+				for _, container := range me.Spec.Containers {
+					if container.Name == "control-plane-operator" {
+						if strings.Contains(container.Image, "@sha256:") {
+							return container.Image, nil
+						}
+					}
+				}
+
+				// CPO container image is not a sha256 reference
+				// Use the container status to make sure we get the sha256 reference
 				for _, container := range me.Status.ContainerStatuses {
 					// TODO: could use downward API for this too, overkill?
 					if container.Name == "control-plane-operator" {
