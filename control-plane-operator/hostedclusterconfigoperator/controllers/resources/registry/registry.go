@@ -25,9 +25,10 @@ func ReconcileRegistryConfig(cfg *imageregistryv1.Config, platform hyperv1.Platf
 	if cfg.Spec.HTTPSecret == "" {
 		cfg.Spec.HTTPSecret = generateImageRegistrySecret()
 	}
-	if (platform == hyperv1.KubevirtPlatform || platform == hyperv1.NonePlatform) &&
-		cfg.Spec.Storage.EmptyDir == nil {
 
+	// Initially assign storage as emptyDir for KubevirtPlatform and NonePlatform
+	// Allow user to change storage afterwards
+	if cfg.ResourceVersion == "" && (platform == hyperv1.KubevirtPlatform || platform == hyperv1.NonePlatform) {
 		cfg.Spec.Storage = imageregistryv1.ImageRegistryConfigStorage{EmptyDir: &imageregistryv1.ImageRegistryConfigStorageEmptyDir{}}
 	}
 	// IBM Cloud platform allows to initialize the registry config and then afterwards the client is in full control of the updates
