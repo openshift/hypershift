@@ -486,6 +486,7 @@ func TestDestroyCloudResources(t *testing.T) {
 		ingressControllers := &operatorv1.IngressControllerList{}
 		err := c.List(context.Background(), ingressControllers)
 		g.Expect(err).ToNot(HaveOccurred())
+		fmt.Println(len(ingressControllers.Items))
 		g.Expect(len(ingressControllers.Items)).To(Equal(0))
 	}
 

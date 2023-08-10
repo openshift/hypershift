@@ -2866,6 +2866,12 @@ When this is false for too long and there&rsquo;s no clear indication in the &ld
 <td><p>HostedClusterDegraded indicates whether the HostedCluster is encountering
 an error that may require user intervention to resolve.</p>
 </td>
+</tr><tr><td><p>&#34;HostedClusterDestroyed&#34;</p></td>
+<td><p>HostedClusterDestroyed indicates that a hosted cluster is destroying. This condition really means that it has finished destroying,
+but the resource is waiting for the grace period so it can go away.
+This grace period was introduced in order to notify when cloud dangling objects are not deleted that the user created.
+This condition will be grabbed by OCM personnel to report any dangling objects to the user.</p>
+</td>
 </tr><tr><td><p>&#34;Progressing&#34;</p></td>
 <td><p>HostedClusterProgressing indicates whether the HostedCluster is attempting
 an initial deployment or upgrade.

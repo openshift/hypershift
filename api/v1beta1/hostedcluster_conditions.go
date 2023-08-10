@@ -39,6 +39,11 @@ const (
 	// A failure here may require external user intervention to resolve. E.g. cloud provider perms were corrupted. E.g. the guest cluster was broken
 	// and kube resource deletion that affects cloud infra like service type load balancer can't succeed.
 	CloudResourcesDestroyed ConditionType = "CloudResourcesDestroyed"
+	// HostedClusterDestroyed indicates that a hosted cluster is destroying. This condition really means that it has finished destroying,
+	// but the resource is waiting for the grace period so it can go away.
+	// This grace period was introduced in order to notify when cloud dangling objects are not deleted that the user created.
+	// This condition will be grabbed by OCM personnel to report any dangling objects to the user.
+	HostedClusterDestroyed ConditionType = "HostedClusterDestroyed"
 	// ExternalDNSReachable bubbles up the same condition from HCP. It signals if the configured external DNS is reachable.
 	// A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
 	// and registered correctly.
@@ -150,11 +155,12 @@ const (
 
 // Reasons.
 const (
-	StatusUnknownReason       = "StatusUnknown"
-	AsExpectedReason          = "AsExpected"
-	NotFoundReason            = "NotFound"
-	WaitingForAvailableReason = "waitingForAvailable"
-	SecretNotFoundReason      = "SecretNotFound"
+	StatusUnknownReason         = "StatusUnknown"
+	AsExpectedReason            = "AsExpected"
+	NotFoundReason              = "NotFound"
+	WaitingForAvailableReason   = "WaitingForAvailable"
+	SecretNotFoundReason        = "SecretNotFound"
+	WaitingForGracePeriodReason = "WaitingForGracePeriod"
 
 	InfraStatusFailureReason           = "InfraStatusFailure"
 	WaitingOnInfrastructureReadyReason = "WaitingOnInfrastructureReady"
