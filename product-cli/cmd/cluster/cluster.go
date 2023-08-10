@@ -16,6 +16,7 @@ import (
 func NewCreateCommands() *cobra.Command {
 	opts := &core.CreateOptions{
 		AdditionalTrustBundle:          "",
+		Arch:                           "amd64",
 		ClusterCIDR:                    "10.132.0.0/14",
 		ControlPlaneAvailabilityPolicy: "HighlyAvailable",
 		ImageContentSources:            "",
