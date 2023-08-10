@@ -45,6 +45,7 @@ type Images struct {
 	RouteOverrideCNI             string
 	MultusNetworkPolicy          string
 	OVN                          string
+	OVNControlPlane              string
 	EgressRouterCNI              string
 	KuryrDaemon                  string
 	KuryrController              string
@@ -88,7 +89,8 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 			WhereaboutsCNI:               userReleaseImageProvider.GetImage("multus-whereabouts-ipam-cni"),
 			RouteOverrideCNI:             userReleaseImageProvider.GetImage("multus-route-override-cni"),
 			MultusNetworkPolicy:          userReleaseImageProvider.GetImage("multus-networkpolicy"),
-			OVN:                          releaseImageProvider.GetImage("ovn-kubernetes"),
+			OVN:                          userReleaseImageProvider.GetImage("ovn-kubernetes"),
+			OVNControlPlane:              releaseImageProvider.GetImage("ovn-kubernetes"),
 			EgressRouterCNI:              userReleaseImageProvider.GetImage("egress-router-cni"),
 			KuryrDaemon:                  userReleaseImageProvider.GetImage("kuryr-cni"),
 			KuryrController:              userReleaseImageProvider.GetImage("kuryr-controller"),
@@ -482,6 +484,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			{Name: "ROUTE_OVERRRIDE_CNI_IMAGE", Value: params.Images.RouteOverrideCNI},
 			{Name: "MULTUS_NETWORKPOLICY_IMAGE", Value: params.Images.MultusNetworkPolicy},
 			{Name: "OVN_IMAGE", Value: params.Images.OVN},
+			{Name: "OVN_CONTROL_PLANE_IMAGE", Value: params.Images.OVNControlPlane},
 			{Name: "EGRESS_ROUTER_CNI_IMAGE", Value: params.Images.EgressRouterCNI},
 			{Name: "KURYR_DAEMON_IMAGE", Value: params.Images.KuryrDaemon},
 			{Name: "KURYR_CONTROLLER_IMAGE", Value: params.Images.KuryrController},
