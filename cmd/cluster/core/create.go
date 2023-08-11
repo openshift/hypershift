@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -401,6 +402,13 @@ func Validate(ctx context.Context, opts *CreateOptions) error {
 		} else if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("hostedcluster doesn't exist validation failed with error: %w", err)
 		}
+	}
+
+	// Validate HostedCluster name follows RFC1123 standard
+	// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names
+	errs := validation.IsDNS1123Label(opts.Name)
+	if len(errs) > 0 {
+		return fmt.Errorf("HostedCluster name failed RFC1123 validation: %s", strings.Join(errs[:], " "))
 	}
 
 	return nil
