@@ -89,6 +89,7 @@ type Options struct {
 	WaitUntilAvailable                        bool
 	RHOBSMonitoring                           bool
 	SLOsAlerts                                bool
+	MonitoringDashboards                      bool
 }
 
 func (o *Options) Validate() error {
@@ -193,6 +194,7 @@ func NewCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.WaitUntilAvailable, "wait-until-available", opts.WaitUntilAvailable, "If true, pauses installation until hypershift operator has been rolled out and its webhook service is available (if installing the webhook)")
 	cmd.PersistentFlags().BoolVar(&opts.RHOBSMonitoring, "rhobs-monitoring", opts.RHOBSMonitoring, "If true, HyperShift will generate and use the RHOBS version of monitoring resources (ServiceMonitors, PodMonitors, etc)")
 	cmd.PersistentFlags().BoolVar(&opts.SLOsAlerts, "slos-alerts", opts.SLOsAlerts, "If true, HyperShift will generate and use the prometheus alerts for monitoring HostedCluster and NodePools")
+	cmd.PersistentFlags().BoolVar(&opts.MonitoringDashboards, "monitoring-dashboards", opts.MonitoringDashboards, "If true, HyperShift will generate a monitoring dashboard for every HostedCluster that it creates")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -539,6 +541,13 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		objects = append(objects, externalDNSDeployment)
 	}
 
+	if opts.MonitoringDashboards {
+		monitoringDashboardTemplate := assets.MonitoringDashboardTemplate{
+			Namespace: opts.Namespace,
+		}.Build()
+		objects = append(objects, monitoringDashboardTemplate)
+	}
+
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
 		AdditionalTrustBundle:          userCABundleCM,
 		OpenShiftTrustBundle:           trustedCABundle,
@@ -562,6 +571,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		IncludeVersion:                 !opts.Template,
 		UWMTelemetry:                   opts.EnableUWMTelemetryRemoteWrite,
 		RHOBSMonitoring:                opts.RHOBSMonitoring,
+		MonitoringDashboards:           opts.MonitoringDashboards,
 	}.Build()
 	objects = append(objects, operatorDeployment)
 

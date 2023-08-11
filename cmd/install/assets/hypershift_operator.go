@@ -1,6 +1,7 @@
 package assets
 
 import (
+	_ "embed"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -274,6 +275,25 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 	return deployment
 }
 
+type MonitoringDashboardTemplate struct {
+	Namespace string
+}
+
+//go:embed dashboard-template/monitoring-dashboard-template.json
+var monitoringDashboardTemplate string
+
+func (o MonitoringDashboardTemplate) Build() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "monitoring-dashboard-template",
+			Namespace: o.Namespace,
+		},
+		Data: map[string]string{
+			"template": monitoringDashboardTemplate,
+		},
+	}
+}
+
 type HyperShiftOperatorDeployment struct {
 	AdditionalTrustBundle          *corev1.ConfigMap
 	OpenShiftTrustBundle           *corev1.ConfigMap
@@ -297,6 +317,7 @@ type HyperShiftOperatorDeployment struct {
 	IncludeVersion                 bool
 	UWMTelemetry                   bool
 	RHOBSMonitoring                bool
+	MonitoringDashboards           bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -447,6 +468,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	if o.RHOBSMonitoring {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  rhobsmonitoring.EnvironmentVariable,
+			Value: "1",
+		})
+	}
+
+	if o.MonitoringDashboards {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "MONITORING_DASHBOARDS",
 			Value: "1",
 		})
 	}

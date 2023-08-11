@@ -53,6 +53,7 @@ nav:
   - how-to/upgrades.md
   - how-to/restart-control-plane-components.md
   - how-to/pause-reconciliation.md
+  - how-to/per-hostedcluster-dashboard.md
   - how-to/debug-nodes.md
   - how-to/metrics-sets.md
   - how-to/troubleshooting.md
