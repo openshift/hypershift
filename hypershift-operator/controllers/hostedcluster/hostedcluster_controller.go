@@ -997,7 +997,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = "true"
 
 		// Set pod security labels on HCP namespace
-		if useRestrictedPSA {
+		psaOverride := hcluster.Annotations[hyperv1.PodSecurityAdmissionLabelOverrideAnnotation]
+		if psaOverride != "" {
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = psaOverride
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = psaOverride
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = psaOverride
+		} else if useRestrictedPSA {
 			controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = "restricted"
 			controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = "restricted"
 			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "restricted"
