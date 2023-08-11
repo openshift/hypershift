@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/blang/semver"
@@ -18,6 +19,26 @@ import (
 // semver parsing.
 var LatestSupportedVersion = semver.MustParse("4.15.0")
 var MinSupportedVersion = semver.MustParse(subtractMinor(&LatestSupportedVersion, uint64(SupportedPreviousMinorVersions)).String())
+
+func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
+	defaultMinVersion := semver.MustParse(subtractMinor(&LatestSupportedVersion, uint64(SupportedPreviousMinorVersions)).String())
+
+	switch hc.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		val, exists := hc.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation]
+		if exists {
+			if isTrue, _ := strconv.ParseBool(val); isTrue {
+				// This is an unsupported escape hatch annotation for internal use
+				return defaultMinVersion
+			}
+		}
+		return semver.MustParse("4.14.0")
+	case hyperv1.IBMCloudPlatform:
+		return semver.MustParse("4.9.0")
+	default:
+		return defaultMinVersion
+	}
+}
 
 // SupportedPreviousMinorVersions is the number of minor versions prior to current
 // version that are supported.
@@ -75,7 +96,7 @@ func IsValidReleaseVersion(version, currentVersion, latestVersionSupported, minS
 	}
 
 	if (version.Major == minSupportedVersion.Major && version.Minor < minSupportedVersion.Minor) || version.Major < minSupportedVersion.Major {
-		return fmt.Errorf("the minimum version supported is: %q. Attempting to use: %q", MinSupportedVersion, version)
+		return fmt.Errorf("the minimum version supported for platform %s is: %q. Attempting to use: %q", string(platformType), minSupportedVersion, version)
 	}
 
 	return nil
@@ -88,10 +109,13 @@ type ocpVersion struct {
 }
 
 // LookupLatestSupportedRelease picks the latest multi-arch image supported by this Hypershift Operator
-func LookupLatestSupportedRelease(ctx context.Context) (string, error) {
+func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
+
+	minSupportedVersion := GetMinSupportedVersion(hc)
+
 	prefix := "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi/latest"
 	filter := fmt.Sprintf("in=>4.%d.%d+<+4.%d.0",
-		MinSupportedVersion.Minor, MinSupportedVersion.Patch, LatestSupportedVersion.Minor+1)
+		minSupportedVersion.Minor, minSupportedVersion.Patch, LatestSupportedVersion.Minor+1)
 
 	releaseURL := fmt.Sprintf("%s?%s", prefix, filter)
 
