@@ -157,13 +157,16 @@ type AzurePlatformOptions struct {
 }
 
 func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
-	if len(opts.ReleaseImage) == 0 {
+
+	// allow client side defaulting when release image is empty but release stream is set.
+	if len(opts.ReleaseImage) == 0 && len(opts.ReleaseStream) != 0 {
 		defaultVersion, err := version.LookupDefaultOCPVersion(opts.ReleaseStream)
 		if err != nil {
 			return nil, fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)
 		}
 		opts.ReleaseImage = defaultVersion.PullSpec
 	}
+
 	if err := defaultNetworkType(ctx, opts, &releaseinfo.RegistryClientProvider{}, os.ReadFile); err != nil {
 		return nil, fmt.Errorf("failed to default network: %w", err)
 	}
@@ -440,7 +443,11 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 func defaultNetworkType(ctx context.Context, opts *CreateOptions, releaseProvider releaseinfo.Provider, readFile func(string) ([]byte, error)) error {
 	if opts.NetworkType != "" {
 		return nil
+	} else if opts.ReleaseImage == "" {
+		opts.NetworkType = string(hyperv1.OVNKubernetes)
+		return nil
 	}
+
 	version, err := getReleaseSemanticVersion(ctx, opts, releaseProvider, readFile)
 	if err != nil {
 		return fmt.Errorf("failed to get version for release image %s: %w", opts.ReleaseImage, err)
