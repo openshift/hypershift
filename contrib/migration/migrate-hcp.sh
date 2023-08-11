@@ -75,6 +75,7 @@ function backup_etcd {
 function render_hc_objects {
     # Backup resources
     rm -fr ${BACKUP_DIR}
+    trap "rm -rf ${BACKUP_DIR}" EXIT
     mkdir -p ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS} ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}-${HC_CLUSTER_NAME}
     chmod 700 ${BACKUP_DIR}/namespaces/
 
@@ -85,9 +86,11 @@ function render_hc_objects {
     sed -i -e '/^status:$/,$d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/hc-${HC_CLUSTER_NAME}.yaml
 
     # NodePool
-    oc get np ${NODEPOOLS} -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${NODEPOOLS}.yaml
-    echo "--> NodePool"
-    sed -i -e '/^status:$/,$ d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${NODEPOOLS}.yaml
+    for NODEPOOL in ${NODEPOOLS}; do
+        oc get np ${NODEPOOL} -n ${HC_CLUSTER_NS} -o yaml > ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${NODEPOOL}.yaml
+        sed -i -e '/^status:$/,$ d' ${BACKUP_DIR}/namespaces/${HC_CLUSTER_NS}/np-${NODEPOOL}.yaml
+    done
+    echo "--> NodePools"
 
     # Secrets in the HC Namespace
     echo "--> HostedCluster Secrets"
@@ -192,12 +195,12 @@ EOF
 
 function restore_object {
     if [[ -z ${1} || ${1} == " " ]]; then
-        echo "I need an argument to deploy K8s objects"
+        echo "I need Kind and Namespace arguments to deploy K8s objects"
         exit 1
     fi
 
     if [[ -z ${2} || ${2} == " " ]]; then
-        echo "I need a Namespace to deploy the K8s objects"
+        echo "I need Namespace argument to deploy the K8s objects"
         exit 1
     fi
 
@@ -213,7 +216,7 @@ function restore_object {
                 yq 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status)' $f | oc apply -f -
             done
             ;;
-	"hc")
+        "hc")
             # Cleaning the YAML files before apply them
             for f in $(ls -1 ${BACKUP_DIR}/namespaces/${2}/${1}-*); do
                 yq 'del(.metadata.ownerReferences,.metadata.creationTimestamp,.metadata.resourceVersion,.metadata.uid,.status,.spec.pausedUntil)' $f | oc apply -f -
@@ -259,7 +262,7 @@ function clean_routes() {
         echo "Waiting for ExternalDNS Operator to clean the DNS Records in AWS Route53 where the zone id is: ${ZONE_ID}..."
         echo "Try: (${count}/${timeout})"
         sleep 10
-        if [[ $count -eq timeout ]];then
+        if [[ $count -ge $timeout ]];then
             echo "Timeout waiting for cleaning the Route53 DNS records"
             exit 1
         fi
@@ -363,6 +366,7 @@ function teardown_old_hc {
     oc -n ${HC_CLUSTER_NS} patch hostedclusters ${HC_CLUSTER_NAME} -p '{"metadata":{"finalizers":null}}' --type merge || true
     oc delete hc -n ${HC_CLUSTER_NS} ${HC_CLUSTER_NAME}  || true
 
+    # TODO: handle case when script is run multiple times in parallel against the same source management cluster
     oc scale deployment -n hypershift operator --replicas 2
 
     #oc delete ns ${HC_CLUSTER_NS} || true
