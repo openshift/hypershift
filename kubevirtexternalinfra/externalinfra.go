@@ -2,21 +2,86 @@ package kubevirtexternalinfra
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/clientcmd"
+	cr "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
 
 type KubevirtInfraClientMap interface {
-	DiscoverKubevirtClusterClient(context.Context, client.Client, string, *hyperv1.KubevirtPlatformCredentials, string, string) (*KubevirtInfraClient, error)
-	GetClient(key string) *KubevirtInfraClient
+	DiscoverKubevirtClusterClient(context.Context, client.Client, string, *hyperv1.KubevirtPlatformCredentials, string, string) (KubevirtInfraClient, error)
 	Delete(string)
+}
+
+type KubevirtInfraClient interface {
+	GetInfraK8sVersion() (*semver.Version, error)
+	GetInfraKubevirtVersion() (*semver.Version, error)
+	GetInfraClient() client.Client
+	GetInfraNamespace() string
+}
+
+type kubevirtInfraClientMapImp struct {
+	theMap sync.Map
+}
+
+type kubevirtInfraClientImp struct {
+	Client          client.Client
+	DiscoveryClient *discovery.DiscoveryClient
+	Namespace       string
+}
+
+type mockKubevirtInfraClientMap struct {
+	cluster KubevirtInfraClient
+}
+
+type mockKubevirtInfraClient struct {
+	cnvVersion string
+	k8sVersion string
+	namespace  string
+	client     client.Client
+}
+
+func (k *mockKubevirtInfraClient) GetInfraK8sVersion() (*semver.Version, error) {
+	v, err := semver.ParseTolerant(k.k8sVersion)
+	return &v, err
+}
+func (k *mockKubevirtInfraClient) GetInfraKubevirtVersion() (*semver.Version, error) {
+	v, err := semver.ParseTolerant(k.cnvVersion)
+	return &v, err
+}
+func (k *mockKubevirtInfraClient) GetInfraClient() client.Client {
+	return k.client
+}
+func (k *mockKubevirtInfraClient) GetInfraNamespace() string {
+	return k.namespace
+}
+
+func (k *mockKubevirtInfraClientMap) DiscoverKubevirtClusterClient(context.Context, client.Client, string, *hyperv1.KubevirtPlatformCredentials, string, string) (KubevirtInfraClient, error) {
+	return k.cluster, nil
+}
+
+func (k *mockKubevirtInfraClientMap) Delete(string) {}
+
+func NewMockKubevirtInfraClientMap(client client.Client, cnvVersion, k8sVersion string) KubevirtInfraClientMap {
+	return &mockKubevirtInfraClientMap{
+		cluster: &mockKubevirtInfraClient{
+			client:     client,
+			namespace:  "kubevirt-kubevirt",
+			cnvVersion: cnvVersion,
+			k8sVersion: k8sVersion,
+		},
+	}
 }
 
 func NewKubevirtInfraClientMap() KubevirtInfraClientMap {
@@ -25,54 +90,45 @@ func NewKubevirtInfraClientMap() KubevirtInfraClientMap {
 	}
 }
 
-type kubevirtInfraClientMapImp struct {
-	theMap sync.Map
-}
-
-type KubevirtInfraClient struct {
-	client.Client
-	Namespace string
-}
-
-func (k *kubevirtInfraClientMapImp) DiscoverKubevirtClusterClient(ctx context.Context, cl client.Client, key string, credentials *hyperv1.KubevirtPlatformCredentials, localInfraNamespace string, secretNS string) (*KubevirtInfraClient, error) {
+func (k *kubevirtInfraClientMapImp) DiscoverKubevirtClusterClient(ctx context.Context, cl client.Client, key string, credentials *hyperv1.KubevirtPlatformCredentials, localInfraNamespace string, secretNS string) (KubevirtInfraClient, error) {
 	if k == nil {
 		return nil, nil
 	}
 
 	if credentials == nil || credentials.InfraKubeConfigSecret == nil {
-		return &KubevirtInfraClient{
-			Client:    cl,
-			Namespace: localInfraNamespace,
+		cfg, err := cr.GetConfig()
+		if err != nil {
+			return nil, err
+		}
+
+		discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
+		if err != nil {
+			return nil, err
+		}
+
+		return &kubevirtInfraClientImp{
+			Client:          cl,
+			DiscoveryClient: discoveryClient,
+			Namespace:       localInfraNamespace,
 		}, nil
 	}
 	loaded, ok := k.theMap.Load(key)
 	if ok {
-		return loaded.(*KubevirtInfraClient), nil
+		return loaded.(*kubevirtInfraClientImp), nil
 	}
-	targetClient, err := generateKubevirtInfraClusterClient(ctx, cl, credentials, secretNS)
+	targetClient, targetDiscoveryClient, err := generateKubevirtInfraClusterClient(ctx, cl, credentials, secretNS)
 	if err != nil {
 		return nil, err
 	}
 
-	cluster := &KubevirtInfraClient{
-		Client:    targetClient,
-		Namespace: credentials.InfraNamespace,
+	cluster := &kubevirtInfraClientImp{
+		Client:          targetClient,
+		DiscoveryClient: targetDiscoveryClient,
+		Namespace:       credentials.InfraNamespace,
 	}
 
 	k.theMap.LoadOrStore(key, cluster)
 	return cluster, nil
-}
-
-func (k *kubevirtInfraClientMapImp) GetClient(key string) *KubevirtInfraClient {
-	if k == nil {
-		return nil
-	}
-	if cl, ok := k.theMap.Load(key); ok {
-		if clnt, ok := cl.(*KubevirtInfraClient); ok {
-			return clnt
-		}
-	}
-	return nil
 }
 
 func (k *kubevirtInfraClientMapImp) Delete(key string) {
@@ -81,26 +137,103 @@ func (k *kubevirtInfraClientMapImp) Delete(key string) {
 	}
 }
 
-func generateKubevirtInfraClusterClient(ctx context.Context, cpClient client.Client, credentials *hyperv1.KubevirtPlatformCredentials, secretNamespace string) (client.Client, error) {
+func generateKubevirtInfraClusterClient(ctx context.Context, cpClient client.Client, credentials *hyperv1.KubevirtPlatformCredentials, secretNamespace string) (client.Client, *discovery.DiscoveryClient, error) {
 	kubeConfig, err := GetKubeConfig(ctx, cpClient, secretNamespace, credentials.InfraKubeConfigSecret.Name)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	clientConfig, err := clientcmd.NewClientConfigFromBytes(kubeConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create K8s-API client config: %w", err)
+		return nil, nil, fmt.Errorf("failed to create K8s-API client config: %w", err)
 	}
 
 	restConfig, err := clientConfig.ClientConfig()
 	if err != nil {
-		return nil, fmt.Errorf("failed to create REST config: %w", err)
+		return nil, nil, fmt.Errorf("failed to create REST config: %w", err)
 	}
 	var infraClusterClient client.Client
 
 	infraClusterClient, err = client.New(restConfig, client.Options{Scheme: cpClient.Scheme()})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create infra cluster client: %w", err)
+		return nil, nil, fmt.Errorf("failed to create infra cluster client: %w", err)
 	}
 
-	return infraClusterClient, nil
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create infra cluster discovery client: %w", err)
+	}
+
+	return infraClusterClient, discoveryClient, nil
+}
+
+func (k *kubevirtInfraClientImp) GetInfraK8sVersion() (*semver.Version, error) {
+	k8sVersion, err := k.DiscoveryClient.ServerVersion()
+	if err != nil {
+		return nil, fmt.Errorf("failed to detect infrastructure cluster Kubernetes version for KubeVirt platform: %w", err)
+	}
+
+	version, err := semver.ParseTolerant(k8sVersion.GitVersion)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse infrastructure cluster Kubernetes version for KubeVirt platform: %w", err)
+	}
+
+	return &version, nil
+}
+
+func (k *kubevirtInfraClientImp) GetInfraClient() client.Client {
+	return k.Client
+}
+
+func (k *kubevirtInfraClientImp) GetInfraNamespace() string {
+	return k.Namespace
+}
+
+func (k *kubevirtInfraClientImp) GetInfraKubevirtVersion() (*semver.Version, error) {
+
+	type info struct {
+		GitVersion string `json:"gitVersion"`
+	}
+
+	restClient := k.DiscoveryClient.RESTClient()
+
+	var group metav1.APIGroup
+	// First, find out which version to query
+	uri := "/apis/subresources.kubevirt.io"
+	result := restClient.Get().AbsPath(uri).Do(context.Background())
+	if data, err := result.Raw(); err != nil {
+		connErr, isConnectionErr := err.(*url.Error)
+		if isConnectionErr {
+			err = connErr.Err
+		}
+		return nil, fmt.Errorf("unable to validate OpenShift Virtualization version due to connection error: %w", err)
+	} else if err = json.Unmarshal(data, &group); err != nil {
+		return nil, fmt.Errorf("unable to validate OpenShift Virtualization version due malformed group version data: %w", err)
+	}
+
+	// Now, query the preferred version
+	uri = fmt.Sprintf("/apis/%s/version", group.PreferredVersion.GroupVersion)
+	var serverInfo info
+
+	result = restClient.Get().AbsPath(uri).Do(context.Background())
+	if data, err := result.Raw(); err != nil {
+		connErr, isConnectionErr := err.(*url.Error)
+		if isConnectionErr {
+			err = connErr.Err
+		}
+
+		return nil, fmt.Errorf("unable to validate OpenShift Virtualization version due to connection error: %w", err)
+	} else if err = json.Unmarshal(data, &serverInfo); err != nil {
+		return nil, fmt.Errorf("unable to validate OpenShift Virtualization version due malformed version data: %w", err)
+	}
+
+	version, err := semver.ParseTolerant(serverInfo.GitVersion)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse infrastructure cluster OpenShift Virtualization version [%s] for KubeVirt platform: %w", serverInfo.GitVersion, err)
+	}
+
+	return &version, nil
+
 }
 
 func GetKubeConfig(ctx context.Context, cl client.Client, secretNamespace, secretName string) ([]byte, error) {

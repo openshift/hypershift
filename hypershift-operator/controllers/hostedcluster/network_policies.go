@@ -105,13 +105,20 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
 			}
 		}
-		kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hcluster.Spec.InfraID, hcluster.Spec.Platform.Kubevirt.Credentials, hcp.Namespace, hcluster.Namespace)
+
+		var creds *hyperv1.KubevirtPlatformCredentials
+
+		if hcluster.Spec.Platform.Kubevirt != nil && hcluster.Spec.Platform.Kubevirt.Credentials != nil {
+			creds = hcluster.Spec.Platform.Kubevirt.Credentials
+		}
+
+		kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hcluster.Spec.InfraID, creds, hcp.Namespace, hcluster.Namespace)
 		if err != nil {
 			return err
 		}
 		if hcluster.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
-			egressFirewall := egressfirewall.VirtLauncherEgressFirewall(kvInfraCluster.Namespace)
-			if _, err := createOrUpdate(ctx, kvInfraCluster.Client, egressFirewall, func() error {
+			egressFirewall := egressfirewall.VirtLauncherEgressFirewall(kvInfraCluster.GetInfraNamespace())
+			if _, err := createOrUpdate(ctx, kvInfraCluster.GetInfraClient(), egressFirewall, func() error {
 				return reconcileVirtLauncherEgressFirewall(egressFirewall)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile firewall to deny metadata server egress: %w", err)

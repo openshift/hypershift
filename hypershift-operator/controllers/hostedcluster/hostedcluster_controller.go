@@ -23,6 +23,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -3596,6 +3597,10 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err)
 	}
 
+	if err := r.validateKubevirtConfig(ctx, hc); err != nil {
+		errs = append(errs, err)
+	}
+
 	if err := r.validateAzureConfig(ctx, hc); err != nil {
 		errs = append(errs, err)
 	}
@@ -3689,11 +3694,7 @@ func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *
 		}
 		currentVersion = &version
 	}
-	minSupportedVersion := supportedversion.MinSupportedVersion
-	if hc.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		// IBM Cloud is allowed to manage 4.9 clusters
-		minSupportedVersion = semver.MustParse("4.9.0")
-	}
+	minSupportedVersion := supportedversion.GetMinSupportedVersion(hc)
 
 	return supportedversion.IsValidReleaseVersion(&version, currentVersion, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
 }
@@ -3788,6 +3789,67 @@ func (r *HostedClusterReconciler) validateAWSConfig(hc *hyperv1.HostedCluster) e
 	} else {
 		if !hyperutil.UseDedicatedDNSForKASByHC(hc) && servicePublishingStrategy.Type != hyperv1.LoadBalancer {
 			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported, use Route or Loadbalancer", hyperv1.APIServer, servicePublishingStrategy.Type))
+		}
+	}
+
+	return utilerrors.NewAggregate(errs)
+}
+
+func (r *HostedClusterReconciler) validateKubevirtConfig(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	if hc.Spec.Platform.Type != hyperv1.KubevirtPlatform {
+		return nil
+	}
+
+	val, exists := hc.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation]
+	if exists {
+		if isTrue, _ := strconv.ParseBool(val); isTrue {
+			// This is an unsupported escape hatch annotation for internal use
+			// Some HCP users are using the kubevirt platform in unconventional ways
+			// and we need to maintain the ability to use unsupported versions
+			return nil
+		}
+
+	}
+
+	var creds *hyperv1.KubevirtPlatformCredentials
+
+	if hc.Spec.Platform.Kubevirt != nil && hc.Spec.Platform.Kubevirt.Credentials != nil {
+		creds = hc.Spec.Platform.Kubevirt.Credentials
+	}
+
+	kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx,
+		r.Client,
+		hc.Spec.InfraID,
+		creds,
+		hc.Namespace,
+		hc.Namespace)
+	if err != nil {
+		return err
+	}
+
+	var errs []error
+
+	if cnvVersion, err := kvInfraClient.GetInfraKubevirtVersion(); err != nil {
+		errs = append(errs, err)
+	} else {
+		// ignore "Pre" so this check works accurately with pre-release CNV versions.
+		cnvVersion.Pre = []semver.PRVersion{}
+		minCNVVersion := semver.MustParse("1.0.0")
+
+		if cnvVersion.LT(minCNVVersion) {
+			errs = append(errs, fmt.Errorf("infrastructure kubevirt version is [%s], hypershift kubevirt platform requires kubevirt version [%s] or greater", cnvVersion.String(), minCNVVersion.String()))
+		}
+	}
+
+	if k8sVersion, err := kvInfraClient.GetInfraK8sVersion(); err != nil {
+		errs = append(errs, err)
+	} else {
+		// ignore "Pre" so this check works accurately with pre-release K8s versions.
+		k8sVersion.Pre = []semver.PRVersion{}
+		minK8sVersion := semver.MustParse("1.27.0")
+
+		if k8sVersion.LT(minK8sVersion) {
+			errs = append(errs, fmt.Errorf("infrastructure Kubernetes version is [%s], hypershift kubevirt platform requires Kubernetes version [%s] or greater", k8sVersion.String(), minK8sVersion.String()))
 		}
 	}
 
@@ -4386,15 +4448,15 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 	// auto generate the basedomain by retrieving the default ingress *.apps dns.
 	if hc.Spec.Platform.Kubevirt.BaseDomainPassthrough != nil && *hc.Spec.Platform.Kubevirt.BaseDomainPassthrough {
 		if hc.Spec.DNS.BaseDomain == "" {
-			kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hc.Spec.InfraID, hc.Spec.Platform.Kubevirt.Credentials, hc.Namespace, hc.Namespace)
+			kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hc.Spec.InfraID, hc.Spec.Platform.Kubevirt.Credentials, hc.Namespace, hc.Namespace)
 			if err != nil {
 				return err
 			}
 			// kubevirtInfraTempRoute is used to resolve the base domain of the infra cluster without accessing IngressController
-			kubevirtInfraTempRoute := manifests.KubevirtInfraTempRoute(kvInfraCluster.Namespace)
+			kubevirtInfraTempRoute := manifests.KubevirtInfraTempRoute(kvInfraClient.GetInfraNamespace())
 
 			createOrUpdateProvider := upsert.New(r.EnableCIDebugOutput)
-			_, err = createOrUpdateProvider.CreateOrUpdate(ctx, kvInfraCluster.Client, kubevirtInfraTempRoute, func() error {
+			_, err = createOrUpdateProvider.CreateOrUpdate(ctx, kvInfraClient.GetInfraClient(), kubevirtInfraTempRoute, func() error {
 				return manifests.ReconcileKubevirtInfraTempRoute(kubevirtInfraTempRoute)
 			})
 			if err != nil {
@@ -4424,7 +4486,7 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 				// This is possible using OCP wildcard routes
 				hc.Spec.DNS.BaseDomain = baseDomain
 
-				if err := kvInfraCluster.Delete(ctx, kubevirtInfraTempRoute); err != nil {
+				if err := kvInfraClient.GetInfraClient().Delete(ctx, kubevirtInfraTempRoute); err != nil {
 					return err
 				}
 			} else {

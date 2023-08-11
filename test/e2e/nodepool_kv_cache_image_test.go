@@ -72,7 +72,7 @@ func (k KubeVirtCacheTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []
 
 	dv := &v1beta1.DataVolume{}
 	g.Expect(
-		infraClient.Get(k.ctx, crclient.ObjectKey{Namespace: guestNamespace, Name: np.Status.Platform.KubeVirt.CacheName}, dv),
+		infraClient.GetInfraClient().Get(k.ctx, crclient.ObjectKey{Namespace: guestNamespace, Name: np.Status.Platform.KubeVirt.CacheName}, dv),
 	).To(Succeed())
 
 	g.Expect(dv.Status.Phase).Should(Equal(v1beta1.Succeeded))
