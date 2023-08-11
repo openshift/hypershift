@@ -17,6 +17,13 @@ else
 fi
 
 generate_junit() {
+  # propagate SIGTERM to the `test-e2e` process
+  for child in $( jobs -p ); do
+    kill "${child}"
+  done
+  # wait until `test-e2e` finishes gracefully
+  wait
+
   cat  /tmp/test_out | go tool test2json -t > /tmp/test_out.json
   gotestsum --raw-command --junitfile="${ARTIFACT_DIR}/junit.xml" --format=standard-verbose -- cat /tmp/test_out.json
   # Ensure generated junit has a useful suite name
@@ -39,4 +46,6 @@ bin/test-e2e \
   --e2e.previous-release-image="${OCP_IMAGE_PREVIOUS}" \
   --e2e.additional-tags="expirationDate=$(date -d '4 hours' --iso=minutes --utc)" \
   --e2e.aws-endpoint-access=PublicAndPrivate \
-  --e2e.external-dns-domain=service.ci.hypershift.devcluster.openshift.com | tee /tmp/test_out
+  --e2e.external-dns-domain=service.ci.hypershift.devcluster.openshift.com | tee /tmp/test_out &
+
+wait $!

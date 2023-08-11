@@ -18,9 +18,14 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/cmd/cluster/core"
+	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	nodepoolmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
+	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+	support "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/library-go/test/library/metrics"
 	promapi "github.com/prometheus/client_golang/api"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -194,9 +199,7 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 		if err != nil {
 			return false, nil
 		}
-		if len(nodes.Items) == 0 {
-			return false, nil
-		}
+
 		var readyNodes []string
 		for _, node := range nodes.Items {
 			for _, cond := range node.Status.Conditions {
@@ -771,11 +774,11 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 }
 
 func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-		t.Skip()
-	}
-
 	t.Run("EnsureNetworkPolicies", func(t *testing.T) {
+		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+			t.Skip()
+		}
+
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
 		t.Run("EnsureComponentsHaveNeedManagementKASAccessLabel", func(t *testing.T) {
 			// Check for all components expected to have NeedManagementKASAccessLabel.
@@ -1312,4 +1315,218 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 		}
 
 	})
+}
+
+const (
+	// Metrics
+	// TODO (jparrill): We need to separate the metrics.go from the main pkg in the hypershift-operator.
+	//     Delete these references when it's done and import it from there
+	HypershiftOperatorInfoName = "hypershift_operator_info"
+)
+
+func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster) {
+	t.Run("ValidateMetricsAreExposed", func(t *testing.T) {
+		// TODO (alberto) this test should pass in None.
+		// https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/artifacts/e2e-aws/run-e2e/artifacts/TestNoneCreateCluster_PreTeardownClusterDump/
+		// https://storage.googleapis.com/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/build-log.txt
+		// https://prow.ci.openshift.org/view/gs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032
+		if hc.Spec.Platform.Type == hyperv1.NonePlatform {
+			t.Skip()
+		}
+
+		g := NewWithT(t)
+
+		prometheusClient, err := NewPrometheusClient(ctx)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Polling to prevent races with prometheus scrape interval.
+		err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
+			for _, metricName := range []string{
+				hcmetrics.DeletionDurationMetricName,
+				hcmetrics.GuestCloudResourcesDeletionDurationMetricName,
+				hcmetrics.AvailableDurationName,
+				hcmetrics.InitialRolloutDurationName,
+				hcmetrics.ClusterUpgradeDurationMetricName,
+				hcmetrics.ProxyName,
+				hcmetrics.SilenceAlertsName,
+				hcmetrics.LimitedSupportEnabledName,
+				HypershiftOperatorInfoName,
+				nodepoolmetrics.NodePoolSizeMetricName,
+				nodepoolmetrics.NodePoolAvailableReplicasMetricName,
+				nodepoolmetrics.NodePoolDeletionDurationMetricName,
+				nodepoolmetrics.NodePoolInitialRolloutDurationMetricName,
+			} {
+				// Query fo HC specific metrics by hc.name.
+				query := fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name)
+				if metricName == HypershiftOperatorInfoName {
+					// Query HO info metric
+					query = HypershiftOperatorInfoName
+				}
+				if strings.HasPrefix(metricName, "hypershift_nodepools") {
+					query = fmt.Sprintf("%v{cluster_name=\"%s\"}", metricName, hc.Name)
+				}
+				// upgrade metric is only available for TestUpgradeControlPlane
+				if metricName == hcmetrics.ClusterUpgradeDurationMetricName && !strings.HasPrefix("TestUpgradeControlPlane", t.Name()) {
+					continue
+				}
+
+				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, query, time.Now())
+				if err != nil {
+					return false, err
+				}
+
+				if len(result.Data.Result) < 1 {
+					t.Logf("Metric not found: %q", metricName)
+					return false, nil
+				}
+				for _, series := range result.Data.Result {
+					t.Logf("Found metric: %v", series.String())
+				}
+			}
+			return true, nil
+		})
+		if err != nil {
+			t.Errorf("Failed to validate that all metrics are exposed")
+		} else {
+			t.Logf("Destroyed cluster. Namespace: %s, name: %s", hc.Namespace, hc.Name)
+		}
+	})
+}
+
+func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) {
+	g := NewWithT(t)
+
+	// Sanity check the cluster by waiting for the nodes to report ready
+	t.Logf("Waiting for guest client to become available")
+	guestClient := WaitForGuestClient(t, ctx, client, hostedCluster)
+
+	// Wait for Nodes to be Ready
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+
+	// rollout will not complete if there are no wroker nodes.
+	if numNodes > 0 {
+		// Wait for the rollout to be complete
+		t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
+		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+	}
+
+	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+
+	serviceStrategy := util.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
+	g.Expect(serviceStrategy).ToNot(BeNil())
+	if serviceStrategy.Type == hyperv1.Route && serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
+		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).To(Equal(serviceStrategy.Route.Hostname))
+	} else {
+		// sanity check
+		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
+	}
+
+	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0)
+
+	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
+	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	EnsurePSANotPrivileged(t, ctx, guestClient)
+	EnsureGuestWebhooksValidated(t, ctx, guestClient)
+
+	if numNodes > 0 {
+		EnsureNodeCommunication(t, ctx, client, hostedCluster)
+	}
+}
+
+func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) {
+	g := NewWithT(t)
+
+	_, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
+
+	// Ensure NodePools have all Nodes ready.
+	WaitForNodePoolDesiredNodes(t, ctx, client, hostedCluster)
+
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	// rollout will not complete if there are no wroker nodes.
+	if numNodes > 0 {
+		// Wait for the rollout to be complete
+		t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
+		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+	}
+
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+
+	serviceStrategy := util.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
+	g.Expect(serviceStrategy).ToNot(BeNil())
+	// Private clusters should always use Route
+	g.Expect(serviceStrategy.Type).To(Equal(hyperv1.Route))
+	if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
+		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).To(Equal(serviceStrategy.Route.Hostname))
+	} else {
+		// sanity check
+		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
+	}
+
+	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0)
+
+	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+}
+
+func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool) {
+	expectedConditions := conditions.ExpectedHCConditions()
+
+	if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
+		// AWS KMS is not configured
+		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionUnknown
+	} else {
+		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionTrue
+	}
+
+	kasExternalHostname := support.ServiceExternalDNSHostnameByHC(hostedCluster, hyperv1.APIServer)
+	if kasExternalHostname == "" {
+		// ExternalDNS is not configured
+		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionUnknown
+	} else {
+		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionTrue
+	}
+
+	if !hasWorkerNodes {
+		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
+		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
+		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
+	}
+
+	start := time.Now()
+	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (bool, error) {
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+			t.Logf("Failed to get hostedcluster: %v", err)
+			return false, nil
+		}
+
+		for _, condition := range hostedCluster.Status.Conditions {
+			if condition.Type == string(hyperv1.ClusterVersionUpgradeable) {
+				// ClusterVersionUpgradeable condition status is not always guranteed to be true, skip.
+				t.Logf("observed condition %s status [%s]", condition.Type, condition.Status)
+				continue
+			}
+
+			expectedStatus, known := expectedConditions[hyperv1.ConditionType(condition.Type)]
+			if !known {
+				return false, fmt.Errorf("unknown condition %s", condition.Type)
+			}
+
+			if condition.Status != expectedStatus {
+				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
+				return false, nil
+			}
+			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
+		}
+
+		return true, nil
+	})
+	duration := time.Since(start).Round(time.Second)
+
+	if err != nil {
+		t.Fatalf("Failed to validate HostedCluster conditions in %s: %v", duration, err)
+	}
+	t.Logf("Successfully validated all expected HostedCluster conditions in %s", duration)
 }

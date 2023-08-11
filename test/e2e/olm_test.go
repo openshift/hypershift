@@ -10,8 +10,8 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/test/e2e/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -43,73 +43,66 @@ func TestOLM(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	client, err := e2eutil.GetClient()
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
-
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	cluster := e2eutil.CreateCluster(t, ctx, client, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		// Get guest client
+		t.Logf("Waiting for guest client to become available")
+		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-	// Get guest client
-	t.Logf("Waiting for guest client to become available")
-	guestClient := e2eutil.WaitForGuestClient(t, ctx, client, cluster)
+		guestNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		t.Logf("Hosted control plane namespace is %s", guestNamespace)
 
-	// Wait for guest cluster nodes to become available
-	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
-	util.WaitForNReadyNodes(t, ctx, guestClient, numNodes, cluster.Spec.Platform.Type)
+		waitCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
+		defer cancel()
 
-	guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name).Name
-	t.Logf("Hosted control plane namespace is %s", guestNamespace)
-
-	waitCtx, cancel := context.WithTimeout(ctx, 15*time.Minute)
-	defer cancel()
-
-	t.Logf("Retrieving Red Hat catalogSource deployment image")
-	redhatCatalogDeployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      redhatOperatorsDeploymentName,
-			Namespace: guestNamespace,
-		},
-	}
-	err = wait.PollImmediateUntilWithContext(waitCtx, 5*time.Second, func(ctx context.Context) (bool, error) {
-		if err := client.Get(ctx, crclient.ObjectKeyFromObject(redhatCatalogDeployment), redhatCatalogDeployment); err != nil {
-			t.Logf("failed to get Red Hat Catalog deployment %s/%s: %s", redhatCatalogDeployment.Namespace, redhatCatalogDeployment.Name, err)
-			return false, nil
+		t.Logf("Retrieving Red Hat catalogSource deployment image")
+		redhatCatalogDeployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      redhatOperatorsDeploymentName,
+				Namespace: guestNamespace,
+			},
 		}
-		return true, nil
-	})
+		err := wait.PollImmediateUntilWithContext(waitCtx, 5*time.Second, func(ctx context.Context) (bool, error) {
+			if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(redhatCatalogDeployment), redhatCatalogDeployment); err != nil {
+				t.Logf("failed to get Red Hat Catalog deployment %s/%s: %s", redhatCatalogDeployment.Namespace, redhatCatalogDeployment.Name, err)
+				return false, nil
+			}
+			return true, nil
+		})
 
-	t.Logf("Creating guest cluster catalogSource using the Red Hat operators image from the hosted control plane")
-	guestClusterCatalogSource := &operatorsv1alpha1.CatalogSource{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      guestClusterCatalogSourceName,
-			Namespace: openshiftMarketplaceNamespace,
-		},
-		Spec: operatorsv1alpha1.CatalogSourceSpec{
-			SourceType:  operatorsv1alpha1.SourceTypeGrpc,
-			Image:       redhatCatalogDeployment.Spec.Template.Spec.Containers[0].Image,
-			Publisher:   "OLM HyperShift Team",
-			DisplayName: "OLM HyperShift Test CatalogSource",
-		},
-	}
-	err = wait.PollImmediateUntilWithContext(waitCtx, 5*time.Second, func(ctx context.Context) (bool, error) {
-		if err := guestClient.Create(ctx, guestClusterCatalogSource); err != nil && !apierrors.IsAlreadyExists(err) {
-			t.Logf("failed to create guest cluster catalogSource %s/%s: %s", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err)
-			return false, nil
+		t.Logf("Creating guest cluster catalogSource using the Red Hat operators image from the hosted control plane")
+		guestClusterCatalogSource := &operatorsv1alpha1.CatalogSource{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      guestClusterCatalogSourceName,
+				Namespace: openshiftMarketplaceNamespace,
+			},
+			Spec: operatorsv1alpha1.CatalogSourceSpec{
+				SourceType:  operatorsv1alpha1.SourceTypeGrpc,
+				Image:       redhatCatalogDeployment.Spec.Template.Spec.Containers[0].Image,
+				Publisher:   "OLM HyperShift Team",
+				DisplayName: "OLM HyperShift Test CatalogSource",
+			},
 		}
-		return true, nil
-	})
-	g.Expect(err).NotTo(HaveOccurred(), "unable to create guest cluster catalogSource")
-	t.Logf("guest cluster catalogSource created")
+		err = wait.PollImmediateUntilWithContext(waitCtx, 5*time.Second, func(ctx context.Context) (bool, error) {
+			if err := guestClient.Create(ctx, guestClusterCatalogSource); err != nil && !apierrors.IsAlreadyExists(err) {
+				t.Logf("failed to create guest cluster catalogSource %s/%s: %s", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err)
+				return false, nil
+			}
+			return true, nil
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "unable to create guest cluster catalogSource")
+		t.Logf("guest cluster catalogSource created")
 
-	defer func() {
-		err = guestClient.Delete(ctx, guestClusterCatalogSource)
-		g.Expect(err != nil && !apierrors.IsNotFound(err)).To(BeFalse(), fmt.Sprintf("failed to delete guest cluster catalogSource %s/%s: %v", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err))
-	}()
+		defer func() {
+			err = guestClient.Delete(ctx, guestClusterCatalogSource)
+			g.Expect(err != nil && !apierrors.IsNotFound(err)).To(BeFalse(), fmt.Sprintf("failed to delete guest cluster catalogSource %s/%s: %v", guestClusterCatalogSource.Namespace, guestClusterCatalogSource.Name, err))
+		}()
 
-	t.Run("Guest cluster catalogSources serve content", testGuestClusterCatalogReady(waitCtx, guestClient))
-	t.Run("Install operator from Red Hat operators catalogSource", testOperatorInstallationFromSource(waitCtx, guestClient, redhatOperatorsCatalogSourceName))
-	t.Run("Install operator from guest cluster catalogSource", testOperatorInstallationFromSource(waitCtx, guestClient, guestClusterCatalogSourceName))
+		t.Run("Guest cluster catalogSources serve content", testGuestClusterCatalogReady(waitCtx, guestClient))
+		t.Run("Install operator from Red Hat operators catalogSource", testOperatorInstallationFromSource(waitCtx, guestClient, redhatOperatorsCatalogSourceName))
+		t.Run("Install operator from guest cluster catalogSource", testOperatorInstallationFromSource(waitCtx, guestClient, guestClusterCatalogSourceName))
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 // testGuestClusterCatalogReady ensures that Catalog Operator is able to connect to the CatalogSource created on the guestCluster.

@@ -35,85 +35,79 @@ type NodePoolTestCase struct {
 func TestNodePool(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
-	ctx, cancel := context.WithCancel(testContext)
 
-	defer func() {
-		t.Log("Test: NodePool finished")
-		cancel()
-	}()
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-
-	mgmtClient, err := e2eutil.GetClient()
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	// We set replicas to 0 in order to allow the inner tests to
 	// create their own NodePools with the proper replicas
 	clusterOpts.NodePoolReplicas = 0
-	hostedCluster := e2eutil.CreateCluster(t, ctx, mgmtClient, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
-	hostedClusterClient := e2eutil.WaitForGuestClient(t, ctx, mgmtClient, hostedCluster)
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		hostedClusterClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-	// Get the newly created defautlt NodePool
-	nodepools := &hyperv1.NodePoolList{}
-	if err := mgmtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
-		t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
-	}
-	g.Expect(nodepools.Items).ToNot(BeEmpty())
-	defaultNodepool := &nodepools.Items[0]
+		// Get the newly created defautlt NodePool
+		nodepools := &hyperv1.NodePoolList{}
+		if err := mgtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
+			t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
+		}
+		g.Expect(nodepools.Items).ToNot(BeEmpty())
+		defaultNodepool := &nodepools.Items[0]
 
-	// Set of tests
-	// Each test should have their own NodePool
-	nodePoolTests := []NodePoolTestCase{
+		// Set of tests
+		// Each test should have their own NodePool
+		nodePoolTests := []NodePoolTestCase{
 
-		{
-			name: "TestKMSRootVolumeEncryption",
-			test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
-		},
-		{
-			name: "TestNodePoolAutoRepair",
-			test: NewNodePoolAutoRepairTest(ctx, hostedCluster, hostedClusterClient, clusterOpts),
-		},
-		{
-			name: "TestNodepoolMachineconfigGetsRolledout",
-			test: NewNodePoolMachineconfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts),
-		},
-		{
-			name: "TestNTOMachineConfigGetsRolledOut",
-			test: NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
-		},
-		/*
-			// TODO: (csrwng) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
 			{
-				name:            "TestNTOMachineConfigAppliedInPlace",
-				test:            NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
-				manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
+				name: "TestKMSRootVolumeEncryption",
+				test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
 			},
-		*/
-		{
-			name: "TestNodePoolReplaceUpgrade",
-			test: NewNodePoolUpgradeTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
-		},
-		// TODO: (jparrill) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
-		/*
 			{
-				name:            "TestNodePoolInPlaceUpgrade",
-				test:            NewNodePoolUpgradeTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
-				manifestBuilder: NewNodePoolInPlaceUpgradeTestManifest(hostedCluster, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+				name: "TestNodePoolAutoRepair",
+				test: NewNodePoolAutoRepairTest(ctx, hostedCluster, hostedClusterClient, clusterOpts),
 			},
-		*/
-		{
-			name: "KubeVirtCacheTest",
-			test: NewKubeVirtCacheTest(ctx, mgmtClient, hostedCluster),
-		},
-	}
+			{
+				name: "TestNodepoolMachineconfigGetsRolledout",
+				test: NewNodePoolMachineconfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts),
+			},
+			{
+				name: "TestNTOMachineConfigGetsRolledOut",
+				test: NewNTOMachineConfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
+			},
+			/*
+				// TODO: (csrwng) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
+				{
+					name:            "TestNTOMachineConfigAppliedInPlace",
+					test:            NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
+					manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
+				},
+			*/
+			{
+				name: "TestNodePoolReplaceUpgrade",
+				test: NewNodePoolUpgradeTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+			},
+			// TODO: (jparrill) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
+			/*
+				{
+					name:            "TestNodePoolInPlaceUpgrade",
+					test:            NewNodePoolUpgradeTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+					manifestBuilder: NewNodePoolInPlaceUpgradeTestManifest(hostedCluster, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+				},
+			*/
+			{
+				name: "KubeVirtCacheTest",
+				test: NewKubeVirtCacheTest(ctx, mgtClient, hostedCluster),
+			},
+		}
 
-	t.Run("NodePool Tests Group", func(t *testing.T) {
 		for _, testCase := range nodePoolTests {
 			t.Run(testCase.name, func(t *testing.T) {
-				executeNodePoolTest(t, ctx, mgmtClient, hostedCluster, hostedClusterClient, *defaultNodepool, testCase.test, testCase.manifestBuilder)
+				executeNodePoolTest(t, ctx, mgtClient, hostedCluster, hostedClusterClient, *defaultNodepool, testCase.test, testCase.manifestBuilder)
 			})
 		}
-	})
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+
 }
 
 // nodePoolScaleDownToZero function will scaleDown the nodePool created for the current tests
