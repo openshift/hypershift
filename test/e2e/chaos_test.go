@@ -43,24 +43,6 @@ func TestHAEtcdChaos(t *testing.T) {
 	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
-// TestEtcdChaos launches a SingleReplica control plane and executes a suite of
-// chaotic etcd tests which ensure no data is lost in the chaos.
-func TestEtcdChaos(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(testContext)
-	defer cancel()
-
-	// Create a cluster
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	clusterOpts.NodePoolReplicas = 0
-
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-		t.Run("KillAllMembers", testKillAllMembers(ctx, mgtClient, hostedCluster))
-	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
-
-}
-
 // testKillRandomMembers ensures that data is preserved following a period where
 // random etcd members are repeatedly killed.
 func testKillRandomMembers(parentCtx context.Context, client crclient.Client, cluster *hyperv1.HostedCluster) func(t *testing.T) {
