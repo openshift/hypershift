@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/testutil"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
@@ -81,6 +82,7 @@ kind: Config`
 			name: "private cluster uses .local address",
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.Private
+				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
 			}),
 
 			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:6443"},
@@ -90,6 +92,7 @@ kind: Config`
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.Private
 				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: utilpointer.Int32(443)}
+				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
 			}),
 
 			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:443"},
@@ -98,6 +101,7 @@ kind: Config`
 			name: "public and private cluster uses .local address",
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.PublicAndPrivate
+				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
 			}),
 
 			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:6443"},
@@ -107,6 +111,7 @@ kind: Config`
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.PublicAndPrivate
 				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: utilpointer.Int32(443)}
+				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
 			}),
 
 			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:443"},
@@ -116,6 +121,7 @@ kind: Config`
 			hc: hc(func(hc *hyperv1.HostedCluster) {
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.Public
 				hc.Status.KubeConfig = &corev1.LocalObjectReference{Name: "kk"}
+				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
 			}),
 			other: []crclient.Object{&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: hc().Namespace},
@@ -132,6 +138,7 @@ kind: Config`
 				hc.Spec.Platform.AWS.EndpointAccess = hyperv1.Public
 				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: utilpointer.Int32(443)}
 				hc.Status.KubeConfig = &corev1.LocalObjectReference{Name: "kk"}
+				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
 			}),
 			other: []crclient.Object{&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: hc().Namespace},

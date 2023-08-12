@@ -268,3 +268,14 @@ func IsIPv4(cidr string) (bool, error) {
 		return false, nil
 	}
 }
+
+// FirstUsableIP returns the first usable IP in both, IPv4 and IPv6 stacks.
+func FirstUsableIP(cidr string) (string, error) {
+	_, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return "", fmt.Errorf("error validating the incoming CIDR %s: %w", cidr, err)
+	}
+	ip := ipNet.IP
+	ip[len(ipNet.IP)-1]++
+	return ip.String(), nil
+}
