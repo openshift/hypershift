@@ -112,6 +112,9 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 			},
 		},
 	}
+	if hcp.Annotations[hyperv1.APICriticalPriorityClass] != "" {
+		params.OpenShiftAPIServerDeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.APICriticalPriorityClass]
+	}
 	params.OpenShiftAPIServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.OpenShiftAPIServerDeploymentConfig.SetDefaults(hcp, openShiftAPIServerLabels(), nil)
 
@@ -159,7 +162,9 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 			},
 		},
 	}
-
+	if hcp.Annotations[hyperv1.APICriticalPriorityClass] != "" {
+		params.OpenShiftOAuthAPIServerDeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.APICriticalPriorityClass]
+	}
 	params.OpenShiftAPIServerDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	params.OpenShiftOAuthAPIServerDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 

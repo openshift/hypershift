@@ -14,6 +14,7 @@ import (
 
 type CVOParams struct {
 	Image                   string
+	ControlPlaneImage       string
 	CLIImage                string
 	AvailabilityProberImage string
 	ClusterID               string
@@ -26,6 +27,7 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imagepr
 	p := &CVOParams{
 		CLIImage:                releaseImageProvider.GetImage("cli"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
+		ControlPlaneImage:       util.HCPControlPlaneReleaseImage(hcp),
 		Image:                   hcp.Spec.ReleaseImage,
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ClusterID:               hcp.Spec.ClusterID,
@@ -46,7 +48,9 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imagepr
 		},
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-
+	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
+	}
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext

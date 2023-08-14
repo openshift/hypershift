@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"strings"
+
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -45,6 +47,8 @@ var (
 		"POWERVS_BLOCK_CSI_DRIVER_OPERATOR_IMAGE":         "powervs-block-csi-driver-operator",
 		"POWERVS_BLOCK_CSI_DRIVER_IMAGE":                  "powervs-block-csi-driver",
 		"HYPERSHIFT_IMAGE":                                "token-minter",
+		"AWS_EBS_DRIVER_CONTROL_PLANE_IMAGE":              "aws-ebs-csi-driver",
+		"LIVENESS_PROBE_CONTROL_PLANE_IMAGE":              "csi-livenessprobe",
 	}
 )
 
@@ -57,13 +61,19 @@ func newEnvironmentReplacer() *environmentReplacer {
 	return &environmentReplacer{values: map[string]string{}}
 }
 
-func (er *environmentReplacer) setOperatorImageReferences(images map[string]string) {
+func (er *environmentReplacer) setOperatorImageReferences(images map[string]string, userImages map[string]string) {
 	// `operatorImageRefs` is map from env. var name -> payload image name
 	// `images` is map from payload image name -> image URL
 	// Create map from env. var name -> image URL
 	for envVar, payloadName := range operatorImageRefs {
-		if imageURL, ok := images[payloadName]; ok {
-			er.values[envVar] = imageURL
+		if envVar == "NODE_DRIVER_REGISTRAR_IMAGE" || envVar == "LIVENESS_PROBE_IMAGE" || strings.HasSuffix(envVar, "_DRIVER_IMAGE") {
+			if imageURL, ok := userImages[payloadName]; ok {
+				er.values[envVar] = imageURL
+			}
+		} else {
+			if imageURL, ok := images[payloadName]; ok {
+				er.values[envVar] = imageURL
+			}
 		}
 	}
 }

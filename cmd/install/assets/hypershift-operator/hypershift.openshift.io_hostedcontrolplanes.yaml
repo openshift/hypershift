@@ -3,8 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.9.2
-  creationTimestamp: null
+    controller-gen.kubebuilder.io/version: v0.12.0
   name: hostedcontrolplanes.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
@@ -999,6 +998,7 @@ spec:
                       a future release"
                     items:
                       type: object
+                      x-kubernetes-preserve-unknown-fields: true
                     type: array
                     x-kubernetes-preserve-unknown-fields: true
                   network:
@@ -1918,6 +1918,11 @@ spec:
                       x-kubernetes-map-type: atomic
                     type: array
                 type: object
+              controlPlaneReleaseImage:
+                description: ControlPlaneReleaseImage specifies the desired OCP release
+                  payload for control plane components running on the management cluster.
+                  If not defined, ReleaseImage is used
+                type: string
               controllerAvailabilityPolicy:
                 default: SingleReplica
                 description: ControllerAvailabilityPolicy specifies the availability
@@ -1968,11 +1973,14 @@ spec:
                                 anyOf:
                                 - type: integer
                                 - type: string
-                                default: 4Gi
+                                default: 8Gi
                                 description: Size is the minimum size of the data
                                   volume for each etcd member.
                                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                 x-kubernetes-int-or-string: true
+                                x-kubernetes-validations:
+                                - message: Etcd PV storage size is immutable
+                                  rule: self == oldSelf
                               storageClassName:
                                 description: "StorageClassName is the StorageClass
                                   of the data volume for each etcd member. \n See
@@ -2680,6 +2688,9 @@ spec:
                           Cluster: guest.apps.mgmt-cluster.example.com Apps: *.apps.guest.apps.mgmt-cluster.example.com
                           \n This is possible using OCP wildcard routes"
                         type: boolean
+                        x-kubernetes-validations:
+                        - message: baseDomainPassthrough is immutable
+                          rule: self == oldSelf
                       credentials:
                         description: "Credentials defines the client credentials used
                           when creating KubeVirt virtual machines. Defining credentials
@@ -2704,6 +2715,9 @@ spec:
                             - key
                             - name
                             type: object
+                            x-kubernetes-validations:
+                            - message: infraKubeConfigSecret is immutable
+                              rule: self == oldSelf
                           infraNamespace:
                             description: InfraNamespace defines the namespace on the
                               external infra cluster that is used to host the KubeVirt
@@ -2712,6 +2726,9 @@ spec:
                               referenced in the InfraKubeConfigSecret must have access
                               to manage the required resources within this namespace.
                             type: string
+                            x-kubernetes-validations:
+                            - message: infraNamespace is immutable
+                              rule: self == oldSelf
                         required:
                         - infraNamespace
                         type: object
@@ -2722,6 +2739,63 @@ spec:
                         type: string
                         x-kubernetes-validations:
                         - message: Kubevirt GenerateID is immutable once set
+                          rule: self == oldSelf
+                      storageDriver:
+                        description: StorageDriver defines how the KubeVirt CSI driver
+                          exposes StorageClasses on the infra cluster (hosting the
+                          VMs) to the guest cluster.
+                        properties:
+                          manual:
+                            description: Manual is used to explicilty define how the
+                              infra storageclasses are mapped to guest storageclasses
+                            properties:
+                              storageClassMapping:
+                                description: "StorageClassMapping maps StorageClasses
+                                  on the infra cluster hosting the KubeVirt VMs to
+                                  StorageClasses that are made available within the
+                                  Guest Cluster. \n NOTE: It is possible that not
+                                  all capablities of an infra cluster's storageclass
+                                  will be present for the corresponding guest clusters
+                                  storageclass."
+                                items:
+                                  properties:
+                                    guestStorageClassName:
+                                      description: GuestStorageClassName is the name
+                                        that the corresponding storageclass will be
+                                        called within the guest cluster
+                                      type: string
+                                    infraStorageClassName:
+                                      description: InfraStorageClassName is the name
+                                        of the infra cluster storage class that will
+                                        be exposed into the guest.
+                                      type: string
+                                  required:
+                                  - guestStorageClassName
+                                  - infraStorageClassName
+                                  type: object
+                                type: array
+                                x-kubernetes-validations:
+                                - message: storageClassMapping is immutable
+                                  rule: self == oldSelf
+                            type: object
+                            x-kubernetes-validations:
+                            - message: storageDriver.Manual is immutable
+                              rule: self == oldSelf
+                          type:
+                            default: Default
+                            description: Type represents the type of kubevirt csi
+                              driver configuration to use
+                            enum:
+                            - None
+                            - Default
+                            - Manual
+                            type: string
+                            x-kubernetes-validations:
+                            - message: storageDriver.Type is immutable
+                              rule: self == oldSelf
+                        type: object
+                        x-kubernetes-validations:
+                        - message: storageDriver is immutable
                           rule: self == oldSelf
                     type: object
                     x-kubernetes-validations:
@@ -2742,6 +2816,17 @@ spec:
                           can't be changed.
                         pattern: '^crn:'
                         type: string
+                      imageRegistryOperatorCloudCreds:
+                        description: ImageRegistryOperatorCloudCreds is a reference
+                          to a secret containing ibm cloud credentials for image registry
+                          operator to get authenticated with ibm cloud.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
                       ingressOperatorCloudCreds:
                         description: IngressOperatorCloudCreds is a reference to a
                           secret containing ibm cloud credentials for ingress operator
@@ -2862,6 +2947,7 @@ spec:
                     required:
                     - accountID
                     - cisInstanceCRN
+                    - imageRegistryOperatorCloudCreds
                     - ingressOperatorCloudCreds
                     - kubeCloudControllerCreds
                     - nodePoolManagementCreds
@@ -5623,6 +5709,11 @@ spec:
                         type: string
                     type: object
                 type: object
+              controlPlaneReleaseImage:
+                description: ControlPlaneReleaseImage specifies the desired OCP release
+                  payload for control plane components running on the management cluster.
+                  If not defined, ReleaseImage is used
+                type: string
               controllerAvailabilityPolicy:
                 default: SingleReplica
                 description: ControllerAvailabilityPolicy specifies the availability
@@ -5674,11 +5765,14 @@ spec:
                                 anyOf:
                                 - type: integer
                                 - type: string
-                                default: 4Gi
+                                default: 8Gi
                                 description: Size is the minimum size of the data
                                   volume for each etcd member.
                                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                                 x-kubernetes-int-or-string: true
+                                x-kubernetes-validations:
+                                - message: Etcd PV storage size is immutable
+                                  rule: self == oldSelf
                               storageClassName:
                                 description: "StorageClassName is the StorageClass
                                   of the data volume for each etcd member. \n See
@@ -5820,7 +5914,8 @@ spec:
                         description: AdvertiseAddress is the address that nodes will
                           use to talk to the API server. This is an address associated
                           with the loopback adapter of each node. If not specified,
-                          172.20.0.1 is used.
+                          the controller will take default values. The default values
+                          will be set as 172.20.0.1 or fd00::1.
                         type: string
                       allowedCIDRBlocks:
                         description: AllowedCIDRBlocks is an allow list of CIDR blocks
@@ -6311,6 +6406,9 @@ spec:
                           Cluster: guest.apps.mgmt-cluster.example.com Apps: *.apps.guest.apps.mgmt-cluster.example.com
                           \n This is possible using OCP wildcard routes"
                         type: boolean
+                        x-kubernetes-validations:
+                        - message: baseDomainPassthrough is immutable
+                          rule: self == oldSelf
                       credentials:
                         description: "Credentials defines the client credentials used
                           when creating KubeVirt virtual machines. Defining credentials
@@ -6335,6 +6433,9 @@ spec:
                             - key
                             - name
                             type: object
+                            x-kubernetes-validations:
+                            - message: infraKubeConfigSecret is immutable
+                              rule: self == oldSelf
                           infraNamespace:
                             description: InfraNamespace defines the namespace on the
                               external infra cluster that is used to host the KubeVirt
@@ -6343,6 +6444,9 @@ spec:
                               referenced in the InfraKubeConfigSecret must have access
                               to manage the required resources within this namespace.
                             type: string
+                            x-kubernetes-validations:
+                            - message: infraNamespace is immutable
+                              rule: self == oldSelf
                         required:
                         - infraNamespace
                         type: object
@@ -6353,6 +6457,63 @@ spec:
                         type: string
                         x-kubernetes-validations:
                         - message: Kubevirt GenerateID is immutable once set
+                          rule: self == oldSelf
+                      storageDriver:
+                        description: StorageDriver defines how the KubeVirt CSI driver
+                          exposes StorageClasses on the infra cluster (hosting the
+                          VMs) to the guest cluster.
+                        properties:
+                          manual:
+                            description: Manual is used to explicilty define how the
+                              infra storageclasses are mapped to guest storageclasses
+                            properties:
+                              storageClassMapping:
+                                description: "StorageClassMapping maps StorageClasses
+                                  on the infra cluster hosting the KubeVirt VMs to
+                                  StorageClasses that are made available within the
+                                  Guest Cluster. \n NOTE: It is possible that not
+                                  all capablities of an infra cluster's storageclass
+                                  will be present for the corresponding guest clusters
+                                  storageclass."
+                                items:
+                                  properties:
+                                    guestStorageClassName:
+                                      description: GuestStorageClassName is the name
+                                        that the corresponding storageclass will be
+                                        called within the guest cluster
+                                      type: string
+                                    infraStorageClassName:
+                                      description: InfraStorageClassName is the name
+                                        of the infra cluster storage class that will
+                                        be exposed into the guest.
+                                      type: string
+                                  required:
+                                  - guestStorageClassName
+                                  - infraStorageClassName
+                                  type: object
+                                type: array
+                                x-kubernetes-validations:
+                                - message: storageClassMapping is immutable
+                                  rule: self == oldSelf
+                            type: object
+                            x-kubernetes-validations:
+                            - message: storageDriver.Manual is immutable
+                              rule: self == oldSelf
+                          type:
+                            default: Default
+                            description: Type represents the type of kubevirt csi
+                              driver configuration to use
+                            enum:
+                            - None
+                            - Default
+                            - Manual
+                            type: string
+                            x-kubernetes-validations:
+                            - message: storageDriver.Type is immutable
+                              rule: self == oldSelf
+                        type: object
+                        x-kubernetes-validations:
+                        - message: storageDriver is immutable
                           rule: self == oldSelf
                     type: object
                     x-kubernetes-validations:
@@ -6373,6 +6534,17 @@ spec:
                           can't be changed.
                         pattern: '^crn:'
                         type: string
+                      imageRegistryOperatorCloudCreds:
+                        description: ImageRegistryOperatorCloudCreds is a reference
+                          to a secret containing ibm cloud credentials for image registry
+                          operator to get authenticated with ibm cloud.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
                       ingressOperatorCloudCreds:
                         description: IngressOperatorCloudCreds is a reference to a
                           secret containing ibm cloud credentials for ingress operator
@@ -6493,6 +6665,7 @@ spec:
                     required:
                     - accountID
                     - cisInstanceCRN
+                    - imageRegistryOperatorCloudCreds
                     - ingressOperatorCloudCreds
                     - kubeCloudControllerCreds
                     - nodePoolManagementCreds

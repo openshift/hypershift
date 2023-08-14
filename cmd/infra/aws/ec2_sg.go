@@ -19,6 +19,12 @@ import (
 const duplicatePermissionErrorCode = "InvalidPermission.Duplicate"
 
 func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, vpcID string) (string, error) {
+	backoff := wait.Backoff{
+		Steps:    10,
+		Duration: 3 * time.Second,
+		Factor:   1.0,
+		Jitter:   0.1,
+	}
 	groupName := fmt.Sprintf("%s-worker-sg", o.InfraID)
 	securityGroup, err := o.existingSecurityGroup(client, groupName)
 	if err != nil {
@@ -33,12 +39,6 @@ func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, v
 		})
 		if err != nil {
 			return "", fmt.Errorf("cannot create worker security group: %w", err)
-		}
-		backoff := wait.Backoff{
-			Steps:    10,
-			Duration: 3 * time.Second,
-			Factor:   1.0,
-			Jitter:   0.1,
 		}
 		var sgResult *ec2.DescribeSecurityGroupsOutput
 		err = retry.OnError(backoff, func(error) bool { return true }, func() error {
@@ -80,34 +80,46 @@ func (o *CreateInfraOptions) CreateWorkerSecurityGroup(client ec2iface.EC2API, v
 	}
 
 	if len(egressToAuthorize) > 0 {
-		_, err = client.AuthorizeSecurityGroupEgress(&ec2.AuthorizeSecurityGroupEgressInput{
-			GroupId:       aws.String(securityGroupID),
-			IpPermissions: egressToAuthorize,
-		})
-		var awsErr awserr.Error
-		if err != nil {
-			if errors.As(err, &awsErr) {
-				// only return an error if the permission has not already been set
-				if awsErr.Code() != duplicatePermissionErrorCode {
-					return "", fmt.Errorf("cannot apply security group egress permissions: %w", err)
+		err = retry.OnError(backoff, func(error) bool { return true }, func() error {
+			_, err := client.AuthorizeSecurityGroupEgress(&ec2.AuthorizeSecurityGroupEgressInput{
+				GroupId:       aws.String(securityGroupID),
+				IpPermissions: egressToAuthorize,
+			})
+			var awsErr awserr.Error
+			if err != nil {
+				if errors.As(err, &awsErr) {
+					// only return an error if the permission has not already been set
+					if awsErr.Code() != duplicatePermissionErrorCode {
+						return fmt.Errorf("cannot apply security group egress permissions: %w", err)
+					}
 				}
 			}
+			return nil
+		})
+		if err != nil {
+			return "", err
 		}
 		log.Log.Info("Authorized egress rules on security group", "id", securityGroupID)
 	}
 	if len(ingressToAuthorize) > 0 {
-		_, err = client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
-			GroupId:       aws.String(securityGroupID),
-			IpPermissions: ingressToAuthorize,
-		})
-		var awsErr awserr.Error
-		if err != nil {
-			if errors.As(err, &awsErr) {
-				// only return an error if the permission has not already been set
-				if awsErr.Code() != duplicatePermissionErrorCode {
-					return "", fmt.Errorf("cannot apply security group ingress permissions: %w", err)
+		err = retry.OnError(backoff, func(error) bool { return true }, func() error {
+			_, err := client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
+				GroupId:       aws.String(securityGroupID),
+				IpPermissions: ingressToAuthorize,
+			})
+			var awsErr awserr.Error
+			if err != nil {
+				if errors.As(err, &awsErr) {
+					// only return an error if the permission has not already been set
+					if awsErr.Code() != duplicatePermissionErrorCode {
+						return fmt.Errorf("cannot apply security group ingress permissions: %w", err)
+					}
 				}
 			}
+			return nil
+		})
+		if err != nil {
+			return "", err
 		}
 		log.Log.Info("Authorized ingress rules on security group", "id", securityGroupID)
 	}

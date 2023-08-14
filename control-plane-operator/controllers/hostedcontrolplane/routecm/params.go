@@ -3,6 +3,7 @@ package routecm
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -14,6 +15,7 @@ import (
 type OpenShiftRouteControllerManagerParams struct {
 	OpenShiftControllerManagerImage string
 	APIServer                       *configv1.APIServerSpec
+	Network                         *configv1.NetworkSpec
 
 	DeploymentConfig config.DeploymentConfig
 	config.OwnerRef
@@ -25,6 +27,7 @@ func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, o
 	}
 	if hcp.Spec.Configuration != nil {
 		params.APIServer = hcp.Spec.Configuration.APIServer
+		params.Network = hcp.Spec.Configuration.Network
 	}
 
 	params.DeploymentConfig = config.DeploymentConfig{
@@ -40,10 +43,55 @@ func NewOpenShiftRouteControllerManagerParams(hcp *hyperv1.HostedControlPlane, o
 			},
 		},
 	}
+	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+		params.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
+	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetDefaults(hcp, openShiftRouteControllerManagerLabels(), nil)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.OwnerRef = config.OwnerRefFrom(hcp)
+
+	params.DeploymentConfig.LivenessProbes = config.LivenessProbes{
+		routeOCMContainerMain().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromInt(int(servingPort)),
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+			InitialDelaySeconds: 30,
+			TimeoutSeconds:      5,
+		},
+	}
+	params.DeploymentConfig.ReadinessProbes = config.ReadinessProbes{
+		routeOCMContainerMain().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromInt(int(servingPort)),
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+			FailureThreshold: 10,
+			TimeoutSeconds:   5,
+		},
+	}
+
 	return params
+}
+
+func (p *OpenShiftRouteControllerManagerParams) MinTLSVersion() string {
+	if p.APIServer != nil {
+		return config.MinTLSVersion(p.APIServer.TLSSecurityProfile)
+	}
+	return config.MinTLSVersion(nil)
+}
+
+func (p *OpenShiftRouteControllerManagerParams) CipherSuites() []string {
+	if p.APIServer != nil {
+		return config.CipherSuites(p.APIServer.TLSSecurityProfile)
+	}
+	return config.CipherSuites(nil)
 }

@@ -8,6 +8,7 @@ import (
 
 	"k8s.io/utils/pointer"
 
+	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
@@ -16,29 +17,33 @@ import (
 // TODO (cewong): Add tests for other params
 func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 	tests := []struct {
-		apiServiceMapping hyperv1.ServicePublishingStrategyMapping
-		name              string
-		advertiseAddress  *string
-		port              *int32
-		expectedAddress   string
-		expectedPort      int32
+		apiServiceMapping  hyperv1.ServicePublishingStrategyMapping
+		name               string
+		advertiseAddress   string
+		serviceNetworkCIDR string
+		port               *int32
+		expectedAddress    string
+		expectedPort       int32
 	}{
 		{
-			name:            "not specified",
-			expectedAddress: config.DefaultAdvertiseAddress,
-			expectedPort:    config.DefaultAPIServerPort,
+			name:               "not specified",
+			expectedAddress:    config.DefaultAdvertiseIPv4Address,
+			serviceNetworkCIDR: "10.0.0.0/24",
+			expectedPort:       config.DefaultAPIServerPort,
 		},
 		{
-			name:             "address specified",
-			advertiseAddress: pointer.String("1.2.3.4"),
-			expectedAddress:  "1.2.3.4",
-			expectedPort:     config.DefaultAPIServerPort,
+			name:               "address specified",
+			advertiseAddress:   "1.2.3.4",
+			serviceNetworkCIDR: "10.0.0.0/24",
+			expectedAddress:    "1.2.3.4",
+			expectedPort:       config.DefaultAPIServerPort,
 		},
 		{
-			name:            "port set for default service publishing strategies",
-			port:            pointer.Int32(6789),
-			expectedAddress: config.DefaultAdvertiseAddress,
-			expectedPort:    config.DefaultAPIServerPort,
+			name:               "port set for default service publishing strategies",
+			port:               pointer.Int32(6789),
+			serviceNetworkCIDR: "10.0.0.0/24",
+			expectedAddress:    config.DefaultAdvertiseIPv4Address,
+			expectedPort:       config.DefaultAPIServerPort,
 		},
 		{
 			name: "port set for NodePort service Publishing Strategy",
@@ -48,21 +53,25 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 					Type: hyperv1.NodePort,
 				},
 			},
-			port:            pointer.Int32(6789),
-			expectedAddress: config.DefaultAdvertiseAddress,
-			expectedPort:    6789,
+			port:               pointer.Int32(6789),
+			serviceNetworkCIDR: "10.0.0.0/24",
+			expectedAddress:    config.DefaultAdvertiseIPv4Address,
+			expectedPort:       6789,
 		},
 	}
 
 	imageProvider := imageprovider.NewFromImages(map[string]string{})
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{test.apiServiceMapping}
-			hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: test.port, AdvertiseAddress: test.advertiseAddress}
+			hcp.Spec.Networking.ServiceNetwork = append(hcp.Spec.Networking.ServiceNetwork, hyperv1.ServiceNetworkEntry{CIDR: *ipnet.MustParseCIDR(test.serviceNetworkCIDR)})
+			hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: test.port, AdvertiseAddress: pointer.String(test.advertiseAddress)}
 			p := NewKubeAPIServerParams(context.Background(), hcp, imageProvider, "", 0, "", 0, false)
-			g := NewGomegaWithT(t)
-			g.Expect(p.AdvertiseAddress).To(Equal(test.expectedAddress))
+			if len(test.advertiseAddress) > 0 {
+				g.Expect(test.advertiseAddress).To(Equal(test.expectedAddress))
+			}
 			g.Expect(p.APIServerPort).To(Equal(test.expectedPort))
 		})
 	}

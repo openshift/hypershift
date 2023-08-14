@@ -3,8 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.9.2
-  creationTimestamp: null
+    controller-gen.kubebuilder.io/version: v0.12.0
   name: nodepools.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
@@ -79,6 +78,18 @@ spec:
           spec:
             description: Spec is the desired behavior of the NodePool.
             properties:
+              arch:
+                default: amd64
+                description: 'Arch is the preferred processor architecture for the
+                  NodePool (currently only supported on AWS) NOTE: This is set as
+                  optional to prevent validation from failing due to a limitation
+                  on client side validation with open API machinery: https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215
+                  TODO Add ppc64le and s390x to enum validation once the architectures
+                  are supported'
+                enum:
+                - arm64
+                - amd64
+                type: string
               autoScaling:
                 description: Autoscaling specifies auto-scaling behavior for the NodePool.
                 properties:
@@ -535,10 +546,35 @@ spec:
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
                         type: object
+                      networkInterfaceMultiqueue:
+                        description: NetworkInterfaceMultiQueue If set to "Enable",
+                          virtual network interfaces configured with a virtio bus
+                          will also enable the vhost multiqueue feature for network
+                          devices. The number of queues created depends on additional
+                          factors of the VirtualMachineInstance, like the number of
+                          guest CPUs.
+                        enum:
+                        - Enable
+                        - Disable
+                        type: string
                       rootVolume:
                         description: RootVolume represents values associated with
                           the VM volume that will host rhcos
                         properties:
+                          cacheStrategy:
+                            description: CacheStrategy defines the boot image caching
+                              strategy. Default - no caching
+                            properties:
+                              type:
+                                default: None
+                                description: Type is the type of the caching strategy
+                                enum:
+                                - None
+                                - PVC
+                                type: string
+                            required:
+                            - type
+                            type: object
                           diskImage:
                             description: Image represents what rhcos image to use
                               for the node pool
@@ -579,6 +615,14 @@ spec:
                               storageClass:
                                 description: StorageClass is the storageClass used
                                   for the underlying PVC that hosts the volume
+                                type: string
+                              volumeMode:
+                                description: VolumeMode defines what type of volume
+                                  is required by the claim. Value of Filesystem is
+                                  implied when not included in claim spec.
+                                enum:
+                                - Filesystem
+                                - Block
                                 type: string
                             type: object
                           type:
@@ -645,7 +689,7 @@ spec:
                           as Dedicated, then Processors value cannot be fractional.
                           When omitted, this means that the user has no opinion and
                           the platform is left to choose a reasonable default. The
-                          current default is Shared."
+                          current default is shared."
                         enum:
                         - dedicated
                         - shared
@@ -841,6 +885,58 @@ spec:
                   - type
                   type: object
                 type: array
+              platform:
+                description: Platform hols the specific statuses
+                properties:
+                  kubeVirt:
+                    description: KubeVirt contains the KubeVirt platform statuses
+                    properties:
+                      cacheName:
+                        description: CacheName holds the name of the cache DataVolume,
+                          if exists
+                        type: string
+                      credentials:
+                        description: "Credentials shows the client credentials used
+                          when creating KubeVirt virtual machines. This filed is only
+                          exists when the KubeVirt virtual machines are being placed
+                          on a cluster separate from the one hosting the Hosted Control
+                          Plane components. \n The default behavior when Credentials
+                          is not defined is for the KubeVirt VMs to be placed on the
+                          same cluster and namespace as the Hosted Control Plane."
+                        properties:
+                          infraKubeConfigSecret:
+                            description: InfraKubeConfigSecret is a reference to a
+                              secret that contains the kubeconfig for the external
+                              infra cluster that will be used to host the KubeVirt
+                              virtual machines for this cluster.
+                            properties:
+                              key:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                            x-kubernetes-validations:
+                            - message: infraKubeConfigSecret is immutable
+                              rule: self == oldSelf
+                          infraNamespace:
+                            description: InfraNamespace defines the namespace on the
+                              external infra cluster that is used to host the KubeVirt
+                              virtual machines. This namespace must already exist
+                              before creating the HostedCluster and the kubeconfig
+                              referenced in the InfraKubeConfigSecret must have access
+                              to manage the required resources within this namespace.
+                            type: string
+                            x-kubernetes-validations:
+                            - message: infraNamespace is immutable
+                              rule: self == oldSelf
+                        required:
+                        - infraNamespace
+                        type: object
+                    type: object
+                type: object
               replicas:
                 description: Replicas is the latest observed number of nodes in the
                   pool.
@@ -918,6 +1014,21 @@ spec:
           spec:
             description: Spec is the desired behavior of the NodePool.
             properties:
+              arch:
+                default: amd64
+                description: 'Arch is the preferred processor architecture for the
+                  NodePool (currently only supported on AWS) NOTE: This is set as
+                  optional to prevent validation from failing due to a limitation
+                  on client side validation with open API machinery: https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215
+                  TODO Add ppc64le and s390x to enum validation once the architectures
+                  are supported'
+                enum:
+                - arm64
+                - amd64
+                type: string
+                x-kubernetes-validations:
+                - message: Arch is immutable
+                  rule: self == oldSelf
               autoScaling:
                 description: Autoscaling specifies auto-scaling behavior for the NodePool.
                 properties:
@@ -951,7 +1062,8 @@ spec:
                   is defined here: \n https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185
                   \n Each ConfigMap must have a single key named \"config\" whose
                   value is the JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
-                  KubeletConfig ContainerRuntimeConfig MachineConfig or ImageContentSourcePolicy"
+                  KubeletConfig ContainerRuntimeConfig MachineConfig ImageContentSourcePolicy
+                  or ImageDigestMirrorSet"
                 items:
                   description: LocalObjectReference contains enough information to
                     let you locate the referenced object inside the same namespace.
@@ -1367,10 +1479,35 @@ spec:
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
                         type: object
+                      networkInterfaceMultiqueue:
+                        description: NetworkInterfaceMultiQueue If set to "Enable",
+                          virtual network interfaces configured with a virtio bus
+                          will also enable the vhost multiqueue feature for network
+                          devices. The number of queues created depends on additional
+                          factors of the VirtualMachineInstance, like the number of
+                          guest CPUs.
+                        enum:
+                        - Enable
+                        - Disable
+                        type: string
                       rootVolume:
                         description: RootVolume represents values associated with
                           the VM volume that will host rhcos
                         properties:
+                          cacheStrategy:
+                            description: CacheStrategy defines the boot image caching
+                              strategy. Default - no caching
+                            properties:
+                              type:
+                                default: None
+                                description: Type is the type of the caching strategy
+                                enum:
+                                - None
+                                - PVC
+                                type: string
+                            required:
+                            - type
+                            type: object
                           diskImage:
                             description: Image represents what rhcos image to use
                               for the node pool
@@ -1411,6 +1548,14 @@ spec:
                               storageClass:
                                 description: StorageClass is the storageClass used
                                   for the underlying PVC that hosts the volume
+                                type: string
+                              volumeMode:
+                                description: VolumeMode defines what type of volume
+                                  is required by the claim. Value of Filesystem is
+                                  implied when not included in claim spec.
+                                enum:
+                                - Filesystem
+                                - Block
                                 type: string
                             type: object
                           type:
@@ -1477,7 +1622,7 @@ spec:
                           as Dedicated, then Processors value cannot be fractional.
                           When omitted, this means that the user has no opinion and
                           the platform is left to choose a reasonable default. The
-                          current default is Shared."
+                          current default is shared."
                         enum:
                         - dedicated
                         - shared
@@ -1616,6 +1761,9 @@ spec:
             - platform
             - release
             type: object
+            x-kubernetes-validations:
+            - message: Arch is required once set
+              rule: '!has(oldSelf.arch) || has(self.arch)'
           status:
             description: Status is the latest observed status of the NodePool.
             properties:
@@ -1671,6 +1819,58 @@ spec:
                   - type
                   type: object
                 type: array
+              platform:
+                description: Platform hols the specific statuses
+                properties:
+                  kubeVirt:
+                    description: KubeVirt contains the KubeVirt platform statuses
+                    properties:
+                      cacheName:
+                        description: CacheName holds the name of the cache DataVolume,
+                          if exists
+                        type: string
+                      credentials:
+                        description: "Credentials shows the client credentials used
+                          when creating KubeVirt virtual machines. This filed is only
+                          exists when the KubeVirt virtual machines are being placed
+                          on a cluster separate from the one hosting the Hosted Control
+                          Plane components. \n The default behavior when Credentials
+                          is not defined is for the KubeVirt VMs to be placed on the
+                          same cluster and namespace as the Hosted Control Plane."
+                        properties:
+                          infraKubeConfigSecret:
+                            description: InfraKubeConfigSecret is a reference to a
+                              secret that contains the kubeconfig for the external
+                              infra cluster that will be used to host the KubeVirt
+                              virtual machines for this cluster.
+                            properties:
+                              key:
+                                type: string
+                              name:
+                                type: string
+                            required:
+                            - key
+                            - name
+                            type: object
+                            x-kubernetes-validations:
+                            - message: infraKubeConfigSecret is immutable
+                              rule: self == oldSelf
+                          infraNamespace:
+                            description: InfraNamespace defines the namespace on the
+                              external infra cluster that is used to host the KubeVirt
+                              virtual machines. This namespace must already exist
+                              before creating the HostedCluster and the kubeconfig
+                              referenced in the InfraKubeConfigSecret must have access
+                              to manage the required resources within this namespace.
+                            type: string
+                            x-kubernetes-validations:
+                            - message: infraNamespace is immutable
+                              rule: self == oldSelf
+                        required:
+                        - infraNamespace
+                        type: object
+                    type: object
+                type: object
               replicas:
                 description: Replicas is the latest observed number of nodes in the
                   pool.

@@ -56,11 +56,13 @@ type CreateOptions struct {
 	NodeDrainTimeout                 time.Duration
 	PullSecretFile                   string
 	ReleaseImage                     string
+	ReleaseStream                    string
 	Render                           bool
 	SSHKeyFile                       string
 	ServiceCIDR                      string
 	ClusterCIDR                      string
 	ExternalDNSDomain                string
+	Arch                             string
 	NodeSelector                     map[string]string
 	NonePlatform                     NonePlatformCreateOptions
 	KubevirtPlatform                 KubevirtPlatformCreateOptions
@@ -111,16 +113,20 @@ type NonePlatformCreateOptions struct {
 }
 
 type KubevirtPlatformCreateOptions struct {
-	ServicePublishingStrategy string
-	APIServerAddress          string
-	Memory                    string
-	Cores                     uint32
-	ContainerDiskImage        string
-	RootVolumeSize            uint32
-	RootVolumeStorageClass    string
-	RootVolumeAccessModes     string
-	InfraKubeConfigFile       string
-	InfraNamespace            string
+	ServicePublishingStrategy  string
+	APIServerAddress           string
+	Memory                     string
+	Cores                      uint32
+	ContainerDiskImage         string
+	RootVolumeSize             uint32
+	RootVolumeStorageClass     string
+	RootVolumeAccessModes      string
+	RootVolumeVolumeMode       string
+	InfraKubeConfigFile        string
+	InfraNamespace             string
+	CacheStrategyType          string
+	InfraStorageClassMappings  []string
+	NetworkInterfaceMultiQueue string
 }
 
 type AWSPlatformOptions struct {
@@ -151,13 +157,16 @@ type AzurePlatformOptions struct {
 }
 
 func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
-	if len(opts.ReleaseImage) == 0 {
-		defaultVersion, err := version.LookupDefaultOCPVersion()
+
+	// allow client side defaulting when release image is empty but release stream is set.
+	if len(opts.ReleaseImage) == 0 && len(opts.ReleaseStream) != 0 {
+		defaultVersion, err := version.LookupDefaultOCPVersion(opts.ReleaseStream)
 		if err != nil {
 			return nil, fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)
 		}
 		opts.ReleaseImage = defaultVersion.PullSpec
 	}
+
 	if err := defaultNetworkType(ctx, opts, &releaseinfo.RegistryClientProvider{}, os.ReadFile); err != nil {
 		return nil, fmt.Errorf("failed to default network: %w", err)
 	}
@@ -267,6 +276,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		EtcdStorageClass:                 opts.EtcdStorageClass,
 		ServiceCIDR:                      opts.ServiceCIDR,
 		ClusterCIDR:                      opts.ClusterCIDR,
+		Arch:                             opts.Arch,
 		NodeSelector:                     opts.NodeSelector,
 		UpgradeType:                      opts.NodeUpgradeType,
 	}, nil
@@ -433,7 +443,11 @@ func CreateCluster(ctx context.Context, opts *CreateOptions, platformSpecificApp
 func defaultNetworkType(ctx context.Context, opts *CreateOptions, releaseProvider releaseinfo.Provider, readFile func(string) ([]byte, error)) error {
 	if opts.NetworkType != "" {
 		return nil
+	} else if opts.ReleaseImage == "" {
+		opts.NetworkType = string(hyperv1.OVNKubernetes)
+		return nil
 	}
+
 	version, err := getReleaseSemanticVersion(ctx, opts, releaseProvider, readFile)
 	if err != nil {
 		return fmt.Errorf("failed to get version for release image %s: %w", opts.ReleaseImage, err)

@@ -37,6 +37,7 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
 		fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
 		fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
+		"--balance-similar-node-groups=true",
 		"--v=4",
 	}
 
@@ -180,10 +181,16 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, util.APIPort(hcp)), availabilityProberImage, &deployment.Spec.Template.Spec)
 
 	deploymentConfig := config.DeploymentConfig{
+		AdditionalLabels: map[string]string{
+			config.NeedManagementKASAccessLabel: "true",
+		},
 		Scheduling: config.Scheduling{
 			PriorityClass: config.DefaultPriorityClass,
 		},
 		SetDefaultSecurityContext: setDefaultSecurityContext,
+	}
+	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 
 	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
@@ -204,12 +211,19 @@ func ReconcileAutoscalerRole(role *rbacv1.Role, owner config.OwnerRef) error {
 				"machines",
 				"machinesets",
 				"machinesets/scale",
+				"machinepools",
+				"machinepools/scale",
 			},
 			Verbs: []string{"*"},
 		},
 		{
 			APIGroups: []string{"infrastructure.cluster.x-k8s.io"},
 			Resources: []string{"*"},
+			Verbs:     []string{"get", "list"},
+		},
+		{
+			APIGroups: []string{"capi-provider.agent-install.openshift.io"},
+			Resources: []string{"agentmachinetemplates"},
 			Verbs:     []string{"get", "list"},
 		},
 	}
@@ -315,6 +329,8 @@ const (
 
 func GetIgnoreLabels() []string {
 	return []string{
+		// Hypershift
+		"hypershift.openshift.io/nodePool",
 		// AWS
 		AwsIgnoredLabelEbsCsiZone,
 		// Azure

@@ -5,21 +5,26 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 )
 
 type ExampleKubevirtOptions struct {
-	ServicePublishingStrategy string
-	APIServerAddress          string
-	Memory                    string
-	Cores                     uint32
-	Image                     string
-	RootVolumeSize            uint32
-	RootVolumeStorageClass    string
-	RootVolumeAccessModes     string
-	BaseDomainPassthrough     bool
-	InfraKubeConfig           []byte
-	InfraNamespace            string
+	ServicePublishingStrategy  string
+	APIServerAddress           string
+	Memory                     string
+	Cores                      uint32
+	Image                      string
+	RootVolumeSize             uint32
+	RootVolumeStorageClass     string
+	RootVolumeAccessModes      string
+	RootVolumeVolumeMode       string
+	BaseDomainPassthrough      bool
+	InfraKubeConfig            []byte
+	InfraNamespace             string
+	CacheStrategyType          string
+	InfraStorageClassMappings  []string
+	NetworkInterfaceMultiQueue *hyperv1.MultiQueueSetting
 }
 
 func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoolPlatform {
@@ -55,6 +60,11 @@ func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoo
 		Compute: &hyperv1.KubevirtCompute{},
 	}
 
+	if o.RootVolumeVolumeMode != "" {
+		vm := corev1.PersistentVolumeMode(o.RootVolumeVolumeMode)
+		exampleTemplate.RootVolume.KubevirtVolume.Persistent.VolumeMode = &vm
+	}
+
 	if o.Memory != "" {
 		memory := apiresource.MustParse(o.Memory)
 		exampleTemplate.Compute.Memory = &memory
@@ -67,6 +77,17 @@ func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoo
 		exampleTemplate.RootVolume.Image = &hyperv1.KubevirtDiskImage{
 			ContainerDiskImage: &o.Image,
 		}
+	}
+
+	strategyType := hyperv1.KubevirtCachingStrategyType(o.CacheStrategyType)
+	if strategyType == hyperv1.KubevirtCachingStrategyNone || strategyType == hyperv1.KubevirtCachingStrategyPVC {
+		exampleTemplate.RootVolume.CacheStrategy = &hyperv1.KubevirtCachingStrategy{
+			Type: strategyType,
+		}
+	}
+
+	if o.NetworkInterfaceMultiQueue != nil && *o.NetworkInterfaceMultiQueue == hyperv1.MultiQueueEnable {
+		exampleTemplate.NetworkInterfaceMultiQueue = o.NetworkInterfaceMultiQueue
 	}
 
 	return exampleTemplate

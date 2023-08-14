@@ -1,6 +1,6 @@
 run:
   tests: false
-  
+
 linters-settings:
   errcheck:
     check-type-assertions: true
@@ -29,20 +29,37 @@ linters-settings:
 linters:
   enable-all: true
   disable:
+    - bodyclose
+    - contextcheck
+    - nilerr
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
+    - structcheck
+    - tparallel
     - vetshadow
+    - errname
+    - forcetypeassert
     - gocyclo
     - unparam
     - nakedret
     - lll
+    - golint
+    - maligned
+    - scopelint
     - dupl
     - gosec
     - gochecknoinits
     - gochecknoglobals
+    - exhaustruct
+    - nonamedreturns
     - errcheck
     - staticcheck
     - stylecheck
     - wsl
     - interfacer
+    - varnamelen
+    - tagliatelle
     - gomnd
     - nlreturn
     - wrapcheck
@@ -53,4 +70,5 @@ linters:
     - errorlint
     - cyclop
     - godot
+    - exhaustive
   fast: false

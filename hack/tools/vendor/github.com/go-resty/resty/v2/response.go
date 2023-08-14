@@ -1,4 +1,4 @@
-// Copyright (c) 2015-2019 Jeevanandam M (jeeva@myjeeva.com), All rights reserved.
+// Copyright (c) 2015-2021 Jeevanandam M (jeeva@myjeeva.com), All rights reserved.
 // resty source code and usage is governed by a MIT style
 // license that can be found in the LICENSE file.
 
@@ -55,6 +55,14 @@ func (r *Response) StatusCode() int {
 	return r.RawResponse.StatusCode
 }
 
+// Proto method returns the HTTP response protocol used for the request.
+func (r *Response) Proto() string {
+	if r.RawResponse == nil {
+		return ""
+	}
+	return r.RawResponse.Proto
+}
+
 // Result method returns the response value as an object if it has one
 func (r *Response) Result() interface{} {
 	return r.Request.Result
@@ -91,16 +99,16 @@ func (r *Response) String() string {
 
 // Time method returns the time of HTTP response time that from request we sent and received a request.
 //
-// See `Response.ReceivedAt` to know when client recevied response and see `Response.Request.Time` to know
+// See `Response.ReceivedAt` to know when client received response and see `Response.Request.Time` to know
 // when client sent a request.
 func (r *Response) Time() time.Duration {
 	if r.Request.clientTrace != nil {
-		return r.receivedAt.Sub(r.Request.clientTrace.getConn)
+		return r.Request.TraceInfo().TotalTime
 	}
 	return r.receivedAt.Sub(r.Request.Time)
 }
 
-// ReceivedAt method returns when response got recevied from server for the request.
+// ReceivedAt method returns when response got received from server for the request.
 func (r *Response) ReceivedAt() time.Time {
 	return r.receivedAt
 }
@@ -137,6 +145,13 @@ func (r *Response) IsError() bool {
 //‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 // Response Unexported methods
 //_______________________________________________________________________
+
+func (r *Response) setReceivedAt() {
+	r.receivedAt = time.Now()
+	if r.Request.clientTrace != nil {
+		r.Request.clientTrace.endTime = r.receivedAt
+	}
+}
 
 func (r *Response) fmtBodyString(sl int64) string {
 	if r.body != nil {

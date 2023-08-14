@@ -25,6 +25,11 @@ type ProviderWithRegistryOverrides interface {
 	GetRegistryOverrides() map[string]string
 }
 
+type ProviderWithOpenShiftImageRegistryOverrides interface {
+	ProviderWithRegistryOverrides
+	GetOpenShiftImageRegistryOverrides() map[string][]string
+}
+
 // ReleaseImage wraps an ImageStream with some utilities that help the user
 // discover constituent component image information.
 type ReleaseImage struct {
@@ -56,8 +61,9 @@ type CoreOSFormat struct {
 }
 
 type CoreOSImages struct {
-	AWS     CoreOSAWSImages     `json:"aws"`
-	PowerVS CoreOSPowerVSImages `json:"powervs"`
+	AWS      CoreOSAWSImages      `json:"aws"`
+	PowerVS  CoreOSPowerVSImages  `json:"powervs"`
+	Kubevirt CoreOSKubevirtImages `json:"kubevirt"`
 }
 
 type CoreOSAWSImages struct {
@@ -67,6 +73,12 @@ type CoreOSAWSImages struct {
 type CoreOSAWSImage struct {
 	Release string `json:"release"`
 	Image   string `json:"image"`
+}
+
+type CoreOSKubevirtImages struct {
+	Release   string `json:"release"`
+	Image     string `json:"image"`
+	DigestRef string `json:"digest-ref"`
 }
 
 type CoreOSPowerVSImages struct {

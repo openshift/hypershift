@@ -4,6 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"sort"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -12,8 +18,14 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/cmd/cluster/core"
+	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	nodepoolmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
+	"github.com/openshift/hypershift/support/conditions"
+	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+	support "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/library-go/test/library/metrics"
 	promapi "github.com/prometheus/client_golang/api"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -22,10 +34,12 @@ import (
 	"github.com/prometheus/common/model"
 	prommodel "github.com/prometheus/common/model"
 	"go.uber.org/zap/zaptest"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	kapierror "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,12 +48,10 @@ import (
 	"k8s.io/client-go/kubernetes"
 	k8s "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"os"
+	"k8s.io/utils/pointer"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"strings"
-	"testing"
-	"time"
 )
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -175,6 +187,8 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 	switch platform {
 	case hyperv1.PowerVSPlatform:
 		waitTimeout = 60 * time.Minute
+	case hyperv1.KubevirtPlatform:
+		waitTimeout = 60 * time.Minute
 	}
 
 	t.Logf("Waiting for nodes to become ready. Want: %v", n)
@@ -185,9 +199,7 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 		if err != nil {
 			return false, nil
 		}
-		if len(nodes.Items) == 0 {
-			return false, nil
-		}
+
 		var readyNodes []string
 		for _, node := range nodes.Items {
 			for _, cond := range node.Status.Conditions {
@@ -217,8 +229,13 @@ func WaitForNReadyNodesByNodePool(t *testing.T, ctx context.Context, client crcl
 	start := time.Now()
 
 	// waitTimeout for nodes to become Ready
-	waitTimeout := 30 * time.Minute
+	// NOTE: The upgrade times are originally 30 minutes each for all platforms except (KubevirtPlatform && PowerVSPlatform).
+	// Due to well-known reasons (https://issues.redhat.com/browse/SDN-4042), these numbers are increased to
+	// 45 minutes only for the 4.13->4.14 upgrades - for all platforms. This will be brought down in 4.15 release.
+	waitTimeout := 45 * time.Minute
 	switch platform {
+	case hyperv1.KubevirtPlatform:
+		waitTimeout = 45 * time.Minute
 	case hyperv1.PowerVSPlatform:
 		waitTimeout = 60 * time.Minute
 	}
@@ -553,6 +570,42 @@ func EnsureMachineDeploymentGeneration(t *testing.T, ctx context.Context, hostCl
 	})
 }
 
+func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, guestClient crclient.Client) {
+	t.Run("EnsurePSANotPrivileged", func(t *testing.T) {
+		testNamespaceName := "e2e-psa-check"
+		namespace := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNamespaceName,
+			},
+		}
+		if err := guestClient.Create(ctx, namespace); err != nil {
+			t.Fatalf("failed to create namespace: %v", err)
+		}
+		pod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-pod",
+				Namespace: testNamespaceName,
+			},
+			Spec: corev1.PodSpec{
+				NodeSelector: map[string]string{
+					"e2e.openshift.io/unschedulable": "should-not-run",
+				},
+				Containers: []corev1.Container{
+					{Name: "first", Image: "something-innocuous"},
+				},
+				HostPID: true, // enforcement of restricted or baseline policy should reject this
+			},
+		}
+		err := guestClient.Create(ctx, pod)
+		if err == nil {
+			t.Errorf("pod admitted when rejection was expected")
+		}
+		if !kapierror.IsForbidden(err) {
+			t.Errorf("forbidden error expected, got %s", err)
+		}
+	})
+}
+
 func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureAPIBudget", func(t *testing.T) {
 
@@ -718,6 +771,167 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 			}
 		}
 	})
+}
+
+func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureNetworkPolicies", func(t *testing.T) {
+		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+			t.Skip()
+		}
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		t.Run("EnsureComponentsHaveNeedManagementKASAccessLabel", func(t *testing.T) {
+			// Check for all components expected to have NeedManagementKASAccessLabel.
+			want := []string{
+				"cluster-network-operator",
+				"ignition-server",
+				"cluster-storage-operator",
+				"csi-snapshot-controller-operator",
+				"machine-approver",
+				"cluster-autoscaler",
+				"cluster-node-tuning-operator",
+				"capi-provider-controller-manager",
+				"cluster-api",
+				"control-plane-operator",
+				"hosted-cluster-config-operator",
+				"cloud-controller-manager",
+			}
+			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+				want = append(want, "private-router")
+			}
+
+			g := NewWithT(t)
+			err := checkPodsHaveLabel(ctx, c, want, hcpNamespace, client.MatchingLabels{suppconfig.NeedManagementKASAccessLabel: "true"})
+			g.Expect(err).ToNot(HaveOccurred())
+		})
+
+		t.Run("EnsureEgressTrafficToManagementKAS", func(t *testing.T) {
+			g := NewWithT(t)
+
+			kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
+			err := c.Get(ctx, client.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			kasAddress := ""
+			for _, subset := range kubernetesEndpoint.Subsets {
+				if len(subset.Addresses) > 0 && len(subset.Ports) > 0 {
+					kasAddress = fmt.Sprintf("https://%s:%v", subset.Addresses[0].IP, subset.Ports[0].Port)
+					break
+				}
+			}
+			t.Logf("Connecting to kubernetes endpoint on: %s", kasAddress)
+
+			command := []string{
+				"curl",
+				"--connect-timeout",
+				"2",
+				"-Iks",
+				// Default KAS advertised address.
+				kasAddress,
+			}
+			stdOut, err := RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator")
+			g.Expect(err).To(HaveOccurred())
+
+			// Expect curl to timeout https://curl.se/docs/manpage.html (exit code 28).
+			if err != nil && !strings.Contains(err.Error(), "command terminated with exit code 28") {
+				t.Errorf("cluster version pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
+			}
+
+			stdOut, err = RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager")
+			// Expect curl return a 403 from the KAS.
+			if !strings.Contains(stdOut, "HTTP/2 403") || err != nil {
+				t.Errorf("cluster api pod was unexpectedly not allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
+			}
+		})
+	})
+}
+
+func checkPodsHaveLabel(ctx context.Context, c crclient.Client, components []string, namespace string, labels map[string]string) error {
+	// Get all Pods with wanted label.
+	podList := &corev1.PodList{}
+	err := c.List(ctx, podList, client.InNamespace(namespace), client.MatchingLabels(labels))
+	if err != nil {
+		return fmt.Errorf("failed to list pods: %w", err)
+	}
+
+	// Create a slice with app/name as the value for every pod.
+	got := make([]string, 0)
+	for _, pod := range podList.Items {
+		if pod.Labels["app"] != "" {
+			got = append(got, pod.Labels["app"])
+			continue
+		}
+
+		if strings.HasPrefix(pod.Labels["name"], "olm-collect-profiles") {
+			continue
+		}
+
+		if pod.Labels["name"] != "" {
+			got = append(got, pod.Labels["name"])
+			continue
+		}
+
+		got = append(got, pod.Name)
+	}
+
+	// Remove duplicates from got. This might be the case when e.g. running HA.
+	processed := make(map[string]bool, 0)
+	gotWithoutDuplicates := make([]string, 0)
+	for i := range got {
+		if processed[got[i]] {
+			continue
+		}
+
+		gotWithoutDuplicates = append(gotWithoutDuplicates, got[i])
+		processed[got[i]] = true
+	}
+
+	// This Transformer sorts a []string.
+	trans := cmp.Transformer("Sort", func(in []string) []string {
+		out := append([]string(nil), in...) // Copy input to avoid mutating it
+		sort.Strings(out)
+		return out
+	})
+
+	if diff := cmp.Diff(components, gotWithoutDuplicates, trans); diff != "" {
+		return fmt.Errorf("not all expected components have NeedManagementKASAccessLabel: %s", cmp.Diff(components, gotWithoutDuplicates, trans))
+	}
+	return nil
+}
+
+func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespace string, command []string, containerName string) (string, error) {
+	podList := &corev1.PodList{}
+	if err := c.List(ctx, podList,
+		client.InNamespace(namespace),
+		client.MatchingLabels{"app": component}); err != nil {
+		return "", fmt.Errorf("failed to list Pods: %w", err)
+	}
+	if len(podList.Items) < 1 {
+		return "", fmt.Errorf("pods for component %q not found", component)
+	}
+
+	restConfig, err := GetConfig()
+	if err != nil {
+		return "", fmt.Errorf("failed to get restConfig; %w", err)
+	}
+
+	stdOut := new(bytes.Buffer)
+	podExecuter := PodExecOptions{
+		StreamOptions: StreamOptions{
+			IOStreams: genericclioptions.IOStreams{
+				Out:    stdOut,
+				ErrOut: os.Stderr,
+			},
+		},
+		Command:       command,
+		Namespace:     namespace,
+		PodName:       podList.Items[0].Name,
+		Config:        restConfig,
+		ContainerName: containerName,
+	}
+
+	err = podExecuter.Run()
+	return stdOut.String(), err
 }
 
 func getPrometheusToken(ctx context.Context, secretName string, client crclient.Client) ([]byte, error) {
@@ -978,4 +1192,341 @@ func RunQueryAtTime(ctx context.Context, log logr.Logger, prometheusClient prome
 			Result: result.(model.Vector),
 		},
 	}, nil
+}
+
+func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
+	t.Run("EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations", func(t *testing.T) {
+		g := NewWithT(t)
+
+		auditedAppList := map[string]string{
+			"cloud-controller-manager":         "app",
+			"aws-ebs-csi-driver-controller":    "app",
+			"capi-provider-controller-manager": "app",
+			"cloud-network-config-controller":  "app",
+			"cluster-network-operator":         "app",
+			"cluster-version-operator":         "app",
+			"control-plane-operator":           "app",
+			"ignition-server":                  "app",
+			"ingress-operator":                 "app",
+			"kube-apiserver":                   "app",
+			"kube-controller-manager":          "app",
+			"kube-scheduler":                   "app",
+			"multus-admission-controller":      "app",
+			"oauth-openshift":                  "app",
+			"openshift-apiserver":              "app",
+			"openshift-oauth-apiserver":        "app",
+			"packageserver":                    "app",
+			"ovnkube-master":                   "app",
+			"kubevirt-csi-driver":              "app",
+			"cluster-image-registry-operator":  "name",
+			"virt-launcher":                    "kubevirt.io",
+		}
+
+		hcpPods := &corev1.PodList{}
+		if err := hostClient.List(ctx, hcpPods, &client.ListOptions{
+			Namespace: hcpNs,
+		}); err != nil {
+			t.Fatalf("cannot list hostedControlPlane pods: %v", err)
+		}
+
+		// Check if the pod's volumes are hostPath or emptyDir, if so, the deployment
+		// should annotate the pods with the safe-to-evict-local-volumes, with all the volumes
+		// involved as an string  and separated by comma, to satisfy CA operator contract.
+		// more info here: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-types-of-pods-can-prevent-ca-from-removing-a-node
+		for _, pod := range hcpPods.Items {
+			var labelKey, labelValue string
+			// Go through our audited list looking for the label that matches the pod Labels
+			// Get the key and value and delete the entry from the audited list.
+			for appName, prefix := range auditedAppList {
+				if pod.Labels[prefix] == appName {
+					labelKey = prefix
+					labelValue = appName
+					delete(auditedAppList, prefix)
+					break
+				}
+			}
+
+			if labelKey == "" || labelValue == "" {
+				// if the Key/Value are empty we asume that the pod is not in the auditedList,
+				// if that's the case the annotation should not exists in that pod.
+				// Then continue to the next pod
+				g.Expect(pod.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey]).To(BeEmpty(), "the pod  %s is not in the audited list for safe-eviction and should not contain the safe-to-evict-local-volume annotation", pod.Name)
+				continue
+			}
+
+			annotationValue := pod.ObjectMeta.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey]
+			for _, volume := range pod.Spec.Volumes {
+				// Check the pod's volumes, if they are emptyDir or hostPath,
+				// they should include that volume in the annotation
+				if volume.EmptyDir != nil || volume.HostPath != nil {
+					g.Expect(strings.Contains(annotationValue, volume.Name)).To(BeTrue(), "pod with name %s do not have the right volumes set in the safe-to-evict-local-volume annotation: \nCurrent: %s, Expected to be included in: %s", pod.Name, volume.Name, annotationValue)
+				}
+			}
+		}
+	})
+}
+
+func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient crclient.Client) {
+	t.Run("EnsureGuestWebhooksValidated", func(t *testing.T) {
+		guestWebhookConf := &admissionregistrationv1.ValidatingWebhookConfiguration{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-webhook",
+				Namespace: "default",
+				Annotations: map[string]string{
+					"service.beta.openshift.io/inject-cabundle": "true",
+				},
+			},
+		}
+
+		sideEffectsNone := admissionregistrationv1.SideEffectClassNone
+		guestWebhookConf.Webhooks = []admissionregistrationv1.ValidatingWebhook{{
+			AdmissionReviewVersions: []string{"v1"},
+			Name:                    "etcd-client.example.com",
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{
+				URL: pointer.String("https://etcd-client:2379"),
+			},
+			Rules: []admissionregistrationv1.RuleWithOperations{{
+				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
+				Rule: admissionregistrationv1.Rule{
+					APIGroups:   []string{""},
+					APIVersions: []string{"v1"},
+					Resources:   []string{"pods"},
+				},
+			}},
+			SideEffects: &sideEffectsNone,
+		}}
+
+		if err := guestClient.Create(ctx, guestWebhookConf); err != nil {
+			t.Errorf("failed to create webhook: %v", err)
+		}
+
+		err := wait.PollImmediateWithContext(ctx, 5*time.Second, 1*time.Minute, func(ctx context.Context) (done bool, err error) {
+			webhook := &admissionregistrationv1.ValidatingWebhookConfiguration{}
+			if err := guestClient.Get(ctx, client.ObjectKeyFromObject(guestWebhookConf), webhook); err != nil && errors.IsNotFound(err) {
+				// webhook has been deleted
+				return true, nil
+			}
+
+			return false, nil
+		})
+
+		if err != nil {
+			t.Errorf("failed to ensure guest webhooks validated, violating webhook %s was not deleted: %v", guestWebhookConf.Name, err)
+		}
+
+	})
+}
+
+const (
+	// Metrics
+	// TODO (jparrill): We need to separate the metrics.go from the main pkg in the hypershift-operator.
+	//     Delete these references when it's done and import it from there
+	HypershiftOperatorInfoName = "hypershift_operator_info"
+)
+
+func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster) {
+	t.Run("ValidateMetricsAreExposed", func(t *testing.T) {
+		// TODO (alberto) this test should pass in None.
+		// https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/artifacts/e2e-aws/run-e2e/artifacts/TestNoneCreateCluster_PreTeardownClusterDump/
+		// https://storage.googleapis.com/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/build-log.txt
+		// https://prow.ci.openshift.org/view/gs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032
+		if hc.Spec.Platform.Type == hyperv1.NonePlatform {
+			t.Skip()
+		}
+
+		g := NewWithT(t)
+
+		prometheusClient, err := NewPrometheusClient(ctx)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Polling to prevent races with prometheus scrape interval.
+		err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
+			for _, metricName := range []string{
+				hcmetrics.DeletionDurationMetricName,
+				hcmetrics.GuestCloudResourcesDeletionDurationMetricName,
+				hcmetrics.AvailableDurationName,
+				hcmetrics.InitialRolloutDurationName,
+				hcmetrics.ClusterUpgradeDurationMetricName,
+				hcmetrics.ProxyName,
+				hcmetrics.SilenceAlertsName,
+				hcmetrics.LimitedSupportEnabledName,
+				HypershiftOperatorInfoName,
+				nodepoolmetrics.NodePoolSizeMetricName,
+				nodepoolmetrics.NodePoolAvailableReplicasMetricName,
+				nodepoolmetrics.NodePoolDeletionDurationMetricName,
+				nodepoolmetrics.NodePoolInitialRolloutDurationMetricName,
+			} {
+				// Query fo HC specific metrics by hc.name.
+				query := fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name)
+				if metricName == HypershiftOperatorInfoName {
+					// Query HO info metric
+					query = HypershiftOperatorInfoName
+				}
+				if strings.HasPrefix(metricName, "hypershift_nodepools") {
+					query = fmt.Sprintf("%v{cluster_name=\"%s\"}", metricName, hc.Name)
+				}
+				// upgrade metric is only available for TestUpgradeControlPlane
+				if metricName == hcmetrics.ClusterUpgradeDurationMetricName && !strings.HasPrefix("TestUpgradeControlPlane", t.Name()) {
+					continue
+				}
+
+				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, query, time.Now())
+				if err != nil {
+					return false, err
+				}
+
+				if len(result.Data.Result) < 1 {
+					t.Logf("Metric not found: %q", metricName)
+					return false, nil
+				}
+				for _, series := range result.Data.Result {
+					t.Logf("Found metric: %v", series.String())
+				}
+			}
+			return true, nil
+		})
+		if err != nil {
+			t.Errorf("Failed to validate that all metrics are exposed")
+		} else {
+			t.Logf("Destroyed cluster. Namespace: %s, name: %s", hc.Namespace, hc.Name)
+		}
+	})
+}
+
+func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) {
+	g := NewWithT(t)
+
+	// Sanity check the cluster by waiting for the nodes to report ready
+	t.Logf("Waiting for guest client to become available")
+	guestClient := WaitForGuestClient(t, ctx, client, hostedCluster)
+
+	// Wait for Nodes to be Ready
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+
+	// rollout will not complete if there are no wroker nodes.
+	if numNodes > 0 {
+		// Wait for the rollout to be complete
+		t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
+		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+	}
+
+	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+
+	serviceStrategy := util.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
+	g.Expect(serviceStrategy).ToNot(BeNil())
+	if serviceStrategy.Type == hyperv1.Route && serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
+		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).To(Equal(serviceStrategy.Route.Hostname))
+	} else {
+		// sanity check
+		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
+	}
+
+	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0)
+
+	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Namespace)
+	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+	EnsurePSANotPrivileged(t, ctx, guestClient)
+	EnsureGuestWebhooksValidated(t, ctx, guestClient)
+
+	if numNodes > 0 {
+		EnsureNodeCommunication(t, ctx, client, hostedCluster)
+	}
+}
+
+func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) {
+	g := NewWithT(t)
+
+	_, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
+
+	// Ensure NodePools have all Nodes ready.
+	WaitForNodePoolDesiredNodes(t, ctx, client, hostedCluster)
+
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	// rollout will not complete if there are no wroker nodes.
+	if numNodes > 0 {
+		// Wait for the rollout to be complete
+		t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
+		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+	}
+
+	err = client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
+
+	serviceStrategy := util.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
+	g.Expect(serviceStrategy).ToNot(BeNil())
+	// Private clusters should always use Route
+	g.Expect(serviceStrategy.Type).To(Equal(hyperv1.Route))
+	if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
+		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).To(Equal(serviceStrategy.Route.Hostname))
+	} else {
+		// sanity check
+		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
+	}
+
+	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0)
+
+	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+}
+
+func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool) {
+	expectedConditions := conditions.ExpectedHCConditions()
+
+	if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
+		// AWS KMS is not configured
+		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionUnknown
+	} else {
+		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionTrue
+	}
+
+	kasExternalHostname := support.ServiceExternalDNSHostnameByHC(hostedCluster, hyperv1.APIServer)
+	if kasExternalHostname == "" {
+		// ExternalDNS is not configured
+		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionUnknown
+	} else {
+		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionTrue
+	}
+
+	if !hasWorkerNodes {
+		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
+		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
+		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
+	}
+
+	start := time.Now()
+	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (bool, error) {
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+			t.Logf("Failed to get hostedcluster: %v", err)
+			return false, nil
+		}
+
+		for _, condition := range hostedCluster.Status.Conditions {
+			if condition.Type == string(hyperv1.ClusterVersionUpgradeable) {
+				// ClusterVersionUpgradeable condition status is not always guranteed to be true, skip.
+				t.Logf("observed condition %s status [%s]", condition.Type, condition.Status)
+				continue
+			}
+
+			expectedStatus, known := expectedConditions[hyperv1.ConditionType(condition.Type)]
+			if !known {
+				return false, fmt.Errorf("unknown condition %s", condition.Type)
+			}
+
+			if condition.Status != expectedStatus {
+				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
+				return false, nil
+			}
+			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
+		}
+
+		return true, nil
+	})
+	duration := time.Since(start).Round(time.Second)
+
+	if err != nil {
+		t.Fatalf("Failed to validate HostedCluster conditions in %s: %v", duration, err)
+	}
+	t.Logf("Successfully validated all expected HostedCluster conditions in %s", duration)
 }

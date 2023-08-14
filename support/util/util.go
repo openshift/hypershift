@@ -11,9 +11,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -66,6 +68,13 @@ func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exis
 	return true, nil
 }
 
+func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {
+	if hcp.Spec.ControlPlaneReleaseImage != nil {
+		return *hcp.Spec.ControlPlaneReleaseImage
+	}
+	return hcp.Spec.ReleaseImage
+}
+
 // CompressAndEncode compresses and base-64 encodes a given byte array. Ideal for loading an
 // arbitrary byte array into a ConfigMap or Secret.
 func CompressAndEncode(payload []byte) (*bytes.Buffer, error) {
@@ -75,7 +84,7 @@ func CompressAndEncode(payload []byte) (*bytes.Buffer, error) {
 		return out, nil
 	}
 
-	// We need to base64-encode our gzipped data so we can marshal it in and out
+	// We need to base64-encode our gzipped data, so we can marshal it in and out
 	// of a string since ConfigMaps and Secrets expect a textual representation.
 	base64Enc := base64.NewEncoder(base64.StdEncoding, out)
 	defer base64Enc.Close()
@@ -170,7 +179,7 @@ func ResolveDNSHostname(ctx context.Context, hostName string) error {
 	return err
 }
 
-// InsecureHTTPClient return an http.Client which skips server certificate verification
+// InsecureHTTPClient return a http.Client which skips server certificate verification
 func InsecureHTTPClient() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
@@ -184,7 +193,89 @@ func InsecureHTTPClient() *http.Client {
 // HashStruct takes a value, typically a string, and returns a 32-bit FNV-1a hashed version of the value as a string
 func HashStruct(o interface{}) string {
 	hash := fnv.New32a()
-	hash.Write([]byte(fmt.Sprintf("%v", o)))
+	_, _ = hash.Write([]byte(fmt.Sprintf("%v", o)))
 	intHash := hash.Sum32()
 	return fmt.Sprintf("%08x", intHash)
+}
+
+// ConvertRegistryOverridesToCommandLineFlag converts a map of registry sources and their mirrors into a string
+func ConvertRegistryOverridesToCommandLineFlag(registryOverrides map[string]string) string {
+	var commandLineFlagArray []string
+	for registrySource, registryReplacement := range registryOverrides {
+		commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
+	}
+	if len(commandLineFlagArray) > 0 {
+		sort.Strings(commandLineFlagArray)
+		return strings.Join(commandLineFlagArray, ",")
+	}
+	// this is the equivalent of null on a StringToString command line variable.
+	return "="
+}
+
+// ConvertOpenShiftImageRegistryOverridesToCommandLineFlag converts a map of image registry sources and their mirrors into a string
+func ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(registryOverrides map[string][]string) string {
+	var commandLineFlagArray []string
+	for registrySource, registryReplacements := range registryOverrides {
+		for _, registryReplacement := range registryReplacements {
+			commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
+		}
+	}
+	if len(commandLineFlagArray) > 0 {
+		sort.Strings(commandLineFlagArray)
+		return strings.Join(commandLineFlagArray, ",")
+	}
+	// this is the equivalent of null on a StringToString command line variable.
+	return "="
+}
+
+// ConvertImageRegistryOverrideStringToMap translates the environment variable containing registry source to mirror
+// mappings back to a map[string]string structure that can be ingested by the registry image content policies release provider
+func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string {
+	registryMirrorPair := strings.Split(envVar, ",")
+
+	if len(registryMirrorPair) == 0 || envVar == "=" {
+		return nil
+	}
+
+	imageRegistryOverrides := make(map[string][]string)
+
+	for _, pair := range registryMirrorPair {
+		registryMirror := strings.Split(pair, "=")
+		registry := registryMirror[0]
+		mirror := registryMirror[1]
+
+		if _, ok := imageRegistryOverrides[registry]; ok {
+			imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], mirror)
+		} else {
+			imageRegistryOverrides[registry] = []string{mirror}
+		}
+	}
+
+	return imageRegistryOverrides
+}
+
+// IsIPv4 function parse the CIDR and get the IPNet struct if the IPNet.IP cannot be converted to 4bytes format,
+// the function returns nil, if it's an IPv6 it will return nil.
+func IsIPv4(cidr string) (bool, error) {
+	_, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return false, fmt.Errorf("error validating the incoming CIDR %s: %v", cidr, err)
+	}
+
+	if ipnet.IP.To4() != nil {
+		return true, nil
+	} else {
+		return false, nil
+	}
+}
+
+// FirstUsableIP returns the first usable IP in both, IPv4 and IPv6 stacks.
+func FirstUsableIP(cidr string) (string, error) {
+	_, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return "", fmt.Errorf("error validating the incoming CIDR %s: %w", cidr, err)
+	}
+	ip := ipNet.IP
+	ip[len(ipNet.IP)-1]++
+	return ip.String(), nil
 }

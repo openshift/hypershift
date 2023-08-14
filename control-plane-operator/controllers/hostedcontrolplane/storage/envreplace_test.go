@@ -1,8 +1,6 @@
 package storage
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -16,14 +14,15 @@ func TestEnvironmentReplacer(t *testing.T) {
 	// This protects us from adding a new image to assets/10_deployment-hypershift.yaml
 	// and not adding it to envreplace.go.
 
-	// All image URLs will point to hash(env. name)
+	// All image URLs will point to string "REPLACED"
+	replaced := "REPLACED"
 	images := map[string]string{}
-	for envVarName, payloadName := range operatorImageRefs {
-		images[payloadName] = hash(envVarName)
+	for _, payloadName := range operatorImageRefs {
+		images[payloadName] = replaced
 	}
 
 	er := newEnvironmentReplacer()
-	er.setOperatorImageReferences(images)
+	er.setOperatorImageReferences(images, images)
 	version := rand.String(10)
 	er.setVersions(version)
 
@@ -41,13 +40,8 @@ func TestEnvironmentReplacer(t *testing.T) {
 			continue
 		}
 		// Not version -> it must be an image name
-		if env.Value != hash(env.Name) {
+		if env.Value != replaced {
 			t.Errorf("Environment variable %q in assets/10_deployment-hypershift.yaml was not replaced by the operator. Please update envreplace.go!", env.Name)
 		}
 	}
-}
-
-func hash(data string) string {
-	hashBytes := md5.Sum([]byte(data))
-	return hex.EncodeToString(hashBytes[0:])
 }

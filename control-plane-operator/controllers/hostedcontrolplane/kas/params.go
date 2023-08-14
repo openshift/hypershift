@@ -103,7 +103,9 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.Image = hcp.Spec.Configuration.Image
 		params.Scheduler = hcp.Spec.Configuration.Scheduler
 	}
-	params.AdvertiseAddress = util.AdvertiseAddressWithDefault(hcp, config.DefaultAdvertiseAddress)
+
+	params.AdvertiseAddress = util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
+
 	params.APIServerPort = util.BindAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
 		params.Images.Portieris = hcp.Annotations[hyperv1.PortierisImageAnnotation]
@@ -119,6 +121,9 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	params.Scheduling = config.Scheduling{
 		PriorityClass: config.APICriticalPriorityClass,
+	}
+	if hcp.Annotations[hyperv1.APICriticalPriorityClass] != "" {
+		params.Scheduling.PriorityClass = hcp.Annotations[hyperv1.APICriticalPriorityClass]
 	}
 	baseLivenessProbeConfig := corev1.Probe{
 		ProbeHandler: corev1.ProbeHandler{
@@ -294,7 +299,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, kasLabels(), nil)
+	params.DeploymentConfig.SetRequestServingDefaults(hcp, kasLabels(), nil)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	return params

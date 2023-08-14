@@ -7,6 +7,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
+	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
@@ -21,9 +22,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	kubevirtv1 "kubevirt.io/api/core/v1"
+	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
+	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
@@ -54,6 +57,7 @@ func init() {
 	hyperv1beta1.AddToScheme(Scheme)
 	capiv1.AddToScheme(Scheme)
 	configv1.AddToScheme(Scheme)
+	operatorv1alpha1.AddToScheme(Scheme)
 	operatorv1.AddToScheme(Scheme)
 	securityv1.AddToScheme(Scheme)
 	routev1.AddToScheme(Scheme)
@@ -71,4 +75,6 @@ func init() {
 	capiazure.AddToScheme(Scheme)
 	snapshotv1.AddToScheme(Scheme)
 	imagev1.AddToScheme(Scheme)
+	cdiv1beta1.AddToScheme(Scheme)
+	kubevirtv1.AddToScheme(Scheme)
 }

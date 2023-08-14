@@ -26,11 +26,12 @@ func NewParams(
 	hcp *hyperv1.HostedControlPlane,
 	version string,
 	releaseImageProvider *imageprovider.ReleaseImageProvider,
+	userReleaseImageProvider *imageprovider.ReleaseImageProvider,
 	setDefaultSecurityContext bool) *Params {
 
 	ir := newEnvironmentReplacer()
 	ir.setVersions(version)
-	ir.setOperatorImageReferences(releaseImageProvider.ComponentImages())
+	ir.setOperatorImageReferences(releaseImageProvider.ComponentImages(), userReleaseImageProvider.ComponentImages())
 
 	params := Params{
 		OwnerRef:                config.OwnerRefFrom(hcp),
@@ -39,7 +40,11 @@ func NewParams(
 		ImageReplacer:           ir,
 		APIPort:                 util.APIPort(hcp),
 	}
-
+	params.DeploymentConfig = config.DeploymentConfig{
+		AdditionalLabels: map[string]string{
+			config.NeedManagementKASAccessLabel: "true",
+		},
+	}
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	// Run only one replica of the operator
 	params.DeploymentConfig.Scheduling = config.Scheduling{

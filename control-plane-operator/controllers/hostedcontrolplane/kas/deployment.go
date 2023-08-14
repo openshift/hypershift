@@ -1,6 +1,7 @@
 package kas
 
 import (
+	"bytes"
 	"fmt"
 	"path"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
@@ -99,6 +101,8 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	aesCBCActiveKey []byte,
 	aesCBCBackupKey []byte,
 	port int32,
+	payloadVersion string,
+	featureGateSpec *configv1.FeatureGateSpec,
 ) error {
 
 	secretEncryptionData := hcp.Spec.SecretEncryption
@@ -124,6 +128,24 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		}
 	}
 
+	clusterFeatureGate := configv1.FeatureGate{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: configv1.SchemeGroupVersion.String(),
+			Kind:       "FeatureGate",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+	if featureGateSpec != nil {
+		clusterFeatureGate.Spec = *featureGateSpec
+	}
+	featureGateBuffer := &bytes.Buffer{}
+	if err := api.YamlSerializer.Encode(&clusterFeatureGate, featureGateBuffer); err != nil {
+		return fmt.Errorf("failed to encode feature gates: %w", err)
+	}
+	featureGateYaml := featureGateBuffer.String()
+
 	deployment.Spec.Template = corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: kasLabels(),
@@ -142,7 +164,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			SchedulerName:                 corev1.DefaultSchedulerName,
 			AutomountServiceAccountToken:  pointer.Bool(false),
 			InitContainers: []corev1.Container{
-				util.BuildContainer(kasContainerBootstrap(), buildKASContainerBootstrap(images.ClusterConfigOperator)),
+				util.BuildContainer(kasContainerBootstrap(), buildKASContainerBootstrap(images.ClusterConfigOperator, payloadVersion, featureGateYaml)),
 			},
 			Containers: []corev1.Container{
 				util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
@@ -288,7 +310,7 @@ func kasContainerBootstrap() *corev1.Container {
 	}
 }
 
-func buildKASContainerBootstrap(image string) func(c *corev1.Container) {
+func buildKASContainerBootstrap(image, payloadVersion, featureGateYaml string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Command = []string{
 			"/bin/bash",
@@ -298,7 +320,7 @@ func buildKASContainerBootstrap(image string) func(c *corev1.Container) {
 		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
 		c.Args = []string{
 			"-c",
-			invokeBootstrapRenderScript(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeBootstrapManifests().Name)),
+			invokeBootstrapRenderScript(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeBootstrapManifests().Name), payloadVersion, featureGateYaml),
 		}
 		c.Resources.Requests = corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -661,18 +683,15 @@ func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec
 	}
 }
 
-func invokeBootstrapRenderScript(workDir string) string {
+func invokeBootstrapRenderScript(workDir, payloadVersion, featureGateYaml string) string {
+
 	var script = `#!/bin/sh
 cd /tmp
 mkdir input output manifests
 
 touch /tmp/manifests/99_feature-gate.yaml
 cat <<EOF >/tmp/manifests/99_feature-gate.yaml
-apiVersion: config.openshift.io/v1
-kind: FeatureGate
-metadata:
-  name: cluster
-spec: {}
+%[3]s
 EOF
 
 /usr/bin/cluster-config-operator render \
@@ -680,10 +699,11 @@ EOF
    --asset-input-dir /tmp/input \
    --asset-output-dir /tmp/output \
    --rendered-manifest-files=/tmp/manifests \
-   --featuregate-manifest=/tmp/manifests/99_feature-gate.yaml
+   --payload-version=%[2]s
 cp /tmp/output/manifests/* %[1]s
+cp /tmp/manifests/* %[1]s
 `
-	return fmt.Sprintf(script, workDir)
+	return fmt.Sprintf(script, workDir, payloadVersion, featureGateYaml)
 }
 
 func applyBootstrapManifestsScript(workDir string) string {
@@ -691,6 +711,13 @@ func applyBootstrapManifestsScript(workDir string) string {
 while true; do
   if oc apply -f %[1]s; then
     echo "Bootstrap manifests applied successfully."
+    break
+  fi
+  sleep 1
+done
+while true; do
+  if oc replace --subresource=status -f %[1]s/99_feature-gate.yaml; then
+    echo "FeatureGate status applied successfully."
     break
   fi
   sleep 1

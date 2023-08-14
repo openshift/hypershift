@@ -10,7 +10,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/support/conditions"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -35,81 +35,79 @@ type NodePoolTestCase struct {
 func TestNodePool(t *testing.T) {
 	t.Parallel()
 	g := NewWithT(t)
-	ctx, cancel := context.WithCancel(testContext)
 
-	defer func() {
-		t.Log("Test: NodePool finished")
-		cancel()
-	}()
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-
-	mgmtClient, err := e2eutil.GetClient()
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get k8s client")
 
 	// We set replicas to 0 in order to allow the inner tests to
 	// create their own NodePools with the proper replicas
 	clusterOpts.NodePoolReplicas = 0
-	hostedCluster := e2eutil.CreateCluster(t, ctx, mgmtClient, &clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
-	hostedClusterClient := e2eutil.WaitForGuestClient(t, ctx, mgmtClient, hostedCluster)
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		hostedClusterClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-	// Get the newly created defautlt NodePool
-	nodepools := &hyperv1.NodePoolList{}
-	if err := mgmtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
-		t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
-	}
-	g.Expect(nodepools.Items).ToNot(BeEmpty())
-	defaultNodepool := &nodepools.Items[0]
+		// Get the newly created defautlt NodePool
+		nodepools := &hyperv1.NodePoolList{}
+		if err := mgtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
+			t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
+		}
+		g.Expect(nodepools.Items).ToNot(BeEmpty())
+		defaultNodepool := &nodepools.Items[0]
 
-	// Set of tests
-	// Each test should have their own NodePool
-	nodePoolTests := []NodePoolTestCase{
+		// Set of tests
+		// Each test should have their own NodePool
+		nodePoolTests := []NodePoolTestCase{
 
-		{
-			name: "TestKMSRootVolumeEncryption",
-			test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
-		},
-		{
-			name: "TestNodePoolAutoRepair",
-			test: NewNodePoolAutoRepairTest(ctx, hostedCluster, hostedClusterClient, clusterOpts),
-		},
-		{
-			name: "TestNodepoolMachineconfigGetsRolledout",
-			test: NewNodePoolMachineconfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts),
-		},
-		{
-			name: "TestNTOMachineConfigGetsRolledOut",
-			test: NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
-		},
-		/*
-			// TODO: (csrwng) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
 			{
-				name:            "TestNTOMachineConfigAppliedInPlace",
-				test:            NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
-				manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
+				name: "TestKMSRootVolumeEncryption",
+				test: NewKMSRootVolumeTest(hostedCluster, clusterOpts),
 			},
-		*/
-		{
-			name: "TestNodePoolReplaceUpgrade",
-			test: NewNodePoolUpgradeTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
-		},
-		// TODO: (jparrill) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
-		/*
 			{
-				name:            "TestNodePoolInPlaceUpgrade",
-				test:            NewNodePoolUpgradeTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
-				manifestBuilder: NewNodePoolInPlaceUpgradeTestManifest(hostedCluster, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+				name: "TestNodePoolAutoRepair",
+				test: NewNodePoolAutoRepairTest(ctx, hostedCluster, hostedClusterClient, clusterOpts),
 			},
-		*/
-	}
+			{
+				name: "TestNodepoolMachineconfigGetsRolledout",
+				test: NewNodePoolMachineconfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts),
+			},
+			{
+				name: "TestNTOMachineConfigGetsRolledOut",
+				test: NewNTOMachineConfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
+			},
+			/*
+				// TODO: (csrwng) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
+				{
+					name:            "TestNTOMachineConfigAppliedInPlace",
+					test:            NewNTOMachineConfigRolloutTest(ctx, mgmtClient, hostedCluster, hostedClusterClient),
+					manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
+				},
+			*/
+			{
+				name: "TestNodePoolReplaceUpgrade",
+				test: NewNodePoolUpgradeTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+			},
+			// TODO: (jparrill) Re-enable when https://issues.redhat.com/browse/OCPBUGS-10218 is fixed
+			/*
+				{
+					name:            "TestNodePoolInPlaceUpgrade",
+					test:            NewNodePoolUpgradeTest(ctx, mgmtClient, hostedCluster, hostedClusterClient, clusterOpts, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+					manifestBuilder: NewNodePoolInPlaceUpgradeTestManifest(hostedCluster, globalOpts.PreviousReleaseImage, globalOpts.LatestReleaseImage),
+				},
+			*/
+			{
+				name: "KubeVirtCacheTest",
+				test: NewKubeVirtCacheTest(ctx, mgtClient, hostedCluster),
+			},
+		}
 
-	t.Run("NodePool Tests Group", func(t *testing.T) {
 		for _, testCase := range nodePoolTests {
 			t.Run(testCase.name, func(t *testing.T) {
-				executeNodePoolTest(t, ctx, mgmtClient, hostedCluster, hostedClusterClient, *defaultNodepool, testCase.test, testCase.manifestBuilder)
+				executeNodePoolTest(t, ctx, mgtClient, hostedCluster, hostedClusterClient, *defaultNodepool, testCase.test, testCase.manifestBuilder)
 			})
 		}
-	})
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+
 }
 
 // nodePoolScaleDownToZero function will scaleDown the nodePool created for the current tests
@@ -205,11 +203,54 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	// run test validations
 	nodePoolTest.Run(t, *nodePool, nodes)
 
-	// validate default security group
-	err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get nodePool")
+	validateNodePoolConditions(t, ctx, mgmtClient, nodePool)
+}
 
-	nodePoolCondition := nodepool.FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
-	g.Expect(nodePoolCondition).ToNot(BeNil(), "%s condition not found", hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
-	g.Expect(nodePoolCondition.Status).To(Equal(corev1.ConditionTrue), "condition %s is not True", hyperv1.NodePoolAWSSecurityGroupAvailableConditionType)
+func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool) {
+	expectedConditions := conditions.ExpectedNodePoolConditions()
+
+	if nodePool.Spec.AutoScaling != nil {
+		expectedConditions[hyperv1.NodePoolAutoscalingEnabledConditionType] = corev1.ConditionTrue
+	} else {
+		expectedConditions[hyperv1.NodePoolAutoscalingEnabledConditionType] = corev1.ConditionFalse
+	}
+
+	if nodePool.Spec.Management.AutoRepair {
+		expectedConditions[hyperv1.NodePoolAutorepairEnabledConditionType] = corev1.ConditionTrue
+	} else {
+		expectedConditions[hyperv1.NodePoolAutorepairEnabledConditionType] = corev1.ConditionFalse
+	}
+
+	if nodePool.Spec.Arch != "" && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+		expectedConditions[hyperv1.NodePoolValidArchPlatform] = corev1.ConditionFalse
+	}
+
+	start := time.Now()
+	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 10*time.Minute, func(ctx context.Context) (bool, error) {
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool); err != nil {
+			t.Logf("Failed to get nodepool: %v", err)
+			return false, nil
+		}
+
+		for _, condition := range nodePool.Status.Conditions {
+			expectedStatus, known := expectedConditions[condition.Type]
+			if !known {
+				return false, fmt.Errorf("unknown condition %s", condition.Type)
+			}
+
+			if condition.Status != expectedStatus {
+				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
+				return false, nil
+			}
+			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
+		}
+
+		return true, nil
+	})
+	duration := time.Since(start).Round(time.Second)
+
+	if err != nil {
+		t.Fatalf("Failed to validate NodePool conditions in %s: %v", duration, err)
+	}
+	t.Logf("Successfully validated all expected NodePool conditions in %s", duration)
 }

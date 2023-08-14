@@ -11,17 +11,22 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/elbv2"
 	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
+	"github.com/go-logr/logr/testr"
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 type fakeEC2Client struct {
 	ec2iface.EC2API
-	created   *ec2.CreateVpcEndpointServiceConfigurationInput
-	createOut *ec2.CreateVpcEndpointServiceConfigurationOutput
+	created     *ec2.CreateVpcEndpointServiceConfigurationInput
+	createOut   *ec2.CreateVpcEndpointServiceConfigurationOutput
+	deleteOut   *ec2.DeleteVpcEndpointServiceConfigurationsOutput
+	describeOut *ec2.DescribeVpcEndpointConnectionsOutput
+	rejectOut   *ec2.RejectVpcEndpointConnectionsOutput
 
 	permsOut *ec2.DescribeVpcEndpointServicePermissionsOutput
 	setPerms *ec2.ModifyVpcEndpointServicePermissionsInput
@@ -33,6 +38,18 @@ func (f *fakeEC2Client) CreateVpcEndpointServiceConfigurationWithContext(ctx aws
 	}
 	f.created = in
 	return f.createOut, nil
+}
+
+func (f *fakeEC2Client) DeleteVpcEndpointServiceConfigurationsWithContext(ctx aws.Context, in *ec2.DeleteVpcEndpointServiceConfigurationsInput, o ...request.Option) (*ec2.DeleteVpcEndpointServiceConfigurationsOutput, error) {
+	return f.deleteOut, nil
+}
+
+func (f *fakeEC2Client) DescribeVpcEndpointConnectionsWithContext(ctx aws.Context, in *ec2.DescribeVpcEndpointConnectionsInput, o ...request.Option) (*ec2.DescribeVpcEndpointConnectionsOutput, error) {
+	return f.describeOut, nil
+}
+
+func (f *fakeEC2Client) RejectVpcEndpointConnectionsWithContext(ctx aws.Context, in *ec2.RejectVpcEndpointConnectionsInput, o ...request.Option) (*ec2.RejectVpcEndpointConnectionsOutput, error) {
+	return f.rejectOut, nil
 }
 
 type fakeElbv2Client struct {
@@ -152,6 +169,100 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 			for _, arn := range test.expectedPrincipalsToRemove {
 				if _, ok := actualToRemove[arn]; !ok {
 					t.Errorf("expected %v to be added as allowed principals, actual: %v", test.expectedPrincipalsToRemove, actualToRemove)
+				}
+			}
+		})
+	}
+}
+
+func TestDeleteAWSEndpointService(t *testing.T) {
+	tests := []struct {
+		name      string
+		ec2Client ec2iface.EC2API
+		expected  bool
+		expectErr bool
+	}{
+		{
+			name: "successful deletion",
+			ec2Client: &fakeEC2Client{
+				deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
+					Unsuccessful: []*ec2.UnsuccessfulItem{},
+				},
+			},
+			expected:  true,
+			expectErr: false,
+		},
+		{
+			name: "endpoint service no longer exists",
+			ec2Client: &fakeEC2Client{
+				deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
+					Unsuccessful: []*ec2.UnsuccessfulItem{
+						{
+							Error: &ec2.UnsuccessfulItemError{
+								Code:    aws.String("InvalidVpcEndpointService.NotFound"),
+								Message: aws.String("The VpcEndpointService Id 'vpce-svc-id' does not exist"),
+							},
+							ResourceId: aws.String("vpce-svc-id"),
+						},
+					},
+				},
+			},
+			expected:  true,
+			expectErr: false,
+		},
+		{
+			name: "existing connections",
+			ec2Client: &fakeEC2Client{
+				deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
+					Unsuccessful: []*ec2.UnsuccessfulItem{
+						{
+							Error: &ec2.UnsuccessfulItemError{
+								Code:    aws.String("ExistingVpcEndpointConnections"),
+								Message: aws.String("Service has existing active VPC Endpoint connections!"),
+							},
+							ResourceId: aws.String("vpce-svc-id"),
+						},
+					},
+				},
+				describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
+					VpcEndpointConnections: []*ec2.VpcEndpointConnection{
+						{
+							VpcEndpointId:    aws.String("vpce-id"),
+							VpcEndpointState: aws.String("available"),
+						},
+					},
+				},
+			},
+			expected:  false,
+			expectErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			obj := &hyperv1.AWSEndpointService{
+				Status: hyperv1.AWSEndpointServiceStatus{EndpointServiceName: "vpce-svc-id"},
+			}
+			client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(obj).Build()
+
+			r := AWSEndpointServiceReconciler{
+				ec2Client: test.ec2Client,
+				Client:    client,
+			}
+
+			ctx := log.IntoContext(context.Background(), testr.New(t))
+			actual, err := r.delete(ctx, obj)
+			if err != nil {
+				if !test.expectErr {
+					t.Errorf("expected no err, got %v", err)
+				}
+			} else {
+				if test.expectErr {
+					t.Error("expected err, got nil")
+				} else {
+					if test.expected != actual {
+						t.Errorf("expected %v, got %v", test.expected, actual)
+					}
 				}
 			}
 		})

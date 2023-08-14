@@ -248,8 +248,18 @@ func NewStartCommand() *cobra.Command {
 				if err := mgr.GetAPIReader().Get(ctx, crclient.ObjectKeyFromObject(me), me); err != nil {
 					return "", fmt.Errorf("failed to get operator pod %s: %w", crclient.ObjectKeyFromObject(me), err)
 				}
-				// Use the container status to make sure we get the sha256 reference rather than a potentially
-				// floating tag.
+
+				// If CPO container image is a sha256 reference, use it
+				for _, container := range me.Spec.Containers {
+					if container.Name == "control-plane-operator" {
+						if strings.Contains(container.Image, "@sha256:") {
+							return container.Image, nil
+						}
+					}
+				}
+
+				// CPO container image is not a sha256 reference
+				// Use the container status to make sure we get the sha256 reference
 				for _, container := range me.Status.ContainerStatuses {
 					// TODO: could use downward API for this too, overkill?
 					if container.Name == "control-plane-operator" {
@@ -342,15 +352,25 @@ func NewStartCommand() *cobra.Command {
 			componentImages[name] = image
 		}
 
-		releaseProvider := &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.StaticProviderDecorator{
-				Delegate: &releaseinfo.CachedProvider{
-					Inner: &releaseinfo.RegistryClientProvider{},
-					Cache: map[string]*releaseinfo.ReleaseImage{},
+		var imageRegistryOverrides map[string][]string
+
+		openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
+		if ok {
+			imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+		}
+
+		releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+				Delegate: &releaseinfo.StaticProviderDecorator{
+					Delegate: &releaseinfo.CachedProvider{
+						Inner: &releaseinfo.RegistryClientProvider{},
+						Cache: map[string]*releaseinfo.ReleaseImage{},
+					},
+					ComponentImages: componentImages,
 				},
-				ComponentImages: componentImages,
+				RegistryOverrides: registryOverrides,
 			},
-			RegistryOverrides: registryOverrides,
+			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		}
 
 		defaultIngressDomain := os.Getenv(config.DefaultIngressDomainEnvVar)
@@ -362,6 +382,12 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("Using metrics set", "set", metricsSet.String())
 
+		nameServerIP, err := util.NameServerIP()
+		if err != nil {
+			setupLog.Error(err, "cannot determine nameserver IP")
+			os.Exit(1)
+		}
+
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                        mgr.GetClient(),
 			ManagementClusterCapabilities: mgmtClusterCaps,
@@ -370,6 +396,7 @@ func NewStartCommand() *cobra.Command {
 			OperateOnReleaseImage:         os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 			DefaultIngressDomain:          defaultIngressDomain,
 			MetricsSet:                    metricsSet,
+			NameServerIP:                  nameServerIP,
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)

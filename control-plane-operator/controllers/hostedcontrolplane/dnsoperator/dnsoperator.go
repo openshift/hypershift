@@ -48,13 +48,13 @@ type Params struct {
 }
 
 // NewParams creates a new Params object for a DNS operator deployment.
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	p := Params{
 		Images: Images{
 			DNSOperator:   releaseImageProvider.GetImage("cluster-dns-operator"),
-			CoreDNS:       releaseImageProvider.GetImage("coredns"),
-			KubeRBACProxy: releaseImageProvider.GetImage("kube-rbac-proxy"),
-			CLI:           releaseImageProvider.GetImage("cli"),
+			CoreDNS:       userReleaseImageProvider.GetImage("coredns"),
+			KubeRBACProxy: userReleaseImageProvider.GetImage("kube-rbac-proxy"),
+			CLI:           userReleaseImageProvider.GetImage("cli"),
 		},
 		ReleaseVersion:          version,
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
@@ -69,6 +69,9 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		hyperv1.ControlPlaneComponent: "dns-operator",
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
+	}
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext

@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -205,7 +206,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								"--txt-suffix=-external-dns",
 								fmt.Sprintf("--txt-owner-id=%s", txtOwnerId),
 								fmt.Sprintf("--label-filter=%s!=%s", hyperv1.RouteVisibilityLabel, hyperv1.RouteVisibilityPrivate),
-								"--events",
+								"--interval=1m",
 							},
 							Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 7979}},
 							LivenessProbe: &corev1.Probe{
@@ -276,6 +277,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 
 type HyperShiftOperatorDeployment struct {
 	AdditionalTrustBundle          *corev1.ConfigMap
+	OpenShiftTrustBundle           *corev1.ConfigMap
 	Namespace                      *corev1.Namespace
 	OperatorImage                  string
 	Images                         map[string]string
@@ -580,6 +582,23 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	if o.AdditionalTrustBundle != nil {
 		// Add trusted-ca mount with optional configmap
 		util.DeploymentAddTrustBundleVolume(&corev1.LocalObjectReference{Name: o.AdditionalTrustBundle.Name}, deployment)
+	}
+
+	if o.OpenShiftTrustBundle != nil {
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "openshift-config-managed-trusted-ca-bundle",
+			MountPath: "/etc/pki/ca-trust/extracted/pem",
+			ReadOnly:  true,
+		})
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: "openshift-config-managed-trusted-ca-bundle",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: o.OpenShiftTrustBundle.Name},
+					Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"}},
+				},
+			},
+		})
 	}
 
 	return deployment
@@ -1415,4 +1434,84 @@ func (o HyperShiftReaderClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 		},
 	}
 	return binding
+}
+
+type HyperShiftMutatingWebhookConfiguration struct {
+	Namespace *corev1.Namespace
+}
+
+func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1.MutatingWebhookConfiguration {
+	scope := admissionregistrationv1.NamespacedScope
+	hcPath := "/mutate-hypershift-openshift-io-v1beta1-hostedcluster"
+	npPath := "/mutate-hypershift-openshift-io-v1beta1-nodepool"
+	sideEffects := admissionregistrationv1.SideEffectClassNone
+	timeout := int32(15)
+	mutatingWebhookConfiguration := &admissionregistrationv1.MutatingWebhookConfiguration{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "MutatingWebhookConfiguration",
+			APIVersion: admissionregistrationv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace.Name,
+			Name:      hyperv1.GroupVersion.Group,
+			Annotations: map[string]string{
+				"service.beta.openshift.io/inject-cabundle": "true",
+			},
+		},
+		Webhooks: []admissionregistrationv1.MutatingWebhook{
+			{
+				Name: "hostedclusters.hypershift.openshift.io",
+				Rules: []admissionregistrationv1.RuleWithOperations{
+					{
+						Operations: []admissionregistrationv1.OperationType{
+							admissionregistrationv1.Create,
+						},
+						Rule: admissionregistrationv1.Rule{
+							APIGroups:   []string{"hypershift.openshift.io"},
+							APIVersions: []string{"v1beta1"},
+							Resources:   []string{"hostedclusters"},
+							Scope:       &scope,
+						},
+					},
+				},
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					Service: &admissionregistrationv1.ServiceReference{
+						Namespace: "hypershift",
+						Name:      "operator",
+						Path:      &hcPath,
+					},
+				},
+				SideEffects:             &sideEffects,
+				AdmissionReviewVersions: []string{"v1"},
+				TimeoutSeconds:          &timeout,
+			},
+			{
+				Name: "nodepools.hypershift.openshift.io",
+				Rules: []admissionregistrationv1.RuleWithOperations{
+					{
+						Operations: []admissionregistrationv1.OperationType{
+							admissionregistrationv1.Create,
+						},
+						Rule: admissionregistrationv1.Rule{
+							APIGroups:   []string{"hypershift.openshift.io"},
+							APIVersions: []string{"v1beta1"},
+							Resources:   []string{"nodepools"},
+							Scope:       &scope,
+						},
+					},
+				},
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					Service: &admissionregistrationv1.ServiceReference{
+						Namespace: "hypershift",
+						Name:      "operator",
+						Path:      &npPath,
+					},
+				},
+				SideEffects:             &sideEffects,
+				AdmissionReviewVersions: []string{"v1"},
+				TimeoutSeconds:          &timeout,
+			},
+		},
+	}
+	return mutatingWebhookConfiguration
 }

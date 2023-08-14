@@ -523,43 +523,33 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 		ServiceIds: []*string{aws.String(serviceID)},
 	})
 	if err != nil {
-		log.Error(err, "Failed to delete vpc endpoint service configuration", "serviceID", serviceID)
-		existingConnectionsResult, describeConnectionsErr := r.ec2Client.DescribeVpcEndpointConnectionsWithContext(ctx, &ec2.DescribeVpcEndpointConnectionsInput{
-			Filters: []*ec2.Filter{
-				{
-					Name:   aws.String("service-id"),
-					Values: []*string{aws.String(serviceID)},
-				},
-			},
-		})
-		if describeConnectionsErr != nil {
-			log.Error(describeConnectionsErr, "Failed to get existing connections", "serviceID", serviceID)
-			return false, unwrapError(describeConnectionsErr)
+		log.Info("failed to delete endpoint service, attempting to reject connections", "serviceID", serviceID)
+		if rejectErr := r.rejectVpcEndpointConnections(ctx, serviceID); err != nil {
+			return false, unwrapError(log, rejectErr)
 		}
-		var existingEndpointIDs []*string
-		for _, conn := range existingConnectionsResult.VpcEndpointConnections {
-			state := aws.StringValue(conn.VpcEndpointState)
-			switch state {
-			case "pendingAcceptance", "pending", "available":
-				existingEndpointIDs = append(existingEndpointIDs, conn.VpcEndpointId)
-			}
-		}
-		if len(existingEndpointIDs) > 0 {
-			if _, rejectEndpointsErr := r.ec2Client.RejectVpcEndpointConnectionsWithContext(ctx, &ec2.RejectVpcEndpointConnectionsInput{
-				ServiceId:      aws.String(serviceID),
-				VpcEndpointIds: existingEndpointIDs,
-			}); rejectEndpointsErr != nil {
-				return false, unwrapError(rejectEndpointsErr)
-			}
-		}
-		return false, unwrapError(err)
+
+		return false, unwrapError(log, err)
 	}
+
+	// DeleteVpcEndpointServiceConfigurations doesn't return errors directly when a VPC Endpoint Service doesn't exist
+	// or when it has active connections, instead returning errors within output.Unsuccessful
+	// https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DeleteVpcEndpointServiceConfigurations.html
 	if output != nil && len(output.Unsuccessful) != 0 && output.Unsuccessful[0].Error != nil {
+		log.Error(err, "unsuccessful deleting vpc endpoint service", "serviceID", serviceID)
 		itemErr := *output.Unsuccessful[0].Error
-		if itemErr.Code != nil && *itemErr.Code == "InvalidVpcEndpointService.NotFound" {
-			log.Info("endpoint service already deleted", "serviceID", serviceID)
-			return true, nil
+		if itemErr.Code != nil {
+			switch *itemErr.Code {
+			case "InvalidVpcEndpointService.NotFound":
+				log.Info("endpoint service already deleted", "serviceID", serviceID)
+				return true, nil
+			case "ExistingVpcEndpointConnections":
+				log.Info("endpoint service has existing connections", "serviceID", serviceID)
+				if err := r.rejectVpcEndpointConnections(ctx, serviceID); err != nil {
+					return false, unwrapError(log, err)
+				}
+			}
 		}
+
 		return false, fmt.Errorf("%s", *output.Unsuccessful[0].Error.Message)
 	}
 
@@ -567,8 +557,47 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	return true, nil
 }
 
-func unwrapError(err error) error {
+func (r *AWSEndpointServiceReconciler) rejectVpcEndpointConnections(ctx context.Context, serviceID string) error {
+	log, err := logr.FromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("no logger found: %w", err)
+	}
+
+	existingConnectionsResult, describeConnectionsErr := r.ec2Client.DescribeVpcEndpointConnectionsWithContext(ctx, &ec2.DescribeVpcEndpointConnectionsInput{
+		Filters: []*ec2.Filter{
+			{
+				Name:   aws.String("service-id"),
+				Values: []*string{aws.String(serviceID)},
+			},
+		},
+	})
+	if describeConnectionsErr != nil {
+		return unwrapError(log, describeConnectionsErr)
+	}
+	var existingEndpointIDs []*string
+	for _, conn := range existingConnectionsResult.VpcEndpointConnections {
+		state := aws.StringValue(conn.VpcEndpointState)
+		switch state {
+		case "pendingAcceptance", "pending", "available":
+			existingEndpointIDs = append(existingEndpointIDs, conn.VpcEndpointId)
+		}
+	}
+	if len(existingEndpointIDs) > 0 {
+		log.Info("rejecting vpc endpoint connections", "serviceID", serviceID)
+		if _, rejectEndpointsErr := r.ec2Client.RejectVpcEndpointConnectionsWithContext(ctx, &ec2.RejectVpcEndpointConnectionsInput{
+			ServiceId:      aws.String(serviceID),
+			VpcEndpointIds: existingEndpointIDs,
+		}); rejectEndpointsErr != nil {
+			return unwrapError(log, rejectEndpointsErr)
+		}
+	}
+
+	return nil
+}
+
+func unwrapError(log logr.Logger, err error) error {
 	if awsErr, ok := err.(awserr.Error); ok {
+		log.Info("AWS Error", "code", awsErr.Code(), "message", awsErr.Message())
 		return fmt.Errorf("error code: %s", awsErr.Code())
 	}
 	return err

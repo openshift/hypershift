@@ -45,6 +45,7 @@ type ServerPublicNet struct {
 // ServerPublicNetIPv4 defines the schema of a server's public
 // network information for an IPv4.
 type ServerPublicNetIPv4 struct {
+	ID      int    `json:"id"`
 	IP      string `json:"ip"`
 	Blocked bool   `json:"blocked"`
 	DNSPtr  string `json:"dns_ptr"`
@@ -53,6 +54,7 @@ type ServerPublicNetIPv4 struct {
 // ServerPublicNetIPv6 defines the schema of a server's public
 // network information for an IPv6.
 type ServerPublicNetIPv6 struct {
+	ID      int                         `json:"id"`
 	IP      string                      `json:"ip"`
 	Blocked bool                        `json:"blocked"`
 	DNSPtr  []ServerPublicNetIPv6DNSPtr `json:"dns_ptr"`
@@ -109,9 +111,18 @@ type ServerCreateRequest struct {
 	Networks         []int                   `json:"networks,omitempty"`
 	Firewalls        []ServerCreateFirewalls `json:"firewalls,omitempty"`
 	PlacementGroup   int                     `json:"placement_group,omitempty"`
+	PublicNet        *ServerCreatePublicNet  `json:"public_net,omitempty"`
 }
 
-// ServerCreateFirewall defines which Firewalls to apply when creating a Server.
+// ServerCreatePublicNet defines the public network configuration of a server.
+type ServerCreatePublicNet struct {
+	EnableIPv4 bool `json:"enable_ipv4"`
+	EnableIPv6 bool `json:"enable_ipv6"`
+	IPv4ID     int  `json:"ipv4,omitempty"`
+	IPv6ID     int  `json:"ipv6,omitempty"`
+}
+
+// ServerCreateFirewalls defines which Firewalls to apply when creating a Server.
 type ServerCreateFirewalls struct {
 	Firewall int `json:"firewall"`
 }
@@ -123,6 +134,12 @@ type ServerCreateResponse struct {
 	Action       Action   `json:"action"`
 	RootPassword *string  `json:"root_password"`
 	NextActions  []Action `json:"next_actions"`
+}
+
+// ServerDeleteResponse defines the schema of the response when
+// deleting a server.
+type ServerDeleteResponse struct {
+	Action Action `json:"action"`
 }
 
 // ServerUpdateRequest defines the schema of the request to update a server.
@@ -245,7 +262,8 @@ type ServerActionRebuildRequest struct {
 // ServerActionRebuildResponse defines the schema of the response when
 // creating a rebuild server action.
 type ServerActionRebuildResponse struct {
-	Action Action `json:"action"`
+	Action       Action  `json:"action"`
+	RootPassword *string `json:"root_password"`
 }
 
 // ServerActionAttachISORequest defines the schema for the request to

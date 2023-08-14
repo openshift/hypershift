@@ -62,7 +62,6 @@ var (
 		"0000_50_olm_15-packageserver.clusterserviceversion.yaml",
 		"0000_50_olm_99-operatorstatus.yaml",
 		"0000_90_olm_00-service-monitor.yaml",
-		"0000_90_olm_01-prometheus-rule.yaml",
 		"0000_50_operator-marketplace_04_service_account.yaml",
 		"0000_50_operator-marketplace_05_role.yaml",
 		"0000_50_operator-marketplace_06_role_binding.yaml",
@@ -109,7 +108,7 @@ func cvoLabels() map[string]string {
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image, cliImage, availabilityProberImage, clusterID string, apiPort *int32, platformType hyperv1.PlatformType) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneImage, image, cliImage, availabilityProberImage, clusterID string, apiPort *int32, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -136,7 +135,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterID)),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(image)),
+					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneImage, image)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(cvoVolumePayload(), buildCVOVolumePayload),
@@ -316,7 +315,7 @@ oc get clusterversion/version &> /dev/null || oc create -f /tmp/clusterversion.y
 	return fmt.Sprintf(scriptTemplate, clusterID, payloadDir)
 }
 
-func buildCVOContainerMain(image string) func(c *corev1.Container) {
+func buildCVOContainerMain(image, releaseImage string) func(c *corev1.Container) {
 	cpath := func(vol, file string) string {
 		return path.Join(volumeMounts.Path(cvoContainerMain().Name, vol), file)
 	}
@@ -326,7 +325,7 @@ func buildCVOContainerMain(image string) func(c *corev1.Container) {
 		c.Args = []string{
 			"start",
 			"--release-image",
-			image,
+			releaseImage,
 			"--enable-auto-update=false",
 			"--kubeconfig",
 			path.Join(volumeMounts.Path(c.Name, cvoVolumeKubeconfig().Name), kas.KubeconfigKey),

@@ -55,10 +55,11 @@ nav:
   - how-to/pause-reconciliation.md
   - how-to/debug-nodes.md
   - how-to/metrics-sets.md
+  - how-to/troubleshooting.md
   - 'Automated Machine Management':
     - how-to/automated-machine-management/index.md
     - how-to/automated-machine-management/scale-to-zero-dataplane.md
-    - how-to/automated-machine-management/nodepool-upgrades.md
+    - how-to/automated-machine-management/nodepool-lifecycle.md
     - how-to/automated-machine-management/node-tuning.md
   - "AWS":
     - how-to/aws/create-infra-iam-separately.md
@@ -68,12 +69,20 @@ nav:
     - how-to/aws/etc-backup-restore.md
     - how-to/aws/disaster-recovery.md
     - how-to/aws/troubleshooting.md
+    - how-to/aws/create-aws-hosted-cluster-arm-workers.md
   - 'Azure':
     - how-to/azure/create-azure-cluster.md
   - 'Agent':
     - how-to/agent/create-agent-cluster.md
+  - 'Disconnected':
+    - how-to/disconnected/automatically-initialize-registry-overrides.md
+    - how-to/disconnected/image-content-sources.md
+    - how-to/disconnected/disconnected-workarounds.md
   - 'Kubevirt':
     - how-to/kubevirt/create-kubevirt-cluster.md
+    - how-to/kubevirt/ingress-and-dns.md
+    - how-to/kubevirt/configuring-storage.md
+    - how-to/kubevirt/external-infrastructure.md
   - 'None':
     - how-to/none/create-none-cluster.md
   - 'PowerVS':
@@ -85,7 +94,9 @@ nav:
   - reference/goals-and-design-invariants.md
   - reference/api.md
   - "Infrastructure":
+    - reference/infrastructure/index.md
     - "AWS": reference/infrastructure/aws.md
+    - "Agent": reference/infrastructure/agent.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
   - reference/multi-platform-support.md

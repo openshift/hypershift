@@ -98,17 +98,27 @@ type ServerPublicNet struct {
 
 // ServerPublicNetIPv4 represents a server's public IPv4 address.
 type ServerPublicNetIPv4 struct {
+	ID      int
 	IP      net.IP
 	Blocked bool
 	DNSPtr  string
 }
 
+func (n *ServerPublicNetIPv4) IsUnspecified() bool {
+	return n.IP == nil || n.IP.Equal(net.IPv4zero)
+}
+
 // ServerPublicNetIPv6 represents a Server's public IPv6 network and address.
 type ServerPublicNetIPv6 struct {
+	ID      int
 	IP      net.IP
 	Network *net.IPNet
 	Blocked bool
 	DNSPtr  map[string]string
+}
+
+func (n *ServerPublicNetIPv6) IsUnspecified() bool {
+	return n.IP == nil || n.IP.Equal(net.IPv6unspecified)
 }
 
 // ServerPrivateNet defines the schema of a Server's private network information.
@@ -120,8 +130,8 @@ type ServerPrivateNet struct {
 }
 
 // DNSPtrForIP returns the reverse dns pointer of the ip address.
-func (s *ServerPublicNetIPv6) DNSPtrForIP(ip net.IP) string {
-	return s.DNSPtr[ip.String()]
+func (n *ServerPublicNetIPv6) DNSPtrForIP(ip net.IP) string {
+	return n.DNSPtr[ip.String()]
 }
 
 // ServerFirewallStatus represents a Firewall and its status on a Server's
@@ -136,9 +146,8 @@ type ServerRescueType string
 
 // List of rescue types.
 const (
-	ServerRescueTypeLinux32   ServerRescueType = "linux32"
-	ServerRescueTypeLinux64   ServerRescueType = "linux64"
-	ServerRescueTypeFreeBSD64 ServerRescueType = "freebsd64"
+	ServerRescueTypeLinux32 ServerRescueType = "linux32"
+	ServerRescueTypeLinux64 ServerRescueType = "linux64"
 )
 
 // changeDNSPtr changes or resets the reverse DNS pointer for a IP address.
@@ -228,6 +237,7 @@ type ServerListOpts struct {
 	ListOpts
 	Name   string
 	Status []ServerStatus
+	Sort   []string
 }
 
 func (l ServerListOpts) values() url.Values {
@@ -237,6 +247,9 @@ func (l ServerListOpts) values() url.Values {
 	}
 	for _, status := range l.Status {
 		vals.Add("status", string(status))
+	}
+	for _, sort := range l.Sort {
+		vals.Add("sort", sort)
 	}
 	return vals
 }
@@ -305,6 +318,14 @@ type ServerCreateOpts struct {
 	Networks         []*Network
 	Firewalls        []*ServerCreateFirewall
 	PlacementGroup   *PlacementGroup
+	PublicNet        *ServerCreatePublicNet
+}
+
+type ServerCreatePublicNet struct {
+	EnableIPv4 bool
+	EnableIPv6 bool
+	IPv4       *PrimaryIP
+	IPv6       *PrimaryIP
 }
 
 // ServerCreateFirewall defines which Firewalls to apply when creating a Server.
@@ -325,6 +346,12 @@ func (o ServerCreateOpts) Validate() error {
 	}
 	if o.Location != nil && o.Datacenter != nil {
 		return errors.New("location and datacenter are mutually exclusive")
+	}
+	if o.PublicNet != nil {
+		if !o.PublicNet.EnableIPv4 && !o.PublicNet.EnableIPv6 &&
+			len(o.Networks) == 0 && (o.StartAfterCreate == nil || *o.StartAfterCreate) {
+			return errors.New("missing networks or StartAfterCreate == false when EnableIPv4 and EnableIPv6 is false")
+		}
 	}
 	return nil
 }
@@ -375,6 +402,19 @@ func (c *ServerClient) Create(ctx context.Context, opts ServerCreateOpts) (Serve
 			Firewall: firewall.Firewall.ID,
 		})
 	}
+
+	if opts.PublicNet != nil {
+		reqBody.PublicNet = &schema.ServerCreatePublicNet{
+			EnableIPv4: opts.PublicNet.EnableIPv4,
+			EnableIPv6: opts.PublicNet.EnableIPv6,
+		}
+		if opts.PublicNet.IPv4 != nil {
+			reqBody.PublicNet.IPv4ID = opts.PublicNet.IPv4.ID
+		}
+		if opts.PublicNet.IPv6 != nil {
+			reqBody.PublicNet.IPv6ID = opts.PublicNet.IPv6.ID
+		}
+	}
 	if opts.Location != nil {
 		if opts.Location.ID != 0 {
 			reqBody.Location = strconv.Itoa(opts.Location.ID)
@@ -418,13 +458,35 @@ func (c *ServerClient) Create(ctx context.Context, opts ServerCreateOpts) (Serve
 	return result, resp, nil
 }
 
+// ServerDeleteResult is the result of a delete server call.
+type ServerDeleteResult struct {
+	Action *Action
+}
+
 // Delete deletes a server.
+//
+// Deprecated: Use [ServerClient.DeleteWithResult] instead.
 func (c *ServerClient) Delete(ctx context.Context, server *Server) (*Response, error) {
+	_, resp, err := c.DeleteWithResult(ctx, server)
+	return resp, err
+}
+
+// DeleteWithResult deletes a server and returns the parsed response containing the action.
+func (c *ServerClient) DeleteWithResult(ctx context.Context, server *Server) (*ServerDeleteResult, *Response, error) {
 	req, err := c.client.NewRequest(ctx, "DELETE", fmt.Sprintf("/servers/%d", server.ID), nil)
 	if err != nil {
-		return nil, err
+		return &ServerDeleteResult{}, nil, err
 	}
-	return c.client.Do(req, nil)
+
+	var respBody schema.ServerDeleteResponse
+	resp, err := c.client.Do(req, &respBody)
+	if err != nil {
+		return &ServerDeleteResult{}, resp, err
+	}
+
+	return &ServerDeleteResult{
+		Action: ActionFromSchema(respBody.Action),
+	}, resp, nil
 }
 
 // ServerUpdateOpts specifies options for updating a server.
@@ -603,7 +665,7 @@ func (c *ServerClient) CreateImage(ctx context.Context, server *Server, opts *Se
 			reqBody.Description = opts.Description
 		}
 		if opts.Type != "" {
-			reqBody.Type = String(string(opts.Type))
+			reqBody.Type = Ptr(string(opts.Type))
 		}
 		if opts.Labels != nil {
 			reqBody.Labels = &opts.Labels
@@ -646,7 +708,7 @@ type ServerEnableRescueResult struct {
 // EnableRescue enables rescue mode for a server.
 func (c *ServerClient) EnableRescue(ctx context.Context, server *Server, opts ServerEnableRescueOpts) (ServerEnableRescueResult, *Response, error) {
 	reqBody := schema.ServerActionEnableRescueRequest{
-		Type: String(string(opts.Type)),
+		Type: Ptr(string(opts.Type)),
 	}
 	for _, sshKey := range opts.SSHKeys {
 		reqBody.SSHKeys = append(reqBody.SSHKeys, sshKey.ID)
@@ -695,8 +757,23 @@ type ServerRebuildOpts struct {
 	Image *Image
 }
 
+// ServerRebuildResult is the result of a create server call.
+type ServerRebuildResult struct {
+	Action       *Action
+	RootPassword string
+}
+
 // Rebuild rebuilds a server.
+//
+// Deprecated: Use [ServerClient.RebuildWithResult] instead.
 func (c *ServerClient) Rebuild(ctx context.Context, server *Server, opts ServerRebuildOpts) (*Action, *Response, error) {
+	result, resp, err := c.RebuildWithResult(ctx, server, opts)
+
+	return result.Action, resp, err
+}
+
+// RebuildWithResult rebuilds a server.
+func (c *ServerClient) RebuildWithResult(ctx context.Context, server *Server, opts ServerRebuildOpts) (ServerRebuildResult, *Response, error) {
 	reqBody := schema.ServerActionRebuildRequest{}
 	if opts.Image.ID != 0 {
 		reqBody.Image = opts.Image.ID
@@ -705,21 +782,29 @@ func (c *ServerClient) Rebuild(ctx context.Context, server *Server, opts ServerR
 	}
 	reqBodyData, err := json.Marshal(reqBody)
 	if err != nil {
-		return nil, nil, err
+		return ServerRebuildResult{}, nil, err
 	}
 
 	path := fmt.Sprintf("/servers/%d/actions/rebuild", server.ID)
 	req, err := c.client.NewRequest(ctx, "POST", path, bytes.NewReader(reqBodyData))
 	if err != nil {
-		return nil, nil, err
+		return ServerRebuildResult{}, nil, err
 	}
 
 	respBody := schema.ServerActionRebuildResponse{}
 	resp, err := c.client.Do(req, &respBody)
 	if err != nil {
-		return nil, resp, err
+		return ServerRebuildResult{}, resp, err
 	}
-	return ActionFromSchema(respBody.Action), resp, nil
+
+	result := ServerRebuildResult{
+		Action: ActionFromSchema(respBody.Action),
+	}
+	if respBody.RootPassword != nil {
+		result.RootPassword = *respBody.RootPassword
+	}
+
+	return result, resp, nil
 }
 
 // AttachISO attaches an ISO to a server.
@@ -771,7 +856,7 @@ func (c *ServerClient) DetachISO(ctx context.Context, server *Server) (*Action, 
 func (c *ServerClient) EnableBackup(ctx context.Context, server *Server, window string) (*Action, *Response, error) {
 	reqBody := schema.ServerActionEnableBackupRequest{}
 	if window != "" {
-		reqBody.BackupWindow = String(window)
+		reqBody.BackupWindow = Ptr(window)
 	}
 	reqBodyData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -924,10 +1009,10 @@ func (c *ServerClient) AttachToNetwork(ctx context.Context, server *Server, opts
 		Network: opts.Network.ID,
 	}
 	if opts.IP != nil {
-		reqBody.IP = String(opts.IP.String())
+		reqBody.IP = Ptr(opts.IP.String())
 	}
 	for _, aliasIP := range opts.AliasIPs {
-		reqBody.AliasIPs = append(reqBody.AliasIPs, String(aliasIP.String()))
+		reqBody.AliasIPs = append(reqBody.AliasIPs, Ptr(aliasIP.String()))
 	}
 	reqBodyData, err := json.Marshal(reqBody)
 	if err != nil {

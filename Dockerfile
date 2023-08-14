@@ -8,6 +8,7 @@ RUN make build
 
 FROM quay.io/openshift/origin-base:4.14
 COPY --from=builder /hypershift/bin/hypershift \
+                    /hypershift/bin/hcp \
                     /hypershift/bin/hypershift-operator \
                     /hypershift/bin/control-plane-operator \
      /usr/bin/
@@ -28,3 +29,5 @@ LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-machine-app
 LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler=true
 LABEL io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config=true
 LABEL io.openshift.hypershift.control-plane-operator-creates-aws-sg=true
+LABEL io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label=true
+LABEL io.openshift.hypershift.restricted-psa=true

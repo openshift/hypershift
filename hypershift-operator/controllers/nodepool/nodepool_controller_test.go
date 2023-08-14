@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,15 +12,6 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/openshift/api/image/docker10"
 	imagev1 "github.com/openshift/api/image/v1"
-	api "github.com/openshift/hypershift/api"
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
-	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,6 +23,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	api "github.com/openshift/hypershift/api"
+	"github.com/openshift/hypershift/api/util/ipnet"
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 )
 
 func TestIsUpdatingConfig(t *testing.T) {
@@ -788,6 +793,11 @@ kind: Config`)},
 			hc := &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{"hypershift.openshift.io/control-plane-operator-image": "cpo-image"}},
 				Status:     hyperv1.HostedClusterStatus{KubeConfig: &corev1.LocalObjectReference{Name: "kubeconfig"}},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+					},
+				},
 			}
 			releaseImage := &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{Spec: imagev1.ImageStreamSpec{Tags: []imagev1.TagReference{{
 				Name: "haproxy-router",
@@ -1486,7 +1496,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	expectedMachineTemplateSpecJSON, err := json.Marshal(expectedMachineTemplate.Spec)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, "", "", true)
+	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, "", nil, true)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(machineTemplateSpecJSON).To(BeIdenticalTo(string(expectedMachineTemplateSpecJSON)))
 
@@ -1497,8 +1507,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	gotMachineTemplate := &capiaws.AWSMachineTemplate{}
-	r.Client.Get(context.Background(), client.ObjectKeyFromObject(expectedMachineTemplate), gotMachineTemplate)
-	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(r.Client.Get(context.Background(), client.ObjectKeyFromObject(expectedMachineTemplate), gotMachineTemplate)).To(Succeed())
 	g.Expect(expectedMachineTemplate.Spec).To(BeEquivalentTo(gotMachineTemplate.Spec))
 	g.Expect(expectedMachineTemplate.ObjectMeta.Annotations).To(BeEquivalentTo(gotMachineTemplate.ObjectMeta.Annotations))
 }
@@ -1757,7 +1766,11 @@ func TestNodepoolDeletionDoesntRequireHCluster(t *testing.T) {
 		t.Errorf("expected to be able to get nodepool after deletion because of finalizer, but got err: %v", err)
 	}
 
-	if _, err := (&NodePoolReconciler{Client: c}).Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(nodePool)}); err != nil {
+	r := &NodePoolReconciler{
+		Client:               c,
+		KubevirtInfraClients: newKVInfraMapMock([]client.Object{nodePool}),
+	}
+	if _, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(nodePool)}); err != nil {
 		t.Fatalf("reconciliation failed: %v", err)
 	}
 
@@ -1995,4 +2008,130 @@ func TestTaintsToJSON(t *testing.T) {
 			g.Expect(node.Spec.Taints).To(ContainElements(coreTaints))
 		})
 	}
+}
+
+func TestDefaultNodePoolAMI(t *testing.T) {
+	testCases := []struct {
+		name          string
+		region        string
+		specifiedArch string
+		releaseImage  *releaseinfo.ReleaseImage
+		image         string
+		err           error
+		expectedImage string
+	}{
+		{
+			name:          "successfully pull amd64 AMI",
+			region:        "us-east-1",
+			specifiedArch: "amd64",
+			expectedImage: "us-east-1-x86_64-image",
+		},
+		{
+			name:          "successfully pull arm64 AMI",
+			region:        "us-east-1",
+			specifiedArch: "arm64",
+			expectedImage: "us-east-1-aarch64-image",
+		},
+		{
+			name:          "fail to pull amd64 AMI because region can't be found",
+			region:        "us-east-2",
+			specifiedArch: "amd64",
+			expectedImage: "",
+		},
+		{
+			name:          "fail to pull arm64 AMI because region can't be found",
+			region:        "us-east-2",
+			specifiedArch: "arm64",
+			expectedImage: "",
+		},
+		{
+			name:          "fail because architecture can't be found",
+			region:        "us-east-2",
+			specifiedArch: "arm644",
+			expectedImage: "",
+		},
+		{
+			name:          "fail because architecture can't be found",
+			region:        "us-east-2",
+			specifiedArch: "s390x",
+			expectedImage: "",
+		},
+		{
+			name:          "fail because no image data is defined",
+			region:        "us-west-1",
+			specifiedArch: "arm64",
+			expectedImage: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			other := []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			}
+
+			client := fake.NewClientBuilder().WithObjects(other...).Build()
+			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{}
+			hc := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.12.0",
+					},
+				},
+			}
+
+			ctx := context.Background()
+			tc.releaseImage = fakereleaseprovider.GetReleaseImage(ctx, hc, client, releaseProvider)
+
+			tc.image, tc.err = defaultNodePoolAMI(tc.region, tc.specifiedArch, tc.releaseImage)
+			if strings.Contains(tc.name, "successfully") {
+				g.Expect(tc.image).To(Equal(tc.expectedImage))
+				g.Expect(tc.err).To(BeNil())
+			} else if strings.Contains(tc.name, "fail to pull") {
+				g.Expect(tc.image).To(BeEmpty())
+				g.Expect(tc.err.Error()).To(Equal("couldn't find AWS image for region \"" + tc.region + "\""))
+			} else if strings.Contains(tc.name, "fail because architecture") {
+				g.Expect(tc.image).To(BeEmpty())
+				g.Expect(tc.err.Error()).To(Equal("couldn't find OS metadata for architecture \"" + tc.specifiedArch + "\""))
+			} else {
+				g.Expect(tc.image).To(BeEmpty())
+				g.Expect(tc.err.Error()).To(Equal("release image metadata has no image for region \"" + tc.region + "\""))
+			}
+		})
+	}
+}
+
+type kubevirtInfraClientMapMock struct {
+	cluster *kvinfra.KubevirtInfraClient
+}
+
+func newKVInfraMapMock(objects []client.Object) kvinfra.KubevirtInfraClientMap {
+	return &kubevirtInfraClientMapMock{
+		cluster: &kvinfra.KubevirtInfraClient{
+			Client:    fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build(),
+			Namespace: "kubevirt-kubevirt",
+		},
+	}
+}
+
+func (k *kubevirtInfraClientMapMock) DiscoverKubevirtClusterClient(_ context.Context, _ client.Client, _ string, _ *hyperv1.KubevirtPlatformCredentials, _ string, _ string) (*kvinfra.KubevirtInfraClient, error) {
+	return k.cluster, nil
+}
+
+func (k *kubevirtInfraClientMapMock) GetClient(_ string) *kvinfra.KubevirtInfraClient {
+	return k.cluster
+}
+
+func (*kubevirtInfraClientMapMock) Delete(_ string) {
+	// interface's empty implementation
 }

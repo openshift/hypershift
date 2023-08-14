@@ -25,3 +25,18 @@ func TestReleaseInfoPowerVS(t *testing.T) {
 		}
 	}
 }
+
+// TestReleaseInfoKubeVirt tests validates the presence of the kubevirt images
+func TestReleaseInfoKubeVirt(t *testing.T) {
+	metadata, err := DeserializeImageMetadata(fixtures.CoreOSBootImagesYAML_4_10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	arch, ok := metadata.Architectures["x86_64"]
+	if !ok {
+		t.Fatal("metadata does not contain the x86_64 architecture")
+	}
+	if arch.Images.Kubevirt.DigestRef == "" {
+		t.Fatal("metadata does not contain a digest ref for kubevirt")
+	}
+}

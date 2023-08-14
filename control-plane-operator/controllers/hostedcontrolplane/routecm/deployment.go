@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -21,7 +22,6 @@ const (
 	configHashAnnotation = "openshift-route-controller-manager.hypershift.openshift.io/config-hash"
 
 	servingPort int32 = 8443
-	configKey         = "config.yaml"
 )
 
 var (
@@ -99,6 +99,9 @@ func buildRouteOCMContainerMain(image string) func(*corev1.Container) {
 			"start",
 			"--config",
 			path.Join(volumeMounts.Path(c.Name, routeOCMVolumeConfig().Name), configKey),
+			"--kubeconfig",
+			path.Join(volumeMounts.Path(c.Name, routeOCMVolumeKubeconfig().Name), kas.KubeconfigKey),
+			"--namespace=openshift-route-controller-manager",
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 		c.Ports = []corev1.ContainerPort{
@@ -106,6 +109,20 @@ func buildRouteOCMContainerMain(image string) func(*corev1.Container) {
 				Name:          "https",
 				ContainerPort: servingPort,
 				Protocol:      corev1.ProtocolTCP,
+			},
+		}
+		c.Env = []corev1.EnvVar{
+			{
+				Name: "POD_NAME",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.name",
+					},
+				},
+			},
+			{
+				Name:  "POD_NAMESPACE",
+				Value: "openshift-route-controller-manager",
 			},
 		}
 	}
@@ -119,7 +136,7 @@ func routeOCMVolumeConfig() *corev1.Volume {
 
 func buildRouteOCMVolumeConfig(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.Name = manifests.OpenShiftControllerManagerConfig("").Name
+	v.ConfigMap.Name = manifests.OpenShiftRouteControllerManagerConfig("").Name
 }
 
 func routeOCMVolumeKubeconfig() *corev1.Volume {
@@ -132,6 +149,7 @@ func buildRouteOCMVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
 	v.Secret.DefaultMode = utilpointer.Int32(416)
+
 }
 
 func routeOCMVolumeServingCert() *corev1.Volume {
@@ -144,4 +162,5 @@ func buildRouteOCMVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftRouteControllerManagerCertSecret("").Name
 	v.Secret.DefaultMode = utilpointer.Int32(416)
+
 }

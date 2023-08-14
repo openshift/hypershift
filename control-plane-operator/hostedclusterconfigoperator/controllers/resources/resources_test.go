@@ -59,6 +59,7 @@ var initialObjects = []client.Object{
 	manifests.NodeTuningClusterOperator(),
 	manifests.NamespaceKubeSystem(),
 	&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
+	fakeOperatorHub(),
 }
 
 func shouldNotError(key client.ObjectKey) bool {
@@ -70,7 +71,7 @@ func shouldNotError(key client.ObjectKey) bool {
 	return false
 }
 
-func (c *testClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+func (c *testClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 	if c.randomGetErrors && !shouldNotError(key) {
 		if randomSource.Int()%3 == 0 {
 			c.getErrorCount++
@@ -246,9 +247,25 @@ func fakePackageServerService() *corev1.Service {
 	return s
 }
 
+func fakeOperatorHub() *configv1.OperatorHub {
+	return &configv1.OperatorHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+}
+
 func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 	testNamespace := "master-cluster1"
 	testHCPName := "cluster1"
+
+	annotatedOauthDeployment := &appsv1.Deployment{
+		ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
+	}
+	annotatedOauthDeployment.Spec.Template.Annotations = map[string]string{
+		SecretHashAnnotation: "fake-hash",
+	}
+
 	tests := map[string]struct {
 		inputHCP                                 *hyperv1.HostedControlPlane
 		inputObjects                             []client.Object
@@ -289,6 +306,19 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 				&appsv1.Deployment{
 					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
 				},
+			},
+			expectedOauthServerAnnotations:           nil,
+			expectKubeadminPasswordHashSecretToExist: false,
+		},
+		"when kubeadminPasswordSecret doesn't exist the oauth server SecretHashAnnotation annotation is deleted and the hash secret is not created": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+			},
+			inputObjects: []client.Object{
+				annotatedOauthDeployment,
 			},
 			expectedOauthServerAnnotations:           nil,
 			expectKubeadminPasswordHashSecretToExist: false,

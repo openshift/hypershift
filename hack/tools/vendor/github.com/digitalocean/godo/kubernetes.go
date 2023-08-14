@@ -71,6 +71,9 @@ type KubernetesClusterCreateRequest struct {
 	Tags        []string `json:"tags,omitempty"`
 	VPCUUID     string   `json:"vpc_uuid,omitempty"`
 
+	// Create cluster with highly available control plane
+	HA bool `json:"ha"`
+
 	NodePools []*KubernetesNodePoolCreateRequest `json:"node_pools,omitempty"`
 
 	MaintenancePolicy *KubernetesMaintenancePolicy `json:"maintenance_policy"`
@@ -85,6 +88,9 @@ type KubernetesClusterUpdateRequest struct {
 	MaintenancePolicy *KubernetesMaintenancePolicy `json:"maintenance_policy,omitempty"`
 	AutoUpgrade       *bool                        `json:"auto_upgrade,omitempty"`
 	SurgeUpgrade      bool                         `json:"surge_upgrade,omitempty"`
+
+	// Convert cluster to run highly available control plane
+	HA *bool `json:"ha,omitempty"`
 }
 
 // KubernetesClusterDeleteSelectiveRequest represents a delete selective request to delete a cluster and it's associated resources.
@@ -189,6 +195,9 @@ type KubernetesCluster struct {
 	Endpoint      string   `json:"endpoint,omitempty"`
 	Tags          []string `json:"tags,omitempty"`
 	VPCUUID       string   `json:"vpc_uuid,omitempty"`
+
+	// Cluster runs a highly available control plane
+	HA bool `json:"ha,omitempty"`
 
 	NodePools []*KubernetesNodePool `json:"node_pools,omitempty"`
 
@@ -422,8 +431,9 @@ type KubernetesOptions struct {
 
 // KubernetesVersion is a DigitalOcean Kubernetes release.
 type KubernetesVersion struct {
-	Slug              string `json:"slug,omitempty"`
-	KubernetesVersion string `json:"kubernetes_version,omitempty"`
+	Slug              string   `json:"slug,omitempty"`
+	KubernetesVersion string   `json:"kubernetes_version,omitempty"`
+	SupportedFeatures []string `json:"supported_features,omitempty"`
 }
 
 // KubernetesNodeSize is a node sizes supported for Kubernetes clusters.
@@ -467,7 +477,7 @@ type KubernetesAssociatedResources struct {
 	LoadBalancers   []*AssociatedResource `json:"load_balancers"`
 }
 
-// AssociatedResource is the object to represent a Kubernetes cluster associated resource's Id and Name.
+// AssociatedResource is the object to represent a Kubernetes cluster associated resource's ID and Name.
 type AssociatedResource struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`

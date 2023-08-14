@@ -20,6 +20,12 @@ const (
 	DisablePKIReconciliationAnnotation        = "hypershift.openshift.io/disable-pki-reconciliation"
 	IdentityProviderOverridesAnnotationPrefix = "idpoverrides.hypershift.openshift.io/"
 	OauthLoginURLOverrideAnnotation           = "oauth.hypershift.openshift.io/login-url-override"
+	// ControlPlanePriorityClass is for pods in the HyperShift Control Plane that are not API critical but still need elevated priority. E.g Cluster Version Operator.
+	ControlPlanePriorityClass = "hypershift.openshift.io/control-plane-priority-class"
+	// APICriticalPriorityClass is for pods that are required for API calls and resource admission to succeed. This includes pods like kube-apiserver, aggregated API servers, and webhooks.
+	APICriticalPriorityClass = "hypershift.openshift.io/api-critical-priority-class"
+	// EtcdPriorityClass is for etcd pods.
+	EtcdPriorityClass = "hypershift.openshift.io/etcd-priority-class"
 	// KonnectivityServerImageAnnotation is a temporary annotation that allows the specification of the konnectivity server image.
 	// This will be removed when Konnectivity is added to the Openshift release payload
 	KonnectivityServerImageAnnotation = "hypershift.openshift.io/konnectivity-server-image"
@@ -152,6 +158,50 @@ const (
 	// RouteVisibilityPrivate is a value for RouteVisibilityLabel that will result
 	// in the labeled route being ignored by external-dns
 	RouteVisibilityPrivate = "private"
+
+	// AllowUnsupportedKubeVirtRHCOSVariantsAnnotation allows a NodePool to use image sources
+	// other than the official rhcos kubevirt variant, such as the openstack variant. This
+	// allows the creation of guest clusters <= 4.13, which are before the rhcos kubevirt
+	// variant was released.
+	AllowUnsupportedKubeVirtRHCOSVariantsAnnotation = "hypershift.openshift.io/allow-unsupported-kubevirt-rhcos-variants"
+
+	// ImageOverridesAnnotation is passed as a flag to the CPO to allow overriding release images.
+	// The format of the annotation value is a commma-separated list of image=ref pairs like:
+	// cluster-network-operator=example.com/cno:latest,ovn-kubernetes=example.com/ovnkube:latest
+	ImageOverridesAnnotation = "hypershift.openshift.io/image-overrides"
+
+	// EnsureExistsPullSecretReconciliation enables a reconciliation behavior on in cluster pull secret
+	// resources that enables user modifications to the resources while ensuring they do exist. This
+	// allows users to execute workflows like disabling insights operator
+	EnsureExistsPullSecretReconciliation = "hypershift.openshift.io/ensureexists-pullsecret-reconcile"
+
+	// HostedClusterLabel is used as a label on nodes that are dedicated to a specific hosted cluster
+	HostedClusterLabel = "hypershift.openshift.io/cluster"
+
+	// RequestServingComponentLabel is used as a label on pods and nodes for dedicated serving components.
+	RequestServingComponentLabel = "hypershift.openshift.io/request-serving-component"
+
+	// TopologyAnnotation indicates the type of topology that should take effect for the
+	// hosted cluster's control plane workloads. Currently the only value supported is "dedicated-request-serving-components".
+	// We implicitly support shared and dedicated.
+	TopologyAnnotation = "hypershift.openshift.io/topology"
+
+	// HostedClusterScheduledAnnotation indicates that a hosted cluster with dedicated request serving components
+	// has been assigned dedicated nodes. If not present, the hosted cluster needs scheduling.
+	HostedClusterScheduledAnnotation = "hypershift.openshift.io/cluster-scheduled"
+
+	// DedicatedRequestServingComponentsTopology indicates that control plane request serving
+	// components should be scheduled on dedicated nodes in the management cluster.
+	DedicatedRequestServingComponentsTopology = "dedicated-request-serving-components"
+
+	// AllowGuestWebhooksServiceLabel marks a service deployed in the control plane as a valid target
+	// for validating/mutating webhooks running in the guest cluster.
+	AllowGuestWebhooksServiceLabel = "hypershift.openshift.io/allow-guest-webhooks"
+
+	// PodSecurityAdmissionLabelOverrideAnnotation allows overriding the pod security admission label on
+	// hosted control plane namespacces. The default is 'Restricted'. Valid values are 'Restricted', 'Baseline', or 'Privileged'
+	// See https://github.com/openshift/enhancements/blob/master/enhancements/authentication/pod-security-admission.md
+	PodSecurityAdmissionLabelOverrideAnnotation = "hypershift.openshift.io/pod-security-admission-label-override"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
@@ -162,6 +212,15 @@ type HostedClusterSpec struct {
 	// behavior of the rollout will be driven by the ControllerAvailabilityPolicy
 	// and InfrastructureAvailabilityPolicy.
 	Release Release `json:"release"`
+
+	// ControlPlaneRelease specifies the desired OCP release payload for
+	// control plane components running on the management cluster.
+	// Updating this field will trigger a rollout of the control plane. The
+	// behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+	// and InfrastructureAvailabilityPolicy.
+	// If not defined, Release is used
+	// +optional
+	ControlPlaneRelease *Release `json:"controlPlaneRelease,omitempty"`
 
 	// ClusterID uniquely identifies this cluster. This is expected to be
 	// an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in
@@ -235,7 +294,7 @@ type HostedClusterSpec struct {
 	// changed.
 	//
 	// +kubebuilder:validation:Optional
-	// +kubebuilder:default={managementType: "Managed", managed: {storage: {type: "PersistentVolume", persistentVolume: {size: "4Gi"}}}}
+	// +kubebuilder:default={managementType: "Managed", managed: {storage: {type: "PersistentVolume", persistentVolume: {size: "8Gi"}}}}
 	// +immutable
 	Etcd EtcdSpec `json:"etcd"`
 
@@ -572,7 +631,8 @@ type CIDRBlock string
 type APIServerNetworking struct {
 	// AdvertiseAddress is the address that nodes will use to talk to the API
 	// server. This is an address associated with the loopback adapter of each
-	// node. If not specified, 172.20.0.1 is used.
+	// node. If not specified, the controller will take default values.
+	// The default values will be set as 172.20.0.1 or fd00::1.
 	AdvertiseAddress *string `json:"advertiseAddress,omitempty"`
 
 	// Port is the port at which the APIServer is exposed inside a node. Other
@@ -681,6 +741,7 @@ type KubevirtPlatformCredentials struct {
 	// +immutable
 	// +kubebuilder:validation:Required
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="infraKubeConfigSecret is immutable"
 	InfraKubeConfigSecret *KubeconfigSecretRef `json:"infraKubeConfigSecret,omitempty"`
 
 	// InfraNamespace defines the namespace on the external infra cluster that is used to host the KubeVirt
@@ -691,6 +752,7 @@ type KubevirtPlatformCredentials struct {
 	// +immutable
 	// +kubebuilder:validation:Required
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="infraNamespace is immutable"
 	InfraNamespace string `json:"infraNamespace"`
 }
 
@@ -720,6 +782,7 @@ type KubevirtPlatformSpec struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="baseDomainPassthrough is immutable"
 	BaseDomainPassthrough *bool `json:"baseDomainPassthrough,omitempty"`
 
 	// GenerateID is used to uniquely apply a name suffix to resources associated with
@@ -737,6 +800,76 @@ type KubevirtPlatformSpec struct {
 	// the same cluster and namespace as the Hosted Control Plane.
 	// +optional
 	Credentials *KubevirtPlatformCredentials `json:"credentials,omitempty"`
+
+	// StorageDriver defines how the KubeVirt CSI driver exposes StorageClasses on
+	// the infra cluster (hosting the VMs) to the guest cluster.
+	//
+	// +kubebuilder:validation:Optional
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageDriver is immutable"
+	StorageDriver *KubevirtStorageDriverSpec `json:"storageDriver,omitempty"`
+}
+
+// KubevirtStorageDriverConfigType defines how the kubevirt storage driver is configured.
+//
+// +kubebuilder:validation:Enum=None;Default;Manual
+type KubevirtStorageDriverConfigType string
+
+const (
+	// NoneKubevirtStorageDriverConfigType means no kubevirt storage driver is used
+	NoneKubevirtStorageDriverConfigType KubevirtStorageDriverConfigType = "None"
+
+	// DefaultKubevirtStorageDriverConfigType means the kubevirt storage driver maps to the
+	// underlying infra cluster's default storageclass
+	DefaultKubevirtStorageDriverConfigType KubevirtStorageDriverConfigType = "Default"
+
+	// ManualKubevirtStorageDriverConfigType means the kubevirt storage driver mapping is
+	// explicitly defined.
+	ManualKubevirtStorageDriverConfigType KubevirtStorageDriverConfigType = "Manual"
+)
+
+type KubevirtStorageDriverSpec struct {
+	// Type represents the type of kubevirt csi driver configuration to use
+	//
+	// +unionDiscriminator
+	// +immutable
+	// +kubebuilder:default=Default
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageDriver.Type is immutable"
+	Type KubevirtStorageDriverConfigType `json:"type,omitempty"`
+
+	// Manual is used to explicilty define how the infra storageclasses are
+	// mapped to guest storageclasses
+	//
+	// +immutable
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageDriver.Manual is immutable"
+	Manual *KubevirtManualStorageDriverConfig `json:"manual,omitempty"`
+}
+
+type KubevirtManualStorageDriverConfig struct {
+	// StorageClassMapping maps StorageClasses on the infra cluster hosting
+	// the KubeVirt VMs to StorageClasses that are made available within the
+	// Guest Cluster.
+	//
+	// NOTE: It is possible that not all capablities of an infra cluster's
+	// storageclass will be present for the corresponding guest clusters storageclass.
+	//
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageClassMapping is immutable"
+	StorageClassMapping []KubevirtStorageClassMapping `json:"storageClassMapping,omitempty"`
+}
+
+type KubevirtStorageClassMapping struct {
+	// InfraStorageClassName is the name of the infra cluster storage class that
+	// will be exposed into the guest.
+	InfraStorageClassName string `json:"infraStorageClassName"`
+	// GuestStorageClassName is the name that the corresponding storageclass will
+	// be called within the guest cluster
+	GuestStorageClassName string `json:"guestStorageClassName"`
 }
 
 // AgentPlatformSpec specifies configuration for agent-based installations.
@@ -842,6 +975,12 @@ type PowerVSPlatformSpec struct {
 	//
 	// +immutable
 	StorageOperatorCloudCreds corev1.LocalObjectReference `json:"storageOperatorCloudCreds"`
+
+	// ImageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
+	// credentials for image registry operator to get authenticated with ibm cloud.
+	//
+	// +immutable
+	ImageRegistryOperatorCloudCreds corev1.LocalObjectReference `json:"imageRegistryOperatorCloudCreds"`
 }
 
 // PowerVSVPC specifies IBM Cloud PowerVS LoadBalancer configuration for the control
@@ -1512,7 +1651,7 @@ const (
 )
 
 var (
-	DefaultPersistentVolumeEtcdStorageSize resource.Quantity = resource.MustParse("4Gi")
+	DefaultPersistentVolumeEtcdStorageSize resource.Quantity = resource.MustParse("8Gi")
 )
 
 // ManagedEtcdStorageSpec describes the storage configuration for etcd data.
@@ -1539,7 +1678,7 @@ type ManagedEtcdStorageSpec struct {
 	//
 	// +optional
 	// +immutable
-	RestoreSnapshotURL []string `json:"restoreSnapshotURL"`
+	RestoreSnapshotURL []string `json:"restoreSnapshotURL,omitempty"`
 }
 
 // PersistentVolumeEtcdStorageSpec is the configuration for PersistentVolume
@@ -1556,7 +1695,9 @@ type PersistentVolumeEtcdStorageSpec struct {
 	// Size is the minimum size of the data volume for each etcd member.
 	//
 	// +optional
-	// +kubebuilder:default="4Gi"
+	// +kubebuilder:default="8Gi"
+	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Etcd PV storage size is immutable"
 	Size *resource.Quantity `json:"size,omitempty"`
 }
 

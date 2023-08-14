@@ -72,12 +72,14 @@ const (
 	powerVsService  = "powervs"
 	vpcService      = "vpc"
 	platformService = "platform"
+	cosService      = "cos"
 
 	// Secret suffix
 	kubeCloudControllerManagerCreds = "cloud-controller-creds"
 	nodePoolManagementCreds         = "node-management-creds"
 	ingressOperatorCreds            = "ingress-creds"
 	storageOperatorCreds            = "storage-creds"
+	imageRegistryOperatorCreds      = "image-registry-creds"
 )
 
 // CreateInfraOptions command line options for setting up infra in IBM PowerVS cloud
@@ -115,7 +117,9 @@ var (
 	customEpEnvNameMapping = map[string]string{
 		powerVsService:  "IBMCLOUD_POWER_API_ENDPOINT",
 		vpcService:      "IBMCLOUD_VPC_API_ENDPOINT",
-		platformService: "IBMCLOUD_PLATFORM_API_ENDPOINT"}
+		platformService: "IBMCLOUD_PLATFORM_API_ENDPOINT",
+		cosService:      "IBMCLOUD_COS_API_ENDPOINT",
+	}
 
 	dhcpServerLimitExceeds = func(dhcpServerCount int) error {
 		return fmt.Errorf("more than one DHCP server is not allowed in a service instance, found %d dhcp servers", dhcpServerCount)
@@ -155,6 +159,7 @@ type Secrets struct {
 	NodePoolManagement         *corev1.Secret
 	IngressOperator            *corev1.Secret
 	StorageOperator            *corev1.Secret
+	ImageRegistryOperator      *corev1.Secret
 }
 
 // Infra resource info in IBM Cloud for setting up hypershift nodepool
@@ -206,10 +211,10 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID with which to tag IBM Cloud resources")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "IBM Cloud PowerVS Region")
 	cmd.Flags().StringVar(&opts.Zone, "zone", opts.Zone, "IBM Cloud PowerVS Zone")
-	cmd.Flags().StringVar(&opts.CloudInstanceID, "cloud-instance-id", opts.CloudInstanceID, "IBM PowerVS Cloud Instance ID")
+	cmd.Flags().StringVar(&opts.CloudInstanceID, "cloud-instance-id", opts.CloudInstanceID, "IBM PowerVS Cloud Instance ID. Use this flag to reuse an existing PowerVS Cloud Instance resource for cluster's infra")
 	cmd.Flags().StringVar(&opts.VPCRegion, "vpc-region", opts.VPCRegion, "IBM Cloud VPC Region for VPC resources")
-	cmd.Flags().StringVar(&opts.VPC, "vpc", opts.VPC, "IBM Cloud VPC Name")
-	cmd.Flags().StringVar(&opts.CloudConnection, "cloud-connection", opts.CloudConnection, "IBM Cloud PowerVS Cloud Connection")
+	cmd.Flags().StringVar(&opts.VPC, "vpc", opts.VPC, "IBM Cloud VPC Name. Use this flag to reuse an existing VPC resource for cluster's infra")
+	cmd.Flags().StringVar(&opts.CloudConnection, "cloud-connection", opts.CloudConnection, "IBM Cloud PowerVS Cloud Connection. Use this flag to reuse an existing Cloud Connection resource for cluster's infra")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
 	cmd.Flags().BoolVar(&opts.Debug, "debug", opts.Debug, "Enabling this will print PowerVS API Request & Response logs")
 	cmd.Flags().BoolVar(&opts.RecreateSecrets, "recreate-secrets", opts.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
@@ -423,6 +428,12 @@ func (infra *Infra) setupSecrets(options *CreateInfraOptions) error {
 		return fmt.Errorf("error setup storage operator secret: %w", err)
 	}
 
+	infra.Secrets.ImageRegistryOperator, err = setupServiceID(options.Name, cloudApiKey, infra.AccountID, infra.ResourceGroupID,
+		imageRegistryOperatorCR, imageRegistryOperatorCreds, options.Namespace)
+	if err != nil {
+		return fmt.Errorf("error setup image registry operator secret: %w", err)
+	}
+
 	log(infra.ID).Info("Secrets Ready")
 
 	return nil
@@ -622,7 +633,11 @@ func getCustomEndpointUrl(serviceName string, defaultUrl string) string {
 	apiEP := os.Getenv(customEpEnvNameMapping[serviceName])
 	url := defaultUrl
 	if apiEP != "" {
-		url = strings.Replace(defaultUrl, "https://", fmt.Sprintf("https://%s.", apiEP), 1)
+		if serviceName == cosService {
+			url = strings.Replace(defaultUrl, "s3.", fmt.Sprintf("s3.%s.", apiEP), 1)
+		} else {
+			url = strings.Replace(defaultUrl, "https://", fmt.Sprintf("https://%s.", apiEP), 1)
+		}
 	}
 
 	return url

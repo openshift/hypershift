@@ -17,6 +17,13 @@ else
 fi
 
 generate_junit() {
+  # propagate SIGTERM to the `test-e2e` process
+  for child in $( jobs -p ); do
+    kill "${child}"
+  done
+  # wait until `test-e2e` finishes gracefully
+  wait
+
   cat  /tmp/test_out | go tool test2json -t > /tmp/test_out.json
   gotestsum --raw-command --junitfile="${ARTIFACT_DIR}/junit.xml" --format=standard-verbose -- cat /tmp/test_out.json
   # Ensure generated junit has a useful suite name
@@ -31,10 +38,14 @@ bin/test-e2e \
   -test.parallel=20 \
   --e2e.aws-credentials-file=/etc/hypershift-pool-aws-credentials/credentials \
   --e2e.aws-zones=us-east-1a,us-east-1b,us-east-1c \
+  --e2e.aws-oidc-s3-bucket-name=hypershift-ci-oidc \
+  --e2e.aws-kms-key-alias=alias/hypershift-ci \
   --e2e.pull-secret-file=/etc/ci-pull-credentials/.dockerconfigjson \
   --e2e.base-domain=ci.hypershift.devcluster.openshift.com \
   --e2e.latest-release-image="${OCP_IMAGE_LATEST}" \
   --e2e.previous-release-image="${OCP_IMAGE_PREVIOUS}" \
   --e2e.additional-tags="expirationDate=$(date -d '4 hours' --iso=minutes --utc)" \
   --e2e.aws-endpoint-access=PublicAndPrivate \
-  --e2e.external-dns-domain=service.ci.hypershift.devcluster.openshift.com | tee /tmp/test_out
+  --e2e.external-dns-domain=service.ci.hypershift.devcluster.openshift.com | tee /tmp/test_out &
+
+wait $!

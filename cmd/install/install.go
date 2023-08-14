@@ -47,6 +47,12 @@ import (
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 )
 
+const (
+	// ExternalDNSImage - This is specifically tag 1.1.0-3 from https://catalog.redhat.com/software/containers/edo/external-dns-rhel8/61d4c35023156829b87a434a?container-tabs=overview&tag=1.1.0-3&push_date=1671131187000
+	// TODO this needs to be updated to a multi-arch image including Arm - https://issues.redhat.com/browse/NE-1298
+	ExternalDNSImage = "registry.redhat.io/edo/external-dns-rhel8@sha256:638fb6b5fc348f5cf52b9800d3d8e9f5315078fc9b1e57e800cb0a4a50f1b4b9"
+)
+
 type Options struct {
 	AdditionalTrustBundle                     string
 	Namespace                                 string
@@ -54,6 +60,7 @@ type Options struct {
 	ImageRefsFile                             string
 	HyperShiftOperatorReplicas                int32
 	Development                               bool
+	EnableDefaultingWebhook                   bool
 	EnableValidatingWebhook                   bool
 	EnableConversionWebhook                   bool
 	Template                                  bool
@@ -76,6 +83,7 @@ type Options struct {
 	ExternalDNSCredentialsSecret              string
 	ExternalDNSDomainFilter                   string
 	ExternalDNSTxtOwnerId                     string
+	ExternalDNSImage                          string
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
 	MetricsSet                                metrics.MetricsSet
@@ -133,7 +141,7 @@ func (o *Options) ApplyDefaults() {
 	switch {
 	case o.Development:
 		o.HyperShiftOperatorReplicas = 0
-	case o.EnableConversionWebhook:
+	case o.EnableDefaultingWebhook || o.EnableConversionWebhook:
 		o.HyperShiftOperatorReplicas = 2
 	default:
 		o.HyperShiftOperatorReplicas = 1
@@ -148,17 +156,15 @@ func NewCommand() *cobra.Command {
 	}
 
 	var opts Options
-	if os.Getenv("CI") == "true" {
-		opts.PlatformMonitoring = metrics.PlatformMonitoringAll
-		opts.EnableCIDebugOutput = true
-	}
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
 	opts.MetricsSet = metrics.DefaultMetricsSet
 	opts.EnableConversionWebhook = true // default to enabling the conversion webhook
+	opts.ExternalDNSImage = ExternalDNSImage
 
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
 	cmd.PersistentFlags().BoolVar(&opts.Development, "development", false, "Enable tweaks to facilitate local development")
+	cmd.PersistentFlags().BoolVar(&opts.EnableDefaultingWebhook, "enable-defaulting-webhook", false, "Enable webhook for defaulting hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.PersistentFlags().MarkDeprecated("enable-validating-webhook", "This field is deprecated and has no effect")
 	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", true, "Enable webhook for converting hypershift API types")
@@ -178,8 +184,9 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSProvider, "external-dns-provider", opts.OIDCStorageProviderS3Credentials, "Provider to use for managing DNS records using external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentials, "external-dns-credentials", opts.OIDCStorageProviderS3Credentials, "Credentials to use for managing DNS records using external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentialsSecret, "external-dns-secret", "", "Name of an existing secret containing the external-dns credentials.")
-	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specifed domain.")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specified domain.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSImage, "external-dns-image", opts.ExternalDNSImage, "Image to use for external-dns")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", false, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
@@ -410,6 +417,13 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 	}.Build()
 	objects = append(objects, operatorRoleBinding)
 
+	if opts.EnableDefaultingWebhook {
+		mutatingWebhookConfiguration := assets.HyperShiftMutatingWebhookConfiguration{
+			Namespace: operatorNamespace,
+		}.Build()
+		objects = append(objects, mutatingWebhookConfiguration)
+	}
+
 	var oidcSecret *corev1.Secret
 	if opts.OIDCStorageProviderS3Credentials != "" {
 		oidcCreds, err := os.ReadFile(opts.OIDCStorageProviderS3Credentials)
@@ -475,6 +489,17 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		objects = append(objects, userCABundleCM)
 	}
 
+	trustedCABundle := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "hypershift",
+			Name:      "openshift-config-managed-trusted-ca-bundle",
+			Labels: map[string]string{
+				"config.openshift.io/inject-trusted-cabundle": "true",
+			},
+		},
+	}
+	objects = append(objects, trustedCABundle)
+
 	if len(opts.ExternalDNSProvider) > 0 {
 		externalDNSServiceAccount := assets.ExternalDNSServiceAccount{
 			Namespace: operatorNamespace,
@@ -512,9 +537,8 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		}
 
 		externalDNSDeployment := assets.ExternalDNSDeployment{
-			Namespace: operatorNamespace,
-			// TODO: need to look this up from somewhere
-			Image:             "registry.redhat.io/edo/external-dns-rhel8@sha256:e8c50c1c158d08a99b1f388c65860c533209299fd0ff87f5c9fe29d7c9b5a4d1",
+			Namespace:         operatorNamespace,
+			Image:             opts.ExternalDNSImage,
 			ServiceAccount:    externalDNSServiceAccount,
 			Provider:          opts.ExternalDNSProvider,
 			DomainFilter:      opts.ExternalDNSDomainFilter,
@@ -526,13 +550,14 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
 		AdditionalTrustBundle:          userCABundleCM,
+		OpenShiftTrustBundle:           trustedCABundle,
 		Namespace:                      operatorNamespace,
 		OperatorImage:                  opts.HyperShiftImage,
 		ServiceAccount:                 operatorServiceAccount,
 		Replicas:                       opts.HyperShiftOperatorReplicas,
 		EnableOCPClusterMonitoring:     opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
 		EnableCIDebugOutput:            opts.EnableCIDebugOutput,
-		EnableWebhook:                  opts.EnableConversionWebhook,
+		EnableWebhook:                  opts.EnableDefaultingWebhook || opts.EnableConversionWebhook,
 		PrivatePlatform:                opts.PrivatePlatform,
 		AWSPrivateRegion:               opts.AWSPrivateRegion,
 		AWSPrivateSecret:               operatorCredentialsSecret,
@@ -660,7 +685,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to look up gvk for %T: %w", objects[idx], err)
 		}
-		// Everything that embedds metav1.TypeMeta implements this
+		// Everything that embeds metav1.TypeMeta implements this
 		objects[idx].(interface {
 			SetGroupVersionKind(gvk schema.GroupVersionKind)
 		}).SetGroupVersionKind(gvk)

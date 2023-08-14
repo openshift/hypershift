@@ -42,6 +42,12 @@ func ensureDNSContainer() *corev1.Container {
 	}
 }
 
+func resetMemberContainer() *corev1.Container {
+	return &corev1.Container{
+		Name: "reset-member",
+	}
+}
+
 func etcdMetricsContainer() *corev1.Container {
 	return &corev1.Container{
 		Name: "etcd-metrics",
@@ -85,6 +91,7 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 
 	ss.Spec.Template.Spec.InitContainers = []corev1.Container{
 		util.BuildContainer(ensureDNSContainer(), buildEnsureDNSContainer(p, ss.Namespace)),
+		util.BuildContainer(resetMemberContainer(), buildResetMemberContainer(p, ss.Namespace)),
 	}
 
 	if len(p.StorageSpec.RestoreSnapshotURL) > 0 && !p.SnapshotRestored {
@@ -137,6 +144,12 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 				},
 			},
 		},
+		{
+			Name: "cluster-state",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		},
 	}
 
 	p.DeploymentConfig.ApplyToStatefulSet(ss)
@@ -181,20 +194,109 @@ func buildEnsureDNSContainer(p *EtcdParams, ns string) func(c *corev1.Container)
 	}
 }
 
+const resetMemberScript = `
+#!/bin/bash
+
+set -eu
+
+# This script checks whether the data directory of this etcd member is empty.
+# If it is, and there is a functional etcd cluster, then it ensures that a member
+# corresponding to this pod does not exist in the cluster so it can be added
+# as a new member.
+
+# Setup the etcdctl environment
+export ETCDCTL_API=3
+export ETCDCTL_CACERT=/etc/etcd/tls/etcd-ca/ca.crt
+export ETCDCTL_CERT=/etc/etcd/tls/server/server.crt
+export ETCDCTL_KEY=/etc/etcd/tls/server/server.key
+export ETCDCTL_ENDPOINTS=https://etcd-client:2379
+
+if [[ -f /etc/etcd/clusterstate/existing ]]; then
+  rm /etc/etcd/clusterstate/existing
+fi
+
+if [[ ! -f /var/lib/data/member/snap/db ]]; then
+  echo "No existing etcd data found"
+  echo "Checking if cluster is functional"
+  if etcdctl member list; then
+    echo "Cluster is functional"
+	MEMBER_ID=$(etcdctl member list -w simple | grep "${HOSTNAME}" | awk -F, '{ print $1 }')
+	if [[ -n "${MEMBER_ID}" ]]; then
+	  echo "A member with this name (${HOSTNAME}) already exists, removing"
+	  etcdctl member remove "${MEMBER_ID}"
+	  echo "Adding new member"
+	  etcdctl member add ${HOSTNAME} --peer-urls https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380
+	  echo "existing" > /etc/etcd/clusterstate/existing
+	else
+	  echo "A member does not exist with name (${HOSTNAME}), nothing to do"
+	fi
+  else
+    echo "Cannot list members in cluster, so likely not up yet"
+  fi
+else
+  echo "Snapshot db exists, member has data"
+fi
+`
+
+func buildResetMemberContainer(p *EtcdParams, ns string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Name = "reset-member"
+		c.Image = p.EtcdImage
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.Command = []string{"/bin/bash"}
+		c.Args = []string{"-c", resetMemberScript}
+		c.VolumeMounts = []corev1.VolumeMount{
+			{
+				Name:      "data",
+				MountPath: "/var/lib",
+			},
+			{
+				Name:      "server-tls",
+				MountPath: "/etc/etcd/tls/server",
+			},
+			{
+				Name:      "etcd-ca",
+				MountPath: "/etc/etcd/tls/etcd-ca",
+			},
+			{
+				Name:      "cluster-state",
+				MountPath: "/etc/etcd/clusterstate",
+			},
+		}
+		c.Env = []corev1.EnvVar{
+			{
+				Name: "NAMESPACE",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.namespace",
+					},
+				},
+			},
+		}
+	}
+}
+
 func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
-		script := `
+		var podIP, allInterfaces string
+
+		scriptTemplate := `
+CLUSTER_STATE="new"
+if [[ -f /etc/etcd/clusterstate/existing ]]; then
+  CLUSTER_STATE="existing"
+fi
+
 /usr/bin/etcd \
 --data-dir=/var/lib/data \
 --name=${HOSTNAME} \
 --initial-advertise-peer-urls=https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2380 \
---listen-peer-urls=https://${POD_IP}:2380 \
---listen-client-urls=https://${POD_IP}:2379,https://localhost:2379 \
---advertise-client-urls=https://${HOSTNAME}.etcd-client.${NAMESPACE}.svc:2379 \
---listen-metrics-urls=https://0.0.0.0:2382 \
+--listen-peer-urls=https://%s:2380 \
+--listen-client-urls=https://%s:2379,https://localhost:2379 \
+--advertise-client-urls=https://${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc:2379 \
+--listen-metrics-urls=https://%s:2382 \
 --initial-cluster-token=etcd-cluster \
 --initial-cluster=${INITIAL_CLUSTER} \
---initial-cluster-state=new \
+--initial-cluster-state=${CLUSTER_STATE} \
 --quota-backend-bytes=${QUOTA_BACKEND_BYTES} \
 --snapshot-count=10000 \
 --peer-client-cert-auth=true \
@@ -206,6 +308,17 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 --key-file=/etc/etcd/tls/server/server.key \
 --trusted-ca-file=/etc/etcd/tls/etcd-ca/ca.crt
 `
+
+		if p.IPv6 {
+			podIP = "[${POD_IP}]"
+			allInterfaces = "[::]"
+
+		} else {
+			podIP = "${POD_IP}"
+			allInterfaces = "0.0.0.0"
+		}
+
+		script := fmt.Sprintf(scriptTemplate, podIP, podIP, allInterfaces)
 
 		var members []string
 		for i := 0; i < p.DeploymentConfig.Replicas; i++ {
@@ -238,6 +351,10 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 				Name:      "etcd-ca",
 				MountPath: "/etc/etcd/tls/etcd-ca",
 			},
+			{
+				Name:      "cluster-state",
+				MountPath: "/etc/etcd/clusterstate",
+			},
 		}
 		c.Env = []corev1.EnvVar{
 			{
@@ -262,7 +379,7 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 			},
 			{
 				Name:  "QUOTA_BACKEND_BYTES",
-				Value: strconv.FormatInt(p.StorageSpec.PersistentVolume.Size.Value(), 10),
+				Value: strconv.FormatInt(EtcdSTSQuotaBackendSize, 10),
 			},
 		}
 		c.Ports = []corev1.ContainerPort{
@@ -293,19 +410,31 @@ func buildEtcdContainer(p *EtcdParams, namespace string) func(c *corev1.Containe
 
 func buildEtcdMetricsContainer(p *EtcdParams, namespace string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
-		script := `
-		etcd grpc-proxy start \
-          --endpoints https://localhost:2382 \
-          --metrics-addr https://0.0.0.0:2381 \
-          --listen-addr 127.0.0.1:2383 \
-          --advertise-client-url ""  \
-          --key /etc/etcd/tls/peer/peer.key \
-          --key-file /etc/etcd/tls/server/server.key \
-          --cert /etc/etcd/tls/peer/peer.crt \
-          --cert-file /etc/etcd/tls/server/server.crt \
-          --cacert /etc/etcd/tls/etcd-ca/ca.crt \
-          --trusted-ca-file /etc/etcd/tls/etcd-metrics-ca/ca.crt
-		`
+		var loInterface, allInterfaces string
+
+		scriptTemplate := `
+etcd grpc-proxy start \
+--endpoints https://localhost:2382 \
+--metrics-addr https://%s:2381 \
+--listen-addr %s:2383 \
+--advertise-client-url ""  \
+--key /etc/etcd/tls/peer/peer.key \
+--key-file /etc/etcd/tls/server/server.key \
+--cert /etc/etcd/tls/peer/peer.crt \
+--cert-file /etc/etcd/tls/server/server.crt \
+--cacert /etc/etcd/tls/etcd-ca/ca.crt \
+--trusted-ca-file /etc/etcd/tls/etcd-metrics-ca/ca.crt
+`
+
+		if p.IPv6 {
+			loInterface = "[::1]"
+			allInterfaces = "[::]"
+		} else {
+			loInterface = "127.0.0.1"
+			allInterfaces = "0.0.0.0"
+		}
+
+		script := fmt.Sprintf(scriptTemplate, allInterfaces, loInterface)
 
 		c.Image = p.EtcdImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent

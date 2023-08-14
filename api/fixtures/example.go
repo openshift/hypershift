@@ -3,6 +3,7 @@ package fixtures
 import (
 	"crypto/rand"
 	"fmt"
+	"strings"
 	"time"
 
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -74,6 +75,7 @@ type ExampleOptions struct {
 	AutoRepair                       bool
 	EtcdStorageClass                 string
 	ExternalDNSDomain                string
+	Arch                             string
 	AWS                              *ExampleAWSOptions
 	None                             *ExampleNoneOptions
 	Agent                            *ExampleAgentOptions
@@ -304,6 +306,27 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			platformSpec.Kubevirt.BaseDomainPassthrough = &o.Kubevirt.BaseDomainPassthrough
 		}
 
+		if len(o.Kubevirt.InfraStorageClassMappings) > 0 {
+			platformSpec.Kubevirt.StorageDriver = &hyperv1.KubevirtStorageDriverSpec{
+				Type:   hyperv1.ManualKubevirtStorageDriverConfigType,
+				Manual: &hyperv1.KubevirtManualStorageDriverConfig{},
+			}
+
+			for _, mapping := range o.Kubevirt.InfraStorageClassMappings {
+				split := strings.Split(mapping, "/")
+				if len(split) != 2 {
+					// This is sanity checked by the hypershift cli as well, so this error should
+					// not be encountered here. This check is left here as a safety measure.
+					panic(fmt.Sprintf("invalid KubeVirt infra storage class mapping [%s]", mapping))
+				}
+				newMap := hyperv1.KubevirtStorageClassMapping{
+					InfraStorageClassName: split[0],
+					GuestStorageClassName: split[1],
+				}
+				platformSpec.Kubevirt.StorageDriver.Manual.StorageClassMapping =
+					append(platformSpec.Kubevirt.StorageDriver.Manual.StorageClassMapping, newMap)
+			}
+		}
 	case o.Azure != nil:
 		credentialSecret := &corev1.Secret{
 			TypeMeta: metav1.TypeMeta{
@@ -360,10 +383,11 @@ func (o ExampleOptions) Resources() *ExampleResources {
 					Region: o.PowerVS.VPCRegion,
 					Subnet: o.PowerVS.VPCSubnet,
 				},
-				KubeCloudControllerCreds:  corev1.LocalObjectReference{Name: o.PowerVS.Resources.KubeCloudControllerCreds.Name},
-				NodePoolManagementCreds:   corev1.LocalObjectReference{Name: o.PowerVS.Resources.NodePoolManagementCreds.Name},
-				IngressOperatorCloudCreds: corev1.LocalObjectReference{Name: o.PowerVS.Resources.IngressOperatorCloudCreds.Name},
-				StorageOperatorCloudCreds: corev1.LocalObjectReference{Name: o.PowerVS.Resources.StorageOperatorCloudCreds.Name},
+				KubeCloudControllerCreds:        corev1.LocalObjectReference{Name: o.PowerVS.Resources.KubeCloudControllerCreds.Name},
+				NodePoolManagementCreds:         corev1.LocalObjectReference{Name: o.PowerVS.Resources.NodePoolManagementCreds.Name},
+				IngressOperatorCloudCreds:       corev1.LocalObjectReference{Name: o.PowerVS.Resources.IngressOperatorCloudCreds.Name},
+				StorageOperatorCloudCreds:       corev1.LocalObjectReference{Name: o.PowerVS.Resources.StorageOperatorCloudCreds.Name},
+				ImageRegistryOperatorCloudCreds: corev1.LocalObjectReference{Name: o.PowerVS.Resources.ImageRegistryOperatorCloudCreds.Name},
 			},
 		}
 		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
@@ -518,6 +542,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				Platform: hyperv1.NodePoolPlatform{
 					Type: cluster.Spec.Platform.Type,
 				},
+				Arch:             o.Arch,
 				NodeDrainTimeout: &metav1.Duration{Duration: o.NodeDrainTimeout},
 			},
 		}
@@ -552,6 +577,13 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		nodePool := defaultNodePool(cluster.Name)
 		nodePool.Spec.Platform.Kubevirt = ExampleKubeVirtTemplate(o.Kubevirt)
 		nodePools = append(nodePools, nodePool)
+		val, exists := o.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation]
+		if exists {
+			if nodePool.Annotations == nil {
+				nodePool.Annotations = map[string]string{}
+			}
+			nodePool.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation] = val
+		}
 	case hyperv1.NonePlatform, hyperv1.AgentPlatform:
 		nodePools = append(nodePools, defaultNodePool(cluster.Name))
 	case hyperv1.AzurePlatform:

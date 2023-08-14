@@ -1,6 +1,8 @@
 package mcs
 
 import (
+	"fmt"
+
 	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 
@@ -22,7 +24,7 @@ type MCSParams struct {
 	InstallConfig   *globalconfig.InstallConfig
 }
 
-func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Secret, userCA, kubeletClientCA *corev1.ConfigMap) *MCSParams {
+func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Secret, userCA, kubeletClientCA *corev1.ConfigMap) (*MCSParams, error) {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
 
@@ -30,7 +32,10 @@ func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Se
 	globalconfig.ReconcileInfrastructure(infra, hcp)
 
 	network := globalconfig.NetworkConfig()
-	globalconfig.ReconcileNetworkConfig(network, hcp)
+	if err := globalconfig.ReconcileNetworkConfig(network, hcp); err != nil {
+		return &MCSParams{}, fmt.Errorf("failed on network reconciliation config: %w", err)
+
+	}
 
 	proxy := globalconfig.ProxyConfig()
 	globalconfig.ReconcileProxyConfigWithStatus(proxy, hcp)
@@ -46,5 +51,5 @@ func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Se
 		Network:         network,
 		Proxy:           proxy,
 		InstallConfig:   globalconfig.NewInstallConfig(hcp),
-	}
+	}, nil
 }

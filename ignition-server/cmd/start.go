@@ -15,7 +15,7 @@ import (
 
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	nodepool "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -26,7 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
-	client "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
@@ -49,20 +49,21 @@ func init() {
 }
 
 type Options struct {
-	Addr              string
-	CertFile          string
-	KeyFile           string
-	RegistryOverrides map[string]string
-	Platform          string
-	WorkDir           string
-	MetricsAddr       string
+	Addr                string
+	CertFile            string
+	KeyFile             string
+	RegistryOverrides   map[string]string
+	Platform            string
+	WorkDir             string
+	MetricsAddr         string
+	FeatureGateManifest string
 }
 
-// This is an https server that enable us to satisfy
+// This is a https server that enable us to satisfy
 // 1 - 1 relation between clusters and ign endpoints.
 // It runs a token Secret controller.
 // The token Secret controller uses an IgnitionProvider provider implementation
-// (e.g machineConfigServerIgnitionProvider) to keep up to date a payload store in memory.
+// (e.g. machineConfigServerIgnitionProvider) to keep up to date a payload store in memory.
 // The payload store has the structure "NodePool token": "payload".
 // A token represents a given cluster version (and in the future also a machine Config) at any given point in time.
 // For a request to succeed a token needs to be passed in the Header.
@@ -88,6 +89,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Platform, "platform", "", "The cloud provider platform name")
 	cmd.Flags().StringVar(&opts.WorkDir, "work-dir", opts.WorkDir, "Directory in which to store transient working data")
 	cmd.Flags().StringVar(&opts.MetricsAddr, "metrics-addr", opts.MetricsAddr, "The address the metric endpoint binds to.")
+	cmd.Flags().StringVar(&opts.FeatureGateManifest, "feature-gate-manifest", opts.FeatureGateManifest, "Path to a rendered featuregates.config.openshift.io/v1 file")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -110,7 +112,7 @@ func NewStartCommand() *cobra.Command {
 
 // setUpPayloadStoreReconciler sets up manager with a TokenSecretReconciler controller
 // to keep the PayloadStore up to date.
-func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[string]string, cloudProvider hyperv1.PlatformType, cacheDir string, metricsAddr string) (ctrl.Manager, error) {
+func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[string]string, cloudProvider hyperv1.PlatformType, cacheDir string, metricsAddr string, featureGateManifest string) (ctrl.Manager, error) {
 	if os.Getenv(namespaceEnvVariableName) == "" {
 		return nil, fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
 	}
@@ -143,18 +145,22 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
 		IgnitionProvider: &controllers.LocalIgnitionProvider{
-			ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
-				Delegate: &releaseinfo.CachedProvider{
-					Inner: &releaseinfo.RegistryClientProvider{},
-					Cache: map[string]*releaseinfo.ReleaseImage{},
+			ReleaseProvider: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+				Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+					Delegate: &releaseinfo.CachedProvider{
+						Inner: &releaseinfo.RegistryClientProvider{},
+						Cache: map[string]*releaseinfo.ReleaseImage{},
+					},
+					RegistryOverrides: registryOverrides,
 				},
-				RegistryOverrides: registryOverrides,
+				OpenShiftImageRegistryOverrides: util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
 			},
-			Client:         mgr.GetClient(),
-			Namespace:      os.Getenv(namespaceEnvVariableName),
-			CloudProvider:  cloudProvider,
-			WorkDir:        cacheDir,
-			ImageFileCache: imageFileCache,
+			Client:              mgr.GetClient(),
+			Namespace:           os.Getenv(namespaceEnvVariableName),
+			CloudProvider:       cloudProvider,
+			WorkDir:             cacheDir,
+			ImageFileCache:      imageFileCache,
+			FeatureGateManifest: featureGateManifest,
 		},
 	}).SetupWithManager(ctx, mgr); err != nil {
 		return nil, fmt.Errorf("unable to create controller: %w", err)
@@ -175,7 +181,7 @@ func run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to load serving cert: %w", err)
 	}
 
-	mgr, err := setUpPayloadStoreReconciler(ctx, opts.RegistryOverrides, hyperv1.PlatformType(opts.Platform), opts.WorkDir, opts.MetricsAddr)
+	mgr, err := setUpPayloadStoreReconciler(ctx, opts.RegistryOverrides, hyperv1.PlatformType(opts.Platform), opts.WorkDir, opts.MetricsAddr, opts.FeatureGateManifest)
 	if err != nil {
 		return fmt.Errorf("error setting up manager: %w", err)
 	}

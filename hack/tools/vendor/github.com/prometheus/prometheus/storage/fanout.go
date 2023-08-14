@@ -20,8 +20,10 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
@@ -144,7 +146,7 @@ type fanoutAppender struct {
 	secondaries []Appender
 }
 
-func (f *fanoutAppender) Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error) {
+func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
 	ref, err := f.primary.Append(ref, l, t, v)
 	if err != nil {
 		return ref, err
@@ -158,7 +160,7 @@ func (f *fanoutAppender) Append(ref uint64, l labels.Labels, t int64, v float64)
 	return ref, nil
 }
 
-func (f *fanoutAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+func (f *fanoutAppender) AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error) {
 	ref, err := f.primary.AppendExemplar(ref, l, e)
 	if err != nil {
 		return ref, err
@@ -166,6 +168,34 @@ func (f *fanoutAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.
 
 	for _, appender := range f.secondaries {
 		if _, err := appender.AppendExemplar(ref, l, e); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
+func (f *fanoutAppender) AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram, fh *histogram.FloatHistogram) (SeriesRef, error) {
+	ref, err := f.primary.AppendHistogram(ref, l, t, h, fh)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.AppendHistogram(ref, l, t, h, fh); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
+func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error) {
+	ref, err := f.primary.UpdateMetadata(ref, l, m)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.UpdateMetadata(ref, l, m); err != nil {
 			return 0, err
 		}
 	}

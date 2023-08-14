@@ -2,6 +2,7 @@ package v1beta1
 
 import (
 	"fmt"
+	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -11,12 +12,25 @@ import (
 )
 
 const (
+	ArchitectureAMD64   = "amd64"
+	ArchitectureS390X   = "s390x"
+	ArchitecturePPC64LE = "ppc64le"
+	ArchitectureARM64   = "arm64"
+
 	// NodePoolLabel is used to label Nodes.
 	NodePoolLabel = "hypershift.openshift.io/nodePool"
 
 	// IgnitionServerTokenExpirationTimestampAnnotation holds the time that a ignition token expires and should be
 	// removed from the cluster.
 	IgnitionServerTokenExpirationTimestampAnnotation = "hypershift.openshift.io/ignition-token-expiration-timestamp"
+)
+
+var (
+	// ArchAliases contains the RHCOS release metadata aliases for the different architectures supported as API input.
+	ArchAliases = map[string]string{
+		ArchitectureAMD64: "x86_64",
+		ArchitectureARM64: "aarch64",
+	}
 )
 
 func init() {
@@ -56,6 +70,7 @@ type NodePool struct {
 }
 
 // NodePoolSpec is the desired behavior of a NodePool.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.arch) || has(self.arch)", message="Arch is required once set"
 type NodePoolSpec struct {
 	// ClusterName is the name of the HostedCluster this NodePool belongs to.
 	//
@@ -102,8 +117,9 @@ type NodePoolSpec struct {
 	// KubeletConfig
 	// ContainerRuntimeConfig
 	// MachineConfig
-	// or
 	// ImageContentSourcePolicy
+	// or
+	// ImageDigestMirrorSet
 	//
 	// +kubebuilder:validation:Optional
 	Config []corev1.LocalObjectReference `json:"config,omitempty"`
@@ -143,6 +159,17 @@ type NodePoolSpec struct {
 	// JSON or YAML of a serialized Tuned.
 	// +kubebuilder:validation:Optional
 	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig,omitempty"`
+
+	// Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
+	// NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
+	//	https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215
+	// TODO Add ppc64le and s390x to enum validation once the architectures are supported
+	//
+	// +kubebuilder:default:=amd64
+	// +kubebuilder:validation:Enum=arm64;amd64
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Arch is immutable"
+	// +optional
+	Arch string `json:"arch,omitempty"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.
@@ -157,6 +184,9 @@ type NodePoolStatus struct {
 	//
 	// +kubebuilder:validation:Optional
 	Version string `json:"version,omitempty"`
+
+	// Platform hols the specific statuses
+	Platform *NodePoolPlatformStatus `json:"platform,omitempty"`
 
 	// Conditions represents the latest available observations of the node pool's
 	// current state.
@@ -411,6 +441,17 @@ const (
 	PowerVSNodePoolCappedProcType = PowerVSNodePoolProcType("capped")
 )
 
+func (p *PowerVSNodePoolProcType) CastToCAPIPowerVSProcessorType() capibmv1.PowerVSProcessorType {
+	switch *p {
+	case PowerVSNodePoolDedicatedProcType:
+		return capibmv1.PowerVSProcessorTypeDedicated
+	case PowerVSNodePoolCappedProcType:
+		return capibmv1.PowerVSProcessorTypeCapped
+	default:
+		return capibmv1.PowerVSProcessorTypeShared
+	}
+}
+
 // PowerVSNodePoolStorageType defines storage type to be used for PowerVSNodePoolPlatform
 type PowerVSNodePoolStorageType string
 
@@ -441,7 +482,7 @@ type PowerVSNodePoolPlatform struct {
 	//
 	// if the processorType is selected as Dedicated, then Processors value cannot be fractional.
 	// When omitted, this means that the user has no opinion and the platform is left to choose a
-	// reasonable default. The current default is Shared.
+	// reasonable default. The current default is shared.
 	//
 	// +kubebuilder:default=shared
 	// +kubebuilder:validation:Enum=dedicated;shared;capped
@@ -544,6 +585,31 @@ type KubevirtPersistentVolume struct {
 	//
 	// +optional
 	AccessModes []PersistentVolumeAccessMode `json:"accessModes,omitempty"`
+	// VolumeMode defines what type of volume is required by the claim.
+	// Value of Filesystem is implied when not included in claim spec.
+	// +optional
+	// +kubebuilder:validation:Enum=Filesystem;Block
+	VolumeMode *corev1.PersistentVolumeMode `json:"volumeMode,omitempty"`
+}
+
+// KubevirtCachingStrategyType is the type of the boot image caching mechanism for the KubeVirt provider
+type KubevirtCachingStrategyType string
+
+const (
+	// KubevirtCachingStrategyNone means that hypershift will not cache the boot image
+	KubevirtCachingStrategyNone KubevirtCachingStrategyType = "None"
+
+	// KubevirtCachingStrategyPVC means that hypershift will cache the boot image into a PVC; only relevant when using
+	// a QCOW boot image, and is ignored when using a container image
+	KubevirtCachingStrategyPVC KubevirtCachingStrategyType = "PVC"
+)
+
+// KubevirtCachingStrategy defines the boot image caching strategy
+type KubevirtCachingStrategy struct {
+	// Type is the type of the caching strategy
+	// +kubebuilder:default=None
+	// +kubebuilder:validation:Enum=None;PVC
+	Type KubevirtCachingStrategyType `json:"type"`
 }
 
 // KubevirtRootVolume represents the volume that the rhcos disk will be stored and run from.
@@ -555,6 +621,10 @@ type KubevirtRootVolume struct {
 
 	// KubevirtVolume represents of type of storage to run the image on
 	KubevirtVolume `json:",inline"`
+
+	// CacheStrategy defines the boot image caching strategy. Default - no caching
+	// +optional
+	CacheStrategy *KubevirtCachingStrategy `json:"cacheStrategy,omitempty"`
 }
 
 // KubevirtVolumeType is a specific supported KubeVirt volumes
@@ -592,6 +662,13 @@ type KubevirtDiskImage struct {
 	ContainerDiskImage *string `json:"containerDiskImage,omitempty"`
 }
 
+type MultiQueueSetting string
+
+const (
+	MultiQueueEnable  MultiQueueSetting = "Enable"
+	MultiQueueDisable MultiQueueSetting = "Disable"
+)
+
 // KubevirtNodePoolPlatform specifies the configuration of a NodePool when operating
 // on KubeVirt platform.
 type KubevirtNodePoolPlatform struct {
@@ -603,6 +680,14 @@ type KubevirtNodePoolPlatform struct {
 	// +optional
 	// +kubebuilder:default={memory: "4Gi", cores: 2}
 	Compute *KubevirtCompute `json:"compute"`
+
+	// NetworkInterfaceMultiQueue If set to "Enable", virtual network interfaces configured with a virtio bus will also
+	// enable the vhost multiqueue feature for network devices. The number of queues created depends on additional
+	// factors of the VirtualMachineInstance, like the number of guest CPUs.
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=Enable;Disable
+	NetworkInterfaceMultiQueue *MultiQueueSetting `json:"networkInterfaceMultiqueue,omitempty"`
 }
 
 // AWSNodePoolPlatform specifies the configuration of a NodePool when operating
@@ -780,6 +865,29 @@ type NodePoolCondition struct {
 
 	// +kubebuilder:validation:Minimum=0
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+}
+
+// NodePoolPlatformStatus contains specific platform statuses
+type NodePoolPlatformStatus struct {
+	// KubeVirt contains the KubeVirt platform statuses
+	// +optional
+	KubeVirt *KubeVirtNodePoolStatus `json:"kubeVirt,omitempty"`
+}
+
+// KubeVirtNodePoolStatus contains the KubeVirt platform statuses
+type KubeVirtNodePoolStatus struct {
+	// CacheName holds the name of the cache DataVolume, if exists
+	// +optional
+	CacheName string `json:"cacheName,omitempty"`
+
+	// Credentials shows the client credentials used when creating KubeVirt virtual machines.
+	// This filed is only exists when the KubeVirt virtual machines are being placed
+	// on a cluster separate from the one hosting the Hosted Control Plane components.
+	//
+	// The default behavior when Credentials is not defined is for the KubeVirt VMs to be placed on
+	// the same cluster and namespace as the Hosted Control Plane.
+	// +optional
+	Credentials *KubevirtPlatformCredentials `json:"credentials,omitempty"`
 }
 
 // Taint is as v1 Core but without TimeAdded.

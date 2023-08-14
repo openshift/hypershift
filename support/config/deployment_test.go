@@ -2,10 +2,12 @@ package config
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -209,7 +211,7 @@ func TestSetLocation(t *testing.T) {
 			Effect:   corev1.TaintEffectNoSchedule,
 		},
 		{
-			Key:      clusterLabelTolerationKey,
+			Key:      hyperv1.HostedClusterLabel,
 			Operator: corev1.TolerationOpEqual,
 			Value:    hcp.Namespace,
 			Effect:   corev1.TaintEffectNoSchedule,
@@ -237,7 +239,7 @@ func TestSetLocation(t *testing.T) {
 					Preference: corev1.NodeSelectorTerm{
 						MatchExpressions: []corev1.NodeSelectorRequirement{
 							{
-								Key:      clusterLabelTolerationKey,
+								Key:      hyperv1.HostedClusterLabel,
 								Operator: corev1.NodeSelectorOpIn,
 								Values:   []string{hcp.Namespace},
 							},
@@ -389,6 +391,105 @@ func TestResourceRequestOverrides(t *testing.T) {
 			hcp.Annotations = test.annotations
 			actual := resourceRequestOverrides(hcp)
 			g.Expect(actual).To(Equal(test.expected))
+		})
+	}
+}
+
+func TestApplyTo(t *testing.T) {
+	tests := []struct {
+		name     string
+		volumes  []corev1.Volume
+		expected string
+	}{
+		{
+			name: "if 3 volumes provided and 2 valids for safe annotation, it should only annotate the deployment with these 2 volume names",
+			volumes: []corev1.Volume{
+				{
+					Name: "test-hostpath",
+					VolumeSource: corev1.VolumeSource{
+						HostPath: &corev1.HostPathVolumeSource{
+							Path: "test",
+						},
+					},
+				},
+				{
+					Name: "test-emptydir",
+					VolumeSource: corev1.VolumeSource{
+						EmptyDir: &corev1.EmptyDirVolumeSource{
+							Medium: corev1.StorageMedium("Memory"),
+						},
+					},
+				},
+				{
+					Name: "test-volume",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: "test",
+						},
+					},
+				},
+			},
+			expected: "test-hostpath,test-emptydir",
+		},
+		{
+			name: "no hostpath or emptydir volumes provided, no safe eviction annotation",
+			volumes: []corev1.Volume{
+				{
+					Name: "test-volume",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: "test",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			deployment := &appsv1.Deployment{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Deployment",
+					APIVersion: appsv1.SchemeGroupVersion.String(),
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-deployment",
+					Namespace: "test-namespace",
+				},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-deployment",
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name: "test-container",
+								},
+							},
+							Volumes: tc.volumes,
+						},
+					},
+				},
+			}
+			dc := &DeploymentConfig{}
+			dc.ApplyTo(deployment)
+
+			localVolumeList := make([]string, 0)
+			for _, volume := range deployment.Spec.Template.Spec.Volumes {
+				// Check the volumes, if they are emptyDir or hostPath, should be annotated
+				if volume.EmptyDir != nil || volume.HostPath != nil {
+					localVolumeList = append(localVolumeList, volume.Name)
+				}
+			}
+
+			// After going through all the volumes in the deployment, validates if
+			// the annotation value makes sense with the expectations.
+			if _, exists := deployment.Spec.Template.ObjectMeta.Annotations[PodSafeToEvictLocalVolumesKey]; exists {
+				g.Expect(deployment.Spec.Template.ObjectMeta.Annotations).To(HaveKeyWithValue(PodSafeToEvictLocalVolumesKey, strings.Join(localVolumeList, ",")))
+			}
 		})
 	}
 }

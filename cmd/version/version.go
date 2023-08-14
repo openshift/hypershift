@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/spf13/cobra"
@@ -17,7 +18,12 @@ var (
 )
 
 // https://docs.ci.openshift.org/docs/getting-started/useful-links/#services
-const releaseURL = "https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable/latest"
+const (
+	defaultReleaseStream = "4-stable-multi"
+
+	multiArchReleaseURLTemplate = "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/latest"
+	releaseURLTemplate          = "https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/latest"
+)
 
 type OCPVersion struct {
 	Name        string `json:"name"`
@@ -25,7 +31,18 @@ type OCPVersion struct {
 	DownloadURL string `json:"downloadURL"`
 }
 
-func LookupDefaultOCPVersion() (OCPVersion, error) {
+func LookupDefaultOCPVersion(releaseStream string) (OCPVersion, error) {
+	if len(releaseStream) == 0 {
+		releaseStream = defaultReleaseStream
+	}
+
+	var releaseURL string
+	if strings.Contains(releaseStream, "multi") {
+		releaseURL = fmt.Sprintf(multiArchReleaseURLTemplate, releaseStream)
+	} else {
+		releaseURL = fmt.Sprintf(releaseURLTemplate, releaseStream)
+	}
+
 	var version OCPVersion
 	resp, err := http.Get(releaseURL)
 	if err != nil {

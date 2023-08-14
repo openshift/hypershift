@@ -28,13 +28,14 @@ const (
 
 	// defaultOAPIPort is the default secure listen port for the OAPI server
 	defaultOAPIPort int32 = 8443
+
+	serviceCAHashAnnotation = "kube-controller-manager.hypershift.openshift.io/service-ca-hash"
 )
 
 var (
 	volumeMounts = util.PodVolumeMounts{
 		oasTrustAnchorGenerator().Name: {
-			oasTrustAnchorVolume().Name:  "/run/ca-trust-generated",
-			serviceCASignerVolume().Name: "/run/service-ca-signer",
+			oasTrustAnchorVolume().Name: "/run/ca-trust-generated",
 		},
 		oasContainerMain().Name: {
 			oasVolumeWorkLogs().Name:          "/var/log/openshift-apiserver",
@@ -55,6 +56,11 @@ var (
 			oasVolumeKonnectivityProxyCA().Name:   "/etc/konnectivity/proxy-ca",
 		},
 	}
+	serviceSignerCertMount = util.PodVolumeMounts{
+		oasTrustAnchorGenerator().Name: {
+			serviceCASignerVolume().Name: "/run/service-ca-signer",
+		},
+	}
 
 	oasAuditWebhookConfigFileVolumeMount = util.PodVolumeMounts{
 		oasContainerMain().Name: {
@@ -70,7 +76,7 @@ func openShiftAPIServerLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, apiPort *int32) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, serviceServingCA *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main OAS container
@@ -151,9 +157,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 			util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
 			util.BuildVolume(oasVolumeKonnectivityProxyCA(), buildOASVolumeKonnectivityProxyCA),
 			util.BuildVolume(oasTrustAnchorVolume(), func(v *corev1.Volume) { v.EmptyDir = &corev1.EmptyDirVolumeSource{} }),
-			util.BuildVolume(serviceCASignerVolume(), func(v *corev1.Volume) {
-				v.ConfigMap = &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.ServiceServingCA(deployment.Namespace).Name}}
-			}),
 			util.BuildVolume(pullSecretVolume(), func(v *corev1.Volume) {
 				v.Secret = &corev1.SecretVolumeSource{
 					DefaultMode: pointer.Int32(0640),
@@ -162,6 +165,15 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 				}
 			}),
 		},
+	}
+
+	if serviceServingCA != nil {
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, util.BuildVolume(serviceCASignerVolume(), buildServiceCASignerVolume))
+		trustAnchorGeneratorContainer := util.FindContainer(oasTrustAnchorGenerator().Name, deployment.Spec.Template.Spec.InitContainers)
+		trustAnchorGeneratorContainer.VolumeMounts = append(trustAnchorGeneratorContainer.VolumeMounts, serviceSignerCertMount.ContainerMounts(oasTrustAnchorGenerator().Name)...)
+		deployment.Spec.Template.ObjectMeta.Annotations[serviceCAHashAnnotation] = util.HashStruct(serviceServingCA.Data)
+	} else {
+		deployment.Spec.Template.ObjectMeta.Annotations[serviceCAHashAnnotation] = ""
 	}
 
 	if auditWebhookRef != nil {
@@ -403,6 +415,11 @@ func serviceCASignerVolume() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "kube-controller-manager",
 	}
+}
+
+func buildServiceCASignerVolume(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.ServiceServingCA("").Name
 }
 
 func pullSecretVolume() *corev1.Volume {

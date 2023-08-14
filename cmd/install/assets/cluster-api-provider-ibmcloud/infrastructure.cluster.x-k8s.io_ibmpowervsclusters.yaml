@@ -3,8 +3,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.9.2
-  creationTimestamp: null
+    controller-gen.kubebuilder.io/version: v0.12.0
   name: ibmpowervsclusters.infrastructure.cluster.x-k8s.io
 spec:
   group: infrastructure.cluster.x-k8s.io
@@ -39,6 +38,108 @@ spec:
       priority: 1
       type: string
     name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: IBMPowerVSCluster is the Schema for the ibmpowervsclusters API.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: IBMPowerVSClusterSpec defines the desired state of IBMPowerVSCluster.
+            properties:
+              controlPlaneEndpoint:
+                description: ControlPlaneEndpoint represents the endpoint used to
+                  communicate with the control plane.
+                properties:
+                  host:
+                    description: The hostname on which the API server is serving.
+                    type: string
+                  port:
+                    description: The port on which the API server is serving.
+                    format: int32
+                    type: integer
+                required:
+                - host
+                - port
+                type: object
+              network:
+                description: Network is the reference to the Network to use for this
+                  cluster.
+                properties:
+                  id:
+                    description: ID of resource
+                    minLength: 1
+                    type: string
+                  name:
+                    description: Name of resource
+                    minLength: 1
+                    type: string
+                  regex:
+                    description: Regular expression to match resource, In case of
+                      multiple resources matches the provided regular expression the
+                      first matched resource will be selected
+                    minLength: 1
+                    type: string
+                type: object
+              serviceInstanceID:
+                description: ServiceInstanceID is the id of the power cloud instance
+                  where the vsi instance will get deployed.
+                minLength: 1
+                type: string
+            required:
+            - network
+            - serviceInstanceID
+            type: object
+          status:
+            description: IBMPowerVSClusterStatus defines the observed state of IBMPowerVSCluster.
+            properties:
+              ready:
+                description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
+                  of cluster Important: Run "make" to regenerate code after modifying
+                  this file'
+                type: boolean
+            required:
+            - ready
+            type: object
+        type: object
+    served: true
+    storage: false
+    subresources:
+      status: {}
+  - additionalPrinterColumns:
+    - description: Cluster to which this IBMPowerVSCluster belongs
+      jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - description: Time duration since creation of IBMPowerVSCluster
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    - jsonPath: .spec.serviceInstanceID
+      name: PowerVS Cloud Instance ID
+      priority: 1
+      type: string
+    - description: Control Plane Endpoint
+      jsonPath: .spec.controlPlaneEndpoint.host
+      name: Endpoint
+      priority: 1
+      type: string
+    - description: Control Plane Port
+      jsonPath: .spec.controlPlaneEndpoint.port
+      name: Port
+      priority: 1
+      type: string
+    name: v1beta2
     schema:
       openAPIV3Schema:
         description: IBMPowerVSCluster is the Schema for the ibmpowervsclusters API.

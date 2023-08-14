@@ -4,20 +4,15 @@ import (
 	"context"
 	"time"
 
-	appsv1 "k8s.io/api/apps/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/informers"
 	kubeclient "k8s.io/client-go/kubernetes"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
+	"github.com/openshift/hypershift/support/upsert"
 )
 
 const (
@@ -45,11 +40,12 @@ func setupConfigMapObserver(cfg *operator.HostedClusterConfigOperatorConfig) err
 
 	configMaps := informerFactory.Core().V1().ConfigMaps()
 	reconciler := &ManagedCAObserver{
-		InitialCA:    cfg.InitialCA,
-		Client:       cfg.KubeClient(),
-		TargetClient: targetKubeClient,
-		Namespace:    cfg.Namespace,
-		Log:          cfg.Logger.WithName("ManagedCAObserver"),
+		cpClient:       cfg.CPCluster.GetClient(),
+		cmLister:       configMaps.Lister(),
+		namespace:      cfg.Namespace,
+		hcpName:        cfg.HCPName,
+		log:            cfg.Logger.WithName("ManagedCAObserver"),
+		createOrUpdate: upsert.New(cfg.EnableCIDebugOutput).CreateOrUpdate,
 	}
 	c, err := controller.New("ca-configmap-observer", cfg.Manager, controller.Options{Reconciler: reconciler})
 	if err != nil {
@@ -58,28 +54,8 @@ func setupConfigMapObserver(cfg *operator.HostedClusterConfigOperatorConfig) err
 	if err := c.Watch(
 		&source.Informer{Informer: configMaps.Informer()},
 		&handler.EnqueueRequestForObject{},
-		predicateForNames(RouterCAConfigMap, ServiceCAConfigMap),
-	); err != nil {
-		return err
-	}
-	if err := c.Watch(
-		source.NewKindWithCache(&appsv1.Deployment{}, cfg.CPCluster.GetCache()),
-		handler.EnqueueRequestsFromMapFunc(func(client.Object) []reconcile.Request {
-			return []reconcile.Request{
-				{NamespacedName: types.NamespacedName{Namespace: ManagedConfigNamespace, Name: RouterCAConfigMap}},
-				{NamespacedName: types.NamespacedName{Namespace: ManagedConfigNamespace, Name: ServiceCAConfigMap}},
-			}
-		}),
-		predicateForNames(reconciler.managedDeployments()...),
 	); err != nil {
 		return err
 	}
 	return nil
-}
-
-func predicateForNames(names ...string) predicate.Predicate {
-	set := sets.NewString(names...)
-	return predicate.NewPredicateFuncs(func(o client.Object) bool {
-		return set.Has(o.GetName())
-	})
 }

@@ -11,12 +11,11 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/docker/distribution/manifest/manifestlist"
+	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -64,6 +63,11 @@ type LocalIgnitionProvider struct {
 	// under WorkDir should be preserved. If false, the temporary directory is
 	// deleted after use.
 	PreserveOutput bool
+
+	// FeatureGateManifest is the path to a rendered feature gate manifest.
+	// This must be copied into the MCC directory as it is required
+	// to render the ignition payload.
+	FeatureGateManifest string
 
 	ImageFileCache *imageFileCache
 
@@ -133,11 +137,17 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		return nil, fmt.Errorf("failed to get component images: %v", err)
 	}
 
-	mcoImage, hasMcoImage := imageProvider.ImageExist("machine-config-operator")
+	component := "machine-config-operator"
+	mcoImage, hasMcoImage := imageProvider.ImageExist(component)
 	if !hasMcoImage {
 		return nil, fmt.Errorf("release image does not contain machine-config-operator (images: %v)", imageProvider.ComponentImages())
 	}
-	log.Info("discovered mco image", "image", mcoImage)
+
+	mcoImage, err = registryclient.GetCorrectArchImage(ctx, component, mcoImage, pullSecret)
+	if err != nil {
+		return nil, err
+	}
+	log.Info("discovered machine-config-operator image", "image", mcoImage)
 
 	// Set up the base working directory
 	workDir, err := os.MkdirTemp(p.WorkDir, "get-payload")
@@ -204,23 +214,6 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		}
 	}
 
-	isMultiArchManifestList, err := registryclient.IsMultiArchManifestList(ctx, mcoImage, pullSecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to determine if image is manifest listed: %w", err)
-	}
-
-	if isMultiArchManifestList {
-		os := runtime.GOOS
-		arch := runtime.GOARCH
-		log.Info("mco image is a manifest listed image; extracting manifest for os/arch: " + os + "/" + arch)
-
-		// Verify MF Image has the right os/arch image
-		mcoImage, err = findImageRefByArch(ctx, mcoImage, pullSecret, os, arch)
-		if err != nil {
-			return nil, fmt.Errorf("failed to extract appropriate os/arch manifest from %s: %w", mcoImage, err)
-		}
-	}
-
 	// Extract template files from the MCO image to the MCC input directory
 	err = func() error {
 		start := time.Now()
@@ -253,11 +246,69 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 				return fmt.Errorf("failed to close file: %w", err)
 			}
 		}
+
+		component = "cluster-config-operator"
+		clusterConfigOperatorImage, ok := imageProvider.ImageExist(component)
+		if !ok {
+			return fmt.Errorf("release image does not contain cluster-config-operator (images: %v)", imageProvider.ComponentImages())
+		}
+
+		clusterConfigOperatorImage, err = registryclient.GetCorrectArchImage(ctx, component, clusterConfigOperatorImage, pullSecret)
+		if err != nil {
+			return err
+		}
+
+		log.Info("discovered cluster config operator image", "image", clusterConfigOperatorImage)
+
+		file, err := os.Create(filepath.Join(binDir, component))
+		if err != nil {
+			return fmt.Errorf("failed to create file: %w", err)
+		}
+		if err := file.Chmod(0777); err != nil {
+			return fmt.Errorf("failed to chmod file: %w", err)
+		}
+		if err := p.ImageFileCache.extractImageFile(ctx, clusterConfigOperatorImage, pullSecret, filepath.Join("usr/bin/", component), file); err != nil {
+			return fmt.Errorf("failed to extract image file: %w", err)
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("failed to close file: %w", err)
+		}
+
 		log.Info("downloaded binaries", "time", time.Since(start).Round(time.Second).String())
 		return nil
 	}()
 	if err != nil {
 		return nil, fmt.Errorf("failed to download binaries: %w", err)
+	}
+
+	payloadVersion, err := semver.Parse(imageProvider.Version())
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse payload version: %w", err)
+	}
+
+	featureGateBytes, err := os.ReadFile(p.FeatureGateManifest)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read feature gate: %w", err)
+	}
+
+	err = func() error {
+		start := time.Now()
+
+		args := []string{
+			"-c",
+			invokeFeatureGateRenderScript(filepath.Join(binDir, "cluster-config-operator"), filepath.Join(workDir, "cco"), mccBaseDir, payloadVersion, string(featureGateBytes)),
+		}
+
+		cmd := exec.CommandContext(ctx, "/bin/bash", args...)
+		out, err := cmd.CombinedOutput()
+		log.Info("cluster-config-operator process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
+		if err != nil {
+			return fmt.Errorf("cluster-config-operator process failed: %s: %w", string(out), err)
+		}
+		return nil
+	}()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute cluster-config-operator: %w", err)
 	}
 
 	// First, run the MCO using templates and image refs as input. This generates
@@ -283,11 +334,10 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			return fmt.Errorf("failed to write pull secret to config dir: %w", err)
 		}
 
+		// args contains the base args that have not changed over time.
 		args := []string{
 			"bootstrap",
-			fmt.Sprintf("--image-references=%s", path.Join(configDir, "release-manifests", "image-references")),
 			fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
-			fmt.Sprintf("--kube-ca=%s/signer-ca.crt", configDir),
 			fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
 			fmt.Sprintf("--network-config-file=%s/cluster-network-02-config.yaml", configDir),
 			fmt.Sprintf("--proxy-config-file=%s/cluster-proxy-01-config.yaml", configDir),
@@ -297,6 +347,36 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			fmt.Sprintf("--dest-dir=%s", destDir),
 			fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir),
 		}
+
+		// Depending on the version, we need different args.
+		switch y := payloadVersion.Minor; {
+		case y >= 14:
+			args = append(args,
+				fmt.Sprintf("--payload-version=%s", imageProvider.Version()),
+			)
+			// We need to include 4.13 plus args here too.
+			fallthrough
+		case y >= 13:
+			args = append(args,
+				fmt.Sprintf("--image-references=%s", path.Join(configDir, "release-manifests", "image-references")),
+				fmt.Sprintf("--kube-ca=%s/signer-ca.crt", configDir),
+			)
+		case y <= 12:
+			// when the CPO is at N and the NodePool.spec.release at N-1
+			// we fail to render ignition payload because https://github.com/openshift/machine-config-operator/pull/3286
+			// broke backward compatibility.
+			args = append(args,
+				fmt.Sprintf("--machine-config-operator-image=%s", imageProvider.GetImage("machine-config-operator")),
+				fmt.Sprintf("--machine-config-oscontent-image=%s", imageProvider.GetImage("machine-os-content")),
+				fmt.Sprintf("--infra-image=%s", imageProvider.GetImage("pod")),
+				fmt.Sprintf("--keepalived-image=%s", imageProvider.GetImage("keepalived-ipfailover")),
+				fmt.Sprintf("--coredns-image=%s", imageProvider.GetImage("codedns")),
+				fmt.Sprintf("--haproxy-image=%s", imageProvider.GetImage("haproxy")),
+				fmt.Sprintf("--baremetal-runtimecfg-image=%s", imageProvider.GetImage("baremetal-runtimecfg")),
+				fmt.Sprintf("--kube-ca=%s/root-ca.crt", configDir),
+			)
+		}
+
 		if image, exists := imageProvider.ImageExist("mdns-publisher"); exists {
 			args = append(args, fmt.Sprintf("--mdns-publisher-image=%s", image))
 		}
@@ -312,48 +392,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		out, err := cmd.CombinedOutput()
 		log.Info("machine-config-operator process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
 		if err != nil {
-			// when the CPO is at N and the NodePool.spec.release at N-1
-			// we fail to render ignition payload because https://github.com/openshift/machine-config-operator/pull/3286
-			// broke backward compatibility.
-			// We fall back to MCO previously supported flags.
-			args := []string{
-				"bootstrap",
-				fmt.Sprintf("--machine-config-operator-image=%s", imageProvider.GetImage("machine-config-operator")),
-				fmt.Sprintf("--machine-config-oscontent-image=%s", imageProvider.GetImage("machine-os-content")),
-				fmt.Sprintf("--infra-image=%s", imageProvider.GetImage("pod")),
-				fmt.Sprintf("--keepalived-image=%s", imageProvider.GetImage("keepalived-ipfailover")),
-				fmt.Sprintf("--coredns-image=%s", imageProvider.GetImage("codedns")),
-				fmt.Sprintf("--haproxy-image=%s", imageProvider.GetImage("haproxy")),
-				fmt.Sprintf("--baremetal-runtimecfg-image=%s", imageProvider.GetImage("baremetal-runtimecfg")),
-				fmt.Sprintf("--root-ca=%s/root-ca.crt", configDir),
-				fmt.Sprintf("--kube-ca=%s/root-ca.crt", configDir),
-				fmt.Sprintf("--infra-config-file=%s/cluster-infrastructure-02-config.yaml", configDir),
-				fmt.Sprintf("--network-config-file=%s/cluster-network-02-config.yaml", configDir),
-				fmt.Sprintf("--proxy-config-file=%s/cluster-proxy-01-config.yaml", configDir),
-				fmt.Sprintf("--config-file=%s/install-config.yaml", configDir),
-				fmt.Sprintf("--dns-config-file=%s/cluster-dns-02-config.yaml", configDir),
-				fmt.Sprintf("--pull-secret=%s/pull-secret.yaml", configDir),
-				fmt.Sprintf("--dest-dir=%s", destDir),
-				fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir),
-			}
-
-			if image, exists := imageProvider.ImageExist("mdns-publisher"); exists {
-				args = append(args, fmt.Sprintf("--mdns-publisher-image=%s", image))
-			}
-			if mcsConfig.Data["user-ca-bundle-config.yaml"] != "" {
-				args = append(args, fmt.Sprintf("--additional-trust-bundle-config-file=%s/user-ca-bundle-config.yaml", configDir))
-			}
-			if p.CloudProvider == hyperv1.AzurePlatform {
-				args = append(args, fmt.Sprintf("--cloud-config-file=%s/cloud.conf.configmap.yaml", mcoBaseDir))
-			}
-
-			start = time.Now()
-			cmd = exec.CommandContext(ctx, filepath.Join(binDir, "machine-config-operator"), args...)
-			out, err = cmd.CombinedOutput()
-			log.Info("machine-config-operator process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
-			if err != nil {
-				return fmt.Errorf("machine-config-operator process failed: %w", err)
-			}
+			return fmt.Errorf("machine-config-operator process failed: %w", err)
 		}
 
 		// set missing images condition on the HCP
@@ -406,12 +445,23 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 	// for the MCS.
 	err = func() error {
 		start := time.Now()
-		cmd := exec.CommandContext(ctx, filepath.Join(binDir, "machine-config-controller"), "bootstrap",
+
+		args := []string{
+			"bootstrap",
 			fmt.Sprintf("--manifest-dir=%s", mccBaseDir),
 			fmt.Sprintf("--templates=%s", filepath.Join(mccBaseDir, "etc", "mcc", "templates")),
 			fmt.Sprintf("--pull-secret=%s/machineconfigcontroller-pull-secret", mccBaseDir),
 			fmt.Sprintf("--dest-dir=%s", mcsBaseDir),
-		)
+		}
+
+		// For 4.14 onwards there's a requirement to include the payload version flag.
+		if payloadVersion.Minor >= 14 {
+			args = append(args,
+				fmt.Sprintf("--payload-version=%s", imageProvider.Version()),
+			)
+		}
+
+		cmd := exec.CommandContext(ctx, filepath.Join(binDir, "machine-config-controller"), args...)
 		out, err := cmd.CombinedOutput()
 		log.Info("machine-config-controller process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
 		if err != nil {
@@ -453,18 +503,28 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 			return nil, fmt.Errorf("failed to generate certificates: %w", err)
 		}
 
-		// Spin up the MCS process and ensure it's signaled to terminate when
-		// the function returns
-		mcsCtx, cancel := context.WithCancel(ctx)
-		defer cancel()
-		cmd := exec.CommandContext(mcsCtx, filepath.Join(binDir, "machine-config-server"), "bootstrap",
+		args := []string{
+			"bootstrap",
 			fmt.Sprintf("--server-basedir=%s", mcsBaseDir),
 			fmt.Sprintf("--bootstrap-kubeconfig=%s/kubeconfig", mcsBaseDir),
 			fmt.Sprintf("--cert=%s/tls.crt", mcsBaseDir),
 			fmt.Sprintf("--key=%s/tls.key", mcsBaseDir),
-			"--secure-port=22623",
-			"--insecure-port=22624",
-		)
+			"--secure-port=22625",
+			"--insecure-port=22626",
+		}
+
+		// For 4.14 onwards there's a requirement to include the payload version flag.
+		if payloadVersion.Minor >= 14 {
+			args = append(args,
+				fmt.Sprintf("--payload-version=%s", imageProvider.Version()),
+			)
+		}
+
+		// Spin up the MCS process and ensure it's signaled to terminate when
+		// the function returns
+		mcsCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		cmd := exec.CommandContext(mcsCtx, filepath.Join(binDir, "machine-config-server"), args...)
 		go func() {
 			out, err := cmd.CombinedOutput()
 			log.Info("machine-config-server process exited", "output", string(out), "error", err)
@@ -477,7 +537,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		}
 		var payload []byte
 		err = wait.PollUntilWithContext(ctx, 1*time.Second, func(ctx context.Context) (bool, error) {
-			req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:22624/config/master", nil)
+			req, err := http.NewRequestWithContext(ctx, "GET", "http://localhost:22626/config/master", nil)
 			if err != nil {
 				return false, fmt.Errorf("error building http request: %w", err)
 			}
@@ -575,69 +635,49 @@ func copyFile(src, dst string) error {
 	return os.Chmod(dst, srcinfo.Mode())
 }
 
-// findImageRefByArch finds the appropriate image reference in a multi-arch manifest image based on the current platform's OS and processor architecture
-func findImageRefByArch(ctx context.Context, imageRef string, pullSecret []byte, osToFind string, archToFind string) (manifestImageRef string, err error) {
-	manifestList, err := registryclient.GetManifest(ctx, imageRef, pullSecret)
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve manifest from image ref, %s: %w", imageRef, err)
+func invokeFeatureGateRenderScript(binary, workDir, outputDir string, payloadVersion semver.Version, featureGateYAML string) string {
+	var script = `#!/bin/bash
+set -e
+mkdir -p %[2]s
+
+cd %[2]s
+mkdir -p input output manifests
+
+touch %[2]s/manifests/99_feature-gate.yaml
+cat <<EOF >%[2]s/manifests/99_feature-gate.yaml
+%[5]s
+EOF
+
+%[1]s render \
+   --config-output-file config \
+   --asset-input-dir %[2]s/input \
+   --asset-output-dir %[2]s/output \
+   --rendered-manifest-files=%[2]s/manifests \
+   --payload-version=%[4]s 
+cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
+`
+
+	// Depending on the version, we need different args.
+	if payloadVersion.Minor < 14 {
+		script = `#!/bin/bash
+set -e
+mkdir -p %[2]s
+
+cd %[2]s
+mkdir -p input output manifests
+
+touch %[2]s/manifests/99_feature-gate.yaml
+cat <<EOF >%[2]s/manifests/99_feature-gate.yaml
+%[5]s
+EOF
+
+%[1]s render \
+   --config-output-file config \
+   --asset-input-dir %[2]s/input \
+   --asset-output-dir %[2]s/output
+cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
+`
 	}
 
-	_, payload, err := manifestList.Payload()
-	if err != nil {
-		return "", fmt.Errorf("failed to get manifest payload: %w", err)
-	}
-
-	deserializedManifestList := new(manifestlist.DeserializedManifestList)
-	if err = deserializedManifestList.UnmarshalJSON(payload); err != nil {
-		return "", fmt.Errorf("failed to get unmarshalled manifest list: %w", err)
-	}
-
-	matchingManifestForArch, err := findMatchingManifest(imageRef, deserializedManifestList, osToFind, archToFind)
-	if err != nil {
-		return "", fmt.Errorf("failed to retrieve matching manifest for os/arch, %s/%s: %w", osToFind, archToFind, err)
-	}
-
-	return matchingManifestForArch, nil
-}
-
-// findMatchingManifest looks to find a manifest matching the current platform's OS and processor architecture from a deserialized manifest list from an image's payload
-func findMatchingManifest(imageRef string, deserializedManifestList *manifestlist.DeserializedManifestList, osToFind string, archToFind string) (string, error) {
-	var foundManifestDesc *manifestlist.ManifestDescriptor
-	for _, manifestDesc := range deserializedManifestList.ManifestList.Manifests {
-		if osToFind == manifestDesc.Platform.OS && archToFind == manifestDesc.Platform.Architecture {
-			foundManifestDesc = &manifestDesc
-			break
-		}
-	}
-
-	if foundManifestDesc == nil {
-		return "", fmt.Errorf("not found")
-	}
-
-	// Multi-arch image references look like either:
-	//	quay.io/openshift-release-dev/ocp-release@sha256:1a101ef5215da468cea8bd2eb47114e85b2b64a6b230d5882f845701f55d057f
-	//	quay.io/openshift-release-dev/ocp-release:4.11.0-0.nightly-multi-2022-07-12-131716
-	if strings.Contains(imageRef, "@sha") {
-		splitSHA := strings.Split(imageRef, "@")
-		if len(splitSHA) != 2 {
-			return "", fmt.Errorf("failed to parse imageRef %s", imageRef)
-		}
-
-		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Descriptor.Digest)
-		log.Info("Found matching manifest of os/arch: " + matchingManifestForArch)
-		return matchingManifestForArch, nil
-	}
-
-	if strings.Contains(imageRef, "ocp-release:") {
-		splitSHA := strings.Split(imageRef, ":")
-		if len(splitSHA) != 2 {
-			return "", fmt.Errorf("failed to parse imageRef %s", imageRef)
-		}
-
-		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Descriptor.Digest)
-		log.Info("Found matching manifest of os/arch: " + matchingManifestForArch)
-		return matchingManifestForArch, nil
-	}
-
-	return "", fmt.Errorf("imageRef is an unknown format to parse, imageRef: %s", imageRef)
+	return fmt.Sprintf(script, binary, workDir, outputDir, payloadVersion, featureGateYAML)
 }

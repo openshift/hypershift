@@ -100,6 +100,25 @@ and InfrastructureAvailabilityPolicy.</p>
 </tr>
 <tr>
 <td>
+<code>controlPlaneRelease</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Release">
+Release
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ControlPlaneRelease specifies the desired OCP release payload for
+control plane components running on the management cluster.
+Updating this field will trigger a rollout of the control plane. The
+behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+and InfrastructureAvailabilityPolicy.
+If not defined, Release is used</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>clusterID</code></br>
 <em>
 string
@@ -642,8 +661,9 @@ JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
 KubeletConfig
 ContainerRuntimeConfig
 MachineConfig
+ImageContentSourcePolicy
 or
-ImageContentSourcePolicy</p>
+ImageDigestMirrorSet</p>
 </td>
 </tr>
 <tr>
@@ -723,6 +743,21 @@ nodes in the NodePool. The Tuned API is defined here:</p>
 <p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;tuned&rdquo; whose value is the
 JSON or YAML of a serialized Tuned.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>arch</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
+NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
+<a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
+TODO Add ppc64le and s390x to enum validation once the architectures are supported</p>
 </td>
 </tr>
 </table>
@@ -816,7 +851,8 @@ string
 <td>
 <p>AdvertiseAddress is the address that nodes will use to talk to the API
 server. This is an address associated with the loopback adapter of each
-node. If not specified, 172.20.0.1 is used.</p>
+node. If not specified, the controller will take default values.
+The default values will be set as 172.20.0.1 or fd00::1.</p>
 </td>
 </tr>
 <tr>
@@ -3200,6 +3236,25 @@ and InfrastructureAvailabilityPolicy.</p>
 </tr>
 <tr>
 <td>
+<code>controlPlaneRelease</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Release">
+Release
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ControlPlaneRelease specifies the desired OCP release payload for
+control plane components running on the management cluster.
+Updating this field will trigger a rollout of the control plane. The
+behavior of the rollout will be driven by the ControllerAvailabilityPolicy
+and InfrastructureAvailabilityPolicy.
+If not defined, Release is used</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>clusterID</code></br>
 <em>
 string
@@ -3721,6 +3776,19 @@ string
 </td>
 <td>
 <p>ReleaseImage is the release image applied to the hosted control plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneReleaseImage</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ControlPlaneReleaseImage specifies the desired OCP release payload for
+control plane components running on the management cluster.
+If not defined, ReleaseImage is used</p>
 </td>
 </tr>
 <tr>
@@ -4732,6 +4800,109 @@ AWSKMSSpec
 </tr>
 </tbody>
 </table>
+###KubeVirtNodePoolStatus { #hypershift.openshift.io/v1beta1.KubeVirtNodePoolStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatformStatus">NodePoolPlatformStatus</a>)
+</p>
+<p>
+<p>KubeVirtNodePoolStatus contains the KubeVirt platform statuses</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>cacheName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>CacheName holds the name of the cache DataVolume, if exists</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>credentials</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtPlatformCredentials">
+KubevirtPlatformCredentials
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Credentials shows the client credentials used when creating KubeVirt virtual machines.
+This filed is only exists when the KubeVirt virtual machines are being placed
+on a cluster separate from the one hosting the Hosted Control Plane components.</p>
+<p>The default behavior when Credentials is not defined is for the KubeVirt VMs to be placed on
+the same cluster and namespace as the Hosted Control Plane.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtCachingStrategy { #hypershift.openshift.io/v1beta1.KubevirtCachingStrategy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtRootVolume">KubevirtRootVolume</a>)
+</p>
+<p>
+<p>KubevirtCachingStrategy defines the boot image caching strategy</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtCachingStrategyType">
+KubevirtCachingStrategyType
+</a>
+</em>
+</td>
+<td>
+<p>Type is the type of the caching strategy</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtCachingStrategyType { #hypershift.openshift.io/v1beta1.KubevirtCachingStrategyType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtCachingStrategy">KubevirtCachingStrategy</a>)
+</p>
+<p>
+<p>KubevirtCachingStrategyType is the type of the boot image caching mechanism for the KubeVirt provider</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;None&#34;</p></td>
+<td><p>KubevirtCachingStrategyNone means that hypershift will not cache the boot image</p>
+</td>
+</tr><tr><td><p>&#34;PVC&#34;</p></td>
+<td><p>KubevirtCachingStrategyPVC means that hypershift will cache the boot image into a PVC; only relevant when using
+a QCOW boot image, and is ignored when using a container image</p>
+</td>
+</tr></tbody>
+</table>
 ###KubevirtCompute { #hypershift.openshift.io/v1beta1.KubevirtCompute }
 <p>
 (<em>Appears on:</em>
@@ -4806,6 +4977,41 @@ string
 </tr>
 </tbody>
 </table>
+###KubevirtManualStorageDriverConfig { #hypershift.openshift.io/v1beta1.KubevirtManualStorageDriverConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtStorageDriverSpec">KubevirtStorageDriverSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>storageClassMapping</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtStorageClassMapping">
+[]KubevirtStorageClassMapping
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StorageClassMapping maps StorageClasses on the infra cluster hosting
+the KubeVirt VMs to StorageClasses that are made available within the
+Guest Cluster.</p>
+<p>NOTE: It is possible that not all capablities of an infra cluster&rsquo;s
+storageclass will be present for the corresponding guest clusters storageclass.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###KubevirtNodePoolPlatform { #hypershift.openshift.io/v1beta1.KubevirtNodePoolPlatform }
 <p>
 (<em>Appears on:</em>
@@ -4848,6 +5054,22 @@ KubevirtCompute
 <td>
 <em>(Optional)</em>
 <p>Compute contains values representing the virtual hardware requested for the VM</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networkInterfaceMultiqueue</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MultiQueueSetting">
+MultiQueueSetting
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NetworkInterfaceMultiQueue If set to &ldquo;Enable&rdquo;, virtual network interfaces configured with a virtio bus will also
+enable the vhost multiqueue feature for network devices. The number of queues created depends on additional
+factors of the VirtualMachineInstance, like the number of guest CPUs.</p>
 </td>
 </tr>
 </tbody>
@@ -4909,11 +5131,27 @@ string
 More info: <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes">https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes</a></p>
 </td>
 </tr>
+<tr>
+<td>
+<code>volumeMode</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#persistentvolumemode-v1-core">
+Kubernetes core/v1.PersistentVolumeMode
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>VolumeMode defines what type of volume is required by the claim.
+Value of Filesystem is implied when not included in claim spec.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubevirtPlatformCredentials { #hypershift.openshift.io/v1beta1.KubevirtPlatformCredentials }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubeVirtNodePoolStatus">KubeVirtNodePoolStatus</a>, 
 <a href="#hypershift.openshift.io/v1beta1.KubevirtPlatformSpec">KubevirtPlatformSpec</a>)
 </p>
 <p>
@@ -5031,6 +5269,21 @@ on a cluster separate from the one hosting the Hosted Control Plane components.<
 the same cluster and namespace as the Hosted Control Plane.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>storageDriver</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtStorageDriverSpec">
+KubevirtStorageDriverSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>StorageDriver defines how the KubeVirt CSI driver exposes StorageClasses on
+the infra cluster (hosting the VMs) to the guest cluster.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubevirtRootVolume { #hypershift.openshift.io/v1beta1.KubevirtRootVolume }
@@ -5077,6 +5330,135 @@ KubevirtVolume
 (Members of <code>KubevirtVolume</code> are embedded into this type.)
 </p>
 <p>KubevirtVolume represents of type of storage to run the image on</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>cacheStrategy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtCachingStrategy">
+KubevirtCachingStrategy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>CacheStrategy defines the boot image caching strategy. Default - no caching</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtStorageClassMapping { #hypershift.openshift.io/v1beta1.KubevirtStorageClassMapping }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtManualStorageDriverConfig">KubevirtManualStorageDriverConfig</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>infraStorageClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>InfraStorageClassName is the name of the infra cluster storage class that
+will be exposed into the guest.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestStorageClassName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>GuestStorageClassName is the name that the corresponding storageclass will
+be called within the guest cluster</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KubevirtStorageDriverConfigType { #hypershift.openshift.io/v1beta1.KubevirtStorageDriverConfigType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtStorageDriverSpec">KubevirtStorageDriverSpec</a>)
+</p>
+<p>
+<p>KubevirtStorageDriverConfigType defines how the kubevirt storage driver is configured.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Default&#34;</p></td>
+<td><p>DefaultKubevirtStorageDriverConfigType means the kubevirt storage driver maps to the
+underlying infra cluster&rsquo;s default storageclass</p>
+</td>
+</tr><tr><td><p>&#34;Manual&#34;</p></td>
+<td><p>ManualKubevirtStorageDriverConfigType means the kubevirt storage driver mapping is
+explicitly defined.</p>
+</td>
+</tr><tr><td><p>&#34;None&#34;</p></td>
+<td><p>NoneKubevirtStorageDriverConfigType means no kubevirt storage driver is used</p>
+</td>
+</tr></tbody>
+</table>
+###KubevirtStorageDriverSpec { #hypershift.openshift.io/v1beta1.KubevirtStorageDriverSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtPlatformSpec">KubevirtPlatformSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtStorageDriverConfigType">
+KubevirtStorageDriverConfigType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Type represents the type of kubevirt csi driver configuration to use</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>manual</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtManualStorageDriverConfig">
+KubevirtManualStorageDriverConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Manual is used to explicilty define how the infra storageclasses are
+mapped to guest storageclasses</p>
 </td>
 </tr>
 </tbody>
@@ -5324,6 +5706,26 @@ is empty.</p>
 <tbody><tr><td><p>&#34;PersistentVolume&#34;</p></td>
 <td><p>PersistentVolumeEtcdStorage uses PersistentVolumes for etcd storage.</p>
 </td>
+</tr></tbody>
+</table>
+###MultiQueueSetting { #hypershift.openshift.io/v1beta1.MultiQueueSetting }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtNodePoolPlatform">KubevirtNodePoolPlatform</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Disable&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Enable&#34;</p></td>
+<td></td>
 </tr></tbody>
 </table>
 ###NetworkType { #hypershift.openshift.io/v1beta1.NetworkType }
@@ -5691,6 +6093,38 @@ PowerVSNodePoolPlatform
 </tr>
 </tbody>
 </table>
+###NodePoolPlatformStatus { #hypershift.openshift.io/v1beta1.NodePoolPlatformStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolStatus">NodePoolStatus</a>)
+</p>
+<p>
+<p>NodePoolPlatformStatus contains specific platform statuses</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>kubeVirt</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubeVirtNodePoolStatus">
+KubeVirtNodePoolStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>KubeVirt contains the KubeVirt platform statuses</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###NodePoolSpec { #hypershift.openshift.io/v1beta1.NodePoolSpec }
 <p>
 (<em>Appears on:</em>
@@ -5808,8 +6242,9 @@ JSON or YAML of a serialized Resource for machineconfiguration.openshift.io:
 KubeletConfig
 ContainerRuntimeConfig
 MachineConfig
+ImageContentSourcePolicy
 or
-ImageContentSourcePolicy</p>
+ImageDigestMirrorSet</p>
 </td>
 </tr>
 <tr>
@@ -5891,6 +6326,21 @@ nodes in the NodePool. The Tuned API is defined here:</p>
 JSON or YAML of a serialized Tuned.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>arch</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
+NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
+<a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
+TODO Add ppc64le and s390x to enum validation once the architectures are supported</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###NodePoolStatus { #hypershift.openshift.io/v1beta1.NodePoolStatus }
@@ -5931,6 +6381,19 @@ string
 <td>
 <p>Version is the semantic version of the latest applied release specified by
 the NodePool.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatformStatus">
+NodePoolPlatformStatus
+</a>
+</em>
+</td>
+<td>
+<p>Platform hols the specific statuses</p>
 </td>
 </tr>
 <tr>
@@ -6318,7 +6781,7 @@ Shared: Shared among other clients.
 Capped: Shared, but resources do not expand beyond those that are requested, the amount of CPU time is Capped to the value specified for the entitlement.</p>
 <p>if the processorType is selected as Dedicated, then Processors value cannot be fractional.
 When omitted, this means that the user has no opinion and the platform is left to choose a
-reasonable default. The current default is Shared.</p>
+reasonable default. The current default is shared.</p>
 </td>
 </tr>
 <tr>
@@ -6634,6 +7097,20 @@ Kubernetes core/v1.LocalObjectReference
 <td>
 <p>StorageOperatorCloudCreds is a reference to a secret containing ibm cloud
 credentials for storage operator to get authenticated with ibm cloud.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageRegistryOperatorCloudCreds</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>ImageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
+credentials for image registry operator to get authenticated with ibm cloud.</p>
 </td>
 </tr>
 </tbody>

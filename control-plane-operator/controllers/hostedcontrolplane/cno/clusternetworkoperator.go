@@ -45,6 +45,7 @@ type Images struct {
 	RouteOverrideCNI             string
 	MultusNetworkPolicy          string
 	OVN                          string
+	OVNControlPlane              string
 	EgressRouterCNI              string
 	KuryrDaemon                  string
 	KuryrController              string
@@ -54,6 +55,7 @@ type Images struct {
 	CloudNetworkConfigController string
 	TokenMinter                  string
 	CLI                          string
+	UserCLI                      string
 	Socks5Proxy                  string
 }
 
@@ -73,30 +75,32 @@ type Params struct {
 	DefaultIngressDomain    string
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, defaultIngressDomain string) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, defaultIngressDomain string) Params {
 	p := Params{
 		Images: Images{
 			NetworkOperator:              releaseImageProvider.GetImage("cluster-network-operator"),
-			SDN:                          releaseImageProvider.GetImage("sdn"),
-			KubeProxy:                    releaseImageProvider.GetImage("kube-proxy"),
-			KubeRBACProxy:                releaseImageProvider.GetImage("kube-rbac-proxy"),
-			Multus:                       releaseImageProvider.GetImage("multus-cni"),
+			SDN:                          userReleaseImageProvider.GetImage("sdn"),
+			KubeProxy:                    userReleaseImageProvider.GetImage("kube-proxy"),
+			KubeRBACProxy:                userReleaseImageProvider.GetImage("kube-rbac-proxy"),
+			Multus:                       userReleaseImageProvider.GetImage("multus-cni"),
 			MultusAdmissionController:    releaseImageProvider.GetImage("multus-admission-controller"),
-			CNIPlugins:                   releaseImageProvider.GetImage("container-networking-plugins"),
-			BondCNIPlugin:                releaseImageProvider.GetImage("network-interface-bond-cni"),
-			WhereaboutsCNI:               releaseImageProvider.GetImage("multus-whereabouts-ipam-cni"),
-			RouteOverrideCNI:             releaseImageProvider.GetImage("multus-route-override-cni"),
-			MultusNetworkPolicy:          releaseImageProvider.GetImage("multus-networkpolicy"),
-			OVN:                          releaseImageProvider.GetImage("ovn-kubernetes"),
-			EgressRouterCNI:              releaseImageProvider.GetImage("egress-router-cni"),
-			KuryrDaemon:                  releaseImageProvider.GetImage("kuryr-cni"),
-			KuryrController:              releaseImageProvider.GetImage("kuryr-controller"),
-			NetworkMetricsDaemon:         releaseImageProvider.GetImage("network-metrics-daemon"),
-			NetworkCheckSource:           releaseImageProvider.GetImage("cluster-network-operator"),
-			NetworkCheckTarget:           releaseImageProvider.GetImage("cluster-network-operator"),
+			CNIPlugins:                   userReleaseImageProvider.GetImage("container-networking-plugins"),
+			BondCNIPlugin:                userReleaseImageProvider.GetImage("network-interface-bond-cni"),
+			WhereaboutsCNI:               userReleaseImageProvider.GetImage("multus-whereabouts-ipam-cni"),
+			RouteOverrideCNI:             userReleaseImageProvider.GetImage("multus-route-override-cni"),
+			MultusNetworkPolicy:          userReleaseImageProvider.GetImage("multus-networkpolicy"),
+			OVN:                          userReleaseImageProvider.GetImage("ovn-kubernetes"),
+			OVNControlPlane:              releaseImageProvider.GetImage("ovn-kubernetes"),
+			EgressRouterCNI:              userReleaseImageProvider.GetImage("egress-router-cni"),
+			KuryrDaemon:                  userReleaseImageProvider.GetImage("kuryr-cni"),
+			KuryrController:              userReleaseImageProvider.GetImage("kuryr-controller"),
+			NetworkMetricsDaemon:         userReleaseImageProvider.GetImage("network-metrics-daemon"),
+			NetworkCheckSource:           userReleaseImageProvider.GetImage("cluster-network-operator"),
+			NetworkCheckTarget:           userReleaseImageProvider.GetImage("cluster-network-operator"),
 			CloudNetworkConfigController: releaseImageProvider.GetImage("cloud-network-config-controller"),
 			TokenMinter:                  releaseImageProvider.GetImage("token-minter"),
 			CLI:                          releaseImageProvider.GetImage("cli"),
+			UserCLI:                      userReleaseImageProvider.GetImage("cli"),
 			Socks5Proxy:                  releaseImageProvider.GetImage("socks5-proxy"),
 		},
 		ReleaseVersion:          version,
@@ -110,7 +114,14 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		DefaultIngressDomain:    defaultIngressDomain,
 	}
 
+	p.DeploymentConfig.AdditionalLabels = map[string]string{
+		config.NeedManagementKASAccessLabel: "true",
+	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	// No support for multus-admission-controller at the moment. TODO: add support after https://issues.redhat.com/browse/OCPBUGS-7942 is resolved.
+	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
+	}
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
@@ -473,6 +484,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			{Name: "ROUTE_OVERRRIDE_CNI_IMAGE", Value: params.Images.RouteOverrideCNI},
 			{Name: "MULTUS_NETWORKPOLICY_IMAGE", Value: params.Images.MultusNetworkPolicy},
 			{Name: "OVN_IMAGE", Value: params.Images.OVN},
+			{Name: "OVN_CONTROL_PLANE_IMAGE", Value: params.Images.OVNControlPlane},
 			{Name: "EGRESS_ROUTER_CNI_IMAGE", Value: params.Images.EgressRouterCNI},
 			{Name: "KURYR_DAEMON_IMAGE", Value: params.Images.KuryrDaemon},
 			{Name: "KURYR_CONTROLLER_IMAGE", Value: params.Images.KuryrController},
@@ -481,7 +493,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			{Name: "NETWORK_CHECK_TARGET_IMAGE", Value: params.Images.NetworkCheckTarget},
 			{Name: "CLOUD_NETWORK_CONFIG_CONTROLLER_IMAGE", Value: params.Images.CloudNetworkConfigController},
 			{Name: "TOKEN_MINTER_IMAGE", Value: params.Images.TokenMinter},
-			{Name: "CLI_IMAGE", Value: params.Images.CLI},
+			{Name: "CLI_IMAGE", Value: params.Images.UserCLI},
 			{Name: "SOCKS5_PROXY_IMAGE", Value: params.Images.Socks5Proxy},
 			{Name: "OPENSHIFT_RELEASE_IMAGE", Value: params.DeploymentConfig.AdditionalAnnotations[hyperv1.ReleaseImageAnnotation]},
 		}...),

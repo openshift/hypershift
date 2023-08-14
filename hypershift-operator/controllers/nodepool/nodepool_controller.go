@@ -15,10 +15,12 @@ import (
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/operator/v1alpha1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
 	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
+
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
@@ -27,12 +29,14 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
+
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -47,9 +51,10 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1"
+	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util"
@@ -107,6 +112,7 @@ type NodePoolReconciler struct {
 	upsert.CreateOrUpdateProvider
 	HypershiftOperatorImage string
 	ImageMetadataProvider   supportutil.ImageMetadataProvider
+	KubevirtInfraClients    kvinfra.KubevirtInfraClientMap
 }
 
 type NotReadyError struct {
@@ -178,6 +184,9 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from nodepool: %w", err)
 			}
 		}
+
+		metrics.RecordNodePoolDeletionDuration(nodePool)
+
 		log.Info("Deleted nodepool", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
 	}
@@ -300,6 +309,87 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		ObservedGeneration: nodePool.Generation,
 	})
 
+	// Validate and get releaseImage.
+	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("Failed to get release image: %v", err.Error()),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
+
+	var kubevirtBootImage kubevirt.BootImage
+	// moved KubeVirt specific handling up here, so the caching of the boot image will start as early as possible
+	// in order to actually save time. Caching form the original location will take more time, because the VMs can't
+	// be created before the caching is 100% done. But moving this logic here, the caching will be done in parallel
+	// to the ignition settings, and so it will be ready, or almost ready, when the VMs are created.
+	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		if err := kubevirt.PlatformValidation(nodePool); err != nil {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolValidationFailedReason,
+				Message:            fmt.Sprintf("validation of NodePool KubeVirt platform failed: %s", err.Error()),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return ctrl.Result{}, fmt.Errorf("validation of NodePool KubeVirt platform failed: %w", err)
+		}
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
+
+		infraNS := controlPlaneNamespace
+		if hcluster.Spec.Platform.Kubevirt != nil &&
+			hcluster.Spec.Platform.Kubevirt.Credentials != nil &&
+			len(hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace) > 0 {
+
+			infraNS = hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace
+
+			if nodePool.Status.Platform == nil {
+				nodePool.Status.Platform = &hyperv1.NodePoolPlatformStatus{}
+			}
+
+			if nodePool.Status.Platform.KubeVirt == nil {
+				nodePool.Status.Platform.KubeVirt = &hyperv1.KubeVirtNodePoolStatus{}
+			}
+
+			nodePool.Status.Platform.KubeVirt.Credentials = hcluster.Spec.Platform.Kubevirt.Credentials.DeepCopy()
+		}
+		kubevirtBootImage, err = kubevirt.GetImage(nodePool, releaseImage, infraNS)
+		if err != nil {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidPlatformImageType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolValidationFailedReason,
+				Message:            fmt.Sprintf("Couldn't discover a KubeVirt Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+				ObservedGeneration: nodePool.Generation,
+			})
+			return ctrl.Result{}, fmt.Errorf("couldn't discover a KubeVirt Image in release payload image: %w", err)
+		}
+
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidPlatformImageType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %s", kubevirtBootImage.String()),
+			ObservedGeneration: nodePool.Generation,
+		})
+
+		uid := string(nodePool.GetUID())
+		kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, uid, hcluster.Spec.Platform.Kubevirt.Credentials, controlPlaneNamespace, hcluster.GetNamespace())
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get KubeVirt external infra-cluster: %w", err)
+		}
+		err = kubevirtBootImage.CacheImage(ctx, kvInfraClient, nodePool, uid)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to create or validate KubeVirt image cache: %w", err)
+		}
+
+		r.addKubeVirtCacheNameToStatus(kubevirtBootImage, nodePool)
+	}
+
 	// Validate IgnitionEndpoint.
 	if ignEndpoint == "" {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -348,17 +438,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
 	// Validate and get releaseImage.
-	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
-	if err != nil {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidReleaseImageConditionType,
-			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedReason,
-			Message:            fmt.Sprintf("Failed to get release image: %v", err.Error()),
-			ObservedGeneration: nodePool.Generation,
-		})
-		return ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
-	}
 	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolValidReleaseImageConditionType,
 		Status:             corev1.ConditionTrue,
@@ -366,6 +445,17 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		Message:            fmt.Sprintf("Using release image: %s", nodePool.Spec.Release.Image),
 		ObservedGeneration: nodePool.Generation,
 	})
+
+	// Validate arch platform support
+	if (nodePool.Spec.Arch != "") && (nodePool.Spec.Platform.Type != hyperv1.AWSPlatform) {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidArchPlatform,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("Arch flag is not supported for platform: %s", nodePool.Spec.Platform.Type),
+			ObservedGeneration: nodePool.Generation,
+		})
+	}
 
 	// Validate AWS platform specific input
 	var ami string
@@ -379,7 +469,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
 		} else {
 			// TODO: Should the region be included in the NodePool platform information?
-			ami, err = defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, releaseImage)
+			ami, err = defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, releaseImage)
 			if err != nil {
 				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 					Type:               hyperv1.NodePoolValidPlatformImageType,
@@ -441,41 +531,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
 			Message:            fmt.Sprintf("Bootstrap PowerVS Image is %q", powervsBootImage),
-			ObservedGeneration: nodePool.Generation,
-		})
-	}
-
-	// Validate KubeVirt platform specific input
-	var kubevirtBootImage string
-	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		if err := kubevirt.PlatformValidation(nodePool); err != nil {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidMachineConfigConditionType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedReason,
-				Message:            fmt.Sprintf("validation of NodePool KubeVirt platform failed: %s", err.Error()),
-				ObservedGeneration: nodePool.Generation,
-			})
-			return ctrl.Result{}, fmt.Errorf("validation of NodePool KubeVirt platform failed: %w", err)
-		}
-		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineConfigConditionType)
-
-		kubevirtBootImage, err = kubevirt.GetImage(nodePool, releaseImage)
-		if err != nil {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidPlatformImageType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.NodePoolValidationFailedReason,
-				Message:            fmt.Sprintf("Couldn't discover a KubeVirt Image for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
-				ObservedGeneration: nodePool.Generation,
-			})
-			return ctrl.Result{}, fmt.Errorf("couldn't discover a KubeVirt Image in release payload image: %w", err)
-		}
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidPlatformImageType,
-			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
-			Message:            fmt.Sprintf("Bootstrap KubeVirt Image is %q", kubevirtBootImage),
 			ObservedGeneration: nodePool.Generation,
 		})
 	}
@@ -573,11 +628,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	SetStatusCondition(&nodePool.Status.Conditions, *condition)
 
+	oldReachedIgnitionEndpointCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReachedIgnitionEndpoint)
 	reachedIgnitionEndpointCondition, err := r.createReachedIgnitionEndpointCondition(ctx, tokenSecret, nodePool.Generation)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("error setting IgnitionReached condition: %w", err)
 	}
 	SetStatusCondition(&nodePool.Status.Conditions, *reachedIgnitionEndpointCondition)
+
+	metrics.ObserveConditionTransitionDuration(nodePool, reachedIgnitionEndpointCondition, oldReachedIgnitionEndpointCondition)
 
 	// Validate tuningConfig input.
 	tuningConfig, err := r.getTuningConfig(ctx, nodePool)
@@ -692,13 +750,17 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		message = hyperv1.AllIsWellMessage
 	}
 
-	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+	oldAllMachinesReadyCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAllMachinesReadyConditionType)
+	allMachinesReadyCondition := &hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolAllMachinesReadyConditionType,
 		Status:             status,
 		Reason:             reason,
 		Message:            message,
 		ObservedGeneration: nodePool.Generation,
-	})
+	}
+	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesReadyCondition)
+
+	metrics.ObserveConditionTransitionDuration(nodePool, allMachinesReadyCondition, oldAllMachinesReadyCondition)
 
 	// Set AllNodesHealthyCondition.
 	status = corev1.ConditionTrue
@@ -724,13 +786,17 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		message = hyperv1.AllIsWellMessage
 	}
 
-	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+	oldAllMachinesHealthyCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAllNodesHealthyConditionType)
+	allMachinesHealthyCondition := &hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolAllNodesHealthyConditionType,
 		Status:             status,
 		Reason:             reason,
 		Message:            message,
 		ObservedGeneration: nodePool.Generation,
-	})
+	}
+	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesHealthyCondition)
+
+	metrics.ObserveConditionTransitionDuration(nodePool, allMachinesHealthyCondition, oldAllMachinesHealthyCondition)
 
 	// 2. - Reconcile towards expected state of the world.
 	compressedConfig, err := supportutil.CompressAndEncode([]byte(config))
@@ -941,6 +1007,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 	}
 	return ctrl.Result{}, nil
+}
+
+func (r *NodePoolReconciler) addKubeVirtCacheNameToStatus(kubevirtBootImage kubevirt.BootImage, nodePool *hyperv1.NodePool) {
+	if namer, ok := kubevirtBootImage.(kubevirt.BootImageNamer); ok {
+		if cacheName := namer.GetCacheName(); len(cacheName) > 0 {
+			if nodePool.Status.Platform == nil {
+				nodePool.Status.Platform = &hyperv1.NodePoolPlatformStatus{}
+			}
+
+			if nodePool.Status.Platform.KubeVirt == nil {
+				nodePool.Status.Platform.KubeVirt = &hyperv1.KubeVirtNodePoolStatus{}
+			}
+
+			nodePool.Status.Platform.KubeVirt.CacheName = cacheName
+		}
+	}
 }
 
 // createReachedIgnitionEndpointCondition creates a condition for the NodePool based on the tokenSecret data.
@@ -1181,10 +1263,42 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 	}
 
 	// Delete all secrets related to the NodePool
-	if err := r.deleteNodePoolSecrets(ctx, nodePool); err != nil {
+	if err = r.deleteNodePoolSecrets(ctx, nodePool); err != nil {
 		return fmt.Errorf("failed to delete NodePool secrets: %w", err)
 	}
 
+	err = r.deleteKubeVirtCache(ctx, nodePool, controlPlaneNamespace)
+	if err != nil {
+		return err
+	}
+
+	r.KubevirtInfraClients.Delete(string(nodePool.GetUID()))
+
+	return nil
+}
+
+func (r *NodePoolReconciler) deleteKubeVirtCache(ctx context.Context, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
+	if nodePool.Status.Platform != nil {
+		if nodePool.Status.Platform.KubeVirt != nil {
+			if cacheName := nodePool.Status.Platform.KubeVirt.CacheName; len(cacheName) > 0 {
+				uid := string(nodePool.GetUID())
+				cl, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, uid, nodePool.Status.Platform.KubeVirt.Credentials, controlPlaneNamespace, nodePool.GetNamespace())
+				if err != nil {
+					return fmt.Errorf("failed to get KubeVirt external infra-cluster:  %w", err)
+				}
+
+				ns := controlPlaneNamespace
+				if nodePool.Status.Platform.KubeVirt.Credentials != nil && len(nodePool.Status.Platform.KubeVirt.Credentials.InfraNamespace) > 0 {
+					ns = nodePool.Status.Platform.KubeVirt.Credentials.InfraNamespace
+				}
+
+				err = kubevirt.DeleteCache(ctx, cl, cacheName, ns)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -1443,6 +1557,10 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	// is at the expected version (spec.version) and config (userData Secret) so we reconcile status and annotation.
 	if MachineDeploymentComplete(machineDeployment) {
 		if nodePool.Status.Version != targetVersion {
+			if nodePool.Status.Version == "" {
+				metrics.RecordNodePoolInitialRolloutDuration(nodePool)
+			}
+
 			log.Info("Version update complete",
 				"previous", nodePool.Status.Version, "new", targetVersion)
 			nodePool.Status.Version = targetVersion
@@ -1650,7 +1768,7 @@ func (r *NodePoolReconciler) getConfig(ctx context.Context,
 
 		haproxyIgnitionConfig, missing, err := r.reconcileHAProxyIgnitionConfig(ctx, releaseImage.ComponentImages(), hcluster, cpoImage)
 		if err != nil {
-			return "", false, fmt.Errorf("failed to generate haporoxy ignition config: %w", err)
+			return "", false, fmt.Errorf("failed to generate haproxy ignition config: %w", err)
 		}
 		if missing {
 			missingConfigs = true
@@ -1817,8 +1935,9 @@ func validateManagement(nodePool *hyperv1.NodePool) error {
 
 func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 	scheme := runtime.NewScheme()
-	mcfgv1.Install(scheme)
-	v1alpha1.Install(scheme)
+	_ = mcfgv1.Install(scheme)
+	_ = v1alpha1.Install(scheme)
+	_ = configv1.Install(scheme)
 
 	YamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
@@ -1842,6 +1961,7 @@ func defaultAndValidateConfigManifest(manifest []byte) ([]byte, error) {
 		}
 		manifest = buff.Bytes()
 	case *v1alpha1.ImageContentSourcePolicy:
+	case *configv1.ImageDigestMirrorSet:
 	case *mcfgv1.KubeletConfig:
 	case *mcfgv1.ContainerRuntimeConfig:
 	default:
@@ -1933,11 +2053,10 @@ func validateAutoscaling(nodePool *hyperv1.NodePool) error {
 	return nil
 }
 
-func defaultNodePoolAMI(region string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	// TODO: The architecture should be specified from the API
-	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+func defaultNodePoolAMI(region string, specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	arch, foundArch := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[specifiedArch]]
 	if !foundArch {
-		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
+		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
 	}
 
 	regionData, hasRegionData := arch.Images.AWS.Regions[region]
@@ -2244,7 +2363,7 @@ func isPlatformNone(nodePool *hyperv1.NodePool) bool {
 // a func to mutate the (platform)MachineTemplate.spec, a json string representation for (platform)MachineTemplate.spec
 // and an error.
 func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool,
-	infraID, ami, powervsBootImage, kubevirtBootImage string, defaultSG bool) (client.Object, func(object client.Object) error, string, error) {
+	infraID, ami, powervsBootImage string, kubevirtBootImage kubevirt.BootImage, defaultSG bool) (client.Object, func(object client.Object) error, string, error) {
 	var mutateTemplate func(object client.Object) error
 	var template client.Object
 	var machineTemplateSpec interface{}
@@ -2281,7 +2400,7 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		}
 	case hyperv1.KubevirtPlatform:
 		template = &capikubevirt.KubevirtMachineTemplate{}
-		machineTemplateSpec = kubevirt.MachineTemplateSpec(kubevirtBootImage, nodePool, hcluster)
+		machineTemplateSpec = kubevirt.MachineTemplateSpec(nodePool, kubevirtBootImage, hcluster)
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capikubevirt.KubevirtMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capikubevirt.KubevirtMachineTemplateSpec)
@@ -2361,7 +2480,7 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 		return nil, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
 
-	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
+	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes, hostedCluster.Spec.ImageContentSources)
 	if err != nil {
 		return nil, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
@@ -2393,7 +2512,7 @@ func (r *NodePoolReconciler) ensureMachineDeletion(nodePool *hyperv1.NodePool) e
 
 // getMachinesForNodePool get all Machines listed with the nodePoolAnnotation
 // within the control plane Namespace for that NodePool.
-func (r *NodePoolReconciler) getMachinesForNodePool(nodePool *hyperv1.NodePool) ([]capiv1.Machine, error) {
+func (r *NodePoolReconciler) getMachinesForNodePool(nodePool *hyperv1.NodePool) ([]*capiv1.Machine, error) {
 	machines := capiv1.MachineList{}
 	controlPlaneNamespace := fmt.Sprintf("%s-%s", nodePool.Namespace, strings.ReplaceAll(nodePool.Spec.ClusterName, ".", "-"))
 
@@ -2402,14 +2521,14 @@ func (r *NodePoolReconciler) getMachinesForNodePool(nodePool *hyperv1.NodePool) 
 	}
 
 	// Filter out only machines belonging to deleted NodePool
-	var machinesForNodePool []capiv1.Machine
+	var machinesForNodePool []*capiv1.Machine
 	for i, machine := range machines.Items {
 		if machine.Annotations[nodePoolAnnotation] == client.ObjectKeyFromObject(nodePool).String() {
-			machinesForNodePool = append(machinesForNodePool, machines.Items[i])
+			machinesForNodePool = append(machinesForNodePool, &machines.Items[i])
 		}
 	}
 
-	return machinesForNodePool, nil
+	return sortedByCreationTimestamp(machinesForNodePool), nil
 }
 
 // getPullSecretBytes retrieves the pull secret bytes from the hosted cluster
@@ -2434,4 +2553,22 @@ func (r *NodePoolReconciler) getPullSecretName(ctx context.Context, hostedCluste
 		return "", fmt.Errorf("pull secret %s/%s missing %q key when retrieving pull secret name", pullSecret.Namespace, pullSecret.Name, corev1.DockerConfigJsonKey)
 	}
 	return pullSecret.Name, nil
+}
+
+// machinesByCreationTimestamp sorts a list of Machine by creation timestamp, using their names as a tie breaker.
+type machinesByCreationTimestamp []*capiv1.Machine
+
+func (o machinesByCreationTimestamp) Len() int      { return len(o) }
+func (o machinesByCreationTimestamp) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
+func (o machinesByCreationTimestamp) Less(i, j int) bool {
+	if o[i].CreationTimestamp.Equal(&o[j].CreationTimestamp) {
+		return o[i].Name < o[j].Name
+	}
+	return o[i].CreationTimestamp.Before(&o[j].CreationTimestamp)
+}
+
+// SortedByCreationTimestamp returns the machines sorted by creation timestamp.
+func sortedByCreationTimestamp(machines []*capiv1.Machine) []*capiv1.Machine {
+	sort.Sort(machinesByCreationTimestamp(machines))
+	return machines
 }

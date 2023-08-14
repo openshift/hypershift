@@ -7,7 +7,7 @@ IMG ?= hypershift:latest
 CRD_OPTIONS ?= "crd"
 
 # Runtime CLI to use for building and pushing images
-RUNTIME ?= docker
+RUNTIME ?= $(shell sh hack/utils.sh get_container_engine)
 
 TOOLS_DIR=./hack/tools
 BIN_DIR=bin
@@ -43,7 +43,7 @@ all: build e2e
 
 pre-commit: all verify test
 
-build: hypershift-operator control-plane-operator hypershift
+build: hypershift-operator control-plane-operator hypershift product-cli
 
 .PHONY: update
 update: deps api api-docs app-sre-saas-template
@@ -79,6 +79,10 @@ control-plane-operator:
 hypershift:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift .
 
+.PHONY: product-cli
+product-cli:
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hcp ./product-cli
+
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
@@ -106,7 +110,7 @@ cluster-api-provider-aws: $(CONTROLLER_GEN)
 .PHONY: cluster-api-provider-ibmcloud
 cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-ibmcloud/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-ibmcloud
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-ibmcloud/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-ibmcloud
 
 .PHONY: cluster-api-provider-kubevirt
 cluster-api-provider-kubevirt: $(CONTROLLER_GEN)
@@ -207,10 +211,18 @@ staticcheck: $(STATICCHECK)
 docker-build:
 	${RUNTIME} build . -t ${IMG}
 
+.PHONY: fast.Dockerfile.dockerignore
+fast.Dockerfile.dockerignore:
+	sed -e '/^bin\//d' .dockerignore > fast.Dockerfile.dockerignore
+
 # Build the docker image copying binaries from workspace
 .PHONY: docker-build-fast
-docker-build-fast: build
-	${RUNTIME} build . -t ${IMG} -f Dockerfile.fast
+docker-build-fast: build fast.Dockerfile.dockerignore
+ifeq ($(RUNTIME),podman)
+		${RUNTIME} build . -t ${IMG} -f fast.Dockerfile --ignorefile fast.Dockerfile.dockerignore
+else
+		DOCKER_BUILDKIT=1 ${RUNTIME} build . -t ${IMG} -f fast.Dockerfile
+endif
 
 # Push the docker image
 .PHONY: docker-push

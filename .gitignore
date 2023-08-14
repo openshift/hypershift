@@ -28,8 +28,9 @@ tools/bin
 
 .kube
 /kubeconfig
-.dockerignore
+vendor/**/.dockerignore
 .docker
+/fast.Dockerfile.dockerignore
 
 # ignore util binaries
 /contrib/cleanzones/cleanzones

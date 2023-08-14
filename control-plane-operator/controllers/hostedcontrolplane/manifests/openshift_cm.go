@@ -16,6 +16,15 @@ func OpenShiftControllerManagerConfig(ns string) *corev1.ConfigMap {
 	}
 }
 
+func OpenShiftRouteControllerManagerConfig(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openshift-route-controller-manager-config",
+			Namespace: ns,
+		},
+	}
+}
+
 func OpenShiftControllerManagerDeployment(ns string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

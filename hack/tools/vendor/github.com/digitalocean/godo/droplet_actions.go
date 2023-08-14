@@ -7,7 +7,7 @@ import (
 	"net/url"
 )
 
-// ActionRequest reprents DigitalOcean Action Request
+// ActionRequest represents DigitalOcean Action Request
 type ActionRequest map[string]interface{}
 
 // DropletActionsService is an interface for interfacing with the Droplet actions
@@ -293,7 +293,7 @@ func (s *DropletActionsServiceOp) Get(ctx context.Context, dropletID, actionID i
 	return s.get(ctx, path)
 }
 
-// GetByURI gets an action for a particular Droplet by id.
+// GetByURI gets an action for a particular Droplet by URI.
 func (s *DropletActionsServiceOp) GetByURI(ctx context.Context, rawurl string) (*Action, *Response, error) {
 	u, err := url.Parse(rawurl)
 	if err != nil {

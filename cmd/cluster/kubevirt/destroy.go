@@ -1,8 +1,6 @@
 package kubevirt
 
 import (
-	"time"
-
 	"github.com/spf13/cobra"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -10,16 +8,10 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 )
 
-type DestroyOptions struct {
-	Namespace          string
-	Name               string
-	ClusterGracePeriod time.Duration
-}
-
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "kubevirt",
-		Short:        "Destroys a HostedCluster and its associated infrastructure on Kubevirt platform.",
+		Short:        "Destroys a HostedCluster and its associated infrastructure on Kubevirt platform",
 		SilenceUsage: true,
 	}
 

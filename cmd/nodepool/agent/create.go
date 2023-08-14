@@ -3,15 +3,16 @@ package agent
 import (
 	"context"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/spf13/cobra"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/cmd/nodepool/core"
 )
 
 type AgentPlatformCreateOptions struct{}
 
-func NewAgentPlatformCreateOptions(cmd *cobra.Command) *AgentPlatformCreateOptions {
+func NewAgentPlatformCreateOptions(_ *cobra.Command) *AgentPlatformCreateOptions {
 	platformOpts := &AgentPlatformCreateOptions{}
 
 	return platformOpts
@@ -31,7 +32,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	return cmd
 }
 
-func (o *AgentPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
+func (o *AgentPlatformCreateOptions) UpdateNodePool(_ context.Context, _ *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
 	return nil
 }
 

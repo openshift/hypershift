@@ -5,6 +5,7 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -32,7 +33,7 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap/zapcore"
-	"k8s.io/apimachinery/pkg/util/errors"
+	apierr "k8s.io/apimachinery/pkg/util/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -55,10 +56,6 @@ var (
 	}))
 )
 
-const (
-	oidcBucketName = "hypershift-ci-oidc"
-)
-
 func init() {
 	rand.Seed(time.Now().UnixNano())
 }
@@ -70,6 +67,8 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.Region, "e2e.aws-region", "us-east-1", "AWS region for clusters")
 	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.aws-zones", "Deprecated, use -e2e.availability-zones instead")
 	flag.Var(&globalOpts.configurableClusterOptions.Zone, "e2e.availability-zones", "Availability zones for clusters")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AWSOidcS3BucketName, "e2e.aws-oidc-s3-bucket-name", "", "AWS S3 Bucket Name to setup the OIDC provider in")
+	flag.StringVar(&globalOpts.configurableClusterOptions.AWSKmsKeyAlias, "e2e.aws-kms-key-alias", "", "AWS KMS Key Alias to use when creating encrypted nodepools, when empty the default EBS KMS Key will be used")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PullSecretFile, "e2e.pull-secret-file", "", "path to pull secret")
 	flag.StringVar(&globalOpts.configurableClusterOptions.AWSEndpointAccess, "e2e.aws-endpoint-access", "", "endpoint access profile for the cluster")
 	flag.StringVar(&globalOpts.configurableClusterOptions.ExternalDNSDomain, "e2e.external-dns-domain", "", "domain that external-dns will use to create DNS records for HCP endpoints")
@@ -77,6 +76,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtNodeMemory, "e2e.kubevirt-node-memory", "8Gi", "the amount of memory to provide to each workload node")
 	flag.UintVar(&globalOpts.configurableClusterOptions.KubeVirtNodeCores, "e2e.kubevirt-node-cores", 2, "The number of cores provided to each workload node")
 	flag.UintVar(&globalOpts.configurableClusterOptions.KubeVirtRootVolumeSize, "e2e.kubevirt-root-volume-size", 32, "The root volume size in Gi")
+	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtRootVolumeVolumeMode, "e2e.kubevirt-root-volume-volume-mode", "Filesystem", "The root pvc volume mode")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtInfraKubeconfigFile, "e2e.kubevirt-infra-kubeconfig", "", "path to the kubeconfig file of the external infra cluster")
 	flag.StringVar(&globalOpts.configurableClusterOptions.KubeVirtInfraNamespace, "e2e.kubevirt-infra-namespace", "", "the namespace on the infra cluster the workers will be created on")
 	flag.IntVar(&globalOpts.configurableClusterOptions.NodePoolReplicas, "e2e.node-pool-replicas", 2, "the number of replicas for each node pool in the cluster")
@@ -100,6 +100,8 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSProcessors, "e2e.powervs-processors", "0.5", "Number of processors allocated. Default is 0.5")
 	flag.IntVar(&globalOpts.configurableClusterOptions.PowerVSMemory, "e2e.powervs-memory", 32, "Amount of memory allocated (in GB). Default is 32")
 	flag.BoolVar(&globalOpts.SkipAPIBudgetVerification, "e2e.skip-api-budget", false, "Bool to avoid send metrics to E2E Server on local test execution.")
+	flag.StringVar(&globalOpts.configurableClusterOptions.EtcdStorageClass, "e2e.etcd-storage-class", "", "The persistent volume storage class for etcd data volumes")
+	flag.BoolVar(&globalOpts.RequestServingIsolation, "e2e.test-request-serving-isolation", false, "If set, TestCreate creates a cluster with request serving isolation topology")
 
 	flag.Parse()
 
@@ -164,11 +166,15 @@ func main(m *testing.M) int {
 
 // setup a shared OIDC provider to be used by all HostedClusters
 func setupSharedOIDCProvider() error {
+	if globalOpts.configurableClusterOptions.AWSOidcS3BucketName == "" {
+		return errors.New("please supply a public S3 bucket name with --e2e.aws-oidc-s3-bucket-name")
+	}
+
 	iamClient := e2eutil.GetIAMClient(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
 	s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
 
 	providerID := e2eutil.SimpleNameGenerator.GenerateName("e2e-oidc-provider-")
-	issuerURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", oidcBucketName, globalOpts.configurableClusterOptions.Region, providerID)
+	issuerURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", globalOpts.configurableClusterOptions.AWSOidcS3BucketName, globalOpts.configurableClusterOptions.Region, providerID)
 
 	key, err := certs.PrivateKey()
 	if err != nil {
@@ -199,11 +205,11 @@ func setupSharedOIDCProvider() error {
 		}
 		_, err = s3Client.PutObject(&s3.PutObjectInput{
 			Body:   bodyReader,
-			Bucket: aws.String(oidcBucketName),
+			Bucket: aws.String(globalOpts.configurableClusterOptions.AWSOidcS3BucketName),
 			Key:    aws.String(providerID + path),
 		})
 		if err != nil {
-			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, oidcBucketName)
+			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, globalOpts.configurableClusterOptions.AWSOidcS3BucketName)
 			if awsErr, ok := err.(awserr.Error); ok {
 				// Generally, the underlying message from AWS has unique per-request
 				// info not suitable for publishing as condition messages, so just
@@ -235,7 +241,7 @@ func cleanupSharedOIDCProvider() {
 	s3Client := e2eutil.GetS3Client(globalOpts.configurableClusterOptions.AWSCredentialsFile, globalOpts.configurableClusterOptions.Region)
 
 	e2eutil.DestroyOIDCProvider(log, iamClient, globalOpts.IssuerURL)
-	e2eutil.CleanupOIDCBucketObjects(log, s3Client, oidcBucketName, globalOpts.IssuerURL)
+	e2eutil.CleanupOIDCBucketObjects(log, s3Client, globalOpts.configurableClusterOptions.AWSOidcS3BucketName, globalOpts.IssuerURL)
 }
 
 // alertSLOs creates alert for our SLO/SLIs and log when firing.
@@ -348,36 +354,44 @@ type options struct {
 	// SkipAPIBudgetVerification implies that you are executing the e2e tests
 	// from local to verify that them works fine before push
 	SkipAPIBudgetVerification bool
+
+	// If set, the CreateCluster test will create a cluster with request serving
+	// isolation topology.
+	RequestServingIsolation bool
 }
 
 type configurableClusterOptions struct {
-	AWSCredentialsFile          string
-	AzureCredentialsFile        string
-	AzureLocation               string
-	Region                      string
-	Zone                        stringSliceVar
-	PullSecretFile              string
-	BaseDomain                  string
-	ControlPlaneOperatorImage   string
-	AWSEndpointAccess           string
-	ExternalDNSDomain           string
-	KubeVirtContainerDiskImage  string
-	KubeVirtNodeMemory          string
-	KubeVirtRootVolumeSize      uint
-	KubeVirtNodeCores           uint
-	KubeVirtInfraKubeconfigFile string
-	KubeVirtInfraNamespace      string
-	NodePoolReplicas            int
-	SSHKeyFile                  string
-	NetworkType                 string
-	PowerVSResourceGroup        string
-	PowerVSRegion               string
-	PowerVSZone                 string
-	PowerVSVpcRegion            string
-	PowerVSSysType              string
-	PowerVSProcType             hyperv1.PowerVSNodePoolProcType
-	PowerVSProcessors           string
-	PowerVSMemory               int
+	AWSCredentialsFile           string
+	AzureCredentialsFile         string
+	AzureLocation                string
+	Region                       string
+	Zone                         stringSliceVar
+	PullSecretFile               string
+	BaseDomain                   string
+	ControlPlaneOperatorImage    string
+	AWSEndpointAccess            string
+	AWSOidcS3BucketName          string
+	AWSKmsKeyAlias               string
+	ExternalDNSDomain            string
+	KubeVirtContainerDiskImage   string
+	KubeVirtNodeMemory           string
+	KubeVirtRootVolumeSize       uint
+	KubeVirtRootVolumeVolumeMode string
+	KubeVirtNodeCores            uint
+	KubeVirtInfraKubeconfigFile  string
+	KubeVirtInfraNamespace       string
+	NodePoolReplicas             int
+	SSHKeyFile                   string
+	NetworkType                  string
+	PowerVSResourceGroup         string
+	PowerVSRegion                string
+	PowerVSZone                  string
+	PowerVSVpcRegion             string
+	PowerVSSysType               string
+	PowerVSProcType              hyperv1.PowerVSNodePoolProcType
+	PowerVSProcessors            string
+	PowerVSMemory                int
+	EtcdStorageClass             string
 }
 
 var nextAWSZoneIndex = 0
@@ -395,7 +409,6 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		ExternalDNSDomain:                o.configurableClusterOptions.ExternalDNSDomain,
 		NodeUpgradeType:                  hyperv1.UpgradeTypeReplace,
 		AWSPlatform: core.AWSPlatformOptions{
-			InstanceType:       "m5.large",
 			RootVolumeSize:     64,
 			RootVolumeType:     "gp3",
 			AWSCredentialsFile: o.configurableClusterOptions.AWSCredentialsFile,
@@ -410,6 +423,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			InfraKubeConfigFile:       o.configurableClusterOptions.KubeVirtInfraKubeconfigFile,
 			InfraNamespace:            o.configurableClusterOptions.KubeVirtInfraNamespace,
 			RootVolumeSize:            uint32(o.configurableClusterOptions.KubeVirtRootVolumeSize),
+			RootVolumeVolumeMode:      o.configurableClusterOptions.KubeVirtRootVolumeVolumeMode,
 		},
 		AzurePlatform: core.AzurePlatformOptions{
 			CredentialsFile: o.configurableClusterOptions.AzureCredentialsFile,
@@ -435,7 +449,14 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
 		},
 		SkipAPIBudgetVerification: o.SkipAPIBudgetVerification,
+		EtcdStorageClass:          o.configurableClusterOptions.EtcdStorageClass,
 	}
+
+	// Arch is only currently valid for aws platform
+	if o.Platform == hyperv1.AWSPlatform {
+		createOption.Arch = "amd64"
+	}
+
 	createOption.AWSPlatform.AdditionalTags = append(createOption.AWSPlatform.AdditionalTags, o.additionalTags...)
 	if len(o.configurableClusterOptions.Zone) == 0 {
 		// align with default for e2e.aws-region flag
@@ -468,7 +489,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 // up additional contextual defaulting.
 func (o *options) Complete() error {
 	if len(o.LatestReleaseImage) == 0 {
-		defaultVersion, err := version.LookupDefaultOCPVersion()
+		defaultVersion, err := version.LookupDefaultOCPVersion("")
 		if err != nil {
 			return fmt.Errorf("couldn't look up default OCP version: %w", err)
 		}
@@ -530,7 +551,7 @@ func (o *options) Validate() error {
 		}
 	}
 
-	return errors.NewAggregate(errs)
+	return apierr.NewAggregate(errs)
 }
 
 var _ flag.Value = &stringSliceVar{}

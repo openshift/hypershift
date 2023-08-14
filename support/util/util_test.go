@@ -49,6 +49,155 @@ func TestCompressDecompress(t *testing.T) {
 	}
 }
 
+func TestConvertRegistryOverridesToCommandLineFlag(t *testing.T) {
+	testCases := []struct {
+		name              string
+		registryOverrides map[string]string
+		expectedFlag      string
+	}{
+		{
+			name:         "No registry overrides",
+			expectedFlag: "=",
+		},
+		{
+			name: "Registry overrides with single mirrors",
+			registryOverrides: map[string]string{
+				"registry1": "mirror1.1",
+				"registry2": "mirror2.1",
+				"registry3": "mirror3.1",
+			},
+			expectedFlag: "registry1=mirror1.1,registry2=mirror2.1,registry3=mirror3.1",
+		},
+	}
+
+	t.Parallel()
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			result := ConvertRegistryOverridesToCommandLineFlag(testCase.registryOverrides)
+			g.Expect(result).To(Equal(testCase.expectedFlag))
+		})
+	}
+}
+
+func TestConvertOpenShiftImageRegistryOverridesToCommandLineFlag(t *testing.T) {
+	testCases := []struct {
+		name              string
+		registryOverrides map[string][]string
+		expectedFlag      string
+	}{
+		{
+			name:         "No registry overrides",
+			expectedFlag: "=",
+		},
+		{
+			name: "Registry overrides with single mirrors",
+			registryOverrides: map[string][]string{
+				"registry1": {
+					"mirror1.1",
+				},
+				"registry2": {
+					"mirror2.1",
+				},
+				"registry3": {
+					"mirror3.1",
+				},
+			},
+			expectedFlag: "registry1=mirror1.1,registry2=mirror2.1,registry3=mirror3.1",
+		},
+		{
+			name: "Registry overrides with multiple mirrors",
+			registryOverrides: map[string][]string{
+				"registry1": {
+					"mirror1.1",
+					"mirror1.2",
+					"mirror1.3",
+				},
+				"registry2": {
+					"mirror2.1",
+					"mirror2.2",
+				},
+				"registry3": {
+					"mirror3.1",
+				},
+			},
+			expectedFlag: "registry1=mirror1.1,registry1=mirror1.2,registry1=mirror1.3,registry2=mirror2.1,registry2=mirror2.2,registry3=mirror3.1",
+		},
+	}
+
+	t.Parallel()
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			result := ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(testCase.registryOverrides)
+			g.Expect(result).To(Equal(testCase.expectedFlag))
+		})
+	}
+}
+
+func TestConvertImageRegistryOverrideStringToMap(t *testing.T) {
+	testCases := []struct {
+		name           string
+		expectedOutput map[string][]string
+		input          string
+	}{
+		{
+			name:  "No registry overrides",
+			input: "=",
+			//expectedOutput: make(map[string][]string),
+		},
+		{
+			name: "Registry overrides with single mirrors",
+			expectedOutput: map[string][]string{
+				"registry1": {
+					"mirror1.1",
+				},
+				"registry2": {
+					"mirror2.1",
+				},
+				"registry3": {
+					"mirror3.1",
+				},
+			},
+
+			input: "registry1=mirror1.1,registry2=mirror2.1,registry3=mirror3.1",
+		},
+		{
+			name: "Registry overrides with multiple mirrors",
+			expectedOutput: map[string][]string{
+				"registry1": {
+					"mirror1.1",
+					"mirror1.2",
+					"mirror1.3",
+				},
+				"registry2": {
+					"mirror2.1",
+					"mirror2.2",
+				},
+				"registry3": {
+					"mirror3.1",
+				},
+			},
+			input: "registry1=mirror1.1,registry1=mirror1.2,registry1=mirror1.3,registry2=mirror2.1,registry2=mirror2.2,registry3=mirror3.1",
+		},
+	}
+
+	t.Parallel()
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			result := ConvertImageRegistryOverrideStringToMap(testCase.input)
+			g.Expect(result).To(Equal(testCase.expectedOutput))
+		})
+	}
+}
+
 // Tests that a given input can be expected and encoded without errors.
 func testCompressFunc(t *testing.T, payload, expected []byte) {
 	t.Helper()
@@ -94,4 +243,101 @@ func testDecompressFuncErr(t *testing.T, payload []byte) {
 	g.Expect(out).ToNot(BeNil(), "should return an initialized bytes.Buffer")
 	g.Expect(out.Bytes()).To(BeNil(), "should be a nil byte slice")
 	g.Expect(out.String()).To(BeEmpty(), "should be an empty string")
+}
+
+func TestIsIPv4(t *testing.T) {
+	type args struct {
+		cidrs []string
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    bool
+		wantErr bool
+	}{
+		{
+			name: "When an ipv4 CIDR is checked by isIPv4, it should return true",
+			args: args{
+				cidrs: []string{"192.168.1.35/24", "0.0.0.0/0", "127.0.0.1/24"},
+			},
+			want:    true,
+			wantErr: false,
+		},
+		{
+			name: "When an ipv6 CIDR is checked by isIPv4, it should return false",
+			args: args{
+				cidrs: []string{"2001::/17", "2001:db8::/62", "::/0", "2000::/3"},
+			},
+			want:    false,
+			wantErr: false,
+		},
+		{
+			name: "When a non valid CIDR is checked by isIPv4, it should return an error and false",
+			args: args{
+				cidrs: []string{"192.168.35/68"},
+			},
+			want:    false,
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, cidr := range tt.args.cidrs {
+				got, err := IsIPv4(cidr)
+				if (err != nil) != tt.wantErr {
+					t.Errorf("isIPv4() error = %v, wantErr %v", err, tt.wantErr)
+					return
+				}
+				if got != tt.want {
+					t.Errorf("isIPv4() = %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+func TestFirstUsableIP(t *testing.T) {
+	tests := []struct {
+		name    string
+		cidr    string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "Given IPv4 CIDR, it should return the first ip of the network range",
+			cidr:    "192.168.1.0/24",
+			want:    "192.168.1.1",
+			wantErr: false,
+		},
+		{
+			name:    "Given IPv6 CIDR, it should return the first ip of the network range",
+			cidr:    "2000::/3",
+			want:    "2000::1",
+			wantErr: false,
+		},
+		{
+			name:    "Given a malformed IPv4 CIDR, it should return empty string and err",
+			cidr:    "192.168.1.35.53/24",
+			want:    "",
+			wantErr: true,
+		},
+		{
+			name:    "Given a malformed IPv6 CIDR, it should return empty string and err",
+			cidr:    "2001::44444444444444/17",
+			want:    "",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := FirstUsableIP(tt.cidr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("FirstUsableIP() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("FirstUsableIP() = %v, want %v", got, tt.want)
+			}
+		})
+	}
 }

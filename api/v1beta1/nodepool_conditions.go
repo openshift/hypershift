@@ -72,4 +72,5 @@ const (
 	IgnitionCACertMissingReason           = "IgnitionCACertMissing"
 	IgnitionNotReached                    = "ignitionNotReached"
 	DefaultAWSSecurityGroupNotReadyReason = "DefaultSGNotReady"
+	NodePoolValidArchPlatform             = "ValidArchPlatform"
 )

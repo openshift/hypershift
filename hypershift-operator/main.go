@@ -1,6 +1,4 @@
 /*
-
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
@@ -23,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openshift/hypershift/support/globalconfig"
+
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
@@ -36,8 +36,10 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/scheduler"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/metrics"
@@ -254,23 +256,48 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
-	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
-		Client:                        mgr.GetClient(),
-		ManagementClusterCapabilities: mgmtClusterCaps,
-		HypershiftOperatorImage:       operatorImage,
-		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
+	// The mgr and therefore the cache is not started yet, thus we have to construct a client that
+	// directly reads from the api.
+	apiReadingClient, err := crclient.NewDelegatingClient(crclient.NewDelegatingClientInput{
+		CacheReader: mgr.GetAPIReader(),
+		Client:      mgr.GetClient(),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to construct api reading client: %w", err)
+	}
+
+	// Populate registry overrides with any ICSP and IDMS from a OpenShift management cluster
+	var imageRegistryOverrides map[string][]string
+	if mgmtClusterCaps.Has(capabilities.CapabilityICSP) || mgmtClusterCaps.Has(capabilities.CapabilityIDMS) {
+		imageRegistryOverrides, err = globalconfig.GetAllImageRegistryMirrors(ctx, apiReadingClient, mgmtClusterCaps.Has(capabilities.CapabilityIDMS))
+		if err != nil {
+			return fmt.Errorf("failed to populate image registry overrides: %w", err)
+		}
+	}
+
+	releaseProviderWithOpenShiftImageRegistryOverrides := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
 				Inner: &releaseinfo.RegistryClientProvider{},
 				Cache: map[string]*releaseinfo.ReleaseImage{},
 			},
 			RegistryOverrides: opts.RegistryOverrides,
 		},
-		EnableOCPClusterMonitoring: opts.EnableOCPClusterMonitoring,
-		EnableCIDebugOutput:        opts.EnableCIDebugOutput,
-		ImageMetadataProvider:      &hyperutil.RegistryClientImageMetadataProvider{},
-		MetricsSet:                 metricsSet,
-		OperatorNamespace:          opts.Namespace,
-		SREConfigHash:              sreConfigHash,
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
+	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
+		Client:                        mgr.GetClient(),
+		ManagementClusterCapabilities: mgmtClusterCaps,
+		HypershiftOperatorImage:       operatorImage,
+		ReleaseProvider:               releaseProviderWithOpenShiftImageRegistryOverrides,
+		EnableOCPClusterMonitoring:    opts.EnableOCPClusterMonitoring,
+		EnableCIDebugOutput:           opts.EnableCIDebugOutput,
+		ImageMetadataProvider:         &hyperutil.RegistryClientImageMetadataProvider{},
+		MetricsSet:                    metricsSet,
+		OperatorNamespace:             opts.Namespace,
+		SREConfigHash:                 sreConfigHash,
+		KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
@@ -308,17 +335,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	if err := (&nodepool.NodePoolReconciler{
-		Client: mgr.GetClient(),
-		ReleaseProvider: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
-			},
-			RegistryOverrides: opts.RegistryOverrides,
-		},
+		Client:                  mgr.GetClient(),
+		ReleaseProvider:         releaseProviderWithOpenShiftImageRegistryOverrides,
 		CreateOrUpdateProvider:  createOrUpdate,
 		HypershiftOperatorImage: operatorImage,
 		ImageMetadataProvider:   &hyperutil.RegistryClientImageMetadataProvider{},
+		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
@@ -341,13 +363,13 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// Start controller to manage supported versions configmap
-	if err := (supportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
-		SetupWithManager(mgr)); err != nil {
+	if err := supportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
+		SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create supported version controller: %w", err)
 	}
 
 	// If enabled, start controller to ensure UWM stack is enabled and configured
-	// to remote write telemetry metrics
+	// to remotely write telemetry metrics
 	if opts.EnableUWMTelemetryRemoteWrite {
 		if err := (&uwmtelemetry.Reconciler{
 			Namespace:              opts.Namespace,
@@ -358,17 +380,21 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
-	// The mgr and therefore the cache is not started yet, thus we have to construct a client that
-	// directly reads from the api.
-	apiReadingClient, err := crclient.NewDelegatingClient(crclient.NewDelegatingClientInput{
-		CacheReader: mgr.GetAPIReader(),
-		Client:      mgr.GetClient(),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to construct api reading client: %w", err)
+	// Start controllers to manage dedicated request serving isolation
+	nodeReaper := scheduler.DedicatedServingComponentNodeReaper{
+		Client: mgr.GetClient(),
+	}
+	if err := nodeReaper.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
+	}
+	hcScheduler := scheduler.DedicatedServingComponentScheduler{
+		Client: mgr.GetClient(),
+	}
+	if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
+		return fmt.Errorf("unable to create dedicated serving component scheduler controller: %w", err)
 	}
 
-	// If it exsists, block default ingress controller from admitting HCP private routes
+	// If it exists, block default ingress controller from admitting HCP private routes
 	ic := &operatorv1.IngressController{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "default",
@@ -399,6 +425,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
 		}
 		log.Info("reconciled default ingress controller")
+	}
+	if err != nil && apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to get ingress controller: %w", err)
 	}
 
 	if err := setupMetrics(mgr); err != nil {

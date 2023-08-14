@@ -57,6 +57,37 @@ func GetClient() (crclient.Client, error) {
 	return client, nil
 }
 
+// GetImpersonatedClient creates a controller-runtime client for Kubernetes
+func GetImpersonatedClient(userName string) (crclient.Client, error) {
+	config, err := GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
+	}
+	config.Impersonate = rest.ImpersonationConfig{
+		UserName: userName,
+	}
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get discovery client: %w", err)
+	}
+	list, err := discoveryClient.ServerResourcesForGroupVersion(schema.GroupVersion{Group: "hypershift.openshift.io", Version: "v1beta1"}.String())
+	if err != nil && !errors.IsNotFound(err) {
+		return nil, fmt.Errorf("cannot discover HyperShift API version: %w", err)
+	}
+	wrapClient := false
+	if err != nil || len(list.APIResources) == 0 {
+		wrapClient = true
+	}
+	client, err := crclient.New(config, crclient.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
+	}
+	if wrapClient {
+		return v1alpha1Client(client), nil
+	}
+	return client, nil
+}
+
 // ParseAWSTags does exactly that
 func ParseAWSTags(tags []string) (map[string]string, error) {
 	tagMap := make(map[string]string, len(tags))

@@ -92,6 +92,7 @@ type VolumeListOpts struct {
 	ListOpts
 	Name   string
 	Status []VolumeStatus
+	Sort   []string
 }
 
 func (l VolumeListOpts) values() url.Values {
@@ -101,6 +102,9 @@ func (l VolumeListOpts) values() url.Values {
 	}
 	for _, status := range l.Status {
 		vals.Add("status", string(status))
+	}
+	for _, sort := range l.Sort {
+		vals.Add("sort", sort)
 	}
 	return vals
 }
@@ -206,7 +210,7 @@ func (c *VolumeClient) Create(ctx context.Context, opts VolumeCreateOpts) (Volum
 		reqBody.Labels = &opts.Labels
 	}
 	if opts.Server != nil {
-		reqBody.Server = Int(opts.Server.ID)
+		reqBody.Server = Ptr(opts.Server.ID)
 	}
 	if opts.Location != nil {
 		if opts.Location.ID != 0 {

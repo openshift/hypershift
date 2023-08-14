@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -33,10 +32,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
@@ -63,13 +66,11 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
-	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 )
 
 const (
 	ControllerName       = "resources"
 	SecretHashAnnotation = "hypershift.openshift.io/kubeadmin-secret-hash"
-	observedConfigKey    = "config"
 )
 
 var (
@@ -111,7 +112,7 @@ func eventHandler() handler.EventHandler {
 }
 
 func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
-	if err := imageregistryv1.AddToScheme(opts.Manager.GetScheme()); err != nil {
+	if err := imageregistryv1.Install(opts.Manager.GetScheme()); err != nil {
 		return fmt.Errorf("failed to add to scheme: %w", err)
 	}
 
@@ -193,12 +194,14 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&configv1.Image{},
 		&configv1.Project{},
 		&configv1.ClusterOperator{},
+		&configv1.OperatorHub{},
 		&appsv1.DaemonSet{},
 		&configv1.ClusterOperator{},
 		&configv1.ClusterVersion{},
 		&apiregistrationv1.APIService{},
 		&operatorv1.Network{},
 		&admissionregistrationv1.MutatingWebhookConfiguration{},
+		&admissionregistrationv1.ValidatingWebhookConfiguration{},
 		&prometheusoperatorv1.PrometheusRule{},
 		&operatorv1.IngressController{},
 		&imageregistryv1.Config{},
@@ -409,13 +412,20 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network operator: %w", err))
 	}
-
+	// this allows users to disable data collection in sensitive environments
+	// solves https://issues.redhat.com/browse/OCPBUGS-12208
+	ensureExistsReconcilationStrategy := false
+	if _, exists := hcp.Annotations[hyperv1.EnsureExistsPullSecretReconciliation]; exists {
+		ensureExistsReconcilationStrategy = true
+	}
 	log.Info("reconciling pull secret")
 	for _, ns := range manifests.PullSecretTargetNamespaces() {
 		secret := manifests.PullSecret(ns)
 		if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
-			secret.Data = pullSecret.Data
-			secret.Type = pullSecret.Type
+			if !ensureExistsReconcilationStrategy || len(secret.Data) == 0 {
+				secret.Data = pullSecret.Data
+				secret.Type = pullSecret.Type
+			}
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile pull secret at namespace %s: %w", ns, err))
@@ -423,7 +433,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling oauth serving cert ca bundle")
-	if err := r.reconcileOAuthServingCertCABundle(ctx, hcp, r.oauthAddress); err != nil {
+	if err := r.reconcileOAuthServingCertCABundle(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile oauth serving cert CA bundle: %w", err))
 	}
 
@@ -488,7 +498,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	if hostedcontrolplane.IsStorageAndCSIManaged(hcp) {
 		log.Info("reconciling storage resources")
-		errs = append(errs, r.reconcileStorage(ctx, hcp, releaseImage)...)
+		errs = append(errs, r.reconcileStorage(ctx, hcp)...)
 
 		log.Info("reconciling node level csi configuration")
 		if err := r.reconcileCSIDriver(ctx, hcp, releaseImage); err != nil {
@@ -505,6 +515,8 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	log.Info("reconciling observed configuration")
 	errs = append(errs, r.reconcileObservedConfiguration(ctx, hcp)...)
+
+	errs = append(errs, r.ensureGuestAdmissionWebhooksAreValid(ctx))
 
 	// Delete the DNS operator deployment in the hosted cluster, if it is
 	// present there.  A separate DNS operator deployment runs as part of
@@ -611,29 +623,14 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile ingress config: %w", err))
 	}
 
-	var clusterVersion configv1.ClusterVersion
-	err := r.client.Get(ctx, types.NamespacedName{Name: "version"}, &clusterVersion)
-	if err != nil {
-		errs = append(errs, fmt.Errorf("unable to retrieve cluster version resource"))
-	}
-	featureGate := globalconfig.FeatureGateConfig()
-	if _, err := r.CreateOrUpdate(ctx, r.client, featureGate, func() error {
-		globalconfig.ReconcileFeatureGateConfig(featureGate, hcp.Spec.Configuration)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile feature gate config: %w", err))
-	}
-	globalconfig.ReconcileFeatureGateConfigStatus(featureGate, hcp.Spec.Configuration, &clusterVersion, r.versions["release"])
-	if err := r.client.Status().Update(ctx, featureGate); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile feature gate config status: %w", err))
-	}
-
 	networkConfig := globalconfig.NetworkConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, networkConfig, func() error {
-		globalconfig.ReconcileNetworkConfig(networkConfig, hcp)
+		if err := globalconfig.ReconcileNetworkConfig(networkConfig, hcp); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile network config: %w", err))
+		}
 		return nil
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile network config: %w", err))
+		errs = append(errs, fmt.Errorf("failed to create network config: %w", err))
 	}
 
 	// Copy proxy trustedCA to guest cluster.
@@ -649,11 +646,9 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile proxy config: %w", err))
 	}
 
-	icsp := globalconfig.ImageContentSourcePolicy()
-	if _, err := r.CreateOrUpdate(ctx, r.client, icsp, func() error {
-		return globalconfig.ReconcileImageContentSourcePolicy(icsp, hcp)
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile image content source policy: %w", err))
+	err := r.reconcileImageContentPolicyType(ctx, hcp)
+	if err != nil {
+		errs = append(errs, err)
 	}
 
 	installConfigCM := manifests.InstallConfigConfigMap()
@@ -820,7 +815,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 	p := ingress.NewIngressParams(hcp)
 	ingressController := manifests.IngressDefaultIngressController()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
-		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate)
+		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate, p.AWSNLB)
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
 	}
@@ -1077,14 +1072,13 @@ func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, h
 func (r *reconciler) deleteKubeadminPasswordHashSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	kubeadminPasswordHashSecret := manifests.KubeadminPasswordHashSecret()
 	if err := r.client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordHashSecret), kubeadminPasswordHashSecret); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
+		if !apierrors.IsNotFound(err) {
+			return err
 		}
-		return err
-	}
-
-	if err := r.client.Delete(ctx, kubeadminPasswordHashSecret); err != nil {
-		return err
+	} else {
+		if err := r.client.Delete(ctx, kubeadminPasswordHashSecret); err != nil {
+			return err
+		}
 	}
 
 	oauthDeployment := manifests.OAuthDeployment(hcp.Namespace)
@@ -1101,7 +1095,7 @@ func secretHash(data []byte) string {
 	return fmt.Sprintf("%x", md5.Sum(data))
 }
 
-func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane, oauthHost string) error {
+func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	sourceBundle := cpomanifests.OpenShiftOAuthMasterCABundle(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(sourceBundle), sourceBundle); err != nil {
 		return fmt.Errorf("cannot get oauth master ca bundle: %w", err)
@@ -1278,6 +1272,24 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile powervs storage cloud credentials secret %w", err))
 		}
+
+		var imageRegistryCredentials corev1.Secret
+		err = r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.PowerVS.ImageRegistryOperatorCloudCreds.Name}, &imageRegistryCredentials)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to get image registry operator cloud credentials secret %s from hcp namespace : %w", hcp.Spec.Platform.PowerVS.ImageRegistryOperatorCloudCreds.Name, err))
+			return errs
+		}
+
+		imageRegistryInstallerCloudCredentials := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "openshift-image-registry",
+				Name:      "installer-cloud-credentials",
+			},
+		}
+		err = createPowerVSSecret(&imageRegistryCredentials, imageRegistryInstallerCloudCredentials)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile powervs image registry cloud credentials secret %w", err))
+		}
 	}
 	return errs
 }
@@ -1286,6 +1298,18 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 	var errs []error
 
 	p := olm.NewOperatorLifecycleManagerParams(hcp)
+
+	// Check if the defaultSources are disabled
+	operatorHub := &configv1.OperatorHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub); err != nil {
+		if !apierrors.IsNotFound(err) {
+			errs = append(errs, fmt.Errorf("failed to get OperatorHub %s: %w", client.ObjectKeyFromObject(operatorHub).String(), err))
+		}
+	}
 
 	catalogs := []struct {
 		manifest  func() *operatorsv1alpha1.CatalogSource
@@ -1299,20 +1323,20 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 
 	for _, catalog := range catalogs {
 		cs := catalog.manifest()
-		if _, err := r.CreateOrUpdate(ctx, r.client, cs, func() error {
-			catalog.reconcile(cs, p)
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile catalog source %s/%s: %w", cs.Namespace, cs.Name, err))
+		if operatorHub.Spec.DisableAllDefaultSources {
+			if err := r.client.Delete(ctx, cs); err != nil {
+				if !apierrors.IsNotFound(err) {
+					errs = append(errs, fmt.Errorf("failed to delete catalogSource %s/%s: %w", cs.Namespace, cs.Name, err))
+				}
+			}
+		} else {
+			if _, err := r.CreateOrUpdate(ctx, r.client, cs, func() error {
+				catalog.reconcile(cs, p)
+				return nil
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile catalog source %s/%s: %w", cs.Namespace, cs.Name, err))
+			}
 		}
-	}
-
-	olmAlertRules := manifests.OLMAlertRules()
-	if _, err := r.CreateOrUpdate(ctx, r.client, olmAlertRules, func() error {
-		olm.ReconcileOLMAlertRules(olmAlertRules)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile olm alert rules: %w", err))
 	}
 
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
@@ -1550,7 +1574,7 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 	}
 
 	if remaining.Len() > 0 {
-		// If we are still waiting for resources to go away, ensure we are requeued in at most 30 secs
+		// If we are still waiting for resources to go away, ensure we are requeued in at most 30 secs,
 		// so we can at least update the timestamp on the condition.
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	} else {
@@ -1634,6 +1658,71 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	}
 
 	return remaining, errors.NewAggregate(errs)
+}
+
+func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	cpServices := &corev1.ServiceList{}
+	if err := r.cpClient.List(ctx, cpServices, client.InNamespace(r.hcpNamespace)); err != nil {
+		return fmt.Errorf("failed to list control plane services: %w", err)
+	}
+
+	// disallow all urls tageting services in the hcp namespace by default unless 'hypershift.openshift.io/allow-guest-webhooks' label is present.
+	disallowedUrls := make([]string, 0)
+	for _, svc := range cpServices.Items {
+		if _, exist := svc.Labels[hyperv1.AllowGuestWebhooksServiceLabel]; exist {
+			continue
+		}
+
+		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s:", svc.Name))
+		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s.%s.svc", svc.Name, svc.Namespace))
+		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s.%s.svc.cluster.local", svc.Name, svc.Namespace))
+	}
+
+	validatingWebhookConfigurations := &admissionregistrationv1.ValidatingWebhookConfigurationList{}
+	if err := r.client.List(ctx, validatingWebhookConfigurations); err != nil {
+		return fmt.Errorf("failed to list validatingWebhookConfigurations: %w", err)
+	}
+
+	errs := make([]error, 0)
+	for _, configuration := range validatingWebhookConfigurations.Items {
+		for _, webhook := range configuration.Webhooks {
+			if webhook.ClientConfig.URL != nil && !isAllowedWebhookUrl(disallowedUrls, *webhook.ClientConfig.URL) {
+				log.Info("deleting validating webhook configuration with a disallowed url", "webhook_name", configuration.Name, "disallowed_url", *webhook.ClientConfig.URL)
+				errs = append(errs, r.client.Delete(ctx, &configuration))
+				break
+			}
+		}
+	}
+
+	mutatingWebhookConfigurations := &admissionregistrationv1.MutatingWebhookConfigurationList{}
+	if err := r.client.List(ctx, mutatingWebhookConfigurations); err != nil {
+		errs = append(errs, fmt.Errorf("failed to list mutatingWebhookConfigurations: %w", err))
+		return errors.NewAggregate(errs)
+	}
+
+	for _, configuration := range mutatingWebhookConfigurations.Items {
+		for _, webhook := range configuration.Webhooks {
+			if webhook.ClientConfig.URL != nil && !isAllowedWebhookUrl(disallowedUrls, *webhook.ClientConfig.URL) {
+				log.Info("deleting mutating webhook configuration with a disallowed url", "webhook_name", configuration.Name, "disallowed_url", *webhook.ClientConfig.URL)
+				errs = append(errs, r.client.Delete(ctx, &configuration))
+				break
+			}
+		}
+	}
+
+	return errors.NewAggregate(errs)
+}
+
+func isAllowedWebhookUrl(disallowedUrls []string, url string) bool {
+	for i := range disallowedUrls {
+		if strings.Contains(url, disallowedUrls[i]) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (r *reconciler) ensureResourceCreationIsBlocked(ctx context.Context) error {
@@ -1824,6 +1913,10 @@ func (r *reconciler) ensureServiceLoadBalancersRemoved(ctx context.Context) (boo
 		if _, hasAnnotation := svc.Annotations["ingresscontroller.operator.openshift.io/owning-ingresscontroller"]; hasAnnotation {
 			return false
 		}
+		// The router-default from openshift-ingress namespace it has the same but as a label
+		if _, hasLabel := svc.Labels["ingresscontroller.operator.openshift.io/owning-ingresscontroller"]; hasLabel {
+			return false
+		}
 		return true
 	}, false)
 	if err != nil {
@@ -1957,7 +2050,7 @@ func (r *reconciler) isClusterVersionUpdated(ctx context.Context, version string
 	return true
 }
 
-func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) []error {
+func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedControlPlane) []error {
 	var errs []error
 
 	snapshotController := manifests.CSISnapshotController()
@@ -1986,4 +2079,26 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 		}
 	}
 	return errs
+}
+
+// reconcileImageContentPolicyType deletes any existing ICSP since IDMS should be used for release versions >= 4.13,
+// then reconciles the ImageContentSources into an IDMS instance.
+func (r *reconciler) reconcileImageContentPolicyType(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	icsp := globalconfig.ImageContentSourcePolicy()
+
+	// Delete any current ICSP
+	_, err := util.DeleteIfNeeded(ctx, r.client, icsp)
+	if err != nil {
+		return fmt.Errorf("failed to delete image content source policy configuration configmap: %w", err)
+	}
+
+	// Next, reconcile the ImageDigestMirrorSet
+	idms := globalconfig.ImageDigestMirrorSet()
+	if _, err = r.CreateOrUpdate(ctx, r.client, idms, func() error {
+		return globalconfig.ReconcileImageDigestMirrors(idms, hcp)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile image digest mirror set: %w", err)
+	}
+
+	return nil
 }

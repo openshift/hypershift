@@ -25,7 +25,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	opts.AWSPlatform = core.AWSPlatformOptions{
 		AWSCredentialsFile: "",
 		Region:             "us-east-1",
-		InstanceType:       "m5.large",
+		InstanceType:       "",
 		RootVolumeType:     "gp3",
 		RootVolumeSize:     120,
 		RootVolumeIOPS:     0,
@@ -56,22 +56,12 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if len(opts.CredentialSecretName) == 0 {
-			if err := isRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
-				return err
-			}
-			if err := isRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
-				return err
-			}
-		} else {
-			//Check the secret exists now, otherwise stop.
-			opts.Log.Info("Retreiving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
-			if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
-				return err
-			}
+		err := ValidateCreateCredentialInfo(opts)
+		if err != nil {
+			return err
 		}
 
-		if err := CreateCluster(ctx, opts); err != nil {
+		if err = CreateCluster(ctx, opts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
 			return err
 		}
@@ -195,6 +185,19 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		tags = append(tags, hyperv1.AWSResourceTag{Key: k, Value: v})
 	}
 
+	var instanceType string
+	if opts.AWSPlatform.InstanceType != "" {
+		instanceType = opts.AWSPlatform.InstanceType
+	} else {
+		// Aligning with AWS IPI instance type defaults
+		switch opts.Arch {
+		case hyperv1.ArchitectureAMD64:
+			instanceType = "m5.large"
+		case hyperv1.ArchitectureARM64:
+			instanceType = "m6g.large"
+		}
+	}
+
 	exampleOptions.BaseDomain = infra.BaseDomain
 	exampleOptions.BaseDomainPrefix = infra.BaseDomainPrefix
 	exampleOptions.MachineCIDR = infra.MachineCIDR
@@ -220,7 +223,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		VPCID:                   infra.VPCID,
 		SecurityGroupID:         infra.SecurityGroupID,
 		InstanceProfile:         iamInfo.ProfileName,
-		InstanceType:            opts.AWSPlatform.InstanceType,
+		InstanceType:            instanceType,
 		Roles:                   iamInfo.Roles,
 		KMSProviderRoleARN:      iamInfo.KMSProviderRoleARN,
 		KMSKeyARN:               iamInfo.KMSKeyARN,
@@ -236,9 +239,30 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 }
 
 // IsRequiredOption returns a cobra style error message when the flag value is empty
-func isRequiredOption(flag string, value string) error {
+func IsRequiredOption(flag string, value string) error {
 	if len(value) == 0 {
 		return fmt.Errorf("required flag(s) \"%s\" not set", flag)
 	}
+	return nil
+}
+
+// ValidateCreateCredentialInfo validates if the credentials secret name is empty that the aws-creds and pull-secret flags are
+// not empty; validates if the credentials secret is not empty, that it can be retrieved
+func ValidateCreateCredentialInfo(opts *core.CreateOptions) error {
+	if len(opts.CredentialSecretName) == 0 {
+		if err := IsRequiredOption("aws-creds", opts.AWSPlatform.AWSCredentialsFile); err != nil {
+			return err
+		}
+		if err := IsRequiredOption("pull-secret", opts.PullSecretFile); err != nil {
+			return err
+		}
+	} else {
+		//Check the secret exists now, otherwise stop.
+		opts.Log.Info("Retrieving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
+		if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

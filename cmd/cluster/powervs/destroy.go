@@ -35,7 +35,16 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.Region, "region", opts.PowerVSPlatform.Region, "IBM Cloud region. Default is us-south")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.Zone, "zone", opts.PowerVSPlatform.Zone, "IBM Cloud zone. Default is us-south")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.VPCRegion, "vpc-region", opts.PowerVSPlatform.VPCRegion, "IBM Cloud VPC Region for VPC resources. Default is us-south")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.VPC, "vpc", "", "IBM Cloud VPC Name. Use this flag to reuse an existing VPC resource for cluster's infra")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.CloudInstanceID, "cloud-instance-id", "", "IBM Cloud PowerVS Service Instance ID. Use this flag to reuse an existing PowerVS Service Instance resource for cluster's infra")
+	cmd.Flags().StringVar(&opts.PowerVSPlatform.CloudConnection, "cloud-connection", "", "Cloud Connection in given zone. Use this flag to reuse an existing Cloud Connection resource for cluster's infra")
 	cmd.Flags().BoolVar(&opts.PowerVSPlatform.Debug, "debug", opts.PowerVSPlatform.Debug, "Enabling this will print PowerVS API Request & Response logs")
+
+	// these options are only for development and testing purpose,
+	// can use these to reuse the existing resources, so hiding it.
+	cmd.Flags().MarkHidden("cloud-instance-id")
+	cmd.Flags().MarkHidden("cloud-connection")
+	cmd.Flags().MarkHidden("vpc")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -101,16 +110,19 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
 	return (&powervsinfra.DestroyInfraOptions{
-		Name:          o.Name,
-		Namespace:     o.Namespace,
-		InfraID:       o.InfraID,
-		BaseDomain:    o.PowerVSPlatform.BaseDomain,
-		CISCRN:        o.PowerVSPlatform.CISCRN,
-		CISDomainID:   o.PowerVSPlatform.CISDomainID,
-		ResourceGroup: o.PowerVSPlatform.ResourceGroup,
-		Region:        o.PowerVSPlatform.Region,
-		Zone:          o.PowerVSPlatform.Zone,
-		VPCRegion:     o.PowerVSPlatform.VPCRegion,
-		Debug:         o.PowerVSPlatform.Debug,
+		Name:            o.Name,
+		Namespace:       o.Namespace,
+		InfraID:         o.InfraID,
+		BaseDomain:      o.PowerVSPlatform.BaseDomain,
+		CISCRN:          o.PowerVSPlatform.CISCRN,
+		CISDomainID:     o.PowerVSPlatform.CISDomainID,
+		ResourceGroup:   o.PowerVSPlatform.ResourceGroup,
+		Region:          o.PowerVSPlatform.Region,
+		Zone:            o.PowerVSPlatform.Zone,
+		VPCRegion:       o.PowerVSPlatform.VPCRegion,
+		VPC:             o.PowerVSPlatform.VPC,
+		CloudInstanceID: o.PowerVSPlatform.CloudInstanceID,
+		CloudConnection: o.PowerVSPlatform.CloudConnection,
+		Debug:           o.PowerVSPlatform.Debug,
 	}).Run(ctx)
 }

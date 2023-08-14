@@ -4,26 +4,27 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"sort"
+	"text/template"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/pointer"
 
+	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 )
 
 const (
-	metricsPort     = 1936
-	routerHTTPPort  = 8080
-	routerHTTPSPort = 8443
+	routerConfigKey     = "haproxy.cfg"
+	routerConfigHashKey = "hypershift.openshift.io/config-hash"
 )
 
 func hcpRouterLabels() map[string]string {
@@ -34,47 +35,21 @@ func hcpRouterLabels() map[string]string {
 
 func HCPRouterConfig(hcp *hyperv1.HostedControlPlane, setDefaultSecurityContext bool) config.DeploymentConfig {
 	cfg := config.DeploymentConfig{
+		AdditionalLabels: map[string]string{
+			config.NeedManagementKASAccessLabel: "true",
+		},
 		Resources: config.ResourcesSpec{
 			hcpRouterContainerMain().Name: {
 				Requests: corev1.ResourceList{
-					corev1.ResourceMemory: resource.MustParse("256Mi"),
-					corev1.ResourceCPU:    resource.MustParse("100m"),
+					corev1.ResourceMemory: resource.MustParse("40Mi"),
+					corev1.ResourceCPU:    resource.MustParse("50m"),
 				},
 			},
 		},
 	}
-	cfg.LivenessProbes = config.LivenessProbes{
-		hcpRouterContainerMain().Name: corev1.Probe{
-			FailureThreshold: 3,
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz",
-					Port:   intstr.FromInt(metricsPort),
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			PeriodSeconds:    10,
-			SuccessThreshold: 1,
-			TimeoutSeconds:   1,
-		},
-	}
-	cfg.ReadinessProbes = config.ReadinessProbes{
-		hcpRouterContainerMain().Name: corev1.Probe{
-			FailureThreshold: 3,
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz/ready",
-					Port:   intstr.FromInt(metricsPort),
-					Scheme: corev1.URISchemeHTTP,
-				},
-			},
-			PeriodSeconds:    10,
-			SuccessThreshold: 1,
-			TimeoutSeconds:   1,
-		},
-	}
+
 	cfg.Scheduling.PriorityClass = config.APICriticalPriorityClass
-	cfg.SetDefaults(hcp, hcpRouterLabels(), nil)
+	cfg.SetRequestServingDefaults(hcp, hcpRouterLabels(), nil)
 	cfg.SetRestartAnnotation(hcp.ObjectMeta)
 	cfg.SetDefaultSecurityContext = setDefaultSecurityContext
 	return cfg
@@ -82,19 +57,96 @@ func HCPRouterConfig(hcp *hyperv1.HostedControlPlane, setDefaultSecurityContext 
 
 const PrivateRouterImage = "haproxy-router"
 
-const (
-	routerTemplateConfigMapKey = "haproxy-config.template"
-	routerTemplateVolumeName   = "happroxy-config"
-)
+//go:embed router_config.template
+var routerConfigTemplateStr string
+var routerConfigTemplate *template.Template
 
-func ReconcileRouterTemplateConfigmap(cm *corev1.ConfigMap) {
+func init() {
+	var err error
+	routerConfigTemplate, err = template.New("router-config").Parse(routerConfigTemplateStr)
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
+type byRouteName []routev1.Route
+
+func (r byRouteName) Len() int           { return len(r) }
+func (r byRouteName) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
+func (r byRouteName) Less(i, j int) bool { return r[i].Name < r[j].Name }
+
+func generateRouterConfig(namespace string, kubeAPIPort int32, routeList *routev1.RouteList, nameServerIP string) (string, error) {
+	type backendDesc struct {
+		Name               string
+		HostName           string
+		DestinationService string
+		DestinationPort    int32
+	}
+	type templateParams struct {
+		HasKubeAPI   bool
+		Namespace    string
+		KubeAPIPort  int32
+		Backends     []backendDesc
+		NameServerIP string
+	}
+	p := templateParams{
+		Namespace:    namespace,
+		NameServerIP: nameServerIP,
+	}
+	sort.Sort(byRouteName(routeList.Items))
+	for _, route := range routeList.Items {
+		if _, hasHCPLabel := route.Labels[util.HCPRouteLabel]; !hasHCPLabel {
+			// If the hypershift.openshift.io/hosted-control-plane label is not present,
+			// then it means the route should be fulfilled by the management cluster's router.
+			continue
+		}
+		switch route.Name {
+		case manifests.KubeAPIServerInternalRoute("").Name,
+			manifests.KubeAPIServerExternalPublicRoute("").Name,
+			manifests.KubeAPIServerExternalPrivateRoute("").Name:
+			p.HasKubeAPI = true
+			continue
+		case ignitionserver.Route("").Name:
+			p.Backends = append(p.Backends, backendDesc{Name: "ignition", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: 443})
+		case manifests.KonnectivityServerRoute("").Name:
+			p.Backends = append(p.Backends, backendDesc{Name: "konnectivity", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: 8091})
+		case manifests.OauthServerExternalPrivateRoute("").Name:
+			p.Backends = append(p.Backends, backendDesc{Name: "oauth_private", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: 6443})
+		case manifests.OauthServerExternalPublicRoute("").Name:
+			p.Backends = append(p.Backends, backendDesc{Name: "oauth", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: 6443})
+		case manifests.OauthServerInternalRoute("").Name:
+			p.Backends = append(p.Backends, backendDesc{Name: "oauth_internal", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: 6443})
+		case manifests.OVNKubeSBDBRoute("").Name:
+			p.Backends = append(p.Backends, backendDesc{Name: "ovnkube_sbdb", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: route.Spec.Port.TargetPort.IntVal})
+		case manifests.MetricsForwarderRoute("").Name:
+			p.Backends = append(p.Backends, backendDesc{Name: "metrics_forwarder", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: route.Spec.Port.TargetPort.IntVal})
+		}
+	}
+	if p.HasKubeAPI {
+		p.KubeAPIPort = kubeAPIPort
+	}
+	out := &bytes.Buffer{}
+	if err := routerConfigTemplate.Execute(out, p); err != nil {
+		return "", fmt.Errorf("failed to generate router config: %w", err)
+	}
+	return out.String(), nil
+}
+
+func ReconcileRouterConfiguration(ownerRef config.OwnerRef, cm *corev1.ConfigMap, kubeAPIPort int32, routeList *routev1.RouteList, nameServerIP string) error {
+	ownerRef.ApplyTo(cm)
+
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	cm.Data[routerTemplateConfigMapKey] = string(bytes.Replace(routerTemplate, []byte(`<<namespace>>`), []byte(cm.Namespace), 1))
+	routerConfig, err := generateRouterConfig(cm.Namespace, kubeAPIPort, routeList, nameServerIP)
+	if err != nil {
+		return err
+	}
+	cm.Data[routerConfigKey] = routerConfig
+	return nil
 }
 
-func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, canonicalHostname string, exposeAPIServerThroughRouter bool, isPrivateOnly bool) error {
+func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, config *corev1.ConfigMap) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: hcpRouterLabels(),
@@ -102,20 +154,27 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, ownerRef config.Ow
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: hcpRouterLabels(),
+				Annotations: map[string]string{
+					routerConfigHashKey: util.ComputeHash(config.Data[routerConfigKey]),
+				},
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(hcpRouterContainerMain(), buildHCPRouterContainerMain(image, deployment.Namespace, canonicalHostname, exposeAPIServerThroughRouter, isPrivateOnly)),
+					util.BuildContainer(hcpRouterContainerMain(), buildHCPRouterContainerMain(image)),
 				},
-				ServiceAccountName: manifests.RouterServiceAccount("").Name,
-				Volumes:            nil,
+				Volumes: []corev1.Volume{
+					{
+						Name: "config",
+						VolumeSource: corev1.VolumeSource{
+							ConfigMap: &corev1.ConfigMapVolumeSource{
+								LocalObjectReference: corev1.LocalObjectReference{Name: manifests.RouterConfigurationConfigMap("").Name},
+							},
+						},
+					},
+				},
+				AutomountServiceAccountToken: pointer.Bool(false),
 			},
 		},
-	}
-	if exposeAPIServerThroughRouter {
-		deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
-			{Name: routerTemplateVolumeName, VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.RouterTemplateConfigMap("").Name}}}},
-		}
 	}
 
 	ownerRef.ApplyTo(deployment)
@@ -130,226 +189,44 @@ func hcpRouterContainerMain() *corev1.Container {
 	}
 }
 
-func buildHCPRouterContainerMain(image, namespace, canonicalHostname string, exposeAPIServerThroughRouter bool, isPrivateOnly bool) func(*corev1.Container) {
-	const haproxyTemplateMountPath = "/usr/local/haproxy/hypershift-template"
-	routeLabels := fmt.Sprintf("%s=%s", util.HCPRouteLabel, namespace)
-	if isPrivateOnly {
-		routeLabels = fmt.Sprintf("%s,%s=%s", routeLabels, util.InternalRouteLabel, "true")
-	}
+func buildHCPRouterContainerMain(image string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
-		c.Env = []corev1.EnvVar{
-			{
-				Name:  "RELOAD_INTERVAL",
-				Value: "5s",
-			},
-			{
-				Name:  "ROUTER_ALLOW_WILDCARD_ROUTES",
-				Value: "false",
-			},
-			{
-				Name:  "ROUTER_CIPHERS",
-				Value: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384",
-			},
-			{
-				Name:  "ROUTER_CIPHERSUITES",
-				Value: "TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256",
-			},
-			{
-				Name:  "ROUTER_DISABLE_HTTP2",
-				Value: "true",
-			},
-			{
-				Name:  "ROUTER_DISABLE_NAMESPACE_OWNERSHIP_CHECK",
-				Value: "true",
-			},
-			{
-				Name:  "ROUTER_LOAD_BALANCE_ALGORITHM",
-				Value: "leastconn",
-			},
-			{
-				Name:  "ROUTER_METRICS_TYPE",
-				Value: "haproxy",
-			},
-			{
-				Name:  "ROUTER_SERVICE_NAME",
-				Value: manifests.RouterPublicService("").Name,
-			},
-			{
-				Name:  "ROUTER_SERVICE_NAMESPACE",
-				Value: namespace,
-			},
-			{
-				Name:  "ROUTER_SET_FORWARDED_HEADERS",
-				Value: "append",
-			},
-			{
-				Name:  "ROUTER_TCP_BALANCE_SCHEME",
-				Value: "source",
-			},
-			{
-				Name:  "ROUTER_THREADS",
-				Value: "4",
-			},
-			{
-				Name:  "ROUTE_LABELS",
-				Value: routeLabels,
-			},
-			{
-				Name:  "SSL_MIN_VERSION",
-				Value: "TLSv1.2",
-			},
-			{
-				Name:  "ROUTER_SERVICE_HTTPS_PORT",
-				Value: fmt.Sprintf("%d", routerHTTPSPort),
-			},
-			{
-				Name:  "ROUTER_SERVICE_HTTP_PORT",
-				Value: fmt.Sprintf("%d", routerHTTPPort),
-			},
-			{
-				Name:  "STATS_PORT",
-				Value: fmt.Sprintf("%d", metricsPort),
-			},
-			{
-				Name:  "ROUTER_CANONICAL_HOSTNAME",
-				Value: canonicalHostname,
-			},
+		c.Command = []string{
+			"haproxy",
 		}
-
 		c.Image = image
 		c.Args = []string{
-			"--namespace", namespace,
+			"-f", "/usr/local/etc/haproxy",
 		}
-
-		if exposeAPIServerThroughRouter {
-			c.Args = append(c.Args, "--template="+haproxyTemplateMountPath+"/"+routerTemplateConfigMapKey)
-		}
-
-		c.StartupProbe = &corev1.Probe{
-			FailureThreshold: 120,
+		c.LivenessProbe = &corev1.Probe{
+			InitialDelaySeconds: 50,
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz/ready",
-					Port:   intstr.FromInt(metricsPort),
-					Scheme: corev1.URISchemeHTTP,
+					Path: "/haproxy_ready",
+					Port: intstr.FromInt(9444),
 				},
 			},
-			PeriodSeconds:    1,
-			SuccessThreshold: 1,
-			TimeoutSeconds:   1,
 		}
 		c.Ports = []corev1.ContainerPort{
 			{
-				ContainerPort: routerHTTPPort,
-				Name:          "http",
-				Protocol:      corev1.ProtocolTCP,
-			},
-			{
-				ContainerPort: routerHTTPSPort,
+				ContainerPort: 8443,
 				Name:          "https",
 				Protocol:      corev1.ProtocolTCP,
 			},
-			{
-				ContainerPort: metricsPort,
-				Name:          "metrics",
-				Protocol:      corev1.ProtocolTCP,
+		}
+		c.SecurityContext = &corev1.SecurityContext{
+			Capabilities: &corev1.Capabilities{
+				Add: []corev1.Capability{
+					"NET_BIND_SERVICE",
+				},
 			},
 		}
-
-		c.VolumeMounts = nil
-		if exposeAPIServerThroughRouter {
-			c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
-				Name:      routerTemplateVolumeName,
-				MountPath: haproxyTemplateMountPath,
-			})
-		}
-
-		// Needed for the router pods to work: https://github.com/openshift/cluster-ingress-operator/blob/649fe5dfe2c6f795651592a045be901b00a1f93a/assets/router/deployment.yaml#L22-L23
-		c.SecurityContext = &corev1.SecurityContext{AllowPrivilegeEscalation: utilpointer.Bool(true)}
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      "config",
+			MountPath: "/usr/local/etc/haproxy/haproxy.cfg",
+			SubPath:   "haproxy.cfg",
+		})
 	}
-}
-
-func ReconcileRouterRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(role)
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{""},
-			Resources: []string{
-				"endpoints",
-				"services",
-			},
-			Verbs: []string{
-				"list",
-				"watch",
-			},
-		},
-		{
-			APIGroups: []string{
-				"route.openshift.io",
-			},
-			Resources: []string{
-				"routes",
-			},
-			Verbs: []string{
-				"list",
-				"watch",
-			},
-		},
-		{
-			APIGroups: []string{
-				"route.openshift.io",
-			},
-			Resources: []string{
-				"routes/status",
-			},
-			Verbs: []string{
-				"update",
-			},
-		},
-		{
-			APIGroups: []string{
-				"discovery.k8s.io",
-			},
-			Resources: []string{
-				"endpointslices",
-			},
-			Verbs: []string{
-				"list",
-				"watch",
-			},
-		},
-		{
-			// Copied from https://github.com/openshift/cluster-ingress-operator/blob/649fe5dfe2c6f795651592a045be901b00a1f93a/manifests/00-cluster-role.yaml#L173-L181
-			// Needed to allow PrivilegeEscalation: true
-			APIGroups:     []string{"security.openshift.io"},
-			ResourceNames: []string{"hostnetwork"},
-			Resources:     []string{"securitycontextconstraints"},
-			Verbs:         []string{"use"},
-		},
-	}
-	return nil
-}
-
-func ReconcileRouterRoleBinding(rb *rbacv1.RoleBinding, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(rb)
-	rb.Subjects = []rbacv1.Subject{
-		{
-			Kind: "ServiceAccount",
-			Name: manifests.RouterServiceAccount("").Name,
-		},
-	}
-	rb.RoleRef = rbacv1.RoleRef{
-		APIGroup: rbacv1.SchemeGroupVersion.Group,
-		Kind:     "Role",
-		Name:     manifests.RouterRole("").Name,
-	}
-	return nil
-}
-
-func ReconcileRouterServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(sa)
-	util.EnsurePullSecret(sa, common.PullSecret("").Name)
-	return nil
 }
 
 func ReconcileRouterService(svc *corev1.Service, kasPort int32, internal, crossZoneLoadBalancingEnabled bool) error {
@@ -411,5 +288,37 @@ func ReconcileRouterService(svc *corev1.Service, kasPort int32, internal, crossZ
 	return nil
 }
 
-//go:embed router.template
-var routerTemplate []byte
+func ReconcileRouteStatus(route *routev1.Route, externalHostname, internalHostname string) {
+	var canonicalHostName string
+	if _, isInternal := route.Labels[util.InternalRouteLabel]; isInternal {
+		canonicalHostName = internalHostname
+	} else {
+		canonicalHostName = externalHostname
+	}
+
+	// Skip reconciliation if ingress status.ingress has already been populated and canonical hostname is the same
+	if len(route.Status.Ingress) > 0 && route.Status.Ingress[0].RouterCanonicalHostname == canonicalHostName {
+		return
+	}
+
+	ingress := routev1.RouteIngress{
+		Host:                    route.Spec.Host,
+		RouterName:              "router",
+		WildcardPolicy:          routev1.WildcardPolicyNone,
+		RouterCanonicalHostname: canonicalHostName,
+	}
+
+	if len(route.Status.Ingress) > 0 && len(route.Status.Ingress[0].Conditions) > 0 {
+		ingress.Conditions = route.Status.Ingress[0].Conditions
+	} else {
+		now := metav1.Now()
+		ingress.Conditions = []routev1.RouteIngressCondition{
+			{
+				Type:               routev1.RouteAdmitted,
+				LastTransitionTime: &now,
+				Status:             corev1.ConditionTrue,
+			},
+		}
+	}
+	route.Status.Ingress = []routev1.RouteIngress{ingress}
+}

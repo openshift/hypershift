@@ -52,6 +52,7 @@ func NewNodePoolMachineconfigRolloutTest(ctx context.Context, mgmtClient crclien
 }
 
 func (mc *NodePoolMachineconfigRolloutTest) Setup(t *testing.T) {
+	t.Log("Starting test NodePoolMachineconfigRolloutTest")
 }
 
 func (mc *NodePoolMachineconfigRolloutTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
@@ -138,8 +139,13 @@ func (mc *NodePoolMachineconfigRolloutTest) Run(t *testing.T, nodePool hyperv1.N
 		t.Fatalf("failed to create %s DaemonSet in guestcluster: %v", ds.Name, err)
 	}
 
+	timeout := time.Duration(15 * time.Minute)
+	if np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		timeout = time.Duration(25 * time.Minute)
+	}
+
 	t.Logf("waiting for rollout of updated nodepools")
-	err = wait.PollImmediateWithContext(ctx, 10*time.Second, 15*time.Minute, func(ctx context.Context) (bool, error) {
+	err = wait.PollImmediateWithContext(ctx, 10*time.Second, timeout, func(ctx context.Context) (bool, error) {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}

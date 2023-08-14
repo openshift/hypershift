@@ -14,7 +14,6 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -114,10 +113,10 @@ func findTagReference(tags []imagev1.TagReference, name string) *imagev1.TagRefe
 }
 
 var CatalogToImage map[string]string = map[string]string{
-	"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.12",
-	"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.12",
-	"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.12",
-	"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.12",
+	"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.14",
+	"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.14",
+	"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.14",
+	"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.14",
 }
 
 func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef) error {
@@ -163,29 +162,6 @@ func generateModularDailyCronSchedule(input []byte) string {
 	m := mi.Mod(a, big.NewInt(60))
 	h := hi.Mod(a, big.NewInt(24))
 	return fmt.Sprintf("%d %d * * *", m.Int64(), h.Int64())
-}
-
-var (
-	catalogRolloutRole        = assets.MustRole(content.ReadFile, "assets/catalog-rollout.role.yaml")
-	catalogRolloutRoleBinding = assets.MustRoleBinding(content.ReadFile, "assets/catalog-rollout.rolebinding.yaml")
-)
-
-func ReconcileCatalogRolloutServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(sa)
-	return nil
-}
-
-func ReconcileCatalogRolloutRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(role)
-	role.Rules = catalogRolloutRole.DeepCopy().Rules
-	return nil
-}
-
-func ReconcileCatalogRolloutRoleBinding(roleBinding *rbacv1.RoleBinding, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(roleBinding)
-	roleBinding.RoleRef = catalogRolloutRoleBinding.DeepCopy().RoleRef
-	roleBinding.Subjects = catalogRolloutRoleBinding.DeepCopy().Subjects
-	return nil
 }
 
 func ReconcileCatalogServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef config.OwnerRef, clusterID string, metricsSet metrics.MetricsSet) error {

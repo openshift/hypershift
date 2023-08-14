@@ -554,9 +554,9 @@ EOF
 
 #### Step 2 - Get the MetalLB Operator Configured
 
-We will create an `IPAddressPool` with a single IP address. This IP address must be on the same subnet as the network used by the cluster nodes.
-
-
+We will create an `IPAddressPool` with a single IP address and L2Advertisement to advertise the LoadBalancer IPs provided by the `IPAddressPool` via L2. 
+Since layer 2 mode relies on ARP and NDP, the IP address must be on the same subnet as the network used by the cluster nodes in order for the MetalLB to work.
+more information about metalLB configuration options is available [here](https://metallb.universe.tf/configuration/).
 > **WARN:** Change `INGRESS_IP` env var to match your environments addressing.
 
 ~~~sh
@@ -573,6 +573,13 @@ spec:
   autoAssign: false
   addresses:
     - ${INGRESS_IP}-${INGRESS_IP}
+---
+
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata:
+  name: ingress-public-ip
+  namespace: metallb
 EOF
 ~~~
 

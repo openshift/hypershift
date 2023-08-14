@@ -16,26 +16,35 @@ func TestDefaultNetworkType(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "Already configured, no change",
-			opts:     &CreateOptions{NetworkType: "foo"},
+			name: "Already configured, no change",
+			opts: &CreateOptions{
+				NetworkType:  "foo",
+				ReleaseImage: "4.11.0",
+			},
 			expected: "foo",
 		},
 		{
-			name:     "4.10, SDN",
-			opts:     &CreateOptions{},
+			name: "4.10, SDN",
+			opts: &CreateOptions{
+				ReleaseImage: "4.10.0",
+			},
 			provider: &fake.FakeReleaseProvider{Version: "4.10.0"},
 			expected: "OpenShiftSDN",
 		},
 		{
-			name:     "4.11, ovn-k",
-			opts:     &CreateOptions{},
+			name: "4.11, ovn-k",
+			opts: &CreateOptions{
+				ReleaseImage: "4.11.0",
+			},
 			provider: &fake.FakeReleaseProvider{Version: "4.11.0"},
 			expected: "OVNKubernetes",
 		},
 		{
-			name:     "4.12, ovn-k",
-			opts:     &CreateOptions{},
-			provider: &fake.FakeReleaseProvider{Version: "4.11.0"},
+			name: "4.12, ovn-k",
+			opts: &CreateOptions{
+				ReleaseImage: "4.12.0",
+			},
+			provider: &fake.FakeReleaseProvider{Version: "4.12.0"},
 			expected: "OVNKubernetes",
 		},
 	}
