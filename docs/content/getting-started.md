@@ -117,6 +117,8 @@ hypershift create cluster aws \
     The cluster name (`--name`) _must be unique within the base domain_ to
     avoid unexpected and conflicting cluster management behavior.
 
+    The cluster name must also adhere to the [RFC1123 standard](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
+
 !!! note
 
     A default NodePool will be created for the cluster with 3 replicas per the

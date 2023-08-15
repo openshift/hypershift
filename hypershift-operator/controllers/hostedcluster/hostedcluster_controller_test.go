@@ -1022,35 +1022,47 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 	}{
 		{
 			name: "Cluster uses route but not supported, error",
-			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
-				Services: []hyperv1.ServicePublishingStrategyMapping{
-					{ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.Route,
-					}},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
 				},
-			}},
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type: hyperv1.Route,
+						}},
+					},
+				}},
 			managementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
 			expectedResult:                errors.New(`cluster does not support Routes, but service "" is exposed via a Route`),
 		},
 		{
 			name: "Cluster uses routes and supported, success",
-			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
-				Services: []hyperv1.ServicePublishingStrategyMapping{
-					{ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-						Type: hyperv1.Route,
-					}},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
 				},
-			}},
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type: hyperv1.Route,
+						}},
+					},
+				}},
 			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		},
 		{
 			name: "Azurecluster with incomplete credentials secret, error",
-			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AzurePlatform,
-				Azure: &hyperv1.AzurePlatformSpec{
-					Credentials: corev1.LocalObjectReference{Name: "creds"},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
 				},
-			}}},
+				Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						Credentials: corev1.LocalObjectReference{Name: "creds"},
+					},
+				}}},
 			other: []crclient.Object{
 				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "creds"}},
 			},
@@ -1058,12 +1070,16 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 		},
 		{
 			name: "Azurecluster with complete credentials secret, success",
-			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AzurePlatform,
-				Azure: &hyperv1.AzurePlatformSpec{
-					Credentials: corev1.LocalObjectReference{Name: "creds"},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
 				},
-			}}},
+				Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						Credentials: corev1.LocalObjectReference{Name: "creds"},
+					},
+				}}},
 			other: []crclient.Object{
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{Name: "creds"},
@@ -1078,14 +1094,31 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 		},
 		{
 			name: "invalid cluster uuid",
-			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
-				ClusterID: "foobar",
-			}},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "foobar",
+				}},
 			expectedResult: errors.New(`cannot parse cluster ID "foobar": invalid UUID length: 6`),
+		},
+		{
+			name: "invalid cluster name",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster-4.14",
+				},
+				Spec: hyperv1.HostedClusterSpec{},
+			},
+			expectedResult: errors.New(`hostedcluster name failed RFC1123 validation: a lowercase RFC 1123 label must consist of lower case alphanumeric characters or '-', and must start and end with an alphanumeric character (e.g. 'my-name',  or '123-abc', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?')`),
 		},
 		{
 			name: "Setting network CIDRs overlapped, not allowed",
 			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
 				Spec: hyperv1.HostedClusterSpec{
 					Networking: hyperv1.ClusterNetworking{
 						ServiceNetwork: serviceNet,
@@ -1097,24 +1130,28 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 		},
 		{
 			name: "multiple published services use the same hostname, error",
-			hostedCluster: &hyperv1.HostedCluster{Spec: hyperv1.HostedClusterSpec{
-				Services: []hyperv1.ServicePublishingStrategyMapping{
-					{
-						Service: hyperv1.APIServer,
-						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-							Type:  hyperv1.Route,
-							Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
-						},
-					},
-					{
-						Service: hyperv1.OAuthServer,
-						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-							Type:  hyperv1.Route,
-							Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
-						},
-					},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
 				},
-			}},
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:  hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+							},
+						},
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type:  hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+							},
+						},
+					},
+				}},
 			expectedResult:                errors.New(`service type OAuthServer can't be published with the same hostname api.example.com as service type APIServer`),
 			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		},
