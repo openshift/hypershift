@@ -303,8 +303,6 @@ type HostedClusterSpec struct {
 	// PullSecret references a pull secret to be injected into the container
 	// runtime of all cluster nodes. The secret must have a key named
 	// ".dockerconfigjson" whose value is the pull secret JSON.
-	//
-	// +immutable
 	PullSecret corev1.LocalObjectReference `json:"pullSecret"`
 
 	// SSHKey references an SSH key to be injected into all cluster node sshd
