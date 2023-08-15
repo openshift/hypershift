@@ -165,6 +165,7 @@ func filterMutableHostedClusterSpecFields(spec *hyperv1.HostedClusterSpec) {
 	spec.AdditionalTrustBundle = nil
 	spec.SecretEncryption = nil
 	spec.PausedUntil = nil
+	spec.PullSecret.Name = ""
 	for i, svc := range spec.Services {
 		if svc.Type == hyperv1.NodePort && svc.NodePort != nil {
 			spec.Services[i].NodePort.Address = ""
