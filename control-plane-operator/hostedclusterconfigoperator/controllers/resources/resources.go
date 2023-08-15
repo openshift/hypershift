@@ -1675,7 +1675,7 @@ func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) e
 			continue
 		}
 
-		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s:", svc.Name))
+		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s", svc.Name))
 		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s.%s.svc", svc.Name, svc.Namespace))
 		disallowedUrls = append(disallowedUrls, fmt.Sprintf("https://%s.%s.svc.cluster.local", svc.Name, svc.Namespace))
 	}
