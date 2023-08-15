@@ -26,6 +26,11 @@ type v1alpha1Wrapper struct {
 	innerClient crclient.Client
 }
 
+// SubResource implements client.Client.
+func (w *v1alpha1Wrapper) SubResource(subResource string) crclient.SubResourceClient {
+	return w.innerClient.SubResource(subResource)
+}
+
 func (w *v1alpha1Wrapper) Scheme() *runtime.Scheme {
 	return w.innerClient.Scheme()
 }

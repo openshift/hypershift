@@ -2,6 +2,7 @@ package nodepool
 
 import (
 	"fmt"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	v1 "k8s.io/api/core/v1"
@@ -101,7 +102,7 @@ func reconcileIBMPowerVSImage(ibmPowerVSImage *capipowervs.IBMPowerVSImage, hclu
 	if ibmPowerVSImage.Annotations == nil {
 		ibmPowerVSImage.Annotations = make(map[string]string)
 	}
-	ibmPowerVSImage.Annotations[capiv1.ClusterLabelName] = infraID
+	ibmPowerVSImage.Annotations[capiv1.ClusterNameLabel] = infraID
 
 	ibmPowerVSImage.Spec = capipowervs.IBMPowerVSImageSpec{
 		ClusterName:       hcluster.Name,
