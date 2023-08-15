@@ -56,6 +56,7 @@ nav:
   - how-to/debug-nodes.md
   - how-to/metrics-sets.md
   - how-to/troubleshooting.md
+  - how-to/etcd-recovery.md
   - 'Automated Machine Management':
     - how-to/automated-machine-management/index.md
     - how-to/automated-machine-management/scale-to-zero-dataplane.md
