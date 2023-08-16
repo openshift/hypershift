@@ -167,6 +167,8 @@ type HostedClusterReconciler struct {
 	overwriteReconcile   func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error)
 	now                  func() metav1.Time
 	KubevirtInfraClients kvinfra.KubevirtInfraClientMap
+
+	MonitoringDashboards bool
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -1383,6 +1385,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
+		}
+	}
+
+	// Reconcile the monitoring dashboard if configured
+	if r.MonitoringDashboards {
+		if err := r.reconcileMonitoringDashboard(ctx, createOrUpdate, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile monitoring dashboard: %w", err)
 		}
 	}
 
@@ -3306,6 +3315,22 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		}
 	}
 
+	if r.MonitoringDashboards {
+		// Delete the monitoring dashboard cm
+		monitoringDashboard := manifests.MonitoringDashboard(hc.Namespace, hc.Name)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(monitoringDashboard), monitoringDashboard); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return false, fmt.Errorf("failed to get monitoring dashboard: %w", err)
+			}
+		} else {
+			if err := r.Delete(ctx, monitoringDashboard); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return false, fmt.Errorf("failed to delete monitoring dashboard: %w", err)
+				}
+			}
+		}
+	}
+
 	// Cleanup Platform specifics.
 
 	if err = p.DeleteCredentials(ctx, r.Client, hc,
@@ -4406,6 +4431,52 @@ func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, roles
 		rolesRef.KubeCloudControllerARN = arn
 	}
 
+	return nil
+}
+
+type DashboardTemplateData struct {
+	Name                  string
+	Namespace             string
+	ID                    string
+	ControlPlaneNamespace string
+}
+
+func (r *HostedClusterReconciler) reconcileMonitoringDashboard(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hc *hyperv1.HostedCluster) error {
+	log := ctrl.LoggerFrom(ctx)
+	dashboardTemplate := manifests.MonitoringDashboardTemplate(r.OperatorNamespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(dashboardTemplate), dashboardTemplate); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("WARNING: monitoring dashboard template is not found. No dashboard will be generated")
+			return nil
+		}
+		return fmt.Errorf("failed to read monitoring dashboard template: %w", err)
+	}
+	dashboard := dashboardTemplate.Data["template"]
+	varsToReplace := map[string]string{
+		"__NAME__":                    hc.Name,
+		"__NAMESPACE__":               hc.Namespace,
+		"__CONTROL_PLANE_NAMESPACE__": manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name).Name,
+		"__CLUSTER_ID__":              hc.Spec.ClusterID,
+	}
+	for k, v := range varsToReplace {
+		dashboard = strings.ReplaceAll(dashboard, k, v)
+	}
+
+	dashboardCM := manifests.MonitoringDashboard(hc.Namespace, hc.Name)
+	if _, err := createOrUpdate(ctx, r.Client, dashboardCM, func() error {
+		if dashboardCM.Labels == nil {
+			dashboardCM.Labels = map[string]string{}
+		}
+		dashboardCM.Labels["console.openshift.io/dashboard"] = "true"
+
+		if dashboardCM.Data == nil {
+			dashboardCM.Data = map[string]string{}
+		}
+		dashboardCM.Data["hostedcluster-dashboard.json"] = dashboard
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile monitoring dashboard: %w", err)
+	}
 	return nil
 }
 

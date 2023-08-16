@@ -2,9 +2,10 @@ package manifests
 
 import (
 	"fmt"
+	"strings"
+
 	routev1 "github.com/openshift/api/route/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"strings"
 
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -76,4 +77,22 @@ func ReconcileKubevirtInfraTempRoute(route *routev1.Route) error {
 		},
 	}
 	return nil
+}
+
+func MonitoringDashboardTemplate(namespace string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "monitoring-dashboard-template",
+			Namespace: namespace,
+		},
+	}
+}
+
+func MonitoringDashboard(clusterNamespace, clusterName string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("hc-%s-%s", clusterNamespace, clusterName),
+			Namespace: "openshift-config-managed",
+		},
+	}
 }

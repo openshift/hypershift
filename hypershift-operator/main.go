@@ -286,6 +286,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
 
+	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
+
 	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
 		Client:                        mgr.GetClient(),
 		ManagementClusterCapabilities: mgmtClusterCaps,
@@ -298,6 +300,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		OperatorNamespace:             opts.Namespace,
 		SREConfigHash:                 sreConfigHash,
 		KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
+		MonitoringDashboards:          monitoringDashboards,
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
