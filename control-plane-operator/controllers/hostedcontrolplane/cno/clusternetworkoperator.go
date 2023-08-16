@@ -55,7 +55,6 @@ type Images struct {
 	CloudNetworkConfigController string
 	TokenMinter                  string
 	CLI                          string
-	UserCLI                      string
 	Socks5Proxy                  string
 }
 
@@ -100,7 +99,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 			CloudNetworkConfigController: releaseImageProvider.GetImage("cloud-network-config-controller"),
 			TokenMinter:                  releaseImageProvider.GetImage("token-minter"),
 			CLI:                          releaseImageProvider.GetImage("cli"),
-			UserCLI:                      userReleaseImageProvider.GetImage("cli"),
 			Socks5Proxy:                  releaseImageProvider.GetImage("socks5-proxy"),
 		},
 		ReleaseVersion:          version,
@@ -493,7 +491,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			{Name: "NETWORK_CHECK_TARGET_IMAGE", Value: params.Images.NetworkCheckTarget},
 			{Name: "CLOUD_NETWORK_CONFIG_CONTROLLER_IMAGE", Value: params.Images.CloudNetworkConfigController},
 			{Name: "TOKEN_MINTER_IMAGE", Value: params.Images.TokenMinter},
-			{Name: "CLI_IMAGE", Value: params.Images.UserCLI},
+			{Name: "CLI_IMAGE", Value: params.Images.CLI},
 			{Name: "SOCKS5_PROXY_IMAGE", Value: params.Images.Socks5Proxy},
 			{Name: "OPENSHIFT_RELEASE_IMAGE", Value: params.DeploymentConfig.AdditionalAnnotations[hyperv1.ReleaseImageAnnotation]},
 		}...),
