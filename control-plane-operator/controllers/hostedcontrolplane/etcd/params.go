@@ -19,8 +19,9 @@ const (
 )
 
 type EtcdParams struct {
-	EtcdImage string
-	CPOImage  string
+	EtcdImage         string
+	EtcdOperatorImage string
+	CPOImage          string
 
 	OwnerRef         config.OwnerRef `json:"ownerRef"`
 	DeploymentConfig config.DeploymentConfig
@@ -45,11 +46,12 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imagep
 	}
 
 	p := &EtcdParams{
-		EtcdImage:    releaseImageProvider.GetImage("etcd"),
-		CPOImage:     releaseImageProvider.GetImage("controlplane-operator"),
-		OwnerRef:     config.OwnerRefFrom(hcp),
-		Availability: hcp.Spec.ControllerAvailabilityPolicy,
-		IPv6:         !ipv4,
+		EtcdImage:         releaseImageProvider.GetImage("etcd"),
+		EtcdOperatorImage: releaseImageProvider.GetImage("cluster-etcd-operator"),
+		CPOImage:          releaseImageProvider.GetImage("controlplane-operator"),
+		OwnerRef:          config.OwnerRefFrom(hcp),
+		Availability:      hcp.Spec.ControllerAvailabilityPolicy,
+		IPv6:              !ipv4,
 	}
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		etcdContainer().Name: {
