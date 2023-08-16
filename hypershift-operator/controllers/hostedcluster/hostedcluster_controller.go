@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -3554,6 +3555,10 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err)
 	}
 
+	if err := r.validateHostedClusterName(hc); err != nil {
+		errs = append(errs, err)
+	}
+
 	// TODO(IBM): Revisit after fleets no longer use conflicting network CIDRs
 	if hc.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
 		if err := r.validateNetworks(hc); err != nil {
@@ -3753,6 +3758,16 @@ func (r *HostedClusterReconciler) validatePublishingStrategyMapping(hc *hyperv1.
 		hostnameServiceMap[hostname] = string(svc.Service)
 	}
 
+	return nil
+}
+
+// validateHostedClusterName validates a HostedCluster name confirms to RFC1123 convention
+// https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names
+func (r *HostedClusterReconciler) validateHostedClusterName(hc *hyperv1.HostedCluster) error {
+	errs := validation.IsDNS1123Label(hc.Name)
+	if len(errs) > 0 {
+		return fmt.Errorf("hostedcluster name failed RFC1123 validation: %s", strings.Join(errs[:], " "))
+	}
 	return nil
 }
 
