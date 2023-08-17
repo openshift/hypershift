@@ -530,18 +530,6 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 							EmptyDir: &corev1.EmptyDirVolumeSource{},
 						},
 					},
-					{
-						Name: "bootstrap-manifests",
-						VolumeSource: corev1.VolumeSource{
-							EmptyDir: &corev1.EmptyDirVolumeSource{},
-						},
-					},
-					{
-						Name: "manifests",
-						VolumeSource: corev1.VolumeSource{
-							EmptyDir: &corev1.EmptyDirVolumeSource{},
-						},
-					},
 				},
 				Containers: []corev1.Container{
 					{
@@ -610,14 +598,6 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 							{
 								Name:      "payloads",
 								MountPath: "/payloads",
-							},
-							{
-								Name:      "bootstrap-manifests",
-								MountPath: "/usr/share/bootkube/manifests/bootstrap-manifests",
-							},
-							{
-								Name:      "manifests",
-								MountPath: "/usr/share/bootkube/manifests/manifests",
 							},
 						},
 					},
