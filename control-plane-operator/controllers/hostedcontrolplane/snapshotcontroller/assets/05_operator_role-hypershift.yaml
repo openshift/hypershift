@@ -68,6 +68,13 @@ rules:
   - patch
   - update
 - apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - list
+  - watch
+- apiGroups:
   - hypershift.openshift.io
   resources:
   - hostedcontrolplanes
