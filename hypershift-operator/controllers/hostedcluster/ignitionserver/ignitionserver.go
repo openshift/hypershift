@@ -487,7 +487,9 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	// it got also silently included in MatchLabels. This made any additional additionalLabel to break reconciliation because MatchLabels is an immutable field.
 	// So now we leave Selector.MatchLabels if it has something already and use a different var from .Labels so the former is not impacted by additionalLabels changes.
 	selectorLabels := ignitionServerLabels
+	isSelectorSet := false
 	if deployment.Spec.Selector != nil && deployment.Spec.Selector.MatchLabels != nil {
+		isSelectorSet = true
 		selectorLabels = deployment.Spec.Selector.MatchLabels
 	}
 
@@ -632,15 +634,16 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 		}
 	}
 
-	deploymentConfig := config.DeploymentConfig{
-		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
-		},
-	}
+	deploymentConfig := config.DeploymentConfig{}
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.SetDefaults(hcp, ignitionServerLabels, nil)
 	deploymentConfig.ApplyTo(deployment)
+	// Intentionally syncing selector matchLabels and pod template Labels
+	// to preserve existing 4.9 and 4.10 reconciliation behavior.
+	if !isSelectorSet {
+		deployment.Spec.Selector.MatchLabels = deployment.Spec.Template.ObjectMeta.Labels
+	}
 
 	return nil
 }
