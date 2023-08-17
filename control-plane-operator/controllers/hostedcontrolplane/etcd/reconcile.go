@@ -54,6 +54,12 @@ func etcdMetricsContainer() *corev1.Container {
 	}
 }
 
+func etcdHealthzContainer() *corev1.Container {
+	return &corev1.Container{
+		Name: "healthz",
+	}
+}
+
 //go:embed etcd-init.sh
 var etcdInitScript string
 
@@ -87,6 +93,7 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 	ss.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(etcdContainer(), buildEtcdContainer(p, ss.Namespace)),
 		util.BuildContainer(etcdMetricsContainer(), buildEtcdMetricsContainer(p, ss.Namespace)),
+		util.BuildContainer(etcdHealthzContainer(), buildEtcdHealthzContainer(p, ss.Namespace)),
 	}
 
 	ss.Spec.Template.Spec.InitContainers = []corev1.Container{
@@ -394,16 +401,89 @@ fi
 				Protocol:      corev1.ProtocolTCP,
 			},
 		}
-		c.ReadinessProbe = &corev1.Probe{
+		c.LivenessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
-				Exec: &corev1.ExecAction{
-					Command: []string{"/bin/sh", "-c",
-						"/usr/bin/etcdctl --cacert /etc/etcd/tls/etcd-ca/ca.crt --cert /etc/etcd/tls/client/etcd-client.crt --key /etc/etcd/tls/client/etcd-client.key --endpoints=localhost:2379 endpoint health"},
+				HTTPGet: &corev1.HTTPGetAction{
+					Port:   intstr.FromInt(9980),
+					Path:   "healthz",
+					Scheme: corev1.URISchemeHTTPS,
 				},
 			},
-			InitialDelaySeconds: 5,
-			PeriodSeconds:       5,
-			FailureThreshold:    6,
+			TimeoutSeconds:   30,
+			FailureThreshold: 5,
+			PeriodSeconds:    5,
+			SuccessThreshold: 1,
+		}
+		c.ReadinessProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Port:   intstr.FromInt(9980),
+					Path:   "readyz",
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+			TimeoutSeconds:   30,
+			FailureThreshold: 5,
+			PeriodSeconds:    5,
+			SuccessThreshold: 1,
+		}
+		c.StartupProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Port:   intstr.FromInt(9980),
+					Path:   "readyz",
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+			InitialDelaySeconds: 10,
+			TimeoutSeconds:      10,
+			PeriodSeconds:       10,
+			SuccessThreshold:    1,
+			FailureThreshold:    18,
+		}
+	}
+}
+
+func buildEtcdHealthzContainer(p *EtcdParams, namespace string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = p.EtcdOperatorImage
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.Command = []string{"cluster-etcd-operator"}
+		c.Args = []string{"readyz",
+			"--target=https://localhost:2379",
+			"--listen-port=9980",
+			"--serving-cert-file=/etc/etcd/tls/server/server.crt",
+			"--serving-key-file=/etc/etcd/tls/server/server.key",
+			"--client-cert-file=/etc/etcd/tls/client/etcd-client.crt",
+			"--client-key-file=/etc/etcd/tls/client/etcd-client.key",
+			"--client-cacert-file=/etc/etcd/tls/etcd-ca/ca.crt",
+		}
+		c.VolumeMounts = []corev1.VolumeMount{
+			{
+				Name:      "server-tls",
+				MountPath: "/etc/etcd/tls/server",
+			},
+			{
+				Name:      "client-tls",
+				MountPath: "/etc/etcd/tls/client",
+			},
+			{
+				Name:      "etcd-ca",
+				MountPath: "/etc/etcd/tls/etcd-ca",
+			},
+		}
+		c.Ports = []corev1.ContainerPort{
+			{
+				Name:          "healthz",
+				ContainerPort: 9980,
+				Protocol:      corev1.ProtocolTCP,
+			},
+		}
+		c.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+			},
 		}
 	}
 }
