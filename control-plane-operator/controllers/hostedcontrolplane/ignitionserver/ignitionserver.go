@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -16,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -188,6 +190,52 @@ func ReconcileIgnitionServer(ctx context.Context,
 	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
 		servingCertSecretName = manifests.IgnitionServerCertSecret("").Name
 	}
+
+	var (
+		ICSFound    bool
+		sourceRef   reference.DockerImageReference
+		mirrorImage string
+	)
+
+	if openShiftRegistryOverrides != "=" && len(openShiftRegistryOverrides) > 0 {
+		var err error
+		// Ignition server cannot handle ImageContentSourcePolicies or ImageDigestMachineSet, so we need to
+		// fill the registryOverrides in the case of disconnected environments
+		mirrorImage = lookupDisconnectedRegistry(ctx, openShiftRegistryOverrides)
+		sourceRef, err = reference.Parse(mirrorImage)
+		if err != nil {
+			return fmt.Errorf("failed to parse private registry hosted control plane image reference %q: %w", mirrorImage, err)
+		}
+
+		if len(sourceRef.String()) > 0 {
+			ICSFound = true
+		}
+	}
+
+	if ICSFound {
+		privateRegistry := sourceRef.Registry
+
+		if !strings.HasPrefix(componentImages["machine-config-operator"], privateRegistry) {
+			ocpReleaseMcoImage := componentImages["machine-config-operator"]
+			mcoSha, err := reference.Parse(ocpReleaseMcoImage)
+			if err != nil {
+				return fmt.Errorf("failed to parse machine-config-operator image reference %q: %w", ocpReleaseMcoImage, err)
+			}
+			registryOverrides[ocpReleaseMcoImage] = fmt.Sprintf("%s@%s", mirrorImage, mcoSha.ID)
+		}
+
+		if !strings.HasPrefix(componentImages["cluster-config-operator"], privateRegistry) {
+			ocpReleaseCCOImage := componentImages["cluster-config-operator"]
+			ccoSha, err := reference.Parse(ocpReleaseCCOImage)
+			if err != nil {
+				return fmt.Errorf("failed to parse cluster-config-operator image reference %s: %w", ocpReleaseCCOImage, err)
+			}
+			registryOverrides[ocpReleaseCCOImage] = fmt.Sprintf("%s@%s", mirrorImage, ccoSha.ID)
+		}
+
+		delete(registryOverrides, "")
+	}
+
 	ignitionServerDeployment := ignitionserver.Deployment(controlPlaneNamespace)
 	if result, err := createOrUpdate(ctx, c, ignitionServerDeployment, func() error {
 		return reconcileDeployment(ignitionServerDeployment,
@@ -842,4 +890,20 @@ EOF
 cp /tmp/manifests/99_feature-gate.yaml %[1]s/99_feature-gate.yaml
 `
 	return fmt.Sprintf(script, workDir, featureGateYAML)
+}
+
+func lookupDisconnectedRegistry(ctx context.Context, strOcpOverrides string) string {
+	ocpOverrides := strings.Split(strOcpOverrides, ",")
+	for _, entry := range ocpOverrides {
+		sourceImage := strings.Split(entry, "=")[0]
+		mirrorImage := strings.Split(entry, "=")[1]
+
+		if strings.Contains(sourceImage, "openshift-release-dev") || strings.Contains(sourceImage, "ocp/release") {
+			// Production releases: 'openshift-release-dev'
+			// Nightly releases: 'ocp/release'
+			return mirrorImage
+		}
+	}
+
+	return ""
 }
