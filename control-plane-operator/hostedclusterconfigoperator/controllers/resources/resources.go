@@ -151,26 +151,29 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		return fmt.Errorf("failed to create kubevirt infra uncached client: %w", err)
 	}
 
-	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: &reconciler{
-		client:                    opts.Manager.GetClient(),
-		uncachedClient:            uncachedClient,
-		CreateOrUpdateProvider:    opts.TargetCreateOrUpdateProvider,
-		platformType:              opts.PlatformType,
-		rootCA:                    opts.InitialCA,
-		clusterSignerCA:           opts.ClusterSignerCA,
-		cpClient:                  opts.CPCluster.GetClient(),
-		kubevirtInfraClient:       kubevirtInfraClient,
-		hcpName:                   opts.HCPName,
-		hcpNamespace:              opts.Namespace,
-		releaseProvider:           opts.ReleaseProvider,
-		konnectivityServerAddress: opts.KonnectivityAddress,
-		konnectivityServerPort:    opts.KonnectivityPort,
-		oauthAddress:              opts.OAuthAddress,
-		oauthPort:                 opts.OAuthPort,
-		versions:                  opts.Versions,
-		operateOnReleaseImage:     opts.OperateOnReleaseImage,
-		apiServerPort:             apiServerPort,
-	}})
+	c, err := controller.New(ControllerName, opts.Manager, controller.Options{
+		Reconciler: &reconciler{
+			client:                    opts.Manager.GetClient(),
+			uncachedClient:            uncachedClient,
+			CreateOrUpdateProvider:    opts.TargetCreateOrUpdateProvider,
+			platformType:              opts.PlatformType,
+			rootCA:                    opts.InitialCA,
+			clusterSignerCA:           opts.ClusterSignerCA,
+			cpClient:                  opts.CPCluster.GetClient(),
+			kubevirtInfraClient:       kubevirtInfraClient,
+			hcpName:                   opts.HCPName,
+			hcpNamespace:              opts.Namespace,
+			releaseProvider:           opts.ReleaseProvider,
+			konnectivityServerAddress: opts.KonnectivityAddress,
+			konnectivityServerPort:    opts.KonnectivityPort,
+			oauthAddress:              opts.OAuthAddress,
+			oauthPort:                 opts.OAuthPort,
+			versions:                  opts.Versions,
+			operateOnReleaseImage:     opts.OperateOnReleaseImage,
+			apiServerPort:             apiServerPort,
+		},
+		CacheSyncTimeout: time.Minute * 10,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
