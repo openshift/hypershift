@@ -18,6 +18,7 @@ const (
 	// AuditWebhookKubeconfigKey is the key name in the AuditWebhook secret that stores audit webhook kubeconfig
 	AuditWebhookKubeconfigKey                 = "webhook-kubeconfig"
 	DisablePKIReconciliationAnnotation        = "hypershift.openshift.io/disable-pki-reconciliation"
+	SkipReleaseImageValidation                = "hypershift.openshift.io/skip-release-image-validation"
 	IdentityProviderOverridesAnnotationPrefix = "idpoverrides.hypershift.openshift.io/"
 	OauthLoginURLOverrideAnnotation           = "oauth.hypershift.openshift.io/login-url-override"
 	// ControlPlanePriorityClass is for pods in the HyperShift Control Plane that are not API critical but still need elevated priority. E.g Cluster Version Operator.
