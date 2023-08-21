@@ -543,8 +543,25 @@ objects:
           - mountPath: /var/run/secrets/openshift/serviceaccount
             name: token
           - mountPath: /etc/pki/ca-trust/extracted/pem
+            name: trusted-ca-bundle
+            readOnly: true
+        initContainers:
+        - args:
+          - init
+          command:
+          - /usr/bin/hypershift-operator
+          image: ${OPERATOR_IMG}:${IMAGE_TAG}
+          imagePullPolicy: IfNotPresent
+          name: init-environment
+          resources: {}
+          securityContext:
+            runAsUser: 1000
+          volumeMounts:
+          - mountPath: /var/run/ca-trust
             name: openshift-config-managed-trusted-ca-bundle
             readOnly: true
+          - mountPath: /trust-bundle
+            name: trusted-ca-bundle
         priorityClassName: hypershift-operator
         serviceAccountName: operator
         volumes:
@@ -568,7 +585,10 @@ objects:
             - key: ca-bundle.crt
               path: tls-ca-bundle.pem
             name: openshift-config-managed-trusted-ca-bundle
+            optional: true
           name: openshift-config-managed-trusted-ca-bundle
+        - emptyDir: {}
+          name: trusted-ca-bundle
   status: {}
 - apiVersion: v1
   kind: Service

@@ -61,6 +61,10 @@ import (
 )
 
 func main() {
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
+
 	cmd := &cobra.Command{
 		Use: "hypershift-operator",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -72,6 +76,7 @@ func main() {
 	cmd.Version = version.String()
 
 	cmd.AddCommand(NewStartCommand())
+	cmd.AddCommand(NewInitCommand())
 
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -97,10 +102,6 @@ type StartOptions struct {
 }
 
 func NewStartCommand() *cobra.Command {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
-		o.EncodeTime = zapcore.RFC3339TimeEncoder
-	})))
-
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Runs the Hypershift operator",

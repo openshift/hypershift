@@ -27,6 +27,10 @@ const (
 	// supports security context constraints
 	CapabilitySecurityContextConstraint
 
+	// CapabilityImage indicates if the cluster supports the
+	// image.config.openshift.io api
+	CapabilityImage
+
 	// CapabilityInfrastructure indicates if the cluster supports the
 	// infrastructures.config.openshift.io api
 	CapabilityInfrastructure
@@ -113,6 +117,15 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 	}
 	if hasSccCap {
 		discoveredCapabilities[CapabilitySecurityContextConstraint] = struct{}{}
+	}
+
+	// check for image capability
+	hasImageCap, err := isAPIResourceRegistered(client, configv1.GroupVersion, "image")
+	if err != nil {
+		return nil, err
+	}
+	if hasImageCap {
+		discoveredCapabilities[CapabilityImage] = struct{}{}
 	}
 
 	// check for infrastructure capability
