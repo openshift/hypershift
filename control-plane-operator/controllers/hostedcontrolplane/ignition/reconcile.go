@@ -3,17 +3,14 @@ package ignition
 import (
 	"bytes"
 	"fmt"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/clarketm/json"
-	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	jsonserializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 
 	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
-
-	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
+	"github.com/openshift/api/operator/v1alpha1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
@@ -53,12 +50,8 @@ func ReconcileWorkerSSHIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.Owne
 	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, ownerRef)
 }
 
-func ReconcileImageSourceMirrorsIgnitionConfigFromICSP(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageContentSourcePolicy *operatorv1alpha1.ImageContentSourcePolicy) error {
-	return reconcileImageContentTypeIgnitionConfigMap(cm, imageContentSourcePolicy, ownerRef)
-}
-
-func ReconcileImageSourceMirrorsIgnitionConfigFromIDMS(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageDigestMirrorSet *configv1.ImageDigestMirrorSet) error {
-	return reconcileImageContentTypeIgnitionConfigMap(cm, imageDigestMirrorSet, ownerRef)
+func ReconcileImageContentSourcePolicyIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageContentSourcePolicy *v1alpha1.ImageContentSourcePolicy) error {
+	return reconcileICSPIgnitionConfigMap(cm, imageContentSourcePolicy, ownerRef)
 }
 
 func workerSSHConfig(sshKey string) ([]byte, error) {
@@ -96,24 +89,17 @@ func SetMachineConfigLabels(mc *mcfgv1.MachineConfig) {
 	}
 }
 
-func reconcileImageContentTypeIgnitionConfigMap(cm *corev1.ConfigMap, imageContentType client.Object, ownerRef config.OwnerRef) error {
+func reconcileICSPIgnitionConfigMap(cm *corev1.ConfigMap, icsp *v1alpha1.ImageContentSourcePolicy, ownerRef config.OwnerRef) error {
 	scheme := runtime.NewScheme()
-	err := operatorv1alpha1.Install(scheme)
-	if err != nil {
-		return err
-	}
-	err = configv1.Install(scheme)
-	if err != nil {
-		return err
-	}
+	v1alpha1.Install(scheme)
 	yamlSerializer := jsonserializer.NewSerializerWithOptions(
 		jsonserializer.DefaultMetaFactory, scheme, scheme,
 		jsonserializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true})
-	imageContentTypeBytesBuffer := bytes.NewBuffer([]byte{})
-	if err := yamlSerializer.Encode(imageContentType, imageContentTypeBytesBuffer); err != nil {
-		return fmt.Errorf("failed to serialize image content type policy: %w", err)
+	imageContentSourceBytesBuffer := bytes.NewBuffer([]byte{})
+	if err := yamlSerializer.Encode(icsp, imageContentSourceBytesBuffer); err != nil {
+		return fmt.Errorf("failed to serialize image content source policy: %w", err)
 	}
-	return ReconcileIgnitionConfigMap(cm, imageContentTypeBytesBuffer.String(), ownerRef)
+	return ReconcileIgnitionConfigMap(cm, imageContentSourceBytesBuffer.String(), ownerRef)
 }
 
 func reconcileMachineConfigIgnitionConfigMap(cm *corev1.ConfigMap, mc *mcfgv1.MachineConfig, ownerRef config.OwnerRef) error {
