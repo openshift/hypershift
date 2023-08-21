@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -795,6 +794,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 				"control-plane-operator",
 				"hosted-cluster-config-operator",
 				"cloud-controller-manager",
+				"olm-collect-profiles",
 			}
 			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 				want = append(want, "private-router")
@@ -846,6 +846,22 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 	})
 }
 
+func getComponentName(pod *corev1.Pod) string {
+	if pod.Labels["app"] != "" {
+		return pod.Labels["app"]
+	}
+
+	if pod.Labels["name"] != "" {
+		return pod.Labels["name"]
+	}
+
+	if strings.HasPrefix(pod.Labels["job-name"], "olm-collect-profiles") {
+		return "olm-collect-profiles"
+	}
+
+	return ""
+}
+
 func checkPodsHaveLabel(ctx context.Context, c crclient.Client, components []string, namespace string, labels map[string]string) error {
 	// Get all Pods with wanted label.
 	podList := &corev1.PodList{}
@@ -854,48 +870,27 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, components []str
 		return fmt.Errorf("failed to list pods: %w", err)
 	}
 
-	// Create a slice with app/name as the value for every pod.
-	got := make([]string, 0)
+	// Get the component name for each labelled pod and ensure it exists in the components slice
 	for _, pod := range podList.Items {
-		if pod.Labels["app"] != "" {
-			got = append(got, pod.Labels["app"])
+		if pod.Labels[suppconfig.NeedManagementKASAccessLabel] == "" {
 			continue
 		}
-
-		if strings.HasPrefix(pod.Labels["name"], "olm-collect-profiles") {
-			continue
+		componentName := getComponentName(&pod)
+		if componentName == "" {
+			return fmt.Errorf("unable to determine component name for pod that has NeedManagementKASAccessLabel: %s", pod.Name)
 		}
-
-		if pod.Labels["name"] != "" {
-			got = append(got, pod.Labels["name"])
-			continue
+		allowed := false
+		for _, component := range components {
+			if component == componentName {
+				allowed = true
+				break
+			}
 		}
-
-		got = append(got, pod.Name)
+		if !allowed {
+			return fmt.Errorf("NeedManagementKASAccessLabel label is not allowed on component: %s", componentName)
+		}
 	}
 
-	// Remove duplicates from got. This might be the case when e.g. running HA.
-	processed := make(map[string]bool, 0)
-	gotWithoutDuplicates := make([]string, 0)
-	for i := range got {
-		if processed[got[i]] {
-			continue
-		}
-
-		gotWithoutDuplicates = append(gotWithoutDuplicates, got[i])
-		processed[got[i]] = true
-	}
-
-	// This Transformer sorts a []string.
-	trans := cmp.Transformer("Sort", func(in []string) []string {
-		out := append([]string(nil), in...) // Copy input to avoid mutating it
-		sort.Strings(out)
-		return out
-	})
-
-	if diff := cmp.Diff(components, gotWithoutDuplicates, trans); diff != "" {
-		return fmt.Errorf("not all expected components have NeedManagementKASAccessLabel: %s", cmp.Diff(components, gotWithoutDuplicates, trans))
-	}
 	return nil
 }
 
