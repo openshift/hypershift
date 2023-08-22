@@ -6,18 +6,18 @@ import (
 )
 
 type IgnitionConfigParams struct {
-	OwnerRef               config.OwnerRef
-	FIPSEnabled            bool
-	SSHKey                 string
-	HasImageMirrorPolicies bool
+	OwnerRef                    config.OwnerRef
+	FIPSEnabled                 bool
+	SSHKey                      string
+	HasImageContentSourcePolicy bool
 }
 
 func NewIgnitionConfigParams(hcp *hyperv1.HostedControlPlane, sshKey string) *IgnitionConfigParams {
 	params := &IgnitionConfigParams{
-		OwnerRef:               config.OwnerRefFrom(hcp),
-		FIPSEnabled:            hcp.Spec.FIPS,
-		SSHKey:                 sshKey,
-		HasImageMirrorPolicies: len(hcp.Spec.ImageContentSources) > 0,
+		OwnerRef:                    config.OwnerRefFrom(hcp),
+		FIPSEnabled:                 hcp.Spec.FIPS,
+		SSHKey:                      sshKey,
+		HasImageContentSourcePolicy: len(hcp.Spec.ImageContentSources) > 0,
 	}
 
 	return params
