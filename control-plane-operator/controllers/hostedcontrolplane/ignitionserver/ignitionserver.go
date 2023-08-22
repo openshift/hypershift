@@ -192,7 +192,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 	}
 
 	var (
-		ICSFound    bool
+		icsFound    bool
 		sourceRef   reference.DockerImageReference
 		mirrorImage string
 	)
@@ -202,17 +202,16 @@ func ReconcileIgnitionServer(ctx context.Context,
 		// Ignition server cannot handle ImageContentSourcePolicies or ImageDigestMachineSet, so we need to
 		// fill the registryOverrides in the case of disconnected environments
 		mirrorImage = lookupDisconnectedRegistry(ctx, openShiftRegistryOverrides)
-		sourceRef, err = reference.Parse(mirrorImage)
-		if err != nil {
-			return fmt.Errorf("failed to parse private registry hosted control plane image reference %q: %w", mirrorImage, err)
-		}
-
-		if len(sourceRef.String()) > 0 {
-			ICSFound = true
+		if len(mirrorImage) > 0 {
+			sourceRef, err = reference.Parse(mirrorImage)
+			if err != nil {
+				return fmt.Errorf("failed to parse private registry hosted control plane image reference %q: %w", mirrorImage, err)
+			}
+			icsFound = true
 		}
 	}
 
-	if ICSFound {
+	if icsFound {
 		privateRegistry := sourceRef.Registry
 
 		if !strings.HasPrefix(componentImages["machine-config-operator"], privateRegistry) {
