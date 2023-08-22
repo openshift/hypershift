@@ -849,7 +849,7 @@ haproxy -f /tmp/haproxy.conf
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	deploymentConfig.SetRequestServingDefaults(hcp, nil, utilpointer.Int(1))
+	deploymentConfig.SetRequestServingDefaults(hcp, nil, nil)
 	deploymentConfig.ApplyTo(deployment)
 
 	return nil
