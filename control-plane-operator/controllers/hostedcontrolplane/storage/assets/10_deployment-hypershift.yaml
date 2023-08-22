@@ -19,6 +19,8 @@ spec:
       - args:
         - start
         - -v=2
+        - --terminate-on-files=/var/run/secrets/serving-cert/tls.crt
+        - --terminate-on-files=/var/run/secrets/serving-cert/tls.key
         - --guest-kubeconfig=/etc/guest-kubeconfig/kubeconfig
         command:
         - cluster-storage-operator
