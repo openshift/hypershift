@@ -1483,6 +1483,36 @@ func TestValidateReleaseImage(t *testing.T) {
 			},
 			expectedResult: nil,
 		},
+		{
+			name: "skip release image validation with annotation, success",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.SkipReleaseImageValidation: "true",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.11.0",
+					},
+				},
+			},
+			expectedResult: nil,
+		},
 	}
 
 	for _, tc := range testCases {

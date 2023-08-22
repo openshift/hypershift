@@ -3599,6 +3599,9 @@ func (r *HostedClusterReconciler) validateUserCAConfigMaps(ctx context.Context, 
 }
 
 func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	if _, exists := hc.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
+		return nil
+	}
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {
 		return fmt.Errorf("failed to get pull secret: %w", err)
