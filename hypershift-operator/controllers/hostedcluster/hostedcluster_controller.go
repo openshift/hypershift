@@ -1010,7 +1010,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = "restricted"
 			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "restricted"
 		} else {
-			controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
+			controlPlaneNamespace.Labels["pod-security.kubernetes.io/enforce"] = "baseline"
 			controlPlaneNamespace.Labels["pod-security.kubernetes.io/audit"] = "privileged"
 			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "privileged"
 		}
