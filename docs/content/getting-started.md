@@ -197,6 +197,10 @@ oc scale nodepool/$NODEPOOL_NAME \
   --replicas=$NODEPOOL_REPLICAS
 ```
 
+!!! note
+
+    See the [Scale Down](./how-to/automated-machine-management/nodepool-lifecycle.md#scale-down) section of the [NodePool lifecycle page](./how-to/automated-machine-management/nodepool-lifecycle.md) for more details when scaling down NodePools.
+
 ## Delete a Hosted Cluster
 To delete a Hosted Cluster:
 
