@@ -1252,7 +1252,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 	}
 	konnectivityServerService := manifests.KonnectivityServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, konnectivityServerService, func() error {
-		return konnectivity.ReconcileServerService(konnectivityServerService, p.OwnerRef, serviceStrategy)
+		return kas.ReconcileKonnectivityServerService(konnectivityServerService, p.OwnerRef, serviceStrategy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile Konnectivity service: %w", err)
 	}
@@ -1262,7 +1262,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 	konnectivityRoute := manifests.KonnectivityServerRoute(hcp.Namespace)
 	if util.IsPrivateHCP(hcp) {
 		if _, err := createOrUpdate(ctx, r.Client, konnectivityRoute, func() error {
-			return konnectivity.ReconcileInternalRoute(konnectivityRoute, p.OwnerRef)
+			return kas.ReconcileKonnectivityInternalRoute(konnectivityRoute, p.OwnerRef)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Konnectivity server internal route: %w", err)
 		}
@@ -1272,7 +1272,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 			if serviceStrategy.Route != nil {
 				hostname = serviceStrategy.Route.Hostname
 			}
-			return konnectivity.ReconcileExternalRoute(konnectivityRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
+			return kas.ReconcileKonnectivityExternalRoute(konnectivityRoute, p.OwnerRef, hostname, r.DefaultIngressDomain)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Konnectivity server external route: %w", err)
 		}
@@ -1605,7 +1605,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx co
 			return
 		}
 	}
-	return konnectivity.ReconcileServerServiceStatus(svc, route, serviceStrategy, events.NewMessageCollector(ctx, r.Client))
+	return kas.ReconcileKonnectivityServerServiceStatus(svc, route, serviceStrategy, events.NewMessageCollector(ctx, r.Client))
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOAuthServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, message string, err error) {
@@ -2184,14 +2184,13 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 	r.Log.Info("Reconciling Konnectivity")
 	p := konnectivity.NewKonnectivityParams(hcp, releaseImageProvider, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, r.SetDefaultSecurityContext)
 	serverDeployment := manifests.KonnectivityServerDeployment(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, serverDeployment, func() error {
-		return konnectivity.ReconcileServerDeployment(serverDeployment, p.OwnerRef, p.ServerDeploymentConfig, p.KonnectivityServerImage)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity server deployment: %w", err)
+	// Remove the konnectivity-server deployment if it exists
+	if _, err := util.DeleteIfNeeded(ctx, r, serverDeployment); err != nil {
+		return fmt.Errorf("failed to remove konnectivity-server deployment: %w", err)
 	}
 	serverLocalService := manifests.KonnectivityServerLocalService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, serverLocalService, func() error {
-		return konnectivity.ReconcileServerLocalService(serverLocalService, p.OwnerRef)
+		return kas.ReconcileKonnectivityServerLocalService(serverLocalService, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity server local service: %w", err)
 	}
