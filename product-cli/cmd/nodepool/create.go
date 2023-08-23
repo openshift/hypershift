@@ -18,6 +18,7 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := &core.CreateNodePoolOptions{
+		Arch:            "amd64",
 		ClusterName:     "example",
 		Namespace:       "clusters",
 		NodeCount:       2,
