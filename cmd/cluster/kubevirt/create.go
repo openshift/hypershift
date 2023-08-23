@@ -24,7 +24,7 @@ const (
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "kubevirt",
-		Short:        "Creates basic functional HostedCluster resources for KubeVirt platform",
+		Short:        "Creates basic functional HostedCluster resources on KubeVirt platform",
 		SilenceUsage: true,
 	}
 

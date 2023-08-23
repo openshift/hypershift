@@ -17,7 +17,7 @@ import (
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "azure",
-		Short:        "Destroys a hHostedCluster and its resources on Azure",
+		Short:        "Destroys a HostedCluster and its associated infrastructure on Azure",
 		SilenceUsage: true,
 	}
 

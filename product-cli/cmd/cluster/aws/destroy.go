@@ -11,7 +11,7 @@ import (
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "aws",
-		Short:        "Destroys a HostedCluster and its associated infrastructure on AWS.",
+		Short:        "Destroys a HostedCluster and its associated infrastructure on AWS",
 		SilenceUsage: true,
 	}
 

@@ -12,6 +12,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		Memory:             "8Gi",
 		Cores:              2,
 		ContainerDiskImage: "",
+		RootVolumeSize:     32,
 		CacheStrategyType:  "",
 	}
 	cmd := &cobra.Command{

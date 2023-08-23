@@ -16,7 +16,7 @@ import (
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "aws",
-		Short:        "Destroys a HostedCluster and its associated infrastructure on AWS.",
+		Short:        "Destroys a HostedCluster and its associated infrastructure on AWS",
 		SilenceUsage: true,
 	}
 
@@ -59,7 +59,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	baseDomainPrefix := o.AWSPlatform.BaseDomainPrefix
 	region := o.AWSPlatform.Region
 
-	//Override the credentialSecret with credentialFile
+	// Override the credentialSecret with credentialFile
 	var awsKeyID, awsSecretKey string
 	var err error
 	if len(o.AWSPlatform.AWSCredentialsFile) == 0 && len(o.CredentialSecretName) > 0 {
@@ -145,7 +145,7 @@ func ValidateCredentialInfo(opts *core.DestroyOptions) error {
 			return err
 		}
 	} else {
-		//Check the secret exists now, otherwise stop
+		// Check the secret exists now, otherwise stop
 		opts.Log.Info("Retrieving credentials secret", "namespace", opts.Namespace, "name", opts.CredentialSecretName)
 		if _, err := util.GetSecret(opts.CredentialSecretName, opts.Namespace); err != nil {
 			return err

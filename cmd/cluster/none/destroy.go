@@ -14,7 +14,7 @@ import (
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "none",
-		Short:        "Destroys a HostedCluster and its associated infrastructure on None.",
+		Short:        "Destroys a HostedCluster and its associated infrastructure on None",
 		SilenceUsage: true,
 	}
 
