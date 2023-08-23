@@ -26,6 +26,7 @@ import (
 
 const (
 	kasNamedCertificateMountPathPrefix         = "/etc/kubernetes/certs/named"
+	auditConfigHashAnnotation                  = "kube-apiserver.hypershift.openshift.io/audit-config-hash"
 	configHashAnnotation                       = "kube-apiserver.hypershift.openshift.io/config-hash"
 	awsPodIdentityWebhookServingCertVolumeName = "aws-pod-identity-webhook-serving-certs"
 	awsPodIdentityWebhookKubeconfigVolumeName  = "aws-pod-identity-webhook-kubeconfig"
@@ -97,6 +98,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	cloudProviderCreds *corev1.LocalObjectReference,
 	images KubeAPIServerImages,
 	config *corev1.ConfigMap,
+	auditConfig *corev1.ConfigMap,
 	auditWebhookRef *corev1.LocalObjectReference,
 	aesCBCActiveKey []byte,
 	aesCBCBackupKey []byte,
@@ -116,6 +118,12 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		return fmt.Errorf("kube apiserver configuration is not expected to be empty")
 	}
 	configHash := util.ComputeHash(configBytes)
+
+	auditConfigBytes, ok := auditConfig.Data[AuditPolicyConfigMapKey]
+	if !ok {
+		return fmt.Errorf("kube apiserver audit configuration is not expected to be empty")
+	}
+	auditConfigHash := util.ComputeHash(auditConfigBytes)
 
 	// preserve existing resource requirements for main KAS container
 	mainContainer := util.FindContainer(kasContainerMain().Name, deployment.Spec.Template.Spec.Containers)
@@ -150,7 +158,8 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: kasLabels(),
 			Annotations: map[string]string{
-				configHashAnnotation: configHash,
+				configHashAnnotation:      configHash,
+				auditConfigHashAnnotation: auditConfigHash,
 			},
 		},
 		Spec: corev1.PodSpec{

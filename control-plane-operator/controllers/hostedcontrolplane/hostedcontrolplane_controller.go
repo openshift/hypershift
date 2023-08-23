@@ -2429,6 +2429,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			p.CloudProviderCreds,
 			p.Images,
 			kubeAPIServerConfig,
+			kubeAPIServerAuditConfig,
 			p.AuditWebhookRef,
 			aesCBCActiveKey,
 			aesCBCBackupKey,
