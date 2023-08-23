@@ -796,9 +796,6 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 				"cloud-controller-manager",
 				"olm-collect-profiles",
 			}
-			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-				want = append(want, "private-router")
-			}
 
 			g := NewWithT(t)
 			err := checkPodsHaveLabel(ctx, c, want, hcpNamespace, client.MatchingLabels{suppconfig.NeedManagementKASAccessLabel: "true"})
