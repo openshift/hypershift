@@ -661,6 +661,13 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile dns config: %w", err))
 	}
 
+	cloudCredsConfig := globalconfig.CloudCredentialsConfiguration()
+	if _, err := r.CreateOrUpdate(ctx, r.client, cloudCredsConfig, func() error {
+		return globalconfig.ReconcileCloudCredentialsConfiguration(cloudCredsConfig)
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile cloud credentials config: %w", err))
+	}
+
 	return errors.NewAggregate(errs)
 }
 
