@@ -447,6 +447,7 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 		Log:         util.NewLogr(t),
 		Annotations: []string{
 			fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
+			fmt.Sprintf("%s=true", hyperv1.SkipReleaseImageValidation),
 		},
 		SkipAPIBudgetVerification: o.SkipAPIBudgetVerification,
 		EtcdStorageClass:          o.configurableClusterOptions.EtcdStorageClass,

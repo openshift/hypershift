@@ -191,9 +191,6 @@ func (h *hypershiftTest) createHostedCluster(opts *core.CreateOptions, platform 
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace.Name,
 			Name:      SimpleNameGenerator.GenerateName("example-"),
-			Annotations: map[string]string{
-				hyperv1.SkipReleaseImageValidation: "true",
-			},
 		},
 		Spec: hyperv1.HostedClusterSpec{
 			Platform: hyperv1.PlatformSpec{
