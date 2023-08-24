@@ -2603,7 +2603,7 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 		return nil, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
 
-	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes, hostedCluster.Spec.ImageContentSources)
+	controlPlaneOperatorImageMetadata, err := r.ImageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
 	}
