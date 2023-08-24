@@ -2973,11 +2973,22 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImageProvider, userReleaseImageProvider.Version(), r.SetDefaultSecurityContext)
 
 	if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {
+		overrideImages, err := checkCatalogImageOverides(p.CertifiedOperatorsCatalogImageOverride, p.CommunityOperatorsCatalogImageOverride, p.RedHatMarketplaceCatalogImageOverride, p.RedHatOperatorsCatalogImageOverride)
+		if err != nil {
+			return fmt.Errorf("failed to reconcile catalogs: %w", err)
+		}
+
 		catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
-			return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
+		if !overrideImages {
+			if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
+				return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, r.ReleaseProvider.GetOpenShiftImageRegistryOverrides())
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
+			}
+		} else {
+			if _, err := util.DeleteIfNeeded(ctx, r, catalogsImageStream); err != nil {
+				return fmt.Errorf("failed to remove OLM Catalog ImageStream: %w", err)
+			}
 		}
 
 		certifiedOperatorsService := manifests.CertifiedOperatorsService(hcp.Namespace)
@@ -3007,25 +3018,25 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 		certifiedOperatorsDeployment := manifests.CertifiedOperatorsDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, certifiedOperatorsDeployment, func() error {
-			return olm.ReconcileCertifiedOperatorsDeployment(certifiedOperatorsDeployment, p.OwnerRef, p.DeploymentConfig)
+			return olm.ReconcileCertifiedOperatorsDeployment(certifiedOperatorsDeployment, p.OwnerRef, p.DeploymentConfig, p.CertifiedOperatorsCatalogImageOverride)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile certified operators deployment: %w", err)
 		}
 		communityOperatorsDeployment := manifests.CommunityOperatorsDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, communityOperatorsDeployment, func() error {
-			return olm.ReconcileCommunityOperatorsDeployment(communityOperatorsDeployment, p.OwnerRef, p.DeploymentConfig)
+			return olm.ReconcileCommunityOperatorsDeployment(communityOperatorsDeployment, p.OwnerRef, p.DeploymentConfig, p.CommunityOperatorsCatalogImageOverride)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile community operators deployment: %w", err)
 		}
 		marketplaceOperatorsDeployment := manifests.RedHatMarketplaceOperatorsDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, marketplaceOperatorsDeployment, func() error {
-			return olm.ReconcileRedHatMarketplaceOperatorsDeployment(marketplaceOperatorsDeployment, p.OwnerRef, p.DeploymentConfig)
+			return olm.ReconcileRedHatMarketplaceOperatorsDeployment(marketplaceOperatorsDeployment, p.OwnerRef, p.DeploymentConfig, p.RedHatMarketplaceCatalogImageOverride)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile marketplace operators deployment: %w", err)
 		}
 		redHatOperatorsDeployment := manifests.RedHatOperatorsDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, redHatOperatorsDeployment, func() error {
-			return olm.ReconcileRedHatOperatorsDeployment(redHatOperatorsDeployment, p.OwnerRef, p.DeploymentConfig)
+			return olm.ReconcileRedHatOperatorsDeployment(redHatOperatorsDeployment, p.OwnerRef, p.DeploymentConfig, p.RedHatOperatorsCatalogImageOverride)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile red hat operators deployment: %w", err)
 		}
@@ -3156,6 +3167,26 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		return fmt.Errorf("failed to reconcile collect profiles serviceaccount: %w", err)
 	}
 	return nil
+}
+
+func checkCatalogImageOverides(images ...string) (bool, error) {
+	override := false
+	for _, image := range images {
+		if image != "" {
+			override = true
+			if !strings.Contains(image, "@sha256:") {
+				return false, errors.New("images for OLM catalogs should be referenced only by digest")
+			}
+		}
+	}
+	if override {
+		for _, image := range images {
+			if image == "" {
+				return false, errors.New("if OLM catalog images are overridden, all the values for the 4 default catalogs should be provided")
+			}
+		}
+	}
+	return override, nil
 }
 
 func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {

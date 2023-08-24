@@ -14,15 +14,19 @@ var packageServerLabels = map[string]string{
 }
 
 type OperatorLifecycleManagerParams struct {
-	CLIImage                string
-	OLMImage                string
-	ProxyImage              string
-	OperatorRegistryImage   string
-	ReleaseVersion          string
-	DeploymentConfig        config.DeploymentConfig
-	PackageServerConfig     config.DeploymentConfig
-	AvailabilityProberImage string
-	NoProxy                 []string
+	CLIImage                               string
+	OLMImage                               string
+	ProxyImage                             string
+	OperatorRegistryImage                  string
+	CertifiedOperatorsCatalogImageOverride string
+	CommunityOperatorsCatalogImageOverride string
+	RedHatMarketplaceCatalogImageOverride  string
+	RedHatOperatorsCatalogImageOverride    string
+	ReleaseVersion                         string
+	DeploymentConfig                       config.DeploymentConfig
+	PackageServerConfig                    config.DeploymentConfig
+	AvailabilityProberImage                string
+	NoProxy                                []string
 	config.OwnerRef
 }
 
@@ -64,6 +68,11 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, releaseI
 	if hcp.Spec.OLMCatalogPlacement == "management" {
 		params.NoProxy = append(params.NoProxy, "certified-operators", "community-operators", "redhat-operators", "redhat-marketplace")
 	}
+
+	params.CertifiedOperatorsCatalogImageOverride = hcp.Annotations[hyperv1.CertifiedOperatorsCatalogImageAnnotation]
+	params.CommunityOperatorsCatalogImageOverride = hcp.Annotations[hyperv1.CommunityOperatorsCatalogImageAnnotation]
+	params.RedHatMarketplaceCatalogImageOverride = hcp.Annotations[hyperv1.RedHatMarketplaceCatalogImageAnnotation]
+	params.RedHatOperatorsCatalogImageOverride = hcp.Annotations[hyperv1.RedHatOperatorsCatalogImageAnnotation]
 
 	return params
 }

@@ -68,6 +68,14 @@ const (
 	// NOTE: We'll expose this in the API if the use case gets generalised.
 	PrivateIngressControllerAnnotation = "hypershift.openshift.io/private-ingress-controller"
 
+	// CertifiedOperatorsCatalogImageAnnotation, CommunityOperatorsCatalogImageAnnotation, RedHatMarketplaceCatalogImageAnnotation and RedHatOperatorsCatalogImageAnnotation
+	// are annotations that can be used to override the address of the images used for the OLM catalogs if in the `management` OLMCatalogPlacement mode.
+	// If used, all of them should be set at the same time referring images only by digest (`...@sha256:<id>`)
+	CertifiedOperatorsCatalogImageAnnotation = "hypershift.openshift.io/certified-operators-catalog-image"
+	CommunityOperatorsCatalogImageAnnotation = "hypershift.openshift.io/community-operators-catalog-image"
+	RedHatMarketplaceCatalogImageAnnotation  = "hypershift.openshift.io/redhat-marketplace-catalog-image"
+	RedHatOperatorsCatalogImageAnnotation    = "hypershift.openshift.io/redhat-operators-catalog-image"
+
 	// ClusterAPIProviderAWSImage overrides the CAPI AWS provider image to use for
 	// a HostedControlPlane.
 	ClusterAPIProviderAWSImage = "hypershift.openshift.io/capi-provider-aws-image"

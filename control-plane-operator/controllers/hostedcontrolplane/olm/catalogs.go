@@ -3,6 +3,7 @@ package olm
 import (
 	"fmt"
 	"math/big"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -68,23 +69,23 @@ var (
 	redHatOperatorsCatalogDeployment   = assets.MustDeployment(content.ReadFile, "assets/catalog-redhat-operators.deployment.yaml")
 )
 
-func ReconcileCertifiedOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig) error {
-	return reconcileCatalogDeployment(deployment, ownerRef, dc, certifiedCatalogDeployment)
+func ReconcileCertifiedOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, imageOverride string) error {
+	return reconcileCatalogDeployment(deployment, ownerRef, dc, certifiedCatalogDeployment, imageOverride)
 }
 
-func ReconcileCommunityOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig) error {
-	return reconcileCatalogDeployment(deployment, ownerRef, dc, communityCatalogDeployment)
+func ReconcileCommunityOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, imageOverride string) error {
+	return reconcileCatalogDeployment(deployment, ownerRef, dc, communityCatalogDeployment, imageOverride)
 }
 
-func ReconcileRedHatMarketplaceOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig) error {
-	return reconcileCatalogDeployment(deployment, ownerRef, dc, redHatMarketplaceCatalogDeployment)
+func ReconcileRedHatMarketplaceOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, imageOverride string) error {
+	return reconcileCatalogDeployment(deployment, ownerRef, dc, redHatMarketplaceCatalogDeployment, imageOverride)
 }
 
-func ReconcileRedHatOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig) error {
-	return reconcileCatalogDeployment(deployment, ownerRef, dc, redHatOperatorsCatalogDeployment)
+func ReconcileRedHatOperatorsDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, imageOverride string) error {
+	return reconcileCatalogDeployment(deployment, ownerRef, dc, redHatOperatorsCatalogDeployment, imageOverride)
 }
 
-func reconcileCatalogDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, sourceDeployment *appsv1.Deployment) error {
+func reconcileCatalogDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, dc config.DeploymentConfig, sourceDeployment *appsv1.Deployment, imageOverride string) error {
 	ownerRef.ApplyTo(deployment)
 	if deployment.Annotations == nil {
 		deployment.Annotations = map[string]string{}
@@ -93,9 +94,14 @@ func reconcileCatalogDeployment(deployment *appsv1.Deployment, ownerRef config.O
 		deployment.Annotations[k] = v
 	}
 	image := "from:imagestream"
-	// If deployment already exists, imagestream tag will already populate the container image
-	if len(deployment.Spec.Template.Spec.Containers) > 0 && deployment.Spec.Template.Spec.Containers[0].Image != "" {
-		image = deployment.Spec.Template.Spec.Containers[0].Image
+	if imageOverride == "" {
+		// If deployment already exists, imagestream tag will already populate the container image
+		if len(deployment.Spec.Template.Spec.Containers) > 0 && deployment.Spec.Template.Spec.Containers[0].Image != "" {
+			image = deployment.Spec.Template.Spec.Containers[0].Image
+		}
+	} else {
+		image = imageOverride
+		delete(deployment.Annotations, "image.openshift.io/triggers")
 	}
 	deployment.Spec = sourceDeployment.DeepCopy().Spec
 	deployment.Spec.Template.Spec.Containers[0].Image = image
@@ -119,12 +125,12 @@ var CatalogToImage map[string]string = map[string]string{
 	"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.14",
 }
 
-func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef) error {
+func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef, openShiftImageRegistryOverrides map[string][]string) error {
 	imageStream.Spec.LookupPolicy.Local = true
 	if imageStream.Spec.Tags == nil {
 		imageStream.Spec.Tags = []imagev1.TagReference{}
 	}
-	for name, image := range CatalogToImage {
+	for name, image := range getCatalogToImageWithOpenShiftImageRegistryOverrides(CatalogToImage, openShiftImageRegistryOverrides) {
 		tagRef := findTagReference(imageStream.Spec.Tags, name)
 		if tagRef == nil {
 			imageStream.Spec.Tags = append(imageStream.Spec.Tags, imagev1.TagReference{
@@ -151,6 +157,24 @@ func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef con
 	}
 	ownerRef.ApplyTo(imageStream)
 	return nil
+}
+
+// getCatalogToImageWithOpenShiftImageRegistryOverrides returns a map of
+// images to be used for the catalog registries where the image address got
+// amended according to OpenShiftImageRegistryOverrides as set on the HostedControlPlaneReconciler
+func getCatalogToImageWithOpenShiftImageRegistryOverrides(catalogToImage map[string]string, openShiftImageRegistryOverrides map[string][]string) map[string]string {
+	catalogWithOverride := make(map[string]string)
+	for name, image := range catalogToImage {
+		for registrySource, registryDest := range openShiftImageRegistryOverrides {
+			if strings.Contains(image, registrySource) {
+				for _, registryReplacement := range registryDest {
+					image = strings.Replace(image, registrySource, registryReplacement, 1)
+				}
+			}
+		}
+		catalogWithOverride[name] = image
+	}
+	return catalogWithOverride
 }
 
 // generateModularDailyCronSchedule returns a daily crontab schedule

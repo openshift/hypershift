@@ -21,3 +21,8 @@ The ignition server reconciler forwards this information on to the `ignition-ser
 
 ### Control Plane Operator
 The `HostedClusterReconciler` passes on the image registry override information as an environment variable in the CPO called `OPENSHIFT_IMG_OVERRIDES`. The CPO will check for the existence of this environment variable when it runs. If the variable exists, it's used to build the HostedControlPlaneReconciler's `releaseProvider`.
+When using the `management` (default) OLMCatalogPlacement mode, the same information will be used also to amend the address used for the imageStreams used for the OLM catalog images: this implicitly assumes that the images used for
+the 4 default OLM catalogs got mirrored to the internal registry using the original name and tag.
+The cluster admin will be able to bypass OpenShiftImageRegistryOverrides for OLM catalogs using 4 annotations (`hypershift.openshift.io/certified-operators-catalog-image`, `hypershift.openshift.io/community-operators-catalog-image`, `hypershift.openshift.io/redhat-marketplace-catalog-image`, `hypershift.openshift.io/redhat-operators-catalog-image`) on the HostedCluster CR to directly specify the address (only by digest) of the 4 images to be used for OLM operator catalogs.
+In this case the imageStream are not going to be created, and it will be up to the guest cluster owner updating the value of the annotations when the internal mirror will get refreshed to pull in operator updates.
+Please notice that if this override mechanism is required, all the 4 values for the 4 default catalog sources are needed.
