@@ -99,6 +99,9 @@ func TestMain(m *testing.M) {
 	flag.Var(&globalOpts.configurableClusterOptions.PowerVSProcType, "e2e.powervs-proc-type", "Processor type (dedicated, shared, capped). Default is shared")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSProcessors, "e2e.powervs-processors", "0.5", "Number of processors allocated. Default is 0.5")
 	flag.IntVar(&globalOpts.configurableClusterOptions.PowerVSMemory, "e2e.powervs-memory", 32, "Amount of memory allocated (in GB). Default is 32")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSCloudInstanceID, "e2e-powervs-cloud-instance-id", "", "IBM Cloud PowerVS Service Instance ID. Use this flag to reuse an existing PowerVS Service Instance resource for cluster's infra")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSCloudConnection, "e2e-powervs-cloud-connection", "", "Cloud Connection in given zone. Use this flag to reuse an existing Cloud Connection resource for cluster's infra")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSVPC, "e2e-powervs-vpc", "", "IBM Cloud VPC Name. Use this flag to reuse an existing VPC resource for cluster's infra")
 	flag.BoolVar(&globalOpts.SkipAPIBudgetVerification, "e2e.skip-api-budget", false, "Bool to avoid send metrics to E2E Server on local test execution.")
 	flag.StringVar(&globalOpts.configurableClusterOptions.EtcdStorageClass, "e2e.etcd-storage-class", "", "The persistent volume storage class for etcd data volumes")
 	flag.BoolVar(&globalOpts.RequestServingIsolation, "e2e.test-request-serving-isolation", false, "If set, TestCreate creates a cluster with request serving isolation topology")
@@ -391,6 +394,9 @@ type configurableClusterOptions struct {
 	PowerVSProcType              hyperv1.PowerVSNodePoolProcType
 	PowerVSProcessors            string
 	PowerVSMemory                int
+	PowerVSCloudInstanceID       string
+	PowerVSCloudConnection       string
+	PowerVSVPC                   string
 	EtcdStorageClass             string
 }
 
@@ -432,14 +438,17 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			DiskSizeGB:      120,
 		},
 		PowerVSPlatform: core.PowerVSPlatformOptions{
-			ResourceGroup: o.configurableClusterOptions.PowerVSResourceGroup,
-			Region:        o.configurableClusterOptions.PowerVSRegion,
-			Zone:          o.configurableClusterOptions.PowerVSZone,
-			VPCRegion:     o.configurableClusterOptions.PowerVSVpcRegion,
-			SysType:       o.configurableClusterOptions.PowerVSSysType,
-			ProcType:      o.configurableClusterOptions.PowerVSProcType,
-			Processors:    o.configurableClusterOptions.PowerVSProcessors,
-			Memory:        int32(o.configurableClusterOptions.PowerVSMemory),
+			ResourceGroup:   o.configurableClusterOptions.PowerVSResourceGroup,
+			Region:          o.configurableClusterOptions.PowerVSRegion,
+			Zone:            o.configurableClusterOptions.PowerVSZone,
+			VPCRegion:       o.configurableClusterOptions.PowerVSVpcRegion,
+			SysType:         o.configurableClusterOptions.PowerVSSysType,
+			ProcType:        o.configurableClusterOptions.PowerVSProcType,
+			Processors:      o.configurableClusterOptions.PowerVSProcessors,
+			Memory:          int32(o.configurableClusterOptions.PowerVSMemory),
+			CloudInstanceID: o.configurableClusterOptions.PowerVSCloudInstanceID,
+			CloudConnection: o.configurableClusterOptions.PowerVSCloudConnection,
+			VPC:             o.configurableClusterOptions.PowerVSVPC,
 		},
 		ServiceCIDR: "172.31.0.0/16",
 		ClusterCIDR: "10.132.0.0/14",
