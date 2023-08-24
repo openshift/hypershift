@@ -398,8 +398,11 @@ func monitorPowerVsJob(id string, client *instance.IBMPIJobClient, infraID strin
 		}
 		log(infraID).Info("Waiting for PowerVS job to complete", "id", id, "status", job.Status.State, "operation_action", *job.Operation.Action, "operation_target", *job.Operation.Target)
 
-		if *job.Status.State == powerVSJobCompletedState || *job.Status.State == powerVSJobFailedState {
+		if *job.Status.State == powerVSJobCompletedState {
 			return true, nil
+		}
+		if *job.Status.State == powerVSJobFailedState {
+			return false, fmt.Errorf("powerVS job failed. id: %s, message: %s", id, job.Status.Message)
 		}
 		return false, nil
 	}
