@@ -3957,7 +3957,7 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 	}
 
 	if r.OIDCStorageProviderS3BucketName == "" || r.S3Client == nil {
-		return errors.New("hypershift wasn't configured with a S3 bucket or credentials, this makes it unable to set up OIDC for AWS clusters. Please install hypershift with the --aws-oidc-bucket-name, --aws-oidc-bucket-region and --aws-oidc-bucket-creds-file flags set. The bucket must pre-exist and the credentials must be authorized to write into it")
+		return errors.New("hypershift wasn't configured with a S3 bucket or credentials, this makes it unable to set up OIDC for AWS clusters. Please install hypershift with the --oidc-storage-provider-s3-bucket-name, --oidc-storage-provider-s3-region and --oidc-storage-provider-s3-credentials flags set. The bucket must pre-exist and the credentials must be authorized to write into it")
 	}
 
 	secret := &corev1.Secret{
@@ -3994,7 +3994,7 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 			if awsErr := awserr.Error(nil); errors.As(err, &awsErr) {
 				switch awsErr.Code() {
 				case s3.ErrCodeNoSuchBucket:
-					wrapped = fmt.Errorf("%w: %s: this could be a misconfiguration of the hypershift operator; check the --aws-oidc-bucket-name flag", wrapped, awsErr.Code())
+					wrapped = fmt.Errorf("%w: %s: this could be a misconfiguration of the hypershift operator; check the --oidc-storage-provider-s3-bucket-name flag", wrapped, awsErr.Code())
 				default:
 					// Generally, the underlying message from AWS has unique per-request
 					// info not suitable for publishing as condition messages, so just
