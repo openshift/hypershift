@@ -1645,8 +1645,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile SRE metrics config: %w", err)
 	}
 
+	openShiftTrustedCABundleConfigMapExists, err := r.reconcileOpenShiftTrustedCAs(ctx, hcp)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile OpenShift trusted CAs: %w", err)
+	}
+
 	// Reconcile the control plane operator
-	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities)
+	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, openShiftTrustedCABundleConfigMapExists)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
@@ -2064,7 +2069,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
-func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool) error {
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, openShiftTrustedCABundleConfigMapExists bool) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -2140,6 +2145,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
 		return reconcileControlPlaneOperatorDeployment(
 			controlPlaneOperatorDeployment,
+			openShiftTrustedCABundleConfigMapExists,
 			hcluster,
 			hostedControlPlane,
 			controlPlaneOperatorImage,
@@ -2183,6 +2189,41 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 
 	return nil
+}
+
+// reconcileOpenShiftTrustedCAs checks for the existence of /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem, if it exists,
+// creates a new ConfigMap to be mounted in the CPO deployment utilizing the file
+func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) (bool, error) {
+	trustedCABundle := new(bytes.Buffer)
+	var trustCABundleFile []byte
+
+	_, err := os.Stat("/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
+	if err == nil {
+		trustCABundleFile, err = os.ReadFile("/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
+		if err != nil {
+			return false, fmt.Errorf("unable to read trust bundle file: %w", err)
+		}
+	}
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return false, nil
+		}
+
+		return false, err
+	}
+
+	if _, err = trustedCABundle.Write(trustCABundleFile); err != nil {
+		return false, fmt.Errorf("unable to write trust bundle to buffer: %w", err)
+	}
+
+	// Next, save the contents to a new ConfigMap in the hosted control plane's namespace
+	openShiftTrustedCABundleConfigMapForCPO := manifests.OpenShiftTrustedCABundleForNamespace(hostedControlPlane.Namespace)
+	openShiftTrustedCABundleConfigMapForCPO.Data["ca-bundle.crt"] = trustedCABundle.String()
+	if _, err = controllerutil.CreateOrUpdate(ctx, r.Client, openShiftTrustedCABundleConfigMapForCPO, NoopReconcile); err != nil {
+		return false, fmt.Errorf("failed to create openshift-config-managed-trusted-ca-bundle for CPO deployment %T: %w", trustedCABundle.String(), err)
+	}
+
+	return true, nil
 }
 
 func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
@@ -2279,6 +2320,7 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 
 func reconcileControlPlaneOperatorDeployment(
 	deployment *appsv1.Deployment,
+	openShiftTrustedCABundleConfigMapExists bool,
 	hc *hyperv1.HostedCluster,
 	hcp *hyperv1.HostedControlPlane,
 	cpoImage,
@@ -2416,6 +2458,10 @@ func reconcileControlPlaneOperatorDeployment(
 				},
 			},
 		},
+	}
+
+	if openShiftTrustedCABundleConfigMapExists {
+		hyperutil.DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment)
 	}
 
 	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
