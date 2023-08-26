@@ -175,6 +175,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 	ignitionServerLabels := map[string]string{
 		"app":                         ignitionserver.ResourceName,
 		hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
+		"hypershift.openshift.io/hosted-control-plane": hcp.Namespace, // Intentionally adding hcp label to avoid upgrade restriction
 	}
 	servingCertSecretName := ignitionserver.IgnitionServingCertSecret("").Name
 	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
