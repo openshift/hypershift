@@ -18,6 +18,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/certs"
@@ -149,7 +150,7 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	if p.CloudProviderConfigRef != nil {
 		args.Set("cloud-config", cloudProviderConfig(p.CloudProviderConfigRef.Name, p.CloudProvider))
 	}
-	if p.CloudProvider != "" {
+	if p.CloudProvider != "" && p.CloudProvider != aws.Provider {
 		args.Set("cloud-provider", p.CloudProvider)
 	}
 	if p.AuditWebhookEnabled {
