@@ -87,6 +87,7 @@ type ExampleOptions struct {
 	ControlPlaneAvailabilityPolicy   hyperv1.AvailabilityPolicy
 	InfrastructureAvailabilityPolicy hyperv1.AvailabilityPolicy
 	UpgradeType                      hyperv1.UpgradeType
+	ServiceAccountSigningKey         string
 }
 
 func (o ExampleOptions) Resources() *ExampleResources {
@@ -443,6 +444,9 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			SecretEncryption: secretEncryption,
 			Networking: hyperv1.ClusterNetworking{
 				NetworkType: o.NetworkType,
+			},
+			ServiceAccountSigningKey: &corev1.LocalObjectReference{
+				Name: o.ServiceAccountSigningKey,
 			},
 			Services:   services,
 			InfraID:    o.InfraID,

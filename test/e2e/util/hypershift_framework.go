@@ -197,11 +197,15 @@ func (h *hypershiftTest) createHostedCluster(opts *core.CreateOptions, platform 
 		}
 	}
 
+	hcName := opts.Name
+	if opts.Name == "" {
+		hcName = SimpleNameGenerator.GenerateName("example-")
+	}
 	// Build the skeletal HostedCluster based on the provided platform.
 	hc := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace.Name,
-			Name:      SimpleNameGenerator.GenerateName("example-"),
+			Name:      hcName,
 		},
 		Spec: hyperv1.HostedClusterSpec{
 			Platform: hyperv1.PlatformSpec{

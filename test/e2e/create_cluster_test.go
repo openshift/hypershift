@@ -5,13 +5,17 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -25,6 +29,61 @@ func TestCreateCluster(t *testing.T) {
 	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	name := e2eutil.SimpleNameGenerator.GenerateName("example-")
+	clusterOpts.Name = name
+
+	// Setup shared infra.
+	infraJSONFile := filepath.Join(globalOpts.ArtifactDir, globalOpts.InfraID+"-"+name+".json")
+	iamJSONFile := filepath.Join(globalOpts.ArtifactDir, globalOpts.InfraID+"-iam-"+name+".json")
+	infra := awsinfra.CreateInfraOptions{
+		// This will find existing infra but will create a dedicated dns zone prepending the Name.
+		Name:               name,
+		InfraID:            globalOpts.InfraID,
+		Region:             globalOpts.configurableClusterOptions.Region,
+		AWSCredentialsFile: globalOpts.configurableClusterOptions.AWSCredentialsFile,
+		BaseDomain:         globalOpts.configurableClusterOptions.BaseDomain,
+		Zones:              strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ","),
+		OutputFile:         infraJSONFile,
+	}
+	if err := infra.Run(testContext, log); err != nil {
+		t.Errorf("failed to create infra: %s", err)
+	}
+
+	// Setup shared IAM.
+	rawInfra, err := os.ReadFile(infra.OutputFile)
+	if err != nil {
+		t.Errorf("failed to read infra: %s", err)
+	}
+	infraOutput := &awsinfra.CreateInfraOutput{}
+	if err = json.Unmarshal(rawInfra, infraOutput); err != nil {
+		t.Errorf("failed to unmarshall infra: %s", err)
+	}
+
+	iam := awsinfra.CreateIAMOptions{
+		Region:             globalOpts.configurableClusterOptions.Region,
+		AWSCredentialsFile: globalOpts.configurableClusterOptions.AWSCredentialsFile,
+		PublicZoneID:       infraOutput.PublicZoneID,
+		PrivateZoneID:      infraOutput.PrivateZoneID,
+		LocalZoneID:        infraOutput.LocalZoneID,
+		// We don't use the shared infraID here so each HC can have its own roles. Otherwise, they'd be overwritten.
+		InfraID:    name,
+		IssuerURL:  globalOpts.IssuerURL,
+		OutputFile: iamJSONFile,
+	}
+
+	client, err := e2eutil.GetClient()
+	if err != nil {
+		t.Errorf("failed to get kube client: %s", err)
+	}
+
+	if err := iam.Run(testContext, client); err != nil {
+		t.Errorf("failed to setup iam: %s", err)
+	}
+
+	clusterOpts.InfrastructureJSON = infraJSONFile
+	clusterOpts.AWSPlatform.IAMJSON = iamJSONFile
+	clusterOpts.InfraID = globalOpts.InfraID
+
 	zones := strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ",")
 	if len(zones) >= 3 {
 		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
@@ -53,6 +112,35 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	name := e2eutil.SimpleNameGenerator.GenerateName("example-")
+	clusterOpts.Name = name
+
+	// Setup shared infra.
+	infraJSONFile := filepath.Join(globalOpts.ArtifactDir, globalOpts.InfraID+"-"+name+".json")
+	iamJSONFile := filepath.Join(globalOpts.ArtifactDir, globalOpts.InfraID+"-iam-"+name+".json")
+	infra := awsinfra.CreateInfraOptions{
+		// This will find existing infra but will create a dedicated dns zone prepending the Name.
+		Name:               name,
+		InfraID:            globalOpts.InfraID,
+		Region:             globalOpts.configurableClusterOptions.Region,
+		AWSCredentialsFile: globalOpts.configurableClusterOptions.AWSCredentialsFile,
+		BaseDomain:         globalOpts.configurableClusterOptions.BaseDomain,
+		Zones:              strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ","),
+		OutputFile:         infraJSONFile,
+	}
+	if err := infra.Run(testContext, log); err != nil {
+		t.Fatalf("failed to create infra: %s", err)
+	}
+
+	// Setup shared IAM.
+	rawInfra, err := os.ReadFile(infra.OutputFile)
+	if err != nil {
+		t.Fatalf("failed to read infra: %s", err)
+	}
+	infraOutput := &awsinfra.CreateInfraOutput{}
+	if err = json.Unmarshal(rawInfra, infraOutput); err != nil {
+		t.Fatalf("failed to unmarshall infra: %s", err)
+	}
 
 	// find kms key ARN using alias
 	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
@@ -61,6 +149,32 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	}
 
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
+
+	iam := awsinfra.CreateIAMOptions{
+		Region:             globalOpts.configurableClusterOptions.Region,
+		AWSCredentialsFile: globalOpts.configurableClusterOptions.AWSCredentialsFile,
+		PublicZoneID:       infraOutput.PublicZoneID,
+		PrivateZoneID:      infraOutput.PrivateZoneID,
+		LocalZoneID:        infraOutput.LocalZoneID,
+		// We don't use the shared infraID here so each HC can have its own roles. Otherwise, they'd be overwritten.
+		InfraID:    name,
+		IssuerURL:  globalOpts.IssuerURL,
+		OutputFile: iamJSONFile,
+		KMSKeyARN:  *kmsKeyArn,
+	}
+
+	client, err := e2eutil.GetClient()
+	if err != nil {
+		t.Fatalf("failed to get kube client: %s", err)
+	}
+
+	if err := iam.Run(testContext, client); err != nil {
+		t.Fatalf("failed to setup iam: %s", err)
+	}
+
+	clusterOpts.InfrastructureJSON = infraJSONFile
+	clusterOpts.AWSPlatform.IAMJSON = iamJSONFile
+	clusterOpts.InfraID = globalOpts.InfraID
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 

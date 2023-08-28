@@ -43,6 +43,7 @@ type AWSPlatformDestroyOptions struct {
 	AWSCredentialsFile string
 	BaseDomain         string
 	BaseDomainPrefix   string
+	PreserveInfra      bool
 	PreserveIAM        bool
 	Region             string
 	PostDeleteAction   func()

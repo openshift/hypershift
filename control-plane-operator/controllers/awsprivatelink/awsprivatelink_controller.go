@@ -486,7 +486,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		// This can happen if we have a stale status on AWSEndpointService or encoutered
 		// an error updating the AWSEndpointService on the previous reconcile
 		output, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{
-			Filters: apiTagToEC2Filter(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
+			Filters: apiTagToEC2Filter(awsEndpointService.Name, hcp.Name, hcp.Spec.Platform.AWS.ResourceTags),
 		})
 		if err != nil {
 			msg := err.Error()
@@ -531,7 +531,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 				SubnetIds:        subnetIDs,
 				TagSpecifications: []*ec2.TagSpecification{{
 					ResourceType: aws.String("vpc-endpoint"),
-					Tags:         apiTagToEC2Tag(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
+					Tags:         apiTagToEC2Tag(awsEndpointService.Name, hcp.Name, hcp.Spec.Platform.AWS.ResourceTags),
 				}},
 			})
 			if err != nil {
@@ -687,22 +687,28 @@ func recordsForService(awsEndpointService *hyperv1.AWSEndpointService, hcp *hype
 
 }
 
-func apiTagToEC2Tag(name string, in []hyperv1.AWSResourceTag) []*ec2.Tag {
+func apiTagToEC2Tag(awsEndpointServiceName, hcpName string, in []hyperv1.AWSResourceTag) []*ec2.Tag {
 	result := make([]*ec2.Tag, len(in))
 	for _, val := range in {
 		result = append(result, &ec2.Tag{Key: aws.String(val.Key), Value: aws.String(val.Value)})
 	}
-	result = append(result, &ec2.Tag{Key: aws.String("AWSEndpointService"), Value: aws.String(name)})
+	result = append(result, &ec2.Tag{Key: aws.String("AWSEndpointService"), Value: aws.String(awsEndpointServiceName)})
+
+	// This tag is needed for determining the right vpc endpoint when sharing infrastructure/infra-id across multiple clusters. We do this in CI.
+	result = append(result, &ec2.Tag{Key: aws.String("hcpName"), Value: aws.String(hcpName)})
 
 	return result
 }
 
-func apiTagToEC2Filter(name string, in []hyperv1.AWSResourceTag) []*ec2.Filter {
+func apiTagToEC2Filter(awsEndpointServiceName, hcpName string, in []hyperv1.AWSResourceTag) []*ec2.Filter {
 	result := make([]*ec2.Filter, len(in))
 	for _, val := range in {
 		result = append(result, &ec2.Filter{Name: aws.String("tag:" + val.Key), Values: aws.StringSlice([]string{val.Value})})
 	}
-	result = append(result, &ec2.Filter{Name: aws.String("tag:AWSEndpointService"), Values: aws.StringSlice([]string{name})})
+	result = append(result, &ec2.Filter{Name: aws.String("tag:AWSEndpointService"), Values: aws.StringSlice([]string{awsEndpointServiceName})})
+
+	// This tag is needed for determining the right vpc endpoint when sharing infrastructure/infra-id across multiple clusters. E.g. we do this in CI.
+	result = append(result, &ec2.Filter{Name: aws.String("tag:hcpName"), Values: aws.StringSlice([]string{hcpName})})
 
 	return result
 }

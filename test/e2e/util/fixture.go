@@ -37,7 +37,9 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		opts.InfraID = hc.Name
+		if opts.InfraID == "" {
+			opts.InfraID = hc.Name
+		}
 	case hyperv1.PowerVSPlatform:
 		opts.InfraID = fmt.Sprintf("%s-infra", hc.Name)
 	}
@@ -74,6 +76,7 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 		ClusterGracePeriod: 15 * time.Minute,
 		Log:                NewLogr(t),
 	}
+
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		opts.AWSPlatform = core.AWSPlatformDestroyOptions{
@@ -83,6 +86,10 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 			Region:             createOpts.AWSPlatform.Region,
 			PostDeleteAction:   validateAWSGuestResourcesDeletedFunc(ctx, t, hc.Spec.InfraID, createOpts.AWSPlatform.AWSCredentialsFile, createOpts.AWSPlatform.Region),
 		}
+		if createOpts.InfrastructureJSON != "" {
+			opts.AWSPlatform.PreserveInfra = true
+		}
+
 		return aws.DestroyCluster(ctx, opts)
 	case hyperv1.NonePlatform, hyperv1.KubevirtPlatform:
 		return none.DestroyCluster(ctx, opts)

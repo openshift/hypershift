@@ -77,6 +77,7 @@ type CreateOptions struct {
 	SkipAPIBudgetVerification        bool
 	CredentialSecretName             string
 	NodeUpgradeType                  hyperv1.UpgradeType
+	ServiceAccountSigningKey         string
 	PausedUntil                      string
 
 	// BeforeApply is called immediately before resources are applied to the
@@ -291,6 +292,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		Arch:                             opts.Arch,
 		NodeSelector:                     opts.NodeSelector,
 		UpgradeType:                      opts.NodeUpgradeType,
+		ServiceAccountSigningKey:         opts.ServiceAccountSigningKey,
 		PausedUntil:                      opts.PausedUntil,
 	}, nil
 }

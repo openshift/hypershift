@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openshift/hypershift/support/infraid"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -160,11 +162,46 @@ func main(m *testing.M) int {
 			return -1
 		}
 		defer cleanupSharedOIDCProvider()
+
+		// Setup shared infra.
+		globalOpts.InfraID = infraid.New("e2e-shared-infra")
+		infra := awsinfra.CreateInfraOptions{
+			// This will create a not used route53 zone with this name.
+			Name:               globalOpts.InfraID,
+			InfraID:            globalOpts.InfraID,
+			Region:             globalOpts.configurableClusterOptions.Region,
+			AWSCredentialsFile: globalOpts.configurableClusterOptions.AWSCredentialsFile,
+			BaseDomain:         globalOpts.configurableClusterOptions.BaseDomain,
+			Zones:              strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ","),
+		}
+
+		defer func() {
+			_ = cleanupSharedInfra(infra)
+		}()
+		if err := infra.Run(testContext, log); err != nil {
+			log.Error(err, "failed to setup shared infra")
+			return -1
+		}
 	}
 
 	// Everything's okay to run tests
 	log.Info("executing e2e tests", "options", globalOpts)
 	return m.Run()
+}
+
+func cleanupSharedInfra(awsInfra awsinfra.CreateInfraOptions) error {
+	destroyInfraOpts := awsinfra.DestroyInfraOptions{
+		Name:               awsInfra.Name,
+		Region:             awsInfra.Region,
+		InfraID:            awsInfra.InfraID,
+		AWSCredentialsFile: awsInfra.AWSCredentialsFile,
+		BaseDomain:         awsInfra.BaseDomain,
+		Log:                log,
+	}
+	if err := destroyInfraOpts.Run(testContext); err != nil {
+		return fmt.Errorf("failed to destroy infrastructure: %w", err)
+	}
+	return nil
 }
 
 // setup a shared OIDC provider to be used by all HostedClusters
@@ -339,6 +376,7 @@ type options struct {
 	PreviousReleaseImage string
 	IsRunningInCI        bool
 	ArtifactDir          string
+	InfraID              string
 
 	// BeforeApply is a function passed to the CLI create command giving the test
 	// code an opportunity to inspect or mutate the resources the CLI will create
