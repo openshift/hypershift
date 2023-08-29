@@ -27,7 +27,6 @@ type KubeAPIServerImages struct {
 	Portieris                  string `json:"portieris"`
 	TokenMinterImage           string
 	AWSPodIdentityWebhookImage string
-	KonnectivityServer         string
 }
 
 type KubeAPIServerParams struct {
@@ -71,12 +70,6 @@ type KubeAPIServerServiceParams struct {
 	OwnerReference      *metav1.OwnerReference
 }
 
-const (
-	KonnectivityHealthPort      = 2041
-	KonnectivityServerLocalPort = 8090
-	KonnectivityServerPort      = 8091
-)
-
 func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
@@ -101,7 +94,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			TokenMinterImage:           releaseImageProvider.GetImage("token-minter"),
 			AWSKMS:                     releaseImageProvider.GetImage("aws-kms-provider"),
 			AWSPodIdentityWebhookImage: releaseImageProvider.GetImage("aws-pod-identity-webhook"),
-			KonnectivityServer:         releaseImageProvider.GetImage("apiserver-network-proxy"),
 		},
 	}
 	if hcp.Spec.Configuration != nil {
@@ -232,20 +224,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			FailureThreshold:    3,
 			SuccessThreshold:    1,
 		},
-		konnectivityServerContainer().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(KonnectivityHealthPort)),
-					Path:   "healthz",
-				},
-			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      30,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
-		},
 	}
 	params.ReadinessProbes = config.ReadinessProbes{
 		kasContainerMain().Name: {
@@ -261,20 +239,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			TimeoutSeconds:      120,
 			FailureThreshold:    6,
 			SuccessThreshold:    1,
-		},
-		konnectivityServerContainer().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(KonnectivityHealthPort)),
-					Path:   "healthz",
-				},
-			},
-			InitialDelaySeconds: 15,
-			PeriodSeconds:       60,
-			SuccessThreshold:    1,
-			FailureThreshold:    3,
-			TimeoutSeconds:      5,
 		},
 	}
 	params.Resources = map[string]corev1.ResourceRequirements{
@@ -314,12 +278,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 				corev1.ResourceCPU:    resource.MustParse("5m"),
 			},
 		},
-		konnectivityServerContainer().Name: {
-			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("50Mi"),
-				corev1.ResourceCPU:    resource.MustParse("10m"),
-			},
-		},
 	}
 
 	switch hcp.Spec.Platform.Type {
@@ -335,9 +293,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	if _, ok := hcp.Annotations[hyperv1.IBMCloudKMSProviderImage]; ok {
 		params.Images.IBMCloudKMS = hcp.Annotations[hyperv1.IBMCloudKMSProviderImage]
-	}
-	if _, ok := hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]; ok {
-		params.Images.KonnectivityServer = hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]
 	}
 
 	params.KubeConfigRef = hcp.Spec.KubeConfig

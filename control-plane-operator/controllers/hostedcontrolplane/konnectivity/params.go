@@ -4,6 +4,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/pointer"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -16,17 +17,70 @@ const (
 )
 
 type KonnectivityParams struct {
-	KonnectivityAgentImage string
-	OwnerRef               config.OwnerRef
-	AgentDeploymentConfig  config.DeploymentConfig
-	AgentDeamonSetConfig   config.DeploymentConfig
+	KonnectivityServerImage string
+	KonnectivityAgentImage  string
+	ExternalAddress         string
+	ExternalPort            int32
+	OwnerRef                config.OwnerRef
+	ServerDeploymentConfig  config.DeploymentConfig
+	AgentDeploymentConfig   config.DeploymentConfig
+	AgentDeamonSetConfig    config.DeploymentConfig
 }
 
 func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, externalAddress string, externalPort int32, setDefaultSecurityContext bool) *KonnectivityParams {
 	p := &KonnectivityParams{
-		KonnectivityAgentImage: releaseImageProvider.GetImage("konnectivity-agent"),
-		OwnerRef:               config.OwnerRefFrom(hcp),
+		KonnectivityServerImage: releaseImageProvider.GetImage("konnectivity-server"),
+		KonnectivityAgentImage:  releaseImageProvider.GetImage("konnectivity-agent"),
+		ExternalAddress:         externalAddress,
+		ExternalPort:            externalPort,
+		OwnerRef:                config.OwnerRefFrom(hcp),
 	}
+	p.ServerDeploymentConfig.LivenessProbes = config.LivenessProbes{
+		konnectivityServerContainer().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(healthPort)),
+					Path:   "healthz",
+				},
+			},
+			InitialDelaySeconds: 120,
+			TimeoutSeconds:      30,
+			PeriodSeconds:       60,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		},
+	}
+	p.ServerDeploymentConfig.ReadinessProbes = config.ReadinessProbes{
+		konnectivityServerContainer().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(healthPort)),
+					Path:   "healthz",
+				},
+			},
+			InitialDelaySeconds: 15,
+			PeriodSeconds:       60,
+			SuccessThreshold:    1,
+			FailureThreshold:    3,
+			TimeoutSeconds:      5,
+		},
+	}
+	p.ServerDeploymentConfig.Resources = config.ResourcesSpec{
+		konnectivityServerContainer().Name: {
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+			},
+		},
+	}
+	p.ServerDeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
+	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
+		p.ServerDeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
+	}
+	p.ServerDeploymentConfig.SetRequestServingDefaults(hcp, nil, pointer.Int(1))
+	p.ServerDeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	p.AgentDeploymentConfig.Resources = config.ResourcesSpec{
 		konnectivityAgentContainer().Name: {
@@ -90,15 +144,21 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider
 	// non root security context if scc capability is missing
 	p.AgentDeamonSetConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	p.AgentDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
+	p.ServerDeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	// check apiserver-network-proxy image in ocp payload and use it
 	if image, exist := releaseImageProvider.ImageExist("apiserver-network-proxy"); exist {
+		p.KonnectivityServerImage = image
 		p.KonnectivityAgentImage = image
 	}
 
-	if _, ok := hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]; ok {
-		p.KonnectivityAgentImage = hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]
+	if hcp.Annotations != nil {
+		if _, ok := hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]; ok {
+			p.KonnectivityServerImage = hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]
+		}
+		if _, ok := hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]; ok {
+			p.KonnectivityAgentImage = hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]
+		}
 	}
-
 	return p
 }
 

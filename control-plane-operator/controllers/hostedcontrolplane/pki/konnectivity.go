@@ -13,15 +13,11 @@ func ReconcileKonnectivitySignerSecret(secret *corev1.Secret, ownerRef config.Ow
 
 func ReconcileKonnectivityServerSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	dnsNames := []string{
-		"localhost",
 		"konnectivity-server-local",
 		fmt.Sprintf("konnectivity-server-local.%s.svc", secret.Namespace),
 		fmt.Sprintf("konnectivity-server-local.%s.svc.cluster.local", secret.Namespace),
 	}
-	ips := []string{
-		"127.0.0.1",
-	}
-	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "konnectivity-server-local", []string{"kubernetes"}, X509UsageServerAuth, dnsNames, ips)
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "konnectivity-server-local", []string{"kubernetes"}, X509UsageServerAuth, dnsNames, nil)
 }
 
 func ReconcileKonnectivityClusterSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalKconnectivityAddress string) error {

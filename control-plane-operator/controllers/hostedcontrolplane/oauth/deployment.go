@@ -17,6 +17,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -139,15 +140,15 @@ func buildOAuthContainerMain(image string, noProxy []string) func(c *corev1.Cont
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "HTTP_PROXY",
-				Value: fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("socks5://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
 			},
 			{
 				Name:  "HTTPS_PROXY",
-				Value: fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("socks5://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
 			},
 			{
 				Name:  "ALL_PROXY",
-				Value: fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("socks5://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
 			},
 			{
 				Name:  "NO_PROXY",

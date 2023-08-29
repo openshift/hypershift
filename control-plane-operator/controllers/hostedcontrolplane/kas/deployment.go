@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"path"
-	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 
@@ -20,7 +19,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
@@ -61,11 +59,6 @@ var (
 			kasVolumeKubeletClientCA().Name:        "/etc/kubernetes/certs/kubelet-ca",
 			kasVolumeKonnectivityClientCert().Name: "/etc/kubernetes/certs/konnectivity-client",
 			kasVolumeEgressSelectorConfig().Name:   "/etc/kubernetes/egress-selector",
-		},
-		konnectivityServerContainer().Name: util.ContainerVolumeMounts{
-			konnectivityVolumeServerCerts().Name:  "/etc/konnectivity/server",
-			konnectivityVolumeClusterCerts().Name: "/etc/konnectivity/cluster",
-			kasVolumeKonnectivityCA().Name:        "/etc/konnectivity/ca",
 		},
 	}
 
@@ -185,7 +178,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			Containers: []corev1.Container{
 				util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
 				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port, additionalNoProxyCIDRS)),
-				util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(images.KonnectivityServer, deploymentConfig.Replicas)),
 				{
 					Name:            "audit-logs",
 					Image:           images.CLI,
@@ -229,8 +221,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeKonnectivityClientCert(), buildKASVolumeKonnectivityClientCert),
 				util.BuildVolume(kasVolumeEgressSelectorConfig(), buildKASVolumeEgressSelectorConfig),
 				util.BuildVolume(kasVolumeKubeconfig(), buildKASVolumeKubeconfig),
-				util.BuildVolume(konnectivityVolumeServerCerts(), buildKonnectivityVolumeServerCerts),
-				util.BuildVolume(konnectivityVolumeClusterCerts(), buildKonnectivityVolumeClusterCerts),
 			},
 		},
 	}
@@ -849,81 +839,6 @@ func kasVolumeKubeconfig() *corev1.Volume {
 func buildKASVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KASLocalhostKubeconfigSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
-	}
-}
-
-func konnectivityServerContainer() *corev1.Container {
-	return &corev1.Container{
-		Name: "konnectivity-server",
-	}
-}
-
-func buildKonnectivityServerContainer(image string, serverCount int) func(c *corev1.Container) {
-	cpath := func(volume, file string) string {
-		return path.Join(volumeMounts.Path(konnectivityServerContainer().Name, volume), file)
-	}
-	return func(c *corev1.Container) {
-		c.Image = image
-		c.ImagePullPolicy = corev1.PullIfNotPresent
-		c.Command = []string{
-			"/usr/bin/proxy-server",
-		}
-		c.Args = []string{
-			"--logtostderr=true",
-			"--log-file-max-size=0",
-			"--cluster-cert",
-			cpath(konnectivityVolumeClusterCerts().Name, corev1.TLSCertKey),
-			"--cluster-key",
-			cpath(konnectivityVolumeClusterCerts().Name, corev1.TLSPrivateKeyKey),
-			"--server-cert",
-			cpath(konnectivityVolumeServerCerts().Name, corev1.TLSCertKey),
-			"--server-key",
-			cpath(konnectivityVolumeServerCerts().Name, corev1.TLSPrivateKeyKey),
-			"--server-ca-cert",
-			cpath(kasVolumeKonnectivityCA().Name, certs.CASignerCertMapKey),
-			"--server-port",
-			strconv.Itoa(KonnectivityServerLocalPort),
-			"--agent-port",
-			strconv.Itoa(KonnectivityServerPort),
-			"--health-port",
-			strconv.Itoa(KonnectivityHealthPort),
-			"--admin-port=8093",
-			"--mode=http-connect",
-			"--proxy-strategies=destHost,defaultRoute",
-			"--keepalive-time",
-			"30s",
-			"--frontend-keepalive-time",
-			"30s",
-			"--server-count",
-			strconv.Itoa(serverCount),
-		}
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
-	}
-}
-
-func konnectivityVolumeServerCerts() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "server-certs",
-	}
-}
-
-func buildKonnectivityVolumeServerCerts(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName:  manifests.KonnectivityServerSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
-	}
-}
-
-func konnectivityVolumeClusterCerts() *corev1.Volume {
-	return &corev1.Volume{
-		Name: "cluster-certs",
-	}
-}
-
-func buildKonnectivityVolumeClusterCerts(v *corev1.Volume) {
-	v.Secret = &corev1.SecretVolumeSource{
-		SecretName:  manifests.KonnectivityClusterSecret("").Name,
 		DefaultMode: pointer.Int32(0640),
 	}
 }

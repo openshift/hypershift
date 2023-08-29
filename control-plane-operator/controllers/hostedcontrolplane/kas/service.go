@@ -2,12 +2,9 @@ package kas
 
 import (
 	"fmt"
-	"strings"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -186,120 +183,4 @@ func ReconcileInternalRoute(route *routev1.Route, owner *metav1.OwnerReference) 
 	route.Spec.Host = fmt.Sprintf("api.%s.hypershift.local", owner.Name)
 	// Assumes owner is the HCP
 	return util.ReconcileInternalRoute(route, "", manifests.KubeAPIServerService("").Name)
-}
-
-func ReconcileKonnectivityServerLocalService(svc *corev1.Service, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(svc)
-	svc.Spec.Selector = kasLabels()
-	var portSpec corev1.ServicePort
-	if len(svc.Spec.Ports) > 0 {
-		portSpec = svc.Spec.Ports[0]
-	} else {
-		svc.Spec.Ports = []corev1.ServicePort{portSpec}
-	}
-	portSpec.Port = int32(KonnectivityServerLocalPort)
-	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(KonnectivityServerLocalPort)
-	svc.Spec.Type = corev1.ServiceTypeClusterIP
-	svc.Spec.Ports[0] = portSpec
-	return nil
-}
-
-func ReconcileKonnectivityServerService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy) error {
-	ownerRef.ApplyTo(svc)
-	svc.Spec.Selector = kasLabels()
-	var portSpec corev1.ServicePort
-	if len(svc.Spec.Ports) > 0 {
-		portSpec = svc.Spec.Ports[0]
-	} else {
-		svc.Spec.Ports = []corev1.ServicePort{portSpec}
-	}
-	portSpec.Port = int32(KonnectivityServerPort)
-	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(KonnectivityServerPort)
-	switch strategy.Type {
-	case hyperv1.LoadBalancer:
-		svc.Spec.Type = corev1.ServiceTypeLoadBalancer
-		if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
-			if svc.Annotations == nil {
-				svc.Annotations = map[string]string{}
-			}
-			svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
-		}
-	case hyperv1.NodePort:
-		svc.Spec.Type = corev1.ServiceTypeNodePort
-		if portSpec.NodePort == 0 && strategy.NodePort != nil {
-			portSpec.NodePort = strategy.NodePort.Port
-		}
-	case hyperv1.Route:
-		svc.Spec.Type = corev1.ServiceTypeClusterIP
-	default:
-		return fmt.Errorf("invalid publishing strategy for Konnectivity service: %s", strategy.Type)
-	}
-	svc.Spec.Ports[0] = portSpec
-	return nil
-}
-
-func ReconcileKonnectivityExternalRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string) error {
-	ownerRef.ApplyTo(route)
-	return util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.KonnectivityServerService(route.Namespace).Name)
-}
-
-func ReconcileKonnectivityInternalRoute(route *routev1.Route, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(route)
-	// Assumes ownerRef is the HCP
-	return util.ReconcileInternalRoute(route, ownerRef.Reference.Name, manifests.KonnectivityServerService(route.Namespace).Name)
-}
-
-func ReconcileKonnectivityServerServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy, messageCollector events.MessageCollector) (host string, port int32, message string, err error) {
-	switch strategy.Type {
-	case hyperv1.LoadBalancer:
-		if len(svc.Status.LoadBalancer.Ingress) == 0 {
-			message = fmt.Sprintf("Konnectivity load balancer is not provisioned; %v since creation", duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
-			var messages []string
-			messages, err = messageCollector.ErrorMessages(svc)
-			if err != nil {
-				err = fmt.Errorf("failed to get events for service %s/%s: %w", svc.Namespace, svc.Name, err)
-				return
-			}
-			if len(messages) > 0 {
-				message = fmt.Sprintf("Konnectivity load balancer is not provisioned: %s", strings.Join(messages, "; "))
-			}
-			return
-		}
-		port = int32(KonnectivityServerPort)
-		switch {
-		case strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "":
-			host = strategy.LoadBalancer.Hostname
-		case svc.Status.LoadBalancer.Ingress[0].Hostname != "":
-			host = svc.Status.LoadBalancer.Ingress[0].Hostname
-		case svc.Status.LoadBalancer.Ingress[0].IP != "":
-			host = svc.Status.LoadBalancer.Ingress[0].IP
-		}
-	case hyperv1.NodePort:
-		if strategy.NodePort == nil {
-			err = fmt.Errorf("strategy details not specified for Konnectivity nodeport type service")
-			return
-		}
-		if len(svc.Spec.Ports) == 0 {
-			return
-		}
-		if svc.Spec.Ports[0].NodePort == 0 {
-			return
-		}
-		port = svc.Spec.Ports[0].NodePort
-		host = strategy.NodePort.Address
-	case hyperv1.Route:
-		if strategy.Route != nil && strategy.Route.Hostname != "" {
-			host = strategy.Route.Hostname
-			port = 443
-			return
-		}
-		if route.Spec.Host == "" {
-			return
-		}
-		port = 443
-		host = route.Spec.Host
-	}
-	return
 }
