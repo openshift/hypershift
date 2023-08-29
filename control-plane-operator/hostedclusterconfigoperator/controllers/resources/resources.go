@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -68,9 +69,8 @@ import (
 )
 
 const (
-	ControllerName                   = "resources"
-	SecretHashAnnotation             = "hypershift.openshift.io/kubeadmin-secret-hash"
-	RegistryConfigDeletionAnnotation = "hypershift.openshift.io/registry-config-deletion-timestamp"
+	ControllerName       = "resources"
+	SecretHashAnnotation = "hypershift.openshift.io/kubeadmin-secret-hash"
 )
 
 var (
@@ -79,10 +79,6 @@ var (
 	// only once.
 	deleteDNSOperatorDeploymentOnce sync.Once
 	deleteCVORemovedResourcesOnce   sync.Once
-
-	// deletionSecondsTimeout is set to 600s or 10m and it's a confortable amount
-	// of time that needs the controller to give up on cloud resource deletion.
-	deletionSecondsTimeout = 600 * time.Second
 )
 
 type reconciler struct {
@@ -1551,156 +1547,95 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 
 	var status metav1.ConditionStatus
 	var reason, message string
-	var ltt metav1.Time
-	var ignoredTotal int
-	requeue := false
 
 	if err != nil {
 		reason = "ErrorOccurred"
 		status = metav1.ConditionFalse
 		message = fmt.Sprintf("Error: %v", err)
 	} else {
-		if len(remaining) == 0 {
+		if remaining.Len() == 0 {
 			reason = "CloudResourcesDestroyed"
 			status = metav1.ConditionTrue
 			message = "All guest resources destroyed"
-			ltt = metav1.Now()
 		} else {
-			// check remaining
-			remainingSlice := make([]string, 0)
-			for object, ignored := range remaining {
-				remainingSlice = append(remainingSlice, object)
-				if ignored {
-					ignoredTotal += 1
-				}
-			}
-
 			reason = "RemainingCloudResources"
 			status = metav1.ConditionFalse
-			message = fmt.Sprintf("Remaining resources: %s", strings.Join(remainingSlice, ","))
-			// Only update the LastTransitionTime when the controller is still waiting for remaining objects
-			// or ltt is not set.
-			if len(remaining) > ignoredTotal {
-				ltt = metav1.Now()
-				requeue = true
-			}
+			message = fmt.Sprintf("Remaining resources: %s", strings.Join(remaining.List(), ","))
 		}
 	}
-
 	resourcesDestroyedCond := &metav1.Condition{
 		Type:    string(hyperv1.CloudResourcesDestroyed),
 		Status:  status,
 		Reason:  reason,
 		Message: message,
-		// Here LastTransitionTime is used to indicate the last time the condition was updated by this
-		// controller. This is used by the CPO as a heartbeat to determine whether resource deletion is
-		// still in progress.
-		LastTransitionTime: ltt,
-	}
-	// Ensure the LastTransitionTime is updated because the hostedcontrolplane controller relies on that
-	// timestamp to use as a heartbeat.
-	setStatusConditionWithTransitionUpdate(&hcp.Status.Conditions, *resourcesDestroyedCond)
-	if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to set resources destroyed condition: %w", err)
 	}
 
-	if requeue {
-		// If we are still waiting for resources to go away, ensure we are requeued in at most 30 secs,
-		// so we can at least update the timestamp on the condition.
+	originalHCP := hcp.DeepCopy()
+	meta.SetStatusCondition(&hcp.Status.Conditions, *resourcesDestroyedCond)
+
+	if !equality.Semantic.DeepEqual(hcp, originalHCP) {
+		if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to set resources destroyed condition: %w", err)
+		}
+	}
+
+	if remaining.Len() > 0 {
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	} else {
 		return ctrl.Result{}, nil
 	}
 }
 
-func setStatusConditionWithTransitionUpdate(conditions *[]metav1.Condition, newCondition metav1.Condition) {
-	if conditions == nil {
-		return
-	}
-	existingCondition := meta.FindStatusCondition(*conditions, newCondition.Type)
-	if existingCondition == nil {
-		if newCondition.LastTransitionTime.IsZero() {
-			newCondition.LastTransitionTime = metav1.NewTime(time.Now())
-		}
-		*conditions = append(*conditions, newCondition)
-		return
-	}
-
-	// Always update the LastTransition time
-	existingCondition.Status = newCondition.Status
-	if !newCondition.LastTransitionTime.IsZero() {
-		existingCondition.LastTransitionTime = newCondition.LastTransitionTime
-	} else {
-		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
-	}
-
-	existingCondition.Reason = newCondition.Reason
-	existingCondition.Message = newCondition.Message
-	existingCondition.ObservedGeneration = newCondition.ObservedGeneration
-}
-
-func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyperv1.HostedControlPlane) (map[string]bool, error) {
+func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyperv1.HostedControlPlane) (sets.String, error) {
 	log := ctrl.LoggerFrom(ctx)
-	remainingIgnoredResources := make(map[string]bool)
+	remaining := sets.NewString()
 	log.Info("Ensuring resource creation is blocked in cluster")
 	if err := r.ensureResourceCreationIsBlocked(ctx); err != nil {
-		return remainingIgnoredResources, err
+		return remaining, err
 	}
-
 	var errs []error
 	log.Info("Ensuring image registry storage is removed")
-	removed, ignored, err := r.ensureImageRegistryStorageRemoved(ctx)
+	removed, err := r.ensureImageRegistryStorageRemoved(ctx)
 	if err != nil {
 		errs = append(errs, err)
 	}
-	if !removed && !ignored {
-		remainingIgnoredResources["image-registry"] = false
-	} else if ignored {
-		remainingIgnoredResources["image-registry"] = true
+	if !removed {
+		remaining.Insert("image-registry")
 	} else {
 		log.Info("Image registry is removed")
 	}
-
 	log.Info("Ensuring ingress controllers are removed")
-	removed, ignored, err = r.ensureIngressControllersRemoved(ctx, hcp)
+	removed, err = r.ensureIngressControllersRemoved(ctx, hcp)
 	if err != nil {
 		errs = append(errs, err)
 	}
-	if !removed && !ignored {
-		remainingIgnoredResources["ingress-controllers"] = false
-	} else if ignored {
-		remainingIgnoredResources["ingress-controllers"] = true
+	if !removed {
+		remaining.Insert("ingress-controllers")
 	} else {
 		log.Info("Ingress controllers are removed")
 	}
-
 	log.Info("Ensuring load balancers are removed")
-	removed, ignored, err = r.ensureServiceLoadBalancersRemoved(ctx)
+	removed, err = r.ensureServiceLoadBalancersRemoved(ctx)
 	if err != nil {
 		errs = append(errs, err)
 	}
-	if !removed && !ignored {
-		remainingIgnoredResources["loadbalancers"] = false
-	} else if ignored {
-		remainingIgnoredResources["loadbalancers"] = true
+	if !removed {
+		remaining.Insert("loadbalancers")
 	} else {
 		log.Info("Load balancers are removed")
 	}
-
 	log.Info("Ensuring persistent volumes are removed")
-	removed, ignored, err = r.ensurePersistentVolumesRemoved(ctx)
+	removed, err = r.ensurePersistentVolumesRemoved(ctx)
 	if err != nil {
 		errs = append(errs, err)
 	}
-	if !removed && !ignored {
-		remainingIgnoredResources["persistent-volumes"] = false
-	} else if ignored {
-		remainingIgnoredResources["persistent-volumes"] = true
+	if !removed {
+		remaining.Insert("persistent-volumes")
 	} else {
 		log.Info("Persistent volumes are removed")
 	}
 
-	return remainingIgnoredResources, errors.NewAggregate(errs)
+	return remaining, errors.NewAggregate(errs)
 }
 
 func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) error {
@@ -1837,37 +1772,16 @@ func reconcileCreationBlockerWebhook(wh *admissionregistrationv1.ValidatingWebho
 	}
 }
 
-// ensureIngressControllersRemoved returns firstly a boolean, indicating if the resource involved (IngressimageController)
-// has been deleted or not. Also it returns another boolean which indicates if that resources is being ignored because of the
-// resource deletion timeout and an error if one occurred.
-func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, bool, error) {
+func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
-
 	ingressControllers := &operatorv1.IngressControllerList{}
 	if err := r.client.List(ctx, ingressControllers); err != nil {
-		return false, false, fmt.Errorf("failed to list ingress controllers: %w", err)
+		return false, fmt.Errorf("failed to list ingress controllers: %w", err)
 	}
 	if len(ingressControllers.Items) == 0 {
 		log.Info("There are no ingresscontrollers, nothing to do")
-		return true, false, nil
+		return true, nil
 	}
-
-	// If the DeletionTimestamp reaches the gracePeriod, the controller
-	// should ignore the object and continue with the deletion
-	counter := 0
-	for i := range ingressControllers.Items {
-		ic := &ingressControllers.Items[i]
-		if ic.DeletionTimestamp != nil {
-			if time.Since(ic.ObjectMeta.DeletionTimestamp.Time) > deletionSecondsTimeout {
-				counter += 1
-			}
-		}
-	}
-	if counter == len(ingressControllers.Items) {
-		log.Info("ingressControllers deletion timeout reached, ignoring object and continuing with the deprovision")
-		return false, true, nil
-	}
-
 	var errs []error
 	for i := range ingressControllers.Items {
 		ic := &ingressControllers.Items[i]
@@ -1879,14 +1793,14 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 		}
 	}
 	if len(errs) > 0 {
-		return false, false, fmt.Errorf("failed to delete ingress controllers: %w", errors.NewAggregate(errs))
+		return false, fmt.Errorf("failed to delete ingress controllers: %w", errors.NewAggregate(errs))
 	}
 
 	// Force deleting pods under openshift-ingress to unblock ingress-controller deletion.
 	// Ingress-operator is dependent on these pods deletion on removing the finalizers of ingress-controller.
 	routerPods := &corev1.PodList{}
 	if err := r.uncachedClient.List(ctx, routerPods, &client.ListOptions{Namespace: "openshift-ingress"}); err != nil {
-		return false, false, fmt.Errorf("failed to list pods under openshift-ingress namespace: %w", err)
+		return false, fmt.Errorf("failed to list pods under openshift-ingress namespace: %w", err)
 	}
 
 	for i := range routerPods.Items {
@@ -1898,7 +1812,7 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 	}
 
 	if len(errs) > 0 {
-		return false, false, fmt.Errorf("failed to force delete pods under openshift-ingress namespace: %w", errors.NewAggregate(errs))
+		return false, fmt.Errorf("failed to force delete pods under openshift-ingress namespace: %w", errors.NewAggregate(errs))
 	}
 
 	// Remove ingress service and route that were created by HCCO in case of basedomain passthrough feature is enabled
@@ -1936,71 +1850,40 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 	}
 
 	if len(errs) > 0 {
-		return false, false, fmt.Errorf("failed to delete ingress resources on infra cluster: %w", errors.NewAggregate(errs))
+		return false, fmt.Errorf("failed to delete ingress resources on infra cluster: %w", errors.NewAggregate(errs))
 	}
 
-	return false, false, nil
+	return false, nil
 }
 
-// ensureImageRegistryStorageRemoved returns firstly a boolean, indicating if the resource involved (imageRegistry)
-// has been deleted or not. Also it returns another boolean which indicates if that resources is being ignored because of the
-// resource deletion timeout and an error if one occurred.
-func (r *reconciler) ensureImageRegistryStorageRemoved(ctx context.Context) (bool, bool, error) {
+func (r *reconciler) ensureImageRegistryStorageRemoved(ctx context.Context) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	registryConfig := manifests.Registry()
 	if err := r.client.Get(ctx, client.ObjectKeyFromObject(registryConfig), registryConfig); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("registry operator config does not exist, nothing to do")
-			return true, false, nil
+			return true, nil
 		}
-		return false, false, fmt.Errorf("failed to get registry operator configuration: %w", err)
+		return false, fmt.Errorf("failed to get registry operator configuration: %w", err)
 	}
-
-	// If the registryConfig has a RegistryConfigDeletionAnnotation annotation will parse the timestamp included
-	// and check if the timestamp exceeds the timeout.
-	if registryConfig.Annotations[RegistryConfigDeletionAnnotation] != "" {
-		annotationTimestamp, err := time.Parse(time.RFC3339, registryConfig.Annotations[RegistryConfigDeletionAnnotation])
-		if err != nil {
-			if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
-				registryConfig.Annotations[RegistryConfigDeletionAnnotation] = ""
-				return nil
-			}); err != nil {
-				return false, false, fmt.Errorf("failed to update image registry annotation: %w", err)
-			}
-		}
-		if time.Since(annotationTimestamp) > deletionSecondsTimeout {
-			log.Info("registry config deletion timeout reached, ignoring object and continuing with the deprovision")
-			return false, true, nil
-		}
-	}
-
 	// If storage has already been removed, nothing to do
 	// When the registry operator has been removed, management state in status is currently cleared.
 	if registryConfig.Status.Storage.ManagementState == "" || registryConfig.Status.Storage.ManagementState == "Removed" {
 		log.Info("Registry operator management state is blank or removed, done cleaning up")
-		return true, false, nil
+		return true, nil
 	}
-
 	log.Info("Setting management state for registry operator to removed")
 	if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
 		registryConfig.Spec.ManagementState = operatorv1.Removed
-		if registryConfig.Annotations == nil {
-			registryConfig.Annotations = make(map[string]string)
-		}
-
-		if registryConfig.Annotations[RegistryConfigDeletionAnnotation] == "" {
-			registryConfig.Annotations[RegistryConfigDeletionAnnotation] = time.Now().Format(time.RFC3339)
-		}
 		return nil
 	}); err != nil {
-		return false, false, fmt.Errorf("failed to update image registry management state: %w", err)
+		return false, fmt.Errorf("failed to update image registry management state: %w", err)
 	}
-	return false, false, nil
+	return false, nil
 }
 
-func (r *reconciler) ensureServiceLoadBalancersRemoved(ctx context.Context) (bool, bool, error) {
-	log := ctrl.LoggerFrom(ctx)
-	_, _, err := cleanupResources(ctx, r.client, &corev1.ServiceList{}, func(obj client.Object) bool {
+func (r *reconciler) ensureServiceLoadBalancersRemoved(ctx context.Context) (bool, error) {
+	_, err := cleanupResources(ctx, r.client, &corev1.ServiceList{}, func(obj client.Object) bool {
 		svc := obj.(*corev1.Service)
 		if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
 			return false
@@ -2015,62 +1898,37 @@ func (r *reconciler) ensureServiceLoadBalancersRemoved(ctx context.Context) (boo
 		return true
 	}, false)
 	if err != nil {
-		return false, false, fmt.Errorf("failed to remove load balancer services: %w", err)
+		return false, fmt.Errorf("failed to remove load balancer services: %w", err)
 	}
 
-	removed, ignored, err := allLoadBalancersRemoved(ctx, r.client)
+	removed, err := allLoadBalancersRemoved(ctx, r.client)
 	if err != nil {
-		return false, false, fmt.Errorf("error checking load balancer services: %w", err)
+		return false, fmt.Errorf("error checking load balancer services: %w", err)
 	}
 
-	if ignored {
-		log.Info("giving up in load balancer deletion")
-		return true, ignored, nil
-	}
-
-	return removed, ignored, nil
+	return removed, nil
 }
 
-func (r *reconciler) ensurePersistentVolumesRemoved(ctx context.Context) (bool, bool, error) {
+func (r *reconciler) ensurePersistentVolumesRemoved(ctx context.Context) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	pvs := &corev1.PersistentVolumeList{}
 	if err := r.client.List(ctx, pvs); err != nil {
-		return false, false, fmt.Errorf("cannot list persistent volumes: %w", err)
+		return false, fmt.Errorf("cannot list persistent volumes: %w", err)
 	}
-
-	pvcsRemain, ignored, err := cleanupResources(ctx, r.client, &corev1.PersistentVolumeClaimList{}, nil, false)
-	if err != nil {
-		return false, false, fmt.Errorf("failed to remove persistent volume claims: %w", err)
-	}
-
-	if ignored {
-		log.Info("giving up in persistent volume claim deletion")
-		return true, ignored, nil
-	}
-
 	if len(pvs.Items) == 0 {
 		log.Info("There are no more persistent volumes. Nothing to cleanup.")
-		return true, false, nil
+		return true, nil
 	}
-
-	if _, _, err := cleanupResources(ctx, r.uncachedClient, &corev1.PodList{}, func(obj client.Object) bool {
+	if _, err := cleanupResources(ctx, r.client, &corev1.PersistentVolumeClaimList{}, nil, false); err != nil {
+		return false, fmt.Errorf("failed to remove persistent volume claims: %w", err)
+	}
+	if _, err := cleanupResources(ctx, r.uncachedClient, &corev1.PodList{}, func(obj client.Object) bool {
 		pod := obj.(*corev1.Pod)
 		return hasAttachedPVC(pod)
 	}, true); err != nil {
-		return false, false, fmt.Errorf("failed to remove pods: %w", err)
+		return false, fmt.Errorf("failed to remove pods: %w", err)
 	}
-
-	if !pvcsRemain {
-		_, ignored, err := cleanupResources(ctx, r.client, &corev1.PersistentVolumeList{}, nil, false)
-		if err != nil {
-			return false, false, fmt.Errorf("failed to remove pending persistent volumes: %w", err)
-		}
-		if ignored {
-			log.Info("giving up in persistent volume deletion")
-			return true, ignored, nil
-		}
-	}
-	return false, false, nil
+	return false, nil
 }
 
 func (r *reconciler) reconcileInstallConfigMap(ctx context.Context, releaseImage *releaseinfo.ReleaseImage) error {
@@ -2112,58 +1970,35 @@ func shouldCleanupCloudResources(hcp *hyperv1.HostedControlPlane) bool {
 
 // cleanupResources generically deletes resources of a given type using an optional filter
 // function. The result is a boolean indicating whether resources were found that match
-// the filter, another boolean which indicate if resource is being ignored because of the
-// resource deletion timeout and an error if one occurred.
-func cleanupResources(ctx context.Context, c client.Client, list client.ObjectList, filter func(client.Object) bool, force bool) (bool, bool, error) {
+// the filter and an error if one occurred.
+func cleanupResources(ctx context.Context, c client.Client, list client.ObjectList, filter func(client.Object) bool, force bool) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	if err := c.List(ctx, list); err != nil {
-		return false, false, fmt.Errorf("cannot list %T: %w", list, err)
+		return false, fmt.Errorf("cannot list %T: %w", list, err)
 	}
 
 	var errs []error
 	foundResource := false
 	a := listAccessor(list)
-	ignoredObjects := make(map[string]bool)
-
 	for i := 0; i < a.len(); i++ {
 		obj := a.item(i)
 		if filter == nil || filter(obj) {
 			foundResource = true
-			var deleteErr error
 			if obj.GetDeletionTimestamp().IsZero() {
-				ignoredObjects[fmt.Sprintf("%s-%s-%s", obj.GetNamespace(), obj.GetName(), obj.GetObjectKind().GroupVersionKind().Kind)] = false
 				log.Info("Deleting resource", "type", fmt.Sprintf("%T", obj), "name", client.ObjectKeyFromObject(obj).String())
+				var deleteErr error
 				if force {
 					deleteErr = c.Delete(ctx, obj, &client.DeleteOptions{GracePeriodSeconds: pointer.Int64(0)})
 				} else {
 					deleteErr = c.Delete(ctx, obj)
 				}
-			}
-			// If the cloudResource is still there after the timeout, it's marked as removed
-			if ts := obj.GetDeletionTimestamp(); ts != nil {
-				if time.Since(ts.Time) > deletionSecondsTimeout {
-					log.Info(fmt.Sprintf("deletion timeout reached for: %s-%s-%s", obj.GetNamespace(), obj.GetName(), obj.GetObjectKind().GroupVersionKind().Kind))
-					ignoredObjects[fmt.Sprintf("%s-%s-%s", obj.GetNamespace(), obj.GetName(), obj.GetObjectKind().GroupVersionKind().Kind)] = true
+				if deleteErr != nil {
+					errs = append(errs, deleteErr)
 				}
 			}
-			if deleteErr != nil {
-				errs = append(errs, deleteErr)
-			}
 		}
 	}
-
-	timedOut := 0
-	for obj := range ignoredObjects {
-		if ignoredObjects[obj] {
-			timedOut += 1
-		}
-		if len(ignoredObjects) == timedOut {
-			log.Info("deletion timeout reached in all the objects, ignoring them and continuing with the deprovision", "IgnoredObjects", ignoredObjects)
-			return foundResource, true, nil
-		}
-
-	}
-	return foundResource, false, errors.NewAggregate(errs)
+	return foundResource, errors.NewAggregate(errs)
 }
 
 type genericListAccessor struct {
@@ -2254,24 +2089,19 @@ func (r *reconciler) reconcileImageContentPolicyType(ctx context.Context, hcp *h
 
 // allLoadBalancersRemoved checks any service of type corev1.ServiceTypeLoadBalancer exists.
 // If any one service of type corev1.ServiceTypeLoadBalancer exists, will return false or else will return true.
-func allLoadBalancersRemoved(ctx context.Context, c client.Client) (bool, bool, error) {
+func allLoadBalancersRemoved(ctx context.Context, c client.Client) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	list := &corev1.ServiceList{}
 	if err := c.List(ctx, list); err != nil {
-		return false, false, fmt.Errorf("cannot list %T: %w", list, err)
+		return false, fmt.Errorf("cannot list %T: %w", list, err)
 	}
 
 	for _, svc := range list.Items {
 		if svc.Spec.Type == corev1.ServiceTypeLoadBalancer {
 			log.Info("Waiting on service of type LoadBalancer to be deleted", "name", svc.Name, "namespace", svc.Namespace)
-			if svc.DeletionTimestamp != nil && time.Since(svc.DeletionTimestamp.Time) > deletionSecondsTimeout {
-				log.Info("load balancer deletion timeout reached, ignoring object and continuing with the deprovision")
-				return false, true, nil
-			}
-
-			return false, false, nil
+			return false, nil
 		}
 	}
 
-	return true, false, nil
+	return true, nil
 }

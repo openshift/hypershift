@@ -2867,10 +2867,8 @@ When this is false for too long and there&rsquo;s no clear indication in the &ld
 an error that may require user intervention to resolve.</p>
 </td>
 </tr><tr><td><p>&#34;HostedClusterDestroyed&#34;</p></td>
-<td><p>HostedClusterDestroyed indicates that a hosted cluster is destroying. This condition really means that it has finished destroying,
-but the resource is waiting for the grace period so it can go away.
-This grace period was introduced in order to notify when cloud dangling objects are not deleted that the user created.
-This condition will be grabbed by OCM personnel to report any dangling objects to the user.</p>
+<td><p>HostedClusterDestroyed indicates that a hosted has finished destroying and that it is waiting for a destroy grace period to go away.
+The grace period is determined by the hypershift.openshift.io/destroy-grace-period annotation in the HostedCluster if present.</p>
 </td>
 </tr><tr><td><p>&#34;Progressing&#34;</p></td>
 <td><p>HostedClusterProgressing indicates whether the HostedCluster is attempting

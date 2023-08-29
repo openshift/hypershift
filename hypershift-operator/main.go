@@ -99,7 +99,6 @@ type StartOptions struct {
 	OIDCStorageProviderS3Region      string
 	OIDCStorageProviderS3Credentials string
 	EnableUWMTelemetryRemoteWrite    bool
-	HCDestroyGracePeriod             time.Duration
 }
 
 func NewStartCommand() *cobra.Command {

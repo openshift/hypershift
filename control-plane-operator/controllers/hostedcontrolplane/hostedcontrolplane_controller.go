@@ -103,7 +103,7 @@ const (
 	ImageStreamAutoscalerImage             = "cluster-autoscaler"
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 
-	resourceDeletionTimeout = 2 * time.Minute
+	resourceDeletionTimeout = 10 * time.Minute
 
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
@@ -3746,7 +3746,7 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 		}
 
 		if timeElapsed > resourceDeletionTimeout {
-			log.Info("Giving up on resource deletion since there has not been an update before timeout", "timeElapsed", duration.ShortHumanDuration(timeElapsed))
+			log.Info("Giving up on resource deletion after timeout", "timeElapsed", duration.ShortHumanDuration(timeElapsed))
 			return true, nil
 		}
 		return false, nil

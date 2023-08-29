@@ -379,7 +379,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 
 			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-			if oldCondition == nil || metav1.ConditionStatus(oldCondition.Message) != metav1.ConditionStatus(freshCondition.Message) {
+			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
 				freshCondition.ObservedGeneration = hcluster.Generation
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 				// Persist status updates
@@ -394,17 +394,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	reportSilecedAlerts(hcluster)
 	reportProxyConfig(hcluster)
 
-	// Add a grace-period finalizer
-	if hcluster.Annotations == nil {
-		hcluster.Annotations = make(map[string]string)
-	}
-
 	var hcDestroyGracePeriod time.Duration
 
-	if gracePeriod, ok := hcluster.Annotations[hyperv1.HCDestroyGracePeriodAnnotation]; ok && len(gracePeriod) > 0 && hcDestroyGracePeriod == 0 {
-		hcDestroyGracePeriod, err = time.ParseDuration(gracePeriod)
+	if gracePeriodString := hcluster.Annotations[hyperv1.HCDestroyGracePeriodAnnotation]; len(gracePeriodString) > 0 {
+		hcDestroyGracePeriod, err = time.ParseDuration(gracePeriodString)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to parse destroy-grace-period annotation: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to parse %s annotation: %w", hyperv1.HCDestroyGracePeriodAnnotation, err)
 		}
 	}
 
@@ -412,23 +407,28 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if !hcluster.DeletionTimestamp.IsZero() {
 		reportHostedClusterGuestCloudResourcesDeletionDuration(hcluster)
 
-		// Keep trying to delete until we know it's safe to finalize.
-		completed, err := r.delete(ctx, hcluster)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete hostedcluster: %w", err)
-		}
-		if !completed {
-			log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
-			return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
-		}
-
 		// This new condition is necessary for OCM personnel to report any cloud dangling objects to the user.
 		// The grace period is customizable using an annotation called HCDestroyGracePeriodAnnotation. It's a time.Duration annotation.
 		// This annotation will create a new condition called HostedClusterDestroyed which in conjuntion with CloudResourcesDestroyed
 		// a SRE could determine if there are dangling objects once the HostedCluster is deleted. These cloud dangling objects will remain
 		// in AWS, and SRE will report them to the final user.
+		hostedClusterDestroyedCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterDestroyed))
+		if hostedClusterDestroyedCondition == nil || hostedClusterDestroyedCondition.Status != metav1.ConditionTrue {
+			// Keep trying to delete until we know it's safe to finalize.
+			completed, err := r.delete(ctx, hcluster)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete hostedcluster: %w", err)
+			}
+			if !completed {
+				log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
+				return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
+			}
+		}
+
+		// Metric for deletion duration should not include grace period which is only used to report status
+		reportHostedClusterDeletionDuration(hcluster, r.Clock)
+
 		if hcDestroyGracePeriod > 0 {
-			hostedClusterDestroyedCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterDestroyed))
 			if hostedClusterDestroyedCondition == nil {
 				hostedClusterDestroyedCondition = &metav1.Condition{
 					Type:               string(hyperv1.HostedClusterDestroyed),
@@ -443,17 +443,15 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 				}
+				log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
+				return ctrl.Result{RequeueAfter: hcDestroyGracePeriod}, nil
 			}
 
-			cloudResourcesDestroyed := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-			if cloudResourcesDestroyed.Status == metav1.ConditionFalse && time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time) <= hcDestroyGracePeriod {
+			if time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time) < hcDestroyGracePeriod {
+				log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
 				return ctrl.Result{RequeueAfter: hcDestroyGracePeriod - time.Since(hostedClusterDestroyedCondition.LastTransitionTime.Time)}, nil
 			}
-
-			log.Info("grace period finished", "gracePeriod", hcDestroyGracePeriod, "status", cloudResourcesDestroyed.Reason)
-			if cloudResourcesDestroyed.Reason == "RemainingCloudResources" {
-				log.Info("cloud dangling objects", "remainingCloudDanglingObjects", cloudResourcesDestroyed.Message)
-			}
+			log.Info("grace period finished", "gracePeriod", hcDestroyGracePeriod)
 		}
 
 		// Now we can remove the finalizer.
@@ -463,8 +461,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
 			}
 		}
-
-		reportHostedClusterDeletionDuration(hcluster, r.Clock)
 
 		log.Info("Deleted hostedcluster", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
