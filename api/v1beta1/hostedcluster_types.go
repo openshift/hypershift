@@ -134,7 +134,7 @@ const (
 	// LimitedSupportLabel is a label that can be used by consumers to indicate
 	// a cluster is somehow out of regular support policy.
 	// https://docs.openshift.com/rosa/rosa_architecture/rosa_policy_service_definition/rosa-service-definition.html#rosa-limited-support_rosa-service-definition.
-	LimitedSupportLabel = "hypershift.openshift.io/limited-support"
+	LimitedSupportLabel = "api.openshift.com/limited-support"
 
 	// SilenceClusterAlertsLabel  is a label that can be used by consumers to indicate
 	// alerts from a cluster can be silenced or ignored
