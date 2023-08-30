@@ -864,8 +864,11 @@ int32
 </td>
 <td>
 <p>Port is the port at which the APIServer is exposed inside a node. Other
-pods using host networking cannot listen on this port. If not specified,
-6443 is used.</p>
+pods using host networking cannot listen on this port.
+If unset 6443 is used.
+This is useful to choose a port other than the default one which might interfere with customer environments e.g. <a href="https://github.com/openshift/hypershift/pull/356">https://github.com/openshift/hypershift/pull/356</a>.
+Setting this to 443 is possible only for backward compatibility reasons and it&rsquo;s discouraged.
+Doing so, it would result in the controller overriding the KAS endpoint in the guest cluster having a discrepancy with the KAS Pod and potentially causing temporarily network failures.</p>
 </td>
 </tr>
 <tr>

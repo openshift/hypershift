@@ -636,9 +636,10 @@ type APIServerNetworking struct {
 
 	// Port is the port at which the APIServer is exposed inside a node. Other
 	// pods using host networking cannot listen on this port.
-	// It's defaulted in the backend to 443.
-	// This is only useful by IBM to bypass a limitation that prevents them from using some ports.
-	// However, its semantic was accidentally coupled with the SVC port.
+	// If unset 6443 is used.
+	// This is useful to choose a port other than the default one which might interfere with customer environments e.g. https://github.com/openshift/hypershift/pull/356.
+	// Setting this to 443 is possible only for backward compatibility reasons and it's discouraged.
+	// Doing so, it would result in the controller overriding the KAS endpoint in the guest cluster having a discrepancy with the KAS Pod and potentially causing temporarily network failures.
 	Port *int32 `json:"port,omitempty"`
 
 	// AllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer

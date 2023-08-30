@@ -4,9 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
-	"net/url"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -99,7 +97,6 @@ type reconciler struct {
 	oauthPort                 int32
 	versions                  map[string]string
 	operateOnReleaseImage     string
-	apiServerPort             int32
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -116,18 +113,6 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		return fmt.Errorf("failed to add to scheme: %w", err)
 	}
 
-	apiServerPort := int32(443)
-	apiServerURL, err := url.Parse(opts.Manager.GetConfig().Host)
-	if err != nil {
-		return fmt.Errorf("failed to parse apiserver host %s as url: %w", opts.Manager.GetConfig().Host, err)
-	}
-	if p := apiServerURL.Port(); p != "" {
-		numericPort, err := strconv.Atoi(p)
-		if err != nil {
-			return fmt.Errorf("failed to parse apiserver port string %s as int: %w", p, err)
-		}
-		apiServerPort = int32(numericPort)
-	}
 	uncachedClient, err := client.New(opts.Manager.GetConfig(), client.Options{
 		Scheme: opts.Manager.GetScheme(),
 		Mapper: opts.Manager.GetRESTMapper(),
@@ -169,7 +154,6 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		oauthPort:                 opts.OAuthPort,
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
-		apiServerPort:             apiServerPort,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -259,16 +243,23 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile crds: %w", err))
 	}
 
-	log.Info("reconciling kubernetes.default endpoints")
-	endpoints := manifests.APIServerEndpoints()
-	if _, err := r.CreateOrUpdate(ctx, r.client, endpoints, func() error {
-		if len(endpoints.Subsets) == 0 || len(endpoints.Subsets[0].Ports) == 0 {
+	// We only keep reconciling the endpoint for existing clusters that are relying on this for nodes haproxy to work.
+	// Otherwise, changing the haproxy config to !=443 would result in a NodePool rollout which want to avoid for existing clusters.
+	// Existing clusters are given the *hcp.Spec.Networking.APIServer.Port == 443 semantic as we were enforcing this default previously,
+	// and it's a now a forbidden operation.
+	if hcp.Spec.Networking.APIServer != nil && hcp.Spec.Networking.APIServer.Port != nil &&
+		*hcp.Spec.Networking.APIServer.Port == 443 {
+		log.Info("reconciling kubernetes.default endpoints")
+		endpoints := manifests.APIServerEndpoints()
+		if _, err := r.CreateOrUpdate(ctx, r.client, endpoints, func() error {
+			if len(endpoints.Subsets) == 0 || len(endpoints.Subsets[0].Ports) == 0 {
+				return nil
+			}
+			endpoints.Subsets[0].Ports[0].Port = 443
 			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoints: %w", err))
 		}
-		endpoints.Subsets[0].Ports[0].Port = r.apiServerPort
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoints: %w", err))
 	}
 
 	log.Info("reconciling install configmap")

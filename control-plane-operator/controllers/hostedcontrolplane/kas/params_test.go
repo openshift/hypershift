@@ -43,7 +43,7 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 			port:               pointer.Int32(6789),
 			serviceNetworkCIDR: "10.0.0.0/24",
 			expectedAddress:    config.DefaultAdvertiseIPv4Address,
-			expectedPort:       config.DefaultAPIServerPort,
+			expectedPort:       6789,
 		},
 		{
 			name: "port set for NodePort service Publishing Strategy",

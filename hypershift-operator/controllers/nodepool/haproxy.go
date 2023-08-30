@@ -112,10 +112,8 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 		apiServerInternalAddress = config.DefaultAdvertiseIPv6Address
 	}
 
-	//TODO: in order to prevent periodic kube-apiserver network blimps in the LoadBalancer
-	//publish strategy this should change.
-	//However: will need API changes for service publishing strategy. Best function to call:
-	//apiServerInternalPort := util.BindAPIPortWithDefaultFromHostedCluster(hcluster, config.DefaultAPIServerPort)
+	// TODO (alberto): Technically this should call util.BindAPIPortWithDefaultFromHostedCluster and let 443 be an invalid value.
+	// How ever we allow it here to keep backward compatibility with existing clusters which defaulted .port to 443.
 	apiServerInternalPort := haproxyFrontendListenAddress(hcluster, config.DefaultAPIServerPort)
 	if hcluster.Spec.Networking.APIServer != nil {
 		if hcluster.Spec.Networking.APIServer.AdvertiseAddress != nil {
