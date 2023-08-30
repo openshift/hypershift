@@ -69,7 +69,6 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 	})
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// wait until the machine deployment starts the rolling upgrade.
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name).Name
 	md := &capiv1.MachineDeployment{
 		ObjectMeta: v1.ObjectMeta{
@@ -77,7 +76,8 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 			Namespace: controlPlaneNamespace,
 		},
 	}
-	err = wait.PollImmediateWithContext(k.ctx, 5*time.Second, 10*time.Minute, func(ctx context.Context) (done bool, err error) {
+	// wait until the machine deployment starts the rolling upgrade.
+	err = wait.PollImmediateWithContext(k.ctx, 5*time.Second, 2*time.Minute, func(ctx context.Context) (done bool, err error) {
 		if err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(md), md); err != nil {
 			return false, err
 		}
