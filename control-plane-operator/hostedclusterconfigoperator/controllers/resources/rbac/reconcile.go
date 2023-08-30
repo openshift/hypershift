@@ -549,3 +549,38 @@ func ReconcileDeployerClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
 	}
 	return nil
 }
+
+func ReconcileUserOAuthClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:openshift:useroauthaccesstoken-manager",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:     "Group",
+			APIGroup: rbacv1.SchemeGroupVersion.Group,
+			Name:     "system:authenticated:oauth",
+		},
+	}
+	return nil
+}
+
+func ReconcileUserOAuthClusterRole(r *rbacv1.ClusterRole) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{"oauth.openshift.io"},
+			Resources: []string{"useroauthaccesstokens"},
+			Verbs:     []string{"get", "list", "watch", "delete"},
+		},
+	}
+	return nil
+}

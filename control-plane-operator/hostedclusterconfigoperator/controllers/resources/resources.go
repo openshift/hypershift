@@ -806,6 +806,9 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.DeployerClusterRole, reconcile: rbac.ReconcileDeployerClusterRole},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.DeployerClusterRoleBinding, reconcile: rbac.ReconcileDeployerClusterRoleBinding},
+
+		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.UserOAuthClusterRole, reconcile: rbac.ReconcileUserOAuthClusterRole},
+		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.UserOAuthClusterRoleBinding, reconcile: rbac.ReconcileUserOAuthClusterRoleBinding},
 	}
 	var errs []error
 	for _, m := range rbac {
