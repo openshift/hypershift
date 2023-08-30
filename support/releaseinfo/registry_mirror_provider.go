@@ -40,5 +40,9 @@ func (p *RegistryMirrorProviderDecorator) Lookup(ctx context.Context, image stri
 }
 
 func (p *RegistryMirrorProviderDecorator) GetRegistryOverrides() map[string]string {
-	return p.RegistryOverrides
+	result := map[string]string{}
+	for k, v := range p.RegistryOverrides {
+		result[k] = v
+	}
+	return result
 }
