@@ -635,8 +635,10 @@ type APIServerNetworking struct {
 	AdvertiseAddress *string `json:"advertiseAddress,omitempty"`
 
 	// Port is the port at which the APIServer is exposed inside a node. Other
-	// pods using host networking cannot listen on this port. If not specified,
-	// 6443 is used.
+	// pods using host networking cannot listen on this port.
+	// It's defaulted in the backend to 443.
+	// This is only useful by IBM to bypass a limitation that prevents them from using some ports.
+	// However, its semantic was accidentally coupled with the SVC port.
 	Port *int32 `json:"port,omitempty"`
 
 	// AllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer

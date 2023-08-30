@@ -86,6 +86,8 @@ func BindAPIPortWithDefaultFromHostedCluster(hc *hyperv1.HostedCluster, defaultV
 // InternalAPIPortWithDefault will retrieve the port to use to contact the APIServer over the Kubernetes service domain
 // kube-apiserver.NAMESPACE.svc.cluster.local:INTERNAL_API_PORT
 func InternalAPIPortWithDefault(hcp *hyperv1.HostedControlPlane, defaultValue int32) int32 {
+	// TODO (alberto): Why is the exposed port for the SVC coming from .Spec.Networking.APIServer.Port?
+	// The API input is meant to be just the KAS Pod Port (and so the nodes haproxy).
 	if port := APIPort(hcp); port != nil {
 		return *port
 	}
