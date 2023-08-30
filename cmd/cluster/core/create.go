@@ -77,6 +77,7 @@ type CreateOptions struct {
 	SkipAPIBudgetVerification        bool
 	CredentialSecretName             string
 	NodeUpgradeType                  hyperv1.UpgradeType
+	PausedUntil                      string
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -256,6 +257,17 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 
 	}
 
+	// validate pausedUntil value
+	// valid values are either "true" or RFC3339 format date
+	if len(opts.PausedUntil) > 0 {
+		if opts.PausedUntil != "true" {
+			_, err := time.Parse(time.RFC3339, opts.PausedUntil)
+			if err != nil {
+				return nil, fmt.Errorf("invalid pausedUntil value, should be \"true\" or RFC3339 format date: %w", err)
+			}
+		}
+	}
+
 	return &apifixtures.ExampleOptions{
 		AdditionalTrustBundle:            string(userCABundle),
 		ImageContentSources:              imageContentSources,
@@ -280,6 +292,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		Arch:                             opts.Arch,
 		NodeSelector:                     opts.NodeSelector,
 		UpgradeType:                      opts.NodeUpgradeType,
+		PausedUntil:                      opts.PausedUntil,
 	}, nil
 }
 
