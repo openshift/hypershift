@@ -51,6 +51,7 @@ type DumpOptions struct {
 	Namespace   string
 	Name        string
 	ArtifactDir string
+	ArchiveDump bool
 	// LogCheckers is a list of functions that will
 	// get run over all raw logs if set.
 	LogCheckers []LogChecker
@@ -75,6 +76,7 @@ func NewDumpCommand() *cobra.Command {
 		Namespace:      "clusters",
 		Name:           "example",
 		ArtifactDir:    "",
+		ArchiveDump:    true,
 		AgentNamespace: "",
 		Log:            log.Log,
 	}
@@ -83,6 +85,7 @@ func NewDumpCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "The name of the hostedcluster to dump")
 	cmd.Flags().StringVar(&opts.ImpersonateAs, "as", opts.ImpersonateAs, "The user or service account to impersonate to and used to execute the cluster dump command")
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
+	cmd.Flags().BoolVar(&opts.ArchiveDump, "archive-dump", opts.ArchiveDump, "Create a tar archive of the artifact directory")
 	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
 	cmd.Flags().BoolVar(&opts.DumpGuestCluster, "dump-guest-cluster", opts.DumpGuestCluster, "If the guest cluster contents should also be dumped")
 
@@ -359,24 +362,11 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		}
 	}
 
-	files, err := os.ReadDir(opts.ArtifactDir)
-	if err != nil {
-		return fmt.Errorf("failed to list artifactDir %s: %w", opts.ArtifactDir, err)
+	if opts.ArchiveDump {
+		if err = CreateArchive(ctx, opts); err != nil {
+			return err
+		}
 	}
-	args := []string{"-cvzf", "hypershift-dump.tar.gz"}
-	for _, file := range files {
-		args = append(args, file.Name())
-	}
-
-	tarCMD := exec.CommandContext(ctx, "tar", args...)
-	tarCMD.Dir = opts.ArtifactDir
-
-	opts.Log.Info("Archiving dump", "command", "tar", "args", args)
-	startArchivingDump := time.Now()
-	if out, err := tarCMD.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to run tar with %v args: got err %w and out \n%s", args, err, string(out))
-	}
-	opts.Log.Info("Successfully archived dump", "duration", time.Since(startArchivingDump).String())
 
 	return nil
 }
@@ -622,4 +612,27 @@ func gatherNetworkLogs(ocCommand, controlPlaneNamespace, artifactDir string, ctx
 			}
 		}
 	}
+}
+
+func CreateArchive(ctx context.Context, opts *DumpOptions) error {
+	files, err := os.ReadDir(opts.ArtifactDir)
+	if err != nil {
+		return fmt.Errorf("failed to list artifactDir %s: %w", opts.ArtifactDir, err)
+	}
+	args := []string{"-cvzf", "hypershift-dump.tar.gz"}
+	for _, file := range files {
+		args = append(args, file.Name())
+	}
+
+	tarCMD := exec.CommandContext(ctx, "tar", args...)
+	tarCMD.Dir = opts.ArtifactDir
+
+	opts.Log.Info("Archiving dump", "command", "tar", "args", args)
+	startArchivingDump := time.Now()
+	if out, err := tarCMD.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to run tar with %v args: got err %w and out \n%s", args, err, string(out))
+	}
+	opts.Log.Info("Successfully archived dump", "duration", time.Since(startArchivingDump).String())
+
+	return nil
 }
