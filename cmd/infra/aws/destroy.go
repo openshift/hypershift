@@ -30,15 +30,16 @@ import (
 )
 
 type DestroyInfraOptions struct {
-	Region             string
-	InfraID            string
-	AWSCredentialsFile string
-	AWSKey             string
-	AWSSecretKey       string
-	Name               string
-	BaseDomain         string
-	BaseDomainPrefix   string
-	Log                logr.Logger
+	Region              string
+	InfraID             string
+	AWSCredentialsFile  string
+	AWSKey              string
+	AWSSecretKey        string
+	Name                string
+	BaseDomain          string
+	BaseDomainPrefix    string
+	AwsInfraGracePeriod time.Duration
+	Log                 logr.Logger
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -60,6 +61,7 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.Flags().StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. se 'none' for an empty prefix")
+	cmd.Flags().DurationVar(&opts.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
@@ -78,8 +80,20 @@ func NewDestroyCommand() *cobra.Command {
 }
 
 func (o *DestroyInfraOptions) Run(ctx context.Context) error {
+	var infraCtx context.Context
+	var destroyInfraCtxCancel context.CancelFunc
+
+	if o.AwsInfraGracePeriod != 0 {
+		infraCtx, destroyInfraCtxCancel = context.WithTimeout(ctx, o.AwsInfraGracePeriod)
+		defer destroyInfraCtxCancel()
+
+		o.Log.Info(fmt.Sprintf("Infra destruction timeout set to %d s", int(o.AwsInfraGracePeriod.Seconds())))
+	} else {
+		infraCtx = ctx
+	}
+
 	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
-		err := o.DestroyInfra(ctx)
+		err := o.DestroyInfra(infraCtx)
 		if err != nil {
 			if !awsutil.IsErrorRetryable(err) {
 				return false, err
@@ -88,7 +102,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 			return false, nil
 		}
 		return true, nil
-	}, ctx.Done())
+	}, infraCtx.Done())
 }
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {

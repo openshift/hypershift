@@ -3,7 +3,6 @@ package aws
 import (
 	"context"
 	"fmt"
-
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/errors"
 
@@ -32,6 +31,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomain, "base-domain", opts.AWSPlatform.BaseDomain, "Cluster's base domain; inferred from the hosted cluster by default")
 	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomainPrefix, "base-domain-prefix", opts.AWSPlatform.BaseDomainPrefix, "Cluster's base domain prefix; inferred from the hosted cluster by default")
 	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with a platform credential, pull-secret and base-domain. The secret must exist in the supplied \"--namespace\"")
+	cmd.Flags().DurationVar(&opts.AWSPlatform.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AWSPlatform.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := ValidateCredentialInfo(opts)
@@ -70,15 +70,16 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	}
 	o.Log.Info("Destroying infrastructure", "infraID", infraID)
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
-		Region:             region,
-		InfraID:            infraID,
-		AWSCredentialsFile: o.AWSPlatform.AWSCredentialsFile,
-		AWSKey:             awsKeyID,
-		AWSSecretKey:       awsSecretKey,
-		Name:               o.Name,
-		BaseDomain:         baseDomain,
-		BaseDomainPrefix:   baseDomainPrefix,
-		Log:                o.Log,
+		Region:              region,
+		InfraID:             infraID,
+		AWSCredentialsFile:  o.AWSPlatform.AWSCredentialsFile,
+		AWSKey:              awsKeyID,
+		AWSSecretKey:        awsSecretKey,
+		Name:                o.Name,
+		BaseDomain:          baseDomain,
+		BaseDomainPrefix:    baseDomainPrefix,
+		AwsInfraGracePeriod: o.AWSPlatform.AwsInfraGracePeriod,
+		Log:                 o.Log,
 	}
 	if err := destroyInfraOpts.Run(ctx); err != nil {
 		return fmt.Errorf("failed to destroy infrastructure: %w", err)
