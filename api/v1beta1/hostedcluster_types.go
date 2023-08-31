@@ -21,6 +21,10 @@ const (
 	SkipReleaseImageValidation                = "hypershift.openshift.io/skip-release-image-validation"
 	IdentityProviderOverridesAnnotationPrefix = "idpoverrides.hypershift.openshift.io/"
 	OauthLoginURLOverrideAnnotation           = "oauth.hypershift.openshift.io/login-url-override"
+	// HCDestroyGracePeriodAnnotation is an annotation which will delay the removal of the HostedCluster finalizer to allow consumers to read the status of the HostedCluster
+	// before the resource goes away. The format of the annotation is a go duration string with a numeric component and unit.
+	// sample: hypershift.openshift.io/destroy-grace-period: "600s"
+	HCDestroyGracePeriodAnnotation = "hypershift.openshift.io/destroy-grace-period"
 	// ControlPlanePriorityClass is for pods in the HyperShift Control Plane that are not API critical but still need elevated priority. E.g Cluster Version Operator.
 	ControlPlanePriorityClass = "hypershift.openshift.io/control-plane-priority-class"
 	// APICriticalPriorityClass is for pods that are required for API calls and resource admission to succeed. This includes pods like kube-apiserver, aggregated API servers, and webhooks.

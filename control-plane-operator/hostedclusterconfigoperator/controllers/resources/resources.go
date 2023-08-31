@@ -1572,51 +1572,22 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 		Status:  status,
 		Reason:  reason,
 		Message: message,
-		// Here LastTransitionTime is used to indicate the last time the condition was updated by this
-		// controller. This is used by the CPO as a heartbeat to determine whether resource deletion is
-		// still in progress.
-		LastTransitionTime: metav1.Now(),
 	}
-	// Ensure the LastTransitionTime is updated because the hostedcontrolplane controller relies on that
-	// timestamp to use as a heartbeat.
-	setStatusConditionWithTransitionUpdate(&hcp.Status.Conditions, *resourcesDestroyedCond)
-	if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to set resources destroyed condition: %w", err)
+
+	originalHCP := hcp.DeepCopy()
+	meta.SetStatusCondition(&hcp.Status.Conditions, *resourcesDestroyedCond)
+
+	if !equality.Semantic.DeepEqual(hcp, originalHCP) {
+		if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to set resources destroyed condition: %w", err)
+		}
 	}
 
 	if remaining.Len() > 0 {
-		// If we are still waiting for resources to go away, ensure we are requeued in at most 30 secs,
-		// so we can at least update the timestamp on the condition.
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	} else {
 		return ctrl.Result{}, nil
 	}
-}
-
-func setStatusConditionWithTransitionUpdate(conditions *[]metav1.Condition, newCondition metav1.Condition) {
-	if conditions == nil {
-		return
-	}
-	existingCondition := meta.FindStatusCondition(*conditions, newCondition.Type)
-	if existingCondition == nil {
-		if newCondition.LastTransitionTime.IsZero() {
-			newCondition.LastTransitionTime = metav1.NewTime(time.Now())
-		}
-		*conditions = append(*conditions, newCondition)
-		return
-	}
-
-	// Always update the LastTransition time
-	existingCondition.Status = newCondition.Status
-	if !newCondition.LastTransitionTime.IsZero() {
-		existingCondition.LastTransitionTime = newCondition.LastTransitionTime
-	} else {
-		existingCondition.LastTransitionTime = metav1.NewTime(time.Now())
-	}
-
-	existingCondition.Reason = newCondition.Reason
-	existingCondition.Message = newCondition.Message
-	existingCondition.ObservedGeneration = newCondition.ObservedGeneration
 }
 
 func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyperv1.HostedControlPlane) (sets.String, error) {

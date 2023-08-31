@@ -614,7 +614,6 @@ func TestDestroyCloudResources(t *testing.T) {
 		cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
 		g.Expect(cond).ToNot(BeNil())
 		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
-		g.Expect(cond.LastTransitionTime.Time.After(originalConditionTime)).To(BeTrue())
 	}
 
 	tests := []struct {

@@ -2866,6 +2866,10 @@ When this is false for too long and there&rsquo;s no clear indication in the &ld
 <td><p>HostedClusterDegraded indicates whether the HostedCluster is encountering
 an error that may require user intervention to resolve.</p>
 </td>
+</tr><tr><td><p>&#34;HostedClusterDestroyed&#34;</p></td>
+<td><p>HostedClusterDestroyed indicates that a hosted has finished destroying and that it is waiting for a destroy grace period to go away.
+The grace period is determined by the hypershift.openshift.io/destroy-grace-period annotation in the HostedCluster if present.</p>
+</td>
 </tr><tr><td><p>&#34;Progressing&#34;</p></td>
 <td><p>HostedClusterProgressing indicates whether the HostedCluster is attempting
 an initial deployment or upgrade.

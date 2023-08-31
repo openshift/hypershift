@@ -39,6 +39,9 @@ const (
 	// A failure here may require external user intervention to resolve. E.g. cloud provider perms were corrupted. E.g. the guest cluster was broken
 	// and kube resource deletion that affects cloud infra like service type load balancer can't succeed.
 	CloudResourcesDestroyed ConditionType = "CloudResourcesDestroyed"
+	// HostedClusterDestroyed indicates that a hosted has finished destroying and that it is waiting for a destroy grace period to go away.
+	// The grace period is determined by the hypershift.openshift.io/destroy-grace-period annotation in the HostedCluster if present.
+	HostedClusterDestroyed ConditionType = "HostedClusterDestroyed"
 	// ExternalDNSReachable bubbles up the same condition from HCP. It signals if the configured external DNS is reachable.
 	// A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
 	// and registered correctly.
@@ -150,11 +153,12 @@ const (
 
 // Reasons.
 const (
-	StatusUnknownReason       = "StatusUnknown"
-	AsExpectedReason          = "AsExpected"
-	NotFoundReason            = "NotFound"
-	WaitingForAvailableReason = "waitingForAvailable"
-	SecretNotFoundReason      = "SecretNotFound"
+	StatusUnknownReason         = "StatusUnknown"
+	AsExpectedReason            = "AsExpected"
+	NotFoundReason              = "NotFound"
+	WaitingForAvailableReason   = "WaitingForAvailable"
+	SecretNotFoundReason        = "SecretNotFound"
+	WaitingForGracePeriodReason = "WaitingForGracePeriod"
 
 	InfraStatusFailureReason           = "InfraStatusFailure"
 	WaitingOnInfrastructureReadyReason = "WaitingOnInfrastructureReady"
