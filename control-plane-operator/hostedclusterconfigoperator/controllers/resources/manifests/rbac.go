@@ -168,3 +168,19 @@ func ImageTriggerControllerClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 		},
 	}
 }
+
+func UserOAuthClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:useroauthaccesstoken-manager",
+		},
+	}
+}
+
+func UserOAuthClusterRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:useroauthaccesstoken-manager",
+		},
+	}
+}
