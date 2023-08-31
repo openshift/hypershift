@@ -3656,7 +3656,7 @@ func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseI
 		}
 	}
 
-	if hc.Status.Version == nil || hyperutil.HCControlPlaneReleaseImage(hc) != hc.Status.Version.Desired.Image {
+	if hc.Status.Version == nil || hc.Spec.Release.Image != hc.Status.Version.Desired.Image {
 		// cluster is doing initial rollout or upgrading
 		return true, nil
 	}
