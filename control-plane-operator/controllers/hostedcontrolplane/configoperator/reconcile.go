@@ -229,7 +229,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, deploymentConfig *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference, hcp *hyperv1.HostedControlPlane) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, deploymentConfig *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference, hcp *hyperv1.HostedControlPlane, openShiftTrustedCABundleConfigMapForCPOExists bool, registryOverrides map[string]string, openShiftImageRegistryOverrides map[string][]string) error {
 	// Before this change we did
 	// 		Selector: &metav1.LabelSelector{
 	//			MatchLabels: hccLabels,
@@ -264,7 +264,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(hccContainerMain(), buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion, enableCIDebugOutput, platformType, konnectivityAddress, konnectivityPort, oauthAddress, oauthPort, releaseImage)),
+					util.BuildContainer(hccContainerMain(), buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion, enableCIDebugOutput, platformType, konnectivityAddress, konnectivityPort, oauthAddress, oauthPort, releaseImage, registryOverrides, openShiftImageRegistryOverrides)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(hccVolumeKubeconfig(), buildHCCVolumeKubeconfig),
@@ -277,6 +277,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 	}
 	if additionalTrustBundle != nil {
 		util.DeploymentAddTrustBundleVolume(additionalTrustBundle, deployment)
+	}
+	if openShiftTrustedCABundleConfigMapForCPOExists {
+		util.DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment)
 	}
 	if isExternalInfraKv(hcp) {
 		// injects the kubevirt credentials secret volume, volume mount path, and appends cli arg.
@@ -319,7 +322,7 @@ func hccVolumeClusterSignerCA() *corev1.Volume {
 	}
 }
 
-func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string) func(c *corev1.Container) {
+func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, registryOverrides map[string]string, openShiftImageRegistryOverrides map[string][]string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullIfNotPresent
@@ -337,6 +340,7 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 			fmt.Sprintf("--konnectivity-port=%d", konnectivityPort),
 			fmt.Sprintf("--oauth-address=%s", oauthAddress),
 			fmt.Sprintf("--oauth-port=%d", oauthPort),
+			"--registry-overrides", util.ConvertRegistryOverridesToCommandLineFlag(registryOverrides),
 		}
 		if platformType == hyperv1.IBMCloudPlatform {
 			c.Command = append(c.Command, "--controllers=controller-manager-ca,resources,inplaceupgrader,drainer,hcpstatus")
@@ -362,6 +366,10 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 			{
 				Name:  "OPERATE_ON_RELEASE_IMAGE",
 				Value: releaseImage,
+			},
+			{
+				Name:  "OPENSHIFT_IMG_OVERRIDES",
+				Value: util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(openShiftImageRegistryOverrides),
 			},
 		}
 		proxy.SetEnvVars(&c.Env)

@@ -44,6 +44,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 	openShiftRegistryOverrides string,
 	managementClusterHasCapabilitySecurityContextConstraint bool,
 	ownerRef config.OwnerRef,
+	openShiftTrustedCABundleConfigMapExists bool,
 ) error {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -234,7 +235,8 @@ func ReconcileIgnitionServer(ctx context.Context,
 			openShiftRegistryOverrides,
 			managementClusterHasCapabilitySecurityContextConstraint,
 			ignitionServerLabels,
-			servingCertSecretName)
+			servingCertSecretName,
+			openShiftTrustedCABundleConfigMapExists)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition deployment: %w", err)
 	} else {
@@ -467,6 +469,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	managementClusterHasCapabilitySecurityContextConstraint bool,
 	ignitionServerLabels map[string]string,
 	servingCertSecretName string,
+	openShiftTrustedCABundleConfigMapForCPOExists bool,
 ) error {
 	var probeHandler corev1.ProbeHandler
 	if hasHealthzHandler {
@@ -696,6 +699,10 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	if hcp.Spec.AdditionalTrustBundle != nil {
 		// Add trusted-ca mount with optional configmap
 		util.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
+	}
+
+	if openShiftTrustedCABundleConfigMapForCPOExists {
+		util.DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment)
 	}
 
 	// set security context
