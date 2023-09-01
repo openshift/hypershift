@@ -3,15 +3,18 @@ package nodepool
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	"github.com/openshift/api/image/docker10"
 	imagev1 "github.com/openshift/api/image/v1"
+	supportutil "github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,6 +24,7 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -1496,6 +1500,8 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	expectedMachineTemplateSpecJSON, err := json.Marshal(expectedMachineTemplate.Spec)
 	g.Expect(err).ToNot(HaveOccurred())
 
+	expectedMachineTemplate.SetName(fmt.Sprintf("%s-%s", nodePool.GetName(), supportutil.HashStruct(expectedMachineTemplateSpecJSON)))
+
 	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, "", nil, true)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(machineTemplateSpecJSON).To(BeIdenticalTo(string(expectedMachineTemplateSpecJSON)))
@@ -1518,6 +1524,78 @@ func TestMachineTemplateBuilders(t *testing.T) {
 
 func TestMachineTemplateBuildersPreexisting(t *testing.T) {
 	RunTestMachineTemplateBuilders(t, true)
+}
+
+func TestCleanupMachineTemplates(t *testing.T) {
+	g := NewWithT(t)
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "test",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+	}
+
+	template1 := &capiaws.AWSMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "template1",
+			Namespace:   "test",
+			Annotations: map[string]string{nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String()},
+		},
+		Spec: capiaws.AWSMachineTemplateSpec{},
+	}
+
+	template2 := &capiaws.AWSMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "template2",
+			Namespace:   "test",
+			Annotations: map[string]string{nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String()},
+		},
+		Spec: capiaws.AWSMachineTemplateSpec{},
+	}
+
+	gvk, err := apiutil.GVKForObject(template1, api.Scheme)
+	g.Expect(err).ToNot(HaveOccurred())
+	// machine set refrencing template1
+	ms := &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "machineSet",
+			Namespace:   "test",
+			Annotations: map[string]string{nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String()},
+		},
+		Spec: capiv1.MachineSetSpec{
+			Template: capiv1.MachineTemplateSpec{
+				Spec: capiv1.MachineSpec{
+					InfrastructureRef: corev1.ObjectReference{
+						Kind:       gvk.Kind,
+						APIVersion: gvk.GroupVersion().String(),
+						Name:       template1.Name,
+						Namespace:  template1.Namespace,
+					},
+				},
+			},
+		},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(nodePool, template1, template2, ms).Build()
+	r := &NodePoolReconciler{
+		Client:                 c,
+		CreateOrUpdateProvider: upsert.New(false),
+	}
+
+	err = r.cleanupMachineTemplates(context.Background(), logr.Discard(), nodePool, "test")
+	g.Expect(err).ToNot(HaveOccurred())
+
+	templates, err := r.listMachineTemplates(nodePool)
+	g.Expect(err).ToNot(HaveOccurred())
+	// check template2 has been deleted
+	g.Expect(len(templates)).To(Equal(1))
+	g.Expect(templates[0].GetName()).To(Equal("template1"))
 }
 
 func TestListMachineTemplatesAWS(t *testing.T) {
