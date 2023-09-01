@@ -29,6 +29,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		Memory:                     "4Gi",
 		Cores:                      2,
 		ContainerDiskImage:         "",
+		RootVolumeSize:             32,
 		CacheStrategyType:          "",
 		NetworkInterfaceMultiQueue: "",
 	}
