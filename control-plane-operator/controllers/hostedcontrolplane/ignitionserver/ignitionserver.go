@@ -707,6 +707,11 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	}
 	proxy.SetEnvVars(&deployment.Spec.Template.Spec.Containers[0].Env)
 
+	if hcp.Spec.AdditionalTrustBundle != nil {
+		// Add trusted-ca mount with optional configmap
+		util.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
+	}
+
 	// set security context
 	if !managementClusterHasCapabilitySecurityContextConstraint {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
