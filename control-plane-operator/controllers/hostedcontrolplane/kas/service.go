@@ -242,13 +242,27 @@ func ReconcileKonnectivityServerService(svc *corev1.Service, ownerRef config.Own
 
 func ReconcileKonnectivityExternalRoute(route *routev1.Route, ownerRef config.OwnerRef, hostname string, defaultIngressDomain string) error {
 	ownerRef.ApplyTo(route)
-	return util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.KonnectivityServerService(route.Namespace).Name)
+	if err := util.ReconcileExternalRoute(route, hostname, defaultIngressDomain, manifests.KonnectivityServerService(route.Namespace).Name); err != nil {
+		return err
+	}
+	if route.Annotations == nil {
+		route.Annotations = map[string]string{}
+	}
+	route.Annotations["haproxy.router.openshift.io/balance"] = "roundrobin"
+	return nil
 }
 
 func ReconcileKonnectivityInternalRoute(route *routev1.Route, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(route)
 	// Assumes ownerRef is the HCP
-	return util.ReconcileInternalRoute(route, ownerRef.Reference.Name, manifests.KonnectivityServerService(route.Namespace).Name)
+	if err := util.ReconcileInternalRoute(route, ownerRef.Reference.Name, manifests.KonnectivityServerService(route.Namespace).Name); err != nil {
+		return err
+	}
+	if route.Annotations == nil {
+		route.Annotations = map[string]string{}
+	}
+	route.Annotations["haproxy.router.openshift.io/balance"] = "roundrobin"
+	return nil
 }
 
 func ReconcileKonnectivityServerServiceStatus(svc *corev1.Service, route *routev1.Route, strategy *hyperv1.ServicePublishingStrategy, messageCollector events.MessageCollector) (host string, port int32, message string, err error) {
