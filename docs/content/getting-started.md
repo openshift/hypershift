@@ -88,8 +88,13 @@ AWS_CREDS="$HOME/.aws/credentials"
 hypershift install \
   --oidc-storage-provider-s3-bucket-name $BUCKET_NAME \
   --oidc-storage-provider-s3-credentials $AWS_CREDS \
-  --oidc-storage-provider-s3-region $REGION
+  --oidc-storage-provider-s3-region $REGION \
+  --enable-defaulting-webhook true
 ```
+
+!!! note 
+
+    `enable-defaulting-webhook` is only for OCP version 4.14 and higher.
 
 ## Create a Hosted Cluster
 Create a new hosted cluster, specifying the domain of the public zone provided in the
@@ -118,6 +123,10 @@ hypershift create cluster aws \
     avoid unexpected and conflicting cluster management behavior.
 
     The cluster name must also adhere to the [RFC1123 standard](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
+
+!!! important
+
+    You must include either flag, `release-image` or `release-stream`, when the `enable-defaulting-webhook` is not enabled on the installation of the HyperShift operator.
 
 !!! note
 
