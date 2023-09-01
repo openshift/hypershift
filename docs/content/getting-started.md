@@ -110,6 +110,7 @@ hypershift create cluster aws \
   --aws-creds $AWS_CREDS \
   --region $REGION \
   --generate-ssh
+  --release-stream 4-stable-multi
 ```
 
 !!! important
