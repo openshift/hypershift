@@ -263,7 +263,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		if opts.PausedUntil != "true" {
 			_, err := time.Parse(time.RFC3339, opts.PausedUntil)
 			if err != nil {
-				return nil, fmt.Errorf("invalid pausedUntil value, should be \"true\" or RFC3339 format date: %w", err)
+				return nil, fmt.Errorf("invalid pausedUntil value, should be \"true\" or a valid RFC3339 date format: %w", err)
 			}
 		}
 	}
