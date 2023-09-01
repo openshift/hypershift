@@ -986,6 +986,11 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		}
 	}
 
+	openShiftTrustedCABundleConfigMapForCPOExists, err := doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx, r.Client, hostedControlPlane.Namespace)
+	if err != nil {
+		return err
+	}
+
 	r.Log.Info("Reconciling ignition server")
 	if err := ignitionserver.ReconcileIgnitionServer(ctx,
 		r.Client,
@@ -1002,6 +1007,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
 		r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
 		config.OwnerRefFrom(hostedControlPlane),
+		openShiftTrustedCABundleConfigMapForCPOExists,
 	); err != nil {
 		return fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
@@ -4298,4 +4304,18 @@ func (r *HostedControlPlaneReconciler) reconcileSREMetricsConfig(ctx context.Con
 		r.SREConfigHash = currentMetricsSetConfigHash
 	}
 	return nil
+}
+
+func doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx context.Context, c client.Client, hcpNamespace string) (bool, error) {
+	openShiftTrustedCABundleConfigMapForCPO := manifests.OpenShiftTrustedCABundleFromCPO(hcpNamespace)
+	if err := c.Get(ctx, client.ObjectKeyFromObject(openShiftTrustedCABundleConfigMapForCPO), openShiftTrustedCABundleConfigMapForCPO); err != nil {
+		// It's okay if this ConfigMap doesn't exist. It won't for non-OCP clusters. Only return an error if the error is something other than not existing.
+		if !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("error getting %T: %w", openShiftTrustedCABundleConfigMapForCPO, err)
+		}
+	}
+	if openShiftTrustedCABundleConfigMapForCPO.Data != nil {
+		return true, nil
+	}
+	return false, nil
 }
