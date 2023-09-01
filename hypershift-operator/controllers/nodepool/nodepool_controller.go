@@ -629,13 +629,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	SetStatusCondition(&nodePool.Status.Conditions, *condition)
 
 	oldReachedIgnitionEndpointCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolReachedIgnitionEndpoint)
-	reachedIgnitionEndpointCondition, err := r.createReachedIgnitionEndpointCondition(ctx, tokenSecret, nodePool.Generation)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("error setting IgnitionReached condition: %w", err)
-	}
-	SetStatusCondition(&nodePool.Status.Conditions, *reachedIgnitionEndpointCondition)
+	// when an InPlace upgrade occurs, a new token-secret is generated, but since nodes don't reboot and reignite,
+	// the new token-secret wouldn't have the `hypershift.openshift.io/ignition-reached` annotation set.
+	// this results in the NodePoolReachedIgnitionEndpoint condition to report False, although the ignition-server could have been already reached.
+	//
+	// if ignition is already reached and InPlace upgrade is used, skip recomputing the NodePoolReachedIgnitionEndpoint condition
+	// to avoid resetting the condition to False because of the missing the annotation on the new generated token-secret.
+	if oldReachedIgnitionEndpointCondition == nil || oldReachedIgnitionEndpointCondition.Status != corev1.ConditionTrue || nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeInPlace {
+		reachedIgnitionEndpointCondition, err := r.createReachedIgnitionEndpointCondition(ctx, tokenSecret, nodePool.Generation)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("error setting IgnitionReached condition: %w", err)
+		}
 
-	metrics.ObserveConditionTransitionDuration(nodePool, reachedIgnitionEndpointCondition, oldReachedIgnitionEndpointCondition)
+		SetStatusCondition(&nodePool.Status.Conditions, *reachedIgnitionEndpointCondition)
+
+		metrics.ObserveConditionTransitionDuration(nodePool, reachedIgnitionEndpointCondition, oldReachedIgnitionEndpointCondition)
+	}
 
 	// Validate tuningConfig input.
 	tuningConfig, err := r.getTuningConfig(ctx, nodePool)
