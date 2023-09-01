@@ -251,11 +251,10 @@ func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.
 	if hcp != nil {
 		err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
 		if err != nil {
-			if apierrors.IsNotFound(err) {
-				return nil
-			} else {
+			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("failed to get hostedcontrolplane: %w", err)
 			}
+			return nil
 		}
 
 		if hcp.Spec.PausedUntil != pauseValue {
