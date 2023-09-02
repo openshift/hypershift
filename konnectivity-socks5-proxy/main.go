@@ -128,13 +128,19 @@ func dialFunc(caCertPath string, clientCertPath string, clientKeyPath string, pr
 			return nil, err
 		}
 
+		formattedRequestAddress := requestAddress
+		// if request address is IPv6 IP, make sure that it is surrounded by brackets for connect request
+		if net.ParseIP(requestAddress) != nil && strings.Contains(requestAddress, ":") && !strings.HasPrefix(requestAddress, "[") {
+			formattedRequestAddress = fmt.Sprintf("[%s]", requestAddress)
+		}
+
 		// connect to the proxy address and get a TLS connection
 		proxyAddress := fmt.Sprintf("%s:%d", proxyHostname, proxyPort)
 		proxyConn, err := tls.Dial("tcp", proxyAddress, tlsConfig)
 		if err != nil {
 			return nil, fmt.Errorf("dialing proxy %q failed: %v", proxyAddress, err)
 		}
-		_, err = fmt.Fprintf(proxyConn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", requestAddress, "127.0.0.1")
+		_, err = fmt.Fprintf(proxyConn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", formattedRequestAddress, "127.0.0.1")
 		if err != nil {
 			return nil, err
 		}
