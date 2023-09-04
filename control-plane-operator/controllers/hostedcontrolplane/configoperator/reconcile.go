@@ -223,10 +223,6 @@ var (
 			hccVolumeClusterSignerCA().Name: "/etc/kubernetes/cluster-signer-ca",
 		},
 	}
-	hccLabels = map[string]string{
-		"app":                         "hosted-cluster-config-operator",
-		hyperv1.ControlPlaneComponent: "hosted-cluster-config-operator",
-	}
 )
 
 func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, deploymentConfig *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference) error {
@@ -241,6 +237,11 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 	// As a consequence of using the same memory address for both MatchLabels and Labels, when setColocation set the colocationLabelKey in additionalLabels
 	// it got also silently included in MatchLabels. This made any additional additionalLabel to break reconciliation because MatchLabels is an immutable field.
 	// So now we leave Selector.MatchLabels if it has something already and use a different var from .Labels so the former is not impacted by additionalLabels changes.
+	hccLabels := map[string]string{
+		"app":                         "hosted-cluster-config-operator",
+		hyperv1.ControlPlaneComponent: "hosted-cluster-config-operator",
+		"hypershift.openshift.io/hosted-control-plane": deployment.Namespace,
+	}
 	selectorLabels := hccLabels
 	if deployment.Spec.Selector != nil && deployment.Spec.Selector.MatchLabels != nil {
 		selectorLabels = deployment.Spec.Selector.MatchLabels
