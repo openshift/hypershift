@@ -55,19 +55,26 @@ type NTOMachineConfigRolloutTest struct {
 
 	hostedCluster       *hyperv1.HostedCluster
 	hostedClusterClient crclient.Client
+
+	inplace bool
 }
 
-func NewNTOMachineConfigRolloutTest(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hcClient crclient.Client) *NTOMachineConfigRolloutTest {
+func NewNTOMachineConfigRolloutTest(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hcClient crclient.Client, inplace bool) *NTOMachineConfigRolloutTest {
 	return &NTOMachineConfigRolloutTest{
 		ctx:                 ctx,
 		hostedCluster:       hostedCluster,
 		hostedClusterClient: hcClient,
 		mgmtClient:          mgmtClient,
+		inplace:             inplace,
 	}
 }
 
 func (mc *NTOMachineConfigRolloutTest) Setup(t *testing.T) {
 	t.Log("Starting test NTOMachineConfigRolloutTest")
+
+	if mc.inplace && globalOpts.Platform == hyperv1.KubevirtPlatform {
+		t.Skip("test can't run for the platform kubevirt")
+	}
 }
 
 func (mc *NTOMachineConfigRolloutTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {

@@ -73,12 +73,12 @@ func TestNodePool(t *testing.T) {
 			},
 			{
 				name: "TestNTOMachineConfigGetsRolledOut",
-				test: NewNTOMachineConfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
+				test: NewNTOMachineConfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient, false),
 			},
 
 			{
 				name:            "TestNTOMachineConfigAppliedInPlace",
-				test:            NewNTOMachineConfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
+				test:            NewNTOMachineConfigRolloutTest(ctx, mgtClient, hostedCluster, hostedClusterClient, true),
 				manifestBuilder: NewNTOMachineConfigInPlaceRolloutTestManifest(hostedCluster),
 			},
 
