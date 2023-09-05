@@ -75,6 +75,8 @@ func (h *hypershiftTest) Execute(opts *core.CreateOptions, platform hyperv1.Plat
 			h.test(t, h.client, hostedCluster)
 		})
 	}
+
+	h.after(hostedCluster, opts, platform)
 }
 
 // runs before each test.
@@ -87,7 +89,16 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *core
 				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)
 			}
 		}
+	})
+}
 
+// runs after each test.
+func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, opts *core.CreateOptions, platform hyperv1.PlatformType) {
+	if h.Failed() {
+		// skip if Main failed
+		return
+	}
+	h.Run("EnsureHostedCluster", func(t *testing.T) {
 		hcpNs := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
 
 		EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t, context.Background(), h.client, hcpNs)
