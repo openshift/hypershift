@@ -37,6 +37,7 @@ type CreateInfraOptions struct {
 	AdditionalTags     []string
 	EnableProxy        bool
 	SSHKeyFile         string
+	SingleNATGateway   bool
 
 	additionalEC2Tags []*ec2.Tag
 }
@@ -94,6 +95,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. Use 'none' for an empty prefix")
 	cmd.Flags().StringSliceVar(&opts.Zones, "zones", opts.Zones, "The availability zones in which NodePool can be created")
 	cmd.Flags().BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
+	cmd.Flags().BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 
 	cmd.MarkFlagRequired("infra-id")
 	cmd.MarkFlagRequired("aws-creds")
@@ -193,6 +195,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	if err != nil {
 		return nil, err
 	}
+	var natGatewayID string
 	for _, zone := range o.Zones {
 		privateSubnetID, err := o.CreatePrivateSubnet(l, ec2Client, result.VPCID, zone, privateNetwork.String())
 		if err != nil {
@@ -202,9 +205,8 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		if err != nil {
 			return nil, err
 		}
-		var natGatewayID string
 		publicSubnetIDs = append(publicSubnetIDs, publicSubnetID)
-		if !o.EnableProxy {
+		if !o.EnableProxy && ((natGatewayID == "" && o.SingleNATGateway) || !o.SingleNATGateway) {
 			natGatewayID, err = o.CreateNATGateway(l, ec2Client, publicSubnetID, zone)
 			if err != nil {
 				return nil, err
