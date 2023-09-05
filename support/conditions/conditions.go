@@ -35,11 +35,11 @@ func ExpectedHCConditions() map[hyperv1.ConditionType]metav1.ConditionStatus {
 		hyperv1.ClusterVersionFailing:     metav1.ConditionFalse,
 		hyperv1.ClusterVersionProgressing: metav1.ConditionFalse,
 
-		// conditions with no strong gurantees
+		// conditions with no strong guarantees
 		//
 		// UnmanagedEtcdAvailable is only set if hcluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged.
 		hyperv1.UnmanagedEtcdAvailable: metav1.ConditionTrue,
-		// ClusterVersionUpgradeable is not always guranteed to be true.
+		// ClusterVersionUpgradeable is not always guaranteed to be true.
 		hyperv1.ClusterVersionUpgradeable: metav1.ConditionTrue,
 		// ExternalDNSReachable could be set to ConditionUnknown if external DNS is not configured or HC is private.
 		hyperv1.ExternalDNSReachable: metav1.ConditionTrue,

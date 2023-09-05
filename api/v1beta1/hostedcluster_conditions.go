@@ -106,6 +106,11 @@ const (
 	// A failure here is unlikely to resolve without the changing user input.
 	ValidReleaseImage ConditionType = "ValidReleaseImage"
 
+	// ValidKubeVirtInfraNetworkMTU indicates if the MTU configured on an infra cluster
+	// hosting a guest cluster utilizing kubevirt platform is a sufficient value that will avoid
+	// performance degradation due to fragmentation of the double encapsulation in ovn-kubernetes
+	ValidKubeVirtInfraNetworkMTU ConditionType = "ValidKubeVirtInfraNetworkMTU"
+
 	// ValidAWSIdentityProvider indicates if the Identity Provider referenced
 	// in the cloud credentials is healthy. E.g. for AWS the idp ARN is referenced in the iam roles.
 	// 		"Version": "2012-10-17",
@@ -191,6 +196,8 @@ const (
 
 	ReconciliationPausedConditionReason             = "ReconciliationPaused"
 	ReconciliationInvalidPausedUntilConditionReason = "InvalidPausedUntilValue"
+
+	KubeVirtSuboptimalMTUReason = "KubeVirtSuboptimalMTUDetected"
 )
 
 // Messages.
