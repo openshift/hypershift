@@ -507,10 +507,35 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 			{Name: "hosted-etc-kube", MountPath: "/etc/hosted-kubernetes"},
 			{Name: "configs", MountPath: "/configs"},
 		},
-	}}
+	},
+		{
+			// CNO uses konnectivity-proxy to perform proxy readiness checks through the hosted cluster's network
+			Name:    "konnectivity-proxy",
+			Image:   params.Images.Socks5Proxy,
+			Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--resolve-from-guest-cluster-dns=true"},
+			Args:    []string{"run"},
+			Env: []corev1.EnvVar{{
+				Name:  "KUBECONFIG",
+				Value: "/etc/kubernetes/kubeconfig",
+			}},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("10Mi"),
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{Name: "hosted-etc-kube", MountPath: "/etc/kubernetes"},
+				{Name: "konnectivity-proxy-cert", MountPath: "/etc/konnectivity/proxy-client"},
+				{Name: "konnectivity-proxy-ca", MountPath: "/etc/konnectivity/proxy-ca"},
+			},
+		},
+	}
 	dep.Spec.Template.Spec.Volumes = []corev1.Volume{
 		{Name: "hosted-etc-kube", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KASServiceKubeconfigSecret("").Name}}},
 		{Name: "configs", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+		{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: utilpointer.Int32(0640)}}},
+		{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: utilpointer.Int32(0640)}}},
 	}
 
 	params.DeploymentConfig.ApplyTo(dep)
