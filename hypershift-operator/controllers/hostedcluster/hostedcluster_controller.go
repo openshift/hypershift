@@ -249,7 +249,7 @@ func serviceFirstNodePortAvailable(svc *corev1.Service) bool {
 // If it doesn't exist: it returns as there's no need to add it
 func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, pauseValue *string) error {
 	// At the initial hosted cluster creation time, there is no HCP.
-	if hcp != nil {
+	if hcp == nil {
 		return nil
 	}
 
