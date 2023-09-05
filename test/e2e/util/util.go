@@ -420,6 +420,11 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
+			// TODO: Remove this when https://issues.redhat.com/browse/OCPBUGS-18569 is resolved
+			if strings.HasPrefix(pod.Name, "cluster-network-operator-") {
+				continue
+			}
+
 			// TODO: Remove this when https://issues.redhat.com/browse/OCPBUGS-6953 is resolved
 			if strings.HasPrefix(pod.Name, "ovnkube-master-") {
 				continue
