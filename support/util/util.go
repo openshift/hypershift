@@ -215,13 +215,20 @@ func ConvertRegistryOverridesToCommandLineFlag(registryOverrides map[string]stri
 // ConvertOpenShiftImageRegistryOverridesToCommandLineFlag converts a map of image registry sources and their mirrors into a string
 func ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(registryOverrides map[string][]string) string {
 	var commandLineFlagArray []string
-	for registrySource, registryReplacements := range registryOverrides {
+	var sortedRegistrySources []string
+
+	for k := range registryOverrides {
+		sortedRegistrySources = append(sortedRegistrySources, k)
+	}
+	sort.Strings(sortedRegistrySources)
+
+	for _, registrySource := range sortedRegistrySources {
+		registryReplacements := registryOverrides[registrySource]
 		for _, registryReplacement := range registryReplacements {
 			commandLineFlagArray = append(commandLineFlagArray, fmt.Sprintf("%s=%s", registrySource, registryReplacement))
 		}
 	}
 	if len(commandLineFlagArray) > 0 {
-		sort.Strings(commandLineFlagArray)
 		return strings.Join(commandLineFlagArray, ",")
 	}
 	// this is the equivalent of null on a StringToString command line variable.
