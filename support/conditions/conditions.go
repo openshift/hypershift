@@ -63,7 +63,8 @@ func ExpectedNodePoolConditions() map[string]corev1.ConditionStatus {
 		hyperv1.NodePoolAWSSecurityGroupAvailableConditionType: corev1.ConditionTrue,
 		hyperv1.NodePoolUpdateManagementEnabledConditionType:   corev1.ConditionTrue,
 
-		hyperv1.NodePoolUpdatingVersionConditionType: corev1.ConditionFalse,
-		hyperv1.NodePoolUpdatingConfigConditionType:  corev1.ConditionFalse,
+		hyperv1.NodePoolUpdatingVersionConditionType:                 corev1.ConditionFalse,
+		hyperv1.NodePoolUpdatingConfigConditionType:                  corev1.ConditionFalse,
+		hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType: corev1.ConditionFalse,
 	}
 }

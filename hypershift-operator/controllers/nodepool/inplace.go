@@ -69,10 +69,7 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 			// Annotations here propagate down to Machines
 			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.
 			Annotations: map[string]string{
-				// TODO (alberto): Use conditions to signal an in progress rolling upgrade
-				// similar to what we do with nodePoolAnnotationCurrentConfig
-				nodePoolAnnotationPlatformMachineTemplate: machineTemplateSpecJSON, // This will trigger a deployment rolling upgrade when its value changes.
-				nodePoolAnnotation:                        client.ObjectKeyFromObject(nodePool).String(),
+				nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
 			},
 		},
 
@@ -86,7 +83,8 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 				Kind:       gvk.Kind,
 				APIVersion: gvk.GroupVersion().String(),
 				Namespace:  machineTemplateCR.GetNamespace(),
-				Name:       machineTemplateCR.GetName(),
+				// Keep current version for later check.
+				Name: machineSet.Spec.Template.Spec.InfrastructureRef.Name,
 			},
 			// Keep current version for later check.
 			Version:          machineSet.Spec.Template.Spec.Version,
@@ -109,6 +107,9 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 	}
 	machineSet.Spec.Template.Annotations[nodePoolAnnotationTaints] = taintsInJSON
 
+	setMachineSetReplicas(nodePool, machineSet)
+
+	isUpdating := false
 	// Propagate version and userData Secret to the MachineSet.
 	if userDataSecret.Name != k8sutilspointer.StringDeref(machineSet.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
 		log.Info("New user data Secret has been generated",
@@ -135,15 +136,23 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 		if _, ok := machineSet.Annotations[nodePoolAnnotationCurrentConfigVersion]; !ok {
 			machineSet.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
 		}
+		isUpdating = true
+	}
 
-		// We return early here during a version/config upgrade to persist the resource with new user data Secret,
-		// so in the next reconciling loop we get a new machineSet.Generation
-		// and we can do a legit MachineSetComplete/MachineSet.Status.ObservedGeneration check.
-		// Before persisting, if the NodePool is brand new we want to make sure the replica number is set so the MachineSet controller
-		// does not panic.
-		if machineSet.Spec.Replicas == nil {
-			setMachineSetReplicas(nodePool, machineSet)
-		}
+	// template spec has changed, signal a rolling upgrade.
+	if machineTemplateCR.GetName() != machineSet.Spec.Template.Spec.InfrastructureRef.Name {
+		log.Info("New machine template has been generated",
+			"current", machineSet.Spec.Template.Spec.InfrastructureRef.Name,
+			"target", machineTemplateCR.GetName())
+
+		machineSet.Spec.Template.Spec.InfrastructureRef.Name = machineTemplateCR.GetName()
+		isUpdating = true
+	}
+
+	if isUpdating {
+		// We return early here during a version/config/MachineTemplate update to persist the resource with new user data Secret / MachineTemplate,
+		// so in the next reconciling loop we get a new MachineDeployment.Generation
+		// and we can do a legit MachineDeploymentComplete/MachineDeployment.Status.ObservedGeneration check.
 		return nil
 	}
 
@@ -168,9 +177,13 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
 		}
 		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
-	}
 
-	setMachineSetReplicas(nodePool, machineSet)
+		if nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] != machineTemplateCR.GetName() {
+			log.Info("Rolling upgrade complete",
+				"previous", nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate], "new", machineTemplateCR.GetName())
+			nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] = machineTemplateCR.GetName()
+		}
+	}
 
 	// Bubble up upgrading NodePoolUpdatingVersionConditionType.
 	var status corev1.ConditionStatus
