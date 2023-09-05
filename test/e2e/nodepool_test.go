@@ -97,10 +97,6 @@ func TestNodePool(t *testing.T) {
 				name: "KubeVirtCacheTest",
 				test: NewKubeVirtCacheTest(ctx, mgtClient, hostedCluster),
 			},
-			{
-				name: "TestRollingUpgrade",
-				test: NewRollingUpgradeTest(ctx, mgtClient, hostedCluster),
-			},
 		}
 
 		for _, testCase := range nodePoolTests {

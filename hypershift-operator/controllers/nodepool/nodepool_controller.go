@@ -917,10 +917,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 	}
 
-	if err := r.cleanupMachineTemplates(ctx, log, nodePool, controlPlaneNamespace); err != nil {
-		return ctrl.Result{}, err
-	}
-
 	// Reconcile (Platform)MachineTemplate.
 	template, mutateTemplate, machineTemplateSpecJSON, err := machineTemplateBuilders(hcluster, nodePool, infraID, ami, powervsBootImage, kubevirtBootImage, cpoCapabilities.CreateDefaultAWSSecurityGroup)
 	if err != nil {
@@ -1020,66 +1016,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 	}
 	return ctrl.Result{}, nil
-}
-
-func (r *NodePoolReconciler) cleanupMachineTemplates(ctx context.Context, log logr.Logger, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
-	// list machineSets
-	machineSets := &capiv1.MachineSetList{}
-	if err := r.Client.List(ctx, machineSets, client.InNamespace(controlPlaneNamespace)); err != nil {
-		return fmt.Errorf("failed to list machineSets: %w", err)
-	}
-
-	// filter machineSets owned by this nodePool.
-	nodePoolKey := client.ObjectKeyFromObject(nodePool).String()
-	filtered := make([]*capiv1.MachineSet, 0, len(machineSets.Items))
-	for idx := range machineSets.Items {
-		ms := &machineSets.Items[idx]
-		// skip if machineSet doesn't belong to the nodePool
-		if ms.Annotations[nodePoolAnnotation] != nodePoolKey {
-			continue
-		}
-
-		filtered = append(filtered, ms)
-	}
-
-	if len(filtered) == 0 {
-		// initial machineSet has not been created.
-		log.Info("initial machineSet has not been created.")
-		return nil
-	}
-
-	ref := filtered[0].Spec.Template.Spec.InfrastructureRef
-	machineTemplates := new(unstructured.UnstructuredList)
-	machineTemplates.SetAPIVersion(ref.APIVersion)
-	machineTemplates.SetKind(ref.Kind)
-	if err := r.Client.List(ctx, machineTemplates, client.InNamespace(ref.Namespace)); err != nil {
-		return fmt.Errorf("failed to list MachineTemplates: %w", err)
-	}
-
-	// delete old machine templates not currently referenced by any machineSet.
-	for _, mt := range machineTemplates.Items {
-		// skip if MachineTempalte doesn't belong to the nodePool.
-		if mt.GetAnnotations()[nodePoolAnnotation] != nodePoolKey {
-			continue
-		}
-
-		shouldDelete := true
-		for _, ms := range filtered {
-			if mt.GetName() == ms.Spec.Template.Spec.InfrastructureRef.Name {
-				shouldDelete = false
-				break
-			}
-		}
-
-		if shouldDelete {
-			log.Info("deleting machineTemplate", "name", mt.GetName())
-			if err := r.Client.Delete(ctx, &mt); err != nil {
-				return fmt.Errorf("failed to delete MachineTemplate %s: %w", mt.GetName(), err)
-			}
-		}
-	}
-
-	return nil
 }
 
 func (r *NodePoolReconciler) addKubeVirtCacheNameToStatus(kubevirtBootImage kubevirt.BootImage, nodePool *hyperv1.NodePool) {
@@ -2516,14 +2452,12 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		return nil, nil, "", fmt.Errorf("unsupported platform type: %s", nodePool.Spec.Platform.Type)
 	}
 	template.SetNamespace(manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name)
+	template.SetName(nodePool.GetName())
 
 	machineTemplateSpecJSON, err := json.Marshal(machineTemplateSpec)
 	if err != nil {
 		return nil, nil, "", err
 	}
-
-	// ensures a rolling upgrade is triggered, by creating a new template with a differnt name if any field changes.
-	template.SetName(fmt.Sprintf("%s-%s", nodePool.GetName(), supportutil.HashStruct(machineTemplateSpecJSON)))
 
 	return template, mutateTemplate, string(machineTemplateSpecJSON), nil
 }
