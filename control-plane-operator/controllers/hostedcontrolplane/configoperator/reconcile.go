@@ -229,7 +229,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, deploymentConfig *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference, hcp *hyperv1.HostedControlPlane) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, deploymentConfig *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference, hcp *hyperv1.HostedControlPlane, openShiftTrustedCABundleConfigMapForCPOExists bool) error {
 	// Before this change we did
 	// 		Selector: &metav1.LabelSelector{
 	//			MatchLabels: hccLabels,
@@ -277,6 +277,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 	}
 	if additionalTrustBundle != nil {
 		util.DeploymentAddTrustBundleVolume(additionalTrustBundle, deployment)
+	}
+	if openShiftTrustedCABundleConfigMapForCPOExists {
+		util.DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment)
 	}
 	if isExternalInfraKv(hcp) {
 		// injects the kubevirt credentials secret volume, volume mount path, and appends cli arg.
