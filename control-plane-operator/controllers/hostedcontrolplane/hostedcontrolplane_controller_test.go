@@ -180,7 +180,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 					{
 						Protocol:   corev1.ProtocolTCP,
 						Port:       apiPort,
-						TargetPort: intstr.FromInt(6443),
+						TargetPort: intstr.FromInt(int(apiPort)),
 					},
 				},
 				LoadBalancerSourceRanges: allowCIDRString,

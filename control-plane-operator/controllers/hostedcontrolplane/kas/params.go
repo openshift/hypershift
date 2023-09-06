@@ -41,18 +41,23 @@ type KubeAPIServerParams struct {
 	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
 	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
 
-	ServiceAccountIssuer string                       `json:"serviceAccountIssuer"`
-	ServiceCIDRs         []string                     `json:"serviceCIDRs"`
-	ClusterCIDRs         []string                     `json:"clusterCIDRs"`
-	AdvertiseAddress     string                       `json:"advertiseAddress"`
-	ExternalAddress      string                       `json:"externalAddress"`
-	ExternalPort         int32                        `json:"externalPort"`
-	InternalAddress      string                       `json:"internalAddress"`
-	InternalPort         int32                        `json:"internalPort"`
+	ServiceAccountIssuer string   `json:"serviceAccountIssuer"`
+	ServiceCIDRs         []string `json:"serviceCIDRs"`
+	ClusterCIDRs         []string `json:"clusterCIDRs"`
+	AdvertiseAddress     string   `json:"advertiseAddress"`
+	ExternalAddress      string   `json:"externalAddress"`
+	// ExternalPort is the port coming from the status of the SVC which is exposing the KAS, e.g. common router LB, dedicated private/public/ LB...
+	// This is used to build kas urls for generated internal kubeconfigs for example.
+	ExternalPort    int32  `json:"externalPort"`
+	InternalAddress string `json:"internalAddress"`
+	// InternalPort is the port that was used to expose the KAS SVC.
+	// This is used to build kas urls for generated external kubeconfigs for example.
+	InternalPort int32 `json:"internalPort"`
+	// APIServerPort is port to expose the KAS Pod.
+	APIServerPort        int32                        `json:"apiServerPort"`
 	ExternalOAuthAddress string                       `json:"externalOAuthAddress"`
 	ExternalOAuthPort    int32                        `json:"externalOAuthPort"`
 	EtcdURL              string                       `json:"etcdAddress"`
-	APIServerPort        int32                        `json:"apiServerPort"`
 	KubeConfigRef        *hyperv1.KubeconfigSecretRef `json:"kubeConfigRef"`
 	AuditWebhookRef      *corev1.LocalObjectReference `json:"auditWebhookRef"`
 	ConsolePublicURL     string                       `json:"consolePublicURL"`
@@ -66,7 +71,9 @@ type KubeAPIServerParams struct {
 }
 
 type KubeAPIServerServiceParams struct {
-	APIServerPort       int
+	// APIServerPort is the port used for the SVC.
+	APIServerPort int
+	// APIServerListenPort is the port used for the TargetPort.
 	APIServerListenPort int
 	AllowedCIDRBlocks   []string
 	OwnerReference      *metav1.OwnerReference

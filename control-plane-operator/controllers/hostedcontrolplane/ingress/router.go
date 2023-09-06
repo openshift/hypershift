@@ -249,6 +249,8 @@ func ReconcileRouterService(svc *corev1.Service, kasPort int32, internal, crossZ
 	foundHTTPS := false
 	foundKAS := false
 
+	// TODO (alberto): why this criteria?
+	// Introduced here https://github.com/openshift/hypershift/pull/1614/files#diff-62c16653415b8d89921cb26796abc479c31da1654095f7c46b551b470533d66dR368-R372.
 	if kasPort == 443 {
 		foundKAS = true
 	}

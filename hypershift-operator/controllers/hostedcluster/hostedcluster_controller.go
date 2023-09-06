@@ -4222,22 +4222,6 @@ func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hc
 	if hcluster.Spec.Networking.APIServer != nil && hcluster.Spec.Networking.APIServer.Port != nil {
 		return nil
 	}
-	for _, publishingStrategy := range hcluster.Spec.Services {
-		if publishingStrategy.Service != hyperv1.APIServer {
-			continue
-		}
-		if publishingStrategy.Type == hyperv1.Route {
-			if hcluster.Spec.Networking.APIServer == nil {
-				hcluster.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
-			}
-
-			hcluster.Spec.Networking.APIServer.Port = k8sutilspointer.Int32(443)
-			if err := r.Update(ctx, hcluster); err != nil {
-				return fmt.Errorf("failed to update hostedcluster after defaulting the apiserver port: %w", err)
-			}
-		}
-		break
-	}
 
 	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityInfrastructure) {
 		return nil
