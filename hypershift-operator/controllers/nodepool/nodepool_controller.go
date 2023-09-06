@@ -48,6 +48,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -2522,10 +2523,16 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		return nil, nil, "", err
 	}
 
-	// ensures a rolling upgrade is triggered, by creating a new template with a differnt name if any field changes.
-	template.SetName(fmt.Sprintf("%s-%s", nodePool.GetName(), supportutil.HashStruct(machineTemplateSpecJSON)))
+	template.SetName(generateMachineTemplateName(nodePool, machineTemplateSpecJSON))
 
 	return template, mutateTemplate, string(machineTemplateSpecJSON), nil
+}
+
+func generateMachineTemplateName(nodePool *hyperv1.NodePool, machineTemplateSpecJSON []byte) string {
+	// using HashStruct(machineTemplateSpecJSON) ensures a rolling upgrade is triggered
+	// by creating a new template with a differnt name if any field changes.
+	return getName(nodePool.GetName(), supportutil.HashStruct(machineTemplateSpecJSON),
+		validation.DNS1123SubdomainMaxLength)
 }
 
 func validateInfraID(infraID string) error {
