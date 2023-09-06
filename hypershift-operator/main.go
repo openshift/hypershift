@@ -54,7 +54,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -164,6 +166,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	renewDeadline := time.Second * 40
 	retryPeriod := time.Second * 15
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
+		NewClient:                     NewCachingClient,
 		Scheme:                        hyperapi.Scheme,
 		MetricsBindAddress:            opts.MetricsAddr,
 		Port:                          9443,
@@ -441,4 +444,18 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	// Start the controllers
 	log.Info("starting manager")
 	return mgr.Start(ctx)
+}
+
+func NewCachingClient(cache cache.Cache, config *rest.Config, options crclient.Options, uncachedObjects ...crclient.Object) (crclient.Client, error) {
+	c, err := crclient.New(config, options)
+	if err != nil {
+		return nil, err
+	}
+
+	return crclient.NewDelegatingClient(crclient.NewDelegatingClientInput{
+		CacheReader:       cache,
+		Client:            c,
+		UncachedObjects:   uncachedObjects,
+		CacheUnstructured: true,
+	})
 }
