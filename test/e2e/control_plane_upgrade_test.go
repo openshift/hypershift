@@ -38,6 +38,9 @@ func TestUpgradeControlPlane(t *testing.T) {
 				obj.Annotations = make(map[string]string)
 			}
 			obj.Annotations[hyperv1.ForceUpgradeToAnnotation] = globalOpts.LatestReleaseImage
+			if globalOpts.DisablePKIReconciliation {
+				obj.Annotations[hyperv1.DisablePKIReconciliationAnnotation] = "true"
+			}
 		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
 

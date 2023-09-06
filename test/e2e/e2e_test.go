@@ -114,6 +114,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ManagementParentKubeconfig, "e2e.management-parent-kubeconfig", "", "Kubeconfig of the management cluster's parent cluster (required to test request serving isolation)")
 	flag.StringVar(&globalOpts.ManagementClusterNamespace, "e2e.management-cluster-namespace", "", "Namespace of the management cluster's HostedCluster (required to test request serving isolation)")
 	flag.StringVar(&globalOpts.ManagementClusterName, "e2e.management-cluster-name", "", "Name of the management cluster's HostedCluster (required to test request serving isolation)")
+	flag.BoolVar(&globalOpts.DisablePKIReconciliation, "e2e.disable-pki-reconciliation", false, "If set, TestUpgradeControlPlane will upgrade the control plane without reconciling the pki components")
 
 	flag.Parse()
 
@@ -381,6 +382,9 @@ type options struct {
 	ManagementParentKubeconfig string
 	ManagementClusterNamespace string
 	ManagementClusterName      string
+	// If set, the UpgradeControlPlane test will upgrade control plane without
+	// reconciling PKI.
+	DisablePKIReconciliation bool
 }
 
 type configurableClusterOptions struct {
