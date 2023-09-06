@@ -128,19 +128,14 @@ func dialFunc(caCertPath string, clientCertPath string, clientKeyPath string, pr
 			return nil, err
 		}
 
-		formattedRequestAddress := requestAddress
-		// if request address is IPv6 IP, make sure that it is surrounded by brackets for connect request
-		if net.ParseIP(requestAddress) != nil && strings.Contains(requestAddress, ":") && !strings.HasPrefix(requestAddress, "[") {
-			formattedRequestAddress = fmt.Sprintf("[%s]", requestAddress)
-		}
-
 		// connect to the proxy address and get a TLS connection
 		proxyAddress := fmt.Sprintf("%s:%d", proxyHostname, proxyPort)
 		proxyConn, err := tls.Dial("tcp", proxyAddress, tlsConfig)
 		if err != nil {
 			return nil, fmt.Errorf("dialing proxy %q failed: %v", proxyAddress, err)
 		}
-		_, err = fmt.Fprintf(proxyConn, "CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", formattedRequestAddress, "127.0.0.1")
+		connectString := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", requestAddress, "127.0.0.1")
+		_, err = fmt.Fprintf(proxyConn, "%s", connectString)
 		if err != nil {
 			return nil, err
 		}
@@ -219,7 +214,11 @@ func (gr *guestClusterResolver) getResolver(ctx context.Context) (*net.Resolver,
 	if err := gr.client.Get(ctx, client.ObjectKeyFromObject(dnsService), dnsService); err != nil {
 		return nil, fmt.Errorf("failed to get dns service from guest cluster: %w", err)
 	}
-	clusterDNSAddress := dnsService.Spec.ClusterIP + ":53"
+	dnsIP := dnsService.Spec.ClusterIP
+	if net.ParseIP(dnsIP) != nil && strings.Contains(dnsIP, ":") && !strings.HasPrefix(dnsIP, "[") {
+		dnsIP = fmt.Sprintf("[%s]", dnsIP)
+	}
+	clusterDNSAddress := dnsIP + ":53"
 	gr.resolver = &net.Resolver{
 		PreferGo: true,
 		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
