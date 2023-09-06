@@ -33,6 +33,7 @@ func NewCreateCommands() *cobra.Command {
 		ServiceCIDR:                    "172.31.0.0/16",
 		Timeout:                        0,
 		Wait:                           false,
+		PausedUntil:                    "",
 	}
 
 	cmd := &cobra.Command{
@@ -67,6 +68,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.SSHKeyFile, "ssh-key", opts.SSHKeyFile, "Filepath to an SSH key file.")
 	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the duration of the wait (Examples: 30s, 1h30m45s, etc.) 0 means no timeout.")
 	cmd.PersistentFlags().BoolVar(&opts.Wait, "wait", opts.Wait, "If true, the create command will block until the HostedCluster is up. Requires at least one NodePool with at least one node.")
+	cmd.PersistentFlags().StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
 
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 

@@ -251,13 +251,17 @@ func serviceFirstNodePortAvailable(svc *corev1.Service) bool {
 // pauseHostedControlPlane will handle adding the pausedUntil field to the hostedControlPlane object if it exists.
 // If it doesn't exist: it returns as there's no need to add it
 func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, pauseValue *string) error {
+	// At the initial hosted cluster creation time, there is no HCP.
+	if hcp == nil {
+		return nil
+	}
+
 	err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
-		} else {
+		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get hostedcontrolplane: %w", err)
 		}
+		return nil
 	}
 
 	if hcp.Spec.PausedUntil != pauseValue {

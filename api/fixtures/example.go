@@ -76,6 +76,7 @@ type ExampleOptions struct {
 	EtcdStorageClass                 string
 	ExternalDNSDomain                string
 	Arch                             string
+	PausedUntil                      string
 	AWS                              *ExampleAWSOptions
 	None                             *ExampleNoneOptions
 	Agent                            *ExampleAgentOptions
@@ -460,6 +461,10 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		},
 	}
 
+	if len(o.PausedUntil) > 0 {
+		cluster.Spec.PausedUntil = &o.PausedUntil
+	}
+
 	if o.BaseDomainPrefix == "none" {
 		// set empty prefix explicitly
 		cluster.Spec.DNS.BaseDomainPrefix = pointer.String("")
@@ -619,6 +624,12 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		nodePools = append(nodePools, nodePool)
 	default:
 		panic("Unsupported platform")
+	}
+
+	if len(o.PausedUntil) > 0 {
+		for _, nodePool := range nodePools {
+			nodePool.Spec.PausedUntil = &o.PausedUntil
+		}
 	}
 
 	return &ExampleResources{
