@@ -3,6 +3,7 @@ package ocm
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -52,6 +53,33 @@ func NewOpenShiftControllerManagerParams(hcp *hyperv1.HostedControlPlane, observ
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.DeploymentConfig.SetDefaults(hcp, openShiftControllerManagerLabels(), nil)
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
+
+	params.DeploymentConfig.LivenessProbes = config.LivenessProbes{
+		ocmContainerMain().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromInt(int(servingPort)),
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+			InitialDelaySeconds: 30,
+			TimeoutSeconds:      5,
+		},
+	}
+	params.DeploymentConfig.ReadinessProbes = config.ReadinessProbes{
+		ocmContainerMain().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz/ready",
+					Port:   intstr.FromInt(int(servingPort)),
+					Scheme: corev1.URISchemeHTTPS,
+				},
+			},
+			FailureThreshold: 10,
+			TimeoutSeconds:   5,
+		},
+	}
 
 	params.OwnerRef = config.OwnerRefFrom(hcp)
 	return params
