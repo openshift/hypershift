@@ -18,8 +18,6 @@ import (
 	"fmt"
 	"os"
 
-	"k8s.io/client-go/rest"
-
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/configmetrics"
@@ -34,8 +32,12 @@ import (
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
+
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
+
+	"k8s.io/client-go/rest"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -107,6 +109,8 @@ type HostedClusterConfigOperator struct {
 	enableCIDebugOutput bool
 
 	clusterSignerCA []byte
+
+	registryOverrides map[string]string
 }
 
 func newHostedClusterConfigOperatorCommand() *cobra.Command {
@@ -139,6 +143,7 @@ func newHostedClusterConfigOperatorCommand() *cobra.Command {
 	flags.Int32Var(&cpo.KonnectivityPort, "konnectivity-port", cpo.KonnectivityPort, "Port of external konnectivity endpoint")
 	flags.StringVar(&cpo.OAuthAddress, "oauth-address", cpo.KonnectivityAddress, "Address of external oauth endpoint")
 	flags.Int32Var(&cpo.OAuthPort, "oauth-port", cpo.KonnectivityPort, "Port of external oauth endpoint")
+	flags.StringToStringVar(&cpo.registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 	return cmd
 }
 
@@ -224,15 +229,28 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		kubevirtInfraConfig = cpConfig
 	}
 
-	releaseProvider := &releaseinfo.StaticProviderDecorator{
-		Delegate: &releaseinfo.CachedProvider{
-			Inner: &releaseinfo.RegistryClientProvider{},
-			Cache: map[string]*releaseinfo.ReleaseImage{},
-		},
-		ComponentImages: map[string]string{
-			"konnectivity-agent": konnectivityAgentImage,
-		},
+	var imageRegistryOverrides map[string][]string
+	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
+	if ok {
+		imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
 	}
+
+	releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.StaticProviderDecorator{
+				Delegate: &releaseinfo.CachedProvider{
+					Inner: &releaseinfo.RegistryClientProvider{},
+					Cache: map[string]*releaseinfo.ReleaseImage{},
+				},
+				ComponentImages: map[string]string{
+					"konnectivity-agent": konnectivityAgentImage,
+				},
+			},
+			RegistryOverrides: o.registryOverrides,
+		},
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
 	operatorConfig := &operator.HostedClusterConfigOperatorConfig{
 		TargetCreateOrUpdateProvider: &labelenforcingclient.LabelEnforcingUpsertProvider{
 			Upstream:  upsert.New(o.enableCIDebugOutput),
