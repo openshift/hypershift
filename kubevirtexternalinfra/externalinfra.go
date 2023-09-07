@@ -82,17 +82,7 @@ func (k *kubevirtInfraClientMapImp) Delete(key string) {
 }
 
 func generateKubevirtInfraClusterClient(ctx context.Context, cpClient client.Client, credentials *hyperv1.KubevirtPlatformCredentials, secretNamespace string) (client.Client, error) {
-	infraKubeconfigSecret := &corev1.Secret{}
-
-	infraKubeconfigSecretKey := client.ObjectKey{Namespace: secretNamespace, Name: credentials.InfraKubeConfigSecret.Name}
-	if err := cpClient.Get(ctx, infraKubeconfigSecretKey, infraKubeconfigSecret); err != nil {
-		return nil, fmt.Errorf("failed to fetch infra kubeconfig secret %s/%s: %w", secretNamespace, credentials.InfraKubeConfigSecret.Name, err)
-	}
-
-	kubeConfig, ok := infraKubeconfigSecret.Data["kubeconfig"]
-	if !ok {
-		return nil, errors.New("failed to retrieve infra kubeconfig from secret: 'kubeconfig' key is missing")
-	}
+	kubeConfig, err := GetKubeConfig(ctx, cpClient, secretNamespace, credentials.InfraKubeConfigSecret.Name)
 
 	clientConfig, err := clientcmd.NewClientConfigFromBytes(kubeConfig)
 	if err != nil {
@@ -111,4 +101,20 @@ func generateKubevirtInfraClusterClient(ctx context.Context, cpClient client.Cli
 	}
 
 	return infraClusterClient, nil
+}
+
+func GetKubeConfig(ctx context.Context, cl client.Client, secretNamespace, secretName string) ([]byte, error) {
+	infraKubeconfigSecret := &corev1.Secret{}
+
+	infraKubeconfigSecretKey := client.ObjectKey{Namespace: secretNamespace, Name: secretName}
+	if err := cl.Get(ctx, infraKubeconfigSecretKey, infraKubeconfigSecret); err != nil {
+		return nil, fmt.Errorf("failed to fetch infra kubeconfig secret %s/%s: %w", secretNamespace, secretName, err)
+	}
+
+	kubeConfig, ok := infraKubeconfigSecret.Data["kubeconfig"]
+	if !ok {
+		return nil, errors.New("failed to retrieve infra kubeconfig from secret: 'kubeconfig' key is missing")
+	}
+
+	return kubeConfig, nil
 }

@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -43,8 +44,36 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/config"
 	supportutil "github.com/openshift/hypershift/support/util"
+)
+
+const (
+	kubevirtNamespace = "openshift-cnv"
+)
+
+var (
+	coreResources = []client.Object{
+		&appsv1.DaemonSet{},
+		&appsv1.Deployment{},
+		&appsv1.ReplicaSet{},
+		&appsv1.StatefulSet{},
+		&batchv1.Job{},
+		&corev1.ConfigMap{},
+		&corev1.Endpoints{},
+		&corev1.Event{},
+		&corev1.PersistentVolumeClaim{},
+		&corev1.Pod{},
+		&corev1.ReplicationController{},
+		&corev1.Service{},
+	}
+
+	kubevirtResources = []client.Object{
+		&cdiv1beta1.DataVolume{},
+		&kubevirtv1.VirtualMachine{},
+		&kubevirtv1.VirtualMachineInstance{},
+	}
 )
 
 type DumpOptions struct {
@@ -63,6 +92,12 @@ type DumpOptions struct {
 	ImpersonateAs    string
 
 	Log logr.Logger
+}
+
+type kubevirtExtCluster struct {
+	uid        string
+	nodePoolNS string
+	creds      *hyperv1.KubevirtPlatformCredentials
 }
 
 func NewDumpCommand() *cobra.Command {
@@ -279,26 +314,29 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name).Name
 
 	kubevirtInUse := false
+	var kubevirtInExternalInfras []kubevirtExtCluster
+
 	for _, np := range nodePools {
 		if np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-			kubevirtInUse = true
-			break
+			if np.Status.Platform != nil &&
+				np.Status.Platform.KubeVirt != nil &&
+				np.Status.Platform.KubeVirt.Credentials != nil &&
+				np.Status.Platform.KubeVirt.Credentials.InfraKubeConfigSecret != nil {
+
+				extInfra := kubevirtExtCluster{
+					uid:        string(np.UID),
+					nodePoolNS: np.Namespace,
+					creds:      np.Status.Platform.KubeVirt.Credentials,
+				}
+
+				kubevirtInExternalInfras = append(kubevirtInExternalInfras, extInfra)
+			} else {
+				kubevirtInUse = true
+			}
 		}
 	}
 
-	resources := []client.Object{
-		&appsv1.DaemonSet{},
-		&appsv1.Deployment{},
-		&appsv1.ReplicaSet{},
-		&appsv1.StatefulSet{},
-		&batchv1.Job{},
-		&corev1.ConfigMap{},
-		&corev1.Endpoints{},
-		&corev1.Event{},
-		&corev1.PersistentVolumeClaim{},
-		&corev1.Pod{},
-		&corev1.ReplicationController{},
-		&corev1.Service{},
+	resources := append(coreResources,
 		&capiv1.Cluster{},
 		&capiv1.MachineDeployment{},
 		&capiv1.Machine{},
@@ -317,14 +355,10 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&routev1.Route{},
 		&imagev1.ImageStream{},
 		&networkingv1.NetworkPolicy{},
-	}
+	)
 
 	if kubevirtInUse {
-		resources = append(resources,
-			&cdiv1beta1.DataVolume{},
-			&kubevirtv1.VirtualMachine{},
-			&kubevirtv1.VirtualMachineInstance{},
-		)
+		resources = append(resources, kubevirtResources...)
 	}
 
 	resourceList := strings.Join(resourceTypes(resources), ",")
@@ -340,7 +374,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	}
 
 	if kubevirtInUse {
-		cmd.WithNamespace("openshift-cnv").Run(ctx, resourceList)
+		cmd.WithNamespace(kubevirtNamespace).Run(ctx, resourceList)
 	}
 
 	podList := &corev1.PodList{}
@@ -359,6 +393,15 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	if opts.DumpGuestCluster {
 		if err = dumpGuestCluster(ctx, opts); err != nil {
 			opts.Log.Error(err, "Failed to dump guest cluster")
+		}
+	}
+
+	for _, infra := range kubevirtInExternalInfras {
+		destDit := path.Join(opts.ArtifactDir, "external-infra-clusters", "nodepool-"+infra.uid)
+		opts.Log.Info("dumping external infra cluster into " + destDit)
+
+		if err = dumpKubevirtExternalCluster(ctx, c, infra.creds, infra.nodePoolNS, destDit, opts.Log); err != nil {
+			opts.Log.Error(err, "Failed to dump infra cluster")
 		}
 	}
 
@@ -386,25 +429,14 @@ func DumpGuestCluster(ctx context.Context, log logr.Logger, kubeconfig string, d
 		kubeconfig:  kubeconfig,
 		log:         log,
 	}
-	resources := []client.Object{
+
+	resources := append(coreResources,
 		&apiextensionsv1.CustomResourceDefinition{},
 		&appsv1.ControllerRevision{},
-		&appsv1.DaemonSet{},
-		&appsv1.Deployment{},
-		&appsv1.ReplicaSet{},
-		&appsv1.StatefulSet{},
-		&batchv1.Job{},
 		&configv1.ClusterOperator{},
-		&corev1.ConfigMap{},
-		&corev1.Endpoints{},
-		&corev1.Event{},
 		&corev1.Namespace{},
 		&corev1.Node{},
 		&corev1.PersistentVolume{},
-		&corev1.PersistentVolumeClaim{},
-		&corev1.Pod{},
-		&corev1.ReplicationController{},
-		&corev1.Service{},
 		&rbacv1.ClusterRole{},
 		&rbacv1.ClusterRoleBinding{},
 		&rbacv1.Role{},
@@ -418,7 +450,8 @@ func DumpGuestCluster(ctx context.Context, log logr.Logger, kubeconfig string, d
 		// https://github.com/openshift/api/blob/2bde012f248a5172dcde2f7104caf0726cf6d93a/config/v1/types_cluster_version.go#L266-L270
 		&snapshotv1.VolumeSnapshotClass{},
 		&snapshotv1.VolumeSnapshotContent{},
-	}
+	)
+
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	cmd.Run(ctx, resourceList)
 	dumpWorkerNodeLogsCmd := OCAdmNodeLogs{
@@ -635,4 +668,60 @@ func CreateArchive(ctx context.Context, opts *DumpOptions) error {
 	opts.Log.Info("Successfully archived dump", "duration", time.Since(startArchivingDump).String())
 
 	return nil
+}
+
+var (
+	kvExtResources     = append(coreResources, kubevirtResources...)
+	kvExtResourcesList = strings.Join(resourceTypes(kvExtResources), ",")
+)
+
+func dumpKubevirtExternalCluster(ctx context.Context, mngmtCl client.Client, creds *hyperv1.KubevirtPlatformCredentials, npNS string, destDir string, log logr.Logger) error {
+	kubeconfig, err := kvinfra.GetKubeConfig(ctx, mngmtCl, npNS, creds.InfraKubeConfigSecret.Name)
+	if err != nil {
+		return fmt.Errorf("failed to get KubeVirt external infra-cluster:  %w", err)
+	}
+
+	kubeconfigFile, err := writeKubeconfigToFile(kubeconfig)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = os.Remove(kubeconfigFile)
+	}()
+
+	ocCommand, err := exec.LookPath("oc")
+	if err != nil || len(ocCommand) == 0 {
+		return fmt.Errorf("cannot find oc command")
+	}
+	cmd := OCAdmInspect{
+		oc:          ocCommand,
+		artifactDir: destDir,
+		kubeconfig:  kubeconfigFile,
+		log:         log,
+	}
+
+	namespaces := []string{creds.InfraNamespace, kubevirtNamespace}
+	for _, ns := range namespaces {
+		cmd.WithNamespace(ns).Run(ctx, kvExtResourcesList)
+	}
+
+	return nil
+}
+
+func writeKubeconfigToFile(data []byte) (string, error) {
+	kubeconfigFile, err := os.CreateTemp(os.TempDir(), "kubeconfig-")
+	if err != nil {
+		return "", fmt.Errorf("failed to get create kubeconfig file for KubeVirt external infra-cluster:  %w", err)
+	}
+	_, err = kubeconfigFile.Write(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to get create kubeconfig file for KubeVirt external infra-cluster:  %w", err)
+	}
+	err = kubeconfigFile.Close()
+	if err != nil {
+		return "", fmt.Errorf("failed to get create kubeconfig file for KubeVirt external infra-cluster:  %w", err)
+	}
+
+	return kubeconfigFile.Name(), err
 }
