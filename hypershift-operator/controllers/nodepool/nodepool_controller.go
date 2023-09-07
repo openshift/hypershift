@@ -939,6 +939,23 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		log.Info("Reconciled Machine template", "result", result)
 	}
 
+	// Check if platform machine template needs to be updated.
+	targetMachineTemplate := template.GetName()
+	if isUpdatingMachineTemplate(nodePool, targetMachineTemplate) {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            fmt.Sprintf("platform machine template update in progress. Target template: %s", targetMachineTemplate),
+			ObservedGeneration: nodePool.Generation,
+		})
+		log.Info("NodePool machine template is updating",
+			"current", nodePool.GetAnnotations()[nodePoolAnnotationPlatformMachineTemplate],
+			"target", targetMachineTemplate)
+	} else {
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
+	}
+
 	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
 		ms := machineSet(nodePool, controlPlaneNamespace)
 		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, ms, func() error {
@@ -1518,10 +1535,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 			// Annotations here propagate down to Machines
 			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.
 			Annotations: map[string]string{
-				// TODO (alberto): Use conditions to signal an in progress rolling upgrade
-				// similar to what we do with nodePoolAnnotationCurrentConfig
-				nodePoolAnnotationPlatformMachineTemplate: machineTemplateSpecJSON, // This will trigger a deployment rolling upgrade when its value changes.
-				nodePoolAnnotation:                        client.ObjectKeyFromObject(nodePool).String(),
+				nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
 			},
 		},
 		Spec: capiv1.MachineSpec{
@@ -1534,7 +1548,8 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 				Kind:       gvk.Kind,
 				APIVersion: gvk.GroupVersion().String(),
 				Namespace:  machineTemplateCR.GetNamespace(),
-				Name:       machineTemplateCR.GetName(),
+				// keep current tempalte name for later check.
+				Name: machineDeployment.Spec.Template.Spec.InfrastructureRef.Name,
 			},
 			// Keep current version for later check.
 			Version:          machineDeployment.Spec.Template.Spec.Version,
@@ -1598,6 +1613,9 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		}
 	}
 
+	setMachineDeploymentReplicas(nodePool, machineDeployment)
+
+	isUpdating := false
 	// Propagate version and userData Secret to the machineDeployment.
 	if userDataSecret.Name != k8sutilspointer.StringDeref(machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName, "") {
 		log.Info("New user data Secret has been generated",
@@ -1615,15 +1633,23 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		}
 		machineDeployment.Spec.Template.Spec.Version = &targetVersion
 		machineDeployment.Spec.Template.Spec.Bootstrap.DataSecretName = k8sutilspointer.String(userDataSecret.Name)
+		isUpdating = true
+	}
 
-		// We return early here during a version/config update to persist the resource with new user data Secret,
+	// template spec has changed, signal a rolling upgrade.
+	if machineTemplateCR.GetName() != machineDeployment.Spec.Template.Spec.InfrastructureRef.Name {
+		log.Info("New machine template has been generated",
+			"current", machineDeployment.Spec.Template.Spec.InfrastructureRef.Name,
+			"target", machineTemplateCR.GetName())
+
+		machineDeployment.Spec.Template.Spec.InfrastructureRef.Name = machineTemplateCR.GetName()
+		isUpdating = true
+	}
+
+	if isUpdating {
+		// We return early here during a version/config/MachineTemplate update to persist the resource with new user data Secret / MachineTemplate,
 		// so in the next reconciling loop we get a new MachineDeployment.Generation
 		// and we can do a legit MachineDeploymentComplete/MachineDeployment.Status.ObservedGeneration check.
-		// Before persisting, if the NodePool is brand new we want to make sure the replica number is set so the machineDeployment controller
-		// does not panic.
-		if machineDeployment.Spec.Replicas == nil {
-			setMachineDeploymentReplicas(nodePool, machineDeployment)
-		}
 		return nil
 	}
 
@@ -1649,9 +1675,13 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 			nodePool.Annotations[nodePoolAnnotationCurrentConfig] = targetConfigHash
 		}
 		nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
-	}
 
-	setMachineDeploymentReplicas(nodePool, machineDeployment)
+		if nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] != machineTemplateCR.GetName() {
+			log.Info("Rolling upgrade complete",
+				"previous", nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate], "new", machineTemplateCR.GetName())
+			nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] = machineTemplateCR.GetName()
+		}
+	}
 
 	// Bubble up AvailableReplicas and Ready condition from MachineDeployment.
 	nodePool.Status.Replicas = machineDeployment.Status.AvailableReplicas
@@ -2100,6 +2130,10 @@ func isUpdatingVersion(nodePool *hyperv1.NodePool, targetVersion string) bool {
 
 func isUpdatingConfig(nodePool *hyperv1.NodePool, targetConfigHash string) bool {
 	return targetConfigHash != nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig]
+}
+
+func isUpdatingMachineTemplate(nodePool *hyperv1.NodePool, targetMachineTemplate string) bool {
+	return targetMachineTemplate != nodePool.GetAnnotations()[nodePoolAnnotationPlatformMachineTemplate]
 }
 
 func isAutoscalingEnabled(nodePool *hyperv1.NodePool) bool {

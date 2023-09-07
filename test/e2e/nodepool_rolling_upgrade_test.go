@@ -5,7 +5,6 @@ package e2e
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -69,44 +68,40 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 	})
 	g.Expect(err).ToNot(HaveOccurred())
 
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name).Name
-	md := &capiv1.MachineDeployment{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      nodePool.Name,
-			Namespace: controlPlaneNamespace,
-		},
-	}
-	// wait until the machine deployment starts the rolling upgrade.
+	// wait until the nodePool starts the rolling upgrade, i.e NodePoolUpdatingPlatformMachineTemplateConditionType is present.
 	err = wait.PollImmediateWithContext(k.ctx, 5*time.Second, 2*time.Minute, func(ctx context.Context) (done bool, err error) {
-		if err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(md), md); err != nil {
+		if err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool); err != nil {
 			return false, err
 		}
 
-		phase := md.Status.GetTypedPhase()
-		if phase == capiv1.MachineDeploymentPhaseScalingDown || phase == capiv1.MachineDeploymentPhaseScalingUp ||
-			md.Status.Replicas > *md.Spec.Replicas {
-			return true, nil
+		condition := npcontroller.FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
+		if condition == nil {
+			return false, nil
 		}
-		return false, nil
+
+		return true, nil
 	})
-	g.Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("failed waiting for machine deployment to start the rolling upgrade, phase=%s", md.Status.Phase))
+	g.Expect(err).ToNot(HaveOccurred(), "failed waiting for nodePool to start the rolling upgrade")
 
-	// wait until the rolling upgrade is completed
+	// wait until the rolling upgrade is completed, i.e NodePoolUpdatingPlatformMachineTemplateConditionType is removed.
 	err = wait.PollImmediateWithContext(k.ctx, 30*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
-		if err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(md), md); err != nil {
+		if err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool); err != nil {
 			return false, err
 		}
 
-		if npcontroller.MachineDeploymentComplete(md) {
+		condition := npcontroller.FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
+		if condition == nil {
 			return true, nil
 		}
+
 		return false, nil
 	})
 	g.Expect(err).ToNot(HaveOccurred(), "failed waiting for the rolling upgrade to complete")
 
 	// check all aws machines have the new instance type
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name).Name
 	awsMachines := &capiaws.AWSMachineList{}
-	err = k.mgmtClient.List(k.ctx, awsMachines, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels{capiv1.MachineDeploymentLabelName: md.Name})
+	err = k.mgmtClient.List(k.ctx, awsMachines, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels{capiv1.MachineDeploymentLabelName: nodePool.Name})
 	g.Expect(err).ToNot(HaveOccurred(), "failed to list aws machines")
 
 	for _, machine := range awsMachines.Items {

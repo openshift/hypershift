@@ -33,7 +33,8 @@ const (
 	NodePoolUpdatingVersionConditionType = "UpdatingVersion"
 	// NodePoolUpdatingConfigConditionType signals if a config update is currently happening in NodePool.
 	NodePoolUpdatingConfigConditionType = "UpdatingConfig"
-
+	// NodePoolUpdatingPlatformMachineTemplateConditionType signals if a platform machine template update is currently happening in NodePool.
+	NodePoolUpdatingPlatformMachineTemplateConditionType = "UpdatingPlatformMachineTemplate"
 	// NodePoolReadyConditionType bubbles up CAPI MachineDeployment/MachineSet Ready condition.
 	// This is true when all replicas are ready Nodes.
 	// When this is false for too long, NodePoolAllMachinesReadyConditionType and NodePoolAllNodesHealthyConditionType might provide more context.
