@@ -2391,6 +2391,9 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 				Metric: []*dto.Metric{{
 					Label: []*dto.LabelPair{
 						{
+							Name: pointer.String("_id"), Value: pointer.String("id"),
+						},
+						{
 							Name: pointer.String("name"), Value: pointer.String("hcluster"),
 						},
 						{
@@ -2422,7 +2425,8 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 					DeletionTimestamp: &metav1.Time{Time: time.Now().Round(time.Second)},
 				},
 				Spec: hyperv1.HostedClusterSpec{
-					InfraID: "fakeInfraID",
+					ClusterID: "id",
+					InfraID:   "fakeInfraID",
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.PlatformType(hyperv1.AWSPlatform),
 						AWS: &hyperv1.AWSPlatformSpec{
@@ -2525,6 +2529,9 @@ func TestReportAvailableTime(t *testing.T) {
 				Metric: []*dto.Metric{{
 					Label: []*dto.LabelPair{
 						{
+							Name: pointer.String("_id"), Value: pointer.String("id"),
+						},
+						{
 							Name: pointer.String("name"), Value: pointer.String("hc"),
 						},
 						{
@@ -2547,6 +2554,9 @@ func TestReportAvailableTime(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Conditions: tc.conditions,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
 				},
 			}
 
@@ -2589,6 +2599,9 @@ func TestReportClusterVersionRolloutTime(t *testing.T) {
 				Metric: []*dto.Metric{{
 					Label: []*dto.LabelPair{
 						{
+							Name: pointer.String("_id"), Value: pointer.String("id"),
+						},
+						{
 							Name: pointer.String("name"), Value: pointer.String("hc"),
 						},
 						{
@@ -2620,6 +2633,9 @@ func TestReportClusterVersionRolloutTime(t *testing.T) {
 				Metric: []*dto.Metric{{
 					Label: []*dto.LabelPair{
 						{
+							Name: pointer.String("_id"), Value: pointer.String("id"),
+						},
+						{
 							Name: pointer.String("name"), Value: pointer.String("hc"),
 						},
 						{
@@ -2644,6 +2660,9 @@ func TestReportClusterVersionRolloutTime(t *testing.T) {
 					Version: &hyperv1.ClusterVersionStatus{
 						History: tc.updateHistory,
 					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
 				},
 			}
 
@@ -2880,6 +2899,9 @@ func TestReportProxyConfig(t *testing.T) {
 				Metric: []*dto.Metric{{
 					Label: []*dto.LabelPair{
 						{
+							Name: pointer.String("_id"), Value: pointer.String("id"),
+						},
+						{
 							Name: pointer.String("name"), Value: pointer.String("hc"),
 						},
 						{
@@ -2907,6 +2929,9 @@ func TestReportProxyConfig(t *testing.T) {
 				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 				Metric: []*dto.Metric{{
 					Label: []*dto.LabelPair{
+						{
+							Name: pointer.String("_id"), Value: pointer.String("id"),
+						},
 						{
 							Name: pointer.String("name"), Value: pointer.String("hc"),
 						},
@@ -2938,6 +2963,7 @@ func TestReportProxyConfig(t *testing.T) {
 					CreationTimestamp: metav1.Time{Time: time.Time{}.Add(time.Hour)},
 				},
 				Spec: hyperv1.HostedClusterSpec{
+					ClusterID:     "id",
 					Configuration: &tc.clusterConf,
 				},
 			}
@@ -2989,6 +3015,9 @@ func TestReportHostedClusterGuestCloudResourcesDeletionDuration(t *testing.T) {
 				Metric: []*dto.Metric{{
 					Label: []*dto.LabelPair{
 						{
+							Name: pointer.String("_id"), Value: pointer.String("id"),
+						},
+						{
 							Name: pointer.String("name"), Value: pointer.String("hc"),
 						},
 						{
@@ -3016,6 +3045,9 @@ func TestReportHostedClusterGuestCloudResourcesDeletionDuration(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Conditions: tc.conditions,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
 				},
 			}
 
@@ -3054,6 +3086,9 @@ func TestReportHostedClusterDeletionDuration(t *testing.T) {
 				Metric: []*dto.Metric{{
 					Label: []*dto.LabelPair{
 						{
+							Name: pointer.String("_id"), Value: pointer.String("id"),
+						},
+						{
 							Name: pointer.String("name"), Value: pointer.String("hc"),
 						},
 						{
@@ -3077,6 +3112,9 @@ func TestReportHostedClusterDeletionDuration(t *testing.T) {
 					Name:              "hc",
 					Namespace:         "any",
 					DeletionTimestamp: &deletionTime,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
 				},
 			}
 

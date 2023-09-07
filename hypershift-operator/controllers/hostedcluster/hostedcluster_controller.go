@@ -3267,7 +3267,7 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
 				}
 			}
-			hcmetrics.SkippedCloudResourcesDeletion.WithLabelValues(hc.Namespace, hc.Name).Set(float64(1))
+			hcmetrics.SkippedCloudResourcesDeletion.WithLabelValues(hc.Namespace, hc.Name, hc.Spec.ClusterID).Set(float64(1))
 			log.Info("Removed finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name)
 			continue
 		}
@@ -4619,7 +4619,7 @@ func reportAvailableTime(hcluster *hyperv1.HostedCluster) {
 	// SLI: Hosted Cluster available duration.
 	availableTime := clusterAvailableTime(hcluster)
 	if availableTime != nil {
-		hcmetrics.HostedClusterAvailableDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(*availableTime)
+		hcmetrics.HostedClusterAvailableDuration.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(*availableTime)
 		if hcluster.Annotations == nil {
 			hcluster.Annotations = make(map[string]string)
 		}
@@ -4631,7 +4631,7 @@ func reportClusterVersionRolloutTime(hcluster *hyperv1.HostedCluster) {
 	// SLI: Hosted Cluster roll out duration.
 	versionRolloutTime := clusterVersionRolloutTime(hcluster)
 	if versionRolloutTime != nil {
-		hcmetrics.HostedClusterInitialRolloutDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(*versionRolloutTime)
+		hcmetrics.HostedClusterInitialRolloutDuration.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(*versionRolloutTime)
 	}
 }
 
@@ -4666,9 +4666,9 @@ func reportProxyConfig(hcluster *hyperv1.HostedCluster) {
 		if hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
 			proxyTrustedCA = "1"
 		}
-		hcmetrics.ProxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(1)
+		hcmetrics.ProxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(1)
 	} else {
-		hcmetrics.ProxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(0)
+		hcmetrics.ProxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(0)
 	}
 }
 
@@ -4677,12 +4677,12 @@ func reportHostedClusterGuestCloudResourcesDeletionDuration(hcluster *hyperv1.Ho
 	condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
 	if condition != nil && condition.Status == metav1.ConditionTrue {
 		guestClusterResourceDeletionDuration := condition.LastTransitionTime.Sub(hcluster.DeletionTimestamp.Time).Seconds()
-		hcmetrics.HostedClusterGuestCloudResourcesDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(guestClusterResourceDeletionDuration)
+		hcmetrics.HostedClusterGuestCloudResourcesDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(guestClusterResourceDeletionDuration)
 	}
 }
 
 func reportHostedClusterDeletionDuration(hcluster *hyperv1.HostedCluster, funcClock clock.WithTickerAndDelayedExecution) {
 	// SLI: HostedCluster deletion duration.
 	deletionDuration := funcClock.Since(hcluster.DeletionTimestamp.Time).Seconds()
-	hcmetrics.HostedClusterDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name).Set(deletionDuration)
+	hcmetrics.HostedClusterDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(deletionDuration)
 }
