@@ -148,6 +148,7 @@ type AWSPlatformOptions struct {
 	Zones                   []string
 	EtcdKMSKeyARN           string
 	EnableProxy             bool
+	SingleNATGateway        bool
 }
 
 type AzurePlatformOptions struct {

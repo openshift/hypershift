@@ -47,6 +47,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().BoolVar(&opts.AWSPlatform.EnableProxy, "enable-proxy", opts.AWSPlatform.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
 	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with a platform credential (--aws-creds), --pull-secret and --base-domain value. The secret must exist in the supplied \"--namespace\"")
 	cmd.Flags().StringVar(&opts.AWSPlatform.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
+	cmd.Flags().BoolVar(&opts.AWSPlatform.SingleNATGateway, "single-nat-gateway", opts.AWSPlatform.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -139,6 +140,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			Zones:              opts.AWSPlatform.Zones,
 			EnableProxy:        opts.AWSPlatform.EnableProxy,
 			SSHKeyFile:         opts.SSHKeyFile,
+			SingleNATGateway:   opts.AWSPlatform.SingleNATGateway,
 		}
 		infra, err = opt.CreateInfra(ctx, opts.Log)
 		if err != nil {
