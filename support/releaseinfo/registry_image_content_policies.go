@@ -12,6 +12,7 @@ var _ ProviderWithOpenShiftImageRegistryOverrides = (*ProviderWithOpenShiftImage
 type ProviderWithOpenShiftImageRegistryOverridesDecorator struct {
 	Delegate                        ProviderWithRegistryOverrides
 	OpenShiftImageRegistryOverrides map[string][]string
+	mirroredReleaseImage            string
 
 	lock sync.Mutex
 }
@@ -30,6 +31,7 @@ func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) Lookup(ctx contex
 				// Attempt to lookup image with mirror registry destination
 				releaseImage, err := p.Delegate.Lookup(ctx, image, pullSecret)
 				if releaseImage != nil {
+					p.mirroredReleaseImage = image
 					return releaseImage, nil
 				}
 
@@ -47,4 +49,8 @@ func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) GetRegistryOverri
 
 func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) GetOpenShiftImageRegistryOverrides() map[string][]string {
 	return p.OpenShiftImageRegistryOverrides
+}
+
+func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) GetMirroredReleaseImage() string {
+	return p.mirroredReleaseImage
 }
