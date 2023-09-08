@@ -38,14 +38,12 @@ func TestOLM(t *testing.T) {
 	t.SkipNow()
 	t.Parallel()
 
-	g := NewWithT(t)
-
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
 	// Create a cluster
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		// Get guest client
 		t.Logf("Waiting for guest client to become available")
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
