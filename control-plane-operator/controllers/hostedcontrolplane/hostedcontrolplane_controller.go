@@ -1038,6 +1038,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
 		config.OwnerRefFrom(hostedControlPlane),
 		openShiftTrustedCABundleConfigMapForCPOExists,
+		r.ReleaseProvider.GetMirroredReleaseImage(),
 	); err != nil {
 		return fmt.Errorf("failed to reconcile ignition server: %w", err)
 	}
