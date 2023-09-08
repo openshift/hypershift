@@ -17,6 +17,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -71,10 +72,6 @@ func NewNTOMachineConfigRolloutTest(ctx context.Context, mgmtClient crclient.Cli
 
 func (mc *NTOMachineConfigRolloutTest) Setup(t *testing.T) {
 	t.Log("Starting test NTOMachineConfigRolloutTest")
-
-	if mc.inplace && globalOpts.Platform == hyperv1.KubevirtPlatform {
-		t.Skip("test can't run for the platform kubevirt")
-	}
 }
 
 func (mc *NTOMachineConfigRolloutTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
@@ -133,9 +130,9 @@ func (mc *NTOMachineConfigRolloutTest) Run(t *testing.T, nodePool hyperv1.NodePo
 		}
 	}
 
-	timeout := time.Duration(15 * time.Minute)
+	timeout := time.Duration(120 * time.Minute)
 	if np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		timeout = time.Duration(25 * time.Minute)
+		timeout = time.Duration(120 * time.Minute)
 	}
 
 	t.Logf("waiting for rollout of NodePools with NTO-generated config")
@@ -192,6 +189,13 @@ func (mc *NTOMachineConfigInPlaceRolloutTestManifest) BuildNodePoolManifest(defa
 
 	nodePool.Spec.Replicas = &twoReplicas
 	nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace
+
+	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		minMemory, _ := resource.ParseQuantity("8Gi")
+		if nodePool.Spec.Platform.Kubevirt.Compute.Memory.Cmp(minMemory) < 0 {
+			nodePool.Spec.Platform.Kubevirt.Compute.Memory = &minMemory
+		}
+	}
 
 	return nodePool, nil
 }

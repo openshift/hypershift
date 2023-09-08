@@ -235,6 +235,8 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 			return nil, fmt.Errorf("failed to generate ssh keys: %w", err)
 		}
 	}
+	fmt.Printf("==========> sshKey = %s\n", string(sshKey[:]))
+	fmt.Printf("==========> sshPrivateKey = %s\n", string(sshPrivateKey[:]))
 
 	var userCABundle []byte
 	if len(opts.AdditionalTrustBundle) > 0 {
