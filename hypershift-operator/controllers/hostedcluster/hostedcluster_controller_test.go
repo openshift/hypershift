@@ -1285,18 +1285,18 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.12.0",
+						Image: "image-4.13.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.13.0",
+							Image: "image-4.14.0",
 						},
 					},
 				},
 			},
-			expectedResult: errors.New(`y-stream downgrade from "4.13.0" to "4.12.0" is not supported`),
+			expectedResult: errors.New(`y-stream downgrade from "4.14.0" to "4.13.0" is not supported`),
 		},
 		{
 			name: "unsupported y-stream upgrade, error",
@@ -1349,7 +1349,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.12.0",
+						Image: "image-4.13.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
@@ -1381,7 +1381,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.12.0",
+						Image: "image-4.13.0",
 					},
 				},
 			},
@@ -1406,13 +1406,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.12.0",
+						Image: "image-4.13.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.12.0",
+							Image: "image-4.13.0",
 						},
 					},
 				},
@@ -1438,7 +1438,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.12.0",
+						Image: "image-4.13.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
@@ -1470,13 +1470,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.12.0",
+						Image: "image-4.13.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.12.0",
+							Image: "image-4.13.0",
 						},
 					},
 				},
@@ -1528,6 +1528,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						"image-4.11.1": "4.11.1",
 						"image-4.12.0": "4.12.0",
 						"image-4.13.0": "4.13.0",
+						"image-4.14.0": "4.14.0",
 					},
 				},
 			}
