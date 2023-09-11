@@ -14,19 +14,20 @@ var packageServerLabels = map[string]string{
 }
 
 type OperatorLifecycleManagerParams struct {
-	CLIImage                               string
-	OLMImage                               string
-	ProxyImage                             string
-	OperatorRegistryImage                  string
-	CertifiedOperatorsCatalogImageOverride string
-	CommunityOperatorsCatalogImageOverride string
-	RedHatMarketplaceCatalogImageOverride  string
-	RedHatOperatorsCatalogImageOverride    string
-	ReleaseVersion                         string
-	DeploymentConfig                       config.DeploymentConfig
-	PackageServerConfig                    config.DeploymentConfig
-	AvailabilityProberImage                string
-	NoProxy                                []string
+	CLIImage                                 string
+	OLMImage                                 string
+	ProxyImage                               string
+	OperatorRegistryImage                    string
+	CertifiedOperatorsCatalogImageOverride   string
+	CommunityOperatorsCatalogImageOverride   string
+	RedHatMarketplaceCatalogImageOverride    string
+	RedHatOperatorsCatalogImageOverride      string
+	OLMCatalogsISRegistryOverridesAnnotation string
+	ReleaseVersion                           string
+	DeploymentConfig                         config.DeploymentConfig
+	PackageServerConfig                      config.DeploymentConfig
+	AvailabilityProberImage                  string
+	NoProxy                                  []string
 	config.OwnerRef
 }
 
@@ -73,6 +74,8 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, releaseI
 	params.CommunityOperatorsCatalogImageOverride = hcp.Annotations[hyperv1.CommunityOperatorsCatalogImageAnnotation]
 	params.RedHatMarketplaceCatalogImageOverride = hcp.Annotations[hyperv1.RedHatMarketplaceCatalogImageAnnotation]
 	params.RedHatOperatorsCatalogImageOverride = hcp.Annotations[hyperv1.RedHatOperatorsCatalogImageAnnotation]
+
+	params.OLMCatalogsISRegistryOverridesAnnotation = hcp.Annotations[hyperv1.OLMCatalogsISRegistryOverridesAnnotation]
 
 	return params
 }

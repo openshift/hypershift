@@ -2980,8 +2980,9 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 		catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
 		if !overrideImages {
+			isImageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(p.OLMCatalogsISRegistryOverridesAnnotation)
 			if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
-				return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, r.ReleaseProvider.GetOpenShiftImageRegistryOverrides())
+				return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
 			}
