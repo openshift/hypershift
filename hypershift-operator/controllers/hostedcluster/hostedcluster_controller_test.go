@@ -1349,13 +1349,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.12.0",
+						Image: "image-4.13.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.11.0",
+							Image: "image-4.12.0",
 						},
 					},
 				},
@@ -1381,7 +1381,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.12.0",
+						Image: "image-4.13.0",
 					},
 				},
 			},
@@ -1406,13 +1406,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.12.0",
+						Image: "image-4.13.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.12.0",
+							Image: "image-4.13.0",
 						},
 					},
 				},
@@ -1438,13 +1438,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.12.0",
+						Image: "image-4.13.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.11.1",
+							Image: "image-4.12.1",
 						},
 					},
 				},
@@ -1470,13 +1470,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.12.0",
+						Image: "image-4.13.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.12.0",
+							Image: "image-4.13.0",
 						},
 					},
 				},
@@ -1525,9 +1525,10 @@ func TestValidateReleaseImage(t *testing.T) {
 						"image-4.9.0":  "4.9.0",
 						"image-4.10.0": "4.10.0",
 						"image-4.11.0": "4.11.0",
-						"image-4.11.1": "4.11.1",
 						"image-4.12.0": "4.12.0",
+						"image-4.12.1": "4.12.1",
 						"image-4.13.0": "4.13.0",
+						"image-4.14.0": "4.14.0",
 					},
 				},
 			}
