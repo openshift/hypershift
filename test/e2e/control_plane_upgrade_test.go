@@ -15,7 +15,6 @@ import (
 
 func TestUpgradeControlPlane(t *testing.T) {
 	t.Parallel()
-	g := NewWithT(t)
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -26,7 +25,7 @@ func TestUpgradeControlPlane(t *testing.T) {
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		// Sanity check the cluster by waiting for the nodes to report ready
 		t.Logf("Waiting for guest client to become available")
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)

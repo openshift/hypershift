@@ -34,7 +34,6 @@ type NodePoolTestCase struct {
 
 func TestNodePool(t *testing.T) {
 	t.Parallel()
-	g := NewWithT(t)
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -44,7 +43,7 @@ func TestNodePool(t *testing.T) {
 	// We set replicas to 0 in order to allow the inner tests to
 	// create their own NodePools with the proper replicas
 	clusterOpts.NodePoolReplicas = 0
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		hostedClusterClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
 		// Get the newly created defautlt NodePool

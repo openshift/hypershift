@@ -38,7 +38,7 @@ func TestHAEtcdChaos(t *testing.T) {
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.NodePoolReplicas = 0
 
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		t.Run("SingleMemberRecovery", testSingleMemberRecovery(ctx, mgtClient, hostedCluster))
 		t.Run("KillRandomMembers", testKillRandomMembers(ctx, mgtClient, hostedCluster))
 		t.Run("KillAllMembers", testKillAllMembers(ctx, mgtClient, hostedCluster))

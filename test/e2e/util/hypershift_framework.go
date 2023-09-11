@@ -18,7 +18,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-type hypershiftTestFunc func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
+type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
 type hypershiftTest struct {
 	*testing.T
 	ctx    context.Context
@@ -72,7 +72,7 @@ func (h *hypershiftTest) Execute(opts *core.CreateOptions, platform hyperv1.Plat
 
 	if h.test != nil && !h.Failed() {
 		h.Run("Main", func(t *testing.T) {
-			h.test(t, h.client, hostedCluster)
+			h.test(t, NewWithT(t), h.client, hostedCluster)
 		})
 	}
 

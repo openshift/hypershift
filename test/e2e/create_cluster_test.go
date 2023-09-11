@@ -48,7 +48,6 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		t.Skip("test only supported on platform AWS")
 	}
 	t.Parallel()
-	g := NewWithT(t)
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -57,12 +56,14 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 	// find kms key ARN using alias
 	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to retrieve kms key arn")
-	g.Expect(kmsKeyArn).NotTo(BeNil(), "failed to retrieve kms key arn")
+	if err != nil || kmsKeyArn == nil {
+		t.Fatal("failed to retrieve kms key arn")
+	}
 
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
 
@@ -81,7 +82,7 @@ func TestNoneCreateCluster(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		// Wait for the rollout to be reported complete
 		t.Logf("Waiting for cluster rollout. Image: %s", globalOpts.LatestReleaseImage)
 		// Since the None platform has no workers, CVO will not have expectations set,
@@ -121,7 +122,7 @@ func TestCreateClusterPrivate(t *testing.T) {
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.Private)
 
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		// Private -> publicAndPrivate
 		t.Run("SwitchFromPrivateToPublic", testSwitchFromPrivateToPublic(ctx, mgtClient, hostedCluster, &clusterOpts))
 		// publicAndPrivate -> Private
