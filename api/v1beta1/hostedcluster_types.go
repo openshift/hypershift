@@ -70,11 +70,18 @@ const (
 
 	// CertifiedOperatorsCatalogImageAnnotation, CommunityOperatorsCatalogImageAnnotation, RedHatMarketplaceCatalogImageAnnotation and RedHatOperatorsCatalogImageAnnotation
 	// are annotations that can be used to override the address of the images used for the OLM catalogs if in the `management` OLMCatalogPlacement mode.
-	// If used, all of them should be set at the same time referring images only by digest (`...@sha256:<id>`)
+	// If used, all of them should be set at the same time referring images only by digest (`...@sha256:<id>`).
+	// This will disable the imagestream used to keep the catalog images up to date.
 	CertifiedOperatorsCatalogImageAnnotation = "hypershift.openshift.io/certified-operators-catalog-image"
 	CommunityOperatorsCatalogImageAnnotation = "hypershift.openshift.io/community-operators-catalog-image"
 	RedHatMarketplaceCatalogImageAnnotation  = "hypershift.openshift.io/redhat-marketplace-catalog-image"
 	RedHatOperatorsCatalogImageAnnotation    = "hypershift.openshift.io/redhat-operators-catalog-image"
+
+	// OLMCatalogsISRegistryOverridesAnnotation overrides the image registries used for the ImageStream used for the OLM catalogs.
+	// It contains the source registry string as a key and the destination registry string as value.
+	// Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string.
+	// Format is: "sr1=dr1,sr2=dr2"
+	OLMCatalogsISRegistryOverridesAnnotation = "hypershift.openshift.io/olm-catalogs-is-registry-overrides"
 
 	// ClusterAPIProviderAWSImage overrides the CAPI AWS provider image to use for
 	// a HostedControlPlane.
