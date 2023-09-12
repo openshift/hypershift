@@ -979,7 +979,13 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	}
 	watchedResources := sets.String{}
 	for _, resource := range r.managedResources() {
-		watchedResources.Insert(fmt.Sprintf("%T", resource))
+		resourceType := fmt.Sprintf("%T", resource)
+		// We watch Endpoints for changes to the kubernetes Endpoint in the default namespace
+		// but never create an Endpoints resource
+		if resourceType == "*v1.Endpoints" {
+			continue
+		}
+		watchedResources.Insert(resourceType)
 	}
 	if diff := cmp.Diff(client.createdTypes.List(), watchedResources.List()); diff != "" {
 		t.Errorf("the set of resources that are being created differs from the one that is being watched: %s", diff)
