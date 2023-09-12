@@ -227,6 +227,7 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 		&corev1.Namespace{},
 		&corev1.ServiceAccount{},
 		&corev1.Service{},
+		&corev1.Endpoints{},
 		&agentv1.AgentCluster{},
 		&capiibmv1.IBMVPCCluster{},
 		&capikubevirt.KubevirtCluster{},
