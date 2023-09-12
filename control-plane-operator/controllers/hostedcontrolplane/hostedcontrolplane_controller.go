@@ -2852,7 +2852,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := nto.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
+	p := nto.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
 	metricsService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, metricsService, func() error {
