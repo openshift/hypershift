@@ -1695,6 +1695,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 	if hcluster.Spec.ControlPlaneRelease != nil {
 		hcp.Spec.ControlPlaneReleaseImage = &hcluster.Spec.ControlPlaneRelease.Image
+	} else {
+		hcp.Spec.ControlPlaneReleaseImage = nil
 	}
 
 	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: controlplaneoperator.PullSecret(hcp.Namespace).Name}
