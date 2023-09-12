@@ -999,7 +999,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			log.Error(fmt.Errorf("release image is invalid"), "reconciliation is blocked", "message", validReleaseImage.Message)
 			return ctrl.Result{}, nil
 		}
-		upgrading, msg, err := isUpgradeable(hcluster, releaseImage)
+		upgrading, msg, err := isUpgrading(hcluster, releaseImage)
 		if upgrading {
 			if err != nil {
 				log.Error(err, "reconciliation is blocked", "message", validReleaseImage.Message)
@@ -3703,7 +3703,7 @@ func isProgressing(hc *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseI
 				return false, fmt.Errorf("%s condition is false", string(condition.Type))
 			}
 		case string(hyperv1.ClusterVersionUpgradeable):
-			_, _, err := isUpgradeable(hc, releaseImage)
+			_, _, err := isUpgrading(hc, releaseImage)
 			if err != nil {
 				return false, fmt.Errorf("ClusterVersionUpgradeable condition is false: %w", err)
 			}
@@ -4173,11 +4173,11 @@ func (r *HostedClusterReconciler) lookupReleaseImage(ctx context.Context, hclust
 	return r.ReleaseProvider.Lookup(ctx, hyperutil.HCControlPlaneReleaseImage(hcluster), pullSecretBytes)
 }
 
-// isUpgradeable returns
+// isUpgrading returns
 // 1) bool indicating whether the HostedCluster is upgrading
 // 2) non-error message about the condition of the upgrade
 // 3) error indicating that the upgrade is not allowed or we were not able to determine
-func isUpgradeable(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (bool, string, error) {
+func isUpgrading(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (bool, string, error) {
 	if hcluster.Status.Version == nil || hcluster.Status.Version.Desired.Image == hyperutil.HCControlPlaneReleaseImage(hcluster) {
 		// cluster is either installing or at the version requested by the spec, no upgrade in progress
 		return false, "", nil

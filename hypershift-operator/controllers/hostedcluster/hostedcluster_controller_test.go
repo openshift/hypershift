@@ -1869,14 +1869,14 @@ func TestIsUpgradeable(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			releaseImage, err := r.lookupReleaseImage(context.TODO(), test.hc)
 			if err != nil {
-				t.Errorf("isUpgradeable() internal err = %v", err)
+				t.Errorf("isUpgrading() internal err = %v", err)
 			}
-			upgrading, _, err := isUpgradeable(test.hc, releaseImage)
+			upgrading, _, err := isUpgrading(test.hc, releaseImage)
 			if upgrading != test.upgrading {
-				t.Errorf("isUpgradeable() upgrading = %v, want %v", upgrading, test.upgrading)
+				t.Errorf("isUpgrading() upgrading = %v, want %v", upgrading, test.upgrading)
 			}
 			if (err == nil) == test.err {
-				t.Errorf("isUpgradeable() err = %v, want %v", err, test.err)
+				t.Errorf("isUpgrading() err = %v, want %v", err, test.err)
 				return
 			}
 		})
