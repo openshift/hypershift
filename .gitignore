@@ -25,6 +25,7 @@ tools/bin
 *~
 .vscode
 .envrc
+.DS_Store
 
 .kube
 /kubeconfig

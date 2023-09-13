@@ -91,6 +91,117 @@ nav:
     - how-to/powervs/create-cluster-powervs.md
     - how-to/powervs/create-infra-separately.md
     - how-to/powervs/prerequisites-and-env-guide.md
+- 'Self-Managed Laboratories':
+  - 'MultiCluster Engine and Agent provider':
+    - labs/index.md
+    - 'IPv4':
+      - labs/IPv4/index.md
+      - 'Hypervisor':
+        - labs/IPv4/hypervisor/index.md
+        - 'Bare Metal Requisites': labs/IPv4/hypervisor/requisites.md
+        - 'Packaging': labs/IPv4/hypervisor/packaging.md
+        - 'Network Manager Dispatcher': labs/IPv4/hypervisor/network-manager-dispatcher.md
+        - 'BMC Access for Metal3': labs/IPv4/hypervisor/redfish-for-vms.md
+        - labs/IPv4/hypervisor/hypervisor-system-config.md
+      - labs/IPv4/dns.md
+      - labs/IPv4/registry.md
+      - 'Management Cluster':
+        - 'Management Cluster Provisioning': labs/IPv4/mgmt-cluster/index.md
+        - 'Networking': labs/IPv4/mgmt-cluster/network.md
+        - 'Openshift Compact IPv4': labs/IPv4/mgmt-cluster/compact-ipv4.md
+      - labs/IPv4/webserver.md
+      - 'Mirroring and Image Content Sources':
+        - labs/IPv4/mirror/index.md
+        - 'Mirroring': labs/IPv4/mirror/mirroring.md
+        - 'Image Content Policies': labs/IPv4/mirror/ICSP-IDMS.md
+      - 'Multicluster Engine':
+        - 'Multicluster Engine': labs/IPv4/mce/index.md
+        - 'ACM/MCE Deployment': labs/IPv4/mce/multicluster-engine.md
+        - 'Agent Service Config': labs/IPv4/mce/agentserviceconfig.md
+      - 'TLS Certificates': labs/IPv4/tls-certificates.md
+      - 'HostedCluster':
+        - 'Hosted Cluster Creation': labs/IPv4/hostedcluster/index.md
+        - 'Hosted Cluster Object': labs/IPv4/hostedcluster/hostedcluster.md
+        - 'Node Pools': labs/IPv4/hostedcluster/nodepool.md
+        - 'Infra Env': labs/IPv4/hostedcluster/infraenv.md
+        - 'Worker Nodes': labs/IPv4/hostedcluster/worker-nodes.md
+        - 'Bare Metal Hosts': labs/IPv4/hostedcluster/baremetalhost.md
+      - 'Finishing Deployment':
+        - labs/IPv4/watching/index.md
+        - 'Watching the Control Plane': labs/IPv4/watching/watching-cp.md
+        - 'Watching the Data Plane': labs/IPv4/watching/watching-dp.md
+    - 'IPv6':
+      - labs/IPv6/index.md
+      - 'Hypervisor':
+        - labs/IPv6/hypervisor/index.md
+        - 'Bare Metal Requisites': labs/IPv6/hypervisor/requisites.md
+        - 'Packaging': labs/IPv6/hypervisor/packaging.md
+        - 'Network Manager Dispatcher': labs/IPv6/hypervisor/network-manager-dispatcher.md
+        - 'BMC Access for Metal3': labs/IPv6/hypervisor/redfish-for-vms.md
+        - labs/IPv6/hypervisor/hypervisor-system-config.md
+      - labs/IPv6/dns.md
+      - labs/IPv6/registry.md
+      - 'Management Cluster':
+        - 'Management Cluster Provisioning': labs/IPv6/mgmt-cluster/index.md
+        - 'Networking': labs/IPv6/mgmt-cluster/network.md
+        - 'Openshift Compact IPv6': labs/IPv6/mgmt-cluster/compact-ipv6.md
+      - labs/IPv6/webserver.md
+      - 'Mirroring and Image Content Sources':
+        - labs/IPv6/mirror/index.md
+        - 'Mirroring': labs/IPv6/mirror/mirroring.md
+        - 'Image Content Policies': labs/IPv6/mirror/ICSP-IDMS.md
+      - 'Multicluster Engine':
+        - 'Multicluster Engine': labs/IPv6/mce/index.md
+        - 'ACM/MCE Deployment': labs/IPv6/mce/multicluster-engine.md
+        - 'Agent Service Config': labs/IPv6/mce/agentserviceconfig.md
+      - 'TLS Certificates': labs/IPv6/tls-certificates.md
+      - 'HostedCluster':
+        - 'Hosted Cluster Creation': labs/IPv6/hostedcluster/index.md
+        - 'Hosted Cluster Object': labs/IPv6/hostedcluster/hostedcluster.md
+        - 'Node Pools': labs/IPv6/hostedcluster/nodepool.md
+        - 'Infra Env': labs/IPv6/hostedcluster/infraenv.md
+        - 'Worker Nodes': labs/IPv6/hostedcluster/worker-nodes.md
+        - 'Bare Metal Hosts': labs/IPv6/hostedcluster/baremetalhost.md
+      - 'Finishing Deployment':
+        - labs/IPv6/watching/index.md
+        - 'Watching the Control Plane': labs/IPv6/watching/watching-cp.md
+        - 'Watching the Data Plane': labs/IPv6/watching/watching-dp.md
+    - 'Dual Stack':
+      - labs/Dual/index.md
+      - 'Hypervisor':
+        - labs/Dual/hypervisor/index.md
+        - 'Bare Metal Requisites': labs/Dual/hypervisor/requisites.md
+        - 'Packaging': labs/Dual/hypervisor/packaging.md
+        - 'Network Manager Dispatcher': labs/Dual/hypervisor/network-manager-dispatcher.md
+        - 'BMC Access for Metal3': labs/Dual/hypervisor/redfish-for-vms.md
+        - labs/Dual/hypervisor/hypervisor-system-config.md
+      - labs/Dual/dns.md
+      - labs/Dual/registry.md
+      - 'Management Cluster':
+        - 'Management Cluster Provisioning': labs/Dual/mgmt-cluster/index.md
+        - 'Networking': labs/Dual/mgmt-cluster/network.md
+        - 'Openshift Compact Dual': labs/Dual/mgmt-cluster/compact-dual.md
+      - labs/Dual/webserver.md
+      - 'Mirroring and Image Content Sources':
+        - labs/Dual/mirror/index.md
+        - 'Mirroring': labs/Dual/mirror/mirroring.md
+        - 'Image Content Policies': labs/Dual/mirror/ICSP-IDMS.md
+      - 'Multicluster Engine':
+        - 'Multicluster Engine': labs/Dual/mce/index.md
+        - 'ACM/MCE Deployment': labs/Dual/mce/multicluster-engine.md
+        - 'Agent Service Config': labs/Dual/mce/agentserviceconfig.md
+      - 'TLS Certificates': labs/Dual/tls-certificates.md
+      - 'HostedCluster':
+        - 'Hosted Cluster Creation': labs/Dual/hostedcluster/index.md
+        - 'Hosted Cluster Object': labs/Dual/hostedcluster/hostedcluster.md
+        - 'Node Pools': labs/Dual/hostedcluster/nodepool.md
+        - 'Infra Env': labs/Dual/hostedcluster/infraenv.md
+        - 'Worker Nodes': labs/Dual/hostedcluster/worker-nodes.md
+        - 'Bare Metal Hosts': labs/Dual/hostedcluster/baremetalhost.md
+      - 'Finishing Deployment':
+        - labs/Dual/watching/index.md
+        - 'Watching the Control Plane': labs/Dual/watching/watching-cp.md
+        - 'Watching the Data Plane': labs/Dual/watching/watching-dp.md
 - 'Reference':
   - reference/index.md
   - reference/goals-and-design-invariants.md
@@ -99,6 +210,9 @@ nav:
     - reference/infrastructure/index.md
     - "AWS": reference/infrastructure/aws.md
     - "Agent": reference/infrastructure/agent.md
+  - 'Architecture':
+    - reference/architecture/index.md
+    - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
   - reference/multi-platform-support.md
