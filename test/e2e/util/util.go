@@ -807,7 +807,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			g.Expect(err).ToNot(HaveOccurred())
 		})
 
-		t.Run("EnsureEgressTrafficToManagementKAS", func(t *testing.T) {
+		t.Run("EnsureLimitedEgressTrafficToManagementKAS", func(t *testing.T) {
 			g := NewWithT(t)
 
 			kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
@@ -831,6 +831,8 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 				// Default KAS advertised address.
 				kasAddress,
 			}
+
+			// Validate cluster-version-operator is not allowed to access management KAS.
 			stdOut, err := RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator")
 			g.Expect(err).To(HaveOccurred())
 
@@ -839,6 +841,18 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 				t.Errorf("cluster version pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
 			}
 
+			// Validate private router is not allowed to access management KAS.
+			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+				stdOut, err := RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router")
+				g.Expect(err).To(HaveOccurred())
+
+				// Expect curl to timeout https://curl.se/docs/manpage.html (exit code 28).
+				if err != nil && !strings.Contains(err.Error(), "command terminated with exit code 28") {
+					t.Errorf("private router pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
+				}
+			}
+
+			// Validate cluster api is allowed to access management KAS.
 			stdOut, err = RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager")
 			// Expect curl return a 403 from the KAS.
 			if !strings.Contains(stdOut, "HTTP/2 403") || err != nil {
