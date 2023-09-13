@@ -91,7 +91,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		policy = networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcilePrivateRouterNetworkPolicy(policy, hcluster, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
+			return reconcilePrivateRouterNetworkPolicy(policy, hcluster, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
@@ -197,7 +197,7 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 	return nil
 }
 
-func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
+func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
 	httpPort := intstr.FromInt(8080)
 	httpsPort := intstr.FromInt(8443)
 	protocol := corev1.ProtocolTCP
@@ -226,13 +226,17 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 	}
 
 	// Allow to any destination not on the management cluster service network
+	// i.e. block all inter-namespace egress not allowed by other rules.
+	// Also do not allow Kubernetes endpoint IPs explicitly
+	// i.e. block access to management cluster KAS.
+	exceptions := append(kasEndpointsToCIDRs(kubernetesEndpoint), clusterNetworks...)
 	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
 		{
 			To: []networkingv1.NetworkPolicyPeer{
 				{
 					IPBlock: &networkingv1.IPBlock{
 						CIDR:   "0.0.0.0/0",
-						Except: clusterNetworks,
+						Except: exceptions,
 					},
 				},
 			},
@@ -249,13 +253,6 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 							Key:      hyperv1.RequestServingComponentLabel,
 							Operator: metav1.LabelSelectorOpExists,
 						},
-					},
-				},
-			},
-			{
-				PodSelector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"app": "ovnkube-master",
 					},
 				},
 			},
@@ -600,27 +597,11 @@ func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, man
 		}
 	}
 
-	kasCIDRs := make([]string, 0)
-	for _, subset := range kubernetesEndpoint.Subsets {
-		for _, address := range subset.Addresses {
-			// Get the CIDR string representation.
-			ip := net.ParseIP(address.IP)
-			mask := net.CIDRMask(32, 32)
-			// Convert IP and mask to CIDR notation
-			ipNet := &net.IPNet{
-				IP:   ip,
-				Mask: mask,
-			}
-
-			kasCIDRs = append(kasCIDRs, ipNet.String())
-		}
-	}
-
 	// Allow to any destination not on the management cluster service network
 	// i.e. block all inter-namespace egress not allowed by other rules.
 	// Also do not allow Kubernetes endpoint IPs explicitly
 	// i.e. block access to management cluster KAS.
-	exceptions := append(kasCIDRs, clusterNetworks...)
+	exceptions := append(kasEndpointsToCIDRs(kubernetesEndpoint), clusterNetworks...)
 	policy.Spec.Egress = append(policy.Spec.Egress,
 		networkingv1.NetworkPolicyEgressRule{
 			To: []networkingv1.NetworkPolicyPeer{
@@ -697,4 +678,23 @@ func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, man
 	}
 
 	return nil
+}
+
+func kasEndpointsToCIDRs(kubernetesEndpoint *corev1.Endpoints) []string {
+	kasCIDRs := make([]string, 0)
+	for _, subset := range kubernetesEndpoint.Subsets {
+		for _, address := range subset.Addresses {
+			// Get the CIDR string representation.
+			ip := net.ParseIP(address.IP)
+			mask := net.CIDRMask(32, 32)
+			// Convert IP and mask to CIDR notation
+			ipNet := &net.IPNet{
+				IP:   ip,
+				Mask: mask,
+			}
+
+			kasCIDRs = append(kasCIDRs, ipNet.String())
+		}
+	}
+	return kasCIDRs
 }
