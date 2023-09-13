@@ -240,22 +240,21 @@ func ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(registryOverrides m
 func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string {
 	registryMirrorPair := strings.Split(envVar, ",")
 
-	if len(registryMirrorPair) == 0 || envVar == "=" {
+	if (len(registryMirrorPair) == 1 && registryMirrorPair[0] == "") || envVar == "=" {
 		return nil
 	}
 
 	imageRegistryOverrides := make(map[string][]string)
 
 	for _, pair := range registryMirrorPair {
-		registryMirror := strings.Split(pair, "=")
+		registryMirror := strings.SplitN(pair, "=", 2)
+		if len(registryMirror) != 2 {
+			continue
+		}
 		registry := registryMirror[0]
 		mirror := registryMirror[1]
 
-		if _, ok := imageRegistryOverrides[registry]; ok {
-			imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], mirror)
-		} else {
-			imageRegistryOverrides[registry] = []string{mirror}
-		}
+		imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], mirror)
 	}
 
 	return imageRegistryOverrides

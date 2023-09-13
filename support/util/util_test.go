@@ -146,6 +146,10 @@ func TestConvertImageRegistryOverrideStringToMap(t *testing.T) {
 		input          string
 	}{
 		{
+			name:  "Empty string",
+			input: "",
+		},
+		{
 			name:  "No registry overrides",
 			input: "=",
 			//expectedOutput: make(map[string][]string),
