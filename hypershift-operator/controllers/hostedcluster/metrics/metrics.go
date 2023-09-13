@@ -11,31 +11,31 @@ var (
 	HostedClusterDeletionDuration = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Help: "Time in seconds it took from HostedCluster having a deletion timestamp to all hypershift finalizers being removed",
 		Name: DeletionDurationMetricName,
-	}, []string{"namespace", "name"})
+	}, []string{"namespace", "name", "_id"})
 
 	GuestCloudResourcesDeletionDurationMetricName    = "hypershift_cluster_guest_cloud_resources_deletion_duration_seconds"
 	HostedClusterGuestCloudResourcesDeletionDuration = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Help: "Time in seconds it took from HostedCluster having a deletion timestamp to the CloudResourcesDestroyed being true",
 		Name: GuestCloudResourcesDeletionDurationMetricName,
-	}, []string{"namespace", "name"})
+	}, []string{"namespace", "name", "_id"})
 
 	AvailableDurationName          = "hypershift_cluster_available_duration_seconds"
 	HostedClusterAvailableDuration = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Help: "Time in seconds it took from initial cluster creation to HostedClusterAvailable condition becoming true",
 		Name: AvailableDurationName,
-	}, []string{"namespace", "name"})
+	}, []string{"namespace", "name", "_id"})
 
 	InitialRolloutDurationName          = "hypershift_cluster_initial_rollout_duration_seconds"
 	HostedClusterInitialRolloutDuration = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Help: "Time in seconds it took from initial cluster creation and rollout of initial version",
 		Name: InitialRolloutDurationName,
-	}, []string{"namespace", "name"})
+	}, []string{"namespace", "name", "_id"})
 
 	ClusterUpgradeDurationMetricName = "hypershift_cluster_upgrade_duration_seconds"
 	ClusterUpgradeDuration           = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Help: "Time in seconds it took a cluster to upgrade and rollout a given version",
 		Name: ClusterUpgradeDurationMetricName,
-	}, []string{"namespace", "name", "previous_version", "new_version"})
+	}, []string{"namespace", "name", "_id", "previous_version", "new_version"})
 
 	LimitedSupportEnabledName = "hypershift_cluster_limited_support_enabled"
 	LimitedSupportEnabled     = prometheus.NewGaugeVec(prometheus.GaugeOpts{
@@ -53,13 +53,13 @@ var (
 	ProxyConfig = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Help: "Indicates cluster proxy state for each cluster",
 		Name: ProxyName,
-	}, []string{"namespace", "name", "proxy_http", "proxy_https", "proxy_trusted_ca"})
+	}, []string{"namespace", "name", "_id", "proxy_http", "proxy_https", "proxy_trusted_ca"})
 
 	SkippedCloudResourcesDeletionName = "hypershift_cluster_skipped_cloud_resources_deletion"
 	SkippedCloudResourcesDeletion     = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Help: "Indicates the operator will skip the aws resources deletion",
 		Name: SkippedCloudResourcesDeletionName,
-	}, []string{"namespace", "name"})
+	}, []string{"namespace", "name", "_id"})
 )
 
 func init() {
@@ -91,6 +91,7 @@ func ReportClusterUpgradeDuration(hc *hyperv1.HostedCluster) {
 			ClusterUpgradeDuration.With(prometheus.Labels{
 				"namespace":        hc.Namespace,
 				"name":             hc.Name,
+				"_id":              hc.Spec.ClusterID,
 				"previous_version": prevVersion.Version,
 				"new_version":      newVersion.Version,
 			}).Set(upgradeDuration)

@@ -320,7 +320,7 @@ func (AWS) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hype
 				errs = append(errs, fmt.Errorf("failed to delete machine %s/%s: %w", awsMachine.Namespace, awsMachine.Name, err))
 				continue
 			}
-			hcmetrics.SkippedCloudResourcesDeletion.WithLabelValues(hc.Namespace, hc.Name).Set(float64(1))
+			hcmetrics.SkippedCloudResourcesDeletion.WithLabelValues(hc.Namespace, hc.Name, hc.Spec.ClusterID).Set(float64(1))
 			logger.Info("skipping cleanup of awsmachine because of invalid AWS identity provider", "machine", client.ObjectKeyFromObject(awsMachine))
 		}
 	}
