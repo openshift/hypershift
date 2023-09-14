@@ -888,7 +888,12 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "kubevirt"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "kubevirt",
+				Annotations: map[string]string{
+					hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation: "true",
+				},
+			},
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.KubevirtPlatform,
@@ -964,7 +969,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		now:                   metav1.Now,
 	}
 
-	r.KubevirtInfraClients = newKVInfraMapMock(objects)
+	r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(&createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
+		"v1.0.0",
+		"1.27.0")
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
@@ -1025,6 +1032,8 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 		other                         []crclient.Object
 		managementClusterCapabilities capabilities.CapabiltyChecker
 		expectedResult                error
+		infraKubeVirtVersion          string
+		infraK8sVersion               string
 	}{
 		{
 			name: "Cluster uses route but not supported, error",
@@ -1161,6 +1170,38 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 			expectedResult:                errors.New(`service type OAuthServer can't be published with the same hostname api.example.com as service type APIServer`),
 			managementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		},
+		{
+			name: "KubeVirt cluster meeting min infra cluster versions should succeed",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.KubevirtPlatform,
+				}}},
+			other: []crclient.Object{
+				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "creds"}},
+			},
+			infraKubeVirtVersion: "v1.0.0",
+			infraK8sVersion:      "v1.27.0",
+		},
+		{
+			name: "KubeVirt cluster not meeting min infra cluster versions should fail",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.KubevirtPlatform,
+				}}},
+			other: []crclient.Object{
+				&corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "creds"}},
+			},
+			infraKubeVirtVersion: "v0.99.0",
+			infraK8sVersion:      "v1.26.99",
+
+			expectedResult: errors.New(`[infrastructure kubevirt version is [0.99.0], hypershift kubevirt platform requires kubevirt version [1.0.0] or greater, infrastructure Kubernetes version is [1.26.99], hypershift kubevirt platform requires Kubernetes version [1.27.0] or greater]`),
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1169,6 +1210,8 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 				Client:                        fake.NewClientBuilder().WithObjects(tc.other...).Build(),
 				ManagementClusterCapabilities: tc.managementClusterCapabilities,
 			}
+
+			r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(r.Client, tc.infraKubeVirtVersion, tc.infraK8sVersion)
 
 			ctx := context.Background()
 			actual := r.validateConfigAndClusterCapabilities(ctx, tc.hostedCluster)
@@ -1518,6 +1561,65 @@ func TestValidateReleaseImage(t *testing.T) {
 				},
 			},
 			expectedResult: nil,
+		},
+		{
+			name: "KubeVirt platform unsupported release, error",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.13.0",
+					},
+
+					Platform: hyperv1.PlatformSpec{
+						Type:     hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{},
+					},
+				},
+			},
+			expectedResult: errors.New(`the minimum version supported for platform KubeVirt is: "4.14.0". Attempting to use: "4.13.0"`),
+		},
+		{
+			name: "KubeVirt platform supported release, success",
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: nil,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						NetworkType: hyperv1.OVNKubernetes,
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "image-4.14.0",
+					},
+
+					Platform: hyperv1.PlatformSpec{
+						Type:     hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{},
+					},
+				},
+			},
 		},
 	}
 
@@ -3144,29 +3246,4 @@ func TestReportHostedClusterDeletionDuration(t *testing.T) {
 			}
 		})
 	}
-}
-
-type kubevirtInfraClientMapMock struct {
-	cluster *kvinfra.KubevirtInfraClient
-}
-
-func newKVInfraMapMock(objects []crclient.Object) kvinfra.KubevirtInfraClientMap {
-	return &kubevirtInfraClientMapMock{
-		cluster: &kvinfra.KubevirtInfraClient{
-			Client:    &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
-			Namespace: "kubevirt-kubevirt",
-		},
-	}
-}
-
-func (k *kubevirtInfraClientMapMock) DiscoverKubevirtClusterClient(_ context.Context, _ crclient.Client, _ string, _ *hyperv1.KubevirtPlatformCredentials, _ string, _ string) (*kvinfra.KubevirtInfraClient, error) {
-	return k.cluster, nil
-}
-
-func (k *kubevirtInfraClientMapMock) GetClient(_ string) *kvinfra.KubevirtInfraClient {
-	return k.cluster
-}
-
-func (*kubevirtInfraClientMapMock) Delete(_ string) {
-	// interface's empty implementation
 }

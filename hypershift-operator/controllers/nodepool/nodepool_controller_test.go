@@ -2187,27 +2187,9 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 	}
 }
 
-type kubevirtInfraClientMapMock struct {
-	cluster *kvinfra.KubevirtInfraClient
-}
-
 func newKVInfraMapMock(objects []client.Object) kvinfra.KubevirtInfraClientMap {
-	return &kubevirtInfraClientMapMock{
-		cluster: &kvinfra.KubevirtInfraClient{
-			Client:    fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build(),
-			Namespace: "kubevirt-kubevirt",
-		},
-	}
-}
-
-func (k *kubevirtInfraClientMapMock) DiscoverKubevirtClusterClient(_ context.Context, _ client.Client, _ string, _ *hyperv1.KubevirtPlatformCredentials, _ string, _ string) (*kvinfra.KubevirtInfraClient, error) {
-	return k.cluster, nil
-}
-
-func (k *kubevirtInfraClientMapMock) GetClient(_ string) *kvinfra.KubevirtInfraClient {
-	return k.cluster
-}
-
-func (*kubevirtInfraClientMapMock) Delete(_ string) {
-	// interface's empty implementation
+	return kvinfra.NewMockKubevirtInfraClientMap(
+		fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build(),
+		"",
+		"")
 }
