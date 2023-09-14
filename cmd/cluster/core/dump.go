@@ -134,7 +134,15 @@ func NewDumpCommand() *cobra.Command {
 
 func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	start := time.Now()
-	c, err := util.GetClient()
+	var c client.Client
+	var err error
+
+	if len(opts.ImpersonateAs) > 0 {
+		c, err = util.GetImpersonatedClient(opts.ImpersonateAs)
+	} else {
+		c, err = util.GetClient()
+	}
+
 	if err != nil {
 		return err
 	}
@@ -175,6 +183,13 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	if err != nil {
 		return fmt.Errorf("failed to get a config for management cluster: %w", err)
 	}
+
+	if len(opts.ImpersonateAs) > 0 {
+		restConfig.Impersonate = restclient.ImpersonationConfig{
+			UserName: opts.ImpersonateAs,
+		}
+	}
+
 	kubeClient, err := kubeclient.NewForConfig(restConfig)
 	if err != nil {
 		return fmt.Errorf("failed to get a kubernetes client: %w", err)
