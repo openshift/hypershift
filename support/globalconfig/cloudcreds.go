@@ -14,8 +14,7 @@ func CloudCredentialsConfiguration() *operatorv1.CloudCredential {
 }
 
 func ReconcileCloudCredentialsConfiguration(cfg *operatorv1.CloudCredential) error {
-	// Always use default mode for cloud credentials
-	cfg.Spec.CredentialsMode = operatorv1.CloudCredentialsModeDefault
+	cfg.Spec.CredentialsMode = operatorv1.CloudCredentialsModeManual
 
 	// Because we don't run the CCO, setting the management state to unmanaged.
 	// This should change if/when we run the CCO on the control plane side.

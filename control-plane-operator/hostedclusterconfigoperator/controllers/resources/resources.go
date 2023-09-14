@@ -659,6 +659,13 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile cloud credentials config: %w", err))
 	}
 
+	authenticationConfig := globalconfig.AuthenticationConfiguration()
+	if _, err := r.CreateOrUpdate(ctx, r.client, authenticationConfig, func() error {
+		return globalconfig.ReconcileAuthenticationConfiguration(authenticationConfig, hcp.Spec.Configuration, hcp.Spec.IssuerURL)
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile authentication config: %w", err))
+	}
+
 	return errors.NewAggregate(errs)
 }
 
