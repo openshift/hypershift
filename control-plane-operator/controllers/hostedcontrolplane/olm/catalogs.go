@@ -125,12 +125,12 @@ var CatalogToImage map[string]string = map[string]string{
 	"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.14",
 }
 
-func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef, openShiftImageRegistryOverrides map[string][]string) error {
+func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef, isImageRegistryOverrides map[string][]string) error {
 	imageStream.Spec.LookupPolicy.Local = true
 	if imageStream.Spec.Tags == nil {
 		imageStream.Spec.Tags = []imagev1.TagReference{}
 	}
-	for name, image := range getCatalogToImageWithOpenShiftImageRegistryOverrides(CatalogToImage, openShiftImageRegistryOverrides) {
+	for name, image := range getCatalogToImageWithISImageRegistryOverrides(CatalogToImage, isImageRegistryOverrides) {
 		tagRef := findTagReference(imageStream.Spec.Tags, name)
 		if tagRef == nil {
 			imageStream.Spec.Tags = append(imageStream.Spec.Tags, imagev1.TagReference{
@@ -159,13 +159,13 @@ func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef con
 	return nil
 }
 
-// getCatalogToImageWithOpenShiftImageRegistryOverrides returns a map of
+// getCatalogToImageWithISImageRegistryOverrides returns a map of
 // images to be used for the catalog registries where the image address got
 // amended according to OpenShiftImageRegistryOverrides as set on the HostedControlPlaneReconciler
-func getCatalogToImageWithOpenShiftImageRegistryOverrides(catalogToImage map[string]string, openShiftImageRegistryOverrides map[string][]string) map[string]string {
+func getCatalogToImageWithISImageRegistryOverrides(catalogToImage map[string]string, isImageRegistryOverrides map[string][]string) map[string]string {
 	catalogWithOverride := make(map[string]string)
 	for name, image := range catalogToImage {
-		for registrySource, registryDest := range openShiftImageRegistryOverrides {
+		for registrySource, registryDest := range isImageRegistryOverrides {
 			if strings.Contains(image, registrySource) {
 				for _, registryReplacement := range registryDest {
 					image = strings.Replace(image, registrySource, registryReplacement, 1)

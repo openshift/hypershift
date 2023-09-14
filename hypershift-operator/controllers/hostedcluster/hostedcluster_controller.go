@@ -1676,6 +1676,11 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.EtcdPriorityClass,
 		hyperv1.EnsureExistsPullSecretReconciliation,
 		hyperv1.TopologyAnnotation,
+		hyperv1.CertifiedOperatorsCatalogImageAnnotation,
+		hyperv1.CommunityOperatorsCatalogImageAnnotation,
+		hyperv1.RedHatMarketplaceCatalogImageAnnotation,
+		hyperv1.RedHatOperatorsCatalogImageAnnotation,
+		hyperv1.OLMCatalogsISRegistryOverridesAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
