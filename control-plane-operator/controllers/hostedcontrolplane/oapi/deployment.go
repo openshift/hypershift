@@ -24,7 +24,8 @@ import (
 )
 
 const (
-	configHashAnnotation = "openshift-apiserver.hypershift.openshift.io/config-hash"
+	configHashAnnotation      = "openshift-apiserver.hypershift.openshift.io/config-hash"
+	auditConfigHashAnnotation = "openshift-apiserver.hypershift.openshift.io/audit-config-hash"
 
 	// defaultOAPIPort is the default secure listen port for the OAPI server
 	defaultOAPIPort int32 = 8443
@@ -76,7 +77,7 @@ func openShiftAPIServerLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, serviceServingCA *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, apiPort *int32) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, serviceServingCA *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main OAS container
@@ -90,6 +91,12 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 		return fmt.Errorf("openshift apiserver configuration is not expected to be empty")
 	}
 	configHash := util.ComputeHash(configBytes)
+
+	auditConfigBytes, ok := auditConfig.Data[auditPolicyConfigMapKey]
+	if !ok {
+		return fmt.Errorf("kube apiserver audit configuration is not expected to be empty")
+	}
+	auditConfigHash := util.ComputeHash(auditConfigBytes)
 
 	maxUnavailable := intstr.FromInt(1)
 	maxSurge := intstr.FromInt(3)
@@ -115,6 +122,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 		deployment.Spec.Template.Annotations = map[string]string{}
 	}
 	deployment.Spec.Template.Annotations[configHashAnnotation] = configHash
+	deployment.Spec.Template.Annotations[auditConfigHashAnnotation] = auditConfigHash
 
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.BoolPtr(false),
