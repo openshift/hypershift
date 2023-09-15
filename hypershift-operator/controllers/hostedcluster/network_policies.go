@@ -90,8 +90,11 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	// Reconcile private-router Network Policy
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		policy = networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
+		// TODO: Network policy code should move to the control plane operator. For now,
+		// only setup ingress rules (and not egress rules) when version is < 4.14
+		ingressOnly := version.Major == 4 && version.Minor < 14
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-			return reconcilePrivateRouterNetworkPolicy(policy, hcluster, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
+			return reconcilePrivateRouterNetworkPolicy(policy, hcluster, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork, ingressOnly)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
@@ -204,7 +207,7 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 	return nil
 }
 
-func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
+func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network, ingressOnly bool) error {
 	httpPort := intstr.FromInt(8080)
 	httpsPort := intstr.FromInt(8443)
 	protocol := corev1.ProtocolTCP
@@ -222,6 +225,15 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 				},
 			},
 		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "private-router",
+		},
+	}
+	if ingressOnly {
+		policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+		return nil
 	}
 
 	clusterNetworks := make([]string, 0)
@@ -313,11 +325,6 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 		})
 	}
 
-	policy.Spec.PodSelector = metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"app": "private-router",
-		},
-	}
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}
 
 	return nil
