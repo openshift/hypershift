@@ -50,7 +50,8 @@ import (
 )
 
 const (
-	kubevirtNamespace = "openshift-cnv"
+	hypershiftNamespace = "hypershift"
+	kubevirtNamespace   = "openshift-cnv"
 )
 
 var (
@@ -92,12 +93,6 @@ type DumpOptions struct {
 	ImpersonateAs    string
 
 	Log logr.Logger
-}
-
-type kubevirtExtCluster struct {
-	uid        string
-	nodePoolNS string
-	creds      *hyperv1.KubevirtPlatformCredentials
 }
 
 func NewDumpCommand() *cobra.Command {
@@ -313,28 +308,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name).Name
 
-	kubevirtInUse := false
-	var kubevirtInExternalInfras []kubevirtExtCluster
-
-	for _, np := range nodePools {
-		if np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-			if np.Status.Platform != nil &&
-				np.Status.Platform.KubeVirt != nil &&
-				np.Status.Platform.KubeVirt.Credentials != nil &&
-				np.Status.Platform.KubeVirt.Credentials.InfraKubeConfigSecret != nil {
-
-				extInfra := kubevirtExtCluster{
-					uid:        string(np.UID),
-					nodePoolNS: np.Namespace,
-					creds:      np.Status.Platform.KubeVirt.Credentials,
-				}
-
-				kubevirtInExternalInfras = append(kubevirtInExternalInfras, extInfra)
-			} else {
-				kubevirtInUse = true
-			}
-		}
-	}
+	kubevirtExternalInfraClusters, localKubevirtInUse := shouldDumpKubevirt(nodePools)
 
 	resources := append(coreResources,
 		&capiv1.Cluster{},
@@ -357,7 +331,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&networkingv1.NetworkPolicy{},
 	)
 
-	if kubevirtInUse {
+	if localKubevirtInUse {
 		resources = append(resources, kubevirtResources...)
 	}
 
@@ -366,28 +340,24 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		// Additional Agent platform resources
 		resourceList += ",clusterdeployment.hive.openshift.io,agentclusterinstall.extensions.hive.openshift.io"
 	}
-	cmd.WithNamespace(controlPlaneNamespace).Run(ctx, resourceList)
-	cmd.WithNamespace(opts.Namespace).Run(ctx, resourceList)
-	cmd.WithNamespace("hypershift").Run(ctx, resourceList)
+
+	namespaces := []string{controlPlaneNamespace, opts.Namespace, hypershiftNamespace}
+	if localKubevirtInUse {
+		namespaces = append(namespaces, kubevirtNamespace)
+	}
+
+	kubeClient := kubeclient.NewForConfigOrDie(cfg)
+	for _, ns := range namespaces {
+		cmd.WithNamespace(ns).Run(ctx, resourceList)
+	}
+
+	outputLogs(ctx, opts.Log, kubeClient, opts.ArtifactDir, controlPlaneNamespace, opts)
+	outputLogs(ctx, opts.Log, kubeClient, opts.ArtifactDir, hypershiftNamespace, opts)
+
 	if opts.AgentNamespace != "" {
 		cmd.WithNamespace(opts.AgentNamespace).Run(ctx, "agent.agent-install.openshift.io,infraenv.agent-install.openshift.io")
 	}
 
-	if kubevirtInUse {
-		cmd.WithNamespace(kubevirtNamespace).Run(ctx, resourceList)
-	}
-
-	podList := &corev1.PodList{}
-	if err = c.List(ctx, podList, client.InNamespace(controlPlaneNamespace)); err != nil {
-		opts.Log.Error(err, "Cannot list pods in controlplane namespace", "namespace", controlPlaneNamespace)
-	}
-	hypershiftNSPodList := &corev1.PodList{}
-	if err := c.List(ctx, hypershiftNSPodList, client.InNamespace("hypershift")); err != nil {
-		opts.Log.Error(err, "Failed to list pods in hypershift namespace")
-	}
-	podList.Items = append(podList.Items, hypershiftNSPodList.Items...)
-	kubeClient := kubeclient.NewForConfigOrDie(cfg)
-	outputLogs(ctx, opts.Log, kubeClient, opts.ArtifactDir, podList, opts.LogCheckers...)
 	gatherNetworkLogs(ocCommand, controlPlaneNamespace, opts.ArtifactDir, ctx, c, opts.Log)
 
 	if opts.DumpGuestCluster {
@@ -396,11 +366,11 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		}
 	}
 
-	for _, infra := range kubevirtInExternalInfras {
+	for _, infra := range kubevirtExternalInfraClusters {
 		destDit := path.Join(opts.ArtifactDir, "external-infra-clusters", "nodepool-"+infra.uid)
 		opts.Log.Info("dumping external infra cluster into " + destDit)
 
-		if err = dumpKubevirtExternalCluster(ctx, c, infra.creds, infra.nodePoolNS, destDit, opts.Log); err != nil {
+		if err = dumpKubevirtExternalCluster(ctx, c, infra.creds, infra.nodePoolNS, destDit, opts); err != nil {
 			opts.Log.Error(err, "Failed to dump infra cluster")
 		}
 	}
@@ -565,24 +535,36 @@ func typedName(obj client.Object, name string) string {
 
 type LogChecker func(filename string, content []byte)
 
-func outputLogs(ctx context.Context, l logr.Logger, c kubeclient.Interface, artifactDir string, podList *corev1.PodList, checker ...LogChecker) {
+func outputLogs(ctx context.Context, l logr.Logger, c kubeclient.Interface, artifactDir string, namespace string, opts *DumpOptions) {
+	podList, err := c.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		opts.Log.Error(err, fmt.Sprintf("Cannot list pods in %s namespace", namespace))
+		return
+	}
+	if len(podList.Items) == 0 {
+		opts.Log.Info(fmt.Sprintf("No pods in %s namespace", namespace))
+		return
+	}
+
+	dir := filepath.Join(artifactDir, "namespaces", namespace, "core", "pods", "logs")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		l.Error(err, "Cannot create directory", "directory", dir)
+		return
+	}
+
+	opts.Log.Info("dumping container logs", "namespace", namespace)
 	for _, pod := range podList.Items {
-		dir := filepath.Join(artifactDir, "namespaces", pod.Namespace, "core", "pods", "logs")
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			l.Error(err, "Cannot create directory", "directory", dir)
-			continue
-		}
 		for _, container := range pod.Spec.InitContainers {
 			outputLog(ctx, l, filepath.Join(dir, fmt.Sprintf("%s-%s.log", pod.Name, container.Name)),
-				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name}), false, checker...)
+				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name}), false, opts.LogCheckers...)
 			outputLog(ctx, l, filepath.Join(dir, fmt.Sprintf("%s-%s-previous.log", pod.Name, container.Name)),
-				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, Previous: true}), true, checker...)
+				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, Previous: true}), true, opts.LogCheckers...)
 		}
 		for _, container := range pod.Spec.Containers {
 			outputLog(ctx, l, filepath.Join(dir, fmt.Sprintf("%s-%s.log", pod.Name, container.Name)),
-				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name}), false, checker...)
+				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name}), false, opts.LogCheckers...)
 			outputLog(ctx, l, filepath.Join(dir, fmt.Sprintf("%s-%s-previous.log", pod.Name, container.Name)),
-				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, Previous: true}), true, checker...)
+				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, Previous: true}), true, opts.LogCheckers...)
 		}
 	}
 }
@@ -675,7 +657,7 @@ var (
 	kvExtResourcesList = strings.Join(resourceTypes(kvExtResources), ",")
 )
 
-func dumpKubevirtExternalCluster(ctx context.Context, mngmtCl client.Client, creds *hyperv1.KubevirtPlatformCredentials, npNS string, destDir string, log logr.Logger) error {
+func dumpKubevirtExternalCluster(ctx context.Context, mngmtCl client.Client, creds *hyperv1.KubevirtPlatformCredentials, npNS string, destDir string, opts *DumpOptions) error {
 	kubeconfig, err := kvinfra.GetKubeConfig(ctx, mngmtCl, npNS, creds.InfraKubeConfigSecret.Name)
 	if err != nil {
 		return fmt.Errorf("failed to get KubeVirt external infra-cluster:  %w", err)
@@ -698,12 +680,21 @@ func dumpKubevirtExternalCluster(ctx context.Context, mngmtCl client.Client, cre
 		oc:          ocCommand,
 		artifactDir: destDir,
 		kubeconfig:  kubeconfigFile,
-		log:         log,
+		log:         opts.Log,
 	}
 
+	cfg, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
+	if err != nil {
+		return fmt.Errorf("can't get infra cluster rest config; %w", err)
+	}
+
+	kubeClient := kubeclient.NewForConfigOrDie(cfg)
+
+	opts.Log.Info("dumping external infra cluster", "host", cfg.Host)
 	namespaces := []string{creds.InfraNamespace, kubevirtNamespace}
 	for _, ns := range namespaces {
 		cmd.WithNamespace(ns).Run(ctx, kvExtResourcesList)
+		outputLogs(ctx, opts.Log, kubeClient, destDir, ns, opts)
 	}
 
 	return nil
@@ -724,4 +715,39 @@ func writeKubeconfigToFile(data []byte) (string, error) {
 	}
 
 	return kubeconfigFile.Name(), err
+}
+
+type kubevirtExtCluster struct {
+	uid        string
+	nodePoolNS string
+	creds      *hyperv1.KubevirtPlatformCredentials
+}
+
+func shouldDumpKubevirt(nodePools []*hyperv1.NodePool) ([]kubevirtExtCluster, bool) {
+	var (
+		localKubevirtInUse       = false
+		kubevirtInExternalInfras []kubevirtExtCluster
+	)
+
+	for _, np := range nodePools {
+		if np.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+			if np.Status.Platform != nil &&
+				np.Status.Platform.KubeVirt != nil &&
+				np.Status.Platform.KubeVirt.Credentials != nil &&
+				np.Status.Platform.KubeVirt.Credentials.InfraKubeConfigSecret != nil {
+
+				extInfra := kubevirtExtCluster{
+					uid:        string(np.UID),
+					nodePoolNS: np.Namespace,
+					creds:      np.Status.Platform.KubeVirt.Credentials,
+				}
+
+				kubevirtInExternalInfras = append(kubevirtInExternalInfras, extInfra)
+			} else {
+				localKubevirtInUse = true
+			}
+		}
+	}
+
+	return kubevirtInExternalInfras, localKubevirtInUse
 }
