@@ -843,12 +843,18 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 
 			// Validate private router is not allowed to access management KAS.
 			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-				stdOut, err := RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router")
-				g.Expect(err).To(HaveOccurred())
+				if hostedCluster.Spec.Platform.AWS.EndpointAccess != hyperv1.Private {
+					// TODO (alberto): Run also in private case. Today it results in a flake:
+					// === CONT  TestCreateClusterPrivate/EnsureHostedCluster/EnsureNetworkPolicies/EnsureLimitedEgressTrafficToManagementKAS
+					//    util.go:851: private router pod was unexpectedly allowed to reach the management KAS. stdOut: . stdErr: Internal error occurred: error executing command in container: container is not created or running
+					// Should be solve with https://issues.redhat.com/browse/HOSTEDCP-1200
+					stdOut, err := RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router")
+					g.Expect(err).To(HaveOccurred())
 
-				// Expect curl to timeout https://curl.se/docs/manpage.html (exit code 28).
-				if err != nil && !strings.Contains(err.Error(), "command terminated with exit code 28") {
-					t.Errorf("private router pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
+					// Expect curl to timeout https://curl.se/docs/manpage.html (exit code 28).
+					if err != nil && !strings.Contains(err.Error(), "command terminated with exit code 28") {
+						t.Errorf("private router pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
+					}
 				}
 			}
 
