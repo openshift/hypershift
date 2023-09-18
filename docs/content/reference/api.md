@@ -678,10 +678,9 @@ Kubernetes meta/v1.Duration
 <td>
 <em>(Optional)</em>
 <p>NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
-The default value is 0, meaning that the node can be drained without any time limitations.
-NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>
-TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
-the purpose of the change. In future we plan to propagate this field in-place.
+The default value is 0s, meaning that the node can be drained without any time limitations.
+NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>.
+NOTE: Changes to this field won&rsquo;t trigger a rollout. It&rsquo;s applied in-place to the underlying Nodes.
 <a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a></p>
 </td>
 </tr>
@@ -6266,10 +6265,9 @@ Kubernetes meta/v1.Duration
 <td>
 <em>(Optional)</em>
 <p>NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
-The default value is 0, meaning that the node can be drained without any time limitations.
-NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>
-TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
-the purpose of the change. In future we plan to propagate this field in-place.
+The default value is 0s, meaning that the node can be drained without any time limitations.
+NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>.
+NOTE: Changes to this field won&rsquo;t trigger a rollout. It&rsquo;s applied in-place to the underlying Nodes.
 <a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a></p>
 </td>
 </tr>

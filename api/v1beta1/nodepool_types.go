@@ -2,8 +2,9 @@ package v1beta1
 
 import (
 	"fmt"
-	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	"strings"
+
+	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -125,10 +126,9 @@ type NodePoolSpec struct {
 	Config []corev1.LocalObjectReference `json:"config,omitempty"`
 
 	// NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
-	// The default value is 0, meaning that the node can be drained without any time limitations.
-	// NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
-	// TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
-	// the purpose of the change. In future we plan to propagate this field in-place.
+	// The default value is 0s, meaning that the node can be drained without any time limitations.
+	// NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`.
+	// NOTE: Changes to this field won't trigger a rollout. It's applied in-place to the underlying Nodes.
 	// https://github.com/kubernetes-sigs/cluster-api/issues/5880
 	// +optional
 	NodeDrainTimeout *metav1.Duration `json:"nodeDrainTimeout,omitempty"`
