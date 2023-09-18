@@ -10,7 +10,7 @@ import (
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
-	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
