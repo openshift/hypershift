@@ -11,7 +11,6 @@ import (
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -21,8 +20,7 @@ func ReconcileCCMServiceAccount(sa *corev1.ServiceAccount, ownerRef config.Owner
 	return nil
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
-	deploymentConfig := newDeploymentConfig()
+func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, deploymentConfig config.DeploymentConfig, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: ccmLabels(),
@@ -118,24 +116,6 @@ func buildCCMCloudConfig(v *corev1.Volume) {
 			Name: manifests.AWSProviderConfig("").Name,
 		},
 	}
-}
-
-func newDeploymentConfig() config.DeploymentConfig {
-	result := config.DeploymentConfig{}
-	result.Resources = config.ResourcesSpec{
-		ccmContainer().Name: {
-			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("60Mi"),
-				corev1.ResourceCPU:    resource.MustParse("75m"),
-			},
-		},
-	}
-	result.AdditionalLabels = additionalLabels()
-	result.Scheduling.PriorityClass = config.DefaultPriorityClass
-
-	result.Replicas = 1
-
-	return result
 }
 
 func ccmLabels() map[string]string {
