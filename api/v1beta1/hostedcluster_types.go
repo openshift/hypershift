@@ -16,8 +16,9 @@ func init() {
 
 const (
 	// AuditWebhookKubeconfigKey is the key name in the AuditWebhook secret that stores audit webhook kubeconfig
-	AuditWebhookKubeconfigKey                 = "webhook-kubeconfig"
-	DisablePKIReconciliationAnnotation        = "hypershift.openshift.io/disable-pki-reconciliation"
+	AuditWebhookKubeconfigKey          = "webhook-kubeconfig"
+	DisablePKIReconciliationAnnotation = "hypershift.openshift.io/disable-pki-reconciliation"
+	// SkipReleaseImageValidation skips any release validation that the HO version might dictate for any HC and skip min supported version check for NodePools.
 	SkipReleaseImageValidation                = "hypershift.openshift.io/skip-release-image-validation"
 	IdentityProviderOverridesAnnotationPrefix = "idpoverrides.hypershift.openshift.io/"
 	OauthLoginURLOverrideAnnotation           = "oauth.hypershift.openshift.io/login-url-override"

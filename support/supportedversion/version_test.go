@@ -3,6 +3,8 @@ package supportedversion
 import (
 	"testing"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -165,4 +167,20 @@ func TestIsValidReleaseVersion(t *testing.T) {
 		})
 	}
 
+}
+
+func TestGetMinSupportedVersion(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	hc := &hyperv1.HostedCluster{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "",
+			Annotations: map[string]string{
+				hyperv1.SkipReleaseImageValidation: "true",
+			},
+		},
+	}
+	minVer := GetMinSupportedVersion(hc)
+	g.Expect(minVer.String()).To(BeEquivalentTo(semver.MustParse("0.0.0").String()))
 }
