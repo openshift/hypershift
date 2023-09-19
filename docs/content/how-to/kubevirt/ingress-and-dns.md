@@ -78,11 +78,11 @@ hcp create kubeconfig --name $CLUSTER_NAME > $CLUSTER_NAME-kubeconfig
 oc --kubeconfig $CLUSTER_NAME-kubeconfig get co
 
 NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-console                                    4.12.7    False       False         False      30m     RouteHealthAvailable: failed to GET route (https://console-openshift-console.apps.example.hypershift.lab): Get "https://console-openshift-console.apps.example.hypershift.lab": dial tcp: lookup console-openshift-console.apps.example.hypershift.lab on 172.31.0.10:53: no such host
+console                                    4.14.0    False       False         False      30m     RouteHealthAvailable: failed to GET route (https://console-openshift-console.apps.example.hypershift.lab): Get "https://console-openshift-console.apps.example.hypershift.lab": dial tcp: lookup console-openshift-console.apps.example.hypershift.lab on 172.31.0.10:53: no such host
 .
 .
 .
-ingress                                    4.12.7    True        False         True       28m     The "default" ingress controller reports Degraded=True: DegradedConditions: One or more other status conditions indicate a degraded state: CanaryChecksSucceeding=False (CanaryChecksRepetitiveFailures: Canary route checks for the default ingress controller are failing)
+ingress                                    4.14.0    True        False         True       28m     The "default" ingress controller reports Degraded=True: DegradedConditions: One or more other status conditions indicate a degraded state: CanaryChecksSucceeding=False (CanaryChecksRepetitiveFailures: Canary route checks for the default ingress controller are failing)
 ```
 
 In the next section we will fix that.
@@ -162,7 +162,7 @@ Now that we fixed the ingress, we should see our HostedCluster progress moved fr
 oc get --namespace clusters hostedclusters
 
 NAME            VERSION   KUBECONFIG                       PROGRESS    AVAILABLE   PROGRESSING   MESSAGE
-example         4.12.7    example-admin-kubeconfig         Completed   True        False         The hosted control plane is available
+example         4.14.0    example-admin-kubeconfig         Completed   True        False         The hosted control plane is available
 ```
 
 ## Optional MetalLB Configuration Steps
