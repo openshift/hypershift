@@ -3,6 +3,7 @@ package oapi
 import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -34,16 +35,17 @@ type OpenShiftAPIServerParams struct {
 }
 
 type OAuthDeploymentParams struct {
-	Image                   string
-	EtcdURL                 string
-	MinTLSVersion           string
-	CipherSuites            []string
-	ServiceAccountIssuerURL string
-	DeploymentConfig        config.DeploymentConfig
-	AvailabilityProberImage string
-	Availability            hyperv1.AvailabilityPolicy
-	OwnerRef                config.OwnerRef
-	AuditWebhookRef         *corev1.LocalObjectReference
+	Image                        string
+	EtcdURL                      string
+	MinTLSVersion                string
+	CipherSuites                 []string
+	ServiceAccountIssuerURL      string
+	DeploymentConfig             config.DeploymentConfig
+	AvailabilityProberImage      string
+	Availability                 hyperv1.AvailabilityPolicy
+	OwnerRef                     config.OwnerRef
+	AuditWebhookRef              *corev1.LocalObjectReference
+	AccessTokenInactivityTimeout *metav1.Duration
 }
 
 func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftAPIServerParams {
@@ -226,6 +228,10 @@ func (p *OpenShiftAPIServerParams) OAuthAPIServerDeploymentParams(hcp *hyperv1.H
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
 		params.AuditWebhookRef = hcp.Spec.AuditWebhook
+	}
+
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.OAuth != nil && hcp.Spec.Configuration.OAuth.TokenConfig.AccessTokenInactivityTimeout != nil {
+		params.AccessTokenInactivityTimeout = hcp.Spec.Configuration.OAuth.TokenConfig.AccessTokenInactivityTimeout
 	}
 
 	return params

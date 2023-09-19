@@ -166,8 +166,11 @@ func buildOAuthContainerMain(p *OAuthDeploymentParams) func(c *corev1.Container)
 			fmt.Sprintf("--client-ca-file=%s", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey)),
 		}
 		if p.AuditWebhookRef != nil {
-			c.Args = append(c.Args, fmt.Sprintf("audit-webhook-config-file=%s", oauthAuditWebhookConfigFile()))
-			c.Args = append(c.Args, "audit-webhook-mode=batch")
+			c.Args = append(c.Args, fmt.Sprintf("--audit-webhook-config-file=%s", oauthAuditWebhookConfigFile()))
+			c.Args = append(c.Args, "--audit-webhook-mode=batch")
+		}
+		if p.AccessTokenInactivityTimeout != nil {
+			c.Args = append(c.Args, fmt.Sprintf("--accesstoken-inactivity-timeout=%s", p.AccessTokenInactivityTimeout.Duration.String()))
 		}
 		c.VolumeMounts = oauthVolumeMounts.ContainerMounts(c.Name)
 		c.WorkingDir = oauthVolumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name)
