@@ -148,7 +148,7 @@ func (p PowerVS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *
 						Args: []string{"--namespace", "$(MY_NAMESPACE)",
 							"--v=4",
 							"--leader-elect=true",
-							"--powervs-provider-id-fmt=v2",
+							"--provider-id-fmt=v2",
 						},
 						Ports: []corev1.ContainerPort{
 							{
