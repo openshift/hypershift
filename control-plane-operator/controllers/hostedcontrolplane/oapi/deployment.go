@@ -123,55 +123,53 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 	deployment.Spec.Template.Annotations[configHashAnnotation] = configHash
 	deployment.Spec.Template.Annotations[auditConfigHashAnnotation] = auditConfigHash
 
-	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: pointer.Bool(false),
-		InitContainers:               []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))},
-		Containers: []corev1.Container{
-			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort, internalOAuthDisable)),
-			{
-				Name:            "audit-logs",
-				Image:           image,
-				ImagePullPolicy: corev1.PullIfNotPresent,
-				Command: []string{
-					"/usr/bin/tail",
-					"-c+1",
-					"-F",
-					fmt.Sprintf("%s/%s", volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name), "audit.log"),
-				},
-				Resources: corev1.ResourceRequirements{
-					Requests: corev1.ResourceList{
-						corev1.ResourceCPU:    resource.MustParse("5m"),
-						corev1.ResourceMemory: resource.MustParse("10Mi"),
-					},
-				},
-				VolumeMounts: []corev1.VolumeMount{{
-					Name:      oasVolumeWorkLogs().Name,
-					MountPath: volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name),
-				}},
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(false)
+	deployment.Spec.Template.Spec.InitContainers = []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))}
+	deployment.Spec.Template.Spec.Containers = []corev1.Container{
+		util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort, internalOAuthDisable)),
+		{
+			Name:            "audit-logs",
+			Image:           image,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command: []string{
+				"/usr/bin/tail",
+				"-c+1",
+				"-F",
+				fmt.Sprintf("%s/%s", volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name), "audit.log"),
 			},
-			util.BuildContainer(oasSocks5ProxyContainer(), buildOASSocks5ProxyContainer(socks5ProxyImage)),
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("5m"),
+					corev1.ResourceMemory: resource.MustParse("10Mi"),
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{{
+				Name:      oasVolumeWorkLogs().Name,
+				MountPath: volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name),
+			}},
 		},
-		Volumes: []corev1.Volume{
-			util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
-			util.BuildVolume(oasVolumeConfig(), buildOASVolumeConfig),
-			util.BuildVolume(oasVolumeAuditConfig(), buildOASVolumeAuditConfig),
-			util.BuildVolume(common.VolumeAggregatorCA(), common.BuildVolumeAggregatorCA),
-			util.BuildVolume(oasVolumeEtcdClientCA(), buildOASVolumeEtcdClientCA),
-			util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
-			util.BuildVolume(oasVolumeKubeconfig(), buildOASVolumeKubeconfig),
-			util.BuildVolume(oasVolumeServingCert(), buildOASVolumeServingCert),
-			util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
-			util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
-			util.BuildVolume(oasVolumeKonnectivityProxyCA(), buildOASVolumeKonnectivityProxyCA),
-			util.BuildVolume(oasTrustAnchorVolume(), func(v *corev1.Volume) { v.EmptyDir = &corev1.EmptyDirVolumeSource{} }),
-			util.BuildVolume(pullSecretVolume(), func(v *corev1.Volume) {
-				v.Secret = &corev1.SecretVolumeSource{
-					DefaultMode: pointer.Int32(0640),
-					SecretName:  common.PullSecret(deployment.Namespace).Name,
-					Items:       []corev1.KeyToPath{{Key: ".dockerconfigjson", Path: "config.json"}},
-				}
-			}),
-		},
+		util.BuildContainer(oasSocks5ProxyContainer(), buildOASSocks5ProxyContainer(socks5ProxyImage)),
+	}
+	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
+		util.BuildVolume(oasVolumeWorkLogs(), buildOASVolumeWorkLogs),
+		util.BuildVolume(oasVolumeConfig(), buildOASVolumeConfig),
+		util.BuildVolume(oasVolumeAuditConfig(), buildOASVolumeAuditConfig),
+		util.BuildVolume(common.VolumeAggregatorCA(), common.BuildVolumeAggregatorCA),
+		util.BuildVolume(oasVolumeEtcdClientCA(), buildOASVolumeEtcdClientCA),
+		util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
+		util.BuildVolume(oasVolumeKubeconfig(), buildOASVolumeKubeconfig),
+		util.BuildVolume(oasVolumeServingCert(), buildOASVolumeServingCert),
+		util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
+		util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
+		util.BuildVolume(oasVolumeKonnectivityProxyCA(), buildOASVolumeKonnectivityProxyCA),
+		util.BuildVolume(oasTrustAnchorVolume(), func(v *corev1.Volume) { v.EmptyDir = &corev1.EmptyDirVolumeSource{} }),
+		util.BuildVolume(pullSecretVolume(), func(v *corev1.Volume) {
+			v.Secret = &corev1.SecretVolumeSource{
+				DefaultMode: pointer.Int32(0640),
+				SecretName:  common.PullSecret(deployment.Namespace).Name,
+				Items:       []corev1.KeyToPath{{Key: ".dockerconfigjson", Path: "config.json"}},
+			}
+		}),
 	}
 
 	if serviceServingCA != nil {
