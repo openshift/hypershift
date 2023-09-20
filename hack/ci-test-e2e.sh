@@ -31,6 +31,14 @@ generate_junit() {
 }
 trap generate_junit EXIT
 
+REQUEST_SERVING_COMPONENT_PARAMS=""
+if [[ -n "${REQUEST_SERVING_COMPONENT_TEST}" ]]; then
+   REQUEST_SERVING_COMPONENT_PARAMS="--e2e.test-request-serving-isolation \
+  --e2e.management-parent-kubeconfig=${MGMT_PARENT_KUBECONFIG} \
+  --e2e.management-cluster-namespace=$(cat $MGMT_HC_NAMESPACE) \
+  --e2e.management-cluster-name=$(cat $MGMT_HC_NAME)"
+fi
+
 bin/test-e2e \
   -test.v \
   -test.timeout=2h10m \
@@ -46,6 +54,7 @@ bin/test-e2e \
   --e2e.previous-release-image="${OCP_IMAGE_PREVIOUS}" \
   --e2e.additional-tags="expirationDate=$(date -d '4 hours' --iso=minutes --utc)" \
   --e2e.aws-endpoint-access=PublicAndPrivate \
-  --e2e.external-dns-domain=service.ci.hypershift.devcluster.openshift.com | tee /tmp/test_out &
+  --e2e.external-dns-domain=service.ci.hypershift.devcluster.openshift.com \
+  ${REQUEST_SERVING_COMPONENT_PARAMS} | tee /tmp/test_out &
 
 wait $!

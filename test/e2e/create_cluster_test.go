@@ -34,10 +34,37 @@ func TestCreateCluster(t *testing.T) {
 		clusterOpts.NodePoolReplicas = 1
 	}
 
-	if globalOpts.RequestServingIsolation {
-		clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
-		clusterOpts.Annotations = append(clusterOpts.Annotations, fmt.Sprintf("%s=%s", hyperv1.TopologyAnnotation, hyperv1.DedicatedRequestServingComponentsTopology))
+	e2eutil.NewHypershiftTest(t, ctx, nil).
+		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+}
+
+func TestCreateClusterRequestServingIsolation(t *testing.T) {
+	if !globalOpts.RequestServingIsolation {
+		t.Skip("Skipping request serving isolation test")
 	}
+	if globalOpts.Platform != hyperv1.AWSPlatform {
+		t.Skip("Request serving isolation test requirest the AWS platform")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	nodePools := e2eutil.SetupRequestServingNodePools(ctx, t, globalOpts.ManagementParentKubeconfig, globalOpts.ManagementClusterNamespace, globalOpts.ManagementClusterName)
+	defer e2eutil.TearDownRequestServingNodePools(ctx, t, globalOpts.ManagementParentKubeconfig, nodePools)
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	zones := strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ",")
+	if len(zones) >= 3 {
+		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
+		t.Logf("Sufficient zones available for InfrastructureAvailabilityPolicy HighlyAvailable")
+		clusterOpts.AWSPlatform.Zones = zones
+		clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
+		clusterOpts.NodePoolReplicas = 1
+	}
+
+	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
+	clusterOpts.Annotations = append(clusterOpts.Annotations, fmt.Sprintf("%s=%s", hyperv1.TopologyAnnotation, hyperv1.DedicatedRequestServingComponentsTopology))
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		guestClient := e2eutil.WaitForGuestClient(t, testContext, mgtClient, hostedCluster)
