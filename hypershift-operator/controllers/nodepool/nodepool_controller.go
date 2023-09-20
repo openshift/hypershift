@@ -379,11 +379,18 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 
 		uid := string(nodePool.GetUID())
-		kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, uid, hcluster.Spec.Platform.Kubevirt.Credentials, controlPlaneNamespace, hcluster.GetNamespace())
+
+		var creds *hyperv1.KubevirtPlatformCredentials
+
+		if hcluster.Spec.Platform.Kubevirt != nil && hcluster.Spec.Platform.Kubevirt.Credentials != nil {
+			creds = hcluster.Spec.Platform.Kubevirt.Credentials
+		}
+
+		kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, uid, creds, controlPlaneNamespace, hcluster.GetNamespace())
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get KubeVirt external infra-cluster: %w", err)
 		}
-		err = kubevirtBootImage.CacheImage(ctx, kvInfraClient, nodePool, uid)
+		err = kubevirtBootImage.CacheImage(ctx, kvInfraClient.GetInfraClient(), nodePool, uid)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to create or validate KubeVirt image cache: %w", err)
 		}
@@ -1383,7 +1390,7 @@ func (r *NodePoolReconciler) deleteKubeVirtCache(ctx context.Context, nodePool *
 					ns = nodePool.Status.Platform.KubeVirt.Credentials.InfraNamespace
 				}
 
-				err = kubevirt.DeleteCache(ctx, cl, cacheName, ns)
+				err = kubevirt.DeleteCache(ctx, cl.GetInfraClient(), cacheName, ns)
 				if err != nil {
 					return err
 				}
@@ -2106,11 +2113,7 @@ func (r *NodePoolReconciler) getReleaseImage(ctx context.Context, hostedCluster 
 		}
 	}
 
-	minSupportedVersion := supportedversion.MinSupportedVersion
-	if hostedCluster.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		//IBM Cloud is allowed to manage 4.9 clusters
-		minSupportedVersion = semver.MustParse("4.9.0")
-	}
+	minSupportedVersion := supportedversion.GetMinSupportedVersion(hostedCluster)
 
 	releaseInfo, err := r.ReleaseProvider.Lookup(ctx, hostedCluster.Spec.Release.Image, pullSecretBytes)
 	if err != nil {

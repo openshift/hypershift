@@ -30,7 +30,7 @@ func (defaulter *hostedClusterDefaulter) Default(ctx context.Context, obj runtim
 		return nil
 	}
 
-	pullSpec, err := supportedversion.LookupLatestSupportedRelease(ctx)
+	pullSpec, err := supportedversion.LookupLatestSupportedRelease(ctx, hcluster)
 	if err != nil {
 		return fmt.Errorf("unable to find default release image: %w", err)
 	}
