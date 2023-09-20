@@ -105,6 +105,9 @@ func TestMain(m *testing.M) {
 	flag.BoolVar(&globalOpts.SkipAPIBudgetVerification, "e2e.skip-api-budget", false, "Bool to avoid send metrics to E2E Server on local test execution.")
 	flag.StringVar(&globalOpts.configurableClusterOptions.EtcdStorageClass, "e2e.etcd-storage-class", "", "The persistent volume storage class for etcd data volumes")
 	flag.BoolVar(&globalOpts.RequestServingIsolation, "e2e.test-request-serving-isolation", false, "If set, TestCreate creates a cluster with request serving isolation topology")
+	flag.StringVar(&globalOpts.ManagementParentKubeconfig, "e2e.management-parent-kubeconfig", "", "Kubeconfig of the management cluster's parent cluster (required to test request serving isolation)")
+	flag.StringVar(&globalOpts.ManagementClusterNamespace, "e2e.management-cluster-namespace", "", "Namespace of the management cluster's HostedCluster (required to test request serving isolation)")
+	flag.StringVar(&globalOpts.ManagementClusterName, "e2e.management-cluster-name", "", "Name of the management cluster's HostedCluster (required to test request serving isolation)")
 
 	flag.Parse()
 
@@ -361,6 +364,13 @@ type options struct {
 	// If set, the CreateCluster test will create a cluster with request serving
 	// isolation topology.
 	RequestServingIsolation bool
+
+	// If testing request serving isolation topology, we need a kubeconfig to the
+	// parent of the management cluster, name and namespace of the management cluster
+	// so we can create additional nodepools for it.
+	ManagementParentKubeconfig string
+	ManagementClusterNamespace string
+	ManagementClusterName      string
 }
 
 type configurableClusterOptions struct {
@@ -558,6 +568,12 @@ func (o *options) Validate() error {
 		// This is possible using OCP wildcard routes
 		if o.Platform != hyperv1.KubevirtPlatform {
 			errs = append(errs, fmt.Errorf("base domain is required"))
+		}
+	}
+
+	if o.RequestServingIsolation {
+		if o.ManagementClusterName == "" || o.ManagementClusterNamespace == "" || o.ManagementParentKubeconfig == "" {
+			errs = append(errs, fmt.Errorf("management cluster name, namespace, and parent kubeconfig are required to test request serving isolation"))
 		}
 	}
 
