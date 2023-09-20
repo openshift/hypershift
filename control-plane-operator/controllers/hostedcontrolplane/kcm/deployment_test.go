@@ -4,6 +4,13 @@ import (
 	"strings"
 	"testing"
 
+	. "github.com/onsi/gomega"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/config"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -53,5 +60,51 @@ func TestKCMArgs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Ensure certain deployment fields do not get set
+func TestKubeControllerManagerDeploymentNoChanges(t *testing.T) {
+
+	// Setup hypershift hosted control plane.
+	targetNamespace := "test"
+	kcmDeployment := manifests.KCMDeployment(targetNamespace)
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp",
+			Namespace: targetNamespace,
+		},
+	}
+	hcp.Name = "name"
+	hcp.Namespace = "namespace"
+
+	testCases := []struct {
+		cm               corev1.ConfigMap
+		params           KubeControllerManagerParams
+		deploymentConfig config.DeploymentConfig
+	}{
+		// empty deployment config and params
+		{
+			cm: corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-kcm-config",
+					Namespace: targetNamespace,
+				},
+				Data: map[string]string{"config.json": "test-data"},
+			},
+			deploymentConfig: config.DeploymentConfig{},
+			params:           KubeControllerManagerParams{},
+		},
+	}
+	for _, tc := range testCases {
+		g := NewGomegaWithT(t)
+		kcmDeployment.Spec.MinReadySeconds = 60
+		expectedMinReadySeconds := kcmDeployment.Spec.MinReadySeconds
+		rootCAConfigMap := manifests.RootCAConfigMap(hcp.Namespace)
+		serviceServingCA := manifests.ServiceServingCA(hcp.Namespace)
+
+		err := ReconcileDeployment(kcmDeployment, &tc.cm, rootCAConfigMap, serviceServingCA, &tc.params, hyperv1.IBMCloudPlatform)
+		g.Expect(err).To(BeNil())
+		g.Expect(expectedMinReadySeconds).To(Equal(kcmDeployment.Spec.MinReadySeconds))
 	}
 }
