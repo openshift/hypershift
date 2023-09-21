@@ -191,7 +191,7 @@ spec:
       runAfter:
       - prefetch-dependencies
       taskRef:
-        bundle: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.1@sha256:e607665f13adadbd4a8d0b32768fc1b24a90884d867ecb681e15c5bc25434f71
+        bundle: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.1@sha256:487b82bbdbd361d6ef3cd7a522bb6fe2f163a2d517181f13fe07565a4838f1bb
         name: buildah
       when:
       - input: $(tasks.init.results.build)
@@ -290,7 +290,7 @@ spec:
       runAfter:
       - clone-repository
       taskRef:
-        bundle: quay.io/redhat-appstudio-tekton-catalog/task-sast-snyk-check:0.1@sha256:9dcd450b454705b9fe22c5f8f7bb7305cebc3cb73e783b85e047f7e721994189
+        bundle: quay.io/redhat-appstudio-tekton-catalog/task-sast-snyk-check:0.1@sha256:bce98eea5980ca923b0bb904f6d3fc1499530da054df734d7b78e6e4dc09b082
         name: sast-snyk-check
       when:
       - input: $(params.skip-checks)
