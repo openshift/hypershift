@@ -21,6 +21,11 @@ var LatestSupportedVersion = semver.MustParse("4.15.0")
 var MinSupportedVersion = semver.MustParse(subtractMinor(&LatestSupportedVersion, uint64(SupportedPreviousMinorVersions)).String())
 
 func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
+
+	if _, exists := hc.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
+		return semver.MustParse("0.0.0")
+	}
+
 	defaultMinVersion := semver.MustParse(subtractMinor(&LatestSupportedVersion, uint64(SupportedPreviousMinorVersions)).String())
 
 	switch hc.Spec.Platform.Type {
