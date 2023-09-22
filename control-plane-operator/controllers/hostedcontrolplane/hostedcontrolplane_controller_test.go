@@ -50,6 +50,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/yaml"
+
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 )
 
 type fakeEC2Client struct {
@@ -140,6 +142,73 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 				if !apierrors.IsNotFound(err) {
 					g.Expect(err).NotTo(HaveOccurred())
 				}
+			}
+		})
+	}
+}
+
+func TestBuildOAuthVolumeTemplates(t *testing.T) {
+	testsCases := []struct {
+		name                   string
+		params                 oauth.OAuthConfigParams
+		expectedLoginSecret    string
+		expectedProviderSecret string
+		expectedErrorSecret    string
+	}{
+		{
+			name: "When OAuthTemplates has secret names specified, they should be used in volume",
+			params: oauth.OAuthConfigParams{
+				OAuthTemplates: configv1.OAuthTemplates{
+					Login: configv1.SecretNameReference{
+						Name: "custom-login-template-secret",
+					},
+					ProviderSelection: configv1.SecretNameReference{
+						Name: "custom-provider-selection-template-secret",
+					},
+					Error: configv1.SecretNameReference{
+						Name: "custom-error-template-secret",
+					},
+				},
+			},
+			expectedLoginSecret:    "custom-login-template-secret",
+			expectedProviderSecret: "custom-provider-selection-template-secret",
+			expectedErrorSecret:    "custom-error-template-secret",
+		},
+		{
+			name:                   "When OAuthTemplates is empty, it should use default secrets",
+			params:                 oauth.OAuthConfigParams{},
+			expectedLoginSecret:    manifests.OAuthServerDefaultLoginTemplateSecret("").Name,
+			expectedProviderSecret: manifests.OAuthServerDefaultProviderSelectionTemplateSecret("").Name,
+			expectedErrorSecret:    manifests.OAuthServerDefaultErrorTemplateSecret("").Name,
+		},
+	}
+
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			loginVolume := &corev1.Volume{}
+			providerVolume := &corev1.Volume{}
+			errorVolume := &corev1.Volume{}
+
+			oauth.BuildOAuthVolumeLoginTemplate(loginVolume, &tc.params)
+			oauth.BuildOAuthVolumeProvidersTemplate(providerVolume, &tc.params)
+			oauth.BuildOAuthVolumeErrorTemplate(errorVolume, &tc.params)
+
+			// Check Login Template
+			actualLoginSecretName := loginVolume.Secret.SecretName
+			if actualLoginSecretName != tc.expectedLoginSecret {
+				t.Errorf("Expected login secret name %s, but got %s", tc.expectedLoginSecret, actualLoginSecretName)
+			}
+
+			// Check Provider Template
+			actualProviderSecretName := providerVolume.Secret.SecretName
+			if actualProviderSecretName != tc.expectedProviderSecret {
+				t.Errorf("Expected provider secret name %s, but got %s", tc.expectedProviderSecret, actualProviderSecretName)
+			}
+
+			// Check Error Template
+			actualErrorSecretName := errorVolume.Secret.SecretName
+			if actualErrorSecretName != tc.expectedErrorSecret {
+				t.Errorf("Expected error secret name %s, but got %s", tc.expectedErrorSecret, actualErrorSecretName)
 			}
 		})
 	}
