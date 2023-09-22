@@ -30,6 +30,15 @@ RUN cd /usr/bin && \
 
 ENTRYPOINT ["/usr/bin/hypershift"]
 
+LABEL name="multicluster-engine/hypershift-operator"
+LABEL description="HyperShift Operator is an operator to manage the lifecycle of Hosted Clusters"
+LABEL summary="HyperShift Operator"
+LABEL url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-rhel8-operator/"
+LABEL version=4.15
+LABEL com.redhat.component="multicluster-engine-hypershift-operator"
+LABEL io.k8s.description="HyperShift Operator"
+LABEL io.k8s.display-name="hypershift-operator"
+LABEL io.openshift.tags="data,images"
 LABEL io.openshift.hypershift.control-plane-operator-subcommands=true
 LABEL io.openshift.hypershift.control-plane-operator-skips-haproxy=true
 LABEL io.openshift.hypershift.ignition-server-healthz-handler=true
