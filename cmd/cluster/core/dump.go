@@ -122,7 +122,7 @@ func NewDumpCommand() *cobra.Command {
 	cmd.MarkFlagRequired("artifact-dir")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		rand.Seed(time.Now().UnixNano())
+		rand.New(rand.NewSource(time.Now().UnixNano()))
 		if err := DumpCluster(cmd.Context(), opts); err != nil {
 			opts.Log.Error(err, "Error")
 			return err
