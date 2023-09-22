@@ -683,11 +683,6 @@ func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, man
 				Operator: "DoesNotExist",
 				Values:   nil,
 			},
-			{
-				Key:      "name",
-				Operator: "NotIn",
-				Values:   []string{"aws-ebs-csi-driver-operator"},
-			},
 		},
 	}
 
