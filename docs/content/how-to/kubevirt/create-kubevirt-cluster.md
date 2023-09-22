@@ -4,9 +4,9 @@ Install an OCP cluster running on VMs within a management OCP cluster
 
 ## Prerequisites
 
-* Admin access to an OpenShift cluster (version 4.12+) specified by the `KUBECONFIG` environment variable.
+* Admin access to an OpenShift cluster (version 4.14+) specified by the `KUBECONFIG` environment variable.
 * The management OCP cluster must have wildcard dns routes enabled. `oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {wildcardPolicy: "WildcardsAllowed"}}]'`
-* The management OCP cluster must have Openshift Virtualization installed on it. [Instructions for installing Openshift Virtualization](https://docs.openshift.com/container-platform/4.12/virt/install/installing-virt-web.html)
+* The management OCP cluster must have Openshift Virtualization (4.14+) installed on it. [Instructions for installing Openshift Virtualization](https://docs.openshift.com/container-platform/4.12/virt/install/installing-virt-web.html)
 * The Management OCP cluster must be configured with OVNKubernetes as the default pod network CNI.
 * The Management OCP cluster must have LoadBalancer service support. [Instructions for installing MetalLB](https://docs.openshift.com/container-platform/4.12/networking/metallb/metallb-operator-install.html)
 * The management OCP cluster must have default storage class. [Storage Configuration Documentation](https://docs.openshift.com/container-platform/4.12/post_installation_configuration/storage-configuration.html) Example of how to set a default storage class: `oc patch storageclass ocs-storagecluster-ceph-rbd -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'`
@@ -126,7 +126,7 @@ reflects what a fully provisioned HostedCluster object looks like.
 oc get --namespace clusters hostedclusters
 
 NAME            VERSION   KUBECONFIG                       PROGRESS   AVAILABLE   PROGRESSING   MESSAGE
-example         4.12.7    example-admin-kubeconfig         Completed  True        False         The hosted control plane is available
+example         4.14.0    example-admin-kubeconfig         Completed  True        False         The hosted control plane is available
 ```
 
 ## Accessing the HostedCluster
@@ -145,8 +145,8 @@ If we access the cluster, we will see we have two nodes.
 oc --kubeconfig $CLUSTER_NAME-kubeconfig get nodes
 
 NAME                  STATUS   ROLES    AGE   VERSION
-example-n6prw         Ready    worker   32m   v1.25.4+18eadca
-example-nc6g4         Ready    worker   32m   v1.25.4+18eadca
+example-n6prw         Ready    worker   32m   v1.27.4+18eadca
+example-nc6g4         Ready    worker   32m   v1.27.4+18eadca
 ```
 
 We can also check the ClusterVersion:
@@ -155,7 +155,7 @@ We can also check the ClusterVersion:
 oc --kubeconfig $CLUSTER_NAME-kubeconfig get clusterversion
 
 NAME      VERSION       AVAILABLE   PROGRESSING   SINCE   STATUS
-version   4.12.7        True        False         5m39s   Cluster version is 4.12.7
+version   4.14.0        True        False         5m39s   Cluster version is 4.14.0
 ```
 
 ## Scaling an existing NodePool
@@ -175,11 +175,11 @@ After a while, in our hosted cluster this is what we will see:
 oc --kubeconfig $CLUSTER_NAME-kubeconfig get nodes
 
 NAME                  STATUS   ROLES    AGE     VERSION
-example-9jvnf         Ready    worker   97s     v1.25.4+18eadca
-example-n6prw         Ready    worker   116m    v1.25.4+18eadca
-example-nc6g4         Ready    worker   117m    v1.25.4+18eadca
-example-thp29         Ready    worker   4m17s   v1.25.4+18eadca
-example-twxns         Ready    worker   88s     v1.25.4+18eadca
+example-9jvnf         Ready    worker   97s     v1.27.4+18eadca
+example-n6prw         Ready    worker   116m    v1.27.4+18eadca
+example-nc6g4         Ready    worker   117m    v1.27.4+18eadca
+example-thp29         Ready    worker   4m17s   v1.27.4+18eadca
+example-twxns         Ready    worker   88s     v1.27.4+18eadca
 ```
 
 ## Adding Additional NodePools
@@ -212,7 +212,7 @@ namespace:
 oc get nodepools --namespace clusters
 
 NAME                      CLUSTER         DESIRED NODES   CURRENT NODES   AUTOSCALING   AUTOREPAIR   VERSION   UPDATINGVERSION   UPDATINGCONFIG   MESSAGE
-example                   example         5               5               False         False        4.12.7                                       
+example                   example         5               5               False         False        4.14.0                                       
 example-extra-cpu         example         2                               False         False                  True              True             Minimum availability requires 2 replicas, current 0 available
 ```
 
@@ -222,13 +222,13 @@ After a while, in our hosted cluster this is what we will see:
 oc --kubeconfig $CLUSTER_NAME-kubeconfig get nodes
 
 NAME                      STATUS   ROLES    AGE     VERSION
-example-9jvnf             Ready    worker   97s     v1.25.4+18eadca
-example-n6prw             Ready    worker   116m    v1.25.4+18eadca
-example-nc6g4             Ready    worker   117m    v1.25.4+18eadca
-example-thp29             Ready    worker   4m17s   v1.25.4+18eadca
-example-twxns             Ready    worker   88s     v1.25.4+18eadca
-example-extra-cpu-zh9l5   Ready    worker   2m6s    v1.25.4+18eadca
-example-extra-cpu-zr8mj   Ready    worker   102s    v1.25.4+18eadca
+example-9jvnf             Ready    worker   97s     v1.27.4+18eadca
+example-n6prw             Ready    worker   116m    v1.27.4+18eadca
+example-nc6g4             Ready    worker   117m    v1.27.4+18eadca
+example-thp29             Ready    worker   4m17s   v1.27.4+18eadca
+example-twxns             Ready    worker   88s     v1.27.4+18eadca
+example-extra-cpu-zh9l5   Ready    worker   2m6s    v1.27.4+18eadca
+example-extra-cpu-zr8mj   Ready    worker   102s    v1.27.4+18eadca
 ```
 
 And the nodepool will be in the desired state:
@@ -237,8 +237,8 @@ And the nodepool will be in the desired state:
 oc get nodepools --namespace clusters
 
 NAME                      CLUSTER         DESIRED NODES   CURRENT NODES   AUTOSCALING   AUTOREPAIR   VERSION   UPDATINGVERSION   UPDATINGCONFIG   MESSAGE
-example                   example         5               5               False         False        4.12.7                                       
-example-extra-cpu         example         2               2               False         False        4.12.7  
+example                   example         5               5               False         False        4.14.0                                       
+example-extra-cpu         example         2               2               False         False        4.14.0  
 ```
 
 ## Delete a HostedCluster
