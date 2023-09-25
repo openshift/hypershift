@@ -1778,9 +1778,19 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 }
 
 func (r *HostedClusterReconciler) reconcileEtcdBackupCronJob(cronJob *batchv1.CronJob, serviceAccount *corev1.ServiceAccount, hcluster *hyperv1.HostedCluster, etcdImage string) error {
+	clusterID, ok := hcluster.Labels["api.openshift.com/id"]
+	if !ok {
+		clusterID = hcluster.Spec.ClusterID
+	}
+	orgID, ok := hcluster.Labels["api.openshift.com/legal-entity-id"]
+	if !ok {
+		orgID = "openshift" // TODO: non OCM environment
+	}
+
+	configMapName := "etcd-backup-config" // TODO: get configMap name from annotation?
 
 	cronJob.Spec = batchv1.CronJobSpec{
-		Schedule: "0 */1 * * *", // TODO: make it configurable
+		Schedule: "0 */1 * * *", // TODO: make it configurable, read from annotation?
 		JobTemplate: batchv1.JobTemplateSpec{
 			Spec: batchv1.JobSpec{
 				Template: corev1.PodTemplateSpec{
@@ -1819,10 +1829,12 @@ func (r *HostedClusterReconciler) reconcileEtcdBackupCronJob(cronJob *batchv1.Cr
 								Args: []string{
 									"--backup-dir",
 									"/etc/backup",
-									"--cluster-id",
-									hcluster.Spec.ClusterID, //TOOD: use OCM cluster ID?
 									"--s3-bucket-name",
 									"$(BUCKET_NAME)",
+									"--s3-key-prefix",
+									fmt.Sprintf("hourly/%s", clusterID),
+									"--s3-object-tags",
+									fmt.Sprintf("cluster_id=%s,org_id=%s", clusterID, orgID),
 									"--etcd-endpoint",
 									"etcd-client:2379",
 									"--etcd-client-cert",
@@ -1838,7 +1850,7 @@ func (r *HostedClusterReconciler) reconcileEtcdBackupCronJob(cronJob *batchv1.Cr
 										ValueFrom: &corev1.EnvVarSource{
 											ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
 												LocalObjectReference: corev1.LocalObjectReference{
-													Name: "etcd-backup-configmap", // TODO: get configMap name from annotation?
+													Name: configMapName,
 												},
 												Key: "bucket-name",
 											},
@@ -1849,7 +1861,7 @@ func (r *HostedClusterReconciler) reconcileEtcdBackupCronJob(cronJob *batchv1.Cr
 										ValueFrom: &corev1.EnvVarSource{
 											ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
 												LocalObjectReference: corev1.LocalObjectReference{
-													Name: "etcd-backup-configmap", // TODO: get configMap name from annotation?
+													Name: configMapName,
 												},
 												Key: "region",
 											},
@@ -1860,7 +1872,7 @@ func (r *HostedClusterReconciler) reconcileEtcdBackupCronJob(cronJob *batchv1.Cr
 										ValueFrom: &corev1.EnvVarSource{
 											ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
 												LocalObjectReference: corev1.LocalObjectReference{
-													Name: "etcd-backup-configmap", // TODO: get configMap name from annotation?
+													Name: configMapName,
 												},
 												Key: "role-arn",
 											},
