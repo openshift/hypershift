@@ -26,7 +26,7 @@ spec:
             - "--infra-cluster-labels=$(INFRACLUSTER_LABELS)"
             - "--run-node-service=false"
             - "--run-controller-service=true"
-            - --v=5
+            - "--v=5"
           env:
             - name: CSI_ENDPOINT
               value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
@@ -61,10 +61,12 @@ spec:
         - name: csi-provisioner
           image: quay.io/openshift/origin-csi-external-provisioner:latest
           args:
-            - --csi-address=$(ADDRESS)
-            - --default-fstype=ext4
-            - --v=5
+            - "--csi-address=$(ADDRESS)"
+            - "--default-fstype=ext4"
+            - "--v=5"
             - "--kubeconfig=/var/run/secrets/tenantcluster/kubeconfig"
+            - "--timeout=3m"
+            - "--retry-interval-max=1m"
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
@@ -76,9 +78,11 @@ spec:
         - name: csi-attacher
           image: quay.io/openshift/origin-csi-external-attacher:latest
           args:
-            - --csi-address=$(ADDRESS)
-            - --v=5
+            - "--csi-address=$(ADDRESS)"
+            - "--v=5"
             - "--kubeconfig=/var/run/secrets/tenantcluster/kubeconfig"
+            - "--timeout=3m"
+            - "--retry-interval-max=1m"
           env:
             - name: ADDRESS
               value: /var/lib/csi/sockets/pluginproxy/csi.sock
@@ -94,9 +98,9 @@ spec:
         - name: csi-liveness-probe
           image: quay.io/openshift/origin-csi-livenessprobe:latest
           args:
-            - --csi-address=/csi/csi.sock
-            - --probe-timeout=3s
-            - --health-port=10301
+            - "--csi-address=/csi/csi.sock"
+            - "--probe-timeout=3s"
+            - "--health-port=10301"
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
