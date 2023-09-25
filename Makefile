@@ -43,7 +43,7 @@ all: build e2e
 
 pre-commit: all verify test
 
-build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli
+build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli etcd-backup
 
 .PHONY: update
 update: deps api api-docs app-sre-saas-template clients
@@ -86,6 +86,10 @@ hypershift:
 .PHONY: product-cli
 product-cli:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hcp ./product-cli
+
+.PHONY: etcd-backup
+etcd-backup:
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/etcd-backup ./etcd-backup
 
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
