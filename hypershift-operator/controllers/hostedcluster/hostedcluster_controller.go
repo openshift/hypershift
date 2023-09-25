@@ -38,7 +38,7 @@ import (
 	"github.com/google/uuid"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	"github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/api/util/configrefs"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
