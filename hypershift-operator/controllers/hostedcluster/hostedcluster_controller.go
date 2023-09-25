@@ -828,6 +828,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	{
 		if hcp != nil {
 			hcluster.Status.ControlPlaneEndpoint = hcp.Status.ControlPlaneEndpoint
+
+			// TODO: (cewong) Remove this hack when we no longer need to support HostedControlPlanes that report
+			// the wrong port for the route strategy.
+			if isAPIServerRoute(hcluster) {
+				hcluster.Status.ControlPlaneEndpoint.Port = 443
+			}
 			hcluster.Status.OAuthCallbackURLTemplate = hcp.Status.OAuthCallbackURLTemplate
 		}
 	}
@@ -4728,4 +4734,13 @@ func reportHostedClusterDeletionDuration(hcluster *hyperv1.HostedCluster, funcCl
 	// SLI: HostedCluster deletion duration.
 	deletionDuration := funcClock.Since(hcluster.DeletionTimestamp.Time).Seconds()
 	hcmetrics.HostedClusterDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(deletionDuration)
+}
+
+func isAPIServerRoute(hcluster *hyperv1.HostedCluster) bool {
+	for _, svc := range hcluster.Spec.Services {
+		if svc.Service == hyperv1.APIServer {
+			return svc.Type == hyperv1.Route
+		}
+	}
+	return false
 }

@@ -110,7 +110,7 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 			return host, port, message, err
 		}
 		host = strategy.Route.Hostname
-		port = int32(apiServerPort)
+		port = 443
 	}
 	return
 }
