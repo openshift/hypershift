@@ -311,65 +311,6 @@ func deleteSecrets(name, namespace, accountID string, resourceGroupID string) er
 	return nil
 }
 
-// destroyPowerVsDhcpServer destroying powervs dhcp server
-func destroyPowerVsDhcpServer(ctx context.Context, infra *Infra, cloudInstanceID string, session *ibmpisession.IBMPISession, infraID string) error {
-	client := instance.NewIBMPIDhcpClient(ctx, session, cloudInstanceID)
-	if infra != nil && infra.DHCPID != "" {
-		log(infraID).Info("Deleting DHCP server", "id", infra.DHCPID)
-		return client.Delete(infra.DHCPID)
-	}
-
-	dhcpServers, err := client.GetAll()
-	if err != nil {
-		return err
-	}
-
-	if dhcpServers == nil || len(dhcpServers) < 1 {
-		log(infraID).Info("No DHCP servers available to delete in PowerVS")
-		return nil
-	}
-
-	dhcpID := *dhcpServers[0].ID
-	log(infraID).Info("Deleting DHCP server", "id", dhcpID)
-	err = client.Delete(dhcpID)
-	if err != nil {
-		return err
-	}
-
-	instanceClient := instance.NewIBMPIInstanceClient(ctx, session, cloudInstanceID)
-
-	// TO-DO: need to replace the logic of waiting for dhcp service deletion by using jobReference.
-	// jobReference is not yet added in SDK
-	f := func() (bool, error) {
-		dhcpInstance, err := instanceClient.Get(dhcpID)
-		if err != nil {
-			if err = isNotRetryableError(err, timeoutErrorKeywords); err == nil {
-				return false, nil
-			}
-			errMsg := err.Error()
-			// when instance becomes does not exist, infra destroy can proceed
-			if strings.Contains(errMsg, "pvm-instance does not exist") {
-				err = nil
-				return true, nil
-			}
-			return false, err
-		}
-
-		if dhcpInstance == nil {
-			return false, fmt.Errorf("dhcpInstance is nil")
-		}
-
-		log(infraID).Info("Waiting for DhcpServer to destroy", "id", *dhcpInstance.PvmInstanceID, "status", *dhcpInstance.Status)
-		if *dhcpInstance.Status == dhcpInstanceShutOffState || *dhcpInstance.Status == dhcpServiceErrorState {
-			return true, nil
-		}
-
-		return false, nil
-	}
-
-	return wait.PollImmediate(pollingInterval, dhcpServerDeletionTimeout, f)
-}
-
 // destroyPowerVsCloudInstance destroying powervs cloud instance
 func destroyPowerVsCloudInstance(ctx context.Context, options *DestroyInfraOptions, infra *Infra, cloudInstanceID string, session *ibmpisession.IBMPISession) error {
 	rcv2, err := resourcecontrollerv2.NewResourceControllerV2(&resourcecontrollerv2.ResourceControllerV2Options{Authenticator: getIAMAuth()})
@@ -377,10 +318,9 @@ func destroyPowerVsCloudInstance(ctx context.Context, options *DestroyInfraOptio
 		return err
 	}
 
-	if options.CloudInstanceID != "" {
-		// In case of user provided cloud instance delete only DHCP server
-		err = destroyPowerVsDhcpServer(ctx, infra, cloudInstanceID, session, options.InfraID)
-	} else {
+	// Attempt cloud instance deletion only when it is created by hypershift
+	// Nothing to clean up on user provided PowerVS instance
+	if options.CloudInstanceID == "" {
 		for retry := 0; retry < 5; retry++ {
 			log(options.InfraID).Info("Deleting PowerVS cloud instance", "id", cloudInstanceID)
 			if _, err = rcv2.DeleteResourceInstanceWithContext(ctx, &resourcecontrollerv2.DeleteResourceInstanceOptions{ID: &cloudInstanceID}); err != nil {
@@ -549,6 +489,11 @@ func deletePowerVsCloudConnection(options *DestroyInfraOptions, id string, clien
 
 // destroyVpc destroying vpc
 func destroyVpc(ctx context.Context, options *DestroyInfraOptions, infra *Infra, resourceGroupID string, v1 *vpcv1.VpcV1, infraID string) error {
+	if options.VPC != "" {
+		log(infraID).Info("Skipping VPC deletion since its user provided")
+		return nil
+	}
+
 	if infra != nil && infra.VPCID != "" {
 		return deleteVpc(ctx, infra.VPCID, v1, infraID)
 	}
@@ -622,7 +567,7 @@ func destroyVpcSubnet(ctx context.Context, options *DestroyInfraOptions, infra *
 		vpcName := fmt.Sprintf("%s-%s", options.InfraID, vpcNameSuffix)
 
 		for _, subnet := range subnetL.Subnets {
-			if *subnet.VPC.Name == vpcName && strings.Contains(*subnet.Zone.Name, options.VPCRegion) {
+			if (*subnet.VPC.Name == vpcName || *subnet.VPC.Name == options.VPC) && strings.Contains(*subnet.Zone.Name, options.VPCRegion) {
 				if err = deleteVpcSubnet(ctx, *subnet.ID, v1, options); err != nil {
 					return false, "", err
 				}
@@ -655,6 +600,11 @@ func deleteVpcSubnet(ctx context.Context, id string, v1 *vpcv1.VpcV1, options *D
 	if err != nil {
 		log(options.InfraID).Error(err, "error destroying VPC Load Balancer")
 		return fmt.Errorf("error destroying VPC Load Balancer %w", err)
+	}
+
+	// In case of user provided VPC delete only load balancer and not the subnet
+	if options.VPC != "" {
+		return nil
 	}
 
 	log(options.InfraID).Info("Deleting VPC subnet", "subnetId", id)
