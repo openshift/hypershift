@@ -1505,11 +1505,15 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 	} else {
 		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionTrue
 	}
-
 	if !hasWorkerNodes {
 		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
 		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
 		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
+	}
+
+	if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
+		hostedCluster.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
+		expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionTrue
 	}
 
 	start := time.Now()

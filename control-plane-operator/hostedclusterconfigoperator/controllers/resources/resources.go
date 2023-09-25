@@ -403,6 +403,10 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network operator: %w", err))
 	}
+	// Detect suboptimal MTU size on kubevirt hosted cluster with ovn-k and raise a condition in such a case
+	if err := networkoperator.DetectSuboptimalMTU(ctx, r.cpClient, networkOperator, hcp); err != nil {
+		errs = append(errs, err)
+	}
 	// this allows users to disable data collection in sensitive environments
 	// solves https://issues.redhat.com/browse/OCPBUGS-12208
 	ensureExistsReconcilationStrategy := false

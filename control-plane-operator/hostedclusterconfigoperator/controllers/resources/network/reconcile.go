@@ -1,10 +1,14 @@
 package network
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
+	"context"
+	"fmt"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func NetworkOperator() *operatorv1.Network {
@@ -71,9 +75,50 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 
 	// Setting the management state is required in order to create
 	// this object. We need to create this object before the cno starts
-	// because mutating many of the values (like vxlanport) is not premitted
+	// because mutating many of the values (like vxlanport) is not permitted
 	// after the cno reconciles this operator CR
 	if network.Spec.ManagementState == "" {
 		network.Spec.ManagementState = "Managed"
 	}
+}
+
+func DetectSuboptimalMTU(ctx context.Context, mgmtClient client.Client,
+	guestNetworkOperator *operatorv1.Network, hcp *hyperv1.HostedControlPlane) error {
+	const recommendedMinMTU = uint32(9000)
+	const ovnkOverhead = 200
+
+	if hcp.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
+		hcp.Spec.Networking.NetworkType == hyperv1.OVNKubernetes &&
+		guestNetworkOperator.Spec.DefaultNetwork.OVNKubernetesConfig != nil &&
+		guestNetworkOperator.Spec.DefaultNetwork.OVNKubernetesConfig.MTU != nil {
+
+		conditionStatus := metav1.ConditionTrue
+		conditionReason := hyperv1.AsExpectedReason
+		conditionMessage := hyperv1.AllIsWellMessage
+
+		if *guestNetworkOperator.Spec.DefaultNetwork.OVNKubernetesConfig.MTU < recommendedMinMTU-ovnkOverhead {
+			// The detected MTU value is suboptimal
+			conditionStatus = metav1.ConditionFalse
+			conditionReason = hyperv1.KubeVirtSuboptimalMTUReason
+			conditionMessage = fmt.Sprintf("A suboptimal MTU size has been detected. "+
+				"Due to performance, we recommend setting an MTU of %d bytes or greater for the "+
+				"infra cluster that hosts the KubeVirt VirtualMachines. When smaller MTUs are used, the cluster will "+
+				"still operate, but network performance will be degraded due to fragmentation of the double "+
+				"encapsulation in OVN-Kubernetes.", recommendedMinMTU)
+		}
+		originalHCP := hcp.DeepCopy()
+		meta.SetStatusCondition(&hcp.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.ValidKubeVirtInfraNetworkMTU),
+			Status:             conditionStatus,
+			Reason:             conditionReason,
+			ObservedGeneration: hcp.Generation,
+			Message:            conditionMessage,
+		})
+		if !equality.Semantic.DeepEqual(hcp.Status, originalHCP.Status) {
+			if err := mgmtClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+				return fmt.Errorf("failed to set suboptimal MTU condition on HCP: %w", err)
+			}
+		}
+	}
+	return nil
 }

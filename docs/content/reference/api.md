@@ -2960,6 +2960,11 @@ A failure here is unlikely to resolve without the changing user input.</p>
 supported by the underlying management cluster.
 A failure here is unlikely to resolve without the changing user input.</p>
 </td>
+</tr><tr><td><p>&#34;ValidKubeVirtInfraNetworkMTU&#34;</p></td>
+<td><p>ValidKubeVirtInfraNetworkMTU indicates if the MTU configured on an infra cluster
+hosting a guest cluster utilizing kubevirt platform is a sufficient value that will avoid
+performance degradation due to fragmentation of the double encapsulation in ovn-kubernetes</p>
+</td>
 </tr><tr><td><p>&#34;ValidOIDCConfiguration&#34;</p></td>
 <td><p>ValidOIDCConfiguration indicates if an AWS cluster&rsquo;s OIDC condition is
 detected as invalid.

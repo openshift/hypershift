@@ -624,6 +624,17 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
 	}
 
+	// Copy the ValidKubeVirtInfraNetworkMTU condition from the HostedControlPlane
+	if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		if hcp != nil {
+			validMtuCondCreated := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidKubeVirtInfraNetworkMTU))
+			if validMtuCondCreated != nil {
+				validMtuCondCreated.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *validMtuCondCreated)
+			}
+		}
+	}
+
 	// Copy conditions from hostedcontrolplane
 	{
 		hcpConditions := []hyperv1.ConditionType{
