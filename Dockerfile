@@ -12,6 +12,7 @@ COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hypershift-operator \
                     /hypershift/bin/control-plane-operator \
                     /hypershift/bin/control-plane-pki-operator \
+                    /hypershift/bin/etcd-backup \
      /usr/bin/
 
 RUN cd /usr/bin && \
