@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,14 +22,17 @@ const (
 )
 
 type options struct {
-	backupDir          string
-	clusterID          string
+	backupDir string
+
 	etcdEndpoint       string
 	etcdClientCertFile string
 	etcdClientKeyFile  string
 	etcdCAFile         string
-	s3BucketName       string
-	s3BucketRegion     string
+
+	s3BucketName   string
+	s3BucketRegion string
+	s3KeyPrefix    string
+	s3ObjectTags   map[string]string
 
 	snapshotFilePath string
 }
@@ -50,17 +54,18 @@ func main() {
 	}
 
 	cmd.Flags().StringVar(&opts.backupDir, "backup-dir", "", "the directory where etcd snapshots are stored")
-	cmd.Flags().StringVar(&opts.clusterID, "cluster-id", "", "ID of the hosted cluster, used as a key for the snapshot file in S3")
 	cmd.Flags().StringVar(&opts.etcdEndpoint, "etcd-endpoint", "", "endpoint of the etcd cluster to backup.")
 	cmd.Flags().StringVar(&opts.etcdClientCertFile, "etcd-client-cert", "", "etcd client cert file.")
 	cmd.Flags().StringVar(&opts.etcdClientKeyFile, "etcd-client-key", "", "etcd client cert key file.")
 	cmd.Flags().StringVar(&opts.etcdCAFile, "etcd-ca-cert", "", "etcd trusted CA cert file.")
 	cmd.Flags().StringVar(&opts.s3BucketName, "s3-bucket-name", "", "name of the S3 bucket to store etcd backups.")
 	cmd.Flags().StringVar(&opts.s3BucketRegion, "s3-bucket-region", "", "AWS region of the S3 bucket to store etcd backups.")
+	cmd.Flags().StringVar(&opts.s3KeyPrefix, "s3-key-prefix", "", "S3 snapshot key prefix.")
+	cmd.Flags().StringToStringVar(&opts.s3ObjectTags, "s3-object-tags", opts.s3ObjectTags, "S3 snapshot object tags.")
 
-	cmd.MarkFlagRequired("cluster-id")
 	cmd.MarkFlagRequired("etcd-endpoint")
 	cmd.MarkFlagRequired("s3-bucket-name")
+	cmd.MarkFlagRequired("s3-key-prefix")
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()
@@ -111,17 +116,15 @@ func uploadToS3(ctx context.Context, opts options) error {
 		return fmt.Errorf("failed to open file %q, %v", opts.snapshotFilePath, err)
 	}
 
-	key := fmt.Sprintf("hourly/%s/%d.db", opts.clusterID, time.Now().Unix())
+	opts.s3KeyPrefix = strings.TrimSuffix(opts.s3KeyPrefix, "/")
+	key := fmt.Sprintf("%s/%d.db", opts.s3KeyPrefix, time.Now().Unix())
 
 	uploader := s3manager.NewUploader(awsSession, s3manager.WithUploaderRequestOptions())
 	output, err := uploader.UploadWithContext(ctx, &s3manager.UploadInput{
-		Bucket: aws.String(opts.s3BucketName),
-		Key:    aws.String(key),
-		Body:   f,
-		Tagging: mapToTags(map[string]string{
-			"cluster_id": opts.clusterID, // OCM cluster ID
-			"org_id":     "HCP",          // TODO
-		}),
+		Bucket:  aws.String(opts.s3BucketName),
+		Key:     aws.String(key),
+		Body:    f,
+		Tagging: mapToTags(opts.s3ObjectTags),
 	})
 
 	if err != nil {
