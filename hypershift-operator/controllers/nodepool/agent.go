@@ -1,7 +1,7 @@
 package nodepool
 
 import (
-	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
 
