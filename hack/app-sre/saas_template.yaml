@@ -5152,7 +5152,7 @@ objects:
       controller-gen.kubebuilder.io/version: v0.12.0
     creationTimestamp: null
     labels:
-      cluster.x-k8s.io/v1beta1: v1alpha1
+      cluster.x-k8s.io/v1beta1: v1beta1
     name: agentclusters.capi-provider.agent-install.openshift.io
   spec:
     group: capi-provider.agent-install.openshift.io
@@ -5486,7 +5486,7 @@ objects:
       controller-gen.kubebuilder.io/version: v0.12.0
     creationTimestamp: null
     labels:
-      cluster.x-k8s.io/v1beta1: v1alpha1
+      cluster.x-k8s.io/v1beta1: v1beta1
     name: agentmachines.capi-provider.agent-install.openshift.io
   spec:
     group: capi-provider.agent-install.openshift.io
@@ -5898,7 +5898,7 @@ objects:
       controller-gen.kubebuilder.io/version: v0.12.0
     creationTimestamp: null
     labels:
-      cluster.x-k8s.io/v1beta1: v1alpha1
+      cluster.x-k8s.io/v1beta1: v1beta1
     name: agentmachinetemplates.capi-provider.agent-install.openshift.io
   spec:
     group: capi-provider.agent-install.openshift.io
