@@ -990,11 +990,6 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:         []string{"delete"},
 				ResourceNames: []string{hyperv1.GroupVersion.Group},
 			},
-			{
-				APIGroups: []string{"k8s.ovn.org"},
-				Resources: []string{"egressfirewalls"},
-				Verbs:     []string{"*"},
-			},
 		},
 	}
 	return role
