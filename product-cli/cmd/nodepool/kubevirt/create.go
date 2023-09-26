@@ -14,6 +14,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		ContainerDiskImage: "",
 		RootVolumeSize:     32,
 		CacheStrategyType:  "",
+		QoSClass:           "Burstable",
 	}
 	cmd := &cobra.Command{
 		Use:          "kubevirt",
@@ -29,6 +30,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().StringVar(&platformOpts.RootVolumeVolumeMode, "root-volume-volume-mode", platformOpts.RootVolumeVolumeMode, "The volume mode of the root volume to use for machines in the NodePool. Supported values are \"Block\", \"Filesystem\"")
 	cmd.Flags().StringVar(&platformOpts.CacheStrategyType, "root-volume-cache-strategy", platformOpts.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
 	cmd.Flags().StringVar(&platformOpts.NetworkInterfaceMultiQueue, "network-multiqueue", platformOpts.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Disable"`)
+	cmd.Flags().StringVar(&platformOpts.QoSClass, "qos-class", platformOpts.QoSClass, `If "Guaranteed", set the limit cpu and memory of the VirtualMachineInstance, to be the same as the requested cpu and memory; supported values: "Burstable" and "Guaranteed"`)
 
 	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 

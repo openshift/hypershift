@@ -4957,6 +4957,23 @@ uint32
 <p>Cores represents how many cores the guest VM should have</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>qosClass</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.QoSClass">
+QoSClass
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>QosClass If set to &ldquo;Guaranteed&rdquo;, requests the scheduler to place the VirtualMachineInstance on a node with
+limit memory and CPU, equal to be the requested values, to set the VMI as a Guaranteed QoS Class;
+See here for more details:
+<a href="https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances">https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances</a></p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubevirtDiskImage { #hypershift.openshift.io/v1beta1.KubevirtDiskImage }
@@ -7251,6 +7268,26 @@ This field is immutable. Once set, It can&rsquo;t be changed.</p>
 <p>
 <p>PublishingStrategyType defines publishing strategies for services.</p>
 </p>
+###QoSClass { #hypershift.openshift.io/v1beta1.QoSClass }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtCompute">KubevirtCompute</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Burstable&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Guaranteed&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
 ###Release { #hypershift.openshift.io/v1beta1.Release }
 <p>
 (<em>Appears on:</em>

@@ -25,6 +25,7 @@ type ExampleKubevirtOptions struct {
 	CacheStrategyType          string
 	InfraStorageClassMappings  []string
 	NetworkInterfaceMultiQueue *hyperv1.MultiQueueSetting
+	QoSClass                   *hyperv1.QoSClass
 }
 
 func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoolPlatform {
@@ -71,6 +72,10 @@ func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoo
 	}
 	if o.Cores != 0 {
 		exampleTemplate.Compute.Cores = &o.Cores
+	}
+
+	if o.QoSClass != nil && *o.QoSClass == hyperv1.QoSClassGuaranteed {
+		exampleTemplate.Compute.QosClass = o.QoSClass
 	}
 
 	if o.Image != "" {

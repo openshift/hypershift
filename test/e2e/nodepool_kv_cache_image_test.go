@@ -44,7 +44,7 @@ func (k KubeVirtCacheTest) Setup(t *testing.T) {
 	t.Log("Starting test KubeVirtCacheTest")
 }
 
-func (k KubeVirtCacheTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
+func (k KubeVirtCacheTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []corev1.Node) {
 	g := NewWithT(t)
 
 	np := &hyperv1.NodePool{}
