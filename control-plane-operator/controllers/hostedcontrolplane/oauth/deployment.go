@@ -52,7 +52,7 @@ func oauthLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, apiPort *int32, namedCertificates []configv1.APIServerNamedServingCert, socks5ProxyImage string, noProxy []string) error {
+func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, ownerRef config.OwnerRef, config *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, apiPort *int32, namedCertificates []configv1.APIServerNamedServingCert, socks5ProxyImage string, noProxy []string, params *OAuthConfigParams) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main oauth container
@@ -97,9 +97,16 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 			util.BuildVolume(oauthVolumeKubeconfig(), buildOAuthVolumeKubeconfig),
 			util.BuildVolume(oauthVolumeServingCert(), buildOAuthVolumeServingCert),
 			util.BuildVolume(oauthVolumeSessionSecret(), buildOAuthVolumeSessionSecret),
-			util.BuildVolume(oauthVolumeErrorTemplate(), buildOAuthVolumeErrorTemplate),
-			util.BuildVolume(oauthVolumeLoginTemplate(), buildOAuthVolumeLoginTemplate),
-			util.BuildVolume(oauthVolumeProvidersTemplate(), buildOAuthVolumeProvidersTemplate),
+			util.BuildVolume(oauthVolumeErrorTemplate(), func(volume *corev1.Volume) {
+				BuildOAuthVolumeErrorTemplate(volume, params)
+			}),
+			util.BuildVolume(oauthVolumeLoginTemplate(), func(volume *corev1.Volume) {
+				BuildOAuthVolumeLoginTemplate(volume, params)
+			}),
+			util.BuildVolume(oauthVolumeProvidersTemplate(),
+				func(volume *corev1.Volume) {
+					BuildOAuthVolumeProvidersTemplate(volume, params)
+				}),
 			util.BuildVolume(oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs),
 			util.BuildVolume(oauthVolumeMasterCABundle(), buildOAuthVolumeMasterCABundle),
 			{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: utilpointer.Int32(0640)}}},
@@ -222,10 +229,16 @@ func oauthVolumeErrorTemplate() *corev1.Volume {
 	}
 }
 
-func buildOAuthVolumeErrorTemplate(v *corev1.Volume) {
+func BuildOAuthVolumeErrorTemplate(v *corev1.Volume, params *OAuthConfigParams) {
+	errorTemplateSecret := manifests.OAuthServerDefaultErrorTemplateSecret("").Name
+
+	if params.OAuthTemplates.Error.Name != "" {
+		errorTemplateSecret = params.OAuthTemplates.Error.Name
+	}
+
 	v.Secret = &corev1.SecretVolumeSource{
 		DefaultMode: utilpointer.Int32(0640),
-		SecretName:  manifests.OAuthServerDefaultErrorTemplateSecret("").Name,
+		SecretName:  errorTemplateSecret,
 	}
 }
 
@@ -235,10 +248,16 @@ func oauthVolumeLoginTemplate() *corev1.Volume {
 	}
 }
 
-func buildOAuthVolumeLoginTemplate(v *corev1.Volume) {
+func BuildOAuthVolumeLoginTemplate(v *corev1.Volume, params *OAuthConfigParams) {
+	loginTemplateSecret := manifests.OAuthServerDefaultLoginTemplateSecret("").Name
+
+	if params.OAuthTemplates.Login.Name != "" {
+		loginTemplateSecret = params.OAuthTemplates.Login.Name
+	}
+
 	v.Secret = &corev1.SecretVolumeSource{
 		DefaultMode: utilpointer.Int32(0640),
-		SecretName:  manifests.OAuthServerDefaultLoginTemplateSecret("").Name,
+		SecretName:  loginTemplateSecret,
 	}
 }
 
@@ -248,10 +267,16 @@ func oauthVolumeProvidersTemplate() *corev1.Volume {
 	}
 }
 
-func buildOAuthVolumeProvidersTemplate(v *corev1.Volume) {
+func BuildOAuthVolumeProvidersTemplate(v *corev1.Volume, params *OAuthConfigParams) {
+	providersTemplateSecret := manifests.OAuthServerDefaultProviderSelectionTemplateSecret("").Name
+
+	if params.OAuthTemplates.ProviderSelection.Name != "" {
+		providersTemplateSecret = params.OAuthTemplates.ProviderSelection.Name
+	}
+
 	v.Secret = &corev1.SecretVolumeSource{
 		DefaultMode: utilpointer.Int32(0640),
-		SecretName:  manifests.OAuthServerDefaultProviderSelectionTemplateSecret("").Name,
+		SecretName:  providersTemplateSecret,
 	}
 }
 

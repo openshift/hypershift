@@ -65,6 +65,7 @@ type OAuthConfigParams struct {
 	// when the login a provider uses doesn't conform to the standard login url in hypershift. The only supported use case
 	// for this is IBMCloud Red Hat Openshift
 	LoginURLOverride string
+	OAuthTemplates   configv1.OAuthTemplates
 }
 
 // ConfigOverride defines the oauth parameters that can be overridden in special use cases. The only supported
@@ -177,6 +178,17 @@ func (p *OAuthServerParams) NamedCertificates() []configv1.APIServerNamedServing
 	}
 }
 
+func (p *OAuthServerParams) OauthTemplates() configv1.OAuthTemplates {
+	emptyTemplates := configv1.OAuthTemplates{}
+
+	if p.OAuth != nil {
+		if p.OAuth.Templates != emptyTemplates {
+			return p.OAuth.Templates
+		}
+	}
+	return emptyTemplates
+}
+
 func (p *OAuthServerParams) IdentityProviders() []configv1.IdentityProvider {
 	if p.OAuth != nil {
 		return p.OAuth.IdentityProviders
@@ -227,6 +239,7 @@ func (p *OAuthServerParams) ConfigParams(servingCert *corev1.Secret) *OAuthConfi
 		OauthConfigOverrides:         p.OauthConfigOverrides,
 		LoginURLOverride:             p.LoginURLOverride,
 		NamedCertificates:            p.NamedCertificates(),
+		OAuthTemplates:               p.OauthTemplates(),
 	}
 }
 
