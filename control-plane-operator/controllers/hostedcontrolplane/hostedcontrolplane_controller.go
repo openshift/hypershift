@@ -3664,9 +3664,10 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s cloud provider service account: %w", hcp.Spec.Platform.Type, err)
 		}
+		p := aws.NewAWSParams(hcp)
 		deployment := aws.CCMDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, deployment, func() error {
-			return aws.ReconcileDeployment(deployment, hcp, sa.Name, releaseImageProvider)
+			return aws.ReconcileDeployment(deployment, hcp, p.DeploymentConfig, sa.Name, releaseImageProvider)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s cloud controller manager deployment: %w", hcp.Spec.Platform.Type, err)
 		}
