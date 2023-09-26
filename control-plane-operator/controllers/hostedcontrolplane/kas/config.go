@@ -204,6 +204,7 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("shutdown-send-retry-after", "true")
 	args.Set("storage-backend", "etcd3")
 	args.Set("storage-media-type", "application/vnd.kubernetes.protobuf")
+	args.Set("strict-transport-security-directives", p.APIServerSTSDirectives)
 	args.Set("tls-cert-file", cpath(kasVolumeServerCert().Name, corev1.TLSCertKey))
 	args.Set("tls-private-key-file", cpath(kasVolumeServerCert().Name, corev1.TLSPrivateKeyKey))
 	config.APIServerArguments = args
