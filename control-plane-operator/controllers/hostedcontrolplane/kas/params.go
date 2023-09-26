@@ -67,7 +67,8 @@ type KubeAPIServerParams struct {
 
 	Images KubeAPIServerImages `json:"images"`
 
-	Availability hyperv1.AvailabilityPolicy
+	Availability           hyperv1.AvailabilityPolicy
+	APIServerSTSDirectives string
 }
 
 type KubeAPIServerServiceParams struct {
@@ -337,6 +338,13 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.CloudProvider = azure.Provider
 		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AzureProviderConfigWithCredentials("").Name}
 	}
+
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		params.APIServerSTSDirectives = "max-age=31536000"
+	} else {
+		params.APIServerSTSDirectives = "max-age=31536000,includeSubDomains,preload"
+	}
+
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
 		params.AuditWebhookRef = hcp.Spec.AuditWebhook
 	}
@@ -431,6 +439,7 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		AuditWebhookEnabled:          p.AuditWebhookRef != nil,
 		ConsolePublicURL:             p.ConsolePublicURL,
 		DisableProfiling:             p.DisableProfiling,
+		APIServerSTSDirectives:       p.APIServerSTSDirectives,
 	}
 }
 
@@ -455,6 +464,7 @@ type KubeAPIServerConfigParams struct {
 	AuditWebhookEnabled          bool
 	ConsolePublicURL             string
 	DisableProfiling             bool
+	APIServerSTSDirectives       string
 }
 
 func (p *KubeAPIServerParams) TLSSecurityProfile() *configv1.TLSSecurityProfile {
