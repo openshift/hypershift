@@ -40,7 +40,7 @@ spec:
             - "--node-name=$(KUBE_NODE_NAME)"
             - "--run-node-service=true"
             - "--run-controller-service=false"
-            - --v=5
+            - "--v=5"
           env:
             - name: KUBE_NODE_NAME
               valueFrom:
@@ -80,9 +80,9 @@ spec:
             privileged: true
           image: quay.io/openshift/origin-csi-node-driver-registrar:latest
           args:
-            - --csi-address=$(ADDRESS)
-            - --kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)
-            - --v=5
+            - "--csi-address=$(ADDRESS)"
+            - "--kubelet-registration-path=$(DRIVER_REG_SOCK_PATH)"
+            - "--v=5"
           lifecycle:
             preStop:
               exec:
@@ -106,9 +106,9 @@ spec:
         - name: csi-liveness-probe
           image: quay.io/openshift/origin-csi-livenessprobe:latest
           args:
-            - --csi-address=/csi/csi.sock
-            - --probe-timeout=3s
-            - --health-port=10300
+            - "--csi-address=/csi/csi.sock"
+            - "--probe-timeout=3s"
+            - "--health-port=10300"
           volumeMounts:
             - name: plugin-dir
               mountPath: /csi
