@@ -77,7 +77,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -4027,26 +4026,6 @@ type ClusterMachineApproverConfig struct {
 }
 type NodeClientCert struct {
 	Disabled bool `json:"disabled,omitempty"`
-}
-
-func reconcileVirtLauncherEgressFirewall(egressFirewall *unstructured.Unstructured) error {
-	egressFirewall.Object["spec"] = map[string]interface{}{
-		"egress": []interface{}{
-			map[string]interface{}{
-				"to": map[string]interface{}{
-					"cidrSelector": "169.254.169.254/32",
-				},
-				"type": "Deny",
-				"ports": []interface{}{
-					map[string]interface{}{
-						"port":     int64(80),
-						"protocol": "TCP",
-					},
-				},
-			},
-		},
-	}
-	return nil
 }
 
 const (

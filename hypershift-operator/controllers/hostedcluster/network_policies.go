@@ -10,7 +10,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/egressfirewall"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
@@ -106,25 +105,6 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				return reconcileVirtLauncherNetworkPolicy(policy, hcluster, managementClusterNetwork)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
-			}
-		}
-
-		var creds *hyperv1.KubevirtPlatformCredentials
-
-		if hcluster.Spec.Platform.Kubevirt != nil && hcluster.Spec.Platform.Kubevirt.Credentials != nil {
-			creds = hcluster.Spec.Platform.Kubevirt.Credentials
-		}
-
-		kvInfraCluster, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx, r.Client, hcluster.Spec.InfraID, creds, hcp.Namespace, hcluster.Namespace)
-		if err != nil {
-			return err
-		}
-		if hcluster.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
-			egressFirewall := egressfirewall.VirtLauncherEgressFirewall(kvInfraCluster.GetInfraNamespace())
-			if _, err := createOrUpdate(ctx, kvInfraCluster.GetInfraClient(), egressFirewall, func() error {
-				return reconcileVirtLauncherEgressFirewall(egressFirewall)
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile firewall to deny metadata server egress: %w", err)
 			}
 		}
 	}
