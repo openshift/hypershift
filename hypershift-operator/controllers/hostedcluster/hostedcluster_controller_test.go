@@ -953,6 +953,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		cluster.Spec.PullSecret = corev1.LocalObjectReference{Name: "secret"}
 		cluster.Spec.InfraID = "infra-id"
 		cluster.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}}
+		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
+		cluster.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}}
 		objects = append(objects, cluster)
 	}
 
@@ -3473,6 +3475,118 @@ func TestFindAdvertiseAddress(t *testing.T) {
 				g.Expect(avdAddress).To(BeEmpty())
 			} else {
 				g.Expect(avdAddress.String()).To(Equal(tt.resultAdvAddress))
+			}
+		})
+	}
+}
+
+func TestValidateNetworkStackAddresses(t *testing.T) {
+	tests := []struct {
+		name    string
+		cn      []hyperv1.ClusterNetworkEntry
+		mn      []hyperv1.MachineNetworkEntry
+		sn      []hyperv1.ServiceNetworkEntry
+		aa      *hyperv1.APIServerNetworking
+		wantErr bool
+	}{
+		{
+			name:    "given an IPv6 clusterNetwork and an IPv4 ServiceNetwork, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: true,
+		},
+		{
+			name:    "on IPv6 and IPv4 Advertise Address, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: true,
+		},
+		{
+			name:    "on IPv6 and defining Advertise Address, it should success",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: false,
+		},
+		{
+			name:    "given an IPv4 clusterNetwork and an IPv6 ServiceNetwork, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/16")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: true,
+		},
+		{
+			name:    "on IPv4 and defining IPv6 Advertise Address, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: true,
+		},
+		{
+			name:    "on IPv4 and defining Advertise Address, it should success",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.0.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: false,
+		},
+		{
+			name:    "on IPv4, it should success",
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			wantErr: false,
+		},
+		{
+			name:    "on IPv6, it should success",
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: false,
+		},
+		{
+			name:    "given an IPv4 invalid advertise address, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1.2")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			wantErr: true,
+		},
+		{
+			name:    "given an IPv6 invalid advertise address, it should fail",
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1::32")},
+			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/64")}},
+			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "any",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						ClusterNetwork: tt.cn,
+						ServiceNetwork: tt.sn,
+						MachineNetwork: tt.mn,
+						APIServer:      tt.aa,
+					},
+				},
+			}
+			err := validateNetworkStackAddresses(hc)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("validateNetworkStackAddresses() wantErr %v, err %v", tt.wantErr, err)
 			}
 		})
 	}
