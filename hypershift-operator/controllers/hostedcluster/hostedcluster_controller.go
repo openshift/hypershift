@@ -4052,6 +4052,7 @@ func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.Hoste
 
 func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) error {
 	var errs field.ErrorList
+	errs = append(errs, validateNetworkStackAddresses(hc)...)
 	errs = append(errs, validateSliceNetworkCIDRs(hc)...)
 	errs = append(errs, checkAdvertiseAddressOverlapping(hc)...)
 
@@ -4092,6 +4093,65 @@ func findAdvertiseAddress(hc *hyperv1.HostedCluster) (net.IP, *field.Error) {
 	}
 
 	return advertiseAddress, nil
+}
+
+// validateNetworkStackAddresses validates that Networks defined in the HostedCluster are in the same network stack
+// between each other against the primary IP using ClusterNetwork as a base.
+func validateNetworkStackAddresses(hc *hyperv1.HostedCluster) field.ErrorList {
+	var errs field.ErrorList
+	ipv4 := make([]string, 0)
+	ipv6 := make([]string, 0)
+
+	networks := make(map[string]string, 0)
+
+	if len(hc.Spec.Networking.ClusterNetwork) > 0 {
+		networks["spec.networking.ClusterNetwork"] = hc.Spec.Networking.ClusterNetwork[0].CIDR.IP.String()
+	}
+
+	if len(hc.Spec.Networking.ServiceNetwork) > 0 {
+		networks["spec.networking.ServiceNetwork"] = hc.Spec.Networking.ServiceNetwork[0].CIDR.IP.String()
+	}
+
+	if len(hc.Spec.Networking.MachineNetwork) > 0 {
+		networks["spec.networking.MachineNetwork"] = hc.Spec.Networking.MachineNetwork[0].CIDR.IP.String()
+	}
+
+	advAddr, err := findAdvertiseAddress(hc)
+	if err != nil {
+		errs = append(errs, err)
+	}
+
+	networks["spec.networking.APIServerNetworking.AdvertiseAddress"] = advAddr.String()
+
+	for fieldpath, ipaddr := range networks {
+		checkIP := net.ParseIP(ipaddr)
+
+		if checkIP != nil && strings.Contains(ipaddr, ".") {
+			ipv4 = append(ipv4, ipaddr)
+		}
+
+		if checkIP != nil && strings.Contains(ipaddr, ":") {
+			ipv6 = append(ipv6, ipaddr)
+		}
+
+		// This check ensures that the IPv6 and IPv4 is a valid ip
+		if checkIP == nil {
+			errs = append(errs, field.Invalid(field.NewPath(fieldpath),
+				k8sutilspointer.String(ipaddr),
+				fmt.Sprintf("error checking network stack of %s with ip %s", fieldpath, ipaddr),
+			))
+		}
+	}
+
+	if len(ipv4) > 0 && len(ipv6) > 0 {
+		// Invalid result, means that there are mixed stacks in the primary position of the stack
+		errs = append(errs, field.Forbidden(field.NewPath("spec.networking"),
+			fmt.Sprintf("declare multiple network stacks as primary network in the cluster definition is not allowed, ipv4: %v, ipv6: %v", ipv4, ipv6),
+		))
+	}
+
+	return errs
+
 }
 
 // checkAdvertiseAddressOverlapping validates that the AdvertiseAddress defined does not overlap with
