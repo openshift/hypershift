@@ -36,6 +36,7 @@ following steps will reference elements of the steps you already performed.
                 "ec2:DescribeVpcEndpointServicePermissions",
                 "ec2:ModifyVpcEndpointServicePermissions",
                 "ec2:RejectVpcEndpointConnections",
+                "ec2:DescribeVpcEndpointConnections",
                 "ec2:CreateTags",
                 "elasticloadbalancing:DescribeLoadBalancers"
               ],
@@ -70,32 +71,32 @@ following steps will reference elements of the steps you already performed.
         }
         ```
 
-2. Create the IAM policy in AWS.
+3. Create the IAM policy in AWS.
 
     ```shell
     aws iam create-policy --policy-name=hypershift-operator-policy --policy-document=file://policy.json
     ```
 
-3. Create a `hypershift-operator` IAM user.
+4. Create a `hypershift-operator` IAM user.
 
     ```shell
     aws iam create-user --user-name=hypershift-operator
     ```
 
-4. Attach the policy to the `hypershift-operator` user, replacing `$POLICY_ARN` with the ARN of the policy
+5. Attach the policy to the `hypershift-operator` user, replacing `$POLICY_ARN` with the ARN of the policy
    created in step 2.
 
     ```shell
     aws iam attach-user-policy --user-name=hypershift-operator --policy-arn=$POLICY_ARN
     ```
 
-5. Create an IAM access key for the user.
+6. Create an IAM access key for the user.
 
     ```shell
     aws iam create-access-key --user-name=hypershift-operator
     ```
 
-6. Create a credentials file (`$AWS_PRIVATE_CREDS`) with the access ID and key for the user
+7. Create a credentials file (`$AWS_PRIVATE_CREDS`) with the access ID and key for the user
    created in step 5.
 
     ```shell
@@ -106,7 +107,7 @@ following steps will reference elements of the steps you already performed.
     EOF
     ```
 
-7. Now you can install HyperShift with private cluster support.
+8. Now you can install HyperShift with private cluster support.
 
     ```shell linenums="1"
     REGION=us-east-1
