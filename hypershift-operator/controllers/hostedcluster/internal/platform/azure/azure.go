@@ -142,24 +142,46 @@ func (a *Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp 
 }
 
 func (a *Azure) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-
 	var source corev1.Secret
+
+	// Sync user cloud-credentials secret
 	name := client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.Azure.Credentials.Name}
 	if err := c.Get(ctx, name, &source); err != nil {
 		return fmt.Errorf("failed to get secret %s: %w", name, err)
 	}
 
-	target := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: name.Name}}
-	_, err := createOrUpdate(ctx, c, target, func() error {
-		if target.Data == nil {
-			target.Data = map[string][]byte{}
+	userCloudCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: name.Name}}
+	if _, err := createOrUpdate(ctx, c, userCloudCreds, func() error {
+		if userCloudCreds.Data == nil {
+			userCloudCreds.Data = map[string][]byte{}
 		}
 		for k, v := range source.Data {
-			target.Data[k] = v
+			userCloudCreds.Data[k] = v
 		}
 		return nil
-	})
-	return err
+	}); err != nil {
+		return err
+	}
+
+	// Sync CNCC secret
+	cloudNetworkConfigCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cloud-network-config-controller-creds"}}
+	secretData := map[string][]byte{
+		"azure_client_id":       userCloudCreds.Data["AZURE_CLIENT_ID"],
+		"azure_client_secret":   userCloudCreds.Data["AZURE_CLIENT_SECRET"],
+		"azure_region":          []byte(hcluster.Spec.Platform.Azure.Location),
+		"azure_resource_prefix": []byte(hcluster.Name + "-" + hcluster.Spec.InfraID),
+		"azure_resourcegroup":   []byte(hcluster.Spec.Platform.Azure.ResourceGroupName),
+		"azure_subscription_id": userCloudCreds.Data["AZURE_SUBSCRIPTION_ID"],
+		"azure_tenant_id":       userCloudCreds.Data["AZURE_TENANT_ID"],
+	}
+	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
+		cloudNetworkConfigCreds.Data = secretData
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (a *Azure) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
