@@ -3296,7 +3296,7 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 				}
 			}
 			hcmetrics.SkippedCloudResourcesDeletion.WithLabelValues(hc.Namespace, hc.Name, hc.Spec.ClusterID).Set(float64(1))
-			log.Info("Removed finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name)
+			log.Info("Removed CPO finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
 			continue
 		}
 
