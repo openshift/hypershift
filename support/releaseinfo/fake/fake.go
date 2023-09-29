@@ -109,6 +109,10 @@ func (*FakeReleaseProvider) GetOpenShiftImageRegistryOverrides() map[string][]st
 	return nil
 }
 
+func (*FakeReleaseProvider) GetMirroredReleaseImage() string {
+	return ""
+}
+
 func GetReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster, client crclient.WithWatch, releaseProvider *FakeReleaseProvider) *releaseinfo.ReleaseImage {
 	var pullSecret corev1.Secret
 	if err := client.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Spec.PullSecret.Name}, &pullSecret); err != nil {

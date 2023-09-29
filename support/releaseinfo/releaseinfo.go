@@ -28,6 +28,7 @@ type ProviderWithRegistryOverrides interface {
 type ProviderWithOpenShiftImageRegistryOverrides interface {
 	ProviderWithRegistryOverrides
 	GetOpenShiftImageRegistryOverrides() map[string][]string
+	GetMirroredReleaseImage() string
 }
 
 // ReleaseImage wraps an ImageStream with some utilities that help the user
