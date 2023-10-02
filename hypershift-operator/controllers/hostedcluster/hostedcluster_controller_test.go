@@ -1148,6 +1148,34 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 			expectedResult: errors.New(`cannot parse cluster ID "foobar": invalid UUID length: 6`),
 		},
 		{
+			name: "Setting Service network CIDR and NodePort IP overlapping, not allowed",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						MachineNetwork: machineNet,
+						ClusterNetwork: clusterNet,
+						ServiceNetwork: serviceNet,
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "172.16.3.3",
+									Port:    4433,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedResult: errors.New(`[spec.networking.MachineNetwork: Invalid value: "172.16.1.0/24": spec.networking.MachineNetwork and spec.networking.ServiceNetwork overlap: 172.16.1.0/24 and 172.16.1.252/32, spec.networking.ServiceNetwork: Invalid value: "172.16.3.0/24": Nodeport IP is within the service network range: 172.16.3.3 is within 172.16.3.0/24]`),
+		},
+		{
 			name: "Setting network CIDRs overlapped, not allowed",
 			hostedCluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
