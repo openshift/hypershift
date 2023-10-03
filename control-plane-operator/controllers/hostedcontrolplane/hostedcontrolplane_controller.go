@@ -3,11 +3,13 @@ package hostedcontrolplane
 import (
 	"context"
 	crand "crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -102,6 +104,7 @@ const (
 	DefaultAdminKubeconfigKey              = "kubeconfig"
 	ImageStreamAutoscalerImage             = "cluster-autoscaler"
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
+	IPPermissionsAnnotationKey             = "default-sg-ip-permission"
 
 	resourceDeletionTimeout = 10 * time.Minute
 
@@ -3927,9 +3930,65 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 		return nil
 	}
 	if hcp.Status.Platform != nil && hcp.Status.Platform.AWS != nil && hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID != "" {
-		// Security group has already been created, nothing to do
+		//Security group has already been created, nothing to do
+		var missingPermissions []*ec2.IpPermission
+		var actualPermissions []*ec2.IpPermission
+
+		expectedPermissions, sgID, err := getDefaultWorkerSGIngressRules(r.ec2Client, ctx, hcp.Spec.InfraID, hcp.Spec.Platform.AWS.CloudProviderConfig.VPC)
+		if err != nil {
+			return err
+		}
+
+		hcpAnnotations := hcp.GetAnnotations()
+
+		if val, ok := hcpAnnotations[IPPermissionsAnnotationKey]; ok && val != "" {
+			err := json.Unmarshal([]byte(hcpAnnotations[IPPermissionsAnnotationKey]), &actualPermissions)
+			if err != nil {
+				return err
+			}
+			for _, expectedPermission := range expectedPermissions {
+				found := false
+				for _, actualPermission := range actualPermissions {
+					if reflect.DeepEqual(expectedPermission, actualPermission) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					missingPermissions = append(missingPermissions, expectedPermission)
+				}
+			}
+		}
+
+		if missingPermissions != nil {
+			_, err := r.ec2Client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
+				GroupId:       awssdk.String(sgID),
+				IpPermissions: missingPermissions,
+			})
+			if err != nil {
+				if awsErrorCode(err) != "InvalidPermission.Duplicate" {
+					return fmt.Errorf("failed to set security group ingress rules, code: %s", awsErrorCode(err))
+				}
+				logger.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)
+			}
+
+			updatedPermissions := append(actualPermissions, missingPermissions...)
+
+			jsonUpdatedPermissions, err := json.Marshal(updatedPermissions)
+			if err != nil {
+				return err
+			}
+
+			originalHCP := hcp.DeepCopy()
+			hcp.ObjectMeta.Annotations[IPPermissionsAnnotationKey] = string(jsonUpdatedPermissions)
+
+			if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+				return fmt.Errorf("failed to update annotations: %w", err)
+			}
+		}
 		return nil
 	}
+
 	validProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
 	if validProvider == nil || validProvider.Status != metav1.ConditionTrue {
 		logger.Info("Identity provider not ready. Skipping security group creation.")
@@ -3938,7 +3997,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 
 	originalHCP := hcp.DeepCopy()
 	var condition *metav1.Condition
-	sgID, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp.Spec.InfraID, hcp.Spec.Platform.AWS.CloudProviderConfig.VPC, hcp.Spec.Platform.AWS.ResourceTags)
+	sgID, appliedIngressPermissions, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp.Spec.InfraID, hcp.Spec.Platform.AWS.CloudProviderConfig.VPC, hcp.Spec.Platform.AWS.ResourceTags)
 	if creationErr != nil {
 		condition = &metav1.Condition{
 			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
@@ -3965,6 +4024,19 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 		return fmt.Errorf("failed to update status: %w", err)
 	}
 
+	originalHCP = hcp.DeepCopy()
+	jsonIngressPermissions, err := json.Marshal(appliedIngressPermissions)
+	if err != nil {
+		return err
+	}
+
+	if _, exists := hcp.ObjectMeta.Annotations[IPPermissionsAnnotationKey]; !exists {
+		hcp.ObjectMeta.Annotations[IPPermissionsAnnotationKey] = string(jsonIngressPermissions)
+		if err = r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("failed to update annotations: %w", err)
+		}
+	}
+
 	return creationErr
 }
 
@@ -3985,7 +4057,7 @@ func awsSecurityGroupName(infraID string) string {
 	return fmt.Sprintf("%s-default-sg", infraID)
 }
 
-func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, infraID, vpcID string, additionalTags []hyperv1.AWSResourceTag) (string, error) {
+func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, infraID, vpcID string, additionalTags []hyperv1.AWSResourceTag) (string, []*ec2.IpPermission, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
 	// Determine VPC cidr
@@ -3994,16 +4066,16 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	})
 	if err != nil {
 		logger.Error(err, "Failed to describe vpc", "vpcID", vpcID)
-		return "", fmt.Errorf("failed to describe vpc %s, code %s", vpcID, awsErrorCode(err))
+		return "", nil, fmt.Errorf("failed to describe vpc %s, code %s", vpcID, awsErrorCode(err))
 	}
 	if len(vpcResult.Vpcs) == 0 {
-		return "", fmt.Errorf("vpc %s not found", vpcID)
+		return "", nil, fmt.Errorf("vpc %s not found", vpcID)
 	}
 	vpcCIDR := awssdk.StringValue(vpcResult.Vpcs[0].CidrBlock)
 	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID)})
 	if err != nil {
 		logger.Error(err, "Failed to list security groups")
-		return "", fmt.Errorf("cannot list security groups, code: %s", awsErrorCode(err))
+		return "", nil, fmt.Errorf("cannot list security groups, code: %s", awsErrorCode(err))
 	}
 	sgID := ""
 	var sg *ec2.SecurityGroup
@@ -4049,7 +4121,7 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 		})
 		if err != nil {
 			logger.Error(err, "Failed to create security group")
-			return "", fmt.Errorf("failed to create security group, code: %s", awsErrorCode(err))
+			return "", nil, fmt.Errorf("failed to create security group, code: %s", awsErrorCode(err))
 		}
 		sgID = awssdk.StringValue(createSGResult.GroupId)
 
@@ -4059,13 +4131,13 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 		}
 		if err = ec2Client.WaitUntilSecurityGroupExistsWithContext(ctx, describeSGInput); err != nil {
 			logger.Error(err, "Failed to wait for security group to exist")
-			return "", fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, awsErrorCode(err))
+			return "", nil, fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, awsErrorCode(err))
 		}
 
 		describeSGResult, err = ec2Client.DescribeSecurityGroups(describeSGInput)
 		if err != nil || len(describeSGResult.SecurityGroups) == 0 {
 			logger.Error(err, "Failed to fetch security group", "sgID", sgID)
-			return "", fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, awsErrorCode(err))
+			return "", nil, fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, awsErrorCode(err))
 		}
 
 		sg = describeSGResult.SecurityGroups[0]
@@ -4079,11 +4151,45 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	if err != nil {
 		if awsErrorCode(err) != "InvalidPermission.Duplicate" {
 			logger.Error(err, "Failed to set security group ingress rules")
-			return "", fmt.Errorf("failed to set security group ingress rules, code: %s", awsErrorCode(err))
+			return "", nil, fmt.Errorf("failed to set security group ingress rules, code: %s", awsErrorCode(err))
 		}
 		logger.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)
 	}
-	return sgID, nil
+	return sgID, ingressPermissions, nil
+}
+
+func getDefaultWorkerSGIngressRules(ec2Client ec2iface.EC2API, ctx context.Context, infraID, vpcID string) ([]*ec2.IpPermission, string, error) {
+	logger := ctrl.LoggerFrom(ctx)
+
+	vpcResult, err := ec2Client.DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
+		VpcIds: []*string{awssdk.String(vpcID)},
+	})
+	if err != nil {
+		logger.Error(err, "Failed to describe VPC", "vpcID", vpcID)
+		return nil, "", fmt.Errorf("failed to describe VPC %s, code %s", vpcID, awsErrorCode(err))
+	}
+	if len(vpcResult.Vpcs) == 0 {
+		return nil, "", fmt.Errorf("VPC %s not found", vpcID)
+	}
+	vpcCIDR := awssdk.StringValue(vpcResult.Vpcs[0].CidrBlock)
+
+	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID)})
+	if err != nil {
+		logger.Error(err, "Failed to list security groups")
+		return nil, "", fmt.Errorf("cannot list security groups, code: %s", awsErrorCode(err))
+	}
+
+	if len(describeSGResult.SecurityGroups) == 0 {
+		return nil, "", fmt.Errorf("security group not found for infraID: %s", infraID)
+	}
+
+	sg := describeSGResult.SecurityGroups[0]
+	sgID := awssdk.StringValue(sg.GroupId)
+	ownerID := awssdk.StringValue(sg.OwnerId)
+
+	ingressRules := supportawsutil.DefaultWorkerSGIngressRules(vpcCIDR, sgID, ownerID)
+
+	return ingressRules, sgID, nil
 }
 
 func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
