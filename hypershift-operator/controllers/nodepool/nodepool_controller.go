@@ -454,13 +454,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		ObservedGeneration: nodePool.Generation,
 	})
 
-	// Validate arch platform support
-	if (nodePool.Spec.Arch != "") && (nodePool.Spec.Platform.Type != hyperv1.AWSPlatform) {
+	// Validate modifying CPU arch support for platform
+	if (nodePool.Spec.Arch != "amd64") && (nodePool.Spec.Platform.Type != hyperv1.AWSPlatform) {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidArchPlatform,
 			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.NodePoolValidationFailedReason,
-			Message:            fmt.Sprintf("Arch flag is not supported for platform: %s", nodePool.Spec.Platform.Type),
+			Reason:             hyperv1.NodePoolInvalidArchPlatform,
+			Message:            fmt.Sprintf("CPU arch %s is not supported for platform: %s, use 'amd64' instead", nodePool.Spec.Arch, nodePool.Spec.Platform.Type),
 			ObservedGeneration: nodePool.Generation,
 		})
 	}
