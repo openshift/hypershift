@@ -86,7 +86,7 @@ VMNAMES=()
 while [[ ${#VMNAMES[@]} < ${REPLICAS}  ]]; do
   for VMNAME in $(oc get vmi -n "${VMNS}" -l hypershift.openshift.io/infra-id="${INFRAID}" -o name 2>/dev/null); do
     SVMNAME=${VMNAME/virtualmachineinstance.kubevirt.io\//}
-    if ! [[ " ${VNMANES[*]} " =~ ${SVMNAME} ]]; then
+    if ! [[ " ${VMNAMES[*]} " =~ ${SVMNAME} ]]; then
 	   VMNAMES+=("${SVMNAME}")
 	   tmux new-session -s "${SVMNAME}" -d "virtctl console --timeout 30 -n ${VMNS} ${SVMNAME} | tee -a ${VMNS}_${SVMNAME}.log"
 	   echo "logs for VM ${SVMNAME} will be appended to ${VMNS}_${SVMNAME}.log"
