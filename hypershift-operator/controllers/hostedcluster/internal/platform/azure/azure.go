@@ -8,21 +8,31 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	k8sutilspointer "k8s.io/utils/pointer"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const providerImage = "gcr.io/k8s-staging-cluster-api-azure/cluster-api-azure-controller:v20220217-v1.1.0-193-gf7fd1995"
+type Azure struct {
+	capiProviderImage string
+}
 
-type Azure struct{}
+func New(capiProviderImage string) *Azure {
+	return &Azure{
+		capiProviderImage: capiProviderImage,
+	}
+}
 
-func (a *Azure) ReconcileCAPIInfraCR(
+func (a Azure) ReconcileCAPIInfraCR(
 	ctx context.Context,
 	client client.Client,
 	createOrUpdate upsert.CreateOrUpdateFN,
@@ -30,118 +40,107 @@ func (a *Azure) ReconcileCAPIInfraCR(
 	controlPlaneNamespace string,
 	apiEndpoint hyperv1.APIEndpoint,
 ) (client.Object, error) {
-
-	cluster := &capiazure.AzureCluster{
+	azureCluster := &capiazure.AzureCluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hcluster.Spec.InfraID,
+			Name:      hcluster.Name,
 			Namespace: controlPlaneNamespace,
 		},
 	}
-	if _, err := createOrUpdate(ctx, client, cluster, func() error {
-		if cluster.Annotations == nil {
-			cluster.Annotations = map[string]string{}
-		}
-		cluster.Annotations[capiv1.ManagedByAnnotation] = "external"
 
-		cluster.Spec.Location = hcluster.Spec.Platform.Azure.Location
-		cluster.Spec.ResourceGroup = hcluster.Spec.Platform.Azure.ResourceGroupName
-		cluster.Spec.NetworkSpec.Vnet.ID = hcluster.Spec.Platform.Azure.VnetID
-		cluster.Spec.NetworkSpec.Vnet.Name = hcluster.Spec.Platform.Azure.VnetName
-		cluster.Spec.NetworkSpec.Vnet.ResourceGroup = hcluster.Spec.Platform.Azure.ResourceGroupName
-		cluster.Spec.SubscriptionID = hcluster.Spec.Platform.Azure.SubscriptionID
-
-		cluster.Status.Ready = true
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("failed to upsert Azure capi cluster: %w", err)
+	azureClusterIdentity := &capiazure.AzureClusterIdentity{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcluster.Name,
+			Namespace: controlPlaneNamespace,
+		},
 	}
 
-	return cluster, nil
+	if _, err := createOrUpdate(ctx, client, azureClusterIdentity, func() error {
+		return reconcileAzureClusterIdentity(ctx, client, hcluster, azureClusterIdentity, controlPlaneNamespace)
+	}); err != nil {
+		return nil, fmt.Errorf("failed to reconcile Azure cluster identity: %w", err)
+	}
+
+	if _, err := createOrUpdate(ctx, client, azureCluster, func() error {
+		return reconcileAzureCluster(azureCluster, hcluster, apiEndpoint, azureClusterIdentity, controlPlaneNamespace)
+	}); err != nil {
+		return nil, fmt.Errorf("failed to reconcile Azure CAPI cluster: %w", err)
+	}
+
+	return azureCluster, nil
 }
 
-func (a *Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
-	image := providerImage
+func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
+	image := a.capiProviderImage
 	if envImage := os.Getenv(images.AzureCAPIProviderEnvVar); len(envImage) > 0 {
 		image = envImage
 	}
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIAzureProviderImage]; ok {
 		image = override
 	}
-	return &appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
-		Containers: []corev1.Container{{
-			Name:    "manager",
-			Image:   image,
-			Command: []string{"/manager"},
-			Args: []string{
-				"--namespace=$(MY_NAMESPACE)",
-				"--leader-elect=true",
-			},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("10m"),
-					corev1.ResourceMemory: resource.MustParse("10Mi"),
-				},
-			},
-			Env: []corev1.EnvVar{
-				{
-					Name: "MY_NAMESPACE",
-					ValueFrom: &corev1.EnvVarSource{
-						FieldRef: &corev1.ObjectFieldSelector{
-							FieldPath: "metadata.namespace",
+	defaultMode := int32(0640)
+	return &appsv1.DeploymentSpec{
+		Template: corev1.PodTemplateSpec{
+			Spec: corev1.PodSpec{
+				TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
+				Containers: []corev1.Container{{
+					Name:            "manager",
+					Image:           image,
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					Args: []string{
+						"--namespace=$(MY_NAMESPACE)",
+						"--leader-elect=true",
+					},
+					Resources: corev1.ResourceRequirements{
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("10m"),
+							corev1.ResourceMemory: resource.MustParse("10Mi"),
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name: "MY_NAMESPACE",
+							ValueFrom: &corev1.EnvVarSource{
+								FieldRef: &corev1.ObjectFieldSelector{
+									FieldPath: "metadata.namespace",
+								},
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							Name:      "capi-webhooks-tls",
+							ReadOnly:  true,
+							MountPath: "/tmp/k8s-webhook-server/serving-certs",
+						},
+						{
+							Name:      "svc-kubeconfig",
+							MountPath: "/etc/kubernetes",
+						},
+					},
+				}},
+				Volumes: []corev1.Volume{
+					{
+						Name: "capi-webhooks-tls",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								SecretName: "capi-webhooks-tls",
+							},
+						},
+					},
+					{
+						Name: "svc-kubeconfig",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								DefaultMode: &defaultMode,
+								SecretName:  "service-network-admin-kubeconfig",
+							},
 						},
 					},
 				},
-				{
-					Name: "AZURE_SUBSCRIPTION_ID",
-					ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: hcluster.Spec.Platform.Azure.Credentials.Name},
-						Key:                  "AZURE_SUBSCRIPTION_ID",
-					}},
-				},
-				{
-					Name: "AZURE_TENANT_ID",
-					ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: hcluster.Spec.Platform.Azure.Credentials.Name},
-						Key:                  "AZURE_TENANT_ID",
-					}},
-				},
-				{
-					Name: "AZURE_CLIENT_ID",
-					ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: hcluster.Spec.Platform.Azure.Credentials.Name},
-						Key:                  "AZURE_CLIENT_ID",
-					}},
-				},
-				{
-					Name: "AZURE_CLIENT_SECRET",
-					ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
-						LocalObjectReference: corev1.LocalObjectReference{Name: hcluster.Spec.Platform.Azure.Credentials.Name},
-						Key:                  "AZURE_CLIENT_SECRET",
-					}},
-				},
-			},
-			VolumeMounts: []corev1.VolumeMount{
-				{
-					Name:      "capi-webhooks-tls",
-					ReadOnly:  true,
-					MountPath: "/tmp/k8s-webhook-server/serving-certs",
-				},
-			},
-		}},
-		Volumes: []corev1.Volume{
-			{
-				Name: "capi-webhooks-tls",
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName: "capi-webhooks-tls",
-					},
-				},
-			},
-		},
-	}}}, nil
+			}}}, nil
 }
 
-func (a *Azure) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	var source corev1.Secret
 
 	// Sync user cloud-credentials secret
@@ -157,6 +156,23 @@ func (a *Azure) ReconcileCredentials(ctx context.Context, c client.Client, creat
 		}
 		for k, v := range source.Data {
 			userCloudCreds.Data[k] = v
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Sync Azure Client Secret in its own secret for since CAPZ needs it in a specific key value
+	// https://capz.sigs.k8s.io/topics/multitenancy#manual-service-principal-identity
+	azureClientSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "azure-client-secret", Namespace: controlPlaneNamespace}}
+	if _, err := createOrUpdate(ctx, c, azureClientSecret, func() error {
+		if azureClientSecret.Data == nil {
+			azureClientSecret.Data = map[string][]byte{}
+		}
+		for k, v := range source.Data {
+			if k == "AZURE_CLIENT_SECRET" {
+				azureClientSecret.Data["clientSecret"] = v
+			}
 		}
 		return nil
 	}); err != nil {
@@ -184,14 +200,60 @@ func (a *Azure) ReconcileCredentials(ctx context.Context, c client.Client, creat
 	return nil
 }
 
-func (a *Azure) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (a Azure) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	return nil
 }
 
-func (a *Azure) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
+func (a Azure) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 	return nil
 }
 
-func (a *Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (a Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	return nil
+}
+
+func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string) error {
+	if azureCluster.Annotations == nil {
+		azureCluster.Annotations = map[string]string{}
+	}
+
+	azureCluster.Annotations[capiv1.ManagedByAnnotation] = "external"
+
+	azureCluster.Spec.Location = hcluster.Spec.Platform.Azure.Location
+	azureCluster.Spec.ResourceGroup = hcluster.Spec.Platform.Azure.ResourceGroupName
+	azureCluster.Spec.NetworkSpec.Vnet.ID = hcluster.Spec.Platform.Azure.VnetID
+	azureCluster.Spec.NetworkSpec.Vnet.Name = hcluster.Spec.Platform.Azure.VnetName
+	azureCluster.Spec.NetworkSpec.Vnet.ResourceGroup = hcluster.Spec.Platform.Azure.ResourceGroupName
+	azureCluster.Spec.SubscriptionID = hcluster.Spec.Platform.Azure.SubscriptionID
+
+	azureCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
+		Host: apiEndpoint.Host,
+		Port: apiEndpoint.Port,
+	}
+
+	azureCluster.Status.Ready = true
+
+	azureCluster.Spec.IdentityRef = &corev1.ObjectReference{Name: azureClusterIdentity.Name, Namespace: azureClusterIdentity.Namespace}
+
+	return nil
+}
+
+func reconcileAzureClusterIdentity(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string) error {
+	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: hcluster.Spec.Platform.Azure.Credentials.Name, Namespace: controlPlaneNamespace}}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+		return fmt.Errorf("failed to get secret %s: %w", credentialsSecret, err)
+	}
+
+	azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
+		ClientID:     string(credentialsSecret.Data["AZURE_CLIENT_ID"]),
+		ClientSecret: corev1.SecretReference{Name: "azure-client-secret", Namespace: controlPlaneNamespace},
+		TenantID:     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
+		Type:         capiazure.ManualServicePrincipal,
+		AllowedNamespaces: &capiazure.AllowedNamespaces{
+			NamespaceList: []string{
+				controlPlaneNamespace,
+			},
+		},
+	}
 	return nil
 }
