@@ -951,6 +951,18 @@ func TestEventHandling(t *testing.T) {
 		Data:       map[string][]byte{"key": []byte("very-secret")},
 	}
 
+	network := &configv1.Network{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+	kubeEndpoint := &corev1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kubernetes",
+			Namespace: "default",
+		},
+	}
+
 	hcpGVK, err := apiutil.GVKForObject(hcp, api.Scheme)
 	if err != nil {
 		t.Fatalf("failed to determine gvk for %T: %v", hcp, err)
@@ -959,7 +971,7 @@ func TestEventHandling(t *testing.T) {
 	restMapper.Add(hcpGVK, meta.RESTScopeNamespace)
 	c := &createTrackingClient{Client: fake.NewClientBuilder().
 		WithScheme(api.Scheme).
-		WithObjects(hcp, pullSecret, etcdEncryptionKey, fakeNodeTuningOperator, fakeNodeTuningOperatorTLS).
+		WithObjects(hcp, pullSecret, etcdEncryptionKey, fakeNodeTuningOperator, fakeNodeTuningOperatorTLS, network, kubeEndpoint).
 		WithRESTMapper(restMapper).
 		Build(),
 	}

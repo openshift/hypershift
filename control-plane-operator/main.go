@@ -43,6 +43,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 
+	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -207,6 +208,7 @@ func NewStartCommand() *cobra.Command {
 				DefaultSelector: cache.ObjectSelector{Field: fields.OneTermEqualSelector("metadata.namespace", namespace)},
 				SelectorsByObject: cache.SelectorsByObject{
 					&operatorv1.IngressController{}: {Field: fields.OneTermEqualSelector("metadata.namespace", manifests.IngressPrivateIngressController("").Namespace)},
+					&configv1.Network{}:             {},
 				},
 			}),
 		})

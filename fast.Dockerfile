@@ -7,6 +7,7 @@ LABEL io.openshift.hypershift.control-plane-operator-manages-ignition-server=tru
 LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver=true
 LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler=true
 LABEL io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config=true
+LABEL io.openshift.hypershift.control-plane-operator-manages.network-policies=true
 LABEL io.openshift.hypershift.control-plane-operator-creates-aws-sg=true
 LABEL io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label=true
 LABEL io.openshift.hypershift.restricted-psa=true

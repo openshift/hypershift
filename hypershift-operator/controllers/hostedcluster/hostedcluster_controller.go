@@ -119,6 +119,7 @@ const (
 	controlplaneOperatorManagesIgnitionServerLabel             = "io.openshift.hypershift.control-plane-operator-manages-ignition-server"
 	controlPlaneOperatorManagesMachineApprover                 = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
 	controlPlaneOperatorManagesMachineAutoscaler               = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
+	controlPlaneOperatorManagesNetworkPolicies                 = "io.openshift.hypershift.control-plane-operator-manages.network-policies"
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
 )
@@ -1058,6 +1059,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	_, controlplaneOperatorManagesIgnitionServer := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlplaneOperatorManagesIgnitionServerLabel]
 	_, controlPlaneOperatorManagesMachineAutoscaler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]
 	_, controlPlaneOperatorManagesMachineApprover := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]
+	_, controlPlaneOperatorManagesNetworkPolicies := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesNetworkPolicies]
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
 	_, useRestrictedPSA := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[useRestrictedPodSecurityLabel]
 
@@ -1630,8 +1632,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the network policies
-	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster, hcp, releaseImageVersion, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
+	if !controlPlaneOperatorManagesNetworkPolicies {
+		if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster, hcp, releaseImageVersion, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
+		}
 	}
 
 	// Reconcile the AWS OIDC discovery
@@ -2046,6 +2050,24 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator rolebinding: %w", err)
+	}
+
+	// Reconcile operator cluster role
+	controlPlaneOperatorClusterRole := controlplaneoperator.OperatorClusterRole(controlPlaneNamespace.Name)
+	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorClusterRole, func() error {
+		return reconcileControlPlaneOperatorClusterRole(controlPlaneOperatorClusterRole)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator clusterrole: %w", err)
+	}
+
+	// Reconcile operator cluster role binding
+	controlPlaneOperatorClusterRoleBinding := controlplaneoperator.OperatorClusterRoleBinding(controlPlaneNamespace.Name)
+	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorClusterRoleBinding, func() error {
+		return reconcileControlPlaneOperatorClusterRoleBinding(controlPlaneOperatorClusterRoleBinding, controlPlaneOperatorClusterRole, controlPlaneOperatorServiceAccount)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator clusterrolebinding: %w", err)
 	}
 
 	// TODO: Remove this block after initial merge of this feature. It is not needed for latest CPO version
@@ -2556,6 +2578,11 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 			Verbs:     []string{"*"},
 		},
 		{
+			APIGroups: []string{"networking.k8s.io"},
+			Resources: []string{"networkpolicies"},
+			Verbs:     []string{"*"},
+		},
+		{
 			APIGroups: []string{"coordination.k8s.io"},
 			Resources: []string{
 				"leases",
@@ -2637,6 +2664,35 @@ func reconcileControlPlaneOperatorRoleBinding(binding *rbacv1.RoleBinding, role 
 	binding.RoleRef = rbacv1.RoleRef{
 		APIGroup: "rbac.authorization.k8s.io",
 		Kind:     "Role",
+		Name:     role.Name,
+	}
+
+	binding.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      sa.Name,
+			Namespace: sa.Namespace,
+		},
+	}
+
+	return nil
+}
+
+func reconcileControlPlaneOperatorClusterRole(role *rbacv1.ClusterRole) error {
+	role.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{"config.openshift.io"},
+			Resources: []string{"networks"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+	}
+	return nil
+}
+
+func reconcileControlPlaneOperatorClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, role *rbacv1.ClusterRole, sa *corev1.ServiceAccount) error {
+	binding.RoleRef = rbacv1.RoleRef{
+		APIGroup: "rbac.authorization.k8s.io",
+		Kind:     "ClusterRole",
 		Name:     role.Name,
 	}
 
@@ -3437,6 +3493,11 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	}
 
 	_, err = hyperutil.DeleteIfNeeded(ctx, r.Client, clusterapi.CAPIManagerClusterRoleBinding(controlPlaneNamespace))
+	if err != nil {
+		return false, err
+	}
+
+	_, err = hyperutil.DeleteIfNeeded(ctx, r.Client, controlplaneoperator.OperatorClusterRoleBinding(controlPlaneNamespace))
 	if err != nil {
 		return false, err
 	}
