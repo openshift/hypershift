@@ -3930,34 +3930,10 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 		return nil
 	}
 	if hcp.Status.Platform != nil && hcp.Status.Platform.AWS != nil && hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID != "" {
-		//Security group has already been created, nothing to do
-		var missingPermissions []*ec2.IpPermission
-		var actualPermissions []*ec2.IpPermission
 
-		expectedPermissions, sgID, err := getDefaultWorkerSGIngressRules(r.ec2Client, ctx, hcp.Spec.InfraID, hcp.Spec.Platform.AWS.CloudProviderConfig.VPC)
+		missingPermissions, actualPermissions, sgID, err := findMissingPermissions(r, ctx, hcp)
 		if err != nil {
-			return err
-		}
-
-		hcpAnnotations := hcp.GetAnnotations()
-
-		if val, ok := hcpAnnotations[IPPermissionsAnnotationKey]; ok && val != "" {
-			err := json.Unmarshal([]byte(hcpAnnotations[IPPermissionsAnnotationKey]), &actualPermissions)
-			if err != nil {
-				return err
-			}
-			for _, expectedPermission := range expectedPermissions {
-				found := false
-				for _, actualPermission := range actualPermissions {
-					if reflect.DeepEqual(expectedPermission, actualPermission) {
-						found = true
-						break
-					}
-				}
-				if !found {
-					missingPermissions = append(missingPermissions, expectedPermission)
-				}
-			}
+			return fmt.Errorf("failed to find missing permissions: %w", err)
 		}
 
 		if missingPermissions != nil {
@@ -3970,6 +3946,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 					return fmt.Errorf("failed to set security group ingress rules, code: %s", awsErrorCode(err))
 				}
 				logger.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)
+				return nil
 			}
 
 			updatedPermissions := append(actualPermissions, missingPermissions...)
@@ -3981,7 +3958,6 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 
 			originalHCP := hcp.DeepCopy()
 			hcp.ObjectMeta.Annotations[IPPermissionsAnnotationKey] = string(jsonUpdatedPermissions)
-
 			if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 				return fmt.Errorf("failed to update annotations: %w", err)
 			}
@@ -4371,4 +4347,38 @@ func (r *HostedControlPlaneReconciler) reconcileSREMetricsConfig(ctx context.Con
 		r.SREConfigHash = currentMetricsSetConfigHash
 	}
 	return nil
+}
+
+func findMissingPermissions(r *HostedControlPlaneReconciler, ctx context.Context, hcp *hyperv1.HostedControlPlane) ([]*ec2.IpPermission, []*ec2.IpPermission, string, error) {
+	var missingPermissions []*ec2.IpPermission
+	var actualPermissions []*ec2.IpPermission
+
+	expectedPermissions, sgID, err := getDefaultWorkerSGIngressRules(r.ec2Client, ctx, hcp.Spec.InfraID, hcp.Spec.Platform.AWS.CloudProviderConfig.VPC)
+	if err != nil {
+		return nil, nil, "", err
+	}
+
+	hcpAnnotations := hcp.GetAnnotations()
+
+	if val, ok := hcpAnnotations[IPPermissionsAnnotationKey]; ok && val != "" {
+		err := json.Unmarshal([]byte(hcpAnnotations[IPPermissionsAnnotationKey]), &actualPermissions)
+		if err != nil {
+			return nil, nil, sgID, err
+		}
+
+		for _, expectedPermission := range expectedPermissions {
+			found := false
+			for _, actualPermission := range actualPermissions {
+				if reflect.DeepEqual(expectedPermission, actualPermission) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				missingPermissions = append(missingPermissions, expectedPermission)
+			}
+		}
+	}
+
+	return missingPermissions, actualPermissions, sgID, nil
 }

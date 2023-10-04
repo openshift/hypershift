@@ -2,7 +2,10 @@ package hostedcontrolplane
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	"reflect"
 	"testing"
 	"time"
 
@@ -58,6 +61,29 @@ type fakeEC2Client struct {
 
 func (*fakeEC2Client) DescribeVpcEndpointsWithContext(aws.Context, *ec2.DescribeVpcEndpointsInput, ...request.Option) (*ec2.DescribeVpcEndpointsOutput, error) {
 	return &ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")
+}
+
+func (*fakeEC2Client) DescribeVpcsWithContext(ctx aws.Context, input *ec2.DescribeVpcsInput, opts ...request.Option) (*ec2.DescribeVpcsOutput, error) {
+	vpcID := "vpc-1234567890"
+	return &ec2.DescribeVpcsOutput{
+		Vpcs: []*ec2.Vpc{
+			{
+				VpcId:     &vpcID,
+				CidrBlock: aws.String("10.0.0.0/16"),
+			},
+		},
+	}, nil
+}
+
+func (*fakeEC2Client) DescribeSecurityGroups(input *ec2.DescribeSecurityGroupsInput) (*ec2.DescribeSecurityGroupsOutput, error) {
+	return &ec2.DescribeSecurityGroupsOutput{
+		SecurityGroups: []*ec2.SecurityGroup{
+			{
+				GroupId: aws.String("sg-1234567890"),
+				OwnerId: aws.String("1234567890"),
+			},
+		},
+	}, nil
 }
 
 func TestReconcileKubeadminPassword(t *testing.T) {
@@ -1507,6 +1533,108 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 				if len(msg) > 0 {
 					t.Errorf("got unexpected event message")
 				}
+			}
+		})
+	}
+}
+
+func Test_findMissingPermissions(t *testing.T) {
+	type args struct {
+		r   *HostedControlPlaneReconciler
+		ctx context.Context
+		hcp *hyperv1.HostedControlPlane
+	}
+	vpcCIDR := aws.String("10.0.0.0/16")
+	sgID := aws.String("sg-1234567890")
+	ownerID := aws.String("1234567890")
+	permissions := supportawsutil.DefaultWorkerSGIngressRules(*vpcCIDR, *sgID, *ownerID)
+	missingPermission := permissions[len(permissions)-1]
+	permissionsMissing := permissions[:len(permissions)-1]
+	jsonPerm, _ := json.Marshal(permissions)
+	jsonPermMissing, _ := json.Marshal(permissionsMissing)
+	tests := []struct {
+		name    string
+		args    args
+		missing []*ec2.IpPermission
+		actual  []*ec2.IpPermission
+		wantErr bool
+	}{
+		{
+			name: "no missing permissions",
+			args: args{
+				r: &HostedControlPlaneReconciler{
+					ec2Client: &fakeEC2Client{},
+				},
+				ctx: context.Background(),
+				hcp: &hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hcp",
+						Annotations: map[string]string{
+							IPPermissionsAnnotationKey: string(jsonPerm),
+						},
+					},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							AWS: &hyperv1.AWSPlatformSpec{
+								CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+									VPC: "vpc-1234567890",
+								},
+							},
+						},
+						InfraID: "hcp-infra-id",
+					},
+				},
+			},
+			missing: nil,
+			actual:  permissions,
+			wantErr: false,
+		},
+		{
+			name: "missing permissions",
+			args: args{
+				r: &HostedControlPlaneReconciler{
+					ec2Client: &fakeEC2Client{},
+				},
+				ctx: context.Background(),
+				hcp: &hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hcp",
+						Annotations: map[string]string{
+							IPPermissionsAnnotationKey: string(jsonPermMissing),
+						},
+					},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							AWS: &hyperv1.AWSPlatformSpec{
+								CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+									VPC: "vpc-1234567890",
+								},
+							},
+						},
+						InfraID: "hcp-infra-id",
+					},
+				},
+			},
+			missing: []*ec2.IpPermission{
+				missingPermission,
+			},
+			actual:  permissionsMissing,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotMissing, gotActual, _, err := findMissingPermissions(tt.args.r, tt.args.ctx, tt.args.hcp)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("findMissingPermissions() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(gotMissing, tt.missing) {
+				t.Errorf("findMissingPermissions() Missing Permissions got = %v, want %v", gotMissing, tt.missing)
+			}
+			if !reflect.DeepEqual(gotActual, tt.actual) {
+				t.Errorf("findMissingPermissions() Actual Permissions got = %v, want %v", gotActual, tt.actual)
 			}
 		})
 	}
