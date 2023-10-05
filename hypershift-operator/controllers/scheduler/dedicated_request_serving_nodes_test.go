@@ -120,10 +120,11 @@ func TestHostedClusterScheduler(t *testing.T) {
 	}
 	_ = hcName
 
-	node := func(name, zone string, mods ...func(*corev1.Node)) *corev1.Node {
+	node := func(name, zone, OSDFleetManagerPairedNodesID string, mods ...func(*corev1.Node)) *corev1.Node {
 		n := &corev1.Node{}
 		n.Name = name
 		n.Labels = map[string]string{
+			OSDFleetManagerPairedNodesLabel:      OSDFleetManagerPairedNodesID,
 			hyperv1.RequestServingComponentLabel: "true",
 			"topology.kubernetes.io/zone":        zone,
 		}
@@ -166,27 +167,66 @@ func TestHostedClusterScheduler(t *testing.T) {
 			hc:   hostedcluster(deletedHC),
 		},
 		{
-			name: "scheduled hosted cluster",
+			name: "scheduled hosted cluster with 2 existing Nodes",
 			hc:   hostedcluster(scheduledHC),
+			nodes: nodes(
+				node("n1", "zone-a", "id1", withCluster(hostedcluster())),
+				node("n2", "zone-b", "id1", withCluster(hostedcluster())),
+			),
 		},
 		{
-			name:                  "available nodes",
-			hc:                    hostedcluster(),
-			nodes:                 nodes(node("n1", "zone-a"), node("n2", "zone-a"), node("n3", "zone-b"), node("n4", "zone-c")),
+			name: "available nodes",
+			hc:   hostedcluster(),
+			nodes: nodes(
+				node("n1", "zone-a", "id1"),
+				node("n2", "zone-a", "id2"),
+				node("n3", "zone-b", "id1"),
+				node("n4", "zone-c", "id2")),
 			checkScheduledNodes:   true,
 			checkScheduledCluster: true,
 		},
 		{
-			name:                  "available node, existing assigned node",
-			hc:                    hostedcluster(),
-			nodes:                 nodes(node("n1", "zone-a", withCluster(hostedcluster())), node("n2", "zone-b")),
+			name: "available node, existing assigned node",
+			hc:   hostedcluster(),
+			nodes: nodes(
+				node("n1", "zone-a", "id1", withCluster(hostedcluster())),
+				node("n2", "zone-b", "id1")),
 			checkScheduledNodes:   true,
 			checkScheduledCluster: true,
 		},
 		{
-			name:        "no available nodes",
-			hc:          hostedcluster(),
-			nodes:       nodes(node("n1", "zone-a", withCluster(hostedcluster(hcName("other")))), node("n2", "zone-b", withCluster(hostedcluster(hcName("other"))))),
+			name: "When there's no paired Nodes in different AZs it should fail",
+			hc:   hostedcluster(),
+			nodes: nodes(
+				node("n1", "zone-a", "id1"),
+				node("n2", "zone-a", "id1"),
+				node("n3", "zone-b", "id2"),
+				node("n4", "zone-c", "id2")),
+			expectError: true,
+		},
+		{
+			name: "When all Nodes are already labeled with other HC it should fail",
+			hc:   hostedcluster(),
+			nodes: nodes(
+				node("n1", "zone-a", "id1", withCluster(hostedcluster(hcName("other")))),
+				node("n2", "zone-b", "id2", withCluster(hostedcluster(hcName("other"))))),
+			expectError: true,
+		},
+		{
+			name: "When HostedCluster is scheduled, without 2 existing Nodes and there's available Nodes it should find them",
+			hc:   hostedcluster(scheduledHC),
+			nodes: nodes(
+				node("n1", "zone-a", "id1", withCluster(hostedcluster())),
+				node("n2", "zone-b", "id1")),
+			checkScheduledNodes:   true,
+			checkScheduledCluster: true,
+		},
+		{
+			name: "When HostedCluster is scheduled, without 2 existing Nodes and there's no Nodes available it should fail",
+			hc:   hostedcluster(scheduledHC),
+			nodes: nodes(
+				node("n1", "zone-a", "id1", withCluster(hostedcluster())),
+				node("n2", "zone-b", "id2")),
 			expectError: true,
 		},
 	}
@@ -234,6 +274,7 @@ func TestHostedClusterScheduler(t *testing.T) {
 				}
 				g.Expect(scheduledNodeIndices).To(HaveLen(2))
 				g.Expect(nodeZone(&nodeList.Items[scheduledNodeIndices[0]])).ToNot(Equal(nodeZone(&nodeList.Items[scheduledNodeIndices[1]])))
+				g.Expect(nodeList.Items[scheduledNodeIndices[0]].Labels[OSDFleetManagerPairedNodesLabel]).To(Equal(nodeList.Items[scheduledNodeIndices[1]].Labels[OSDFleetManagerPairedNodesLabel]))
 			}
 		})
 	}
