@@ -15,11 +15,17 @@ clientId: <your_client_id>
 clientSecret: <your_client_secret>
 ```
 
+## Install the Hypershift Operator
+
+```
+hypershift install
+```
+
 ## Creating the cluster
 
 After the credentials file was set up, creating a cluster is a simple matter of invoking the `hypershift` cli:
 
 
 ```
-hypershift create cluster azure --pull-secret <pull_secret_file> --name <cluster_name> --azure-creds <path_to_azure_credentials_file> --location eastus
+hypershift create cluster azure --pull-secret <pull_secret_file> --name <cluster_name> --azure-creds <path_to_azure_credentials_file> --location eastus --base-domain <base_domain> --release-image <release_image>
 ```
