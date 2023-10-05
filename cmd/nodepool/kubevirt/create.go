@@ -22,6 +22,7 @@ type KubevirtPlatformCreateOptions struct {
 	RootVolumeVolumeMode       string
 	CacheStrategyType          string
 	NetworkInterfaceMultiQueue string
+	QoSClass                   string
 }
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
@@ -32,6 +33,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		RootVolumeSize:             32,
 		CacheStrategyType:          "",
 		NetworkInterfaceMultiQueue: "",
+		QoSClass:                   "Burstable",
 	}
 	cmd := &cobra.Command{
 		Use:          "kubevirt",
@@ -48,6 +50,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().StringVar(&platformOpts.ContainerDiskImage, "containerdisk", platformOpts.ContainerDiskImage, "A reference to docker image with the embedded disk to be used to create the machines")
 	cmd.Flags().StringVar(&platformOpts.CacheStrategyType, "root-volume-cache-strategy", platformOpts.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
 	cmd.Flags().StringVar(&platformOpts.NetworkInterfaceMultiQueue, "network-multiqueue", platformOpts.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Disable"`)
+	cmd.Flags().StringVar(&platformOpts.QoSClass, "qos-class", platformOpts.QoSClass, `If "Guaranteed", set the limit cpu and memory of the VirtualMachineInstance, to be the same as the requested cpu and memory; supported values: "Burstable" and "Guaranteed"`)
 
 	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
@@ -62,13 +65,21 @@ func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePo
 	}
 
 	var multiQueue *hyperv1.MultiQueueSetting
-	switch o.NetworkInterfaceMultiQueue {
+	switch value := hyperv1.MultiQueueSetting(o.NetworkInterfaceMultiQueue); value {
 	case "": // do nothing; value is nil
-	case string(hyperv1.MultiQueueEnable), string(hyperv1.MultiQueueDisable):
-		value := hyperv1.MultiQueueSetting(o.NetworkInterfaceMultiQueue)
+	case hyperv1.MultiQueueEnable, hyperv1.MultiQueueDisable:
 		multiQueue = &value
 	default:
-		return fmt.Errorf(`wrong value for the --network-multiqueue parameter. May be only "Enable" or "Disable"`)
+		return fmt.Errorf(`wrong value for the --network-multiqueue parameter. Supported values are "Enable" or "Disable"`)
+	}
+
+	var qosClass *hyperv1.QoSClass
+	switch value := hyperv1.QoSClass(o.QoSClass); value {
+	case "": // do nothing; value is nil
+	case hyperv1.QoSClassBurstable, hyperv1.QoSClassGuaranteed:
+		qosClass = &value
+	default:
+		return fmt.Errorf(`wrong value for the --qos-class parameter. Supported values are "Burstable" are "Guaranteed"`)
 	}
 
 	nodePool.Spec.Platform.Kubevirt = fixtures.ExampleKubeVirtTemplate(&fixtures.ExampleKubevirtOptions{
@@ -81,6 +92,7 @@ func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePo
 		RootVolumeVolumeMode:       o.RootVolumeVolumeMode,
 		CacheStrategyType:          o.CacheStrategyType,
 		NetworkInterfaceMultiQueue: multiQueue,
+		QoSClass:                   qosClass,
 	})
 	return nil
 }

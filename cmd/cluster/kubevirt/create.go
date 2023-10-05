@@ -38,6 +38,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		InfraKubeConfigFile:        "",
 		CacheStrategyType:          "",
 		NetworkInterfaceMultiQueue: "",
+		QoSClass:                   "Burstable",
 	}
 
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.APIServerAddress, "api-server-address", opts.KubevirtPlatform.APIServerAddress, "The API server address that should be used for components outside the control plane")
@@ -54,6 +55,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.CacheStrategyType, "root-volume-cache-strategy", opts.KubevirtPlatform.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
 	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.InfraStorageClassMappings, "infra-storage-class-mapping", opts.KubevirtPlatform.InfraStorageClassMappings, "KubeVirt CSI napping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.NetworkInterfaceMultiQueue, "network-multiqueue", opts.KubevirtPlatform.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Disable"`)
+	cmd.Flags().StringVar(&opts.KubevirtPlatform.QoSClass, "qos-class", opts.KubevirtPlatform.QoSClass, `If "Guaranteed", set the limit cpu and memory of the VirtualMachineInstance, to be the same as the requested cpu and memory; supported values: "Burstable" and "Guaranteed"`)
 
 	cmd.MarkPersistentFlagRequired("pull-secret")
 
@@ -147,13 +149,21 @@ func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	}
 
 	var multiQueue *hyperv1.MultiQueueSetting
-	switch opts.KubevirtPlatform.NetworkInterfaceMultiQueue {
+	switch value := hyperv1.MultiQueueSetting(opts.KubevirtPlatform.NetworkInterfaceMultiQueue); value {
 	case "": // do nothing; value is nil
-	case string(hyperv1.MultiQueueEnable), string(hyperv1.MultiQueueDisable):
-		value := hyperv1.MultiQueueSetting(opts.KubevirtPlatform.NetworkInterfaceMultiQueue)
+	case hyperv1.MultiQueueEnable, hyperv1.MultiQueueDisable:
 		multiQueue = &value
 	default:
 		return fmt.Errorf(`wrong value for the --network-multiqueue parameter. May be only "enable" or "disable"`)
+	}
+
+	var qosClass *hyperv1.QoSClass
+	switch value := hyperv1.QoSClass(opts.KubevirtPlatform.QoSClass); value {
+	case "": // do nothing; value is nil
+	case hyperv1.QoSClassBurstable, hyperv1.QoSClassGuaranteed:
+		qosClass = &value
+	default:
+		return fmt.Errorf(`wrong value for the --qos-class parameter. Supported values are "Burstable" are "Guaranteed"`)
 	}
 
 	exampleOptions.Kubevirt = &apifixtures.ExampleKubevirtOptions{
@@ -171,6 +181,7 @@ func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		CacheStrategyType:          opts.KubevirtPlatform.CacheStrategyType,
 		InfraStorageClassMappings:  opts.KubevirtPlatform.InfraStorageClassMappings,
 		NetworkInterfaceMultiQueue: multiQueue,
+		QoSClass:                   qosClass,
 	}
 
 	if opts.BaseDomain != "" {

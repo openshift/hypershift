@@ -551,6 +551,13 @@ type PowerVSNodePoolPlatform struct {
 	ImageDeletePolicy PowerVSNodePoolImageDeletePolicy `json:"imageDeletePolicy,omitempty"`
 }
 
+type QoSClass string
+
+const (
+	QoSClassBurstable  QoSClass = "Burstable"
+	QoSClassGuaranteed QoSClass = "Guaranteed"
+)
+
 // KubevirtCompute contains values associated with the virtual compute hardware requested for the VM.
 type KubevirtCompute struct {
 	// Memory represents how much guest memory the VM should have
@@ -564,6 +571,16 @@ type KubevirtCompute struct {
 	// +optional
 	// +kubebuilder:default=2
 	Cores *uint32 `json:"cores"`
+
+	// QosClass If set to "Guaranteed", requests the scheduler to place the VirtualMachineInstance on a node with
+	// limit memory and CPU, equal to be the requested values, to set the VMI as a Guaranteed QoS Class;
+	// See here for more details:
+	// https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=Burstable;Guaranteed
+	// +kubebuilder:default=Burstable
+	QosClass *QoSClass `json:"qosClass,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=ReadWriteOnce;ReadWriteMany;ReadOnly;ReadWriteOncePod

@@ -36,11 +36,6 @@ const (
 	imageHash              = "imageHash"
 )
 
-var (
-	multiQueueEnable  = hyperv1.MultiQueueEnable
-	multiQueueDisable = hyperv1.MultiQueueDisable
-)
-
 func TestKubevirtMachineTemplate(t *testing.T) {
 	testCases := []struct {
 		name     string
@@ -62,8 +57,13 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Management:  hyperv1.NodePoolManagement{},
 					AutoScaling: nil,
 					Platform: hyperv1.NodePoolPlatform{
-						Type:     hyperv1.KubevirtPlatform,
-						Kubevirt: generateKubevirtPlatform("5Gi", 4, "testimage", "32Gi", nil),
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
 					},
 					Release: hyperv1.Release{},
 				},
@@ -81,7 +81,58 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
-						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "32Gi", false),
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "happy flow - QoS CLass Guaranteed",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							qosClassGuaranteedNPOption(),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						VirtualMachineTemplate: *generateNodeTemplate(
+							storageTmpltOpt("32Gi"),
+							guaranteedResourcesOpt(4, "5Gi"),
+						),
 					},
 				},
 			},
@@ -100,8 +151,14 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Management:  hyperv1.NodePoolManagement{},
 					AutoScaling: nil,
 					Platform: hyperv1.NodePoolPlatform{
-						Type:     hyperv1.KubevirtPlatform,
-						Kubevirt: generateKubevirtPlatform("5Gi", 4, "testimage", "32Gi", &multiQueueDisable),
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							multiQueueNPOption(hyperv1.MultiQueueDisable),
+						),
 					},
 					Release: hyperv1.Release{},
 				},
@@ -119,7 +176,11 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
-						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "32Gi", false),
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+						),
 					},
 				},
 			},
@@ -138,8 +199,14 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Management:  hyperv1.NodePoolManagement{},
 					AutoScaling: nil,
 					Platform: hyperv1.NodePoolPlatform{
-						Type:     hyperv1.KubevirtPlatform,
-						Kubevirt: generateKubevirtPlatform("5Gi", 4, "testimage", "32Gi", &multiQueueEnable),
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							multiQueueNPOption(hyperv1.MultiQueueEnable),
+						),
 					},
 					Release: hyperv1.Release{},
 				},
@@ -157,12 +224,18 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
-						VirtualMachineTemplate: *generateNodeTemplate("5Gi", 4, "32Gi", true),
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							networkInterfaceMultiQueueTmpltOpt(),
+						),
 					},
 				},
 			},
 		},
 	}
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
@@ -190,8 +263,13 @@ func TestCacheImage(t *testing.T) {
 			Management:  hyperv1.NodePoolManagement{},
 			AutoScaling: nil,
 			Platform: hyperv1.NodePoolPlatform{
-				Type:     hyperv1.KubevirtPlatform,
-				Kubevirt: generateKubevirtPlatform("5Gi", 4, "testimage", "32Gi", nil),
+				Type: hyperv1.KubevirtPlatform,
+				Kubevirt: generateKubevirtPlatform(
+					memoryNPOption("5Gi"),
+					coresNPOption(4),
+					imageNPOption("testimage"),
+					volumeNPOption("32Gi"),
+				),
 			},
 			Release: hyperv1.Release{},
 		},
@@ -325,42 +403,149 @@ func assertDV(g Gomega, dvs []v1beta1.DataVolume, expectedDVNamePrefix string, b
 	g.ExpectWithOffset(1, bootImage.dvName).Should(Equal(dvs[0].Name), "failed to set the dvName filed in the cacheImage object")
 }
 
-func generateKubevirtPlatform(memory string, cores uint32, image string, volumeSize string, multiQueue *hyperv1.MultiQueueSetting) *hyperv1.KubevirtNodePoolPlatform {
-	memoryQuantity := apiresource.MustParse(memory)
+type nodePoolOption func(kvNodePool *hyperv1.KubevirtNodePoolPlatform)
+
+func memoryNPOption(memory string) nodePoolOption {
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		if kvNodePool.Compute == nil {
+			kvNodePool.Compute = &hyperv1.KubevirtCompute{}
+		}
+
+		memoryQuantity := apiresource.MustParse(memory)
+		kvNodePool.Compute.Memory = &memoryQuantity
+	}
+}
+
+func coresNPOption(cores uint32) nodePoolOption {
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		if kvNodePool.Compute == nil {
+			kvNodePool.Compute = &hyperv1.KubevirtCompute{}
+		}
+
+		kvNodePool.Compute.Cores = &cores
+	}
+}
+
+func qosClassGuaranteedNPOption() nodePoolOption {
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		if kvNodePool.Compute == nil {
+			kvNodePool.Compute = &hyperv1.KubevirtCompute{}
+		}
+
+		qosClassGuaranteed := hyperv1.QoSClassGuaranteed
+		kvNodePool.Compute.QosClass = &qosClassGuaranteed
+	}
+}
+
+func imageNPOption(image string) nodePoolOption {
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		if kvNodePool.RootVolume == nil {
+			kvNodePool.RootVolume = &hyperv1.KubevirtRootVolume{}
+		}
+
+		kvNodePool.RootVolume.Image = &hyperv1.KubevirtDiskImage{
+			ContainerDiskImage: &image,
+		}
+	}
+}
+
+func volumeNPOption(volumeSize string) nodePoolOption {
 	volumeSizeQuantity := apiresource.MustParse(volumeSize)
 
-	exampleTemplate := &hyperv1.KubevirtNodePoolPlatform{
-		RootVolume: &hyperv1.KubevirtRootVolume{
-			Image: &hyperv1.KubevirtDiskImage{
-				ContainerDiskImage: &image,
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		if kvNodePool.RootVolume == nil {
+			kvNodePool.RootVolume = &hyperv1.KubevirtRootVolume{}
+		}
+
+		kvNodePool.RootVolume.KubevirtVolume = hyperv1.KubevirtVolume{
+			Type: hyperv1.KubevirtVolumeTypePersistent,
+			Persistent: &hyperv1.KubevirtPersistentVolume{
+				Size:         &volumeSizeQuantity,
+				StorageClass: nil,
 			},
-			KubevirtVolume: hyperv1.KubevirtVolume{
-				Type: hyperv1.KubevirtVolumeTypePersistent,
-				Persistent: &hyperv1.KubevirtPersistentVolume{
-					Size:         &volumeSizeQuantity,
-					StorageClass: nil,
-				},
-			},
-		},
-		Compute: &hyperv1.KubevirtCompute{
-			Memory: &memoryQuantity,
-			Cores:  &cores,
-		},
-		NetworkInterfaceMultiQueue: multiQueue,
+		}
+	}
+}
+
+func multiQueueNPOption(multiQueue hyperv1.MultiQueueSetting) nodePoolOption {
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		kvNodePool.NetworkInterfaceMultiQueue = &multiQueue
+	}
+}
+
+func generateKubevirtPlatform(options ...nodePoolOption) *hyperv1.KubevirtNodePoolPlatform {
+	exampleTemplate := &hyperv1.KubevirtNodePoolPlatform{}
+
+	for _, opt := range options {
+		opt(exampleTemplate)
 	}
 
 	return exampleTemplate
 }
 
-func generateNodeTemplate(memory string, cpu uint32, volumeSize string, NetworkInterfaceMultiQueue bool) *capikubevirt.VirtualMachineTemplateSpec {
-	runAlways := kubevirtv1.RunStrategyAlways
+type nodeTemplateOption func(template *capikubevirt.VirtualMachineTemplateSpec)
+
+func cpuTmpltOpt(cores uint32) nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{Cores: cores}
+	}
+}
+
+func memoryTmpltOpt(memory string) nodeTemplateOption {
 	guestQuantity := apiresource.MustParse(memory)
-	var multiQueue *bool
-	if NetworkInterfaceMultiQueue {
-		multiQueue = pointer.Bool(true)
+
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.Domain.Memory = &kubevirtv1.Memory{Guest: &guestQuantity}
+	}
+}
+
+func storageTmpltOpt(volumeSize string) nodeTemplateOption {
+	storage := &v1beta1.StorageSpec{
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceStorage: apiresource.MustParse(volumeSize),
+			},
+		},
 	}
 
-	return &capikubevirt.VirtualMachineTemplateSpec{
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		if len(template.Spec.DataVolumeTemplates) == 1 {
+			template.Spec.DataVolumeTemplates[0].Spec.Storage = storage
+		}
+	}
+}
+
+func networkInterfaceMultiQueueTmpltOpt() nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = pointer.Bool(true)
+	}
+}
+
+func guaranteedResourcesOpt(cores uint32, memory string) nodeTemplateOption {
+	memReq := apiresource.MustParse(memory)
+	coresReq := *apiresource.NewQuantity(int64(cores), apiresource.DecimalSI)
+
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		if len(template.Spec.Template.Spec.Domain.Resources.Requests) == 0 {
+			template.Spec.Template.Spec.Domain.Resources.Requests = make(corev1.ResourceList)
+		}
+
+		if len(template.Spec.Template.Spec.Domain.Resources.Limits) == 0 {
+			template.Spec.Template.Spec.Domain.Resources.Limits = make(corev1.ResourceList)
+		}
+
+		template.Spec.Template.Spec.Domain.Resources.Requests[corev1.ResourceMemory] = memReq
+		template.Spec.Template.Spec.Domain.Resources.Limits[corev1.ResourceMemory] = memReq
+
+		template.Spec.Template.Spec.Domain.Resources.Requests[corev1.ResourceCPU] = coresReq
+		template.Spec.Template.Spec.Domain.Resources.Limits[corev1.ResourceCPU] = coresReq
+	}
+}
+
+func generateNodeTemplate(options ...nodeTemplateOption) *capikubevirt.VirtualMachineTemplateSpec {
+	runAlways := kubevirtv1.RunStrategyAlways
+
+	template := &capikubevirt.VirtualMachineTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
 				hyperv1.NodePoolNameLabel: "my-pool",
@@ -380,13 +565,6 @@ func generateNodeTemplate(memory string, cpu uint32, volumeSize string, NetworkI
 							PVC: &v1beta1.DataVolumeSourcePVC{
 								Namespace: hostedClusterNamespace,
 								Name:      bootImageNamePrefix + "12345",
-							},
-						},
-						Storage: &v1beta1.StorageSpec{
-							Resources: corev1.ResourceRequirements{
-								Requests: map[corev1.ResourceName]apiresource.Quantity{
-									corev1.ResourceStorage: apiresource.MustParse(volumeSize),
-								},
 							},
 						},
 					},
@@ -428,8 +606,6 @@ func generateNodeTemplate(memory string, cpu uint32, volumeSize string, NetworkI
 					},
 
 					Domain: kubevirtv1.DomainSpec{
-						CPU:    &kubevirtv1.CPU{Cores: cpu},
-						Memory: &kubevirtv1.Memory{Guest: &guestQuantity},
 						Devices: kubevirtv1.Devices{
 							Disks: []kubevirtv1.Disk{
 								{
@@ -449,7 +625,6 @@ func generateNodeTemplate(memory string, cpu uint32, volumeSize string, NetworkI
 									},
 								},
 							},
-							NetworkInterfaceMultiQueue: multiQueue,
 						},
 					},
 
@@ -475,4 +650,10 @@ func generateNodeTemplate(memory string, cpu uint32, volumeSize string, NetworkI
 			},
 		},
 	}
+
+	for _, opt := range options {
+		opt(template)
+	}
+
+	return template
 }

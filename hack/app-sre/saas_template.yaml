@@ -45903,6 +45903,17 @@ objects:
                                 the VM should have
                               pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                               x-kubernetes-int-or-string: true
+                            qosClass:
+                              default: Burstable
+                              description: 'QosClass If set to "Guaranteed", requests
+                                the scheduler to place the VirtualMachineInstance
+                                on a node with limit memory and CPU, equal to be the
+                                requested values, to set the VMI as a Guaranteed QoS
+                                Class; See here for more details: https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances'
+                              enum:
+                              - Burstable
+                              - Guaranteed
+                              type: string
                           type: object
                         networkInterfaceMultiqueue:
                           description: NetworkInterfaceMultiQueue If set to "Enable",
@@ -46847,6 +46858,17 @@ objects:
                                 the VM should have
                               pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                               x-kubernetes-int-or-string: true
+                            qosClass:
+                              default: Burstable
+                              description: 'QosClass If set to "Guaranteed", requests
+                                the scheduler to place the VirtualMachineInstance
+                                on a node with limit memory and CPU, equal to be the
+                                requested values, to set the VMI as a Guaranteed QoS
+                                Class; See here for more details: https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances'
+                              enum:
+                              - Burstable
+                              - Guaranteed
+                              type: string
                           type: object
                         networkInterfaceMultiqueue:
                           description: NetworkInterfaceMultiQueue If set to "Enable",

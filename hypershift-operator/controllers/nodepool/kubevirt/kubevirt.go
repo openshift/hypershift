@@ -2,14 +2,14 @@ package kubevirt
 
 import (
 	"fmt"
+	"k8s.io/utils/pointer"
+	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
 	kubevirtv1 "kubevirt.io/api/core/v1"
-	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -134,8 +134,9 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 	const rootVolumeName = "rhcos"
 
 	var (
-		memory apiresource.Quantity
-		cores  uint32
+		memory              apiresource.Quantity
+		cores               uint32
+		guaranteedResources = false
 	)
 
 	dvSource := bootImage.getDVSourceForVMTemplate()
@@ -147,9 +148,12 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		if kvPlatform.Compute.Memory != nil {
 			memory = *kvPlatform.Compute.Memory
 		}
+
 		if kvPlatform.Compute.Cores != nil {
 			cores = *kvPlatform.Compute.Cores
 		}
+
+		guaranteedResources = kvPlatform.Compute.QosClass != nil && *kvPlatform.Compute.QosClass == hyperv1.QoSClassGuaranteed
 	}
 
 	template := &capikubevirt.VirtualMachineTemplateSpec{
@@ -163,8 +167,6 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
 					Domain: kubevirtv1.DomainSpec{
-						CPU:    &kubevirtv1.CPU{Cores: cores},
-						Memory: &kubevirtv1.Memory{Guest: &memory},
 						Devices: kubevirtv1.Devices{
 							Interfaces: []kubevirtv1.Interface{
 								{
@@ -187,6 +189,24 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 				},
 			},
 		},
+	}
+
+	if guaranteedResources {
+		podResources := corev1.ResourceList{
+			corev1.ResourceMemory: memory,
+		}
+
+		if cores > 0 {
+			podResources[corev1.ResourceCPU] = *apiresource.NewQuantity(int64(cores), apiresource.DecimalSI)
+		}
+
+		template.Spec.Template.Spec.Domain.Resources.Requests = podResources
+		template.Spec.Template.Spec.Domain.Resources.Limits = podResources
+	} else {
+		template.Spec.Template.Spec.Domain.Memory = &kubevirtv1.Memory{Guest: &memory}
+		if cores > 0 {
+			template.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{Cores: cores}
+		}
 	}
 
 	template.Spec.Template.Spec.Domain.Devices.Disks = []kubevirtv1.Disk{

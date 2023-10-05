@@ -129,6 +129,7 @@ type KubevirtPlatformCreateOptions struct {
 	CacheStrategyType          string
 	InfraStorageClassMappings  []string
 	NetworkInterfaceMultiQueue string
+	QoSClass                   string
 }
 
 type AWSPlatformOptions struct {
