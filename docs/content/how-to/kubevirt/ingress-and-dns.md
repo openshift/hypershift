@@ -25,6 +25,13 @@ be `*.apps.guest.apps.mgmt-cluster.example.com`.
     hosting the KubeVirt VMs must allow wildcard DNS routes. This can be
     configured using the following cli command. ```oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {wildcardPolicy: "WildcardsAllowed"}}]'```
 
+!!! note
+
+    When using the default guest cluster ingress, connectivity is limited to HTTPS
+    traffic over port 443. Plain HTTP traffic over port 80 will be rejected. This
+    limitation only applies to the default ingress behavior and not the custom ingress
+    behavior where manual creation of an ingress LoadBalancer and DNS is performed.
+
 ## Customized Ingress and DNS Behavior
 
 In lieu of the default ingress and DNS behavior, it is also possible to
