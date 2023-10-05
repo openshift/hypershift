@@ -800,6 +800,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 				"hosted-cluster-config-operator",
 				"cloud-controller-manager",
 				"olm-collect-profiles",
+				"aws-ebs-csi-driver-operator",
 			}
 
 			g := NewWithT(t)
@@ -884,7 +885,7 @@ func getComponentName(pod *corev1.Pod) string {
 	return ""
 }
 
-func checkPodsHaveLabel(ctx context.Context, c crclient.Client, components []string, namespace string, labels map[string]string) error {
+func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponents []string, namespace string, labels map[string]string) error {
 	// Get all Pods with wanted label.
 	podList := &corev1.PodList{}
 	err := c.List(ctx, podList, client.InNamespace(namespace), client.MatchingLabels(labels))
@@ -902,7 +903,7 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, components []str
 			return fmt.Errorf("unable to determine component name for pod that has NeedManagementKASAccessLabel: %s", pod.Name)
 		}
 		allowed := false
-		for _, component := range components {
+		for _, component := range allowedComponents {
 			if component == componentName {
 				allowed = true
 				break
