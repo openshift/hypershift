@@ -2,6 +2,15 @@ groups:
 - name: hypershift.rules
   interval: "30s"
   rules:
+  - record: hypershift:apiserver_request_total:read
+    expr: sum by (namespace) (rate(apiserver_request_total{verb=~"LIST|GET|WATCH"}[2m]))
+
+  - record: hypershift:apiserver_request_total:write
+    expr: sum by (namespace) (rate(apiserver_request_total{verb=~"POST|PUT|PATCH|UPDATE|DELETE|APPLY"}[2m]))
+
+  - record: hypershift:apiserver_request_total:client
+    expr: sum by (namespace, system_client) (rate(apiserver_request_total{}[2m]))
+
   - record: hypershift:apiserver_request_aborts_total
     expr: sort_desc(sum(rate(apiserver_request_aborts_total[1m])) by (resource, verb))
 
