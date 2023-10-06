@@ -24,9 +24,9 @@ const (
 	ControlPlaneServingComponentAvailableNodeTaint = "hypershift.openshift.io/control-plane-serving-component-available"
 
 	ControlPlaneServingComponentLabel = "hypershift.openshift.io/control-plane-serving-component"
-
-	HostedClusterNameLabel      = "hypershift.openshift.io/cluster-name"
-	HostedClusterNamespaceLabel = "hypershift.openshift.io/cluster-namespace"
+	OSDFleetManagerPairedNodesLabel   = "osd-fleet-manager.openshift.io/paired-nodes"
+	HostedClusterNameLabel            = "hypershift.openshift.io/cluster-name"
+	HostedClusterNamespaceLabel       = "hypershift.openshift.io/cluster-namespace"
 )
 
 type DedicatedServingComponentNodeReaper struct {
@@ -121,10 +121,26 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 		log.Info("hostedcluster does not use isolated request serving components, nothing to do")
 		return ctrl.Result{}, nil
 	}
-	if scheduled := hcluster.Annotations[hyperv1.HostedClusterScheduledAnnotation]; scheduled == "true" {
-		log.Info("hostedcluster is already scheduled, nothing to do")
+
+	// Find existing dedicated serving content Nodes for this HC.
+	dedicatedNodesForHC := &corev1.NodeList{}
+	if err := r.List(ctx, dedicatedNodesForHC,
+		client.HasLabels{hyperv1.RequestServingComponentLabel},
+		client.MatchingLabels{
+			hyperv1.HostedClusterLabel: fmt.Sprintf("%s-%s", hcluster.Namespace, hcluster.Name),
+		}); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to list nodes: %w", err)
+	}
+	if len(dedicatedNodesForHC.Items) > 2 {
+		return ctrl.Result{}, fmt.Errorf("found too many dedicated nodes for HC: %v", len(dedicatedNodesForHC.Items))
+	}
+
+	// We check existing dedicated Nodes are 2. If not e.g. some was deleted, continue.
+	if scheduled := hcluster.Annotations[hyperv1.HostedClusterScheduledAnnotation]; scheduled == "true" && len(dedicatedNodesForHC.Items) == 2 {
+		log.Info("hosted cluster is already scheduled, nothing to do")
 		return ctrl.Result{}, nil
 	}
+
 	nodeList := &corev1.NodeList{}
 	if err := r.List(ctx, nodeList, client.HasLabels{hyperv1.RequestServingComponentLabel}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to list nodes: %w", err)
@@ -156,15 +172,32 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 				// No zone has been set on the node, we cannot use it
 				continue
 			}
+
 			_, hasHCLabel := node.Labels[hyperv1.HostedClusterLabel]
 			if hasHCLabel {
 				// The node has been allocated to a different hosted cluster, skip it
 				continue
 			}
+
 			if nodesToUse[zone] == nil {
+
+				// if the candidate Node is not paired with the existing node to use then skip.
+				paired := false
+				if len(nodesToUse) > 0 {
+					for _, n := range nodesToUse {
+						if n.Labels[OSDFleetManagerPairedNodesLabel] == node.Labels[OSDFleetManagerPairedNodesLabel] {
+							paired = true
+						}
+					}
+					if !paired {
+						continue
+					}
+				}
+
 				log.Info("Found node to allocate for hosted cluster", "node", node.Name, "zone", zone)
 				nodesToUse[zone] = node
 			}
+
 			if len(nodesToUse) == 2 {
 				break
 			}
