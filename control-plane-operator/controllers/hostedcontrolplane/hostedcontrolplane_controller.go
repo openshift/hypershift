@@ -2144,6 +2144,32 @@ func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context,
 		r.Log.Info("reconciled etcd pdb", "result", result)
 	}
 
+	// reconcile etcd-defrag-opeartor serviceAccount, role and roleBinding
+	if p.DeploymentConfig.Replicas > 1 {
+		sa := manifests.EtcdDefragOperatorServiceAccount(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, sa, func() error {
+			p.OwnerRef.ApplyTo(sa)
+			util.EnsurePullSecret(sa, common.PullSecret(hcp.Namespace).Name)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile etcd-defrag-operator service account: %w", err)
+		}
+
+		role := manifests.EtcdDefragOperatorRole(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, role, func() error {
+			return etcd.ReconcileDefragOperatorRole(role, p)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile etcd-defrag-operator role: %w", err)
+		}
+
+		roleBinding := manifests.EtcdDefragOperatorRoleBinding(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, roleBinding, func() error {
+			return etcd.ReconcileDefragOperatorRoleBinding(roleBinding, p)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile etcd-defrag-operator role binding: %w", err)
+		}
+	}
+
 	if result, err := createOrUpdate(ctx, r, statefulSet, func() error {
 		return etcd.ReconcileStatefulSet(statefulSet, p)
 	}); err != nil {
