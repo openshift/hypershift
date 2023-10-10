@@ -1908,6 +1908,18 @@ func (r *HostedClusterReconciler) reconcileEtcdBackupCronJob(cronJob *batchv1.Cr
 										},
 									},
 									{
+										Name: "AWS_ENDPOINT_URL_S3",
+										ValueFrom: &corev1.EnvVarSource{
+											ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+												LocalObjectReference: corev1.LocalObjectReference{
+													Name: configMapName,
+												},
+												Key:      "s3-endpoint-url",
+												Optional: k8sutilspointer.Bool(true),
+											},
+										},
+									},
+									{
 										Name:  "AWS_WEB_IDENTITY_TOKEN_FILE",
 										Value: "/var/run/secrets/openshift/serviceaccount/token",
 									},
