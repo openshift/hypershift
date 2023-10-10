@@ -9,7 +9,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
@@ -104,12 +103,6 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	}
 	params.DeploymentConfig.SetDefaults(hcp, kcmLabels(), nil)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-
-	switch hcp.Spec.Platform.Type {
-	case hyperv1.AzurePlatform:
-		params.CloudProvider = azure.Provider
-		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AzureProviderConfigWithCredentials("").Name}
-	}
 
 	params.SetDefaultSecurityContext = setDefaultSecurityContext
 

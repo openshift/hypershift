@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
@@ -36,14 +37,15 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
+	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/konnectivity"
@@ -236,7 +238,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get lookup release image %s: %w", hcp.Spec.ReleaseImage, err)
 	}
-
 	var errs []error
 	log.Info("reconciling guest cluster crds")
 	if err := r.reconcileCRDs(ctx); err != nil {
@@ -540,10 +541,15 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		})
 	}
 
-	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+	// Reconcile platform specific resources
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		log.Info("reconciling AWS specific resources")
 		errs = append(errs, r.reconcileAWSIdentityWebhook(ctx)...)
+	case hyperv1.AzurePlatform:
+		log.Info("reconciling Azure specific resources")
+		errs = append(errs, r.reconcileAzureCloudNodeManager(ctx, releaseImage.ComponentImages()["azure-cloud-node-manager"])...)
 	}
-
 	return ctrl.Result{}, errors.NewAggregate(errs)
 }
 
@@ -2113,4 +2119,134 @@ func allLoadBalancersRemoved(ctx context.Context, c client.Client) (bool, error)
 	}
 
 	return true, nil
+}
+
+func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image string) []error {
+	var errs []error
+
+	serviceAccount := ccm.CloudNodeManagerServiceAccount()
+	if _, err := r.CreateOrUpdate(ctx, r.client, serviceAccount, func() error { return nil }); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", serviceAccount, serviceAccount.Name, err))
+	}
+
+	clusterRole := ccm.CloudNodeManagerClusterRole()
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRole, func() error {
+		// TODO explore scoping down rbac to the running Node
+		clusterRole.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"nodes"},
+				Verbs: []string{
+					"get",
+					"list",
+					"patch",
+					"update",
+					"watch",
+				},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"nodes/status"},
+				Verbs: []string{
+					"patch",
+				},
+			},
+		}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRole, clusterRole.Name, err))
+	}
+
+	clusterRoleBinding := ccm.CloudNodeManagerClusterRoleBinding()
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRoleBinding, func() error {
+		clusterRoleBinding.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     clusterRole.Name,
+		}
+		clusterRoleBinding.Subjects = []rbacv1.Subject{
+			{
+				Kind:      rbacv1.ServiceAccountKind,
+				Namespace: serviceAccount.Namespace,
+				Name:      serviceAccount.Name,
+			},
+		}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRole, clusterRole.Name, err))
+	}
+
+	cloudNodeManagerDaemonSet := ccm.CloudNodeManagerDaemonSet()
+	if _, err := r.CreateOrUpdate(ctx, r.client, cloudNodeManagerDaemonSet, func() error {
+		cloudNodeManagerDaemonSet.Spec = appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"k8s-app": ccm.CloudNodeManagerName},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels:      map[string]string{"k8s-app": ccm.CloudNodeManagerName},
+					Annotations: map[string]string{"cluster-autoscaler.kubernetes.io/daemonset-pod": "true"},
+				},
+				Spec: corev1.PodSpec{
+					PriorityClassName:  "system-node-critical",
+					ServiceAccountName: ccm.CloudNodeManagerName,
+					HostNetwork:        true,
+					// https://github.com/openshift/cluster-cloud-controller-manager-operator/blob/release-4.15/pkg/cloud/azure/assets/cloud-node-manager-daemonset.yaml#L34
+					Tolerations: []corev1.Toleration{
+						{
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoSchedule,
+						},
+						{
+							Key:      "node.kubernetes.io/unreachable",
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoExecute,
+						},
+						{
+							Key:      "node.kubernetes.io/not-ready",
+							Operator: corev1.TolerationOpExists,
+							Effect:   corev1.TaintEffectNoExecute,
+						},
+					},
+					Containers: []corev1.Container{
+						{
+							Name:  ccm.CloudNodeManagerName,
+							Image: image,
+							Command: []string{
+								"/bin/azure-cloud-node-manager",
+								"--node-name=$(NODE_NAME)",
+								"--enable-deprecated-beta-topology-labels",
+								"--wait-routes=false",
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name: "NODE_NAME",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "spec.nodeName",
+										},
+									},
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("50Mi"),
+									corev1.ResourceCPU:    resource.MustParse("50m"),
+								},
+								Limits: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("512Mi"),
+									corev1.ResourceCPU:    resource.MustParse("2000m"),
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", cloudNodeManagerDaemonSet, cloudNodeManagerDaemonSet.Name, err))
+	}
+
+	return errs
 }
