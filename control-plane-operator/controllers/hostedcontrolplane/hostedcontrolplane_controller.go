@@ -2250,7 +2250,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	if _, err := createOrUpdate(ctx, r, capiKubeconfigSecret, func() error {
 		// TODO(alberto): This secret is currently using the cluster-admin kubeconfig for the guest cluster.
 		// We should create a separate kubeconfig with a tight set of permissions for it to use.
-		return kas.ReconcileServiceCAPIKubeconfigSecret(capiKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalPort)
+		return kas.ReconcileServiceCAPIKubeconfigSecret(capiKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalPort, hcp.Spec.InfraID)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile CAPI service admin kubeconfig secret: %w", err)
 	}

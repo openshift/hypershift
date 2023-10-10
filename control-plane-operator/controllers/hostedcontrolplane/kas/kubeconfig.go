@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
 const (
@@ -20,10 +21,17 @@ func ReconcileServiceKubeconfigSecret(secret, cert *corev1.Secret, ca *corev1.Co
 	return pki.ReconcileKubeConfig(secret, cert, ca, svcURL, "", "service", ownerRef)
 }
 
-func ReconcileServiceCAPIKubeconfigSecret(secret, cert *corev1.Secret, ca *corev1.ConfigMap, ownerRef config.OwnerRef, apiServerPort int32) error {
+func ReconcileServiceCAPIKubeconfigSecret(secret, cert *corev1.Secret, ca *corev1.ConfigMap, ownerRef config.OwnerRef, apiServerPort int32, capiClusterName string) error {
 	svcURL := InClusterKASURL(secret.Namespace, apiServerPort)
 	// The client used by CAPI machine controller expects the kubeconfig to have this key
 	// https://github.com/kubernetes-sigs/cluster-api/blob/5c85a0a01ee44ecf7c8a3c3fdc867a88af87d73c/util/secret/secret.go#L29-L33
+	// and to be labeled with cluster.x-k8s.io/cluster-name=<clusterName> so the secret can be cached by the client.
+	// https://github.com/kubernetes-sigs/cluster-api/blob/8ba3f47b053da8bbf63cf407c930a2ee10bfd754/main.go#L304
+	if secret.Labels == nil {
+		secret.Labels = make(map[string]string)
+	}
+	secret.Labels[capiv1.ClusterLabelName] = capiClusterName
+
 	return pki.ReconcileKubeConfig(secret, cert, ca, svcURL, "value", "capi", ownerRef)
 }
 
