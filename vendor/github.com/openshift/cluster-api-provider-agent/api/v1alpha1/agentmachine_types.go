@@ -22,6 +22,17 @@ import (
 	"sigs.k8s.io/cluster-api/errors"
 )
 
+const (
+	AgentReservedCondition        clusterv1.ConditionType = "AgentReserved"
+	AgentSpecSyncedCondition      clusterv1.ConditionType = "AgentSpecSynced"
+	AgentValidatedCondition       clusterv1.ConditionType = "AgentValidated"
+	AgentRequirementsMetCondition clusterv1.ConditionType = "AgentRequirementsMet"
+	InstalledCondition            clusterv1.ConditionType = "Installed"
+
+	AgentNotYetFoundReason = "AgentNotYetFound"
+	NoSuitableAgentsReason = "NoSuitableAgents"
+)
+
 // AgentMachineSpec defines the desired state of AgentMachine
 type AgentMachineSpec struct {
 	// AgentLabelSelector contains the labels that must be set on an Agent in order to be selected for this Machine.
@@ -90,6 +101,7 @@ type AgentMachineStatus struct {
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+//+kubebuilder:deprecatedversion:warning="v1alpha1 is a deprecated version for AgentMachine"
 
 // AgentMachine is the Schema for the agentmachines API
 type AgentMachine struct {
@@ -98,6 +110,16 @@ type AgentMachine struct {
 
 	Spec   AgentMachineSpec   `json:"spec,omitempty"`
 	Status AgentMachineStatus `json:"status,omitempty"`
+}
+
+// GetConditions returns the observations of the operational state of the AWSMachine resource.
+func (r *AgentMachine) GetConditions() clusterv1.Conditions {
+	return r.Status.Conditions
+}
+
+// SetConditions sets the underlying service state of the AWSMachine to the predescribed clusterv1.Conditions.
+func (r *AgentMachine) SetConditions(conditions clusterv1.Conditions) {
+	r.Status.Conditions = conditions
 }
 
 //+kubebuilder:object:root=true

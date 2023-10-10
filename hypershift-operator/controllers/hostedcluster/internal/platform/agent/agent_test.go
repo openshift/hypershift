@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"

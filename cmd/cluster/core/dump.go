@@ -18,7 +18,7 @@ import (
 	imagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
-	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1alpha1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	"github.com/spf13/cobra"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"

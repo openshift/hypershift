@@ -120,7 +120,7 @@ cluster-api-provider-kubevirt: $(CONTROLLER_GEN)
 .PHONY: cluster-api-provider-agent
 cluster-api-provider-agent: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-agent/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/openshift/cluster-api-provider-agent/api/v1alpha1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-agent
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/github.com/openshift/cluster-api-provider-agent/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-agent
 
 .PHONY: cluster-api-provider-azure
 cluster-api-provider-azure: $(CONTROLLER_GEN)
