@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -2985,74 +2986,174 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImageProvider, userReleaseImageProvider.Version(), r.SetDefaultSecurityContext)
 
+	olmDepReconciler := []struct {
+		name       string
+		manifest   *appsv1.Deployment
+		reconciler func(*appsv1.Deployment, config.OwnerRef, config.DeploymentConfig, string) error
+		image      string
+	}{
+		{
+			name:       "certifiedOperatorsDeployment",
+			manifest:   manifests.CertifiedOperatorsDeployment(hcp.Namespace),
+			reconciler: olm.ReconcileCertifiedOperatorsDeployment,
+			image:      p.CertifiedOperatorsCatalogImageOverride,
+		},
+		{
+			name:       "communityOperatorsDeployment",
+			manifest:   manifests.CommunityOperatorsDeployment(hcp.Namespace),
+			reconciler: olm.ReconcileCommunityOperatorsDeployment,
+			image:      p.CommunityOperatorsCatalogImageOverride,
+		},
+		{
+			name:       "marketplaceOperatorsDeployment",
+			manifest:   manifests.RedHatMarketplaceOperatorsDeployment(hcp.Namespace),
+			reconciler: olm.ReconcileRedHatMarketplaceOperatorsDeployment,
+			image:      p.RedHatMarketplaceCatalogImageOverride,
+		},
+		{
+			name:       "redHatOperatorsDeployment",
+			manifest:   manifests.RedHatOperatorsDeployment(hcp.Namespace),
+			reconciler: olm.ReconcileRedHatOperatorsDeployment,
+			image:      p.RedHatOperatorsCatalogImageOverride,
+		},
+	}
+
+	olmSvcReconciler := []struct {
+		name       string
+		manifest   *corev1.Service
+		reconciler func(*corev1.Service, config.OwnerRef) error
+	}{
+		{
+			name:       "certifiedOperatorsService",
+			manifest:   manifests.CertifiedOperatorsService(hcp.Namespace),
+			reconciler: olm.ReconcileCertifiedOperatorsService,
+		},
+		{
+			name:       "communityOperatorsService",
+			manifest:   manifests.CommunityOperatorsService(hcp.Namespace),
+			reconciler: olm.ReconcileCommunityOperatorsService,
+		},
+		{
+			name:       "marketplaceOperatorsService",
+			manifest:   manifests.RedHatMarketplaceOperatorsService(hcp.Namespace),
+			reconciler: olm.ReconcileRedHatMarketplaceOperatorsService,
+		},
+		{
+			name:       "redHatOperatorsService",
+			manifest:   manifests.RedHatOperatorsService(hcp.Namespace),
+			reconciler: olm.ReconcileRedHatOperatorsService,
+		},
+	}
+
+	// Check if the defaultSources are disabled in the HostedCluster's OperatorHub object
+	operatorHub := &configv1.OperatorHub{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+
+	// Creating a new client for the HostedCluster to check the OperatorHub object
+	hcClient, err := generateHostedClusterClient(ctx, r.Client, hcp.Namespace)
+	if err != nil {
+		return fmt.Errorf("failed to get Hosted Cluster client: %w", err)
+	}
+
+	if err := hcClient.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get OperatorHub %s: %w", client.ObjectKeyFromObject(operatorHub).String(), err)
+		}
+	}
+
 	if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {
-		overrideImages, err := checkCatalogImageOverides(p.CertifiedOperatorsCatalogImageOverride, p.CommunityOperatorsCatalogImageOverride, p.RedHatMarketplaceCatalogImageOverride, p.RedHatOperatorsCatalogImageOverride)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile catalogs: %w", err)
+
+		// Clean HostedCluster OLM pods
+		// This cannot be executed by the HCCO because the signaling after changing from guest to management
+		// or in reverse does not updates the p.OLMCatalogPlacement value. With this solution we make sure there
+		// are not delay between the catalog source disabling and the pod cleaning in the HostedCluster.
+		olmLabelKey := "olm.catalogSource"
+
+		pods := &corev1.PodList{}
+		if err := hcClient.List(ctx, pods, &client.ListOptions{
+			Namespace: "openshift-marketplace",
+		}); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get pods from openshift-marketplace namespace: %w", err)
+			}
 		}
 
-		catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
-		if !overrideImages {
-			isImageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(p.OLMCatalogsISRegistryOverridesAnnotation)
-			if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
-				return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides)
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
+		for _, pod := range pods.Items {
+			labelValue, labelExists := pod.Labels[olmLabelKey]
+
+			if labelExists && (labelValue == "community-operators" ||
+				labelValue == "redhat-operators" ||
+				labelValue == "certified-operators" ||
+				labelValue == "redhat-marketplace") {
+				if err := hcClient.Delete(ctx, &pod); err != nil {
+					if !apierrors.IsNotFound(err) {
+						return fmt.Errorf("failed to delete pod %s from openshift-marketplace namespace: %w", pod.Name, err)
+					}
+				}
 			}
+		}
+
+		if operatorHub.Spec.DisableAllDefaultSources {
+			for _, svc := range olmSvcReconciler {
+				if err := r.Client.Delete(ctx, svc.manifest); err != nil {
+					if !apierrors.IsNotFound(err) {
+						return fmt.Errorf("failed to delete %s service on OLM reconcile: %w", svc.name, err)
+					}
+				}
+			}
+
+			for _, dep := range olmDepReconciler {
+				if err := r.Client.Delete(ctx, dep.manifest); err != nil {
+					if !apierrors.IsNotFound(err) {
+						return fmt.Errorf("failed to delete %s deployment on OLM reconcile: %w", dep.name, err)
+					}
+				}
+			}
+
 		} else {
-			if _, err := util.DeleteIfNeeded(ctx, r, catalogsImageStream); err != nil {
-				return fmt.Errorf("failed to remove OLM Catalog ImageStream: %w", err)
+			// ImageStreams
+			catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
+			overrideImages, err := checkCatalogImageOverides(
+				p.CertifiedOperatorsCatalogImageOverride,
+				p.CommunityOperatorsCatalogImageOverride,
+				p.RedHatMarketplaceCatalogImageOverride,
+				p.RedHatOperatorsCatalogImageOverride,
+			)
+			if err != nil {
+				return fmt.Errorf("failed to reconcile catalogs: %w", err)
 			}
-		}
 
-		certifiedOperatorsService := manifests.CertifiedOperatorsService(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, certifiedOperatorsService, func() error {
-			return olm.ReconcileCertifiedOperatorsService(certifiedOperatorsService, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile certified operators service: %w", err)
-		}
-		communityOperatorsService := manifests.CommunityOperatorsService(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, communityOperatorsService, func() error {
-			return olm.ReconcileCommunityOperatorsService(communityOperatorsService, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile community operators service: %w", err)
-		}
-		marketplaceOperatorsService := manifests.RedHatMarketplaceOperatorsService(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, marketplaceOperatorsService, func() error {
-			return olm.ReconcileRedHatMarketplaceOperatorsService(marketplaceOperatorsService, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile marketplace operators service: %w", err)
-		}
-		redHatOperatorsService := manifests.RedHatOperatorsService(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, redHatOperatorsService, func() error {
-			return olm.ReconcileRedHatOperatorsService(redHatOperatorsService, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile red hat operators service: %w", err)
-		}
+			if !overrideImages {
+				isImageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(p.OLMCatalogsISRegistryOverridesAnnotation)
+				if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
+					return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
+				}
+			} else {
+				if _, err := util.DeleteIfNeeded(ctx, r, catalogsImageStream); err != nil {
+					return fmt.Errorf("failed to remove OLM Catalog ImageStream: %w", err)
+				}
+			}
 
-		certifiedOperatorsDeployment := manifests.CertifiedOperatorsDeployment(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, certifiedOperatorsDeployment, func() error {
-			return olm.ReconcileCertifiedOperatorsDeployment(certifiedOperatorsDeployment, p.OwnerRef, p.DeploymentConfig, p.CertifiedOperatorsCatalogImageOverride)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile certified operators deployment: %w", err)
-		}
-		communityOperatorsDeployment := manifests.CommunityOperatorsDeployment(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, communityOperatorsDeployment, func() error {
-			return olm.ReconcileCommunityOperatorsDeployment(communityOperatorsDeployment, p.OwnerRef, p.DeploymentConfig, p.CommunityOperatorsCatalogImageOverride)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile community operators deployment: %w", err)
-		}
-		marketplaceOperatorsDeployment := manifests.RedHatMarketplaceOperatorsDeployment(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, marketplaceOperatorsDeployment, func() error {
-			return olm.ReconcileRedHatMarketplaceOperatorsDeployment(marketplaceOperatorsDeployment, p.OwnerRef, p.DeploymentConfig, p.RedHatMarketplaceCatalogImageOverride)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile marketplace operators deployment: %w", err)
-		}
-		redHatOperatorsDeployment := manifests.RedHatOperatorsDeployment(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, redHatOperatorsDeployment, func() error {
-			return olm.ReconcileRedHatOperatorsDeployment(redHatOperatorsDeployment, p.OwnerRef, p.DeploymentConfig, p.RedHatOperatorsCatalogImageOverride)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile red hat operators deployment: %w", err)
+			for _, svc := range olmSvcReconciler {
+				if _, err := createOrUpdate(ctx, r, svc.manifest, func() error {
+					return svc.reconciler(svc.manifest, p.OwnerRef)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile %s service: %w", svc.name, err)
+				}
+			}
+
+			for _, dep := range olmDepReconciler {
+				if _, err := createOrUpdate(ctx, r, dep.manifest, func() error {
+					return dep.reconciler(dep.manifest, p.OwnerRef, p.DeploymentConfig, dep.image)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile %s deployment with image %s: %w", dep.name, dep.image, err)
+				}
+			}
 		}
 	}
 
@@ -4330,4 +4431,46 @@ func doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx context.Context, c cli
 		return true, nil
 	}
 	return false, nil
+}
+
+func getHostedClusterKubeconfig(ctx context.Context, cl client.Client, secretNamespace, secretName string) ([]byte, error) {
+	kubeconfigSecret := &corev1.Secret{}
+
+	kubeconfigSecretKey := client.ObjectKey{Namespace: secretNamespace, Name: secretName}
+	if err := cl.Get(ctx, kubeconfigSecretKey, kubeconfigSecret); err != nil {
+		return nil, fmt.Errorf("failed to fetch Hosted Cluster kubeconfig secret %s/%s: %w", secretNamespace, secretName, err)
+	}
+
+	kubeConfig, ok := kubeconfigSecret.Data["kubeconfig"]
+	if !ok {
+		return nil, fmt.Errorf("failed extracting the Hosted Cluster kubeconfig from secret %s/%s", secretNamespace, secretName)
+	}
+
+	return kubeConfig, nil
+}
+
+func generateHostedClusterClient(ctx context.Context, mgmtClient client.Client, secretNamespace string) (client.Client, error) {
+
+	hcKubeConfig, err := getHostedClusterKubeconfig(ctx, mgmtClient, secretNamespace, "admin-kubeconfig")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HostedCluster Kubeconfig: %w", err)
+	}
+
+	clientConfig, err := clientcmd.NewClientConfigFromBytes(hcKubeConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create client config: %w", err)
+	}
+
+	restConfig, err := clientConfig.ClientConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create REST config: %w", err)
+	}
+
+	hcClient, err := client.New(restConfig, client.Options{Scheme: mgmtClient.Scheme()})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create hosted cluster client: %w", err)
+	}
+
+	return hcClient, nil
+
 }
