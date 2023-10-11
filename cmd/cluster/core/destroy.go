@@ -40,12 +40,13 @@ type DestroyOptions struct {
 }
 
 type AWSPlatformDestroyOptions struct {
-	AWSCredentialsFile string
-	BaseDomain         string
-	BaseDomainPrefix   string
-	PreserveIAM        bool
-	Region             string
-	PostDeleteAction   func()
+	AWSCredentialsFile  string
+	BaseDomain          string
+	BaseDomainPrefix    string
+	PreserveIAM         bool
+	Region              string
+	PostDeleteAction    func()
+	AwsInfraGracePeriod time.Duration
 }
 
 type AzurePlatformDestroyOptions struct {
