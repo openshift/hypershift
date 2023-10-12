@@ -427,6 +427,11 @@ type HostedClusterSpec struct {
 	//
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// NonRequestNodeSelector specifies the nodes for the non-request serving pods managed by the HostedCLuster to be scheduled on.
+	//
+	// +optional
+	NonRequestNodeSelector map[string]string `json:"nonrequestnodeselector,omitempty"`
 }
 
 // OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.

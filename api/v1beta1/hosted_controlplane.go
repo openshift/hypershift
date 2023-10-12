@@ -159,6 +159,11 @@ type HostedControlPlaneSpec struct {
 	//
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
+
+	// NonRequestNodeSelector specifies the nodes for the non-request serving pods managed by the HostedCLuster to be scheduled on.
+	//
+	// +optional
+	NonRequestNodeSelector map[string]string `json:"nonrequestnodeselector,omitempty"`
 }
 
 // AvailabilityPolicy specifies a high level availability policy for components.

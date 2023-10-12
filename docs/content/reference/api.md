@@ -483,6 +483,18 @@ map[string]string
 <p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>nonrequestnodeselector</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NonRequestNodeSelector specifies the nodes for the non-request serving pods managed by the HostedCLuster to be scheduled on.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -3631,6 +3643,18 @@ map[string]string
 <p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>nonrequestnodeselector</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NonRequestNodeSelector specifies the nodes for the non-request serving pods managed by the HostedCLuster to be scheduled on.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1beta1.HostedClusterStatus }
@@ -4154,6 +4178,18 @@ map[string]string
 <td>
 <em>(Optional)</em>
 <p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nonrequestnodeselector</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NonRequestNodeSelector specifies the nodes for the non-request serving pods managed by the HostedCLuster to be scheduled on.</p>
 </td>
 </tr>
 </tbody>

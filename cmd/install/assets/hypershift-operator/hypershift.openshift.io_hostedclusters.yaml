@@ -6043,6 +6043,12 @@ spec:
                 description: NodeSelector when specified, must be true for the pods
                   managed by the HostedCluster to be scheduled.
                 type: object
+              nonrequestnodeselector:
+                additionalProperties:
+                  type: string
+                description: NonRequestNodeSelector specifies the nodes for the non-request
+                  serving pods managed by the HostedCLuster to be scheduled on.
+                type: object
               olmCatalogPlacement:
                 default: management
                 description: OLMCatalogPlacement specifies the placement of OLM catalog
