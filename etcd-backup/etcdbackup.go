@@ -1,4 +1,4 @@
-package main
+package etcdbackup
 
 import (
 	"context"
@@ -37,7 +37,7 @@ type options struct {
 	snapshotFilePath string
 }
 
-func main() {
+func NewStartCommand() *cobra.Command {
 	opts := options{
 		backupDir:          "/tmp",
 		etcdClientCertFile: "/etc/etcd/tls/client/etcd-client.crt",
@@ -49,7 +49,10 @@ func main() {
 		Use:          "etcd-backup",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return run(cmd.Context(), opts)
+			ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGINT)
+			defer cancel()
+
+			return run(ctx, opts)
 		},
 	}
 
@@ -67,11 +70,7 @@ func main() {
 	cmd.MarkFlagRequired("s3-bucket-name")
 	cmd.MarkFlagRequired("s3-key-prefix")
 
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
-	defer cancel()
-	if err := cmd.ExecuteContext(ctx); err != nil {
-		os.Exit(1)
-	}
+	return cmd
 }
 
 func run(ctx context.Context, opts options) error {

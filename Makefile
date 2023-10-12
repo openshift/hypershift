@@ -87,10 +87,6 @@ hypershift:
 product-cli:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hcp ./product-cli
 
-.PHONY: etcd-backup
-etcd-backup:
-	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/etcd-backup ./etcd-backup
-
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
