@@ -298,17 +298,25 @@ func (c *DeploymentConfig) setControlPlaneIsolation(hcp *hyperv1.HostedControlPl
 
 }
 
-// setNodeSelector sets a nodeSelector passed through the API.
-// This is useful to e.g ensure control plane pods land in management cluster Infra Nodes.
-func (c *DeploymentConfig) setNodeSelector(hcp *hyperv1.HostedControlPlane) {
+// setRequestServingNodeSelector sets a nodeSelector passed through the API.
+// This is useful to e.g. ensure request serving pods land in request serving nodes.
+func (c *DeploymentConfig) setRequestServingNodeSelector(hcp *hyperv1.HostedControlPlane) {
 	if hcp.Spec.NodeSelector == nil {
 		return
 	}
 	c.Scheduling.NodeSelector = hcp.Spec.NodeSelector
 }
 
+// setNonRequestServingNodeSelector sets a NonRequestNodeSelector passed through the API.
+// This is useful to ensure any non-request serving pods land in non-request serving nodes
+func (c *DeploymentConfig) setNonRequestServingNodeSelector(hcp *hyperv1.HostedControlPlane) {
+	if hcp.Spec.NonRequestNodeSelector == nil {
+		return
+	}
+	c.Scheduling.NodeSelector = hcp.Spec.NonRequestNodeSelector
+}
+
 func (c *DeploymentConfig) setLocation(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string) {
-	c.setNodeSelector(hcp)
 	c.setControlPlaneIsolation(hcp)
 	c.setColocation(hcp)
 	// TODO (alberto): pass labels with deployment hash and set this unconditionally so we don't skew setup.
@@ -330,13 +338,16 @@ func (c *DeploymentConfig) setReplicas(availability hyperv1.AvailabilityPolicy) 
 	}
 }
 
-// SetRequestServingDefaults wraps the call to SetDefaults. It is meant to be invoked by request serving components so that their sheduling
+// SetRequestServingDefaults wraps the call to SetDefaults. It is meant to be invoked by request serving components so that their scheduling
 // attributes can be modified accordingly.
 func (c *DeploymentConfig) SetRequestServingDefaults(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string, replicas *int) {
 	if hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
 		c.IsolateAsRequestServing = true
 	}
-	c.SetDefaults(hcp, multiZoneSpreadLabels, replicas)
+	c.setBaseDefaults(hcp, replicas)
+	c.setRequestServingNodeSelector(hcp)
+	c.setLocation(hcp, multiZoneSpreadLabels)
+
 	if c.AdditionalLabels == nil {
 		c.AdditionalLabels = map[string]string{}
 	}
@@ -346,6 +357,12 @@ func (c *DeploymentConfig) SetRequestServingDefaults(hcp *hyperv1.HostedControlP
 
 // SetDefaults populates opinionated default DeploymentConfig for any Deployment.
 func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string, replicas *int) {
+	c.setBaseDefaults(hcp, replicas)
+	c.setLocation(hcp, multiZoneSpreadLabels)
+}
+
+// SetDefaults populates opinionated default DeploymentConfig for any Deployment.
+func (c *DeploymentConfig) setBaseDefaults(hcp *hyperv1.HostedControlPlane, replicas *int) {
 	// If no replicas is specified then infer it from the ControllerAvailabilityPolicy.
 	if replicas == nil {
 		c.setReplicas(hcp.Spec.ControllerAvailabilityPolicy)
@@ -356,7 +373,6 @@ func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, multiZon
 
 	c.ResourceRequestOverrides = resourceRequestOverrides(hcp)
 
-	c.setLocation(hcp, multiZoneSpreadLabels)
 	// TODO (alberto): make this private, atm is needed for the konnectivity agent daemonset.
 	c.SetReleaseImageAnnotation(util.HCPControlPlaneReleaseImage(hcp))
 }

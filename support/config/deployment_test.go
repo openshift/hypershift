@@ -199,7 +199,7 @@ func TestSetLocation(t *testing.T) {
 		},
 	}
 
-	// setNodeSelector expectations.
+	// setNonRequestServingNodeSelector expectations.
 	g.Expect(expected.Scheduling.NodeSelector).To(BeEquivalentTo(cfg.Scheduling.NodeSelector))
 
 	// setControlPlaneIsolation expectations. NodeAffinity.
