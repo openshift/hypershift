@@ -65,6 +65,7 @@ type CreateOptions struct {
 	ExternalDNSDomain                string
 	Arch                             string
 	NodeSelector                     map[string]string
+	NonRequestNodeSelector           map[string]string
 	NonePlatform                     NonePlatformCreateOptions
 	KubevirtPlatform                 KubevirtPlatformCreateOptions
 	AWSPlatform                      AWSPlatformOptions
@@ -291,6 +292,7 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		ClusterCIDR:                      opts.ClusterCIDR,
 		Arch:                             opts.Arch,
 		NodeSelector:                     opts.NodeSelector,
+		NonRequestNodeSelector:           opts.NonRequestNodeSelector,
 		UpgradeType:                      opts.NodeUpgradeType,
 		PausedUntil:                      opts.PausedUntil,
 	}, nil

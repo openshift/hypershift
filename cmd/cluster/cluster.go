@@ -36,6 +36,7 @@ func NewCreateCommands() *cobra.Command {
 		AdditionalTrustBundle:          "",
 		ImageContentSources:            "",
 		NodeSelector:                   nil,
+		NonRequestNodeSelector:         nil,
 		Log:                            log.Log,
 		NodeDrainTimeout:               0,
 		NodeUpgradeType:                v1beta1.UpgradeTypeReplace,
@@ -75,6 +76,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network")
 	cmd.PersistentFlags().StringVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "The CIDR of the cluster network")
 	cmd.PersistentFlags().StringToStringVar(&opts.NodeSelector, "node-selector", opts.NodeSelector, "A comma separated list of key=value to use as node selector for the Hosted Control Plane pods to stick to. E.g. role=cp,disk=fast")
+	cmd.PersistentFlags().StringToStringVar(&opts.NonRequestNodeSelector, "non-request-node-selector", opts.NonRequestNodeSelector, "A comma separated list of key=value to use as node selector for any Hosted Control Plane non-request serving pods to stick to. E.g. role=cp,disk=fast")
 	cmd.PersistentFlags().BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
 	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
 	cmd.PersistentFlags().Var(&opts.NodeUpgradeType, "node-upgrade-type", "The NodePool upgrade strategy for how nodes should behave when upgraded. Supported options: Replace, InPlace")

@@ -66,6 +66,7 @@ type ExampleOptions struct {
 	ServiceCIDR                      string
 	ClusterCIDR                      string
 	NodeSelector                     map[string]string
+	NonRequestNodeSelector           map[string]string
 	BaseDomain                       string
 	BaseDomainPrefix                 string
 	PublicZoneID                     string
@@ -488,6 +489,10 @@ func (o ExampleOptions) Resources() *ExampleResources {
 
 	if o.NodeSelector != nil {
 		cluster.Spec.NodeSelector = o.NodeSelector
+	}
+
+	if o.NonRequestNodeSelector != nil {
+		cluster.Spec.NonRequestNodeSelector = o.NonRequestNodeSelector
 	}
 
 	var userCABundleCM *corev1.ConfigMap

@@ -307,9 +307,9 @@ func (c *DeploymentConfig) setRequestServingNodeSelector(hcp *hyperv1.HostedCont
 	c.Scheduling.NodeSelector = hcp.Spec.NodeSelector
 }
 
-// setNonRequestServingNodeSelector sets a NonRequestNodeSelector passed through the API.
+// setNonRequestNodeSelector sets a NonRequestNodeSelector passed through the API.
 // This is useful to ensure any non-request serving pods land in non-request serving nodes
-func (c *DeploymentConfig) setNonRequestServingNodeSelector(hcp *hyperv1.HostedControlPlane) {
+func (c *DeploymentConfig) setNonRequestNodeSelector(hcp *hyperv1.HostedControlPlane) {
 	if hcp.Spec.NonRequestNodeSelector == nil {
 		return
 	}
