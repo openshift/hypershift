@@ -1630,11 +1630,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Reconcile the machine config server
-	if err = r.reconcileMachineConfigServer(ctx, createOrUpdate, hcluster); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile machine config server: %w", err)
-	}
-
 	// Reconcile the network policies
 	if err = r.reconcileNetworkPolicies(ctx, createOrUpdate, hcluster, hcp, releaseImageVersion, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
@@ -3554,44 +3549,6 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 			{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
 		}
 	}
-}
-
-func (r *HostedClusterReconciler) reconcileMachineConfigServer(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
-
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace); err != nil {
-		return fmt.Errorf("failed to get control plane namespace: %w", err)
-	}
-
-	// Reconcile service
-	mcsService := ignitionserver.MCSService(controlPlaneNamespace.Name)
-	if _, err := createOrUpdate(ctx, r.Client, mcsService, func() error {
-		return reconcileMachineConfigServerService(mcsService)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile machine config server service: %w", err)
-	}
-
-	return nil
-}
-
-func reconcileMachineConfigServerService(svc *corev1.Service) error {
-	svc.Spec.Selector = map[string]string{
-		"app": "machine-config-server",
-	}
-	var portSpec corev1.ServicePort
-	if len(svc.Spec.Ports) > 0 {
-		portSpec = svc.Spec.Ports[0]
-	} else {
-		svc.Spec.Ports = []corev1.ServicePort{portSpec}
-	}
-	portSpec.Port = int32(8443)
-	portSpec.Name = "https"
-	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(8443)
-	svc.Spec.Ports[0] = portSpec
-	svc.Spec.Type = corev1.ServiceTypeClusterIP
-	svc.Spec.ClusterIP = corev1.ClusterIPNone
-	return nil
 }
 
 func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, namespace string) error {

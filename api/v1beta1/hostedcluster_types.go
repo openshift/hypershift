@@ -223,6 +223,9 @@ const (
 	// hosted control plane namespacces. The default is 'Restricted'. Valid values are 'Restricted', 'Baseline', or 'Privileged'
 	// See https://github.com/openshift/enhancements/blob/master/enhancements/authentication/pod-security-admission.md
 	PodSecurityAdmissionLabelOverrideAnnotation = "hypershift.openshift.io/pod-security-admission-label-override"
+
+	//DisableMonitoringServices introduces introduces an option to disable monitor services IBM Cloud do not use.
+	DisableMonitoringServices = "hypershift.openshift.io/disable-monitoring-services"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
