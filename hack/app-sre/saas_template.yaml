@@ -451,14 +451,16 @@ objects:
       spec:
         affinity:
           podAntiAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchExpressions:
-                - key: name
-                  operator: In
-                  values:
-                  - operator
-              topologyKey: kubernetes.io/hostname
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                  - key: name
+                    operator: In
+                    values:
+                    - operator
+                topologyKey: kubernetes.io/hostname
+              weight: 10
         containers:
         - args:
           - run
