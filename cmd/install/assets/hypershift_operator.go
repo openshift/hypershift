@@ -508,18 +508,21 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				Spec: corev1.PodSpec{
 					Affinity: &corev1.Affinity{
 						PodAntiAffinity: &corev1.PodAntiAffinity{
-							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+							PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
 								{
-									LabelSelector: &metav1.LabelSelector{
-										MatchExpressions: []metav1.LabelSelectorRequirement{
-											{
-												Key:      "name",
-												Operator: metav1.LabelSelectorOpIn,
-												Values:   []string{HypershiftOperatorName},
+									PodAffinityTerm: corev1.PodAffinityTerm{
+										LabelSelector: &metav1.LabelSelector{
+											MatchExpressions: []metav1.LabelSelectorRequirement{
+												{
+													Key:      "name",
+													Operator: metav1.LabelSelectorOpIn,
+													Values:   []string{HypershiftOperatorName},
+												},
 											},
 										},
+										TopologyKey: "kubernetes.io/hostname",
 									},
-									TopologyKey: "kubernetes.io/hostname",
+									Weight: 10,
 								},
 							},
 						},
