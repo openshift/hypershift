@@ -7,7 +7,7 @@ IMG ?= hypershift:latest
 CRD_OPTIONS ?= "crd"
 
 # Runtime CLI to use for building and pushing images
-RUNTIME ?= "docker"
+RUNTIME ?= $(shell sh hack/utils.sh get_container_engine)
 
 TOOLS_DIR=./hack/tools
 BIN_DIR=bin
