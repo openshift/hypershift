@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+	utilsnet "k8s.io/utils/net"
 )
 
 const (
@@ -131,7 +132,7 @@ func generateKubeConfig(url string, crtBytes, keyBytes, caBytes []byte) ([]byte,
 	}
 	kubeCfg.Clusters = map[string]*clientcmdapi.Cluster{
 		"cluster": {
-			Server:                   url,
+			Server:                   addBracketsIfIPv6(url),
 			CertificateAuthorityData: caBytes,
 		},
 	}
@@ -154,4 +155,17 @@ func generateKubeConfig(url string, crtBytes, keyBytes, caBytes []byte) ([]byte,
 
 func inClusterKASURL(namespace string, apiServerPort int32) string {
 	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, apiServerPort)
+}
+
+// addBracketsIfIPv6 function is needed to build the serverAPI url for every kubeconfig created.
+// The function returns a string in 3 ways.
+// - Without brackets if it's an URL or an IPv4
+// - With brackets if it's a valid IPv6
+func addBracketsIfIPv6(apiAddress string) string {
+
+	if utilsnet.IsIPv6String(apiAddress) {
+		return fmt.Sprintf("[%s]", apiAddress)
+	}
+
+	return apiAddress
 }
