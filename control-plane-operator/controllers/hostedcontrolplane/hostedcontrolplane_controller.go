@@ -2714,18 +2714,20 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 		return fmt.Errorf("failed to reconcile openshift controller manager config: %w", err)
 	}
 
-	service := manifests.OpenShiftControllerService(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, service, func() error {
-		return ocm.ReconcileService(service, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift controller manager service: %w", err)
-	}
+	if _, exists := hcp.Annotations[hyperv1.DisableMonitoringServices]; !exists {
+		service := manifests.OpenShiftControllerService(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, service, func() error {
+			return ocm.ReconcileService(service, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile openshift controller manager service: %w", err)
+		}
 
-	serviceMonitor := manifests.OpenShiftControllerServiceMonitor(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
-		return ocm.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift controller manager service monitor: %w", err)
+		serviceMonitor := manifests.OpenShiftControllerServiceMonitor(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
+			return ocm.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile openshift controller manager service monitor: %w", err)
+		}
 	}
 
 	deployment := manifests.OpenShiftControllerManagerDeployment(hcp.Namespace)
@@ -2750,18 +2752,20 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftRouteControllerManager(
 		return fmt.Errorf("failed to get openshift controller manager config: %w", err)
 	}
 
-	service := manifests.OpenShiftRouteControllerManagerService(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, service, func() error {
-		return routecm.ReconcileService(service, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift route controller manager service: %w", err)
-	}
+	if _, exists := hcp.Annotations[hyperv1.DisableMonitoringServices]; !exists {
+		service := manifests.OpenShiftRouteControllerManagerService(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, service, func() error {
+			return routecm.ReconcileService(service, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile openshift route controller manager service: %w", err)
+		}
 
-	serviceMonitor := manifests.OpenShiftRouteControllerManagerServiceMonitor(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
-		return routecm.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift route controller manager service monitor: %w", err)
+		serviceMonitor := manifests.OpenShiftRouteControllerManagerServiceMonitor(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
+			return routecm.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile openshift route controller manager service monitor: %w", err)
+		}
 	}
 
 	deployment := manifests.OpenShiftRouteControllerManagerDeployment(hcp.Namespace)
@@ -2795,18 +2799,20 @@ func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx cont
 func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := cvo.NewCVOParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext)
 
-	service := manifests.ClusterVersionOperatorService(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, service, func() error {
-		return cvo.ReconcileService(service, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile cluster version operator service: %w", err)
-	}
+	if _, exists := hcp.Annotations[hyperv1.DisableMonitoringServices]; !exists {
+		service := manifests.ClusterVersionOperatorService(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, service, func() error {
+			return cvo.ReconcileService(service, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile cluster version operator service: %w", err)
+		}
 
-	serviceMonitor := manifests.ClusterVersionOperatorServiceMonitor(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
-		return cvo.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile cluster version operator service monitor: %w", err)
+		serviceMonitor := manifests.ClusterVersionOperatorServiceMonitor(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, serviceMonitor, func() error {
+			return cvo.ReconcileServiceMonitor(serviceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile cluster version operator service monitor: %w", err)
+		}
 	}
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
@@ -3050,17 +3056,20 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		}
 	}
 
-	catalogOperatorMetricsService := manifests.CatalogOperatorMetricsService(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, catalogOperatorMetricsService, func() error {
-		return olm.ReconcileCatalogOperatorMetricsService(catalogOperatorMetricsService, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile catalog operator metrics service: %w", err)
-	}
-	catalogOperatorServiceMonitor := manifests.CatalogOperatorServiceMonitor(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, catalogOperatorServiceMonitor, func() error {
-		return olm.ReconcileCatalogServiceMonitor(catalogOperatorServiceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile catalog operator service monitor: %w", err)
+	if _, exists := hcp.Annotations[hyperv1.DisableMonitoringServices]; !exists {
+		catalogOperatorMetricsService := manifests.CatalogOperatorMetricsService(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, catalogOperatorMetricsService, func() error {
+			return olm.ReconcileCatalogOperatorMetricsService(catalogOperatorMetricsService, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile catalog operator metrics service: %w", err)
+		}
+
+		catalogOperatorServiceMonitor := manifests.CatalogOperatorServiceMonitor(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, catalogOperatorServiceMonitor, func() error {
+			return olm.ReconcileCatalogServiceMonitor(catalogOperatorServiceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile catalog operator service monitor: %w", err)
+		}
 	}
 	catalogOperatorDeployment := manifests.CatalogOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, catalogOperatorDeployment, func() error {
@@ -3069,18 +3078,20 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 		return fmt.Errorf("failed to reconcile catalog operator deployment: %w", err)
 	}
 
-	olmOperatorMetricsService := manifests.OLMOperatorMetricsService(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, olmOperatorMetricsService, func() error {
-		return olm.ReconcileOLMOperatorMetricsService(olmOperatorMetricsService, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile olm operator metrics service: %w", err)
-	}
+	if _, exists := hcp.Annotations[hyperv1.DisableMonitoringServices]; !exists {
+		olmOperatorMetricsService := manifests.OLMOperatorMetricsService(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, olmOperatorMetricsService, func() error {
+			return olm.ReconcileOLMOperatorMetricsService(olmOperatorMetricsService, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile olm operator metrics service: %w", err)
+		}
 
-	olmOperatorServiceMonitor := manifests.OLMOperatorServiceMonitor(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, olmOperatorServiceMonitor, func() error {
-		return olm.ReconcileOLMOperatorServiceMonitor(olmOperatorServiceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile olm operator service monitor: %w", err)
+		olmOperatorServiceMonitor := manifests.OLMOperatorServiceMonitor(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, olmOperatorServiceMonitor, func() error {
+			return olm.ReconcileOLMOperatorServiceMonitor(olmOperatorServiceMonitor, p.OwnerRef, hcp.Spec.ClusterID, r.MetricsSet)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile olm operator service monitor: %w", err)
+		}
 	}
 
 	olmOperatorDeployment := manifests.OLMOperatorDeployment(hcp.Namespace)
