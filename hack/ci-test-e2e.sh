@@ -31,6 +31,7 @@ generate_junit() {
 }
 trap generate_junit EXIT
 
+REQUEST_SERVING_COMPONENT_TEST="${REQUEST_SERVING_COMPONENT_TEST:-}"
 REQUEST_SERVING_COMPONENT_PARAMS=""
 if [[ -n "${REQUEST_SERVING_COMPONENT_TEST}" ]]; then
    REQUEST_SERVING_COMPONENT_PARAMS="--e2e.test-request-serving-isolation \
