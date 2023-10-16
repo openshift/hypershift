@@ -2488,9 +2488,9 @@ func reconcileControlPlaneOperatorDeployment(
 		})
 	}
 
-	if hc.Spec.AdditionalTrustBundle != nil {
+	if hcp.Spec.AdditionalTrustBundle != nil {
 		// Add trusted-ca mount with optional configmap
-		hyperutil.DeploymentAddTrustBundleVolume(hc.Spec.AdditionalTrustBundle, deployment)
+		hyperutil.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
 	}
 
 	// set security context
