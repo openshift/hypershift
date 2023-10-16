@@ -50750,6 +50750,28 @@ objects:
                       description: Kubevirt specifies the configuration used when
                         operating on KubeVirt platform.
                       properties:
+                        additionalNetworks:
+                          description: AdditionalNetworks specify the extra networks
+                            attached to the nodes
+                          items:
+                            description: KubevirtNetwork specifies the configuration
+                              for a virtual machine network interface interface
+                            properties:
+                              name:
+                                description: Name specify the network attached to
+                                  the nodes it is a value with the format "[namespace]/[name]"
+                                  to reference the multus network attachment definition
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                        attachDefaultNetwork:
+                          default: true
+                          description: AttachDefaultNetwork specify if the default
+                            pod network should be attached to the nodes this can only
+                            be set to false if AdditionalNetworks are configured
+                          type: boolean
                         compute:
                           default:
                             cores: 2
@@ -51705,6 +51727,28 @@ objects:
                       description: Kubevirt specifies the configuration used when
                         operating on KubeVirt platform.
                       properties:
+                        additionalNetworks:
+                          description: AdditionalNetworks specify the extra networks
+                            attached to the nodes
+                          items:
+                            description: KubevirtNetwork specifies the configuration
+                              for a virtual machine network interface
+                            properties:
+                              name:
+                                description: Name specify the network attached to
+                                  the nodes it is a value with the format "[namespace]/[name]"
+                                  to reference the multus network attachment definition
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                        attachDefaultNetwork:
+                          default: true
+                          description: AttachDefaultNetwork specify if the default
+                            pod network should be attached to the nodes this can only
+                            be set to false if AdditionalNetworks are configured
+                          type: boolean
                         compute:
                           default:
                             cores: 2

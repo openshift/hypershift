@@ -712,6 +712,27 @@ type KubevirtNodePoolPlatform struct {
 	// +optional
 	// +kubebuilder:validation:Enum=Enable;Disable
 	NetworkInterfaceMultiQueue *MultiQueueSetting `json:"networkInterfaceMultiqueue,omitempty"`
+
+	// AdditionalNetworks specify the extra networks attached to the nodes
+	//
+	// +optional
+	AdditionalNetworks []KubevirtNetwork `json:"additionalNetworks,omitempty"`
+
+	// AttachDefaultNetwork specify if the default pod network should be attached to the nodes
+	// this can only be set to false if AdditionalNetworks are configured
+	//
+	// +optional
+	// +kubebuilder:default=true
+	AttachDefaultNetwork *bool `json:"attachDefaultNetwork,omitempty"`
+}
+
+// KubevirtNetwork specifies the configuration for a virtual machine
+// network interface interface
+type KubevirtNetwork struct {
+	// Name specify the network attached to the nodes
+	// it is a value with the format "[namespace]/[name]" to reference the
+	// multus network attachment definition
+	Name string `json:"name"`
 }
 
 // AWSNodePoolPlatform specifies the configuration of a NodePool when operating

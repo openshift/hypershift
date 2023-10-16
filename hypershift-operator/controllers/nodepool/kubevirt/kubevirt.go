@@ -130,6 +130,10 @@ func PlatformValidation(nodePool *hyperv1.NodePool) error {
 		}
 	}
 
+	if len(kvPlatform.AdditionalNetworks) == 0 && kvPlatform.AttachDefaultNetwork != nil && !*kvPlatform.AttachDefaultNetwork {
+		return fmt.Errorf("default network cannot be disabled when no additional networks are configured")
+	}
+
 	return nil
 }
 
@@ -170,24 +174,10 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
 					Domain: kubevirtv1.DomainSpec{
 						Devices: kubevirtv1.Devices{
-							Interfaces: []kubevirtv1.Interface{
-								{
-									Name: "default",
-									InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
-										Bridge: &kubevirtv1.InterfaceBridge{},
-									},
-								},
-							},
+							Interfaces: virtualMachineInterfaces(kvPlatform),
 						},
 					},
-					Networks: []kubevirtv1.Network{
-						{
-							Name: "default",
-							NetworkSource: kubevirtv1.NetworkSource{
-								Pod: &kubevirtv1.PodNetwork{},
-							},
-						},
-					},
+					Networks: virtualMachineNetworks(kvPlatform),
 				},
 			},
 		},
@@ -278,6 +268,57 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 	}
 
 	return template
+}
+
+func virtualMachineInterfaceName(idx int, name string) string {
+	return fmt.Sprintf("iface%d_%s", idx+1, strings.ReplaceAll(name, "/", "-"))
+}
+
+func virtualMachineInterfaces(kvPlatform *hyperv1.KubevirtNodePoolPlatform) []kubevirtv1.Interface {
+	interfaces := []kubevirtv1.Interface{}
+	if shouldAttachDefaultNetwork(kvPlatform) {
+		interfaces = append(interfaces, kubevirtv1.Interface{
+			Name: "default",
+			InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+				Bridge: &kubevirtv1.InterfaceBridge{},
+			},
+		})
+	}
+	for idx, network := range kvPlatform.AdditionalNetworks {
+		interfaces = append(interfaces, kubevirtv1.Interface{
+			Name: virtualMachineInterfaceName(idx, network.Name),
+			InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+				Bridge: &kubevirtv1.InterfaceBridge{},
+			},
+		})
+	}
+	return interfaces
+}
+
+func virtualMachineNetworks(kvPlatform *hyperv1.KubevirtNodePoolPlatform) []kubevirtv1.Network {
+	networks := []kubevirtv1.Network{}
+	if shouldAttachDefaultNetwork(kvPlatform) {
+		networks = append(networks, kubevirtv1.Network{
+			Name: "default",
+			NetworkSource: kubevirtv1.NetworkSource{
+				Pod: &kubevirtv1.PodNetwork{},
+			},
+		})
+	}
+	for idx, network := range kvPlatform.AdditionalNetworks {
+		networks = append(networks, kubevirtv1.Network{
+			Name: virtualMachineInterfaceName(idx, network.Name),
+			NetworkSource: kubevirtv1.NetworkSource{
+				Multus: &kubevirtv1.MultusNetwork{
+					NetworkName: network.Name,
+				},
+			},
+		})
+	}
+	return networks
+}
+func shouldAttachDefaultNetwork(kvPlatform *hyperv1.KubevirtNodePoolPlatform) bool {
+	return kvPlatform.AttachDefaultNetwork == nil || *kvPlatform.AttachDefaultNetwork
 }
 
 func MachineTemplateSpec(nodePool *hyperv1.NodePool, bootImage BootImage, hcluster *hyperv1.HostedCluster) (*capikubevirt.KubevirtMachineTemplateSpec, error) {

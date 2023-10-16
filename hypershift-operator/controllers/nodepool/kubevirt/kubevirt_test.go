@@ -38,10 +38,11 @@ const (
 
 func TestKubevirtMachineTemplate(t *testing.T) {
 	testCases := []struct {
-		name     string
-		nodePool *hyperv1.NodePool
-		hcluster *hyperv1.HostedCluster
-		expected *capikubevirt.KubevirtMachineTemplateSpec
+		name                    string
+		nodePool                *hyperv1.NodePool
+		hcluster                *hyperv1.HostedCluster
+		expected                *capikubevirt.KubevirtMachineTemplateSpec
+		expectedValidationError string
 	}{
 		{
 			name: "happy flow",
@@ -238,12 +239,241 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Addtional networks are configured",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							additionalNetworksNPOption([]hyperv1.KubevirtNetwork{
+								{
+									Name: "ns1/nad1",
+								},
+								{
+									Name: "ns2/nad2",
+								},
+							}),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							interfacesTmpltOpt([]kubevirtv1.Interface{
+								{
+									Name: "default",
+									InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+										Bridge: &kubevirtv1.InterfaceBridge{},
+									},
+								},
+								{
+									Name: "iface1_ns1-nad1",
+									InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+										Bridge: &kubevirtv1.InterfaceBridge{},
+									},
+								},
+								{
+									Name: "iface2_ns2-nad2",
+									InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+										Bridge: &kubevirtv1.InterfaceBridge{},
+									},
+								},
+							}),
+							networksTmpltOpt([]kubevirtv1.Network{
+								{
+									Name: "default",
+									NetworkSource: kubevirtv1.NetworkSource{
+										Pod: &kubevirtv1.PodNetwork{},
+									},
+								},
+								{
+									Name: "iface1_ns1-nad1",
+									NetworkSource: kubevirtv1.NetworkSource{
+										Multus: &kubevirtv1.MultusNetwork{
+											NetworkName: "ns1/nad1",
+										},
+									},
+								},
+								{
+									Name: "iface2_ns2-nad2",
+									NetworkSource: kubevirtv1.NetworkSource{
+										Multus: &kubevirtv1.MultusNetwork{
+											NetworkName: "ns2/nad2",
+										},
+									},
+								},
+							}),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "Addtional networks are configured excluding default one",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							attachDefaultNetworkNPOption(false),
+							additionalNetworksNPOption([]hyperv1.KubevirtNetwork{
+								{
+									Name: "ns1/nad1",
+								},
+								{
+									Name: "ns2/nad2",
+								},
+							}),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							interfacesTmpltOpt([]kubevirtv1.Interface{
+								{
+									Name: "iface1_ns1-nad1",
+									InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+										Bridge: &kubevirtv1.InterfaceBridge{},
+									},
+								},
+								{
+									Name: "iface2_ns2-nad2",
+									InterfaceBindingMethod: kubevirtv1.InterfaceBindingMethod{
+										Bridge: &kubevirtv1.InterfaceBridge{},
+									},
+								},
+							}),
+							networksTmpltOpt([]kubevirtv1.Network{
+								{
+									Name: "iface1_ns1-nad1",
+									NetworkSource: kubevirtv1.NetworkSource{
+										Multus: &kubevirtv1.MultusNetwork{
+											NetworkName: "ns1/nad1",
+										},
+									},
+								},
+								{
+									Name: "iface2_ns2-nad2",
+									NetworkSource: kubevirtv1.NetworkSource{
+										Multus: &kubevirtv1.MultusNetwork{
+											NetworkName: "ns2/nad2",
+										},
+									},
+								},
+							}),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "Excluding default network with addional ones should fail validation",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							attachDefaultNetworkNPOption(false),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+			expectedValidationError: "default network cannot be disabled when no additional networks are configured",
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-
+			if tc.expectedValidationError != "" {
+				g.Expect(PlatformValidation(tc.nodePool)).To(MatchError(tc.expectedValidationError))
+				return
+			}
 			g.Expect(PlatformValidation(tc.nodePool)).To(Succeed())
 
 			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
@@ -865,6 +1095,18 @@ func multiQueueNPOption(multiQueue hyperv1.MultiQueueSetting) nodePoolOption {
 	}
 }
 
+func additionalNetworksNPOption(additionalNetworks []hyperv1.KubevirtNetwork) nodePoolOption {
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		kvNodePool.AdditionalNetworks = additionalNetworks
+	}
+}
+
+func attachDefaultNetworkNPOption(attach bool) nodePoolOption {
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		kvNodePool.AttachDefaultNetwork = &attach
+	}
+}
+
 func generateKubevirtPlatform(options ...nodePoolOption) *hyperv1.KubevirtNodePoolPlatform {
 	exampleTemplate := &hyperv1.KubevirtNodePoolPlatform{}
 
@@ -910,6 +1152,17 @@ func storageTmpltOpt(volumeSize string) nodeTemplateOption {
 func networkInterfaceMultiQueueTmpltOpt() nodeTemplateOption {
 	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
 		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = pointer.Bool(true)
+	}
+}
+
+func interfacesTmpltOpt(interfaces []kubevirtv1.Interface) nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.Domain.Devices.Interfaces = interfaces
+	}
+}
+func networksTmpltOpt(networks []kubevirtv1.Network) nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.Networks = networks
 	}
 }
 

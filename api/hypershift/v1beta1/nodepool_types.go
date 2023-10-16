@@ -2,8 +2,9 @@ package v1beta1
 
 import (
 	"fmt"
-	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	"strings"
+
+	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -705,6 +706,27 @@ type KubevirtNodePoolPlatform struct {
 	// +optional
 	// +kubebuilder:validation:Enum=Enable;Disable
 	NetworkInterfaceMultiQueue *MultiQueueSetting `json:"networkInterfaceMultiqueue,omitempty"`
+
+	// AdditionalNetworks specify the extra networks attached to the nodes
+	//
+	// +optional
+	AdditionalNetworks []KubevirtNetwork `json:"additionalNetworks,omitempty"`
+
+	// AttachDefaultNetwork specify if the default pod network should be attached to the nodes
+	// this can only be set to false if AdditionalNetworks are configured
+	//
+	// +optional
+	// +kubebuilder:default=true
+	AttachDefaultNetwork *bool `json:"attachDefaultNetwork,omitempty"`
+}
+
+// KubevirtNetwork specifies the configuration for a virtual machine
+// network interface
+type KubevirtNetwork struct {
+	// Name specify the network attached to the nodes
+	// it is a value with the format "[namespace]/[name]" to reference the
+	// multus network attachment definition
+	Name string `json:"name"`
 }
 
 // AWSNodePoolPlatform specifies the configuration of a NodePool when operating

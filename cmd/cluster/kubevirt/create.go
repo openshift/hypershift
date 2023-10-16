@@ -12,9 +12,15 @@ import (
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/cluster/kubevirt/params"
 	"github.com/openshift/hypershift/support/infraid"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/pointer"
 )
+
+type NetworkOpts struct {
+	Name string `param:"name"`
+}
 
 const (
 	NodePortServicePublishingStrategy = "NodePort"
@@ -39,6 +45,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		CacheStrategyType:          "",
 		NetworkInterfaceMultiQueue: "",
 		QoSClass:                   "Burstable",
+		AttachDefaultNetwork:       pointer.Bool(true),
 	}
 
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.APIServerAddress, "api-server-address", opts.KubevirtPlatform.APIServerAddress, "The API server address that should be used for components outside the control plane")
@@ -56,6 +63,8 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.InfraStorageClassMappings, "infra-storage-class-mapping", opts.KubevirtPlatform.InfraStorageClassMappings, "KubeVirt CSI napping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb")
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.NetworkInterfaceMultiQueue, "network-multiqueue", opts.KubevirtPlatform.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Disable"`)
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.QoSClass, "qos-class", opts.KubevirtPlatform.QoSClass, `If "Guaranteed", set the limit cpu and memory of the VirtualMachineInstance, to be the same as the requested cpu and memory; supported values: "Burstable" and "Guaranteed"`)
+	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.AdditionalNetworks, "additional-network", opts.KubevirtPlatform.AdditionalNetworks, fmt.Sprintf(`Specify additional network that should be attached to the nodes, the "name" field should point to a multus network attachment definition with the format "[namespace]/[name]", Supported parameters: %s, example: "name:ns1/nad-foo`, params.Supported(NetworkOpts{})))
+	cmd.Flags().BoolVar(opts.KubevirtPlatform.AttachDefaultNetwork, "attach-default-network", *opts.KubevirtPlatform.AttachDefaultNetwork, `specify if the default pod network should be attached to the nodes this can only be set if an AdditionalNetworks is configured`)
 
 	cmd.MarkPersistentFlagRequired("pull-secret")
 
@@ -166,6 +175,21 @@ func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		return fmt.Errorf(`wrong value for the --qos-class parameter. Supported values are "Burstable" are "Guaranteed"`)
 	}
 
+	if len(opts.KubevirtPlatform.AdditionalNetworks) == 0 && opts.KubevirtPlatform.AttachDefaultNetwork != nil && !*opts.KubevirtPlatform.AttachDefaultNetwork {
+		return fmt.Errorf(`missing --additional-network. when --attach-default-network is false configuring an additional network is mandatory`)
+	}
+
+	additionalNetworks := []hyperv1.KubevirtNetwork{}
+	for _, additionalNetworkOptsRaw := range opts.KubevirtPlatform.AdditionalNetworks {
+		additionalNetworkOpts := NetworkOpts{}
+		if err := params.Map("additional-network", additionalNetworkOptsRaw, &additionalNetworkOpts); err != nil {
+			return err
+		}
+		additionalNetworks = append(additionalNetworks, hyperv1.KubevirtNetwork{
+			Name: additionalNetworkOpts.Name,
+		})
+	}
+
 	exampleOptions.Kubevirt = &apifixtures.ExampleKubevirtOptions{
 		ServicePublishingStrategy:  opts.KubevirtPlatform.ServicePublishingStrategy,
 		APIServerAddress:           opts.KubevirtPlatform.APIServerAddress,
@@ -182,6 +206,8 @@ func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		InfraStorageClassMappings:  opts.KubevirtPlatform.InfraStorageClassMappings,
 		NetworkInterfaceMultiQueue: multiQueue,
 		QoSClass:                   qosClass,
+		AdditionalNetworks:         additionalNetworks,
+		AttachDefaultNetwork:       opts.KubevirtPlatform.AttachDefaultNetwork,
 	}
 
 	if opts.BaseDomain != "" {
