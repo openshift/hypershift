@@ -32,14 +32,7 @@ const (
 	APICriticalPriorityClass = "hypershift.openshift.io/api-critical-priority-class"
 	// EtcdPriorityClass is for etcd pods.
 	EtcdPriorityClass = "hypershift.openshift.io/etcd-priority-class"
-	// KonnectivityServerImageAnnotation is a temporary annotation that allows the specification of the konnectivity server image.
-	// This will be removed when Konnectivity is added to the Openshift release payload
-	KonnectivityServerImageAnnotation = "hypershift.openshift.io/konnectivity-server-image"
-	// KonnectivityAgentImageAnnotation is a temporary annotation that allows the specification of the konnectivity agent image.
-	// This will be removed when Konnectivity is added to the Openshift release payload
-	KonnectivityAgentImageAnnotation = "hypershift.openshift.io/konnectivity-agent-image"
-	// ControlPlaneOperatorImageAnnotation is a annotation that allows the specification of the control plane operator image.
-	// This is used for development and e2e workflows
+	// ControlPlaneOperatorImageAnnotation is used for development and e2e workflows.
 	ControlPlaneOperatorImageAnnotation = "hypershift.openshift.io/control-plane-operator-image"
 	// RestartDateAnnotation is a annotation that can be used to trigger a rolling restart of all components managed by hypershift.
 	// it is important in some situations like CA rotation where components need to be fully restarted to pick up new CAs. It's also

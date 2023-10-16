@@ -134,9 +134,6 @@ func defaultCommand() *cobra.Command {
 }
 
 const (
-	// TODO: Include konnectivity image in release payload
-	defaultKonnectivityImage = "registry.ci.openshift.org/hypershift/apiserver-network-proxy:latest"
-
 	// Default AWS KMS provider image. Can be overriden with annotation on HostedCluster
 	defaultAWSKMSProviderImage = "registry.ci.openshift.org/hypershift/aws-encryption-provider:latest"
 )
@@ -326,13 +323,6 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("Using CPO image", "image", cpoImage)
 
-		konnectivityServerImage := defaultKonnectivityImage
-		konnectivityAgentImage := defaultKonnectivityImage
-		if envImage := os.Getenv(images.KonnectivityEnvVar); len(envImage) > 0 {
-			konnectivityServerImage = envImage
-			konnectivityAgentImage = envImage
-		}
-
 		awsKMSProviderImage := defaultAWSKMSProviderImage
 		if envImage := os.Getenv(images.AWSEncryptionProviderEnvVar); len(envImage) > 0 {
 			awsKMSProviderImage = envImage
@@ -341,8 +331,6 @@ func NewStartCommand() *cobra.Command {
 		componentImages := map[string]string{
 			util.AvailabilityProberImageName: availabilityProberImage,
 			"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
-			"konnectivity-server":            konnectivityServerImage,
-			"konnectivity-agent":             konnectivityAgentImage,
 			"socks5-proxy":                   socks5ProxyImage,
 			"token-minter":                   tokenMinterImage,
 			"aws-kms-provider":               awsKMSProviderImage,

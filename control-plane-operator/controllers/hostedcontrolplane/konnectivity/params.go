@@ -95,10 +95,6 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider
 		p.KonnectivityAgentImage = image
 	}
 
-	if _, ok := hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]; ok {
-		p.KonnectivityAgentImage = hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]
-	}
-
 	return p
 }
 

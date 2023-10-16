@@ -346,9 +346,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	if _, ok := hcp.Annotations[hyperv1.IBMCloudKMSProviderImage]; ok {
 		params.Images.IBMCloudKMS = hcp.Annotations[hyperv1.IBMCloudKMSProviderImage]
 	}
-	if _, ok := hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]; ok {
-		params.Images.KonnectivityServer = hcp.Annotations[hyperv1.KonnectivityServerImageAnnotation]
-	}
 
 	params.KubeConfigRef = hcp.Spec.KubeConfig
 	params.OwnerRef = config.OwnerRefFrom(hcp)
