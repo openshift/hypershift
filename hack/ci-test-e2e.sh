@@ -33,11 +33,17 @@ trap generate_junit EXIT
 
 REQUEST_SERVING_COMPONENT_TEST="${REQUEST_SERVING_COMPONENT_TEST:-}"
 REQUEST_SERVING_COMPONENT_PARAMS=""
+
+# Replacing SHARE_DIR variable to avoid cat error https://storage.googleapis.com/origin-ci-test/pr-logs/pull/openshift_hypershift/3104/pull-ci-openshift-hypershift-main-e2e-aws/1714331123632312320/build-log.txt
+MGMT_HC_NAMESPACE_PARSED="${MGMT_HC_NAMESPACE/\$SHARED_DIR/$SHARED_DIR}"
+MGMT_HC_NAME_PARSED="${MGMT_HC_NAME/\$SHARED_DIR/$SHARED_DIR}"
+
+MGMT_NAMESPACE_STRING=$(cat "$MGMT_HC_NAMESPACE")
 if [[ -n "${REQUEST_SERVING_COMPONENT_TEST}" ]]; then
    REQUEST_SERVING_COMPONENT_PARAMS="--e2e.test-request-serving-isolation \
   --e2e.management-parent-kubeconfig=${MGMT_PARENT_KUBECONFIG} \
-  --e2e.management-cluster-namespace=$(cat $MGMT_HC_NAMESPACE) \
-  --e2e.management-cluster-name=$(cat $MGMT_HC_NAME)"
+  --e2e.management-cluster-namespace=$(cat "$MGMT_HC_NAMESPACE_PARSED") \
+  --e2e.management-cluster-name=$(cat "$MGMT_HC_NAME_PARSED")"
 fi
 
 bin/test-e2e \
