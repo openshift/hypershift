@@ -33,11 +33,12 @@ trap generate_junit EXIT
 
 REQUEST_SERVING_COMPONENT_TEST="${REQUEST_SERVING_COMPONENT_TEST:-}"
 REQUEST_SERVING_COMPONENT_PARAMS=""
+
 if [[ -n "${REQUEST_SERVING_COMPONENT_TEST}" ]]; then
    REQUEST_SERVING_COMPONENT_PARAMS="--e2e.test-request-serving-isolation \
   --e2e.management-parent-kubeconfig=${MGMT_PARENT_KUBECONFIG} \
-  --e2e.management-cluster-namespace=$(cat $MGMT_HC_NAMESPACE) \
-  --e2e.management-cluster-name=$(cat $MGMT_HC_NAME)"
+  --e2e.management-cluster-namespace=$(cat "${SHARED_DIR}/management_cluster_namespace") \
+  --e2e.management-cluster-name=$(cat "${SHARED_DIR}/management_cluster_name")"
 fi
 
 bin/test-e2e \
