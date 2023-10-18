@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,8 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	k8sutilspointer "k8s.io/utils/pointer"
 )
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -851,8 +854,8 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 
 					// Expect curl to timeout https://curl.se/docs/manpage.html (exit code 28).
 					if err != nil && !strings.Contains(err.Error(), "command terminated with exit code 28") {
-						t.Errorf("private router pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
 					}
+					t.Errorf("private router pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
 				}
 			}
 
@@ -1548,4 +1551,120 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		t.Fatalf("Failed to validate HostedCluster conditions in %s: %v", duration, err)
 	}
 	t.Logf("Successfully validated all expected HostedCluster conditions in %s", duration)
+}
+
+func CheckAffinityOpinions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("CheckAffinityOpinions", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		awsEbsCsiDriverOperatorPodSubstring := "aws-ebs-csi-driver-operator"
+
+		var podList corev1.PodList
+		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
+			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
+		}
+
+		namespacedName := types.NamespacedName{
+			Namespace: namespace,
+			Name:      hostedCluster.Name,
+		}
+
+		var hcp hyperv1.HostedControlPlane
+		if err := client.Get(ctx, namespacedName, &hcp); err != nil {
+			t.Fatalf("failed to get hostedcontrolplane: %v", err)
+		}
+
+		DC := suppconfig.DeploymentConfig{}
+		DC.SetDefaults(&hcp, nil, k8sutilspointer.Int(1))
+
+		for _, pod := range podList.Items {
+			if DC.Scheduling.Tolerations != nil {
+				for _, dcToleration := range DC.Scheduling.Tolerations {
+					found := false
+					for _, podToleration := range pod.Spec.Tolerations {
+						if reflect.DeepEqual(podToleration, dcToleration) {
+							found = true
+							break
+						}
+						// aws-ebs-csi-driver-operator are set through CSO and are different from the ones in the DC
+						if strings.Contains(pod.Name, awsEbsCsiDriverOperatorPodSubstring) && podToleration.Key == dcToleration.Key {
+							found = true
+							break
+						}
+
+					}
+					if !found {
+						t.Errorf("Pod %s does not have required toleration: %+v", pod.Name, dcToleration)
+					}
+				}
+			}
+
+			if DC.Scheduling.Affinity != nil {
+				if DC.Scheduling.Affinity.NodeAffinity != nil {
+					if DC.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution != nil {
+						for _, dcNodePreferredAffinity := range DC.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
+							found := false
+							for _, podNodePreferredAffinity := range pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
+								if reflect.DeepEqual(podNodePreferredAffinity, dcNodePreferredAffinity) {
+									found = true
+									break
+								}
+							}
+							if !found {
+								t.Errorf("Pod %s does not preffered NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution : %+v", pod.Name, dcNodePreferredAffinity)
+							}
+						}
+					}
+
+					if DC.Scheduling.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil && DC.Scheduling.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms != nil {
+						for _, dcNodeRequiredAffinity := range DC.Scheduling.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms {
+							found := false
+							for _, podNodeRequiredAffinity := range pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms {
+								if reflect.DeepEqual(podNodeRequiredAffinity, dcNodeRequiredAffinity) {
+									found = true
+									break
+								}
+							}
+							if !found {
+								t.Errorf("Pod %s does not have required NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms %+v", pod.Name, dcNodeRequiredAffinity)
+							}
+						}
+					}
+				}
+
+				if DC.Scheduling.Affinity.PodAffinity != nil {
+					if DC.Scheduling.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution != nil {
+						for _, dcRequiredPodAffinity := range DC.Scheduling.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
+							found := false
+							for _, podRequiredPodAffinity := range pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
+								if reflect.DeepEqual(podRequiredPodAffinity, dcRequiredPodAffinity) {
+									found = true
+									break
+								}
+							}
+							if !found {
+								t.Errorf("Pod %s does not have required PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution %+v", pod.Name, dcRequiredPodAffinity)
+							}
+						}
+					}
+				}
+
+				if DC.Scheduling.Affinity.PodAntiAffinity != nil {
+					if DC.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
+						for _, dcRequiredPodAntiAffinity := range DC.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution {
+							found := false
+							for _, podRequiredPodAffinity := range pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution {
+								if reflect.DeepEqual(podRequiredPodAffinity, dcRequiredPodAntiAffinity) {
+									found = true
+									break
+								}
+							}
+							if !found {
+								t.Errorf("Pod %s does not have required PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution %+v", pod.Name, dcRequiredPodAntiAffinity)
+							}
+						}
+					}
+				}
+			}
+		}
+	})
 }
