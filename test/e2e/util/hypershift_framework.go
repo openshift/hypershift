@@ -108,7 +108,9 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, opts *core.
 		NoticePreemptionOrFailedScheduling(t, context.Background(), h.client, hostedCluster)
 		EnsureAllRoutesUseHCPRouter(t, context.Background(), h.client, hostedCluster)
 		EnsureNetworkPolicies(t, context.Background(), h.client, hostedCluster)
-		CheckAffinityOpinions(t, context.Background(), h.client, hostedCluster)
+		if platform == hyperv1.AWSPlatform {
+			EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
+		}
 	})
 }
 

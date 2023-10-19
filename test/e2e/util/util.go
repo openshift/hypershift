@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -52,8 +51,6 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	k8sutilspointer "k8s.io/utils/pointer"
 )
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -854,8 +851,8 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 
 					// Expect curl to timeout https://curl.se/docs/manpage.html (exit code 28).
 					if err != nil && !strings.Contains(err.Error(), "command terminated with exit code 28") {
+						t.Errorf("private router pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
 					}
-					t.Errorf("private router pod was unexpectedly allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
 				}
 			}
 
@@ -1553,10 +1550,16 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 	t.Logf("Successfully validated all expected HostedCluster conditions in %s", duration)
 }
 
-func CheckAffinityOpinions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	t.Run("CheckAffinityOpinions", func(t *testing.T) {
+func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureHCPPodsAffinitiesAndTolerations ", func(t *testing.T) {
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
 		awsEbsCsiDriverOperatorPodSubstring := "aws-ebs-csi-driver-operator"
+		controlPlaneLabelTolerationKey := "hypershift.openshift.io/control-plane"
+		clusterNodeSchedulingAffinityWeight := 100
+		controlPlaneNodeSchedulingAffinityWeight := clusterNodeSchedulingAffinityWeight / 2
+		colocationLabelKey := "hypershift.openshift.io/hosted-control-plane"
+
+		g := NewGomegaWithT(t)
 
 		var podList corev1.PodList
 		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
@@ -1573,98 +1576,98 @@ func CheckAffinityOpinions(t *testing.T, ctx context.Context, client crclient.Cl
 			t.Fatalf("failed to get hostedcontrolplane: %v", err)
 		}
 
-		DC := suppconfig.DeploymentConfig{}
-		DC.SetDefaults(&hcp, nil, k8sutilspointer.Int(1))
+		expected := suppconfig.DeploymentConfig{
+			Scheduling: suppconfig.Scheduling{
+				Tolerations: []corev1.Toleration{
+					{
+						Key:      controlPlaneLabelTolerationKey,
+						Operator: corev1.TolerationOpEqual,
+						Value:    "true",
+						Effect:   corev1.TaintEffectNoSchedule,
+					},
+					{
+						Key:      hyperv1.HostedClusterLabel,
+						Operator: corev1.TolerationOpEqual,
+						Value:    hcp.Namespace,
+						Effect:   corev1.TaintEffectNoSchedule,
+					},
+				},
+				Affinity: &corev1.Affinity{
+					NodeAffinity: &corev1.NodeAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
+							{
+								Weight: int32(controlPlaneNodeSchedulingAffinityWeight),
+								Preference: corev1.NodeSelectorTerm{
+									MatchExpressions: []corev1.NodeSelectorRequirement{
+										{
+											Key:      controlPlaneLabelTolerationKey,
+											Operator: corev1.NodeSelectorOpIn,
+											Values:   []string{"true"},
+										},
+									},
+								},
+							},
+							{
+								Weight: int32(clusterNodeSchedulingAffinityWeight),
+								Preference: corev1.NodeSelectorTerm{
+									MatchExpressions: []corev1.NodeSelectorRequirement{
+										{
+											Key:      hyperv1.HostedClusterLabel,
+											Operator: corev1.NodeSelectorOpIn,
+											Values:   []string{hcp.Namespace},
+										},
+									},
+								},
+							},
+						},
+					},
+					PodAffinity: &corev1.PodAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+							{
+								Weight: 100,
+								PodAffinityTerm: corev1.PodAffinityTerm{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											colocationLabelKey: hcp.Namespace,
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		awsEbsCsiDriverOperatorTolerations := []corev1.Toleration{
+			{
+				Key:      controlPlaneLabelTolerationKey,
+				Operator: corev1.TolerationOpExists,
+			},
+			{
+				Key:      hyperv1.HostedClusterLabel,
+				Operator: corev1.TolerationOpEqual,
+				Value:    hcp.Namespace,
+			},
+		}
 
 		for _, pod := range podList.Items {
-			if DC.Scheduling.Tolerations != nil {
-				for _, dcToleration := range DC.Scheduling.Tolerations {
-					found := false
-					for _, podToleration := range pod.Spec.Tolerations {
-						if reflect.DeepEqual(podToleration, dcToleration) {
-							found = true
-							break
-						}
-						// aws-ebs-csi-driver-operator are set through CSO and are different from the ones in the DC
-						if strings.Contains(pod.Name, awsEbsCsiDriverOperatorPodSubstring) && podToleration.Key == dcToleration.Key {
-							found = true
-							break
-						}
-
-					}
-					if !found {
-						t.Errorf("Pod %s does not have required toleration: %+v", pod.Name, dcToleration)
-					}
-				}
+			// Skip KubeVirt VM worker node related pods
+			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
+				continue
 			}
 
-			if DC.Scheduling.Affinity != nil {
-				if DC.Scheduling.Affinity.NodeAffinity != nil {
-					if DC.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution != nil {
-						for _, dcNodePreferredAffinity := range DC.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
-							found := false
-							for _, podNodePreferredAffinity := range pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
-								if reflect.DeepEqual(podNodePreferredAffinity, dcNodePreferredAffinity) {
-									found = true
-									break
-								}
-							}
-							if !found {
-								t.Errorf("Pod %s does not preffered NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution : %+v", pod.Name, dcNodePreferredAffinity)
-							}
-						}
-					}
-
-					if DC.Scheduling.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil && DC.Scheduling.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms != nil {
-						for _, dcNodeRequiredAffinity := range DC.Scheduling.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms {
-							found := false
-							for _, podNodeRequiredAffinity := range pod.Spec.Affinity.NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms {
-								if reflect.DeepEqual(podNodeRequiredAffinity, dcNodeRequiredAffinity) {
-									found = true
-									break
-								}
-							}
-							if !found {
-								t.Errorf("Pod %s does not have required NodeAffinity.RequiredDuringSchedulingIgnoredDuringExecution.NodeSelectorTerms %+v", pod.Name, dcNodeRequiredAffinity)
-							}
-						}
-					}
-				}
-
-				if DC.Scheduling.Affinity.PodAffinity != nil {
-					if DC.Scheduling.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution != nil {
-						for _, dcRequiredPodAffinity := range DC.Scheduling.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
-							found := false
-							for _, podRequiredPodAffinity := range pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution {
-								if reflect.DeepEqual(podRequiredPodAffinity, dcRequiredPodAffinity) {
-									found = true
-									break
-								}
-							}
-							if !found {
-								t.Errorf("Pod %s does not have required PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution %+v", pod.Name, dcRequiredPodAffinity)
-							}
-						}
-					}
-				}
-
-				if DC.Scheduling.Affinity.PodAntiAffinity != nil {
-					if DC.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution != nil {
-						for _, dcRequiredPodAntiAffinity := range DC.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution {
-							found := false
-							for _, podRequiredPodAffinity := range pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution {
-								if reflect.DeepEqual(podRequiredPodAffinity, dcRequiredPodAntiAffinity) {
-									found = true
-									break
-								}
-							}
-							if !found {
-								t.Errorf("Pod %s does not have required PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution %+v", pod.Name, dcRequiredPodAntiAffinity)
-							}
-						}
-					}
-				}
+			//aws-ebs-csi-driver-operator tolerations are set through CSO and are different from the ones in the DC
+			if strings.Contains(pod.Name, awsEbsCsiDriverOperatorPodSubstring) {
+				g.Expect(pod.Spec.Tolerations).To(ContainElements(awsEbsCsiDriverOperatorTolerations))
+			} else {
+				g.Expect(pod.Spec.Tolerations).To(ContainElements(expected.Scheduling.Tolerations))
 			}
+
+			g.Expect(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expected.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
+			g.Expect(pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expected.Scheduling.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
+
 		}
 	})
 }
