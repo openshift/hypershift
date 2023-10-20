@@ -33,6 +33,8 @@ const (
 	CAHashAnnotation = "hypershiftlite.openshift.io/ca-hash"
 	// CASignerCertMapKey is the key value in a CA cert utilized by the control plane operator.
 	CASignerCertMapKey = "ca.crt"
+	// OCPCASignerCertMapKey is the key value in a CA cert created by OCP library-go mechanisms.
+	OCPCASignerCertMapKey = "ca=bundle.crt"
 	// CASignerKeyMapKey is the key for the private key field in a CA cert utilized by the control plane operator.
 	CASignerKeyMapKey = "ca.key"
 	// TLSSignerCertMapKey is the key value the default k8s cert-manager looks for in a TLS certificate in a TLS secret.

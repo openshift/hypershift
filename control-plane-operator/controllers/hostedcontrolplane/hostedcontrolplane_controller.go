@@ -14,7 +14,6 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
-
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/kms"
@@ -68,6 +67,10 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/library-go/pkg/controller/factory"
+	"github.com/openshift/library-go/pkg/operator/certrotation"
+	librarygoevents "github.com/openshift/library-go/pkg/operator/events"
+	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -82,7 +85,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/duration"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apiserver/pkg/authentication/user"
+	corev1informers "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes"
+	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/pointer"
@@ -164,6 +170,19 @@ type HostedControlPlaneReconciler struct {
 	awsSession                    *session.Session
 	reconcileInfrastructureStatus func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error)
 	NameServerIP                  string
+
+	KubeClient        kubernetes.Interface
+	OperatorClient    v1helpers.StaticPodOperatorClient
+	Recorder          librarygoevents.Recorder
+	Namespace         string
+	SecretInformer    corev1informers.SecretInformer
+	SecretLister      corev1listers.SecretLister
+	ConfigMapInformer corev1informers.ConfigMapInformer
+	ConfigMapLister   corev1listers.ConfigMapLister
+	CertRotationScale time.Duration
+	Context           context.Context
+
+	certRotationControllers map[string]factory.Controller
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -285,6 +304,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 		return ctrl.Result{}, err
 	}
+
+	r.ensureCertRotationControllers(hostedControlPlane)
 
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
 	// This is the best effort ping to the identity provider
@@ -1802,7 +1823,12 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile kas server secret: %w", err)
 	}
 
-	if err := r.setupKASClientSigners(ctx, hcp, p, createOrUpdate, rootCASecret); err != nil {
+	customerAdminSigner := manifests.CustomerSystemAdminSigner(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(customerAdminSigner), customerAdminSigner); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to fetch customer admin signer secret: %w", err)
+	}
+
+	if err := r.setupKASClientSigners(ctx, hcp, p, createOrUpdate, rootCASecret, customerAdminSigner); err != nil {
 		return err
 	}
 
@@ -4330,4 +4356,60 @@ func doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx context.Context, c cli
 		return true, nil
 	}
 	return false, nil
+}
+
+const defaultRotationDay time.Duration = 24 * time.Hour
+
+func (r *HostedControlPlaneReconciler) ensureCertRotationControllers(hcp *hyperv1.HostedControlPlane) {
+	if r.certRotationControllers == nil {
+		r.certRotationControllers = map[string]factory.Controller{}
+	}
+
+	// TODO: need owner refs on the secrets we create to trigger HCP reconcile loop when these change, so the total client CA is recreated
+	// - this will come with https://github.com/openshift/library-go/pull/1593
+	// TODO: ensure we destroy rotators when HCP is deleted
+	// - does the controller handle this? do we just crash? if HCP is singleton, do we need this logic?
+
+	name := "CustomerAdminKubeconfigSigner"
+	if _, ok := r.certRotationControllers[name]; !ok {
+		rotator := certrotation.NewCertRotationController(
+			name,
+			certrotation.RotatedSigningCASecret{
+				Namespace:     hcp.Namespace,
+				Name:          manifests.CustomerSystemAdminSigner(hcp.Namespace).Name,
+				Validity:      14 * defaultRotationDay,
+				Refresh:       5 * defaultRotationDay,
+				Informer:      r.SecretInformer,
+				Lister:        r.SecretLister,
+				Client:        r.KubeClient.CoreV1(),
+				EventRecorder: r.Recorder,
+			},
+			certrotation.CABundleConfigMap{
+				Namespace:     hcp.Namespace,
+				Name:          manifests.CustomerSystemAdminSignerCA(hcp.Namespace).Name,
+				Informer:      r.ConfigMapInformer,
+				Lister:        r.ConfigMapLister,
+				Client:        r.KubeClient.CoreV1(),
+				EventRecorder: r.Recorder,
+			},
+			certrotation.RotatedSelfSignedCertKeySecret{
+				Namespace: hcp.Namespace,
+				Name:      manifests.CustomerSystemAdminClientCertSecret(hcp.Namespace).Name,
+				Validity:  7 * r.CertRotationScale,
+				Refresh:   1 * r.CertRotationScale,
+				//RefreshOnlyWhenExpired: refreshOnlyWhenExpired, // TODO: how to plumb?
+				CertCreator: &certrotation.ClientRotation{
+					UserInfo: &user.DefaultInfo{Name: "system:control-plane-node-admin", Groups: []string{"system:masters"}},
+				},
+				Informer:      r.SecretInformer,
+				Lister:        r.SecretLister,
+				Client:        r.KubeClient.CoreV1(),
+				EventRecorder: r.Recorder,
+			},
+			r.OperatorClient,
+			r.Recorder,
+		)
+		r.certRotationControllers[name] = rotator
+		go rotator.Run(r.Context, 1) // TODO: plumb workers
+	}
 }

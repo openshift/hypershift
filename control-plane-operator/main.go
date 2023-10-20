@@ -23,6 +23,10 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 	tokenminter "github.com/openshift/hypershift/token-minter"
+	"github.com/openshift/library-go/pkg/operator/certrotation"
+	librarygoevents "github.com/openshift/library-go/pkg/operator/events"
+	"github.com/openshift/library-go/pkg/operator/genericoperatorclient"
+	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	"go.uber.org/zap/zapcore"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +34,9 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/kubernetes"
+	clientgocache "k8s.io/client-go/tools/cache"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -388,7 +395,43 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
+		kubeClient, err := kubernetes.NewForConfig(restConfig)
+		if err != nil {
+			setupLog.Error(err, "could not create k8s client")
+			os.Exit(1)
+		}
+		kubeInformersForNamespaces := v1helpers.NewKubeInformersForNamespaces(kubeClient, namespace)
+		operatorClient, _, err := genericoperatorclient.NewStaticPodOperatorClient(restConfig, operatorv1.GroupVersion.WithResource("kubeapiservers")) // TODO: where do we report status?
+		if err != nil {
+			setupLog.Error(err, "could not create operator client and informers")
+			os.Exit(1)
+		}
+		controllerRef, err := librarygoevents.GetControllerReferenceForCurrentPod(ctx, kubeClient, namespace, nil)
+		if err != nil {
+			setupLog.Error(err, "unable to get owner reference (falling back to namespace)")
+			controllerRef = &corev1.ObjectReference{
+				Kind: "Namespace",
+				Name: namespace,
+			}
+		}
+		eventRecorder := librarygoevents.NewKubeRecorder(kubeClient.CoreV1().Events(namespace), "hostedcontrolplanecontroller", controllerRef)
+		certRotationScale, err := certrotation.GetCertRotationScale(ctx, kubeClient, namespace) // TODO: where to store this config?
+		if err != nil {
+			setupLog.Error(err, "could not determine cert rotation scale")
+			os.Exit(1)
+		}
+		rotationDay := 24 * time.Hour
+		if certRotationScale != time.Duration(0) {
+			rotationDay = certRotationScale
+			klog.Warningf("!!! UNSUPPORTED VALUE SET !!!")
+			klog.Warningf("Certificate rotation base set to %q", rotationDay)
+		} else {
+			// for the development cycle, make the rotation 60 times faster (every twelve hours or so).
+			// This must be reverted before we ship
+			rotationDay = rotationDay / 60
+		}
+
+		reconciler := &hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                        mgr.GetClient(),
 			ManagementClusterCapabilities: mgmtClusterCaps,
 			ReleaseProvider:               releaseProvider,
@@ -397,7 +440,18 @@ func NewStartCommand() *cobra.Command {
 			DefaultIngressDomain:          defaultIngressDomain,
 			MetricsSet:                    metricsSet,
 			NameServerIP:                  nameServerIP,
-		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
+			KubeClient:                    kubeClient,
+			OperatorClient:                operatorClient,
+			SecretInformer:                kubeInformersForNamespaces.InformersFor(namespace).Core().V1().Secrets(),
+			SecretLister:                  kubeInformersForNamespaces.InformersFor(namespace).Core().V1().Secrets().Lister(),
+			ConfigMapInformer:             kubeInformersForNamespaces.InformersFor(namespace).Core().V1().ConfigMaps(),
+			ConfigMapLister:               kubeInformersForNamespaces.InformersFor(namespace).Core().V1().ConfigMaps().Lister(),
+			Recorder:                      eventRecorder,
+			Namespace:                     namespace,
+			CertRotationScale:             rotationDay,
+			Context:                       ctx,
+		}
+		if err := reconciler.SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)
 		}
@@ -447,6 +501,9 @@ func NewStartCommand() *cobra.Command {
 			setupLog.Error(err, "unable to set up ready check")
 			os.Exit(1)
 		}
+
+		go kubeInformersForNamespaces.Start(ctx.Done())
+		clientgocache.WaitForCacheSync(ctx.Done(), reconciler.ConfigMapInformer.Informer().HasSynced, reconciler.SecretInformer.Informer().HasSynced)
 
 		setupLog.Info("starting manager")
 		if err := mgr.Start(ctx); err != nil {

@@ -20,10 +20,16 @@ func reconcileAggregateCA(configMap *corev1.ConfigMap, ownerRef config.OwnerRef,
 	ownerRef.ApplyTo(configMap)
 	combined := &bytes.Buffer{}
 	for _, src := range sources {
-		caBytes := src.Data[certs.CASignerCertMapKey]
-		_, err := fmt.Fprintf(combined, "%s", string(caBytes))
-		if err != nil {
-			return err
+		for _, key := range []string{certs.OCPCASignerCertMapKey, certs.CASignerCertMapKey} {
+			caBytes, ok := src.Data[key]
+			if !ok {
+				continue
+			}
+			_, err := fmt.Fprintf(combined, "%s", string(caBytes))
+			if err != nil {
+				return err
+			}
+			break // be greedy, only load one value if both are present
 		}
 	}
 	if configMap.Data == nil {

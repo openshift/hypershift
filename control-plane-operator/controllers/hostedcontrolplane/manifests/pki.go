@@ -170,6 +170,23 @@ func SystemAdminClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "system-admin-client")
 }
 
+func CustomerSystemAdminSigner(ns string) *corev1.Secret {
+	return secretFor(ns, "customer-system-admin-signer")
+}
+
+func CustomerSystemAdminSignerCA(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "customer-system-admin-signer-ca",
+			Namespace: ns,
+		},
+	}
+}
+
+func CustomerSystemAdminClientCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "customer-system-admin-client-cert-key")
+}
+
 func KASMachineBootstrapClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "kas-bootstrap-client")
 }

@@ -21,6 +21,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	p *pki.PKIParams,
 	createOrUpdate upsert.CreateOrUpdateFN,
 	rootCASecret *corev1.Secret,
+	additionalClientCAs ...*corev1.Secret,
 ) error {
 	reconcileSigner := func(s *corev1.Secret, reconciler signerReconciler) (*corev1.Secret, error) {
 		applyFunc := func() error {
@@ -78,7 +79,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	//	control-plane signer
 	// ----------
 
-	totalClientCABundle := []*corev1.Secret{}
+	totalClientCABundle := additionalClientCAs
 	kubeletClientCABundle := []*corev1.Secret{}
 
 	// signer
