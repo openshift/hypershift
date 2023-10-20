@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
+
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
@@ -31,6 +33,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"go.uber.org/zap/zapcore"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -3588,6 +3591,81 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateNetworkStackAddresses() wantErr %v, err %v", tt.wantErr, err)
 			}
+		})
+	}
+}
+
+func TestReconcileCAPIProviderDeployment(t *testing.T) {
+	testCases := []struct {
+		name       string
+		deployment *appsv1.Deployment
+		expected   *metav1.LabelSelector
+	}{
+		{
+			name: "When has selector it should keep it",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      clusterapi.CAPIProviderDeployment("test").Name,
+					Namespace: clusterapi.CAPIProviderDeployment("test").Namespace,
+					Annotations: map[string]string{
+						HasBeenAvailableAnnotation: "true",
+					},
+				},
+				Spec: appsv1.DeploymentSpec{
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"keep": "it",
+						},
+					},
+				},
+			},
+			expected: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"keep": "it",
+				},
+			},
+		},
+		{
+			name: "When it doesn't have selector it should add a new one",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      clusterapi.CAPIProviderDeployment("test").Name,
+					Namespace: clusterapi.CAPIProviderDeployment("test").Namespace,
+					Annotations: map[string]string{
+						HasBeenAvailableAnnotation: "true",
+					},
+				},
+				Spec: appsv1.DeploymentSpec{},
+			},
+			expected: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"control-plane": "capi-provider-controller-manager",
+					"app":           "capi-provider-controller-manager",
+					"hypershift.openshift.io/control-plane-component": "capi-provider-controller-manager",
+				},
+			},
+		},
+	}
+
+	g := NewGomegaWithT(t)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.deployment).Build()
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "test",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			}
+			createOrUpdate := upsert.New(false)
+			deployment := clusterapi.CAPIProviderDeployment("test")
+			capiProviderServiceAccount := clusterapi.CAPIProviderServiceAccount("test")
+			_, err := createOrUpdate.CreateOrUpdate(context.Background(), client, deployment, func() error {
+				return reconcileCAPIProviderDeployment(deployment, &deployment.Spec, hcp, capiProviderServiceAccount, false)
+			})
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(deployment.Spec.Selector).To(BeEquivalentTo(tc.expected))
 		})
 	}
 }
