@@ -2100,6 +2100,7 @@ type ClusterConfiguration struct {
 	// It is used to configure the integrated OAuth server.
 	// This configuration is only honored when the top level Authentication config has type set to IntegratedOAuth.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="!has(self.tokenConfig.accessTokenInactivityTimeout) || duration(self.tokenConfig.accessTokenInactivityTimeout).getSeconds() >= 300", message="spec.configuration.oauth.tokenConfig.accessTokenInactivityTimeout minimum acceptable token timeout value is 300 seconds"
 	OAuth *configv1.OAuthSpec `json:"oauth,omitempty"`
 
 	// Scheduler holds cluster-wide config information to run the Kubernetes Scheduler
