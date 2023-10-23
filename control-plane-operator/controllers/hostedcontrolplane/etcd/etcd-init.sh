@@ -2,10 +2,7 @@
 mkdir -p /var/lib/data
 [ "$(ls -A /var/lib/data)" ] && echo "/var/lib/data not empty, not restoring snapshot" && exit 0
 
-# HOSTNAME is e.g etcd-0
-# so HOSTNAME_SUFFIX is etcd_0, then we uppercase it with ^^ so RESTORE_URL_VAR becomes RESTORE_URL_ETCD_0
-HOSTNAME_SUFFIX=${HOSTNAME/-/_}
-RESTORE_URL_VAR="RESTORE_URL_${HOSTNAME_SUFFIX^^}"
+RESTORE_URL_VAR="RESTORE_URL_ETCD"
 RESTORE_URL=${!RESTORE_URL_VAR}
 
 # When downloading from S3, curl can succeed even if the object doesn't exist
