@@ -36573,6 +36573,12 @@ objects:
                   format: uri
                   type: string
                 networking:
+                  default:
+                    clusterNetwork:
+                    - cidr: 10.132.0.0/14
+                    networkType: OVNKubernetes
+                    serviceNetwork:
+                    - cidr: 172.31.0.0/16
                   description: Networking specifies network configuration for the
                     cluster.
                   properties:
@@ -36605,6 +36611,8 @@ objects:
                           type: integer
                       type: object
                     clusterNetwork:
+                      default:
+                      - cidr: 10.132.0.0/14
                       description: 'ClusterNetwork is the list of IP address pools
                         for pods. TODO: make this required in the next version of
                         the API'
@@ -36668,6 +36676,8 @@ objects:
                       format: cidr
                       type: string
                     serviceNetwork:
+                      default:
+                      - cidr: 172.31.0.0/16
                       description: 'ServiceNetwork is the list of IP address pools
                         for services. NOTE: currently only one entry is supported.
                         TODO: make this required in the next version of the API'
@@ -40664,6 +40674,12 @@ objects:
                   format: uri
                   type: string
                 networking:
+                  default:
+                    clusterNetwork:
+                    - cidr: 10.132.0.0/14
+                    networkType: OVNKubernetes
+                    serviceNetwork:
+                    - cidr: 172.31.0.0/16
                   description: Networking specifies network configuration for the
                     cluster.
                   properties:
@@ -40704,6 +40720,8 @@ objects:
                           type: integer
                       type: object
                     clusterNetwork:
+                      default:
+                      - cidr: 10.132.0.0/14
                       description: ClusterNetwork is the list of IP address pools
                         for pods.
                       items:
@@ -40750,6 +40768,8 @@ objects:
                       - Other
                       type: string
                     serviceNetwork:
+                      default:
+                      - cidr: 172.31.0.0/16
                       description: 'ServiceNetwork is the list of IP address pools
                         for services. NOTE: currently only one entry is supported.'
                       items:
@@ -44777,6 +44797,8 @@ objects:
                           type: integer
                       type: object
                     clusterNetwork:
+                      default:
+                      - cidr: 10.132.0.0/14
                       description: 'ClusterNetwork is the list of IP address pools
                         for pods. TODO: make this required in the next version of
                         the API'
@@ -44840,6 +44862,8 @@ objects:
                       format: cidr
                       type: string
                     serviceNetwork:
+                      default:
+                      - cidr: 172.31.0.0/16
                       description: 'ServiceNetwork is the list of IP address pools
                         for services. NOTE: currently only one entry is supported.
                         TODO: make this required in the next version of the API'
@@ -48859,6 +48883,8 @@ objects:
                           type: integer
                       type: object
                     clusterNetwork:
+                      default:
+                      - cidr: 10.132.0.0/14
                       description: ClusterNetwork is the list of IP address pools
                         for pods.
                       items:
@@ -48905,6 +48931,8 @@ objects:
                       - Other
                       type: string
                     serviceNetwork:
+                      default:
+                      - cidr: 172.31.0.0/16
                       description: 'ServiceNetwork is the list of IP address pools
                         for services. NOTE: currently only one entry is supported.'
                       items:
@@ -50716,6 +50744,7 @@ objects:
                     the pool, such as upgrade strategies and auto-repair behaviors.
                   properties:
                     autoRepair:
+                      default: false
                       description: AutoRepair specifies whether health checks should
                         be enabled for machines in the NodePool. The default is false.
                       type: boolean
@@ -51130,7 +51159,7 @@ objects:
                         compute:
                           default:
                             cores: 2
-                            memory: 4Gi
+                            memory: 8Gi
                           description: Compute contains values representing the virtual
                             hardware requested for the VM
                           properties:
@@ -51173,6 +51202,10 @@ objects:
                           - Disable
                           type: string
                         rootVolume:
+                          default:
+                            persistent:
+                              size: 32Gi
+                            type: Persistent
                           description: RootVolume represents values associated with
                             the VM volume that will host rhcos
                           properties:
@@ -51701,6 +51734,7 @@ objects:
                     the pool, such as upgrade strategies and auto-repair behaviors.
                   properties:
                     autoRepair:
+                      default: false
                       description: AutoRepair specifies whether health checks should
                         be enabled for machines in the NodePool. The default is false.
                       type: boolean
@@ -52107,7 +52141,7 @@ objects:
                         compute:
                           default:
                             cores: 2
-                            memory: 4Gi
+                            memory: 8Gi
                           description: Compute contains values representing the virtual
                             hardware requested for the VM
                           properties:
@@ -52150,6 +52184,10 @@ objects:
                           - Disable
                           type: string
                         rootVolume:
+                          default:
+                            persistent:
+                              size: 32Gi
+                            type: Persistent
                           description: RootVolume represents values associated with
                             the VM volume that will host rhcos
                           properties:

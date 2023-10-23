@@ -189,7 +189,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				},
 			}
 		}
-		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
+		services = GetIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 		if o.ExternalDNSDomain != "" {
 			for i, svc := range services {
 				switch svc.Service {
@@ -233,7 +233,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		if o.None.APIServerAddress != "" {
 			services = getServicePublishingStrategyMappingByAPIServerAddress(o.None.APIServerAddress, o.NetworkType)
 		} else {
-			services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
+			services = GetIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 		}
 	case o.Agent != nil:
 		platformSpec = hyperv1.PlatformSpec{
@@ -272,7 +272,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		case "NodePort":
 			services = getServicePublishingStrategyMappingByAPIServerAddress(o.Kubevirt.APIServerAddress, o.NetworkType)
 		case "Ingress":
-			services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
+			services = GetIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 		default:
 			panic(fmt.Sprintf("service publishing type %s is not supported", o.Kubevirt.ServicePublishingStrategy))
 		}
@@ -380,7 +380,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			}
 		}
 
-		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
+		services = GetIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 		if o.ExternalDNSDomain != "" {
 			for i, svc := range services {
 				switch svc.Service {
@@ -438,7 +438,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				ImageRegistryOperatorCloudCreds: corev1.LocalObjectReference{Name: o.PowerVS.Resources.ImageRegistryOperatorCloudCreds.Name},
 			},
 		}
-		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
+		services = GetIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 	default:
 		panic("no platform specified")
 	}
@@ -700,7 +700,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 	}
 }
 
-func getIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType, usesExternalDNS bool) []hyperv1.ServicePublishingStrategyMapping {
+func GetIngressServicePublishingStrategyMapping(netType hyperv1.NetworkType, usesExternalDNS bool) []hyperv1.ServicePublishingStrategyMapping {
 	// TODO (Alberto): Default KAS to Route if endpointAccess is Private.
 	apiServiceStrategy := hyperv1.LoadBalancer
 	if usesExternalDNS {

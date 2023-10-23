@@ -3,16 +3,19 @@ package hostedcluster
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"testing"
+
 	"github.com/openshift/api/image/docker10"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
-	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	apiexample "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
@@ -1322,6 +1325,160 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 				t.Error("should return warnings but didn't")
 			} else if !testCase.expectWarnings && warnings != nil {
 				t.Errorf("should not return warnings but returned %q", warnings)
+			}
+		})
+	}
+}
+
+// util function used to generate a service map that is different than the defaults
+func customKubeVirtServiceMap() []v1beta1.ServicePublishingStrategyMapping {
+	// use the defaults as a basis
+	defaults := apiexample.GetIngressServicePublishingStrategyMapping(v1beta1.OVNKubernetes, false)
+
+	custom := []v1beta1.ServicePublishingStrategyMapping{}
+	for _, cur := range defaults {
+		entry := v1beta1.ServicePublishingStrategyMapping{
+			Service: cur.Service,
+		}
+		// none of the kubevirt defaults use nodeport, so this
+		// is an easy way to make a service map different than
+		// the default
+		entry.ServicePublishingStrategy.NodePort = &v1beta1.NodePortPublishingStrategy{}
+		custom = append(custom, entry)
+	}
+
+	return custom
+
+}
+
+func TestKubevirtClusterServiceDefaulting(t *testing.T) {
+	for _, testCase := range []struct {
+		name             string
+		hc               *v1beta1.HostedCluster
+		expectedServices []v1beta1.ServicePublishingStrategyMapping
+	}{
+		{
+			name: "default services in webhook",
+			hc: &v1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cluster-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.HostedClusterSpec{
+					Release: v1beta1.Release{
+						Image: "example",
+					},
+					Platform: v1beta1.PlatformSpec{
+						Type:     v1beta1.KubevirtPlatform,
+						Kubevirt: &v1beta1.KubevirtPlatformSpec{},
+					},
+				},
+			},
+			expectedServices: apiexample.GetIngressServicePublishingStrategyMapping(v1beta1.OVNKubernetes, false),
+		},
+		{
+			name: "don't default when services already exist",
+			hc: &v1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cluster-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.HostedClusterSpec{
+					Release: v1beta1.Release{
+						Image: "example",
+					},
+					Platform: v1beta1.PlatformSpec{
+						Type:     v1beta1.KubevirtPlatform,
+						Kubevirt: &v1beta1.KubevirtPlatformSpec{},
+					},
+					Services: customKubeVirtServiceMap(),
+				},
+			},
+			expectedServices: customKubeVirtServiceMap(),
+		},
+	} {
+		t.Run(testCase.name, func(tt *testing.T) {
+			d := hostedClusterDefaulter{}
+			hc := testCase.hc.DeepCopy()
+			err := d.Default(context.Background(), hc)
+			if err != nil {
+				tt.Errorf("unexpected error: %v", err)
+			}
+			if len(hc.Spec.Services) != len(testCase.expectedServices) {
+				tt.Errorf("Expected %d len of services, but got %d", len(testCase.expectedServices), len(hc.Spec.Services))
+			}
+
+			for _, expected := range testCase.expectedServices {
+				found := false
+				for _, cur := range hc.Spec.Services {
+					if reflect.DeepEqual(&expected, &cur) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					tt.Errorf("Did not find expected matching service of type %s", expected.Service)
+				}
+			}
+		})
+	}
+}
+
+func TestKubevirtNodePoolManagementDefaulting(t *testing.T) {
+	for _, testCase := range []struct {
+		name                string
+		np                  *v1beta1.NodePool
+		expectedUpgradeType v1beta1.UpgradeType
+	}{
+		{
+			name: "default upgrade type in webhook",
+			np: &v1beta1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cluster-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.NodePoolSpec{
+					Release: v1beta1.Release{
+						Image: "example",
+					},
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.KubevirtPlatform,
+					},
+				},
+			},
+			expectedUpgradeType: v1beta1.UpgradeTypeReplace,
+		},
+		{
+			name: "non default upgrade type in webhook",
+			np: &v1beta1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "cluster-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.NodePoolSpec{
+					Release: v1beta1.Release{
+						Image: "example",
+					},
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.KubevirtPlatform,
+					},
+					Management: v1beta1.NodePoolManagement{
+						UpgradeType: v1beta1.UpgradeTypeInPlace,
+					},
+				},
+			},
+			expectedUpgradeType: v1beta1.UpgradeTypeInPlace,
+		},
+	} {
+		t.Run(testCase.name, func(tt *testing.T) {
+			d := nodePoolDefaulter{}
+			np := testCase.np.DeepCopy()
+			err := d.Default(context.Background(), np)
+			if err != nil {
+				tt.Errorf("unexpected error: %v", err)
+			}
+			if np.Spec.Management.UpgradeType != testCase.expectedUpgradeType {
+				tt.Errorf("Expected upgrade type %s, but got %s", testCase.expectedUpgradeType, np.Spec.Management.UpgradeType)
 			}
 		})
 	}
