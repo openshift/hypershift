@@ -87,6 +87,22 @@ func PodSecurityAdmissionLabelSyncerControllerRoleBinding() *rbacv1.ClusterRoleB
 	}
 }
 
+func PriviligedNamespacesPSALabelSyncerClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:controller:privileged-namespaces-psa-label-syncer",
+		},
+	}
+}
+
+func PriviligedNamespacesPSALabelSyncerClusterRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:controller:privileged-namespaces-psa-label-syncer",
+		},
+	}
+}
+
 func NodeBootstrapperClusterRoleBinding() *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
