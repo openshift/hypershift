@@ -5597,6 +5597,12 @@ spec:
                             type: integer
                         type: object
                     type: object
+                    x-kubernetes-validations:
+                    - message: spec.configuration.oauth.tokenConfig.accessTokenInactivityTimeout
+                        minimum acceptable token timeout value is 300 seconds
+                      rule: '!has(self.tokenConfig.accessTokenInactivityTimeout) ||
+                        duration(self.tokenConfig.accessTokenInactivityTimeout).getSeconds()
+                        >= 300'
                   proxy:
                     description: Proxy holds cluster-wide information on how to configure
                       default proxies for the cluster.
