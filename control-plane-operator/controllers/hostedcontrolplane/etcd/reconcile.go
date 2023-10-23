@@ -146,14 +146,12 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 
 func buildEtcdInitContainer(p *EtcdParams) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
-		c.Env = []corev1.EnvVar{}
-		for i := 0; i < p.DeploymentConfig.Replicas; i++ {
-			c.Env = append(c.Env, corev1.EnvVar{
-				Name:  fmt.Sprintf("RESTORE_URL_ETCD_%d", i),
-				Value: p.StorageSpec.RestoreSnapshotURL[i],
-			})
+		c.Env = []corev1.EnvVar{
+			{
+				Name:  "RESTORE_URL_ETCD",
+				Value: p.StorageSpec.RestoreSnapshotURL[0], // RestoreSnapshotURL can only hve 1 entry
+			},
 		}
-
 		c.Image = p.EtcdImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{"/bin/sh", "-ce", etcdInitScript}
