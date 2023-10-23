@@ -5708,9 +5708,9 @@ availability configuration).</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>RestoreSnapshotURL allows an optional list of URLs to be provided where
+<p>RestoreSnapshotURL allows an optional URL to be provided where
 an etcd snapshot can be downloaded, for example a pre-signed URL
-referencing a storage service, one URL per replica.
+referencing a storage service.
 This snapshot will be restored on initial startup, only when the etcd PV
 is empty.</p>
 </td>
