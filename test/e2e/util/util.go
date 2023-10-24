@@ -422,11 +422,6 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				continue
 			}
 
-			// TODO: Remove this when https://issues.redhat.com/browse/OCPBUGS-6953 is resolved
-			if strings.HasPrefix(pod.Name, "ovnkube-master-") {
-				continue
-			}
-
 			// TODO: Figure out why Route kind does not exist when ingress-operator first starts
 			if strings.HasPrefix(pod.Name, "ingress-operator-") {
 				continue
