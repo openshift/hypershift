@@ -22,6 +22,10 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
+const (
+	hostedClusterConfigOperatorName = "hosted-cluster-config-operator"
+)
+
 func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(sa)
 	util.EnsurePullSecret(sa, common.PullSecret("").Name)
@@ -224,8 +228,8 @@ var (
 		},
 	}
 	hccLabels = map[string]string{
-		"app":                         "hosted-cluster-config-operator",
-		hyperv1.ControlPlaneComponent: "hosted-cluster-config-operator",
+		"app":                         hostedClusterConfigOperatorName,
+		hyperv1.ControlPlaneComponent: hostedClusterConfigOperatorName,
 	}
 )
 
@@ -247,6 +251,13 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 	}
 
 	ownerRef.ApplyTo(deployment)
+
+	// preserve existing resource requirements for main scheduler container
+	mainContainer := util.FindContainer(hostedClusterConfigOperatorName, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: selectorLabels,
@@ -313,7 +324,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 
 func hccContainerMain() *corev1.Container {
 	return &corev1.Container{
-		Name: "hosted-cluster-config-operator",
+		Name: hostedClusterConfigOperatorName,
 	}
 }
 
@@ -341,7 +352,7 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
 			"/usr/bin/control-plane-operator",
-			"hosted-cluster-config-operator",
+			hostedClusterConfigOperatorName,
 			fmt.Sprintf("--initial-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeRootCA().Name), certs.CASignerCertMapKey)),
 			fmt.Sprintf("--cluster-signer-ca-file=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeClusterSignerCA().Name), certs.CASignerCertMapKey)),
 			fmt.Sprintf("--target-kubeconfig=%s", path.Join(volumeMounts.Path(c.Name, hccVolumeKubeconfig().Name), kas.KubeconfigKey)),

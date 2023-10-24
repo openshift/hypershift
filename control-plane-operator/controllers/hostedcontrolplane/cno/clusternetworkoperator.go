@@ -297,6 +297,20 @@ func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef
 func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) error {
 	params.OwnerRef.ApplyTo(dep)
 
+	cnoResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+		},
+	}
+	// preserve existing resource requirements
+	mainContainer := util.FindContainer(operatorName, dep.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
+			cnoResources = mainContainer.Resources
+		}
+	}
+
 	dep.Spec.Replicas = utilpointer.Int32(1)
 	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": operatorName}}
 	dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
@@ -538,12 +552,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 				Name:  "KUBECONFIG",
 				Value: "/etc/kubernetes/kubeconfig",
 			}},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("10m"),
-					corev1.ResourceMemory: resource.MustParse("10Mi"),
-				},
-			},
+			Resources: cnoResources,
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "hosted-etc-kube", MountPath: "/etc/kubernetes"},
 				{Name: "konnectivity-proxy-cert", MountPath: "/etc/konnectivity/proxy-client"},

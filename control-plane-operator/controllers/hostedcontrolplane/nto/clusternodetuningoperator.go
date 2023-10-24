@@ -176,6 +176,21 @@ func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef
 
 func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 	params.OwnerRef.ApplyTo(dep)
+
+	ntoResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("50Mi"),
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+		},
+	}
+	// preserve existing resource requirements
+	mainContainer := util.FindContainer(operatorName, dep.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
+			ntoResources = mainContainer.Resources
+		}
+	}
+
 	dep.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"name": operatorName,
@@ -229,11 +244,8 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 		Ports: []corev1.ContainerPort{
 			{Name: "metrics", ContainerPort: 60000},
 		},
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Resources: corev1.ResourceRequirements{Requests: corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse("10m"),
-			corev1.ResourceMemory: resource.MustParse("50Mi"),
-		}},
+		ImagePullPolicy:          corev1.PullIfNotPresent,
+		Resources:                ntoResources,
 		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: "node-tuning-operator-tls", MountPath: "/etc/secrets"},
