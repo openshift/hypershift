@@ -19,6 +19,10 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
+const (
+	konnectivityAgentName = "konnectivity-agent"
+)
+
 var (
 	volumeMounts = util.PodVolumeMounts{
 		konnectivityAgentContainer().Name: util.ContainerVolumeMounts{
@@ -30,8 +34,8 @@ var (
 
 func konnectivityAgentLabels() map[string]string {
 	return map[string]string{
-		"app":                         "konnectivity-agent",
-		hyperv1.ControlPlaneComponent: "konnectivity-agent",
+		"app":                         konnectivityAgentName,
+		hyperv1.ControlPlaneComponent: konnectivityAgentName,
 	}
 }
 
@@ -52,7 +56,7 @@ func buildKonnectivitySignerCAkonnectivitySignerCAVolume(v *corev1.Volume) {
 
 func konnectivityAgentContainer() *corev1.Container {
 	return &corev1.Container{
-		Name: "konnectivity-agent",
+		Name: konnectivityAgentName,
 	}
 }
 
@@ -71,6 +75,13 @@ func buildKonnectivityVolumeAgentCerts(v *corev1.Volume) {
 
 func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, image string, ips []string) error {
 	ownerRef.ApplyTo(deployment)
+
+	// preserve existing resource requirements for main scheduler container
+	mainContainer := util.FindContainer(konnectivityAgentName, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: konnectivityAgentLabels(),

@@ -140,10 +140,16 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	auditConfigHash := util.ComputeHash(auditConfigBytes)
 
 	// preserve existing resource requirements for main KAS container
-	mainContainer := util.FindContainer(kasContainerMain().Name, deployment.Spec.Template.Spec.Containers)
-	if mainContainer != nil {
-		deploymentConfig.SetContainerResourcesIfPresent(mainContainer)
+	kasContainer := util.FindContainer(kasContainerMain().Name, deployment.Spec.Template.Spec.Containers)
+	if kasContainer != nil {
+		deploymentConfig.SetContainerResourcesIfPresent(kasContainer)
 	}
+	// preserve existing resource requirements for the konnectivy-server container
+	konnectivityContainer := util.FindContainer(konnectivityServerContainer().Name, deployment.Spec.Template.Spec.Containers)
+	if konnectivityContainer != nil {
+		deploymentConfig.SetContainerResourcesIfPresent(konnectivityContainer)
+	}
+
 	if deployment.Spec.Selector == nil {
 		deployment.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: kasLabels(),

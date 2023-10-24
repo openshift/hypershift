@@ -21,6 +21,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	machineApproverName = "machine-approver-controller"
+)
+
 func ReconcileMachineApproverConfig(cm *corev1.ConfigMap, owner config.OwnerRef) error {
 	owner.ApplyTo(cm)
 	type NodeClientCert struct {
@@ -80,6 +84,20 @@ func ReconcileMachineApproverRoleBinding(binding *rbacv1.RoleBinding, role *rbac
 
 func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, kubeconfigSecretName string, cm *corev1.ConfigMap, machineApproverImage, availabilityProberImage string, setDefaultSecurityContext bool, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(deployment)
+
+	machineApproverResources := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("50Mi"),
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+		},
+	}
+	// preserve existing resource requirements
+	mainContainer := util.FindContainer(machineApproverName, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
+			machineApproverResources = mainContainer.Resources
+		}
+	}
 
 	// TODO: enable leader election when the flag is added in machine-approver
 	args := []string{
@@ -143,7 +161,7 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 				},
 				Containers: []corev1.Container{
 					{
-						Name:            "machine-approver-controller",
+						Name:            machineApproverName,
 						Image:           machineApproverImage,
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						VolumeMounts: []corev1.VolumeMount{
@@ -156,14 +174,9 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 								MountPath: "/var/run/configmaps/config",
 							},
 						},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("50Mi"),
-								corev1.ResourceCPU:    resource.MustParse("10m"),
-							},
-						},
-						Command: []string{"/usr/bin/machine-approver"},
-						Args:    args,
+						Resources: machineApproverResources,
+						Command:   []string{"/usr/bin/machine-approver"},
+						Args:      args,
 					},
 				},
 			},

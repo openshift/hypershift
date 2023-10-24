@@ -988,7 +988,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	r.Log.Info("Reconciling Kube Scheduler")
 	schedulerDeployment := manifests.SchedulerDeployment(hostedControlPlane.Namespace)
 	if err := r.reconcileKubeScheduler(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, schedulerDeployment); err != nil {
-		return fmt.Errorf("failed to reconcile kube controller manager: %w", err)
+		return fmt.Errorf("failed to reconcile kube scheduler: %w", err)
 	}
 
 	r.Log.Info("Looking up observed configuration")

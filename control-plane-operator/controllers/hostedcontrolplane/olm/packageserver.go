@@ -14,16 +14,27 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
+const (
+	packageServerName = "packageserver"
+)
+
 var (
 	packageServerDeployment = assets.MustDeployment(content.ReadFile, "assets/packageserver-deployment.yaml")
 )
 
 func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, noProxy []string) error {
 	ownerRef.ApplyTo(deployment)
+
+	// preserve existing resource requirements
+	mainContainer := util.FindContainer(packageServerName, deployment.Spec.Template.Spec.Containers)
+	if mainContainer != nil {
+		dc.SetContainerResourcesIfPresent(mainContainer)
+	}
+
 	deployment.Spec = packageServerDeployment.DeepCopy().Spec
 	for i, container := range deployment.Spec.Template.Spec.Containers {
 		switch container.Name {
-		case "packageserver":
+		case packageServerName:
 			deployment.Spec.Template.Spec.Containers[i].Image = olmImage
 		case "socks5-proxy":
 			deployment.Spec.Template.Spec.Containers[i].Image = socks5ProxyImage
