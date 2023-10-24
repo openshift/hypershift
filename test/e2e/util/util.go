@@ -437,12 +437,6 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				continue
 			}
 
-			// TODO: Autoscaler is restarting because it times out accessing the kube apiserver for leader election.
-			// Investigate a fix.
-			if strings.HasPrefix(pod.Name, "cluster-autoscaler") {
-				continue
-			}
-
 			// TODO: Machine approver started restarting in the UpgradeControlPlane test with the following error:
 			// F1122 15:17:01.880727       1 main.go:144] Can't create clients: failed to create client: Unauthorized
 			// Investigate a fix.
