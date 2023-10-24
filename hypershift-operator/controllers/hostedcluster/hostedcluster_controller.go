@@ -3379,9 +3379,6 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	// this will ensure that alerts triggered because of the deletion process aren't forwarded
 	if _, ok := hc.Labels[hyperv1.SilenceClusterAlertsLabel]; !ok {
 		original := hc.DeepCopy()
-		if hc.Labels == nil {
-			hc.Labels = make(map[string]string)
-		}
 		hc.Labels[hyperv1.SilenceClusterAlertsLabel] = "clusterDeleting"
 		if err := r.Patch(ctx, hc, client.MergeFromWithOptions(original)); err != nil {
 			return false, fmt.Errorf("cannot patch hosted cluster with silence label: %w", err)
