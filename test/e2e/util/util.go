@@ -443,13 +443,6 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				continue
 			}
 
-			// TODO: Machine approver started restarting in the UpgradeControlPlane test with the following error:
-			// F1122 15:17:01.880727       1 main.go:144] Can't create clients: failed to create client: Unauthorized
-			// Investigate a fix.
-			if strings.HasPrefix(pod.Name, "machine-approver") {
-				continue
-			}
-
 			// TODO: Drop this when this discussion https://redhat-internal.slack.com/archives/C01C8502FMM/p1677761198989759 is resolved.
 			if strings.HasPrefix(pod.Name, "cluster-node-tuning-operator") {
 				continue
