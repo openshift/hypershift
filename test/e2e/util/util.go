@@ -432,11 +432,6 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				continue
 			}
 
-			// TODO: Figure out why default-http backend health check is failing and triggering liveness probe to restart
-			if strings.HasPrefix(pod.Name, "router-") {
-				continue
-			}
-
 			// TODO: Autoscaler is restarting because it times out accessing the kube apiserver for leader election.
 			// Investigate a fix.
 			if strings.HasPrefix(pod.Name, "cluster-autoscaler") {
