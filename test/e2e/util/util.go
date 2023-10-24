@@ -427,11 +427,6 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				continue
 			}
 
-			// TODO: Figure out why Route kind does not exist when ingress-operator first starts
-			if strings.HasPrefix(pod.Name, "ingress-operator-") {
-				continue
-			}
-
 			// TODO: Figure out why default-http backend health check is failing and triggering liveness probe to restart
 			if strings.HasPrefix(pod.Name, "router-") {
 				continue
