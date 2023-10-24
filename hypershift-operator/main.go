@@ -34,7 +34,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/scheduler"
@@ -332,6 +334,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			return fmt.Errorf("unable to create webhook: %w", err)
 		}
 	}
+	hcmetrics.CreateAndRegisterHostedClustersMetricsCollector(mgr.GetClient())
 
 	// Since we dropped the validation webhook server we need to ensure this resource doesn't exist
 	// otherwise it will intercept kas requests and fail.
@@ -364,6 +367,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
+	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient())
 
 	if mgmtClusterCaps.Has(capabilities.CapabilityProxy) {
 		if err := proxy.Setup(mgr, opts.Namespace, opts.DeploymentName); err != nil {
@@ -450,7 +454,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("failed to get ingress controller: %w", err)
 	}
 
-	if err := setupMetrics(mgr); err != nil {
+	if err := setupOperatorInfoMetric(mgr); err != nil {
 		return fmt.Errorf("failed to setup metrics: %w", err)
 	}
 

@@ -9,7 +9,9 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -148,7 +150,21 @@ func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts
 			EnsureAPIBudget(t, h.ctx, h.client, hostedCluster)
 		}
 
-		ValidateMetrics(t, h.ctx, hostedCluster)
+		ValidateMetrics(t, h.ctx, hostedCluster, []string{
+			hcmetrics.WaitingInitialAvailabilityDurationMetricName,
+			hcmetrics.InitialRollingOutDurationMetricName,
+			hcmetrics.UpgradingDurationMetricName,
+			hcmetrics.SilenceAlertsMetricName,
+			hcmetrics.LimitedSupportEnabledMetricName,
+			hcmetrics.ProxyMetricName,
+			hcmetrics.InvalidAwsCredsMetricName,
+			hcmetrics.DeletingDurationMetricName,
+			hcmetrics.GuestCloudResourcesDeletingDurationMetricName,
+			npmetrics.InitialRollingOutDurationMetricName,
+			npmetrics.SizeMetricName,
+			npmetrics.AvailableReplicasMetricName,
+			npmetrics.DeletingDurationMetricName,
+		}, false)
 	})
 }
 
@@ -248,6 +264,16 @@ func (h *hypershiftTest) teardownHostedCluster(ctx context.Context, hc *hyperv1.
 	if err != nil {
 		h.Errorf("Failed to dump cluster: %v", err)
 	}
+
+	ValidateMetrics(h.T, ctx, hc, []string{
+		hcmetrics.SilenceAlertsMetricName,
+		hcmetrics.LimitedSupportEnabledMetricName,
+		hcmetrics.ProxyMetricName,
+		hcmetrics.InvalidAwsCredsMetricName,
+		HypershiftOperatorInfoName,
+		npmetrics.SizeMetricName,
+		npmetrics.AvailableReplicasMetricName,
+	}, true)
 
 	// Try repeatedly to destroy the cluster gracefully. For each failure, dump
 	// the current cluster to help debug teardown lifecycle issues.
