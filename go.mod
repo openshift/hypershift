@@ -29,7 +29,7 @@ require (
 	github.com/onsi/gomega v1.27.4
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799
-	github.com/openshift/api v0.0.0-20230915112357-693d4b64813c
+	github.com/openshift/api v0.0.0-20231025170628-b8a18fdc040d
 	github.com/openshift/client-go v0.0.0-20220525160904-9e1acff93e4a
 	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
@@ -52,9 +52,9 @@ require (
 	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/square/go-jose.v2 v2.5.1
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.28.2
+	k8s.io/api v0.28.3
 	k8s.io/apiextensions-apiserver v0.25.0
-	k8s.io/apimachinery v0.28.2
+	k8s.io/apimachinery v0.28.3
 	k8s.io/apiserver v0.25.0
 	k8s.io/cli-runtime v0.25.0
 	k8s.io/client-go v12.0.0+incompatible
@@ -63,7 +63,7 @@ require (
 	k8s.io/kube-scheduler v0.23.1
 	k8s.io/kubectl v0.25.0
 	k8s.io/pod-security-admission v0.23.5
-	k8s.io/utils v0.0.0-20230406110748-d93618cff8a2
+	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
 	kubevirt.io/api v0.58.0
 	kubevirt.io/containerized-data-importer-api v1.50.0
 	sigs.k8s.io/apiserver-network-proxy v0.0.24
@@ -181,7 +181,7 @@ require (
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kustomize/api v0.12.1 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.13.9 // indirect
-	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
+	sigs.k8s.io/structured-merge-diff/v4 v4.3.0 // indirect
 )
 
 replace (
