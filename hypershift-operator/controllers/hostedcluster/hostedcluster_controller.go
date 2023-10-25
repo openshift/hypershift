@@ -28,8 +28,6 @@ import (
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/validation/field"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -40,6 +38,40 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	ini "gopkg.in/ini.v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/clock"
+	k8sutilspointer "k8s.io/utils/pointer"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2" // Need this dep atm to satisfy IBM provider dep.
+	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+
 	"github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/api/util/configrefs"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -67,38 +99,6 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	ini "gopkg.in/ini.v1"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/util/workqueue"
-	"k8s.io/utils/clock"
-	k8sutilspointer "k8s.io/utils/pointer"
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2" // Need this dep atm to satisfy IBM provider dep.
-	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
-	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -3848,33 +3848,7 @@ func (r *HostedClusterReconciler) validateKubevirtConfig(ctx context.Context, hc
 		return err
 	}
 
-	var errs []error
-
-	if cnvVersion, err := kvInfraClient.GetInfraKubevirtVersion(); err != nil {
-		errs = append(errs, err)
-	} else {
-		// ignore "Pre" so this check works accurately with pre-release CNV versions.
-		cnvVersion.Pre = []semver.PRVersion{}
-		minCNVVersion := semver.MustParse("1.0.0")
-
-		if cnvVersion.LT(minCNVVersion) {
-			errs = append(errs, fmt.Errorf("infrastructure kubevirt version is [%s], hypershift kubevirt platform requires kubevirt version [%s] or greater", cnvVersion.String(), minCNVVersion.String()))
-		}
-	}
-
-	if k8sVersion, err := kvInfraClient.GetInfraK8sVersion(); err != nil {
-		errs = append(errs, err)
-	} else {
-		// ignore "Pre" so this check works accurately with pre-release K8s versions.
-		k8sVersion.Pre = []semver.PRVersion{}
-		minK8sVersion := semver.MustParse("1.27.0")
-
-		if k8sVersion.LT(minK8sVersion) {
-			errs = append(errs, fmt.Errorf("infrastructure Kubernetes version is [%s], hypershift kubevirt platform requires Kubernetes version [%s] or greater", k8sVersion.String(), minK8sVersion.String()))
-		}
-	}
-
-	return utilerrors.NewAggregate(errs)
+	return kvinfra.ValidateClusterVersions(ctx, kvInfraClient)
 }
 
 // validatePublishingStrategyMapping validates that each published serviceType has a unique hostname.

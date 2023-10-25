@@ -101,6 +101,7 @@ type StartOptions struct {
 	OIDCStorageProviderS3Region      string
 	OIDCStorageProviderS3Credentials string
 	EnableUWMTelemetryRemoteWrite    bool
+	EnableValidatingWebhook          bool
 }
 
 func NewStartCommand() *cobra.Command {
@@ -135,6 +136,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", opts.OIDCStorageProviderS3Region, "Region in which the OIDC bucket is located. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
 	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
+	cmd.Flags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -329,19 +331,21 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	// Since we dropped the validation webhook server we need to ensure this resource doesn't exist
 	// otherwise it will intercept kas requests and fail.
 	// TODO (alberto): dropped in 4.14.
-	validatingWebhookConfiguration := &admissionregistrationv1.ValidatingWebhookConfiguration{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ValidatingWebhookConfiguration",
-			APIVersion: admissionregistrationv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: opts.Namespace,
-			Name:      hyperv1.GroupVersion.Group,
-		},
-	}
-	if err := mgr.GetClient().Delete(ctx, validatingWebhookConfiguration); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return err
+	if !opts.EnableValidatingWebhook {
+		validatingWebhookConfiguration := &admissionregistrationv1.ValidatingWebhookConfiguration{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "ValidatingWebhookConfiguration",
+				APIVersion: admissionregistrationv1.SchemeGroupVersion.String(),
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: opts.Namespace,
+				Name:      hyperv1.GroupVersion.Group,
+			},
+		}
+		if err := mgr.GetClient().Delete(ctx, validatingWebhookConfiguration); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return err
+			}
 		}
 	}
 

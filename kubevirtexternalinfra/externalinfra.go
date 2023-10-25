@@ -8,14 +8,16 @@ import (
 	"net/url"
 	"sync"
 
+	"github.com/blang/semver"
+	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/clientcmd"
 	cr "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 )
 
@@ -26,7 +28,7 @@ type KubevirtInfraClientMap interface {
 
 type KubevirtInfraClient interface {
 	GetInfraK8sVersion() (*semver.Version, error)
-	GetInfraKubevirtVersion() (*semver.Version, error)
+	GetInfraKubevirtVersion(ctx context.Context) (*semver.Version, error)
 	GetInfraClient() client.Client
 	GetInfraNamespace() string
 }
@@ -56,7 +58,7 @@ func (k *mockKubevirtInfraClient) GetInfraK8sVersion() (*semver.Version, error) 
 	v, err := semver.ParseTolerant(k.k8sVersion)
 	return &v, err
 }
-func (k *mockKubevirtInfraClient) GetInfraKubevirtVersion() (*semver.Version, error) {
+func (k *mockKubevirtInfraClient) GetInfraKubevirtVersion(_ context.Context) (*semver.Version, error) {
 	v, err := semver.ParseTolerant(k.cnvVersion)
 	return &v, err
 }
@@ -189,7 +191,7 @@ func (k *kubevirtInfraClientImp) GetInfraNamespace() string {
 	return k.Namespace
 }
 
-func (k *kubevirtInfraClientImp) GetInfraKubevirtVersion() (*semver.Version, error) {
+func (k *kubevirtInfraClientImp) GetInfraKubevirtVersion(ctx context.Context) (*semver.Version, error) {
 
 	type info struct {
 		GitVersion string `json:"gitVersion"`
@@ -200,9 +202,10 @@ func (k *kubevirtInfraClientImp) GetInfraKubevirtVersion() (*semver.Version, err
 	var group metav1.APIGroup
 	// First, find out which version to query
 	uri := "/apis/subresources.kubevirt.io"
-	result := restClient.Get().AbsPath(uri).Do(context.Background())
+	result := restClient.Get().AbsPath(uri).Do(ctx)
 	if data, err := result.Raw(); err != nil {
-		connErr, isConnectionErr := err.(*url.Error)
+		var connErr *url.Error
+		isConnectionErr := errors.As(err, &connErr)
 		if isConnectionErr {
 			err = connErr.Err
 		}
@@ -215,7 +218,7 @@ func (k *kubevirtInfraClientImp) GetInfraKubevirtVersion() (*semver.Version, err
 	uri = fmt.Sprintf("/apis/%s/version", group.PreferredVersion.GroupVersion)
 	var serverInfo info
 
-	result = restClient.Get().AbsPath(uri).Do(context.Background())
+	result = restClient.Get().AbsPath(uri).Do(ctx)
 	if data, err := result.Raw(); err != nil {
 		connErr, isConnectionErr := err.(*url.Error)
 		if isConnectionErr {
@@ -250,4 +253,46 @@ func GetKubeConfig(ctx context.Context, cl client.Client, secretNamespace, secre
 	}
 
 	return kubeConfig, nil
+}
+
+func ValidateClusterVersions(ctx context.Context, cl KubevirtInfraClient) error {
+	var cnvVersion, k8sVersion *semver.Version
+
+	eg, egCtx := errgroup.WithContext(ctx)
+
+	eg.Go(func() error {
+		var err error
+		cnvVersion, err = cl.GetInfraKubevirtVersion(egCtx)
+		return err
+	})
+
+	eg.Go(func() error {
+		var err error
+		k8sVersion, err = cl.GetInfraK8sVersion()
+		return err
+	})
+
+	err := eg.Wait()
+	if err != nil {
+		return err
+	}
+
+	// ignore "Pre" so this check works accurately with pre-release CNV versions.
+	cnvVersion.Pre = []semver.PRVersion{}
+	minCNVVersion := semver.MustParse("1.0.0")
+
+	var errs []error
+	if cnvVersion.LT(minCNVVersion) {
+		errs = append(errs, fmt.Errorf("infrastructure kubevirt version is [%s], hypershift kubevirt platform requires kubevirt version [%s] or greater", cnvVersion.String(), minCNVVersion.String()))
+	}
+
+	// ignore "Pre" so this check works accurately with pre-release K8s versions.
+	k8sVersion.Pre = []semver.PRVersion{}
+	minK8sVersion := semver.MustParse("1.27.0")
+
+	if k8sVersion.LT(minK8sVersion) {
+		errs = append(errs, fmt.Errorf("infrastructure Kubernetes version is [%s], hypershift kubevirt platform requires Kubernetes version [%s] or greater", k8sVersion.String(), minK8sVersion.String()))
+	}
+
+	return utilerrors.NewAggregate(errs)
 }
