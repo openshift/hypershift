@@ -26,7 +26,7 @@ The HO has an independent release cadence. For consumer products:
     - `git tag v0.1.1`
     - Push against remote.
   - Generate release notes:
-    - `GITHUB_ACCESS_TOKEN=XXXX FROM=v0.1.0 TO=v0.1.1 make release`
+    - `FROM=v0.1.0 TO=v0.1.1 make release`
     - Use the output to create the PR for bump the new image in the product gitOps repo. E.g.
 
 This is a sample of how the release notes looks like added to the PR:

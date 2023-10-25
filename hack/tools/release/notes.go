@@ -83,15 +83,8 @@ func main() {
 		// https://docs.github.com/en/rest/pulls/pulls#list-pull-requests
 		url := fmt.Sprintf("https://api.github.com/repos/openshift/hypershift/pulls/%s", c.prID)
 
-		// Set up the API request headers with a personal access token.
-		token := os.Getenv("GITHUB_ACCESS_TOKEN")
-		if token == "" {
-			fmt.Println("Please set the GITHUB_ACCESS_TOKEN environment variable with a personal access token.")
-			return
-		}
 		headers := map[string]string{
-			"Accept":        "application/vnd.github.v3+json",
-			"Authorization": fmt.Sprintf("Bearer %s", token),
+			"Accept": "application/vnd.github.v3+json",
 		}
 
 		// Make the API request.
