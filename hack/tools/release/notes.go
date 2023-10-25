@@ -39,9 +39,6 @@ func main() {
 	// Set the path to the Git repository
 	repoPath := "."
 
-	// Set the hashes of the two commits to compare
-	fmt.Println(fmt.Sprintf("Finding PRs between %q and %q", *fromTag, *toTag))
-
 	// Run the Git command to get the commit log between the two commits
 	cmd := exec.Command("git", "-C", repoPath, "log", "--pretty=format:%H %s", fmt.Sprintf("%s..%s", *fromTag, *toTag), "--merges")
 	output, err := cmd.Output()
@@ -51,7 +48,6 @@ func main() {
 
 	// Split the output into individual commit messages
 	outLines := strings.Split(string(output), "\n")
-	fmt.Println(fmt.Sprintf("Found %v PRs", len(outLines)))
 
 	// Print out the commit messages
 	commits := make([]commit, 0)
