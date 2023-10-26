@@ -45,7 +45,7 @@ metadata:
   namespace: clusters
 spec:
   hard:
-    count/hostedclusters.hypershift.openshift.io: "30"
+    count/hostedclusters.hypershift.openshift.io: "40"
 ---
 apiVersion: v1
 kind: Namespace
