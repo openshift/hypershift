@@ -1401,7 +1401,7 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	if util.IsPrivateHCP(hcp) {
 		svc := manifests.PrivateRouterService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, svc, func() error {
-			return ingress.ReconcileRouterService(svc, util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort), true, true)
+			return ingress.ReconcileRouterService(svc, true, true)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router service: %w", err)
 		}
@@ -1423,7 +1423,7 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	// When Public access endpoint we need to create a Service type LB external for the KAS.
 	if util.IsPublicHCP(hcp) && exposeKASThroughRouter {
 		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
-			return ingress.ReconcileRouterService(pubSvc, util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort), false, util.IsPrivateHCP(hcp))
+			return ingress.ReconcileRouterService(pubSvc, false, util.IsPrivateHCP(hcp))
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router service: %w", err)
 		}
