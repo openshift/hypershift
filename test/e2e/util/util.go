@@ -417,52 +417,6 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
-			// TODO: Remove this when https://issues.redhat.com/browse/OCPBUGS-18569 is resolved
-			if strings.HasPrefix(pod.Name, "cluster-network-operator-") {
-				continue
-			}
-
-			// TODO: Remove this when https://issues.redhat.com/browse/OCPBUGS-6953 is resolved
-			if strings.HasPrefix(pod.Name, "ovnkube-master-") {
-				continue
-			}
-
-			// TODO: Figure out why Route kind does not exist when ingress-operator first starts
-			if strings.HasPrefix(pod.Name, "ingress-operator-") {
-				continue
-			}
-
-			// TODO: Figure out why default-http backend health check is failing and triggering liveness probe to restart
-			if strings.HasPrefix(pod.Name, "router-") {
-				continue
-			}
-
-			// TODO: Autoscaler is restarting because it times out accessing the kube apiserver for leader election.
-			// Investigate a fix.
-			if strings.HasPrefix(pod.Name, "cluster-autoscaler") {
-				continue
-			}
-
-			// TODO: Machine approver started restarting in the UpgradeControlPlane test with the following error:
-			// F1122 15:17:01.880727       1 main.go:144] Can't create clients: failed to create client: Unauthorized
-			// Investigate a fix.
-			if strings.HasPrefix(pod.Name, "machine-approver") {
-				continue
-			}
-
-			// TODO: Drop this when this discussion https://redhat-internal.slack.com/archives/C01C8502FMM/p1677761198989759 is resolved.
-			if strings.HasPrefix(pod.Name, "cluster-node-tuning-operator") {
-				continue
-			}
-
-			// TODO: 4.11 and later, FBC based catalogs can in excess of 150s to start
-			// https://github.com/openshift/hypershift/pull/1746
-			// https://github.com/operator-framework/operator-lifecycle-manager/pull/2791
-			// Investigate a fix.
-			if strings.Contains(pod.Name, "-catalog") {
-				continue
-			}
-
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				if containerStatus.RestartCount > 0 {
 					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
