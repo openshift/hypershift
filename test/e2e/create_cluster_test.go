@@ -39,8 +39,10 @@ func TestCreateCluster(t *testing.T) {
 		clusterOpts.Annotations = append(clusterOpts.Annotations, fmt.Sprintf("%s=%s", hyperv1.TopologyAnnotation, hyperv1.DedicatedRequestServingComponentsTopology))
 	}
 
-	e2eutil.NewHypershiftTest(t, ctx, nil).
-		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		guestClient := e2eutil.WaitForGuestClient(t, testContext, mgtClient, hostedCluster)
+		e2eutil.EnsurePSANotPrivileged(t, ctx, guestClient)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 func TestCreateClusterCustomConfig(t *testing.T) {
