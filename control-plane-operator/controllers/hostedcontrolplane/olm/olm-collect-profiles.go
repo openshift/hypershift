@@ -1,6 +1,7 @@
 package olm
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/config"
@@ -18,7 +19,10 @@ var (
 	olmCollectProfilesSecret      = assets.MustSecret(content.ReadFile, "assets/olm-collect-profiles.secret.yaml")
 )
 
-func ReconcileCollectProfilesCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, olmImage, namespace string) {
+func ReconcileCollectProfilesCronJob(cronJob *batchv1.CronJob, ownerRef config.OwnerRef, olmImage string, hcp *hyperv1.HostedControlPlane) {
+	mockDC := config.DeploymentConfig{}
+	mockDC.SetDefaults(hcp, nil, nil)
+
 	ownerRef.ApplyTo(cronJob)
 	cronJob.Spec = olmCollectProfilesCronJob.DeepCopy().Spec
 	cronJob.Spec.JobTemplate.Spec.Template.ObjectMeta.Labels = map[string]string{
@@ -27,9 +31,11 @@ func ReconcileCollectProfilesCronJob(cronJob *batchv1.CronJob, ownerRef config.O
 	cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Image = olmImage
 	for i, arg := range cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Args {
 		if arg == "OLM_NAMESPACE" {
-			cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Args[i] = namespace
+			cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers[0].Args[i] = hcp.Namespace
 		}
 	}
+	cronJob.Spec.JobTemplate.Spec.Template.Spec.Tolerations = mockDC.Scheduling.Tolerations
+	cronJob.Spec.JobTemplate.Spec.Template.Spec.Affinity = mockDC.Scheduling.Affinity
 	cronJob.Spec.Schedule = generateModularDailyCronSchedule([]byte(cronJob.Namespace))
 }
 
