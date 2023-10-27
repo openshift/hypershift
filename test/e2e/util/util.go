@@ -758,6 +758,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 				"cluster-node-tuning-operator",
 				"capi-provider-controller-manager",
 				"cluster-api",
+				"etcd", // For etcd-defrag leader elections
 				"control-plane-operator",
 				"hosted-cluster-config-operator",
 				"cloud-controller-manager",

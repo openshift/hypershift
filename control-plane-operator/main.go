@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	"github.com/openshift/hypershift/dnsresolver"
+	etcddefrag "github.com/openshift/hypershift/etcd-defrag"
 	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
@@ -79,6 +80,8 @@ func commandFor(name string) *cobra.Command {
 		cmd = availabilityprober.NewStartCommand()
 	case "token-minter":
 		cmd = tokenminter.NewStartCommand()
+	case "etcd-defrag-controller":
+		cmd = etcddefrag.NewStartCommand()
 	default:
 		// for the default case, there is no need
 		// to convert flags, return immediately
@@ -124,6 +127,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(availabilityprober.NewStartCommand())
 	cmd.AddCommand(tokenminter.NewStartCommand())
 	cmd.AddCommand(ignitionserver.NewStartCommand())
+	cmd.AddCommand(etcddefrag.NewStartCommand())
 	cmd.AddCommand(kubernetesdefaultproxy.NewStartCommand())
 	cmd.AddCommand(dnsresolver.NewCommand())
 

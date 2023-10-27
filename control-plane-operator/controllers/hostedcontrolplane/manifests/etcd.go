@@ -5,7 +5,12 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+const (
+	EtcdDefragName = "etcd-defrag-controller"
 )
 
 func EtcdStatefulSet(ns string) *appsv1.StatefulSet {
@@ -48,6 +53,34 @@ func EtcdPodDisruptionBudget(ns string) *policyv1.PodDisruptionBudget {
 	return &policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "etcd",
+			Namespace: ns,
+		},
+	}
+}
+
+func EtcdDefragControllerRole(ns string) *rbacv1.Role {
+	return &rbacv1.Role{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      EtcdDefragName,
+			Namespace: ns,
+		},
+	}
+}
+
+func EtcdDefragControllerRoleBinding(ns string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      EtcdDefragName,
+			Namespace: ns,
+		},
+	}
+
+}
+
+func EtcdDefragControllerServiceAccount(ns string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      EtcdDefragName,
 			Namespace: ns,
 		},
 	}
