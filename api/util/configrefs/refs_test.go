@@ -15,6 +15,7 @@ func TestKnownConfigMapRefs(t *testing.T) {
 	expected := sets.NewString(
 		".APIServer.ClientCA",
 		".Authentication.OAuthMetadata",
+		".Authentication.OIDCProviders.Issuer.CertificateAuthority",
 		".Image.AdditionalTrustedCA",
 		".OAuth.IdentityProviders.IdentityProviderConfig.BasicAuth.OAuthRemoteConnectionInfo.CA",
 		".OAuth.IdentityProviders.IdentityProviderConfig.GitHub.CA",

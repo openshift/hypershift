@@ -30332,6 +30332,182 @@ objects:
                           required:
                           - name
                           type: object
+                        oidcProviders:
+                          description: "OIDCProviders are OIDC identity providers
+                            that can issue tokens for this cluster Can only be set
+                            if \"Type\" is set to \"OIDC\". \n At most one provider
+                            can be configured."
+                          items:
+                            properties:
+                              claimMappings:
+                                description: ClaimMappings describes rules on how
+                                  to transform information from an ID token into a
+                                  cluster identity
+                                properties:
+                                  groups:
+                                    description: Groups is a name of the claim that
+                                      should be used to construct groups for the cluster
+                                      identity. The referenced claim must use array
+                                      of strings values.
+                                    properties:
+                                      claim:
+                                        description: Claim is a JWT token claim to
+                                          be used in the mapping
+                                        type: string
+                                      prefix:
+                                        description: "Prefix is a string to prefix
+                                          the value from the token in the result of
+                                          the claim mapping. \n By default, no prefixing
+                                          occurs. \n Example: if `prefix` is set to
+                                          \"myoidc:\"\" and the `claim` in JWT contains
+                                          an array of strings \"a\", \"b\" and  \"c\",
+                                          the mapping will result in an array of string
+                                          \"myoidc:a\", \"myoidc:b\" and \"myoidc:c\"."
+                                        type: string
+                                    required:
+                                    - claim
+                                    type: object
+                                  username:
+                                    description: "Username is a name of the claim
+                                      that should be used to construct usernames for
+                                      the cluster identity. \n Default value: \"sub\""
+                                    properties:
+                                      claim:
+                                        description: Claim is a JWT token claim to
+                                          be used in the mapping
+                                        type: string
+                                      prefix:
+                                        properties:
+                                          prefixString:
+                                            minLength: 1
+                                            type: string
+                                        required:
+                                        - prefixString
+                                        type: object
+                                      prefixPolicy:
+                                        description: "PrefixPolicy specifies how a
+                                          prefix should apply. \n By default, claims
+                                          other than `email` will be prefixed with
+                                          the issuer URL to prevent naming clashes
+                                          with other plugins. \n Set to \"NoPrefix\"
+                                          to disable prefixing. \n Example: (1) `prefix`
+                                          is set to \"myoidc:\" and `claim` is set
+                                          to \"username\". If the JWT claim `username`
+                                          contains value `userA`, the resulting mapped
+                                          value will be \"myoidc:userA\". (2) `prefix`
+                                          is set to \"myoidc:\" and `claim` is set
+                                          to \"email\". If the JWT `email` claim contains
+                                          value \"userA@myoidc.tld\", the resulting
+                                          mapped value will be \"myoidc:userA@myoidc.tld\".
+                                          (3) `prefix` is unset, `issuerURL` is set
+                                          to `https://myoidc.tld`, the JWT claims
+                                          include \"username\":\"userA\" and \"email\":\"userA@myoidc.tld\",
+                                          and `claim` is set to: (a) \"username\":
+                                          the mapped value will be \"https://myoidc.tld#userA\"
+                                          (b) \"email\": the mapped value will be
+                                          \"userA@myoidc.tld\""
+                                        enum:
+                                        - ""
+                                        - NoPrefix
+                                        - Prefix
+                                        type: string
+                                    required:
+                                    - claim
+                                    type: object
+                                    x-kubernetes-validations:
+                                    - message: prefix must be set if prefixPolicy
+                                        is 'Prefix', but must remain unset otherwise
+                                      rule: 'has(self.prefixPolicy) && self.prefixPolicy
+                                        == ''Prefix'' ? (has(self.prefix) && size(self.prefix.prefixString)
+                                        > 0) : !has(self.prefix)'
+                                type: object
+                              claimValidationRules:
+                                description: ClaimValidationRules are rules that are
+                                  applied to validate token claims to authenticate
+                                  users.
+                                items:
+                                  properties:
+                                    requiredClaim:
+                                      description: RequiredClaim allows configuring
+                                        a required claim name and its expected value
+                                      properties:
+                                        claim:
+                                          description: Claim is a name of a required
+                                            claim. Only claims with string values
+                                            are supported.
+                                          minLength: 1
+                                          type: string
+                                        requiredValue:
+                                          description: RequiredValue is the required
+                                            value for the claim.
+                                          minLength: 1
+                                          type: string
+                                      required:
+                                      - claim
+                                      - requiredValue
+                                      type: object
+                                    type:
+                                      default: RequiredClaim
+                                      description: Type sets the type of the validation
+                                        rule
+                                      enum:
+                                      - RequiredClaim
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              issuer:
+                                description: Issuer describes atributes of the OIDC
+                                  token issuer
+                                properties:
+                                  audiences:
+                                    description: Audiences is an array of audiences
+                                      that the token was issued for. Valid tokens
+                                      must include at least one of these values in
+                                      their "aud" claim. Must be set to exactly one
+                                      value.
+                                    items:
+                                      minLength: 1
+                                      type: string
+                                    maxItems: 1
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  issuerCertificateAuthority:
+                                    description: CertificateAuthority is a reference
+                                      to a config map in the configuration namespace.
+                                      The .data of the configMap must contain the
+                                      "ca-bundle.crt" key. If unset, system trust
+                                      is used instead.
+                                    properties:
+                                      name:
+                                        description: name is the metadata.name of
+                                          the referenced config map
+                                        type: string
+                                    required:
+                                    - name
+                                    type: object
+                                  issuerURL:
+                                    description: URL is the serving URL of the token
+                                      issuer. Must use the https:// scheme.
+                                    pattern: ^https:\/\/[^\s]
+                                    type: string
+                                required:
+                                - audiences
+                                - issuerURL
+                                type: object
+                              name:
+                                description: Name of the OIDC provider
+                                minLength: 1
+                                type: string
+                            required:
+                            - issuer
+                            - name
+                            type: object
+                          maxItems: 1
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
                         serviceAccountIssuer:
                           description: 'serviceAccountIssuer is the identifier of
                             the bound service account token issuer. The default is
@@ -30352,11 +30528,12 @@ objects:
                             is IntegratedOAuth.
                           type: string
                         webhookTokenAuthenticator:
-                          description: webhookTokenAuthenticator configures a remote
+                          description: "webhookTokenAuthenticator configures a remote
                             token reviewer. These remote authentication webhooks can
                             be used to verify bearer tokens via the tokenreviews.authentication.k8s.io
                             REST API. This is required to honor bearer tokens that
                             are provisioned by an external authentication service.
+                            \n Can only be set if \"Type\" is set to \"None\"."
                           properties:
                             kubeConfig:
                               description: "kubeConfig references a secret that contains
@@ -30409,6 +30586,7 @@ objects:
                                 type: object
                             type: object
                           type: array
+                          x-kubernetes-list-type: atomic
                       type: object
                     configMapRefs:
                       description: "ConfigMapRefs holds references to any configmaps
@@ -34244,6 +34422,182 @@ objects:
                           required:
                           - name
                           type: object
+                        oidcProviders:
+                          description: "OIDCProviders are OIDC identity providers
+                            that can issue tokens for this cluster Can only be set
+                            if \"Type\" is set to \"OIDC\". \n At most one provider
+                            can be configured."
+                          items:
+                            properties:
+                              claimMappings:
+                                description: ClaimMappings describes rules on how
+                                  to transform information from an ID token into a
+                                  cluster identity
+                                properties:
+                                  groups:
+                                    description: Groups is a name of the claim that
+                                      should be used to construct groups for the cluster
+                                      identity. The referenced claim must use array
+                                      of strings values.
+                                    properties:
+                                      claim:
+                                        description: Claim is a JWT token claim to
+                                          be used in the mapping
+                                        type: string
+                                      prefix:
+                                        description: "Prefix is a string to prefix
+                                          the value from the token in the result of
+                                          the claim mapping. \n By default, no prefixing
+                                          occurs. \n Example: if `prefix` is set to
+                                          \"myoidc:\"\" and the `claim` in JWT contains
+                                          an array of strings \"a\", \"b\" and  \"c\",
+                                          the mapping will result in an array of string
+                                          \"myoidc:a\", \"myoidc:b\" and \"myoidc:c\"."
+                                        type: string
+                                    required:
+                                    - claim
+                                    type: object
+                                  username:
+                                    description: "Username is a name of the claim
+                                      that should be used to construct usernames for
+                                      the cluster identity. \n Default value: \"sub\""
+                                    properties:
+                                      claim:
+                                        description: Claim is a JWT token claim to
+                                          be used in the mapping
+                                        type: string
+                                      prefix:
+                                        properties:
+                                          prefixString:
+                                            minLength: 1
+                                            type: string
+                                        required:
+                                        - prefixString
+                                        type: object
+                                      prefixPolicy:
+                                        description: "PrefixPolicy specifies how a
+                                          prefix should apply. \n By default, claims
+                                          other than `email` will be prefixed with
+                                          the issuer URL to prevent naming clashes
+                                          with other plugins. \n Set to \"NoPrefix\"
+                                          to disable prefixing. \n Example: (1) `prefix`
+                                          is set to \"myoidc:\" and `claim` is set
+                                          to \"username\". If the JWT claim `username`
+                                          contains value `userA`, the resulting mapped
+                                          value will be \"myoidc:userA\". (2) `prefix`
+                                          is set to \"myoidc:\" and `claim` is set
+                                          to \"email\". If the JWT `email` claim contains
+                                          value \"userA@myoidc.tld\", the resulting
+                                          mapped value will be \"myoidc:userA@myoidc.tld\".
+                                          (3) `prefix` is unset, `issuerURL` is set
+                                          to `https://myoidc.tld`, the JWT claims
+                                          include \"username\":\"userA\" and \"email\":\"userA@myoidc.tld\",
+                                          and `claim` is set to: (a) \"username\":
+                                          the mapped value will be \"https://myoidc.tld#userA\"
+                                          (b) \"email\": the mapped value will be
+                                          \"userA@myoidc.tld\""
+                                        enum:
+                                        - ""
+                                        - NoPrefix
+                                        - Prefix
+                                        type: string
+                                    required:
+                                    - claim
+                                    type: object
+                                    x-kubernetes-validations:
+                                    - message: prefix must be set if prefixPolicy
+                                        is 'Prefix', but must remain unset otherwise
+                                      rule: 'has(self.prefixPolicy) && self.prefixPolicy
+                                        == ''Prefix'' ? (has(self.prefix) && size(self.prefix.prefixString)
+                                        > 0) : !has(self.prefix)'
+                                type: object
+                              claimValidationRules:
+                                description: ClaimValidationRules are rules that are
+                                  applied to validate token claims to authenticate
+                                  users.
+                                items:
+                                  properties:
+                                    requiredClaim:
+                                      description: RequiredClaim allows configuring
+                                        a required claim name and its expected value
+                                      properties:
+                                        claim:
+                                          description: Claim is a name of a required
+                                            claim. Only claims with string values
+                                            are supported.
+                                          minLength: 1
+                                          type: string
+                                        requiredValue:
+                                          description: RequiredValue is the required
+                                            value for the claim.
+                                          minLength: 1
+                                          type: string
+                                      required:
+                                      - claim
+                                      - requiredValue
+                                      type: object
+                                    type:
+                                      default: RequiredClaim
+                                      description: Type sets the type of the validation
+                                        rule
+                                      enum:
+                                      - RequiredClaim
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              issuer:
+                                description: Issuer describes atributes of the OIDC
+                                  token issuer
+                                properties:
+                                  audiences:
+                                    description: Audiences is an array of audiences
+                                      that the token was issued for. Valid tokens
+                                      must include at least one of these values in
+                                      their "aud" claim. Must be set to exactly one
+                                      value.
+                                    items:
+                                      minLength: 1
+                                      type: string
+                                    maxItems: 1
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  issuerCertificateAuthority:
+                                    description: CertificateAuthority is a reference
+                                      to a config map in the configuration namespace.
+                                      The .data of the configMap must contain the
+                                      "ca-bundle.crt" key. If unset, system trust
+                                      is used instead.
+                                    properties:
+                                      name:
+                                        description: name is the metadata.name of
+                                          the referenced config map
+                                        type: string
+                                    required:
+                                    - name
+                                    type: object
+                                  issuerURL:
+                                    description: URL is the serving URL of the token
+                                      issuer. Must use the https:// scheme.
+                                    pattern: ^https:\/\/[^\s]
+                                    type: string
+                                required:
+                                - audiences
+                                - issuerURL
+                                type: object
+                              name:
+                                description: Name of the OIDC provider
+                                minLength: 1
+                                type: string
+                            required:
+                            - issuer
+                            - name
+                            type: object
+                          maxItems: 1
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
                         serviceAccountIssuer:
                           description: 'serviceAccountIssuer is the identifier of
                             the bound service account token issuer. The default is
@@ -34264,11 +34618,12 @@ objects:
                             is IntegratedOAuth.
                           type: string
                         webhookTokenAuthenticator:
-                          description: webhookTokenAuthenticator configures a remote
+                          description: "webhookTokenAuthenticator configures a remote
                             token reviewer. These remote authentication webhooks can
                             be used to verify bearer tokens via the tokenreviews.authentication.k8s.io
                             REST API. This is required to honor bearer tokens that
                             are provisioned by an external authentication service.
+                            \n Can only be set if \"Type\" is set to \"None\"."
                           properties:
                             kubeConfig:
                               description: "kubeConfig references a secret that contains
@@ -34321,6 +34676,7 @@ objects:
                                 type: object
                             type: object
                           type: array
+                          x-kubernetes-list-type: atomic
                       type: object
                     featureGate:
                       description: FeatureGate holds cluster-wide information about
@@ -38072,6 +38428,182 @@ objects:
                           required:
                           - name
                           type: object
+                        oidcProviders:
+                          description: "OIDCProviders are OIDC identity providers
+                            that can issue tokens for this cluster Can only be set
+                            if \"Type\" is set to \"OIDC\". \n At most one provider
+                            can be configured."
+                          items:
+                            properties:
+                              claimMappings:
+                                description: ClaimMappings describes rules on how
+                                  to transform information from an ID token into a
+                                  cluster identity
+                                properties:
+                                  groups:
+                                    description: Groups is a name of the claim that
+                                      should be used to construct groups for the cluster
+                                      identity. The referenced claim must use array
+                                      of strings values.
+                                    properties:
+                                      claim:
+                                        description: Claim is a JWT token claim to
+                                          be used in the mapping
+                                        type: string
+                                      prefix:
+                                        description: "Prefix is a string to prefix
+                                          the value from the token in the result of
+                                          the claim mapping. \n By default, no prefixing
+                                          occurs. \n Example: if `prefix` is set to
+                                          \"myoidc:\"\" and the `claim` in JWT contains
+                                          an array of strings \"a\", \"b\" and  \"c\",
+                                          the mapping will result in an array of string
+                                          \"myoidc:a\", \"myoidc:b\" and \"myoidc:c\"."
+                                        type: string
+                                    required:
+                                    - claim
+                                    type: object
+                                  username:
+                                    description: "Username is a name of the claim
+                                      that should be used to construct usernames for
+                                      the cluster identity. \n Default value: \"sub\""
+                                    properties:
+                                      claim:
+                                        description: Claim is a JWT token claim to
+                                          be used in the mapping
+                                        type: string
+                                      prefix:
+                                        properties:
+                                          prefixString:
+                                            minLength: 1
+                                            type: string
+                                        required:
+                                        - prefixString
+                                        type: object
+                                      prefixPolicy:
+                                        description: "PrefixPolicy specifies how a
+                                          prefix should apply. \n By default, claims
+                                          other than `email` will be prefixed with
+                                          the issuer URL to prevent naming clashes
+                                          with other plugins. \n Set to \"NoPrefix\"
+                                          to disable prefixing. \n Example: (1) `prefix`
+                                          is set to \"myoidc:\" and `claim` is set
+                                          to \"username\". If the JWT claim `username`
+                                          contains value `userA`, the resulting mapped
+                                          value will be \"myoidc:userA\". (2) `prefix`
+                                          is set to \"myoidc:\" and `claim` is set
+                                          to \"email\". If the JWT `email` claim contains
+                                          value \"userA@myoidc.tld\", the resulting
+                                          mapped value will be \"myoidc:userA@myoidc.tld\".
+                                          (3) `prefix` is unset, `issuerURL` is set
+                                          to `https://myoidc.tld`, the JWT claims
+                                          include \"username\":\"userA\" and \"email\":\"userA@myoidc.tld\",
+                                          and `claim` is set to: (a) \"username\":
+                                          the mapped value will be \"https://myoidc.tld#userA\"
+                                          (b) \"email\": the mapped value will be
+                                          \"userA@myoidc.tld\""
+                                        enum:
+                                        - ""
+                                        - NoPrefix
+                                        - Prefix
+                                        type: string
+                                    required:
+                                    - claim
+                                    type: object
+                                    x-kubernetes-validations:
+                                    - message: prefix must be set if prefixPolicy
+                                        is 'Prefix', but must remain unset otherwise
+                                      rule: 'has(self.prefixPolicy) && self.prefixPolicy
+                                        == ''Prefix'' ? (has(self.prefix) && size(self.prefix.prefixString)
+                                        > 0) : !has(self.prefix)'
+                                type: object
+                              claimValidationRules:
+                                description: ClaimValidationRules are rules that are
+                                  applied to validate token claims to authenticate
+                                  users.
+                                items:
+                                  properties:
+                                    requiredClaim:
+                                      description: RequiredClaim allows configuring
+                                        a required claim name and its expected value
+                                      properties:
+                                        claim:
+                                          description: Claim is a name of a required
+                                            claim. Only claims with string values
+                                            are supported.
+                                          minLength: 1
+                                          type: string
+                                        requiredValue:
+                                          description: RequiredValue is the required
+                                            value for the claim.
+                                          minLength: 1
+                                          type: string
+                                      required:
+                                      - claim
+                                      - requiredValue
+                                      type: object
+                                    type:
+                                      default: RequiredClaim
+                                      description: Type sets the type of the validation
+                                        rule
+                                      enum:
+                                      - RequiredClaim
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              issuer:
+                                description: Issuer describes atributes of the OIDC
+                                  token issuer
+                                properties:
+                                  audiences:
+                                    description: Audiences is an array of audiences
+                                      that the token was issued for. Valid tokens
+                                      must include at least one of these values in
+                                      their "aud" claim. Must be set to exactly one
+                                      value.
+                                    items:
+                                      minLength: 1
+                                      type: string
+                                    maxItems: 1
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  issuerCertificateAuthority:
+                                    description: CertificateAuthority is a reference
+                                      to a config map in the configuration namespace.
+                                      The .data of the configMap must contain the
+                                      "ca-bundle.crt" key. If unset, system trust
+                                      is used instead.
+                                    properties:
+                                      name:
+                                        description: name is the metadata.name of
+                                          the referenced config map
+                                        type: string
+                                    required:
+                                    - name
+                                    type: object
+                                  issuerURL:
+                                    description: URL is the serving URL of the token
+                                      issuer. Must use the https:// scheme.
+                                    pattern: ^https:\/\/[^\s]
+                                    type: string
+                                required:
+                                - audiences
+                                - issuerURL
+                                type: object
+                              name:
+                                description: Name of the OIDC provider
+                                minLength: 1
+                                type: string
+                            required:
+                            - issuer
+                            - name
+                            type: object
+                          maxItems: 1
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
                         serviceAccountIssuer:
                           description: 'serviceAccountIssuer is the identifier of
                             the bound service account token issuer. The default is
@@ -38092,11 +38624,12 @@ objects:
                             is IntegratedOAuth.
                           type: string
                         webhookTokenAuthenticator:
-                          description: webhookTokenAuthenticator configures a remote
+                          description: "webhookTokenAuthenticator configures a remote
                             token reviewer. These remote authentication webhooks can
                             be used to verify bearer tokens via the tokenreviews.authentication.k8s.io
                             REST API. This is required to honor bearer tokens that
                             are provisioned by an external authentication service.
+                            \n Can only be set if \"Type\" is set to \"None\"."
                           properties:
                             kubeConfig:
                               description: "kubeConfig references a secret that contains
@@ -38149,6 +38682,7 @@ objects:
                                 type: object
                             type: object
                           type: array
+                          x-kubernetes-list-type: atomic
                       type: object
                     configMapRefs:
                       description: "ConfigMapRefs holds references to any configmaps
@@ -41979,6 +42513,182 @@ objects:
                           required:
                           - name
                           type: object
+                        oidcProviders:
+                          description: "OIDCProviders are OIDC identity providers
+                            that can issue tokens for this cluster Can only be set
+                            if \"Type\" is set to \"OIDC\". \n At most one provider
+                            can be configured."
+                          items:
+                            properties:
+                              claimMappings:
+                                description: ClaimMappings describes rules on how
+                                  to transform information from an ID token into a
+                                  cluster identity
+                                properties:
+                                  groups:
+                                    description: Groups is a name of the claim that
+                                      should be used to construct groups for the cluster
+                                      identity. The referenced claim must use array
+                                      of strings values.
+                                    properties:
+                                      claim:
+                                        description: Claim is a JWT token claim to
+                                          be used in the mapping
+                                        type: string
+                                      prefix:
+                                        description: "Prefix is a string to prefix
+                                          the value from the token in the result of
+                                          the claim mapping. \n By default, no prefixing
+                                          occurs. \n Example: if `prefix` is set to
+                                          \"myoidc:\"\" and the `claim` in JWT contains
+                                          an array of strings \"a\", \"b\" and  \"c\",
+                                          the mapping will result in an array of string
+                                          \"myoidc:a\", \"myoidc:b\" and \"myoidc:c\"."
+                                        type: string
+                                    required:
+                                    - claim
+                                    type: object
+                                  username:
+                                    description: "Username is a name of the claim
+                                      that should be used to construct usernames for
+                                      the cluster identity. \n Default value: \"sub\""
+                                    properties:
+                                      claim:
+                                        description: Claim is a JWT token claim to
+                                          be used in the mapping
+                                        type: string
+                                      prefix:
+                                        properties:
+                                          prefixString:
+                                            minLength: 1
+                                            type: string
+                                        required:
+                                        - prefixString
+                                        type: object
+                                      prefixPolicy:
+                                        description: "PrefixPolicy specifies how a
+                                          prefix should apply. \n By default, claims
+                                          other than `email` will be prefixed with
+                                          the issuer URL to prevent naming clashes
+                                          with other plugins. \n Set to \"NoPrefix\"
+                                          to disable prefixing. \n Example: (1) `prefix`
+                                          is set to \"myoidc:\" and `claim` is set
+                                          to \"username\". If the JWT claim `username`
+                                          contains value `userA`, the resulting mapped
+                                          value will be \"myoidc:userA\". (2) `prefix`
+                                          is set to \"myoidc:\" and `claim` is set
+                                          to \"email\". If the JWT `email` claim contains
+                                          value \"userA@myoidc.tld\", the resulting
+                                          mapped value will be \"myoidc:userA@myoidc.tld\".
+                                          (3) `prefix` is unset, `issuerURL` is set
+                                          to `https://myoidc.tld`, the JWT claims
+                                          include \"username\":\"userA\" and \"email\":\"userA@myoidc.tld\",
+                                          and `claim` is set to: (a) \"username\":
+                                          the mapped value will be \"https://myoidc.tld#userA\"
+                                          (b) \"email\": the mapped value will be
+                                          \"userA@myoidc.tld\""
+                                        enum:
+                                        - ""
+                                        - NoPrefix
+                                        - Prefix
+                                        type: string
+                                    required:
+                                    - claim
+                                    type: object
+                                    x-kubernetes-validations:
+                                    - message: prefix must be set if prefixPolicy
+                                        is 'Prefix', but must remain unset otherwise
+                                      rule: 'has(self.prefixPolicy) && self.prefixPolicy
+                                        == ''Prefix'' ? (has(self.prefix) && size(self.prefix.prefixString)
+                                        > 0) : !has(self.prefix)'
+                                type: object
+                              claimValidationRules:
+                                description: ClaimValidationRules are rules that are
+                                  applied to validate token claims to authenticate
+                                  users.
+                                items:
+                                  properties:
+                                    requiredClaim:
+                                      description: RequiredClaim allows configuring
+                                        a required claim name and its expected value
+                                      properties:
+                                        claim:
+                                          description: Claim is a name of a required
+                                            claim. Only claims with string values
+                                            are supported.
+                                          minLength: 1
+                                          type: string
+                                        requiredValue:
+                                          description: RequiredValue is the required
+                                            value for the claim.
+                                          minLength: 1
+                                          type: string
+                                      required:
+                                      - claim
+                                      - requiredValue
+                                      type: object
+                                    type:
+                                      default: RequiredClaim
+                                      description: Type sets the type of the validation
+                                        rule
+                                      enum:
+                                      - RequiredClaim
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                              issuer:
+                                description: Issuer describes atributes of the OIDC
+                                  token issuer
+                                properties:
+                                  audiences:
+                                    description: Audiences is an array of audiences
+                                      that the token was issued for. Valid tokens
+                                      must include at least one of these values in
+                                      their "aud" claim. Must be set to exactly one
+                                      value.
+                                    items:
+                                      minLength: 1
+                                      type: string
+                                    maxItems: 1
+                                    type: array
+                                    x-kubernetes-list-type: set
+                                  issuerCertificateAuthority:
+                                    description: CertificateAuthority is a reference
+                                      to a config map in the configuration namespace.
+                                      The .data of the configMap must contain the
+                                      "ca-bundle.crt" key. If unset, system trust
+                                      is used instead.
+                                    properties:
+                                      name:
+                                        description: name is the metadata.name of
+                                          the referenced config map
+                                        type: string
+                                    required:
+                                    - name
+                                    type: object
+                                  issuerURL:
+                                    description: URL is the serving URL of the token
+                                      issuer. Must use the https:// scheme.
+                                    pattern: ^https:\/\/[^\s]
+                                    type: string
+                                required:
+                                - audiences
+                                - issuerURL
+                                type: object
+                              name:
+                                description: Name of the OIDC provider
+                                minLength: 1
+                                type: string
+                            required:
+                            - issuer
+                            - name
+                            type: object
+                          maxItems: 1
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
                         serviceAccountIssuer:
                           description: 'serviceAccountIssuer is the identifier of
                             the bound service account token issuer. The default is
@@ -41999,11 +42709,12 @@ objects:
                             is IntegratedOAuth.
                           type: string
                         webhookTokenAuthenticator:
-                          description: webhookTokenAuthenticator configures a remote
+                          description: "webhookTokenAuthenticator configures a remote
                             token reviewer. These remote authentication webhooks can
                             be used to verify bearer tokens via the tokenreviews.authentication.k8s.io
                             REST API. This is required to honor bearer tokens that
                             are provisioned by an external authentication service.
+                            \n Can only be set if \"Type\" is set to \"None\"."
                           properties:
                             kubeConfig:
                               description: "kubeConfig references a secret that contains
@@ -42056,6 +42767,7 @@ objects:
                                 type: object
                             type: object
                           type: array
+                          x-kubernetes-list-type: atomic
                       type: object
                     featureGate:
                       description: FeatureGate holds cluster-wide information about
