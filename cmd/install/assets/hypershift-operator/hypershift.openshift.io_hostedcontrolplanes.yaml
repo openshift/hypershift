@@ -2160,15 +2160,18 @@ spec:
                                 type: string
                             type: object
                           restoreSnapshotURL:
-                            description: RestoreSnapshotURL allows an optional list
-                              of URLs to be provided where an etcd snapshot can be
-                              downloaded, for example a pre-signed URL referencing
-                              a storage service, one URL per replica. This snapshot
-                              will be restored on initial startup, only when the etcd
-                              PV is empty.
+                            description: RestoreSnapshotURL allows an optional URL
+                              to be provided where an etcd snapshot can be downloaded,
+                              for example a pre-signed URL referencing a storage service.
+                              This snapshot will be restored on initial startup, only
+                              when the etcd PV is empty.
                             items:
                               type: string
                             type: array
+                            x-kubernetes-validations:
+                            - message: RestoreSnapshotURL shouldn't contain more than
+                                1 entry
+                              rule: self.size() <= 1
                           type:
                             description: Type is the kind of persistent storage implementation
                               to use for etcd.
@@ -6130,15 +6133,18 @@ spec:
                                 type: string
                             type: object
                           restoreSnapshotURL:
-                            description: RestoreSnapshotURL allows an optional list
-                              of URLs to be provided where an etcd snapshot can be
-                              downloaded, for example a pre-signed URL referencing
-                              a storage service, one URL per replica. This snapshot
-                              will be restored on initial startup, only when the etcd
-                              PV is empty.
+                            description: RestoreSnapshotURL allows an optional URL
+                              to be provided where an etcd snapshot can be downloaded,
+                              for example a pre-signed URL referencing a storage service.
+                              This snapshot will be restored on initial startup, only
+                              when the etcd PV is empty.
                             items:
                               type: string
                             type: array
+                            x-kubernetes-validations:
+                            - message: RestoreSnapshotURL shouldn't contain more than
+                                1 entry
+                              rule: self.size() <= 1
                           type:
                             description: Type is the kind of persistent storage implementation
                               to use for etcd.

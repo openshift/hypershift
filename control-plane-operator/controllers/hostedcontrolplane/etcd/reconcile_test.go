@@ -82,34 +82,8 @@ func TestBuildEtcdInitContainer(t *testing.T) {
 			},
 			expectedEnv: []corev1.EnvVar{
 				{
-					Name:  "RESTORE_URL_ETCD_0",
+					Name:  "RESTORE_URL_ETCD",
 					Value: "arestoreurl",
-				},
-			},
-		},
-		{
-			name: "three replica container env as expected",
-			params: EtcdParams{
-				EtcdImage: "animage",
-				DeploymentConfig: config.DeploymentConfig{
-					Replicas: 3,
-				},
-				StorageSpec: hyperv1.ManagedEtcdStorageSpec{
-					RestoreSnapshotURL: []string{"u1", "u2", "u3"},
-				},
-			},
-			expectedEnv: []corev1.EnvVar{
-				{
-					Name:  "RESTORE_URL_ETCD_0",
-					Value: "u1",
-				},
-				{
-					Name:  "RESTORE_URL_ETCD_1",
-					Value: "u2",
-				},
-				{
-					Name:  "RESTORE_URL_ETCD_2",
-					Value: "u3",
 				},
 			},
 		},
@@ -155,7 +129,7 @@ func TestBuildEtcdContainer(t *testing.T) {
 					Replicas: 1,
 				},
 				StorageSpec: hyperv1.ManagedEtcdStorageSpec{
-					RestoreSnapshotURL: []string{"u1", "u2", "u3"},
+					RestoreSnapshotURL: []string{"arestoreurl"},
 				},
 				IPv6: true,
 			},
@@ -203,7 +177,7 @@ func TestBuildEtcdMetricsContainer(t *testing.T) {
 					Replicas: 1,
 				},
 				StorageSpec: hyperv1.ManagedEtcdStorageSpec{
-					RestoreSnapshotURL: []string{"u1", "u2", "u3"},
+					RestoreSnapshotURL: []string{"arestoreurl"},
 				},
 				IPv6: true,
 			},
