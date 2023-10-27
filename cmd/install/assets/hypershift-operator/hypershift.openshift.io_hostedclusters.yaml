@@ -6403,6 +6403,9 @@ spec:
                 - management
                 - guest
                 type: string
+                x-kubernetes-validations:
+                - message: OLMCatalogPlacement is immutable
+                  rule: self == oldSelf
               pausedUntil:
                 description: 'PausedUntil is a field that can be used to pause reconciliation
                   on a resource. Either a date can be provided in RFC3339 format or
