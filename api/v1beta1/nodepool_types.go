@@ -914,7 +914,7 @@ type Taint struct {
 	Key string `json:"key"`
 	// The taint value corresponding to the taint key.
 	// +optional
-	// +kubebuilder:validation:Pattern:=`(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?`
+	// +kubebuilder:validation:Pattern:=`^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$`
 	Value string `json:"value,omitempty"`
 	// Required. The effect of the taint on pods
 	// that do not tolerate the taint.
