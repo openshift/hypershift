@@ -57,7 +57,7 @@ type AzureClusterStatus struct {
 	// A FailureDomain maps to Availability Zone with an Azure Region (if the region support them). An
 	// Availability Zone is a separate data center within a region and they can be used to ensure
 	// the cluster is more resilient to failure.
-	// See: https://docs.microsoft.com/en-us/azure/availability-zones/az-overview
+	// See: https://learn.microsoft.com/azure/reliability/availability-zones-overview
 	// This list will be used by Cluster API to try and spread the machines across the failure domains.
 	// +optional
 	FailureDomains clusterv1.FailureDomains `json:"failureDomains,omitempty"`
@@ -85,6 +85,7 @@ type AzureClusterStatus struct {
 // +kubebuilder:printcolumn:name="SubscriptionID",type="string",priority=1,JSONPath=".spec.subscriptionID"
 // +kubebuilder:printcolumn:name="Location",type="string",priority=1,JSONPath=".spec.location"
 // +kubebuilder:printcolumn:name="Endpoint",type="string",priority=1,JSONPath=".spec.controlPlaneEndpoint.host",description="Control Plane Endpoint"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of this AzureCluster"
 // +kubebuilder:resource:path=azureclusters,scope=Namespaced,categories=cluster-api
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status

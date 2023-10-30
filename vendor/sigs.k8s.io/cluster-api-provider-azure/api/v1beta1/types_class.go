@@ -25,6 +25,10 @@ type AzureClusterClassSpec struct {
 
 	Location string `json:"location"`
 
+	// ExtendedLocation is an optional set of ExtendedLocation properties for clusters on Azure public MEC.
+	// +optional
+	ExtendedLocation *ExtendedLocationSpec `json:"extendedLocation,omitempty"`
+
 	// AdditionalTags is an optional set of tags to add to Azure resources managed by the Azure provider, in addition to the
 	// ones added by default.
 	// +optional
@@ -50,6 +54,16 @@ type AzureClusterClassSpec struct {
 	// Note: All cloud provider config values can be customized by creating the secret beforehand. CloudProviderConfigOverrides is only used when the secret is managed by the Azure Provider.
 	// +optional
 	CloudProviderConfigOverrides *CloudProviderConfigOverrides `json:"cloudProviderConfigOverrides,omitempty"`
+}
+
+// ExtendedLocationSpec defines the ExtendedLocation properties to enable CAPZ for Azure public MEC.
+type ExtendedLocationSpec struct {
+	// Name defines the name for the extended location.
+	Name string `json:"name"`
+
+	// Type defines the type for the extended location.
+	// +kubebuilder:validation:Enum=EdgeZone
+	Type string `json:"type"`
 }
 
 // NetworkClassSpec defines the NetworkSpec properties that may be shared across several Azure clusters.
@@ -86,6 +100,10 @@ type SubnetClassSpec struct {
 	// ServiceEndpoints is a slice of Virtual Network service endpoints to enable for the subnets.
 	// +optional
 	ServiceEndpoints ServiceEndpoints `json:"serviceEndpoints,omitempty"`
+
+	// PrivateEndpoints defines a list of private endpoints that should be attached to this subnet.
+	// +optional
+	PrivateEndpoints PrivateEndpoints `json:"privateEndpoints,omitempty"`
 }
 
 // LoadBalancerClassSpec defines the LoadBalancerSpec properties that may be shared across several Azure clusters.

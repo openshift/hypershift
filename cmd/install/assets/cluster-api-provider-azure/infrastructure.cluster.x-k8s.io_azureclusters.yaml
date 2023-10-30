@@ -48,6 +48,10 @@ spec:
       name: Endpoint
       priority: 1
       type: string
+    - description: Time duration since creation of this AzureCluster
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
     name: v1beta1
     schema:
       openAPIV3Schema:
@@ -90,6 +94,11 @@ spec:
                     description: AzureBastion specifies how the Azure Bastion cloud
                       component should be configured.
                     properties:
+                      enableTunneling:
+                        default: false
+                        description: EnableTunneling enables the native client support
+                          feature for the Azure Bastion Host. Defaults to false.
+                        type: boolean
                       name:
                         type: string
                       publicIP:
@@ -121,6 +130,15 @@ spec:
                         required:
                         - name
                         type: object
+                      sku:
+                        default: Basic
+                        description: BastionHostSkuName configures the tier of the
+                          Azure Bastion Host. Can be either Basic or Standard. Defaults
+                          to Basic.
+                        enum:
+                        - Basic
+                        - Standard
+                        type: string
                       subnet:
                         description: SubnetSpec configures an Azure subnet.
                         properties:
@@ -179,6 +197,88 @@ spec:
                             required:
                             - name
                             type: object
+                          privateEndpoints:
+                            description: PrivateEndpoints defines a list of private
+                              endpoints that should be attached to this subnet.
+                            items:
+                              description: PrivateEndpointSpec configures an Azure
+                                Private Endpoint.
+                              properties:
+                                applicationSecurityGroups:
+                                  description: ApplicationSecurityGroups specifies
+                                    the Application security group in which the private
+                                    endpoint IP configuration is included.
+                                  items:
+                                    type: string
+                                  type: array
+                                customNetworkInterfaceName:
+                                  description: CustomNetworkInterfaceName specifies
+                                    the network interface name associated with the
+                                    private endpoint.
+                                  type: string
+                                location:
+                                  description: Location specifies the region to create
+                                    the private endpoint.
+                                  type: string
+                                manualApproval:
+                                  description: ManualApproval specifies if the connection
+                                    approval needs to be done manually or not. Set
+                                    it true when the network admin does not have access
+                                    to approve connections to the remote resource.
+                                    Defaults to false.
+                                  type: boolean
+                                name:
+                                  description: Name specifies the name of the private
+                                    endpoint.
+                                  type: string
+                                privateIPAddresses:
+                                  description: PrivateIPAddresses specifies the IP
+                                    addresses for the network interface associated
+                                    with the private endpoint. They have to be part
+                                    of the subnet where the private endpoint is linked.
+                                  items:
+                                    type: string
+                                  type: array
+                                privateLinkServiceConnections:
+                                  description: PrivateLinkServiceConnections specifies
+                                    Private Link Service Connections of the private
+                                    endpoint.
+                                  items:
+                                    description: PrivateLinkServiceConnection defines
+                                      the specification for a private link service
+                                      connection associated with a private endpoint.
+                                    properties:
+                                      groupIDs:
+                                        description: GroupIDs specifies the ID(s)
+                                          of the group(s) obtained from the remote
+                                          resource that this private endpoint should
+                                          connect to.
+                                        items:
+                                          type: string
+                                        type: array
+                                      name:
+                                        description: Name specifies the name of the
+                                          private link service.
+                                        type: string
+                                      privateLinkServiceID:
+                                        description: PrivateLinkServiceID specifies
+                                          the resource ID of the private link service.
+                                        type: string
+                                      requestMessage:
+                                        description: RequestMessage specifies a message
+                                          passed to the owner of the remote resource
+                                          with the private endpoint connection request.
+                                        maxLength: 140
+                                        type: string
+                                    type: object
+                                  type: array
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
                           role:
                             description: Role defines the subnet role (eg. Node, ControlPlane)
                             enum:
@@ -432,6 +532,22 @@ spec:
                 - host
                 - port
                 type: object
+              extendedLocation:
+                description: ExtendedLocation is an optional set of ExtendedLocation
+                  properties for clusters on Azure public MEC.
+                properties:
+                  name:
+                    description: Name defines the name for the extended location.
+                    type: string
+                  type:
+                    description: Type defines the type for the extended location.
+                    enum:
+                    - EdgeZone
+                    type: string
+                required:
+                - name
+                - type
+                type: object
               identityRef:
                 description: IdentityRef is a reference to an AzureIdentity to be
                   used when reconciling this cluster
@@ -480,6 +596,16 @@ spec:
                     description: APIServerLB is the configuration for the control-plane
                       load balancer.
                     properties:
+                      backendPool:
+                        description: BackendPool describes the backend pool of the
+                          load balancer.
+                        properties:
+                          name:
+                            description: Name specifies the name of backend pool for
+                              the load balancer. If not specified, the default name
+                              will be set, depending on the load balancer role.
+                            type: string
+                        type: object
                       frontendIPs:
                         items:
                           description: FrontendIP defines a load balancer frontend
@@ -553,6 +679,16 @@ spec:
                       APIServerLB, and is used only in private clusters (optionally)
                       for enabling outbound traffic.
                     properties:
+                      backendPool:
+                        description: BackendPool describes the backend pool of the
+                          load balancer.
+                        properties:
+                          name:
+                            description: Name specifies the name of backend pool for
+                              the load balancer. If not specified, the default name
+                              will be set, depending on the load balancer role.
+                            type: string
+                        type: object
                       frontendIPs:
                         items:
                           description: FrontendIP defines a load balancer frontend
@@ -624,6 +760,16 @@ spec:
                     description: NodeOutboundLB is the configuration for the node
                       outbound load balancer.
                     properties:
+                      backendPool:
+                        description: BackendPool describes the backend pool of the
+                          load balancer.
+                        properties:
+                          name:
+                            description: Name specifies the name of backend pool for
+                              the load balancer. If not specified, the default name
+                              will be set, depending on the load balancer role.
+                            type: string
+                        type: object
                       frontendIPs:
                         items:
                           description: FrontendIP defines a load balancer frontend
@@ -756,6 +902,88 @@ spec:
                           required:
                           - name
                           type: object
+                        privateEndpoints:
+                          description: PrivateEndpoints defines a list of private
+                            endpoints that should be attached to this subnet.
+                          items:
+                            description: PrivateEndpointSpec configures an Azure Private
+                              Endpoint.
+                            properties:
+                              applicationSecurityGroups:
+                                description: ApplicationSecurityGroups specifies the
+                                  Application security group in which the private
+                                  endpoint IP configuration is included.
+                                items:
+                                  type: string
+                                type: array
+                              customNetworkInterfaceName:
+                                description: CustomNetworkInterfaceName specifies
+                                  the network interface name associated with the private
+                                  endpoint.
+                                type: string
+                              location:
+                                description: Location specifies the region to create
+                                  the private endpoint.
+                                type: string
+                              manualApproval:
+                                description: ManualApproval specifies if the connection
+                                  approval needs to be done manually or not. Set it
+                                  true when the network admin does not have access
+                                  to approve connections to the remote resource. Defaults
+                                  to false.
+                                type: boolean
+                              name:
+                                description: Name specifies the name of the private
+                                  endpoint.
+                                type: string
+                              privateIPAddresses:
+                                description: PrivateIPAddresses specifies the IP addresses
+                                  for the network interface associated with the private
+                                  endpoint. They have to be part of the subnet where
+                                  the private endpoint is linked.
+                                items:
+                                  type: string
+                                type: array
+                              privateLinkServiceConnections:
+                                description: PrivateLinkServiceConnections specifies
+                                  Private Link Service Connections of the private
+                                  endpoint.
+                                items:
+                                  description: PrivateLinkServiceConnection defines
+                                    the specification for a private link service connection
+                                    associated with a private endpoint.
+                                  properties:
+                                    groupIDs:
+                                      description: GroupIDs specifies the ID(s) of
+                                        the group(s) obtained from the remote resource
+                                        that this private endpoint should connect
+                                        to.
+                                      items:
+                                        type: string
+                                      type: array
+                                    name:
+                                      description: Name specifies the name of the
+                                        private link service.
+                                      type: string
+                                    privateLinkServiceID:
+                                      description: PrivateLinkServiceID specifies
+                                        the resource ID of the private link service.
+                                      type: string
+                                    requestMessage:
+                                      description: RequestMessage specifies a message
+                                        passed to the owner of the remote resource
+                                        with the private endpoint connection request.
+                                      maxLength: 140
+                                      type: string
+                                  type: object
+                                type: array
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
                         role:
                           description: Role defines the subnet role (eg. Node, ControlPlane)
                           enum:
@@ -1028,7 +1256,7 @@ spec:
                   maps to Availability Zone with an Azure Region (if the region support
                   them). An Availability Zone is a separate data center within a region
                   and they can be used to ensure the cluster is more resilient to
-                  failure. See: https://docs.microsoft.com/en-us/azure/availability-zones/az-overview
+                  failure. See: https://learn.microsoft.com/azure/reliability/availability-zones-overview
                   This list will be used by Cluster API to try and spread the machines
                   across the failure domains.'
                 type: object

@@ -144,6 +144,11 @@ type Subnets []SubnetSpec
 // +listMapKey=service
 type ServiceEndpoints []ServiceEndpointSpec
 
+// PrivateEndpoints is a slice of PrivateEndpointSpec.
+// +listType=map
+// +listMapKey=name
+type PrivateEndpoints []PrivateEndpointSpec
+
 // SecurityGroup defines an Azure security group.
 type SecurityGroup struct {
 	// ID is the Azure resource ID of the security group.
@@ -254,6 +259,9 @@ type LoadBalancerSpec struct {
 	// FrontendIPsCount specifies the number of frontend IP addresses for the load balancer.
 	// +optional
 	FrontendIPsCount *int32 `json:"frontendIPsCount,omitempty"`
+	// BackendPool describes the backend pool of the load balancer.
+	// +optional
+	BackendPool BackendPool `json:"backendPool,omitempty"`
 
 	LoadBalancerClassSpec `json:",inline"`
 }
@@ -632,6 +640,66 @@ type ServiceEndpointSpec struct {
 	Locations []string `json:"locations"`
 }
 
+// PrivateLinkServiceConnection defines the specification for a private link service connection associated with a private endpoint.
+type PrivateLinkServiceConnection struct {
+	// Name specifies the name of the private link service.
+	// +optional
+	Name string `json:"name,omitempty"`
+	// PrivateLinkServiceID specifies the resource ID of the private link service.
+	PrivateLinkServiceID string `json:"privateLinkServiceID,omitempty"`
+	// GroupIDs specifies the ID(s) of the group(s) obtained from the remote resource that this private endpoint should connect to.
+	// +optional
+	GroupIDs []string `json:"groupIDs,omitempty"`
+	// RequestMessage specifies a message passed to the owner of the remote resource with the private endpoint connection request.
+	// +kubebuilder:validation:MaxLength=140
+	// +optional
+	RequestMessage string `json:"requestMessage,omitempty"`
+}
+
+// PrivateEndpointSpec configures an Azure Private Endpoint.
+type PrivateEndpointSpec struct {
+	// Name specifies the name of the private endpoint.
+	Name string `json:"name"`
+	// Location specifies the region to create the private endpoint.
+	// +optional
+	Location string `json:"location,omitempty"`
+	// PrivateLinkServiceConnections specifies Private Link Service Connections of the private endpoint.
+	PrivateLinkServiceConnections []PrivateLinkServiceConnection `json:"privateLinkServiceConnections,omitempty"`
+	// CustomNetworkInterfaceName specifies the network interface name associated with the private endpoint.
+	// +optional
+	CustomNetworkInterfaceName string `json:"customNetworkInterfaceName,omitempty"`
+	// PrivateIPAddresses specifies the IP addresses for the network interface associated with the private endpoint.
+	// They have to be part of the subnet where the private endpoint is linked.
+	// +optional
+	PrivateIPAddresses []string `json:"privateIPAddresses,omitempty"`
+	// ApplicationSecurityGroups specifies the Application security group in which the private endpoint IP configuration is included.
+	// +optional
+	ApplicationSecurityGroups []string `json:"applicationSecurityGroups,omitempty"`
+	// ManualApproval specifies if the connection approval needs to be done manually or not.
+	// Set it true when the network admin does not have access to approve connections to the remote resource.
+	// Defaults to false.
+	// +optional
+	ManualApproval bool `json:"manualApproval,omitempty"`
+}
+
+// NetworkInterface defines a network interface.
+type NetworkInterface struct {
+	// SubnetName specifies the subnet in which the new network interface will be placed.
+	SubnetName string `json:"subnetName,omitempty"`
+
+	// PrivateIPConfigs specifies the number of private IP addresses to attach to the interface.
+	// Defaults to 1 if not specified.
+	// +optional
+	PrivateIPConfigs int `json:"privateIPConfigs,omitempty"`
+
+	// AcceleratedNetworking enables or disables Azure accelerated networking. If omitted, it will be set based on
+	// whether the requested VMSize supports accelerated networking.
+	// If AcceleratedNetworking is set to true with a VMSize that does not support it, Azure will return an error.
+	// +kubebuilder:validation:nullable
+	// +optional
+	AcceleratedNetworking *bool `json:"acceleratedNetworking,omitempty"`
+}
+
 // GetControlPlaneSubnet returns the cluster control plane subnet.
 func (n *NetworkSpec) GetControlPlaneSubnet() (SubnetSpec, error) {
 	for _, sn := range n.Subnets {
@@ -764,6 +832,16 @@ const (
 	AvailabilitySetRateLimit = "availabilitySetRateLimit"
 )
 
+// BastionHostSkuName is the name of the SKU used to specify the tier of Azure Bastion Host.
+type BastionHostSkuName string
+
+const (
+	// BasicBastionHostSku SKU for the Azure Bastion Host.
+	BasicBastionHostSku BastionHostSkuName = "Basic"
+	// StandardBastionHostSku SKU for the Azure Bastion Host.
+	StandardBastionHostSku BastionHostSkuName = "Standard"
+)
+
 // BastionSpec specifies how the Bastion feature should be set up for the cluster.
 type BastionSpec struct {
 	// +optional
@@ -778,9 +856,97 @@ type AzureBastion struct {
 	Subnet SubnetSpec `json:"subnet,omitempty"`
 	// +optional
 	PublicIP PublicIPSpec `json:"publicIP,omitempty"`
+	// BastionHostSkuName configures the tier of the Azure Bastion Host. Can be either Basic or Standard. Defaults to Basic.
+	// +kubebuilder:default=Basic
+	// +kubebuilder:validation:Enum=Basic;Standard
+	// +optional
+	Sku BastionHostSkuName `json:"sku,omitempty"`
+	// EnableTunneling enables the native client support feature for the Azure Bastion Host. Defaults to false.
+	// +kubebuilder:default=false
+	// +optional
+	EnableTunneling bool `json:"enableTunneling,omitempty"`
+}
+
+// BackendPool describes the backend pool of the load balancer.
+type BackendPool struct {
+	// Name specifies the name of backend pool for the load balancer. If not specified, the default name will
+	// be set, depending on the load balancer role.
+	// +optional
+	Name string `json:"name,omitempty"`
 }
 
 // IsTerminalProvisioningState returns true if the ProvisioningState is a terminal state for an Azure resource.
 func IsTerminalProvisioningState(state ProvisioningState) bool {
 	return state == Failed || state == Succeeded
 }
+
+// Diagnostics is used to configure the diagnostic settings of the virtual machine.
+type Diagnostics struct {
+	// Boot configures the boot diagnostics settings for the virtual machine.
+	// This allows to configure capturing serial output from the virtual machine on boot.
+	// This is useful for debugging software based launch issues.
+	// If not specified then Boot diagnostics (Managed) will be enabled.
+	// +optional
+	Boot *BootDiagnostics `json:"boot,omitempty"`
+}
+
+// BootDiagnostics configures the boot diagnostics settings for the virtual machine.
+// This allows you to configure capturing serial output from the virtual machine on boot.
+// This is useful for debugging software based launch issues.
+// +union
+type BootDiagnostics struct {
+	// StorageAccountType determines if the storage account for storing the diagnostics data
+	// should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
+	// +kubebuilder:validation:Required
+	// +unionDiscriminator
+	StorageAccountType BootDiagnosticsStorageAccountType `json:"storageAccountType"`
+
+	// UserManaged provides a reference to the user-managed storage account.
+	// +optional
+	UserManaged *UserManagedBootDiagnostics `json:"userManaged,omitempty"`
+}
+
+// BootDiagnosticsStorageAccountType defines the list of valid storage account types
+// for the boot diagnostics.
+// +kubebuilder:validation:Enum:="Managed";"UserManaged";"Disabled"
+type BootDiagnosticsStorageAccountType string
+
+const (
+	// DisabledDiagnosticsStorage is used to determine that the diagnostics storage account
+	// should be disabled.
+	DisabledDiagnosticsStorage BootDiagnosticsStorageAccountType = "Disabled"
+
+	// ManagedDiagnosticsStorage is used to determine that the diagnostics storage account
+	// should be provisioned by Azure.
+	ManagedDiagnosticsStorage BootDiagnosticsStorageAccountType = "Managed"
+
+	// UserManagedDiagnosticsStorage is used to determine that the diagnostics storage account
+	// should be provisioned by the User.
+	UserManagedDiagnosticsStorage BootDiagnosticsStorageAccountType = "UserManaged"
+)
+
+// UserManagedBootDiagnostics provides a reference to a user-managed
+// storage account.
+type UserManagedBootDiagnostics struct {
+	// StorageAccountURI is the URI of the user-managed storage account.
+	// The URI typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
+	// but may differ if you are using Azure DNS zone endpoints.
+	// You can find the correct endpoint by looking for the Blob Primary Endpoint in the
+	// endpoints tab in the Azure console or with the CLI by issuing
+	// `az storage account list --query='[].{name: name, "resource group": resourceGroup, "blob endpoint": primaryEndpoints.blob}'`.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^https://`
+	// +kubebuilder:validation:MaxLength=1024
+	StorageAccountURI string `json:"storageAccountURI"`
+}
+
+// OrchestrationModeType represents the orchestration mode for a Virtual Machine Scale Set backing an AzureMachinePool.
+// +kubebuilder:validation:Enum=Flexible;Uniform
+type OrchestrationModeType string
+
+const (
+	// FlexibleOrchestrationMode treats VMs as individual resources accessible by standard VM APIs.
+	FlexibleOrchestrationMode OrchestrationModeType = "Flexible"
+	// UniformOrchestrationMode treats VMs as identical instances accessible by the VMSS VM API.
+	UniformOrchestrationMode OrchestrationModeType = "Uniform"
+)

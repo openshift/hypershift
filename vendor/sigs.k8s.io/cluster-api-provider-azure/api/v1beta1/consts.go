@@ -30,6 +30,8 @@ const (
 const (
 	// VMRunningCondition reports on current status of the Azure VM.
 	VMRunningCondition clusterv1.ConditionType = "VMRunning"
+	// VMIdentitiesReadyCondition reports on the readiness of the Azure VM identities.
+	VMIdentitiesReadyCondition clusterv1.ConditionType = "VMIdentitiesReady"
 	// VMCreatingReason used when the vm creation is in progress.
 	VMCreatingReason = "VMCreating"
 	// VMUpdatingReason used when the vm updating is in progress.
@@ -38,6 +40,8 @@ const (
 	VMDeletingReason = "VMDeleting"
 	// VMProvisionFailedReason used for failures during vm provisioning.
 	VMProvisionFailedReason = "VMProvisionFailed"
+	// UserAssignedIdentityMissingReason used for failures when a user-assigned identity is missing.
+	UserAssignedIdentityMissingReason = "UserAssignedIdentityMissing"
 	// WaitingForClusterInfrastructureReason used when machine is waiting for cluster infrastructure to be ready before proceeding.
 	WaitingForClusterInfrastructureReason = "WaitingForClusterInfrastructure"
 	// WaitingForBootstrapDataReason used when machine is waiting for bootstrap data to be ready before proceeding.
@@ -82,6 +86,8 @@ const (
 	ManagedClusterRunningCondition clusterv1.ConditionType = "ManagedClusterRunning"
 	// AgentPoolsReadyCondition means the AKS agent pools exist and are ready to be used.
 	AgentPoolsReadyCondition clusterv1.ConditionType = "AgentPoolsReady"
+	// AzureResourceAvailableCondition means the AKS cluster is healthy according to Azure's Resource Health API.
+	AzureResourceAvailableCondition clusterv1.ConditionType = "AzureResourceAvailable"
 )
 
 // Azure Services Conditions and Reasons.
@@ -122,6 +128,8 @@ const (
 	DisksReadyCondition clusterv1.ConditionType = "DisksReady"
 	// NetworkInterfaceReadyCondition means the network interfaces exist and are ready to be used.
 	NetworkInterfaceReadyCondition clusterv1.ConditionType = "NetworkInterfacesReady"
+	// PrivateEndpointsReadyCondition means the private endpoints exist and are ready to be used.
+	PrivateEndpointsReadyCondition clusterv1.ConditionType = "PrivateEndpointsReady"
 
 	// CreatingReason means the resource is being created.
 	CreatingReason = "Creating"
@@ -135,4 +143,19 @@ const (
 	DeletionFailedReason = "DeletionFailed"
 	// UpdatingReason means the resource is being updated.
 	UpdatingReason = "Updating"
+)
+
+const (
+	// CustomHeaderPrefix is the prefix of annotations that enable additional cluster / node pool features.
+	// Whatever follows the prefix will be passed as a header to cluster/node pool creation/update requests.
+	// E.g. add `"infrastructure.cluster.x-k8s.io/custom-header-UseGPUDedicatedVHD": "true"` annotation to
+	// AzureManagedMachinePool CR to enable creating GPU nodes by the node pool.
+	CustomHeaderPrefix = "infrastructure.cluster.x-k8s.io/custom-header-"
+)
+
+const (
+	// LinuxOS is Linux OS value for OSDisk.OSType.
+	LinuxOS = "Linux"
+	// WindowsOS is Windows OS value for OSDisk.OSType.
+	WindowsOS = "Windows"
 )

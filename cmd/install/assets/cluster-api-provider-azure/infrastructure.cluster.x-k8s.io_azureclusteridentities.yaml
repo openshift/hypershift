@@ -16,7 +16,16 @@ spec:
     singular: azureclusteridentity
   scope: Namespaced
   versions:
-  - name: v1beta1
+  - additionalPrinterColumns:
+    - description: Type of Azure Identity
+      jsonPath: .spec.type
+      name: Type
+      type: string
+    - description: Time duration since creation of this AzureClusterIdentity
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
     schema:
       openAPIV3Schema:
         description: AzureClusterIdentity is the Schema for the azureclustersidentities

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
+	"sort"
 
 	admissionv1 "k8s.io/api/admission/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -166,4 +167,23 @@ func ValidateImmutable(path *field.Path, oldVal, newVal any) *field.Error {
 	}
 
 	return nil
+}
+
+// EnsureStringSlicesAreEquivalent returns if two string slices have equal lengths,
+// and that they have the exact same items; it does not enforce strict ordering of items.
+func EnsureStringSlicesAreEquivalent(a []string, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	sort.Strings(a)
+	sort.Strings(b)
+
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+
+	return true
 }
