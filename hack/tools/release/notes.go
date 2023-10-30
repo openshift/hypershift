@@ -39,9 +39,6 @@ func main() {
 	// Set the path to the Git repository
 	repoPath := "."
 
-	// Set the hashes of the two commits to compare
-	fmt.Println(fmt.Sprintf("Finding PRs between %q and %q", *fromTag, *toTag))
-
 	// Run the Git command to get the commit log between the two commits
 	cmd := exec.Command("git", "-C", repoPath, "log", "--pretty=format:%H %s", fmt.Sprintf("%s..%s", *fromTag, *toTag), "--merges")
 	output, err := cmd.Output()
@@ -51,7 +48,6 @@ func main() {
 
 	// Split the output into individual commit messages
 	outLines := strings.Split(string(output), "\n")
-	fmt.Println(fmt.Sprintf("Found %v PRs", len(outLines)))
 
 	// Print out the commit messages
 	commits := make([]commit, 0)
@@ -83,15 +79,8 @@ func main() {
 		// https://docs.github.com/en/rest/pulls/pulls#list-pull-requests
 		url := fmt.Sprintf("https://api.github.com/repos/openshift/hypershift/pulls/%s", c.prID)
 
-		// Set up the API request headers with a personal access token.
-		token := os.Getenv("GITHUB_ACCESS_TOKEN")
-		if token == "" {
-			fmt.Println("Please set the GITHUB_ACCESS_TOKEN environment variable with a personal access token.")
-			return
-		}
 		headers := map[string]string{
-			"Accept":        "application/vnd.github.v3+json",
-			"Authorization": fmt.Sprintf("Bearer %s", token),
+			"Accept": "application/vnd.github.v3+json",
 		}
 
 		// Make the API request.
