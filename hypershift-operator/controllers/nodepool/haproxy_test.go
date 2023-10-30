@@ -85,7 +85,7 @@ kind: Config`
 				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
 			}),
 
-			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:6443"},
+			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:443"},
 		},
 		{
 			name: "private cluster uses .local address and custom apiserver port",
@@ -104,7 +104,7 @@ kind: Config`
 				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
 			}),
 
-			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:6443"},
+			expectedHAProxyConfigContent: []string{"api." + hc().Name + ".hypershift.local:443"},
 		},
 		{
 			name: "public and private cluster uses .local address and custom apiserver port",
@@ -126,11 +126,11 @@ kind: Config`
 			other: []crclient.Object{&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: hc().Namespace},
 				Data: map[string][]byte{
-					"kubeconfig": []byte(kubeconfig(6443)),
+					"kubeconfig": []byte(kubeconfig(443)),
 				},
 			}},
 
-			expectedHAProxyConfigContent: []string{"kubeconfig-host:6443"},
+			expectedHAProxyConfigContent: []string{"kubeconfig-host:443"},
 		},
 		{
 			name: "public cluster uses address from kubeconfig and custom port",
