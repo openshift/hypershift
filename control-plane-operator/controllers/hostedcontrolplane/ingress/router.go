@@ -226,7 +226,7 @@ func buildHCPRouterContainerMain(image string) func(*corev1.Container) {
 	}
 }
 
-func ReconcileRouterService(svc *corev1.Service, kasPort int32, internal, crossZoneLoadBalancingEnabled bool) error {
+func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancingEnabled bool) error {
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
 	}
@@ -247,13 +247,7 @@ func ReconcileRouterService(svc *corev1.Service, kasPort int32, internal, crossZ
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 	svc.Spec.Selector = hcpRouterLabels()
 	foundHTTPS := false
-	foundKAS := false
 
-	// TODO (alberto): why this criteria?
-	// Introduced here https://github.com/openshift/hypershift/pull/1614/files#diff-62c16653415b8d89921cb26796abc479c31da1654095f7c46b551b470533d66dR368-R372.
-	if kasPort == 443 {
-		foundKAS = true
-	}
 	for i, port := range svc.Spec.Ports {
 		switch port.Name {
 		case "https":
@@ -261,11 +255,6 @@ func ReconcileRouterService(svc *corev1.Service, kasPort int32, internal, crossZ
 			svc.Spec.Ports[i].TargetPort = intstr.FromString("https")
 			svc.Spec.Ports[i].Protocol = corev1.ProtocolTCP
 			foundHTTPS = true
-		case "kube-apiserver":
-			svc.Spec.Ports[i].Port = kasPort
-			svc.Spec.Ports[i].TargetPort = intstr.FromString("https")
-			svc.Spec.Ports[i].Protocol = corev1.ProtocolTCP
-			foundKAS = true
 		}
 	}
 	if !foundHTTPS {
@@ -276,14 +265,7 @@ func ReconcileRouterService(svc *corev1.Service, kasPort int32, internal, crossZ
 			Protocol:   corev1.ProtocolTCP,
 		})
 	}
-	if !foundKAS {
-		svc.Spec.Ports = append(svc.Spec.Ports, corev1.ServicePort{
-			Name:       "kube-apiserver",
-			Port:       kasPort,
-			TargetPort: intstr.FromString("https"),
-			Protocol:   corev1.ProtocolTCP,
-		})
-	}
+
 	return nil
 }
 
