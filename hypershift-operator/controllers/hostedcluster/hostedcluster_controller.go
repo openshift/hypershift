@@ -1279,13 +1279,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		var src corev1.Secret
 		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &src)
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSH key secret %s: %w", hcluster.Spec.SSHKey.Name, err)
+			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSHKey secret %s: %w", hcluster.Spec.SSHKey.Name, err)
 		}
 		dest := controlplaneoperator.SSHKey(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
 			srcData, srcHasData := src.Data["id_rsa.pub"]
 			if !srcHasData {
-				return fmt.Errorf("hostedcluster ssh key secret %q must have a id_rsa.pub key", src.Name)
+				return fmt.Errorf("hostedcluster SSHKey secret %q must have a id_rsa.pub key", src.Name)
 			}
 			dest.Type = corev1.SecretTypeOpaque
 			if dest.Data == nil {
@@ -1295,7 +1295,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return nil
 		})
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane ssh secret: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane SSHKey secret: %w", err)
 		}
 	}
 
@@ -1311,7 +1311,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
 			srcData, srcHasData := src.Data["ca-bundle.crt"]
 			if !srcHasData {
-				return fmt.Errorf("hostedcluster configmap %q must have a ca-bundle.crt key", src.Name)
+				return fmt.Errorf("hostedcluster AdditionalTrustBundle configmap %q must have a ca-bundle.crt key", src.Name)
 			}
 			if dest.Data == nil {
 				dest.Data = map[string]string{}
@@ -1320,7 +1320,38 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return nil
 		})
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane AdditionalTrustBundle: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane AdditionalTrustBundle configmap: %w", err)
+		}
+	}
+
+	// Reconcile the OIDCCAFile ConfigMap if
+	// * Authentication Type is OIDC
+	// * At least one OIDCProvider is set (only a single OIDCProvider is currently supported)
+	// * A configmap ref is set for the issuer CA
+	if !hyperutil.HCOAuthEnabled(hcluster) &&
+		len(hcluster.Spec.Configuration.Authentication.OIDCProviders) != 0 &&
+		hcluster.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.CertificateAuthority.Name != "" {
+		caConfigMapName := hcluster.Spec.Configuration.Authentication.OIDCProviders[0].Issuer.CertificateAuthority.Name
+		var src corev1.ConfigMap
+		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: caConfigMapName}, &src)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster OIDCCAFile configmap %s: %w", caConfigMapName, err)
+		}
+
+		dest := controlplaneoperator.OIDCCAConfigMap(controlPlaneNamespace.Name)
+		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
+			srcData, srcHasData := src.Data["ca.crt"]
+			if !srcHasData {
+				return fmt.Errorf("hostedcluster OIDCCAFile configmap %q must have a ca.crt key", src.Name)
+			}
+			if dest.Data == nil {
+				dest.Data = map[string]string{}
+			}
+			dest.Data["ca.crt"] = srcData
+			return nil
+		})
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane OIDCCAFile configmap: %w", err)
 		}
 	}
 
