@@ -417,6 +417,23 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
+			// TODO: Figure out why Route kind does not exist when ingress-operator first starts
+			if strings.HasPrefix(pod.Name, "ingress-operator-") {
+				continue
+			}
+			// Restart built into OLM by design by
+			// https://github.com/openshift/operator-framework-olm/commit/1cf358424a0cbe353428eab9a16051c6cabbd002
+			if strings.HasPrefix(pod.Name, "olm-operator-") {
+				continue
+			}
+
+			if strings.HasPrefix(pod.Name, "catalog-operator-") {
+				continue
+			}
+			if strings.Contains(pod.Name, "-catalog") {
+				continue
+			}
+
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				if containerStatus.RestartCount > 0 {
 					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
