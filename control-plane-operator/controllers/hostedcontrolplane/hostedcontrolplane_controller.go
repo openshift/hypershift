@@ -3149,7 +3149,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 	collectProfilesCronJob := manifests.CollectProfilesCronJob(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, collectProfilesCronJob, func() error {
-		olm.ReconcileCollectProfilesCronJob(collectProfilesCronJob, p.OwnerRef, p.OLMImage, hcp.Namespace)
+		olm.ReconcileCollectProfilesCronJob(collectProfilesCronJob, p.OwnerRef, p.OLMImage, hcp)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile collect profiles cronjob: %w", err)

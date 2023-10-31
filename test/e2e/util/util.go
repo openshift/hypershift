@@ -1519,3 +1519,125 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 	}
 	t.Logf("Successfully validated all expected HostedCluster conditions in %s", duration)
 }
+
+func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureHCPPodsAffinitiesAndTolerations ", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		awsEbsCsiDriverOperatorPodSubstring := "aws-ebs-csi-driver-operator"
+		controlPlaneLabelTolerationKey := "hypershift.openshift.io/control-plane"
+		clusterNodeSchedulingAffinityWeight := 100
+		controlPlaneNodeSchedulingAffinityWeight := clusterNodeSchedulingAffinityWeight / 2
+		colocationLabelKey := "hypershift.openshift.io/hosted-control-plane"
+
+		g := NewGomegaWithT(t)
+
+		var podList corev1.PodList
+		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
+			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
+		}
+
+		namespacedName := types.NamespacedName{
+			Namespace: namespace,
+			Name:      hostedCluster.Name,
+		}
+
+		var hcp hyperv1.HostedControlPlane
+		if err := client.Get(ctx, namespacedName, &hcp); err != nil {
+			t.Fatalf("failed to get hostedcontrolplane: %v", err)
+		}
+
+		expected := suppconfig.DeploymentConfig{
+			Scheduling: suppconfig.Scheduling{
+				Tolerations: []corev1.Toleration{
+					{
+						Key:      controlPlaneLabelTolerationKey,
+						Operator: corev1.TolerationOpEqual,
+						Value:    "true",
+						Effect:   corev1.TaintEffectNoSchedule,
+					},
+					{
+						Key:      hyperv1.HostedClusterLabel,
+						Operator: corev1.TolerationOpEqual,
+						Value:    hcp.Namespace,
+						Effect:   corev1.TaintEffectNoSchedule,
+					},
+				},
+				Affinity: &corev1.Affinity{
+					NodeAffinity: &corev1.NodeAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
+							{
+								Weight: int32(controlPlaneNodeSchedulingAffinityWeight),
+								Preference: corev1.NodeSelectorTerm{
+									MatchExpressions: []corev1.NodeSelectorRequirement{
+										{
+											Key:      controlPlaneLabelTolerationKey,
+											Operator: corev1.NodeSelectorOpIn,
+											Values:   []string{"true"},
+										},
+									},
+								},
+							},
+							{
+								Weight: int32(clusterNodeSchedulingAffinityWeight),
+								Preference: corev1.NodeSelectorTerm{
+									MatchExpressions: []corev1.NodeSelectorRequirement{
+										{
+											Key:      hyperv1.HostedClusterLabel,
+											Operator: corev1.NodeSelectorOpIn,
+											Values:   []string{hcp.Namespace},
+										},
+									},
+								},
+							},
+						},
+					},
+					PodAffinity: &corev1.PodAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+							{
+								Weight: 100,
+								PodAffinityTerm: corev1.PodAffinityTerm{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											colocationLabelKey: hcp.Namespace,
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		awsEbsCsiDriverOperatorTolerations := []corev1.Toleration{
+			{
+				Key:      controlPlaneLabelTolerationKey,
+				Operator: corev1.TolerationOpExists,
+			},
+			{
+				Key:      hyperv1.HostedClusterLabel,
+				Operator: corev1.TolerationOpEqual,
+				Value:    hcp.Namespace,
+			},
+		}
+
+		for _, pod := range podList.Items {
+			// Skip KubeVirt VM worker node related pods
+			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
+				continue
+			}
+
+			//aws-ebs-csi-driver-operator tolerations are set through CSO and are different from the ones in the DC
+			if strings.Contains(pod.Name, awsEbsCsiDriverOperatorPodSubstring) {
+				g.Expect(pod.Spec.Tolerations).To(ContainElements(awsEbsCsiDriverOperatorTolerations))
+			} else {
+				g.Expect(pod.Spec.Tolerations).To(ContainElements(expected.Scheduling.Tolerations))
+			}
+
+			g.Expect(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expected.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
+			g.Expect(pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expected.Scheduling.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
+
+		}
+	})
+}
