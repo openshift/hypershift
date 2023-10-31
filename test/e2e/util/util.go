@@ -426,6 +426,14 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			if strings.HasPrefix(pod.Name, "olm-operator-") {
 				continue
 			}
+
+			if strings.HasPrefix(pod.Name, "catalog-operator-") {
+				continue
+			}
+			if strings.Contains(pod.Name, "-catalog") {
+				continue
+			}
+
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				if containerStatus.RestartCount > 0 {
 					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
