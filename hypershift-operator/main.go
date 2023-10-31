@@ -27,6 +27,8 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -367,7 +369,18 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
-	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient())
+
+	{
+		var ec2Client ec2iface.EC2API
+
+		if hyperv1.PlatformType(opts.PrivatePlatform) == hyperv1.AWSPlatform {
+			awsSession := awsutil.NewSession("hypershift-operator", "", "", "", "")
+			awsConfig := awsutil.NewConfig()
+			ec2Client = ec2.New(awsSession, awsConfig)
+		}
+
+		npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client)
+	}
 
 	if mgmtClusterCaps.Has(capabilities.CapabilityProxy) {
 		if err := proxy.Setup(mgr, opts.Namespace, opts.DeploymentName); err != nil {
