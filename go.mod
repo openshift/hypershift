@@ -193,7 +193,6 @@ require (
 )
 
 replace (
-	k8s.io/apimachinery => k8s.io/apimachinery v0.25.2
 	k8s.io/client-go => k8s.io/client-go v0.25.2
 	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20230308215209-15aac26d736a
 	k8s.io/kubernetes => k8s.io/kubernetes v0.23.3
