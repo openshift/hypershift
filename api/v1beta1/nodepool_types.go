@@ -17,6 +17,10 @@ const (
 	ArchitecturePPC64LE = "ppc64le"
 	ArchitectureARM64   = "arm64"
 
+	AzureGalleryName      = "Gallery"
+	Amd64GalleryImageName = "RHCOS_Amd64"
+	DiskName              = "GalleryDisk"
+
 	// NodePoolLabel is used to label Nodes.
 	NodePoolLabel = "hypershift.openshift.io/nodePool"
 

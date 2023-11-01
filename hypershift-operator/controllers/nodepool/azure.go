@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"fmt"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 	utilpointer "k8s.io/utils/pointer"
@@ -24,9 +25,15 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 			return nil, fmt.Errorf("failed to generate a SSH key: %w", err)
 		}
 	}
+
+	bootImageToUse, err := bootImage(hcluster.Spec.Platform.Azure.SubscriptionID, hcluster.Spec.Platform.Azure.ResourceGroupName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find boot image: %w", err)
+	}
+
 	return &capiazure.AzureMachineTemplateSpec{Template: capiazure.AzureMachineTemplateResource{Spec: capiazure.AzureMachineSpec{
 		VMSize: nodePool.Spec.Platform.Azure.VMSize,
-		Image:  &capiazure.Image{ID: utilpointer.String(bootImage(hcluster, nodePool))},
+		Image:  &capiazure.Image{ID: utilpointer.String(bootImageToUse)},
 		OSDisk: capiazure.OSDisk{
 			DiskSizeGB: utilpointer.Int32(nodePool.Spec.Platform.Azure.DiskSizeGB),
 			ManagedDisk: &capiazure.ManagedDiskParameters{
@@ -57,11 +64,16 @@ func generateSSHPubkey() (string, error) {
 	return base64.StdEncoding.EncodeToString(ssh.MarshalAuthorizedKey(publicRsaKey)), nil
 }
 
-func bootImage(hcluster *hyperv1.HostedCluster, nodepool *hyperv1.NodePool) string {
-	if nodepool.Spec.Platform.Azure.ImageID != "" {
-		return nodepool.Spec.Platform.Azure.ImageID
+func bootImage(subscriptionID string, resourceGroupName string) (string, error) {
+	var bootImageGalleyID string
+	splitResourceGroupName := strings.Split(resourceGroupName, "-")
+	if len(splitResourceGroupName) <= 0 {
+		return "", fmt.Errorf("failed to parse resource group name unique ID to retrieve boot image: %s", resourceGroupName)
+	} else {
+		bootImageGalleyID = splitResourceGroupName[len(splitResourceGroupName)-1]
 	}
-	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/images/rhcos.x86_64.vhd", hcluster.Spec.Platform.Azure.SubscriptionID, hcluster.Spec.Platform.Azure.ResourceGroupName)
+
+	return fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.Compute/galleries/"+hyperv1.AzureGalleryName+"_%s/images/RHCOS_Amd64/versions/1.0.0", subscriptionID, resourceGroupName, bootImageGalleyID), nil
 }
 
 func failureDomain(nodepool *hyperv1.NodePool) *string {
