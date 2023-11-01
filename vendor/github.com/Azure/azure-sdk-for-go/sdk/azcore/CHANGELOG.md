@@ -1,16 +1,14 @@
 # Release History
 
-## 1.7.2 (2023-09-06)
+## 1.8.0-beta.1 (2023-07-12)
 
-### Bugs Fixed
+### Features Added
 
-* Fix default HTTP transport to work in WASM modules.
+- `messaging/CloudEvent` allows you to serialize/deserialize CloudEvents, as described in the CloudEvents 1.0 specification: [link](https://github.com/cloudevents/spec)
 
-## 1.7.1 (2023-08-14)
+### Other Changes
 
-## Bugs Fixed
-
-* Enable TLS renegotiation in the default transport policy.
+* The beta features for CAE, tracing, and fakes have been reinstated.
 
 ## 1.7.0 (2023-07-12)
 
