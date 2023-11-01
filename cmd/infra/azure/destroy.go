@@ -2,15 +2,15 @@ package azure
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"os"
 
-	"github.com/Azure/azure-sdk-for-go/services/resources/mgmt/2020-10-01/resources"
-	"github.com/Azure/go-autorest/autorest"
-	"github.com/Azure/go-autorest/autorest/azure"
-	"github.com/Azure/go-autorest/autorest/azure/auth"
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/log"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+
 	"github.com/spf13/cobra"
 )
 
@@ -38,9 +38,9 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Location, "location", opts.Location, "Location where cluster infra should be created")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("azure-creds")
-	cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("azure-creds")
+	_ = cmd.MarkFlagRequired("name")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Run(cmd.Context()); err != nil {
@@ -64,29 +64,27 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 			return fmt.Errorf("failed to read the credentials: %w", err)
 		}
 	}
-	authorizer, err := auth.ClientCredentialsConfig{
-		TenantID:     creds.TenantID,
-		ClientID:     creds.ClientID,
-		ClientSecret: creds.ClientSecret,
-		AADEndpoint:  azure.PublicCloud.ActiveDirectoryEndpoint,
-		Resource:     azure.PublicCloud.ResourceManagerEndpoint,
-	}.Authorizer()
+
+	_ = os.Setenv("AZURE_TENANT_ID", creds.TenantID)
+	_ = os.Setenv("AZURE_CLIENT_ID", creds.ClientID)
+	_ = os.Setenv("AZURE_CLIENT_SECRET", creds.ClientSecret)
+
+	azureCreds, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
-		return fmt.Errorf("failed to get azure authorizer: %w", err)
+		return fmt.Errorf("failed to create Azure credentials to create image gallery: %w", err)
 	}
 
-	resourceGroupClient := resources.NewGroupsClient(creds.SubscriptionID)
-	resourceGroupClient.Authorizer = authorizer
-	destroyFuture, err := resourceGroupClient.Delete(ctx, resourceGroupName(o.Name, o.InfraID))
+	resourceGroupClient, err := armresources.NewResourceGroupsClient(creds.SubscriptionID, azureCreds, nil)
 	if err != nil {
-		if detailedErr := *new(autorest.DetailedError); errors.As(err, &detailedErr) {
-			if intStatusCode, isInt := detailedErr.StatusCode.(int); isInt && intStatusCode == 404 {
-				return nil
-			}
-		}
-		return fmt.Errorf("failed to delete resourceGroup: %w", err)
+		return fmt.Errorf("failed to create new resource groups client: %w", err)
 	}
-	if err := destroyFuture.WaitForCompletionRef(ctx, resourceGroupClient.Client); err != nil {
+	destroyFuture, err := resourceGroupClient.BeginDelete(ctx, createResourceGroupName(o.Name, o.InfraID), nil)
+	if err != nil {
+		return fmt.Errorf("failed to start deletion: %w", err)
+	}
+
+	_, err = destroyFuture.PollUntilDone(ctx, nil)
+	if err != nil {
 		return fmt.Errorf("failed to wait for resourceGroup deletion: %w", err)
 	}
 
