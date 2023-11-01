@@ -25,6 +25,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+// ClusterClassKind represents the Kind of ClusterClass.
+const ClusterClassKind = "ClusterClass"
+
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=clusterclasses,shortName=cc,scope=Namespaced,categories=cluster-api
 // +kubebuilder:storageversion
@@ -75,7 +78,9 @@ type ClusterClassSpec struct {
 
 // ControlPlaneClass defines the class for the control plane.
 type ControlPlaneClass struct {
-	// Metadata is the metadata applied to the machines of the ControlPlane.
+	// Metadata is the metadata applied to the ControlPlane and the Machines of the ControlPlane
+	// if the ControlPlaneTemplate referenced is machine based. If not, it is applied only to the
+	// ControlPlane.
 	// At runtime this metadata is merged with the corresponding metadata from the topology.
 	//
 	// This field is supported if and only if the control plane provider template
@@ -101,6 +106,10 @@ type ControlPlaneClass struct {
 	// +optional
 	MachineHealthCheck *MachineHealthCheckClass `json:"machineHealthCheck,omitempty"`
 
+	// NamingStrategy allows changing the naming pattern used when creating the control plane provider object.
+	// +optional
+	NamingStrategy *ControlPlaneClassNamingStrategy `json:"namingStrategy,omitempty"`
+
 	// NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
 	// The default value is 0, meaning that the node can be drained without any time limitations.
 	// NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
@@ -120,6 +129,19 @@ type ControlPlaneClass struct {
 	// NOTE: This value can be overridden while defining a Cluster.Topology.
 	// +optional
 	NodeDeletionTimeout *metav1.Duration `json:"nodeDeletionTimeout,omitempty"`
+}
+
+// ControlPlaneClassNamingStrategy defines the naming strategy for control plane objects.
+type ControlPlaneClassNamingStrategy struct {
+	// Template defines the template to use for generating the name of the ControlPlane object.
+	// If not defined, it will fallback to `{{ .cluster.name }}-{{ .random }}`.
+	// If the templated string exceeds 63 characters, it will be trimmed to 58 characters and will
+	// get concatenated with a random suffix of length 5.
+	// The templating mechanism provides the following arguments:
+	// * `.cluster.name`: The name of the cluster object.
+	// * `.random`: A random alphanumeric string, without vowels, of length 5.
+	// +optional
+	Template *string `json:"template,omitempty"`
 }
 
 // WorkersClass is a collection of deployment classes.
@@ -151,6 +173,10 @@ type MachineDeploymentClass struct {
 	// NOTE: This value can be overridden while defining a Cluster.Topology using this MachineDeploymentClass.
 	// +optional
 	FailureDomain *string `json:"failureDomain,omitempty"`
+
+	// NamingStrategy allows changing the naming pattern used when creating the MachineDeployment.
+	// +optional
+	NamingStrategy *MachineDeploymentClassNamingStrategy `json:"namingStrategy,omitempty"`
 
 	// NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
 	// The default value is 0, meaning that the node can be drained without any time limitations.
@@ -188,7 +214,7 @@ type MachineDeploymentClass struct {
 // MachineDeploymentClassTemplate defines how a MachineDeployment generated from a MachineDeploymentClass
 // should look like.
 type MachineDeploymentClassTemplate struct {
-	// Metadata is the metadata applied to the machines of the MachineDeployment.
+	// Metadata is the metadata applied to the MachineDeployment and the machines of the MachineDeployment.
 	// At runtime this metadata is merged with the corresponding metadata from the topology.
 	// +optional
 	Metadata ObjectMeta `json:"metadata,omitempty"`
@@ -200,6 +226,20 @@ type MachineDeploymentClassTemplate struct {
 	// Infrastructure contains the infrastructure template reference to be used
 	// for the creation of worker Machines.
 	Infrastructure LocalObjectTemplate `json:"infrastructure"`
+}
+
+// MachineDeploymentClassNamingStrategy defines the naming strategy for machine deployment objects.
+type MachineDeploymentClassNamingStrategy struct {
+	// Template defines the template to use for generating the name of the MachineDeployment object.
+	// If not defined, it will fallback to `{{ .cluster.name }}-{{ .machineDeployment.topologyName }}-{{ .random }}`.
+	// If the templated string exceeds 63 characters, it will be trimmed to 58 characters and will
+	// get concatenated with a random suffix of length 5.
+	// The templating mechanism provides the following arguments:
+	// * `.cluster.name`: The name of the cluster object.
+	// * `.random`: A random alphanumeric string, without vowels, of length 5.
+	// * `.machineDeployment.topologyName`: The name of the MachineDeployment topology (Cluster.spec.topology.workers.machineDeployments[].name).
+	// +optional
+	Template *string `json:"template,omitempty"`
 }
 
 // MachineHealthCheckClass defines a MachineHealthCheck for a group of Machines.
@@ -532,6 +572,16 @@ type ExternalPatchDefinition struct {
 	// ValidateExtension references an extension which is called to validate the topology.
 	// +optional
 	ValidateExtension *string `json:"validateExtension,omitempty"`
+
+	// DiscoverVariablesExtension references an extension which is called to discover variables.
+	// +optional
+	DiscoverVariablesExtension *string `json:"discoverVariablesExtension,omitempty"`
+
+	// Settings defines key value pairs to be passed to the extensions.
+	// Values defined here take precedence over the values defined in the
+	// corresponding ExtensionConfig.
+	// +optional
+	Settings map[string]string `json:"settings,omitempty"`
 }
 
 // LocalObjectTemplate defines a template for a topology Class.
@@ -545,9 +595,47 @@ type LocalObjectTemplate struct {
 
 // ClusterClassStatus defines the observed state of the ClusterClass.
 type ClusterClassStatus struct {
+	// Variables is a list of ClusterClassStatusVariable that are defined for the ClusterClass.
+	// +optional
+	Variables []ClusterClassStatusVariable `json:"variables,omitempty"`
+
 	// Conditions defines current observed state of the ClusterClass.
 	// +optional
 	Conditions Conditions `json:"conditions,omitempty"`
+
+	// ObservedGeneration is the latest generation observed by the controller.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+}
+
+// ClusterClassStatusVariable defines a variable which appears in the status of a ClusterClass.
+type ClusterClassStatusVariable struct {
+	// Name is the name of the variable.
+	Name string `json:"name"`
+
+	// DefinitionsConflict specifies whether or not there are conflicting definitions for a single variable name.
+	// +optional
+	DefinitionsConflict bool `json:"definitionsConflict"`
+
+	// Definitions is a list of definitions for a variable.
+	Definitions []ClusterClassStatusVariableDefinition `json:"definitions"`
+}
+
+// ClusterClassStatusVariableDefinition defines a variable which appears in the status of a ClusterClass.
+type ClusterClassStatusVariableDefinition struct {
+	// From specifies the origin of the variable definition.
+	// This will be `inline` for variables defined in the ClusterClass or the name of a patch defined in the ClusterClass
+	// for variables discovered from a DiscoverVariables runtime extensions.
+	From string `json:"from"`
+
+	// Required specifies if the variable is required.
+	// Note: this applies to the variable as a whole and thus the
+	// top-level object defined in the schema. If nested fields are
+	// required, this will be specified inside the schema.
+	Required bool `json:"required"`
+
+	// Schema defines the schema of the variable.
+	Schema VariableSchema `json:"schema"`
 }
 
 // GetConditions returns the set of conditions for this object.

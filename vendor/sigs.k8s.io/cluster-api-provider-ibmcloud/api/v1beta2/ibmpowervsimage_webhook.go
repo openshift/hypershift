@@ -22,6 +22,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // log is for logging in this package.
@@ -48,19 +49,19 @@ func (r *IBMPowerVSImage) Default() {
 var _ webhook.Validator = &IBMPowerVSImage{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMPowerVSImage) ValidateCreate() error {
+func (r *IBMPowerVSImage) ValidateCreate() (admission.Warnings, error) {
 	ibmpowervsimagelog.Info("validate create", "name", r.Name)
-	return nil
+	return nil, nil
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMPowerVSImage) ValidateUpdate(old runtime.Object) error {
+func (r *IBMPowerVSImage) ValidateUpdate(_ runtime.Object) (admission.Warnings, error) {
 	ibmpowervsimagelog.Info("validate update", "name", r.Name)
-	return nil
+	return nil, nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMPowerVSImage) ValidateDelete() error {
+func (r *IBMPowerVSImage) ValidateDelete() (admission.Warnings, error) {
 	ibmpowervsimagelog.Info("validate delete", "name", r.Name)
-	return nil
+	return nil, nil
 }

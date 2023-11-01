@@ -36,7 +36,7 @@ func (o *ServiceBrokerHardwareplatformsGetReader) ReadResponse(response runtime.
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /broker/v1/hardware-platforms] serviceBroker.hardwareplatforms.get", response, response.Code())
 	}
 }
 
@@ -77,6 +77,11 @@ func (o *ServiceBrokerHardwareplatformsGetOK) IsServerError() bool {
 // IsCode returns true when this service broker hardwareplatforms get o k response a status code equal to that given
 func (o *ServiceBrokerHardwareplatformsGetOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the service broker hardwareplatforms get o k response
+func (o *ServiceBrokerHardwareplatformsGetOK) Code() int {
+	return 200
 }
 
 func (o *ServiceBrokerHardwareplatformsGetOK) Error() string {
@@ -138,6 +143,11 @@ func (o *ServiceBrokerHardwareplatformsGetInternalServerError) IsServerError() b
 // IsCode returns true when this service broker hardwareplatforms get internal server error response a status code equal to that given
 func (o *ServiceBrokerHardwareplatformsGetInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the service broker hardwareplatforms get internal server error response
+func (o *ServiceBrokerHardwareplatformsGetInternalServerError) Code() int {
+	return 500
 }
 
 func (o *ServiceBrokerHardwareplatformsGetInternalServerError) Error() string {

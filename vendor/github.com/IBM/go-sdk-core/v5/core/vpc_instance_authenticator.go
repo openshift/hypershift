@@ -402,7 +402,7 @@ func (authenticator *VpcInstanceAuthenticator) retrieveIamAccessToken(
 	// Good response, so unmarshal the response body into a vpcTokenResponse instance.
 	tokenResponse := &vpcTokenResponse{}
 	_ = json.NewDecoder(resp.Body).Decode(tokenResponse)
-	defer resp.Body.Close()
+	defer resp.Body.Close() // #nosec G307
 
 	// Finally, convert the vpcTokenResponse instance into an IamTokenServerResponse to maintain
 	// consistency with other IAM-based authenticators.
@@ -499,7 +499,7 @@ func (authenticator *VpcInstanceAuthenticator) retrieveInstanceIdentityToken() (
 	// and retrieve the instance identity token value.
 	operationResponse := &vpcTokenResponse{}
 	_ = json.NewDecoder(resp.Body).Decode(operationResponse)
-	defer resp.Body.Close()
+	defer resp.Body.Close() // #nosec G307
 
 	// The instance identity token is returned in the "access_token" field of the response object.
 	instanceIdentityToken = *operationResponse.AccessToken

@@ -54,7 +54,7 @@ func (o *PcloudStoragecapacityTypesGetReader) ReadResponse(response runtime.Clie
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/storage-capacity/storage-types/{storage_type_name}] pcloud.storagecapacity.types.get", response, response.Code())
 	}
 }
 
@@ -95,6 +95,11 @@ func (o *PcloudStoragecapacityTypesGetOK) IsServerError() bool {
 // IsCode returns true when this pcloud storagecapacity types get o k response a status code equal to that given
 func (o *PcloudStoragecapacityTypesGetOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud storagecapacity types get o k response
+func (o *PcloudStoragecapacityTypesGetOK) Code() int {
+	return 200
 }
 
 func (o *PcloudStoragecapacityTypesGetOK) Error() string {
@@ -160,6 +165,11 @@ func (o *PcloudStoragecapacityTypesGetUnauthorized) IsCode(code int) bool {
 	return code == 401
 }
 
+// Code gets the status code for the pcloud storagecapacity types get unauthorized response
+func (o *PcloudStoragecapacityTypesGetUnauthorized) Code() int {
+	return 401
+}
+
 func (o *PcloudStoragecapacityTypesGetUnauthorized) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/storage-capacity/storage-types/{storage_type_name}][%d] pcloudStoragecapacityTypesGetUnauthorized  %+v", 401, o.Payload)
 }
@@ -221,6 +231,11 @@ func (o *PcloudStoragecapacityTypesGetForbidden) IsServerError() bool {
 // IsCode returns true when this pcloud storagecapacity types get forbidden response a status code equal to that given
 func (o *PcloudStoragecapacityTypesGetForbidden) IsCode(code int) bool {
 	return code == 403
+}
+
+// Code gets the status code for the pcloud storagecapacity types get forbidden response
+func (o *PcloudStoragecapacityTypesGetForbidden) Code() int {
+	return 403
 }
 
 func (o *PcloudStoragecapacityTypesGetForbidden) Error() string {
@@ -286,6 +301,11 @@ func (o *PcloudStoragecapacityTypesGetNotFound) IsCode(code int) bool {
 	return code == 404
 }
 
+// Code gets the status code for the pcloud storagecapacity types get not found response
+func (o *PcloudStoragecapacityTypesGetNotFound) Code() int {
+	return 404
+}
+
 func (o *PcloudStoragecapacityTypesGetNotFound) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/storage-capacity/storage-types/{storage_type_name}][%d] pcloudStoragecapacityTypesGetNotFound  %+v", 404, o.Payload)
 }
@@ -347,6 +367,11 @@ func (o *PcloudStoragecapacityTypesGetInternalServerError) IsServerError() bool 
 // IsCode returns true when this pcloud storagecapacity types get internal server error response a status code equal to that given
 func (o *PcloudStoragecapacityTypesGetInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud storagecapacity types get internal server error response
+func (o *PcloudStoragecapacityTypesGetInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudStoragecapacityTypesGetInternalServerError) Error() string {

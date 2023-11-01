@@ -24,27 +24,50 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4"
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/cluster-api-provider-azure/feature"
 	azureutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 	"sigs.k8s.io/cluster-api-provider-azure/util/maps"
 	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	capifeature "sigs.k8s.io/cluster-api/feature"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 var validNodePublicPrefixID = regexp.MustCompile(`(?i)^/?subscriptions/[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}/resourcegroups/[^/]+/providers/microsoft\.network/publicipprefixes/[^/]+$`)
 
+// SetupAzureManagedMachinePoolWebhookWithManager sets up and registers the webhook with the manager.
+func SetupAzureManagedMachinePoolWebhookWithManager(mgr ctrl.Manager) error {
+	mw := &azureManagedMachinePoolWebhook{Client: mgr.GetClient()}
+	return ctrl.NewWebhookManagedBy(mgr).
+		For(&AzureManagedMachinePool{}).
+		WithDefaulter(mw).
+		WithValidator(mw).
+		Complete()
+}
+
 //+kubebuilder:webhook:path=/mutate-infrastructure-cluster-x-k8s-io-v1beta1-azuremanagedmachinepool,mutating=true,failurePolicy=fail,matchPolicy=Equivalent,groups=infrastructure.cluster.x-k8s.io,resources=azuremanagedmachinepools,verbs=create;update,versions=v1beta1,name=default.azuremanagedmachinepools.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1;v1beta1
 
+// azureManagedMachinePoolWebhook implements a validating and defaulting webhook for AzureManagedMachinePool.
+type azureManagedMachinePoolWebhook struct {
+	Client client.Client
+}
+
 // Default implements webhook.Defaulter so a webhook will be registered for the type.
-func (m *AzureManagedMachinePool) Default(client client.Client) {
+func (mw *azureManagedMachinePoolWebhook) Default(ctx context.Context, obj runtime.Object) error {
+	m, ok := obj.(*AzureManagedMachinePool)
+	if !ok {
+		return apierrors.NewBadRequest("expected an AzureManagedMachinePool")
+	}
 	if m.Labels == nil {
 		m.Labels = make(map[string]string)
 	}
@@ -55,18 +78,28 @@ func (m *AzureManagedMachinePool) Default(client client.Client) {
 	}
 
 	if m.Spec.OSType == nil {
-		m.Spec.OSType = pointer.String(DefaultOSType)
+		m.Spec.OSType = ptr.To(DefaultOSType)
 	}
+
+	if ptr.Deref(m.Spec.ScaleSetPriority, "") == string(armcontainerservice.ScaleSetPrioritySpot) && m.Spec.SpotMaxPrice == nil {
+		m.Spec.SpotMaxPrice = ptr.To(resource.MustParse("-1"))
+	}
+
+	return nil
 }
 
-//+kubebuilder:webhook:verbs=update;delete,path=/validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremanagedmachinepool,mutating=false,failurePolicy=fail,matchPolicy=Equivalent,groups=infrastructure.cluster.x-k8s.io,resources=azuremanagedmachinepools,versions=v1beta1,name=validation.azuremanagedmachinepools.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1;v1beta1
+//+kubebuilder:webhook:verbs=create;update;delete,path=/validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremanagedmachinepool,mutating=false,failurePolicy=fail,matchPolicy=Equivalent,groups=infrastructure.cluster.x-k8s.io,resources=azuremanagedmachinepools,versions=v1beta1,name=validation.azuremanagedmachinepools.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1;v1beta1
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (m *AzureManagedMachinePool) ValidateCreate(client client.Client) error {
+func (mw *azureManagedMachinePoolWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	m, ok := obj.(*AzureManagedMachinePool)
+	if !ok {
+		return nil, apierrors.NewBadRequest("expected an AzureManagedMachinePool")
+	}
 	// NOTE: AzureManagedMachinePool relies upon MachinePools, which is behind a feature gate flag.
 	// The webhook must prevent creating new objects in case the feature flag is disabled.
 	if !feature.Gates.Enabled(capifeature.MachinePool) {
-		return field.Forbidden(
+		return nil, field.Forbidden(
 			field.NewPath("spec"),
 			"can be set only if the Cluster API 'MachinePool' feature flag is enabled",
 		)
@@ -80,6 +113,7 @@ func (m *AzureManagedMachinePool) ValidateCreate(client client.Client) error {
 		m.validateEnableNodePublicIP,
 		m.validateKubeletConfig,
 		m.validateLinuxOSConfig,
+		m.validateSubnetName,
 	}
 
 	var errs []error
@@ -89,12 +123,19 @@ func (m *AzureManagedMachinePool) ValidateCreate(client client.Client) error {
 		}
 	}
 
-	return kerrors.NewAggregate(errs)
+	return nil, kerrors.NewAggregate(errs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (m *AzureManagedMachinePool) ValidateUpdate(oldRaw runtime.Object, client client.Client) error {
-	old := oldRaw.(*AzureManagedMachinePool)
+func (mw *azureManagedMachinePoolWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+	old, ok := oldObj.(*AzureManagedMachinePool)
+	if !ok {
+		return nil, apierrors.NewBadRequest("expected an AzureManagedMachinePool")
+	}
+	m, ok := newObj.(*AzureManagedMachinePool)
+	if !ok {
+		return nil, apierrors.NewBadRequest("expected an AzureManagedMachinePool")
+	}
 	var allErrs field.ErrorList
 
 	if err := webhookutils.ValidateImmutable(
@@ -133,6 +174,20 @@ func (m *AzureManagedMachinePool) ValidateUpdate(oldRaw runtime.Object, client c
 		allErrs = append(allErrs, err)
 	}
 
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "SubnetName"),
+		old.Spec.SubnetName,
+		m.Spec.SubnetName); err != nil && old.Spec.SubnetName != nil {
+		allErrs = append(allErrs, err)
+	}
+
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "EnableFIPS"),
+		old.Spec.EnableFIPS,
+		m.Spec.EnableFIPS); err != nil && old.Spec.EnableFIPS != nil {
+		allErrs = append(allErrs, err)
+	}
+
 	// custom headers are immutable
 	oldCustomHeaders := maps.FilterByKeyPrefix(old.ObjectMeta.Annotations, CustomHeaderPrefix)
 	newCustomHeaders := maps.FilterByKeyPrefix(m.ObjectMeta.Annotations, CustomHeaderPrefix)
@@ -154,7 +209,7 @@ func (m *AzureManagedMachinePool) ValidateUpdate(oldRaw runtime.Object, client c
 
 	if m.Spec.Mode != string(NodePoolModeSystem) && old.Spec.Mode == string(NodePoolModeSystem) {
 		// validate for last system node pool
-		if err := m.validateLastSystemNodePool(client); err != nil {
+		if err := m.validateLastSystemNodePool(mw.Client); err != nil {
 			allErrs = append(allErrs, field.Forbidden(
 				field.NewPath("Spec", "Mode"),
 				"Cannot change node pool mode to User, you must have at least one System node pool in your cluster"))
@@ -223,19 +278,23 @@ func (m *AzureManagedMachinePool) ValidateUpdate(oldRaw runtime.Object, client c
 	}
 
 	if len(allErrs) != 0 {
-		return apierrors.NewInvalid(GroupVersion.WithKind("AzureManagedMachinePool").GroupKind(), m.Name, allErrs)
+		return nil, apierrors.NewInvalid(GroupVersion.WithKind("AzureManagedMachinePool").GroupKind(), m.Name, allErrs)
 	}
 
-	return nil
+	return nil, nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (m *AzureManagedMachinePool) ValidateDelete(client client.Client) error {
+func (mw *azureManagedMachinePoolWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	m, ok := obj.(*AzureManagedMachinePool)
+	if !ok {
+		return nil, apierrors.NewBadRequest("expected an AzureManagedMachinePool")
+	}
 	if m.Spec.Mode != string(NodePoolModeSystem) {
-		return nil
+		return nil, nil
 	}
 
-	return errors.Wrapf(m.validateLastSystemNodePool(client), "if the delete is triggered via owner MachinePool please refer to trouble shooting section in https://capz.sigs.k8s.io/topics/managedcluster.html")
+	return nil, errors.Wrapf(m.validateLastSystemNodePool(mw.Client), "if the delete is triggered via owner MachinePool please refer to trouble shooting section in https://capz.sigs.k8s.io/topics/managedcluster.html")
 }
 
 // validateLastSystemNodePool is used to check if the existing system node pool is the last system node pool.
@@ -244,7 +303,7 @@ func (m *AzureManagedMachinePool) validateLastSystemNodePool(cli client.Client) 
 	ctx := context.Background()
 
 	// Fetch the Cluster.
-	clusterName, ok := m.Labels[clusterv1.ClusterLabelName]
+	clusterName, ok := m.Labels[clusterv1.ClusterNameLabel]
 	if !ok {
 		return nil
 	}
@@ -269,7 +328,7 @@ func (m *AzureManagedMachinePool) validateLastSystemNodePool(cli client.Client) 
 
 	opt1 := client.InNamespace(m.Namespace)
 	opt2 := client.MatchingLabels(map[string]string{
-		clusterv1.ClusterLabelName: clusterName,
+		clusterv1.ClusterNameLabel: clusterName,
 		LabelAgentPoolMode:         string(NodePoolModeSystem),
 	})
 
@@ -286,7 +345,7 @@ func (m *AzureManagedMachinePool) validateLastSystemNodePool(cli client.Client) 
 
 func (m *AzureManagedMachinePool) validateMaxPods() error {
 	if m.Spec.MaxPods != nil {
-		if pointer.Int32Deref(m.Spec.MaxPods, 0) < 10 || pointer.Int32Deref(m.Spec.MaxPods, 0) > 250 {
+		if ptr.Deref[int32](m.Spec.MaxPods, 0) < 10 || ptr.Deref[int32](m.Spec.MaxPods, 0) > 250 {
 			return field.Invalid(
 				field.NewPath("Spec", "MaxPods"),
 				m.Spec.MaxPods,
@@ -310,13 +369,12 @@ func (m *AzureManagedMachinePool) validateOSType() error {
 }
 
 func (m *AzureManagedMachinePool) validateName() error {
-	if m.Spec.OSType != nil && *m.Spec.OSType == WindowsOS {
-		if len(m.Name) > 6 {
-			return field.Invalid(
-				field.NewPath("Name"),
-				m.Name,
-				"Windows agent pool name can not be longer than 6 characters.")
-		}
+	if m.Spec.OSType != nil && *m.Spec.OSType == WindowsOS &&
+		m.Spec.Name != nil && len(*m.Spec.Name) > 6 {
+		return field.Invalid(
+			field.NewPath("Spec", "Name"),
+			m.Spec.Name,
+			"Windows agent pool name can not be longer than 6 characters.")
 	}
 
 	return nil
@@ -356,6 +414,18 @@ func (m *AzureManagedMachinePool) validateEnableNodePublicIP() error {
 	return nil
 }
 
+func (m *AzureManagedMachinePool) validateSubnetName() error {
+	if m.Spec.SubnetName != nil {
+		subnetRegex := "^[a-zA-Z0-9][a-zA-Z0-9-]{0,78}[a-zA-Z0-9]$"
+		regex := regexp.MustCompile(subnetRegex)
+		if success := regex.MatchString(ptr.Deref(m.Spec.SubnetName, "")); !success {
+			return field.Invalid(field.NewPath("Spec", "SubnetName"), m.Spec.SubnetName,
+				fmt.Sprintf("name of subnet doesn't match regex %s", subnetRegex))
+		}
+	}
+	return nil
+}
+
 // validateKubeletConfig enforces the AKS API configuration for KubeletConfig.
 // See:  https://learn.microsoft.com/en-us/azure/aks/custom-node-configuration.
 func (m *AzureManagedMachinePool) validateKubeletConfig() error {
@@ -368,7 +438,7 @@ func (m *AzureManagedMachinePool) validateKubeletConfig() error {
 	}
 	if m.Spec.KubeletConfig != nil {
 		if m.Spec.KubeletConfig.CPUCfsQuotaPeriod != nil {
-			if !strings.HasSuffix(pointer.StringDeref(m.Spec.KubeletConfig.CPUCfsQuotaPeriod, ""), "ms") {
+			if !strings.HasSuffix(ptr.Deref(m.Spec.KubeletConfig.CPUCfsQuotaPeriod, ""), "ms") {
 				return field.Invalid(
 					field.NewPath("Spec", "KubeletConfig", "CPUCfsQuotaPeriod"),
 					m.Spec.KubeletConfig.CPUCfsQuotaPeriod,
@@ -376,12 +446,12 @@ func (m *AzureManagedMachinePool) validateKubeletConfig() error {
 			}
 		}
 		if m.Spec.KubeletConfig.ImageGcHighThreshold != nil && m.Spec.KubeletConfig.ImageGcLowThreshold != nil {
-			if pointer.Int32Deref(m.Spec.KubeletConfig.ImageGcLowThreshold, 0) > pointer.Int32Deref(m.Spec.KubeletConfig.ImageGcHighThreshold, 0) {
+			if ptr.Deref[int32](m.Spec.KubeletConfig.ImageGcLowThreshold, 0) > ptr.Deref[int32](m.Spec.KubeletConfig.ImageGcHighThreshold, 0) {
 				return field.Invalid(
 					field.NewPath("Spec", "KubeletConfig", "ImageGcLowThreshold"),
 					m.Spec.KubeletConfig.ImageGcLowThreshold,
 					fmt.Sprintf("must not be greater than ImageGcHighThreshold, ImageGcLowThreshold=%d, ImageGcHighThreshold=%d",
-						pointer.Int32Deref(m.Spec.KubeletConfig.ImageGcLowThreshold, 0), pointer.Int32Deref(m.Spec.KubeletConfig.ImageGcHighThreshold, 0)))
+						ptr.Deref[int32](m.Spec.KubeletConfig.ImageGcLowThreshold, 0), ptr.Deref[int32](m.Spec.KubeletConfig.ImageGcHighThreshold, 0)))
 			}
 		}
 		for _, val := range m.Spec.KubeletConfig.AllowedUnsafeSysctls {
@@ -412,7 +482,7 @@ func (m *AzureManagedMachinePool) validateLinuxOSConfig() error {
 	}
 
 	if m.Spec.LinuxOSConfig.SwapFileSizeMB != nil {
-		if m.Spec.KubeletConfig == nil || pointer.BoolDeref(m.Spec.KubeletConfig.FailSwapOn, true) {
+		if m.Spec.KubeletConfig == nil || ptr.Deref(m.Spec.KubeletConfig.FailSwapOn, true) {
 			errs = append(errs, field.Invalid(
 				field.NewPath("Spec", "LinuxOSConfig", "SwapFileSizeMB"),
 				m.Spec.LinuxOSConfig.SwapFileSizeMB,

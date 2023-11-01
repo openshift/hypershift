@@ -36,7 +36,7 @@ func (o *ServiceBrokerAuthLogoutReader) ReadResponse(response runtime.ClientResp
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /auth/v1/logout] serviceBroker.auth.logout", response, response.Code())
 	}
 }
 
@@ -77,6 +77,11 @@ func (o *ServiceBrokerAuthLogoutOK) IsServerError() bool {
 // IsCode returns true when this service broker auth logout o k response a status code equal to that given
 func (o *ServiceBrokerAuthLogoutOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the service broker auth logout o k response
+func (o *ServiceBrokerAuthLogoutOK) Code() int {
+	return 200
 }
 
 func (o *ServiceBrokerAuthLogoutOK) Error() string {
@@ -138,6 +143,11 @@ func (o *ServiceBrokerAuthLogoutInternalServerError) IsServerError() bool {
 // IsCode returns true when this service broker auth logout internal server error response a status code equal to that given
 func (o *ServiceBrokerAuthLogoutInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the service broker auth logout internal server error response
+func (o *ServiceBrokerAuthLogoutInternalServerError) Code() int {
+	return 500
 }
 
 func (o *ServiceBrokerAuthLogoutInternalServerError) Error() string {

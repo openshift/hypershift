@@ -54,7 +54,7 @@ func (o *PcloudTenantsPutReader) ReadResponse(response runtime.ClientResponse, c
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[PUT /pcloud/v1/tenants/{tenant_id}] pcloud.tenants.put", response, response.Code())
 	}
 }
 
@@ -95,6 +95,11 @@ func (o *PcloudTenantsPutOK) IsServerError() bool {
 // IsCode returns true when this pcloud tenants put o k response a status code equal to that given
 func (o *PcloudTenantsPutOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud tenants put o k response
+func (o *PcloudTenantsPutOK) Code() int {
+	return 200
 }
 
 func (o *PcloudTenantsPutOK) Error() string {
@@ -160,6 +165,11 @@ func (o *PcloudTenantsPutBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the pcloud tenants put bad request response
+func (o *PcloudTenantsPutBadRequest) Code() int {
+	return 400
+}
+
 func (o *PcloudTenantsPutBadRequest) Error() string {
 	return fmt.Sprintf("[PUT /pcloud/v1/tenants/{tenant_id}][%d] pcloudTenantsPutBadRequest  %+v", 400, o.Payload)
 }
@@ -221,6 +231,11 @@ func (o *PcloudTenantsPutUnauthorized) IsServerError() bool {
 // IsCode returns true when this pcloud tenants put unauthorized response a status code equal to that given
 func (o *PcloudTenantsPutUnauthorized) IsCode(code int) bool {
 	return code == 401
+}
+
+// Code gets the status code for the pcloud tenants put unauthorized response
+func (o *PcloudTenantsPutUnauthorized) Code() int {
+	return 401
 }
 
 func (o *PcloudTenantsPutUnauthorized) Error() string {
@@ -286,6 +301,11 @@ func (o *PcloudTenantsPutUnprocessableEntity) IsCode(code int) bool {
 	return code == 422
 }
 
+// Code gets the status code for the pcloud tenants put unprocessable entity response
+func (o *PcloudTenantsPutUnprocessableEntity) Code() int {
+	return 422
+}
+
 func (o *PcloudTenantsPutUnprocessableEntity) Error() string {
 	return fmt.Sprintf("[PUT /pcloud/v1/tenants/{tenant_id}][%d] pcloudTenantsPutUnprocessableEntity  %+v", 422, o.Payload)
 }
@@ -347,6 +367,11 @@ func (o *PcloudTenantsPutInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud tenants put internal server error response a status code equal to that given
 func (o *PcloudTenantsPutInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud tenants put internal server error response
+func (o *PcloudTenantsPutInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudTenantsPutInternalServerError) Error() string {

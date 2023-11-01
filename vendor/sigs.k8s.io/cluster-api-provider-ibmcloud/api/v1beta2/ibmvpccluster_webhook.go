@@ -22,6 +22,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // log is for logging in this package.
@@ -48,19 +49,19 @@ func (r *IBMVPCCluster) Default() {
 var _ webhook.Validator = &IBMVPCCluster{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMVPCCluster) ValidateCreate() error {
+func (r *IBMVPCCluster) ValidateCreate() (admission.Warnings, error) {
 	ibmvpcclusterlog.Info("validate create", "name", r.Name)
-	return nil
+	return nil, nil
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMVPCCluster) ValidateUpdate(old runtime.Object) error {
+func (r *IBMVPCCluster) ValidateUpdate(_ runtime.Object) (admission.Warnings, error) {
 	ibmvpcclusterlog.Info("validate update", "name", r.Name)
-	return nil
+	return nil, nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMVPCCluster) ValidateDelete() error {
+func (r *IBMVPCCluster) ValidateDelete() (admission.Warnings, error) {
 	ibmvpcclusterlog.Info("validate delete", "name", r.Name)
-	return nil
+	return nil, nil
 }

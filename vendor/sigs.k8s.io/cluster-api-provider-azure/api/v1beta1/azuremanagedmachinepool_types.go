@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	capierrors "sigs.k8s.io/cluster-api/errors"
@@ -93,7 +94,11 @@ const (
 	TransparentHugePageOptionDeferMadvise TransparentHugePageOption = "defer+madvise"
 )
 
-// KubeletConfig defines the set of kubelet configurations for nodes in pools.
+// KubeletConfig defines the supported subset of kubelet configurations for nodes in pools.
+// See also [AKS doc], [K8s doc].
+//
+// [AKS doc]: https://learn.microsoft.com/azure/aks/custom-node-configuration
+// [K8s doc]: https://kubernetes.io/docs/reference/config-api/kubelet-config.v1beta1/
 type KubeletConfig struct {
 	// CPUManagerPolicy - CPU Manager policy to use.
 	// +kubebuilder:validation:Enum=none;static
@@ -103,14 +108,17 @@ type KubeletConfig struct {
 	// +optional
 	CPUCfsQuota *bool `json:"cpuCfsQuota,omitempty"`
 	// CPUCfsQuotaPeriod - Sets CPU CFS quota period value.
+	// Must end in "ms", e.g. "100ms"
 	// +optional
 	CPUCfsQuotaPeriod *string `json:"cpuCfsQuotaPeriod,omitempty"`
 	// ImageGcHighThreshold - The percent of disk usage after which image garbage collection is always run.
+	// Valid values are 0-100 (inclusive).
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
 	// +optional
 	ImageGcHighThreshold *int32 `json:"imageGcHighThreshold,omitempty"`
 	// ImageGcLowThreshold - The percent of disk usage before which image garbage collection is never run.
+	// Valid values are 0-100 (inclusive) and must be less than `imageGcHighThreshold`.
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
 	// +optional
@@ -120,12 +128,13 @@ type KubeletConfig struct {
 	// +optional
 	TopologyManagerPolicy *TopologyManagerPolicy `json:"topologyManagerPolicy,omitempty"`
 	// AllowedUnsafeSysctls - Allowlist of unsafe sysctls or unsafe sysctl patterns (ending in `*`).
+	// Valid values match `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`, or `net.*`.
 	// +optional
 	AllowedUnsafeSysctls []string `json:"allowedUnsafeSysctls,omitempty"`
 	// FailSwapOn - If set to true it will make the Kubelet fail to start if swap is enabled on the node.
 	// +optional
 	FailSwapOn *bool `json:"failSwapOn,omitempty"`
-	// ContainerLogMaxSizeMB - The maximum size (e.g. 10Mi) of container log file before it is rotated.
+	// ContainerLogMaxSizeMB - The maximum size in MB of a container log file before it is rotated.
 	// +optional
 	ContainerLogMaxSizeMB *int32 `json:"containerLogMaxSizeMB,omitempty"`
 	// ContainerLogMaxFiles - The maximum number of container log files that can be present for a container. The number must be ≥ 2.
@@ -133,6 +142,7 @@ type KubeletConfig struct {
 	// +optional
 	ContainerLogMaxFiles *int32 `json:"containerLogMaxFiles,omitempty"`
 	// PodMaxPids - The maximum number of processes per pod.
+	// Must not exceed kernel PID limit. -1 disables the limit.
 	// +kubebuilder:validation:Minimum=-1
 	// +optional
 	PodMaxPids *int32 `json:"podMaxPids,omitempty"`
@@ -141,6 +151,7 @@ type KubeletConfig struct {
 // SysctlConfig specifies the settings for Linux agent nodes.
 type SysctlConfig struct {
 	// FsAioMaxNr specifies the maximum number of system-wide asynchronous io requests.
+	// Valid values are 65536-6553500 (inclusive).
 	// Maps to fs.aio-max-nr.
 	// +kubebuilder:validation:Minimum=65536
 	// +kubebuilder:validation:Maximum=6553500
@@ -148,6 +159,7 @@ type SysctlConfig struct {
 	FsAioMaxNr *int32 `json:"fsAioMaxNr,omitempty"`
 
 	// FsFileMax specifies the max number of file-handles that the Linux kernel will allocate, by increasing increases the maximum number of open files permitted.
+	// Valid values are 8192-12000500 (inclusive).
 	// Maps to fs.file-max.
 	// +kubebuilder:validation:Minimum=8192
 	// +kubebuilder:validation:Maximum=12000500
@@ -155,6 +167,7 @@ type SysctlConfig struct {
 	FsFileMax *int32 `json:"fsFileMax,omitempty"`
 
 	// FsInotifyMaxUserWatches specifies the number of file watches allowed by the system. Each watch is roughly 90 bytes on a 32-bit kernel, and roughly 160 bytes on a 64-bit kernel.
+	// Valid values are 781250-2097152 (inclusive).
 	// Maps to fs.inotify.max_user_watches.
 	// +kubebuilder:validation:Minimum=781250
 	// +kubebuilder:validation:Maximum=2097152
@@ -162,6 +175,7 @@ type SysctlConfig struct {
 	FsInotifyMaxUserWatches *int32 `json:"fsInotifyMaxUserWatches,omitempty"`
 
 	// FsNrOpen specifies the maximum number of file-handles a process can allocate.
+	// Valid values are 8192-20000500 (inclusive).
 	// Maps to fs.nr_open.
 	// +kubebuilder:validation:Minimum=8192
 	// +kubebuilder:validation:Maximum=20000500
@@ -169,6 +183,7 @@ type SysctlConfig struct {
 	FsNrOpen *int32 `json:"fsNrOpen,omitempty"`
 
 	// KernelThreadsMax specifies the maximum number of all threads that can be created.
+	// Valid values are 20-513785 (inclusive).
 	// Maps to kernel.threads-max.
 	// +kubebuilder:validation:Minimum=20
 	// +kubebuilder:validation:Maximum=513785
@@ -176,6 +191,7 @@ type SysctlConfig struct {
 	KernelThreadsMax *int32 `json:"kernelThreadsMax,omitempty"`
 
 	// NetCoreNetdevMaxBacklog specifies maximum number of packets, queued on the INPUT side, when the interface receives packets faster than kernel can process them.
+	// Valid values are 1000-3240000 (inclusive).
 	// Maps to net.core.netdev_max_backlog.
 	// +kubebuilder:validation:Minimum=1000
 	// +kubebuilder:validation:Maximum=3240000
@@ -184,6 +200,7 @@ type SysctlConfig struct {
 
 	// NetCoreOptmemMax specifies the maximum ancillary buffer size (option memory buffer) allowed per socket.
 	// Socket option memory is used in a few cases to store extra structures relating to usage of the socket.
+	// Valid values are 20480-4194304 (inclusive).
 	// Maps to net.core.optmem_max.
 	// +kubebuilder:validation:Minimum=20480
 	// +kubebuilder:validation:Maximum=4194304
@@ -191,6 +208,7 @@ type SysctlConfig struct {
 	NetCoreOptmemMax *int32 `json:"netCoreOptmemMax,omitempty"`
 
 	// NetCoreRmemDefault specifies the default receive socket buffer size in bytes.
+	// Valid values are 212992-134217728 (inclusive).
 	// Maps to net.core.rmem_default.
 	// +kubebuilder:validation:Minimum=212992
 	// +kubebuilder:validation:Maximum=134217728
@@ -198,6 +216,7 @@ type SysctlConfig struct {
 	NetCoreRmemDefault *int32 `json:"netCoreRmemDefault,omitempty"`
 
 	// NetCoreRmemMax specifies the maximum receive socket buffer size in bytes.
+	// Valid values are 212992-134217728 (inclusive).
 	// Maps to net.core.rmem_max.
 	// +kubebuilder:validation:Minimum=212992
 	// +kubebuilder:validation:Maximum=134217728
@@ -207,6 +226,7 @@ type SysctlConfig struct {
 	// NetCoreSomaxconn specifies maximum number of connection requests that can be queued for any given listening socket.
 	// An upper limit for the value of the backlog parameter passed to the listen(2)(https://man7.org/linux/man-pages/man2/listen.2.html) function.
 	// If the backlog argument is greater than the somaxconn, then it's silently truncated to this limit.
+	// Valid values are 4096-3240000 (inclusive).
 	// Maps to net.core.somaxconn.
 	// +kubebuilder:validation:Minimum=4096
 	// +kubebuilder:validation:Maximum=3240000
@@ -214,6 +234,7 @@ type SysctlConfig struct {
 	NetCoreSomaxconn *int32 `json:"netCoreSomaxconn,omitempty"`
 
 	// NetCoreWmemDefault specifies the default send socket buffer size in bytes.
+	// Valid values are 212992-134217728 (inclusive).
 	// Maps to net.core.wmem_default.
 	// +kubebuilder:validation:Minimum=212992
 	// +kubebuilder:validation:Maximum=134217728
@@ -221,6 +242,7 @@ type SysctlConfig struct {
 	NetCoreWmemDefault *int32 `json:"netCoreWmemDefault,omitempty"`
 
 	// NetCoreWmemMax specifies the maximum send socket buffer size in bytes.
+	// Valid values are 212992-134217728 (inclusive).
 	// Maps to net.core.wmem_max.
 	// +kubebuilder:validation:Minimum=212992
 	// +kubebuilder:validation:Maximum=134217728
@@ -237,6 +259,7 @@ type SysctlConfig struct {
 
 	// NetIpv4NeighDefaultGcThresh1 specifies the minimum number of entries that may be in the ARP cache.
 	// Garbage collection won't be triggered if the number of entries is below this setting.
+	// Valid values are 128-80000 (inclusive).
 	// Maps to net.ipv4.neigh.default.gc_thresh1.
 	// +kubebuilder:validation:Minimum=128
 	// +kubebuilder:validation:Maximum=80000
@@ -245,6 +268,7 @@ type SysctlConfig struct {
 
 	// NetIpv4NeighDefaultGcThresh2 specifies soft maximum number of entries that may be in the ARP cache.
 	// ARP garbage collection will be triggered about 5 seconds after reaching this soft maximum.
+	// Valid values are 512-90000 (inclusive).
 	// Maps to net.ipv4.neigh.default.gc_thresh2.
 	// +kubebuilder:validation:Minimum=512
 	// +kubebuilder:validation:Maximum=90000
@@ -252,6 +276,7 @@ type SysctlConfig struct {
 	NetIpv4NeighDefaultGcThresh2 *int32 `json:"netIpv4NeighDefaultGcThresh2,omitempty"`
 
 	// NetIpv4NeighDefaultGcThresh3 specified hard maximum number of entries in the ARP cache.
+	// Valid values are 1024-100000 (inclusive).
 	// Maps to net.ipv4.neigh.default.gc_thresh3.
 	// +kubebuilder:validation:Minimum=1024
 	// +kubebuilder:validation:Maximum=100000
@@ -259,6 +284,7 @@ type SysctlConfig struct {
 	NetIpv4NeighDefaultGcThresh3 *int32 `json:"netIpv4NeighDefaultGcThresh3,omitempty"`
 
 	// NetIpv4TCPFinTimeout specifies the length of time an orphaned connection will remain in the FIN_WAIT_2 state before it's aborted at the local end.
+	// Valid values are 5-120 (inclusive).
 	// Maps to net.ipv4.tcp_fin_timeout.
 	// +kubebuilder:validation:Minimum=5
 	// +kubebuilder:validation:Maximum=120
@@ -266,6 +292,7 @@ type SysctlConfig struct {
 	NetIpv4TCPFinTimeout *int32 `json:"netIpv4TCPFinTimeout,omitempty"`
 
 	// NetIpv4TCPKeepaliveProbes specifies the number of keepalive probes TCP sends out, until it decides the connection is broken.
+	// Valid values are 1-15 (inclusive).
 	// Maps to net.ipv4.tcp_keepalive_probes.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=15
@@ -273,6 +300,7 @@ type SysctlConfig struct {
 	NetIpv4TCPKeepaliveProbes *int32 `json:"netIpv4TCPKeepaliveProbes,omitempty"`
 
 	// NetIpv4TCPKeepaliveTime specifies the rate at which TCP sends out a keepalive message when keepalive is enabled.
+	// Valid values are 30-432000 (inclusive).
 	// Maps to net.ipv4.tcp_keepalive_time.
 	// +kubebuilder:validation:Minimum=30
 	// +kubebuilder:validation:Maximum=432000
@@ -281,6 +309,7 @@ type SysctlConfig struct {
 
 	// NetIpv4TCPMaxSynBacklog specifies the maximum number of queued connection requests that have still not received an acknowledgment from the connecting client.
 	// If this number is exceeded, the kernel will begin dropping requests.
+	// Valid values are 128-3240000 (inclusive).
 	// Maps to net.ipv4.tcp_max_syn_backlog.
 	// +kubebuilder:validation:Minimum=128
 	// +kubebuilder:validation:Maximum=3240000
@@ -289,6 +318,7 @@ type SysctlConfig struct {
 
 	// NetIpv4TCPMaxTwBuckets specifies maximal number of timewait sockets held by system simultaneously.
 	// If this number is exceeded, time-wait socket is immediately destroyed and warning is printed.
+	// Valid values are 8000-1440000 (inclusive).
 	// Maps to net.ipv4.tcp_max_tw_buckets.
 	// +kubebuilder:validation:Minimum=8000
 	// +kubebuilder:validation:Maximum=1440000
@@ -302,6 +332,7 @@ type SysctlConfig struct {
 
 	// NetIpv4TCPkeepaliveIntvl specifies the frequency of the probes sent out.
 	// Multiplied by tcpKeepaliveprobes, it makes up the time to kill a connection that isn't responding, after probes started.
+	// Valid values are 1-75 (inclusive).
 	// Maps to net.ipv4.tcp_keepalive_intvl.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=75
@@ -309,6 +340,7 @@ type SysctlConfig struct {
 	NetIpv4TCPkeepaliveIntvl *int32 `json:"netIpv4TCPkeepaliveIntvl,omitempty"`
 
 	// NetNetfilterNfConntrackBuckets specifies the size of hash table used by nf_conntrack module to record the established connection record of the TCP protocol.
+	// Valid values are 65536-147456 (inclusive).
 	// Maps to net.netfilter.nf_conntrack_buckets.
 	// +kubebuilder:validation:Minimum=65536
 	// +kubebuilder:validation:Maximum=147456
@@ -316,6 +348,7 @@ type SysctlConfig struct {
 	NetNetfilterNfConntrackBuckets *int32 `json:"netNetfilterNfConntrackBuckets,omitempty"`
 
 	// NetNetfilterNfConntrackMax specifies the maximum number of connections supported by the nf_conntrack module or the size of connection tracking table.
+	// Valid values are 131072-1048576 (inclusive).
 	// Maps to net.netfilter.nf_conntrack_max.
 	// +kubebuilder:validation:Minimum=131072
 	// +kubebuilder:validation:Maximum=1048576
@@ -324,6 +357,7 @@ type SysctlConfig struct {
 
 	// VMMaxMapCount specifies the maximum number of memory map areas a process may have.
 	// Maps to vm.max_map_count.
+	// Valid values are 65530-262144 (inclusive).
 	// +kubebuilder:validation:Minimum=65530
 	// +kubebuilder:validation:Maximum=262144
 	// +optional
@@ -331,6 +365,7 @@ type SysctlConfig struct {
 
 	// VMSwappiness specifies aggressiveness of the kernel in swapping memory pages.
 	// Higher values will increase aggressiveness, lower values decrease the amount of swap.
+	// Valid values are 0-100 (inclusive).
 	// Maps to vm.swappiness.
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
@@ -338,6 +373,7 @@ type SysctlConfig struct {
 	VMSwappiness *int32 `json:"vmSwappiness,omitempty"`
 
 	// VMVfsCachePressure specifies the percentage value that controls tendency of the kernel to reclaim the memory, which is used for caching of directory and inode objects.
+	// Valid values are 1-500 (inclusive).
 	// Maps to vm.vfs_cache_pressure.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=500
@@ -346,9 +382,16 @@ type SysctlConfig struct {
 }
 
 // LinuxOSConfig specifies the custom Linux OS settings and configurations.
+// See also [AKS doc].
+//
+// [AKS doc]: https://learn.microsoft.com/azure/aks/custom-node-configuration#linux-os-custom-configuration
 type LinuxOSConfig struct {
 	// SwapFileSizeMB specifies size in MB of a swap file will be created on the agent nodes from this node pool.
-	// Max value of SwapFileSizeMB should be the size of temporary disk(/dev/sdb). Refer: https://learn.microsoft.com/en-us/azure/virtual-machines/managed-disks-overview#temporary-disk
+	// Max value of SwapFileSizeMB should be the size of temporary disk(/dev/sdb).
+	// Must be at least 1.
+	// See also [AKS doc].
+	//
+	// [AKS doc]: https://learn.microsoft.com/azure/virtual-machines/managed-disks-overview#temporary-disk
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	SwapFileSizeMB *int32 `json:"swapFileSizeMB,omitempty"`
@@ -358,12 +401,17 @@ type LinuxOSConfig struct {
 	Sysctls *SysctlConfig `json:"sysctls,omitempty"`
 
 	// TransparentHugePageDefrag specifies whether the kernel should make aggressive use of memory compaction to make more hugepages available.
-	// Refer to https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html#admin-guide-transhuge for more details.
+	// See also [Linux doc].
+	//
+	// [Linux doc]: https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html#admin-guide-transhuge for more details.
 	// +kubebuilder:validation:Enum=always;defer;defer+madvise;madvise;never
 	// +optional
 	TransparentHugePageDefrag *TransparentHugePageOption `json:"transparentHugePageDefrag,omitempty"`
 
-	// TransparentHugePageEnabled specifies various modes of Transparent Hugepages. Refer to https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html#admin-guide-transhuge for more details.
+	// TransparentHugePageEnabled specifies various modes of Transparent Hugepages.
+	// See also [Linux doc].
+	//
+	// [Linux doc]: https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html#admin-guide-transhuge for more details.
 	// +kubebuilder:validation:Enum=always;madvise;never
 	// +optional
 	TransparentHugePageEnabled *TransparentHugePageOption `json:"transparentHugePageEnabled,omitempty"`
@@ -378,6 +426,7 @@ type AzureManagedMachinePoolSpec struct {
 	AdditionalTags Tags `json:"additionalTags,omitempty"`
 
 	// Name - name of the agent pool. If not specified, CAPZ uses the name of the CR as the agent pool name.
+	// Immutable.
 	// +optional
 	Name *string `json:"name,omitempty"`
 
@@ -386,22 +435,31 @@ type AzureManagedMachinePoolSpec struct {
 	Mode string `json:"mode"`
 
 	// SKU is the size of the VMs in the node pool.
+	// Immutable.
 	SKU string `json:"sku"`
 
 	// OSDiskSizeGB is the disk size for every machine in this agent pool.
 	// If you specify 0, it will apply the default osDisk size according to the vmSize specified.
+	// Immutable.
 	// +optional
 	OSDiskSizeGB *int32 `json:"osDiskSizeGB,omitempty"`
 
 	// AvailabilityZones - Availability zones for nodes. Must use VirtualMachineScaleSets AgentPoolType.
+	// Immutable.
 	// +optional
 	AvailabilityZones []string `json:"availabilityZones,omitempty"`
 
-	// Node labels - labels for all of the nodes present in node pool
+	// Node labels - labels for all of the nodes present in node pool.
+	// See also [AKS doc].
+	//
+	// [AKS doc]: https://learn.microsoft.com/azure/aks/use-labels
 	// +optional
 	NodeLabels map[string]string `json:"nodeLabels,omitempty"`
 
 	// Taints specifies the taints for nodes present in this agent pool.
+	// See also [AKS doc].
+	//
+	// [AKS doc]: https://learn.microsoft.com/azure/aks/use-multiple-node-pools#setting-node-pool-taints
 	// +optional
 	Taints Taints `json:"taints,omitempty"`
 
@@ -413,56 +471,103 @@ type AzureManagedMachinePoolSpec struct {
 	// +optional
 	Scaling *ManagedMachinePoolScaling `json:"scaling,omitempty"`
 
-	// MaxPods specifies the kubelet --max-pods configuration for the node pool.
+	// MaxPods specifies the kubelet `--max-pods` configuration for the node pool.
+	// Immutable.
+	// See also [AKS doc], [K8s doc].
+	//
+	// [AKS doc]: https://learn.microsoft.com/azure/aks/configure-azure-cni#configure-maximum---new-clusters
+	// [K8s doc]: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/
 	// +optional
 	MaxPods *int32 `json:"maxPods,omitempty"`
 
-	// OsDiskType specifies the OS disk type for each node in the pool. Allowed values are 'Ephemeral' and 'Managed'.
+	// OsDiskType specifies the OS disk type for each node in the pool. Allowed values are 'Ephemeral' and 'Managed' (default).
+	// Immutable.
+	// See also [AKS doc].
+	//
+	// [AKS doc]: https://learn.microsoft.com/azure/aks/cluster-configuration#ephemeral-os
 	// +kubebuilder:validation:Enum=Ephemeral;Managed
 	// +kubebuilder:default=Managed
 	// +optional
 	OsDiskType *string `json:"osDiskType,omitempty"`
 
 	// EnableUltraSSD enables the storage type UltraSSD_LRS for the agent pool.
+	// Immutable.
 	// +optional
 	EnableUltraSSD *bool `json:"enableUltraSSD,omitempty"`
 
-	// OSType specifies the virtual machine operating system. Default to Linux. Possible values include: 'Linux', 'Windows'
+	// OSType specifies the virtual machine operating system. Default to Linux. Possible values include: 'Linux', 'Windows'.
+	// 'Windows' requires the AzureManagedControlPlane's `spec.networkPlugin` to be `azure`.
+	// Immutable.
+	// See also [AKS doc].
+	//
+	// [AKS doc]: https://learn.microsoft.com/rest/api/aks/agent-pools/create-or-update?tabs=HTTP#ostype
 	// +kubebuilder:validation:Enum=Linux;Windows
 	// +optional
 	OSType *string `json:"osType,omitempty"`
 
 	// EnableNodePublicIP controls whether or not nodes in the pool each have a public IP address.
+	// Immutable.
 	// +optional
 	EnableNodePublicIP *bool `json:"enableNodePublicIP,omitempty"`
 
 	// NodePublicIPPrefixID specifies the public IP prefix resource ID which VM nodes should use IPs from.
+	// Immutable.
 	// +optional
 	NodePublicIPPrefixID *string `json:"nodePublicIPPrefixID,omitempty"`
 
 	// ScaleSetPriority specifies the ScaleSetPriority value. Default to Regular. Possible values include: 'Regular', 'Spot'
+	// Immutable.
 	// +kubebuilder:validation:Enum=Regular;Spot
 	// +optional
 	ScaleSetPriority *string `json:"scaleSetPriority,omitempty"`
 
+	// ScaleDownMode affects the cluster autoscaler behavior. Default to Delete. Possible values include: 'Deallocate', 'Delete'
+	// +kubebuilder:validation:Enum=Deallocate;Delete
+	// +kubebuilder:default=Delete
+	// +optional
+	ScaleDownMode *string `json:"scaleDownMode,omitempty"`
+
+	// SpotMaxPrice defines max price to pay for spot instance. Possible values are any decimal value greater than zero or -1.
+	// If you set the max price to be -1, the VM won't be evicted based on price. The price for the VM will be the current price
+	// for spot or the price for a standard VM, which ever is less, as long as there's capacity and quota available.
+	// +optional
+	SpotMaxPrice *resource.Quantity `json:"spotMaxPrice,omitempty"`
+
 	// KubeletConfig specifies the kubelet configurations for nodes.
+	// Immutable.
 	// +optional
 	KubeletConfig *KubeletConfig `json:"kubeletConfig,omitempty"`
 
 	// KubeletDiskType specifies the kubelet disk type. Default to OS. Possible values include: 'OS', 'Temporary'.
-	// Requires kubeletDisk preview feature to be set.
+	// Requires Microsoft.ContainerService/KubeletDisk preview feature to be set.
+	// Immutable.
+	// See also [AKS doc].
+	//
+	// [AKS doc]: https://learn.microsoft.com/rest/api/aks/agent-pools/create-or-update?tabs=HTTP#kubeletdisktype
 	// +kubebuilder:validation:Enum=OS;Temporary
 	// +optional
 	KubeletDiskType *KubeletDiskType `json:"kubeletDiskType,omitempty"`
 
 	// LinuxOSConfig specifies the custom Linux OS settings and configurations.
+	// Immutable.
 	// +optional
 	LinuxOSConfig *LinuxOSConfig `json:"linuxOSConfig,omitempty"`
+	// SubnetName specifies the Subnet where the MachinePool will be placed
+	// Immutable.
+	// +optional
+	SubnetName *string `json:"subnetName,omitempty"`
+
+	// EnableFIPS indicates whether FIPS is enabled on the node pool.
+	// Immutable.
+	// +optional
+	EnableFIPS *bool `json:"enableFIPS,omitempty"`
 }
 
 // ManagedMachinePoolScaling specifies scaling options.
 type ManagedMachinePoolScaling struct {
+	// MinSize is the minimum number of nodes for auto-scaling.
 	MinSize *int32 `json:"minSize,omitempty"`
+	// MaxSize is the maximum number of nodes for auto-scaling.
 	MaxSize *int32 `json:"maxSize,omitempty"`
 }
 

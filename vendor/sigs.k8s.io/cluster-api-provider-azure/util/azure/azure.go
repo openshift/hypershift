@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/go-autorest/autorest"
@@ -36,6 +37,12 @@ import (
 
 // AzureSystemNodeLabelPrefix is a standard node label prefix for Azure features, e.g., kubernetes.azure.com/scalesetpriority.
 const AzureSystemNodeLabelPrefix = "kubernetes.azure.com"
+
+const (
+	// ProviderIDPrefix will be appended to the beginning of Azure resource IDs to form the Kubernetes Provider ID.
+	// NOTE: this format matches the 2 slashes format used in cloud-provider and cluster-autoscaler.
+	ProviderIDPrefix = "azure://"
+)
 
 // IsAzureSystemNodeLabelKey is a helper function that determines whether a node label key is an Azure "system" label.
 func IsAzureSystemNodeLabelKey(labelKey string) bool {
@@ -125,4 +132,9 @@ func FindParentMachinePoolWithRetry(ampName string, cli client.Client, maxAttemp
 		}
 		return p, nil
 	}
+}
+
+// ParseResourceID parses a string to an *arm.ResourceID, first removing any "azure://" prefix.
+func ParseResourceID(id string) (*arm.ResourceID, error) {
+	return arm.ParseResourceID(strings.TrimPrefix(id, ProviderIDPrefix))
 }

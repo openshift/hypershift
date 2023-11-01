@@ -48,7 +48,7 @@ func (o *PcloudSapGetallReader) ReadResponse(response runtime.ClientResponse, co
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/sap] pcloud.sap.getall", response, response.Code())
 	}
 }
 
@@ -89,6 +89,11 @@ func (o *PcloudSapGetallOK) IsServerError() bool {
 // IsCode returns true when this pcloud sap getall o k response a status code equal to that given
 func (o *PcloudSapGetallOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud sap getall o k response
+func (o *PcloudSapGetallOK) Code() int {
+	return 200
 }
 
 func (o *PcloudSapGetallOK) Error() string {
@@ -154,6 +159,11 @@ func (o *PcloudSapGetallBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the pcloud sap getall bad request response
+func (o *PcloudSapGetallBadRequest) Code() int {
+	return 400
+}
+
 func (o *PcloudSapGetallBadRequest) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/sap][%d] pcloudSapGetallBadRequest  %+v", 400, o.Payload)
 }
@@ -217,6 +227,11 @@ func (o *PcloudSapGetallUnauthorized) IsCode(code int) bool {
 	return code == 401
 }
 
+// Code gets the status code for the pcloud sap getall unauthorized response
+func (o *PcloudSapGetallUnauthorized) Code() int {
+	return 401
+}
+
 func (o *PcloudSapGetallUnauthorized) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/sap][%d] pcloudSapGetallUnauthorized  %+v", 401, o.Payload)
 }
@@ -278,6 +293,11 @@ func (o *PcloudSapGetallInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud sap getall internal server error response a status code equal to that given
 func (o *PcloudSapGetallInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud sap getall internal server error response
+func (o *PcloudSapGetallInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudSapGetallInternalServerError) Error() string {

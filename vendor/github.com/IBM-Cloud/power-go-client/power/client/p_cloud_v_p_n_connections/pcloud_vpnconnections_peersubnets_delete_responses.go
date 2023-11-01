@@ -60,7 +60,7 @@ func (o *PcloudVpnconnectionsPeersubnetsDeleteReader) ReadResponse(response runt
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[DELETE /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/vpn-connections/{vpn_connection_id}/peer-subnets] pcloud.vpnconnections.peersubnets.delete", response, response.Code())
 	}
 }
 
@@ -101,6 +101,11 @@ func (o *PcloudVpnconnectionsPeersubnetsDeleteOK) IsServerError() bool {
 // IsCode returns true when this pcloud vpnconnections peersubnets delete o k response a status code equal to that given
 func (o *PcloudVpnconnectionsPeersubnetsDeleteOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud vpnconnections peersubnets delete o k response
+func (o *PcloudVpnconnectionsPeersubnetsDeleteOK) Code() int {
+	return 200
 }
 
 func (o *PcloudVpnconnectionsPeersubnetsDeleteOK) Error() string {
@@ -166,6 +171,11 @@ func (o *PcloudVpnconnectionsPeersubnetsDeleteBadRequest) IsCode(code int) bool 
 	return code == 400
 }
 
+// Code gets the status code for the pcloud vpnconnections peersubnets delete bad request response
+func (o *PcloudVpnconnectionsPeersubnetsDeleteBadRequest) Code() int {
+	return 400
+}
+
 func (o *PcloudVpnconnectionsPeersubnetsDeleteBadRequest) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/vpn-connections/{vpn_connection_id}/peer-subnets][%d] pcloudVpnconnectionsPeersubnetsDeleteBadRequest  %+v", 400, o.Payload)
 }
@@ -227,6 +237,11 @@ func (o *PcloudVpnconnectionsPeersubnetsDeleteUnauthorized) IsServerError() bool
 // IsCode returns true when this pcloud vpnconnections peersubnets delete unauthorized response a status code equal to that given
 func (o *PcloudVpnconnectionsPeersubnetsDeleteUnauthorized) IsCode(code int) bool {
 	return code == 401
+}
+
+// Code gets the status code for the pcloud vpnconnections peersubnets delete unauthorized response
+func (o *PcloudVpnconnectionsPeersubnetsDeleteUnauthorized) Code() int {
+	return 401
 }
 
 func (o *PcloudVpnconnectionsPeersubnetsDeleteUnauthorized) Error() string {
@@ -292,6 +307,11 @@ func (o *PcloudVpnconnectionsPeersubnetsDeleteForbidden) IsCode(code int) bool {
 	return code == 403
 }
 
+// Code gets the status code for the pcloud vpnconnections peersubnets delete forbidden response
+func (o *PcloudVpnconnectionsPeersubnetsDeleteForbidden) Code() int {
+	return 403
+}
+
 func (o *PcloudVpnconnectionsPeersubnetsDeleteForbidden) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/vpn-connections/{vpn_connection_id}/peer-subnets][%d] pcloudVpnconnectionsPeersubnetsDeleteForbidden  %+v", 403, o.Payload)
 }
@@ -355,6 +375,11 @@ func (o *PcloudVpnconnectionsPeersubnetsDeleteUnprocessableEntity) IsCode(code i
 	return code == 422
 }
 
+// Code gets the status code for the pcloud vpnconnections peersubnets delete unprocessable entity response
+func (o *PcloudVpnconnectionsPeersubnetsDeleteUnprocessableEntity) Code() int {
+	return 422
+}
+
 func (o *PcloudVpnconnectionsPeersubnetsDeleteUnprocessableEntity) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/vpn-connections/{vpn_connection_id}/peer-subnets][%d] pcloudVpnconnectionsPeersubnetsDeleteUnprocessableEntity  %+v", 422, o.Payload)
 }
@@ -416,6 +441,11 @@ func (o *PcloudVpnconnectionsPeersubnetsDeleteInternalServerError) IsServerError
 // IsCode returns true when this pcloud vpnconnections peersubnets delete internal server error response a status code equal to that given
 func (o *PcloudVpnconnectionsPeersubnetsDeleteInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud vpnconnections peersubnets delete internal server error response
+func (o *PcloudVpnconnectionsPeersubnetsDeleteInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudVpnconnectionsPeersubnetsDeleteInternalServerError) Error() string {

@@ -22,17 +22,18 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-func (c *AzureClusterTemplate) validateClusterTemplate() error {
+func (c *AzureClusterTemplate) validateClusterTemplate() (admission.Warnings, error) {
 	var allErrs field.ErrorList
 	allErrs = append(allErrs, c.validateClusterTemplateSpec()...)
 
 	if len(allErrs) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return apierrors.NewInvalid(
+	return nil, apierrors.NewInvalid(
 		schema.GroupKind{Group: "infrastructure.cluster.x-k8s.io", Kind: "AzureClusterTemplate"},
 		c.Name, allErrs)
 }
@@ -55,21 +56,29 @@ func (c *AzureClusterTemplate) validateClusterTemplateSpec() field.ErrorList {
 		field.NewPath("spec").Child("template").Child("spec").Child("networkSpec").Child("apiServerLB"),
 	)...)
 
-	var oneSubnetWithoutNatGateway bool
-	networkSpec := c.Spec.Template.Spec.NetworkSpec
-	for _, subnet := range networkSpec.Subnets {
-		if subnet.Role == SubnetNode && !subnet.IsNatGatewayEnabled() {
-			oneSubnetWithoutNatGateway = true
-			break
-		}
-	}
-	if oneSubnetWithoutNatGateway {
-		allErrs = append(allErrs, c.validateNodeOutboundLB()...)
-	}
+	allErrs = append(allErrs, c.validateNetworkSpec()...)
 
 	allErrs = append(allErrs, c.validateControlPlaneOutboundLB()...)
 
 	allErrs = append(allErrs, c.validatePrivateDNSZoneName()...)
+
+	return allErrs
+}
+
+func (c *AzureClusterTemplate) validateNetworkSpec() field.ErrorList {
+	var allErrs field.ErrorList
+
+	var needOutboundLB bool
+	networkSpec := c.Spec.Template.Spec.NetworkSpec
+	for _, subnet := range networkSpec.Subnets {
+		if subnet.Role == SubnetNode && subnet.IsIPv6Enabled() {
+			needOutboundLB = true
+			break
+		}
+	}
+	if needOutboundLB {
+		allErrs = append(allErrs, c.validateNodeOutboundLB()...)
+	}
 
 	return allErrs
 }

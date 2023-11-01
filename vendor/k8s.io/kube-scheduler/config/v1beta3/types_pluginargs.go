@@ -52,6 +52,10 @@ type InterPodAffinityArgs struct {
 	// HardPodAffinityWeight is the scoring weight for existing pods with a
 	// matching hard affinity to the incoming pod.
 	HardPodAffinityWeight *int32 `json:"hardPodAffinityWeight,omitempty"`
+
+	// IgnorePreferredTermsOfExistingPods configures the scheduler to ignore existing pods' preferred affinity
+	// rules when scoring candidate nodes, unless the incoming pod has inter-pod affinities.
+	IgnorePreferredTermsOfExistingPods bool `json:"ignorePreferredTermsOfExistingPods"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -110,8 +114,7 @@ type PodTopologySpreadArgs struct {
 	//   Nodes and Zones.
 	// - "List": Use constraints defined in .defaultConstraints.
 	//
-	// Defaults to "List" if feature gate DefaultPodTopologySpread is disabled
-	// and to "System" if enabled.
+	// Defaults to "System".
 	// +optional
 	DefaultingType PodTopologySpreadConstraintsDefaulting `json:"defaultingType,omitempty"`
 }
@@ -192,9 +195,9 @@ type NodeAffinityArgs struct {
 type ScoringStrategyType string
 
 const (
-	// LeastAllocated strategy prioritizes nodes with least allcoated resources.
+	// LeastAllocated strategy prioritizes nodes with least allocated resources.
 	LeastAllocated ScoringStrategyType = "LeastAllocated"
-	// MostAllocated strategy prioritizes nodes with most allcoated resources.
+	// MostAllocated strategy prioritizes nodes with most allocated resources.
 	MostAllocated ScoringStrategyType = "MostAllocated"
 	// RequestedToCapacityRatio strategy allows specifying a custom shape function
 	// to score nodes based on the request to capacity ratio.

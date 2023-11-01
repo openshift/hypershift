@@ -25,6 +25,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // log is for logging in this package.
@@ -51,33 +52,33 @@ func (r *IBMPowerVSCluster) Default() {
 var _ webhook.Validator = &IBMPowerVSCluster{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMPowerVSCluster) ValidateCreate() error {
+func (r *IBMPowerVSCluster) ValidateCreate() (admission.Warnings, error) {
 	ibmpowervsclusterlog.Info("validate create", "name", r.Name)
 	return r.validateIBMPowerVSCluster()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMPowerVSCluster) ValidateUpdate(old runtime.Object) error {
+func (r *IBMPowerVSCluster) ValidateUpdate(_ runtime.Object) (admission.Warnings, error) {
 	ibmpowervsclusterlog.Info("validate update", "name", r.Name)
 	return r.validateIBMPowerVSCluster()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMPowerVSCluster) ValidateDelete() error {
+func (r *IBMPowerVSCluster) ValidateDelete() (admission.Warnings, error) {
 	ibmpowervsclusterlog.Info("validate delete", "name", r.Name)
-	return nil
+	return nil, nil
 }
 
-func (r *IBMPowerVSCluster) validateIBMPowerVSCluster() error {
+func (r *IBMPowerVSCluster) validateIBMPowerVSCluster() (admission.Warnings, error) {
 	var allErrs field.ErrorList
 	if err := r.validateIBMPowerVSClusterNetwork(); err != nil {
 		allErrs = append(allErrs, err)
 	}
 	if len(allErrs) == 0 {
-		return nil
+		return nil, nil
 	}
 
-	return apierrors.NewInvalid(
+	return nil, apierrors.NewInvalid(
 		schema.GroupKind{Group: "infrastructure.cluster.x-k8s.io", Kind: "IBMPowerVSCluster"},
 		r.Name, allErrs)
 }

@@ -36,8 +36,11 @@ const (
 	// InstanceErroredReason instance is in a errored state.
 	InstanceErroredReason = "InstanceErrored"
 
-	// InstanceNotReadyReason used when the instance is in a pending state.
+	// InstanceNotReadyReason used when the instance is in a not ready state.
 	InstanceNotReadyReason = "InstanceNotReady"
+
+	// InstanceStateUnknownReason used when the instance is in a unknown state.
+	InstanceStateUnknownReason = "InstanceStateUnknown"
 )
 
 const (

@@ -36,7 +36,7 @@ func (o *ServiceBrokerHealthReader) ReadResponse(response runtime.ClientResponse
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /broker/v1/health] serviceBroker.health", response, response.Code())
 	}
 }
 
@@ -77,6 +77,11 @@ func (o *ServiceBrokerHealthOK) IsServerError() bool {
 // IsCode returns true when this service broker health o k response a status code equal to that given
 func (o *ServiceBrokerHealthOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the service broker health o k response
+func (o *ServiceBrokerHealthOK) Code() int {
+	return 200
 }
 
 func (o *ServiceBrokerHealthOK) Error() string {
@@ -140,6 +145,11 @@ func (o *ServiceBrokerHealthBadRequest) IsServerError() bool {
 // IsCode returns true when this service broker health bad request response a status code equal to that given
 func (o *ServiceBrokerHealthBadRequest) IsCode(code int) bool {
 	return code == 400
+}
+
+// Code gets the status code for the service broker health bad request response
+func (o *ServiceBrokerHealthBadRequest) Code() int {
+	return 400
 }
 
 func (o *ServiceBrokerHealthBadRequest) Error() string {

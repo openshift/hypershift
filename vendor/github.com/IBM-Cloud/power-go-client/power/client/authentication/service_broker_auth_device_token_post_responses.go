@@ -56,7 +56,7 @@ func (o *ServiceBrokerAuthDeviceTokenPostReader) ReadResponse(response runtime.C
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[POST /auth/v1/device/token] serviceBroker.auth.device.token.post", response, response.Code())
 	}
 }
 
@@ -97,6 +97,11 @@ func (o *ServiceBrokerAuthDeviceTokenPostOK) IsServerError() bool {
 // IsCode returns true when this service broker auth device token post o k response a status code equal to that given
 func (o *ServiceBrokerAuthDeviceTokenPostOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the service broker auth device token post o k response
+func (o *ServiceBrokerAuthDeviceTokenPostOK) Code() int {
+	return 200
 }
 
 func (o *ServiceBrokerAuthDeviceTokenPostOK) Error() string {
@@ -162,6 +167,11 @@ func (o *ServiceBrokerAuthDeviceTokenPostBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the service broker auth device token post bad request response
+func (o *ServiceBrokerAuthDeviceTokenPostBadRequest) Code() int {
+	return 400
+}
+
 func (o *ServiceBrokerAuthDeviceTokenPostBadRequest) Error() string {
 	return fmt.Sprintf("[POST /auth/v1/device/token][%d] serviceBrokerAuthDeviceTokenPostBadRequest  %+v", 400, o.Payload)
 }
@@ -223,6 +233,11 @@ func (o *ServiceBrokerAuthDeviceTokenPostForbidden) IsServerError() bool {
 // IsCode returns true when this service broker auth device token post forbidden response a status code equal to that given
 func (o *ServiceBrokerAuthDeviceTokenPostForbidden) IsCode(code int) bool {
 	return code == 403
+}
+
+// Code gets the status code for the service broker auth device token post forbidden response
+func (o *ServiceBrokerAuthDeviceTokenPostForbidden) Code() int {
+	return 403
 }
 
 func (o *ServiceBrokerAuthDeviceTokenPostForbidden) Error() string {
@@ -288,6 +303,11 @@ func (o *ServiceBrokerAuthDeviceTokenPostTooManyRequests) IsCode(code int) bool 
 	return code == 429
 }
 
+// Code gets the status code for the service broker auth device token post too many requests response
+func (o *ServiceBrokerAuthDeviceTokenPostTooManyRequests) Code() int {
+	return 429
+}
+
 func (o *ServiceBrokerAuthDeviceTokenPostTooManyRequests) Error() string {
 	return fmt.Sprintf("[POST /auth/v1/device/token][%d] serviceBrokerAuthDeviceTokenPostTooManyRequests  %+v", 429, o.Payload)
 }
@@ -349,6 +369,11 @@ func (o *ServiceBrokerAuthDeviceTokenPostInternalServerError) IsServerError() bo
 // IsCode returns true when this service broker auth device token post internal server error response a status code equal to that given
 func (o *ServiceBrokerAuthDeviceTokenPostInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the service broker auth device token post internal server error response
+func (o *ServiceBrokerAuthDeviceTokenPostInternalServerError) Code() int {
+	return 500
 }
 
 func (o *ServiceBrokerAuthDeviceTokenPostInternalServerError) Error() string {

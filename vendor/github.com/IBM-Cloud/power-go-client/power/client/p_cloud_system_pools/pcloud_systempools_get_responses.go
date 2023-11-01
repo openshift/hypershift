@@ -48,7 +48,7 @@ func (o *PcloudSystempoolsGetReader) ReadResponse(response runtime.ClientRespons
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/system-pools] pcloud.systempools.get", response, response.Code())
 	}
 }
 
@@ -89,6 +89,11 @@ func (o *PcloudSystempoolsGetOK) IsServerError() bool {
 // IsCode returns true when this pcloud systempools get o k response a status code equal to that given
 func (o *PcloudSystempoolsGetOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud systempools get o k response
+func (o *PcloudSystempoolsGetOK) Code() int {
+	return 200
 }
 
 func (o *PcloudSystempoolsGetOK) Error() string {
@@ -150,6 +155,11 @@ func (o *PcloudSystempoolsGetUnauthorized) IsServerError() bool {
 // IsCode returns true when this pcloud systempools get unauthorized response a status code equal to that given
 func (o *PcloudSystempoolsGetUnauthorized) IsCode(code int) bool {
 	return code == 401
+}
+
+// Code gets the status code for the pcloud systempools get unauthorized response
+func (o *PcloudSystempoolsGetUnauthorized) Code() int {
+	return 401
 }
 
 func (o *PcloudSystempoolsGetUnauthorized) Error() string {
@@ -215,6 +225,11 @@ func (o *PcloudSystempoolsGetForbidden) IsCode(code int) bool {
 	return code == 403
 }
 
+// Code gets the status code for the pcloud systempools get forbidden response
+func (o *PcloudSystempoolsGetForbidden) Code() int {
+	return 403
+}
+
 func (o *PcloudSystempoolsGetForbidden) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/system-pools][%d] pcloudSystempoolsGetForbidden  %+v", 403, o.Payload)
 }
@@ -276,6 +291,11 @@ func (o *PcloudSystempoolsGetInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud systempools get internal server error response a status code equal to that given
 func (o *PcloudSystempoolsGetInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud systempools get internal server error response
+func (o *PcloudSystempoolsGetInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudSystempoolsGetInternalServerError) Error() string {

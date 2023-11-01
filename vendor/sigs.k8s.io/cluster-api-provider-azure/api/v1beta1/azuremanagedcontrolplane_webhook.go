@@ -31,35 +31,47 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/cluster-api-provider-azure/feature"
 	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	capifeature "sigs.k8s.io/cluster-api/feature"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 var (
-	kubeSemver                       = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)([-0-9a-zA-Z_\.+]*)?$`)
-	controlPlaneEndpointErrorMessage = "can not be set by the user, will be set automatically by AKS after the cluster is Ready"
-	rMaxNodeProvisionTime            = regexp.MustCompile(`^(\d+)m$`)
-	rScaleDownTime                   = regexp.MustCompile(`^(\d+)m$`)
-	rScaleDownDelayAfterDelete       = regexp.MustCompile(`^(\d+)s$`)
-	rScanInterval                    = regexp.MustCompile(`^(\d+)s$`)
+	kubeSemver                 = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)([-0-9a-zA-Z_\.+]*)?$`)
+	rMaxNodeProvisionTime      = regexp.MustCompile(`^(\d+)m$`)
+	rScaleDownTime             = regexp.MustCompile(`^(\d+)m$`)
+	rScaleDownDelayAfterDelete = regexp.MustCompile(`^(\d+)s$`)
+	rScanInterval              = regexp.MustCompile(`^(\d+)s$`)
 )
 
-// SetupWebhookWithManager sets up and registers the webhook with the manager.
-func (m *AzureManagedControlPlane) SetupWebhookWithManager(mgr ctrl.Manager) error {
+// SetupAzureManagedControlPlaneWebhookWithManager sets up and registers the webhook with the manager.
+func SetupAzureManagedControlPlaneWebhookWithManager(mgr ctrl.Manager) error {
+	mw := &azureManagedControlPlaneWebhook{Client: mgr.GetClient()}
 	return ctrl.NewWebhookManagedBy(mgr).
-		For(m).
+		For(&AzureManagedControlPlane{}).
+		WithDefaulter(mw).
+		WithValidator(mw).
 		Complete()
 }
 
 // +kubebuilder:webhook:path=/mutate-infrastructure-cluster-x-k8s-io-v1beta1-azuremanagedcontrolplane,mutating=true,failurePolicy=fail,groups=infrastructure.cluster.x-k8s.io,resources=azuremanagedcontrolplanes,verbs=create;update,versions=v1beta1,name=default.azuremanagedcontrolplanes.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1;v1beta1
 
+// azureManagedControlPlaneWebhook implements a validating and defaulting webhook for AzureManagedControlPlane.
+type azureManagedControlPlaneWebhook struct {
+	Client client.Client
+}
+
 // Default implements webhook.Defaulter so a webhook will be registered for the type.
-func (m *AzureManagedControlPlane) Default(_ client.Client) {
+func (mw *azureManagedControlPlaneWebhook) Default(ctx context.Context, obj runtime.Object) error {
+	m, ok := obj.(*AzureManagedControlPlane)
+	if !ok {
+		return apierrors.NewBadRequest("expected an AzureManagedControlPlane")
+	}
 	if m.Spec.NetworkPlugin == nil {
 		networkPlugin := "azure"
 		m.Spec.NetworkPlugin = &networkPlugin
@@ -74,8 +86,20 @@ func (m *AzureManagedControlPlane) Default(_ client.Client) {
 		m.Spec.Version = normalizedVersion
 	}
 
+	if m.Spec.Identity == nil {
+		m.Spec.Identity = &Identity{
+			Type: ManagedControlPlaneIdentityTypeSystemAssigned,
+		}
+	}
+
 	if err := m.setDefaultSSHPublicKey(); err != nil {
 		ctrl.Log.WithName("AzureManagedControlPlaneWebHookLogger").Error(err, "setDefaultSSHPublicKey failed")
+	}
+
+	// PaidManagedControlPlaneTier has been replaced with StandardManagedControlPlaneTier since v2023-02-01.
+	if m.Spec.SKU != nil && m.Spec.SKU.Tier == PaidManagedControlPlaneTier {
+		m.Spec.SKU.Tier = StandardManagedControlPlaneTier
+		ctrl.Log.WithName("AzureManagedControlPlaneWebHookLogger").Info("Paid SKU tier is deprecated and has been replaced by Standard")
 	}
 
 	m.setDefaultNodeResourceGroupName()
@@ -83,41 +107,42 @@ func (m *AzureManagedControlPlane) Default(_ client.Client) {
 	m.setDefaultSubnet()
 	m.setDefaultSku()
 	m.setDefaultAutoScalerProfile()
+	m.setDefaultOIDCIssuerProfile()
+
+	return nil
 }
 
 // +kubebuilder:webhook:verbs=create;update,path=/validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremanagedcontrolplane,mutating=false,failurePolicy=fail,groups=infrastructure.cluster.x-k8s.io,resources=azuremanagedcontrolplanes,versions=v1beta1,name=validation.azuremanagedcontrolplanes.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1;v1beta1
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (m *AzureManagedControlPlane) ValidateCreate(client client.Client) error {
+func (mw *azureManagedControlPlaneWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	m, ok := obj.(*AzureManagedControlPlane)
+	if !ok {
+		return nil, apierrors.NewBadRequest("expected an AzureManagedControlPlane")
+	}
 	// NOTE: AzureManagedControlPlane relies upon MachinePools, which is behind a feature gate flag.
 	// The webhook must prevent creating new objects in case the feature flag is disabled.
 	if !feature.Gates.Enabled(capifeature.MachinePool) {
-		return field.Forbidden(
+		return nil, field.Forbidden(
 			field.NewPath("spec"),
 			"can be set only if the Cluster API 'MachinePool' feature flag is enabled",
 		)
 	}
 
-	if m.Spec.ControlPlaneEndpoint.Host != "" {
-		return field.Forbidden(
-			field.NewPath("Spec", "ControlPlaneEndpoint", "Host"),
-			controlPlaneEndpointErrorMessage,
-		)
-	}
-	if m.Spec.ControlPlaneEndpoint.Port != 0 {
-		return field.Forbidden(
-			field.NewPath("Spec", "ControlPlaneEndpoint", "Port"),
-			controlPlaneEndpointErrorMessage,
-		)
-	}
-
-	return m.Validate(client)
+	return nil, m.Validate(mw.Client)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (m *AzureManagedControlPlane) ValidateUpdate(oldRaw runtime.Object, client client.Client) error {
+func (mw *azureManagedControlPlaneWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
 	var allErrs field.ErrorList
-	old := oldRaw.(*AzureManagedControlPlane)
+	old, ok := oldObj.(*AzureManagedControlPlane)
+	if !ok {
+		return nil, apierrors.NewBadRequest("expected an AzureManagedControlPlane")
+	}
+	m, ok := newObj.(*AzureManagedControlPlane)
+	if !ok {
+		return nil, apierrors.NewBadRequest("expected an AzureManagedControlPlane")
+	}
 
 	if err := webhookutils.ValidateImmutable(
 		field.NewPath("Spec", "SubscriptionID"),
@@ -182,6 +207,20 @@ func (m *AzureManagedControlPlane) ValidateUpdate(oldRaw runtime.Object, client 
 		allErrs = append(allErrs, err)
 	}
 
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "HTTPProxyConfig"),
+		old.Spec.HTTPProxyConfig,
+		m.Spec.HTTPProxyConfig); err != nil {
+		allErrs = append(allErrs, err)
+	}
+
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("Spec", "AzureEnvironment"),
+		old.Spec.AzureEnvironment,
+		m.Spec.AzureEnvironment); err != nil {
+		allErrs = append(allErrs, err)
+	}
+
 	if old.Spec.AADProfile != nil {
 		if m.Spec.AADProfile == nil {
 			allErrs = append(allErrs,
@@ -207,24 +246,6 @@ func (m *AzureManagedControlPlane) ValidateUpdate(oldRaw runtime.Object, client 
 		}
 	}
 
-	if old.Spec.ControlPlaneEndpoint.Host != "" {
-		if err := webhookutils.ValidateImmutable(
-			field.NewPath("Spec", "ControlPlaneEndpoint", "Host"),
-			old.Spec.ControlPlaneEndpoint.Host,
-			m.Spec.ControlPlaneEndpoint.Host); err != nil {
-			allErrs = append(allErrs, err)
-		}
-	}
-
-	if old.Spec.ControlPlaneEndpoint.Port != 0 {
-		if err := webhookutils.ValidateImmutable(
-			field.NewPath("Spec", "ControlPlaneEndpoint", "Port"),
-			old.Spec.ControlPlaneEndpoint.Port,
-			m.Spec.ControlPlaneEndpoint.Port); err != nil {
-			allErrs = append(allErrs, err)
-		}
-	}
-
 	// Consider removing this once moves out of preview
 	// Updating outboundType after cluster creation (PREVIEW)
 	// https://learn.microsoft.com/en-us/azure/aks/egress-outboundtype#updating-outboundtype-after-cluster-creation-preview
@@ -243,16 +264,24 @@ func (m *AzureManagedControlPlane) ValidateUpdate(oldRaw runtime.Object, client 
 		allErrs = append(allErrs, errs...)
 	}
 
-	if len(allErrs) == 0 {
-		return m.Validate(client)
+	if errs := m.validateNetworkPluginModeUpdate(old); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
 	}
 
-	return apierrors.NewInvalid(GroupVersion.WithKind("AzureManagedControlPlane").GroupKind(), m.Name, allErrs)
+	if errs := m.validateOIDCIssuerProfileUpdate(old); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+
+	if len(allErrs) == 0 {
+		return nil, m.Validate(mw.Client)
+	}
+
+	return nil, apierrors.NewInvalid(GroupVersion.WithKind("AzureManagedControlPlane").GroupKind(), m.Name, allErrs)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (m *AzureManagedControlPlane) ValidateDelete(_ client.Client) error {
-	return nil
+func (mw *azureManagedControlPlaneWebhook) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+	return nil, nil
 }
 
 // Validate the Azure Managed Control Plane and return an aggregate error.
@@ -260,12 +289,13 @@ func (m *AzureManagedControlPlane) Validate(cli client.Client) error {
 	validators := []func(client client.Client) error{
 		m.validateName,
 		m.validateVersion,
-		m.validateDNSServiceIP,
 		m.validateSSHKey,
 		m.validateLoadBalancerProfile,
 		m.validateAPIServerAccessProfile,
 		m.validateManagedClusterNetwork,
 		m.validateAutoScalerProfile,
+		m.validateIdentity,
+		m.validateNetworkPluginMode,
 	}
 
 	var errs []error
@@ -276,17 +306,6 @@ func (m *AzureManagedControlPlane) Validate(cli client.Client) error {
 	}
 
 	return kerrors.NewAggregate(errs)
-}
-
-// validateDNSServiceIP validates the DNSServiceIP.
-func (m *AzureManagedControlPlane) validateDNSServiceIP(_ client.Client) error {
-	if m.Spec.DNSServiceIP != nil {
-		if net.ParseIP(*m.Spec.DNSServiceIP) == nil {
-			return errors.New("DNSServiceIP must be a valid IP")
-		}
-	}
-
-	return nil
 }
 
 // validateVersion validates the Kubernetes version.
@@ -300,9 +319,8 @@ func (m *AzureManagedControlPlane) validateVersion(_ client.Client) error {
 
 // validateSSHKey validates an SSHKey.
 func (m *AzureManagedControlPlane) validateSSHKey(_ client.Client) error {
-	if m.Spec.SSHPublicKey != "" {
-		sshKey := m.Spec.SSHPublicKey
-		if errs := ValidateSSHKey(sshKey, field.NewPath("sshKey")); len(errs) > 0 {
+	if sshKey := m.Spec.SSHPublicKey; sshKey != nil && *sshKey != "" {
+		if errs := ValidateSSHKey(*sshKey, field.NewPath("sshKey")); len(errs) > 0 {
 			return kerrors.NewAggregate(errs.ToAggregate().Errors())
 		}
 	}
@@ -380,7 +398,7 @@ func (m *AzureManagedControlPlane) validateManagedClusterNetwork(cli client.Clie
 	ctx := context.Background()
 
 	// Fetch the Cluster.
-	clusterName, ok := m.Labels[clusterv1.ClusterLabelName]
+	clusterName, ok := m.Labels[clusterv1.ClusterNameLabel]
 	if !ok {
 		return nil
 	}
@@ -428,9 +446,21 @@ func (m *AzureManagedControlPlane) validateManagedClusterNetwork(cli client.Clie
 		if err != nil {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("Cluster", "Spec", "ClusterNetwork", "Services", "CIDRBlocks"), serviceCIDR, fmt.Sprintf("failed to parse cluster service cidr: %v", err)))
 		}
-		ip := net.ParseIP(*m.Spec.DNSServiceIP)
-		if !cidr.Contains(ip) {
+
+		dnsIP := net.ParseIP(*m.Spec.DNSServiceIP)
+		if dnsIP == nil { // dnsIP will be nil if the string is not a valid IP
+			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "DNSServiceIP"), *m.Spec.DNSServiceIP, "must be a valid IP address"))
+		}
+
+		if dnsIP != nil && !cidr.Contains(dnsIP) {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("Cluster", "Spec", "ClusterNetwork", "Services", "CIDRBlocks"), serviceCIDR, "DNSServiceIP must reside within the associated cluster serviceCIDR"))
+		}
+
+		// AKS only supports .10 as the last octet for the DNSServiceIP.
+		// Refer to: https://learn.microsoft.com/en-us/azure/aks/configure-kubenet#create-an-aks-cluster-with-system-assigned-managed-identities
+		targetSuffix := ".10"
+		if dnsIP != nil && !strings.HasSuffix(dnsIP.String(), targetSuffix) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "DNSServiceIP"), *m.Spec.DNSServiceIP, fmt.Sprintf("must end with %q", targetSuffix)))
 		}
 	}
 
@@ -524,6 +554,38 @@ func (m *AzureManagedControlPlane) validateVirtualNetworkUpdate(old *AzureManage
 	return allErrs
 }
 
+// validateNetworkPluginModeUpdate validates update to NetworkPluginMode.
+func (m *AzureManagedControlPlane) validateNetworkPluginModeUpdate(old *AzureManagedControlPlane) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if ptr.Deref(old.Spec.NetworkPluginMode, "") != NetworkPluginModeOverlay &&
+		ptr.Deref(m.Spec.NetworkPluginMode, "") == NetworkPluginModeOverlay &&
+		old.Spec.NetworkPolicy != nil {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("Spec", "NetworkPluginMode"), fmt.Sprintf("%q NetworkPluginMode cannot be enabled when NetworkPolicy is set", NetworkPluginModeOverlay)))
+	}
+
+	return allErrs
+}
+
+// validateOIDCIssuerProfile validates an OIDCIssuerProfile.
+func (m *AzureManagedControlPlane) validateOIDCIssuerProfileUpdate(old *AzureManagedControlPlane) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if m.Spec.OIDCIssuerProfile != nil && old.Spec.OIDCIssuerProfile != nil {
+		if m.Spec.OIDCIssuerProfile.Enabled != nil && old.Spec.OIDCIssuerProfile.Enabled != nil &&
+			!*m.Spec.OIDCIssuerProfile.Enabled && *old.Spec.OIDCIssuerProfile.Enabled {
+			allErrs = append(allErrs,
+				field.Forbidden(
+					field.NewPath("Spec", "OIDCIssuerProfile", "Enabled"),
+					"cannot be disabled",
+				),
+			)
+		}
+	}
+
+	return allErrs
+}
+
 func (m *AzureManagedControlPlane) validateName(_ client.Client) error {
 	if lName := strings.ToLower(m.Name); strings.Contains(lName, "microsoft") ||
 		strings.Contains(lName, "windows") {
@@ -610,8 +672,8 @@ func (m *AzureManagedControlPlane) validateAutoScalerProfile(_ client.Client) er
 // validateMaxNodeProvisionTime validates update to AutoscalerProfile.MaxNodeProvisionTime.
 func (m *AzureManagedControlPlane) validateMaxNodeProvisionTime() field.ErrorList {
 	var allErrs field.ErrorList
-	if pointer.StringDeref(m.Spec.AutoScalerProfile.MaxNodeProvisionTime, "") != "" {
-		if !rMaxNodeProvisionTime.MatchString(pointer.StringDeref(m.Spec.AutoScalerProfile.MaxNodeProvisionTime, "")) {
+	if ptr.Deref(m.Spec.AutoScalerProfile.MaxNodeProvisionTime, "") != "" {
+		if !rMaxNodeProvisionTime.MatchString(ptr.Deref(m.Spec.AutoScalerProfile.MaxNodeProvisionTime, "")) {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "AutoscalerProfile", "MaxNodeProvisionTime"), m.Spec.AutoScalerProfile.MaxNodeProvisionTime, "invalid value"))
 		}
 	}
@@ -621,8 +683,8 @@ func (m *AzureManagedControlPlane) validateMaxNodeProvisionTime() field.ErrorLis
 // validateScanInterval validates update to AutoscalerProfile.ScanInterval.
 func (m *AzureManagedControlPlane) validateScanInterval() field.ErrorList {
 	var allErrs field.ErrorList
-	if pointer.StringDeref(m.Spec.AutoScalerProfile.ScanInterval, "") != "" {
-		if !rScanInterval.MatchString(pointer.StringDeref(m.Spec.AutoScalerProfile.ScanInterval, "")) {
+	if ptr.Deref(m.Spec.AutoScalerProfile.ScanInterval, "") != "" {
+		if !rScanInterval.MatchString(ptr.Deref(m.Spec.AutoScalerProfile.ScanInterval, "")) {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "AutoscalerProfile", "ScanInterval"), m.Spec.AutoScalerProfile.ScanInterval, "invalid value"))
 		}
 	}
@@ -632,8 +694,8 @@ func (m *AzureManagedControlPlane) validateScanInterval() field.ErrorList {
 // validateNewPodScaleUpDelay validates update to AutoscalerProfile.NewPodScaleUpDelay.
 func (m *AzureManagedControlPlane) validateNewPodScaleUpDelay() field.ErrorList {
 	var allErrs field.ErrorList
-	if pointer.StringDeref(m.Spec.AutoScalerProfile.NewPodScaleUpDelay, "") != "" {
-		_, err := time.ParseDuration(pointer.StringDeref(m.Spec.AutoScalerProfile.NewPodScaleUpDelay, ""))
+	if ptr.Deref(m.Spec.AutoScalerProfile.NewPodScaleUpDelay, "") != "" {
+		_, err := time.ParseDuration(ptr.Deref(m.Spec.AutoScalerProfile.NewPodScaleUpDelay, ""))
 		if err != nil {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "AutoscalerProfile", "NewPodScaleUpDelay"), m.Spec.AutoScalerProfile.NewPodScaleUpDelay, "invalid value"))
 		}
@@ -644,9 +706,9 @@ func (m *AzureManagedControlPlane) validateNewPodScaleUpDelay() field.ErrorList 
 // validateScaleDownDelayAfterDelete validates update to AutoscalerProfile.ScaleDownDelayAfterDelete value.
 func (m *AzureManagedControlPlane) validateScaleDownDelayAfterDelete() field.ErrorList {
 	var allErrs field.ErrorList
-	if pointer.StringDeref(m.Spec.AutoScalerProfile.ScaleDownDelayAfterDelete, "") != "" {
-		if !rScaleDownDelayAfterDelete.MatchString(pointer.StringDeref(m.Spec.AutoScalerProfile.ScaleDownDelayAfterDelete, "")) {
-			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "AutoscalerProfile", "ScaleDownDelayAfterDelete"), pointer.StringDeref(m.Spec.AutoScalerProfile.ScaleDownDelayAfterDelete, ""), "invalid value"))
+	if ptr.Deref(m.Spec.AutoScalerProfile.ScaleDownDelayAfterDelete, "") != "" {
+		if !rScaleDownDelayAfterDelete.MatchString(ptr.Deref(m.Spec.AutoScalerProfile.ScaleDownDelayAfterDelete, "")) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "AutoscalerProfile", "ScaleDownDelayAfterDelete"), ptr.Deref(m.Spec.AutoScalerProfile.ScaleDownDelayAfterDelete, ""), "invalid value"))
 		}
 	}
 	return allErrs
@@ -655,9 +717,9 @@ func (m *AzureManagedControlPlane) validateScaleDownDelayAfterDelete() field.Err
 // validateScaleDownTime validates update to AutoscalerProfile.ScaleDown* values.
 func (m *AzureManagedControlPlane) validateScaleDownTime(scaleDownValue *string, fieldName string) field.ErrorList {
 	var allErrs field.ErrorList
-	if pointer.StringDeref(scaleDownValue, "") != "" {
-		if !rScaleDownTime.MatchString(pointer.StringDeref(scaleDownValue, "")) {
-			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "AutoscalerProfile", fieldName), pointer.StringDeref(scaleDownValue, ""), "invalid value"))
+	if ptr.Deref(scaleDownValue, "") != "" {
+		if !rScaleDownTime.MatchString(ptr.Deref(scaleDownValue, "")) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "AutoscalerProfile", fieldName), ptr.Deref(scaleDownValue, ""), "invalid value"))
 		}
 	}
 	return allErrs
@@ -675,4 +737,44 @@ func (m *AzureManagedControlPlane) validateIntegerStringGreaterThanZero(input *s
 	}
 
 	return allErrs
+}
+
+// validateIdentity validates an Identity.
+func (m *AzureManagedControlPlane) validateIdentity(_ client.Client) error {
+	var allErrs field.ErrorList
+
+	if m.Spec.Identity != nil {
+		if m.Spec.Identity.Type == ManagedControlPlaneIdentityTypeUserAssigned {
+			if m.Spec.Identity.UserAssignedIdentityResourceID == "" {
+				allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "Identity", "UserAssignedIdentityResourceID"), m.Spec.Identity.UserAssignedIdentityResourceID, "cannot be empty if Identity.Type is UserAssigned"))
+			}
+		} else {
+			if m.Spec.Identity.UserAssignedIdentityResourceID != "" {
+				allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "Identity", "UserAssignedIdentityResourceID"), m.Spec.Identity.UserAssignedIdentityResourceID, "should be empty if Identity.Type is SystemAssigned"))
+			}
+		}
+	}
+
+	if len(allErrs) > 0 {
+		return kerrors.NewAggregate(allErrs.ToAggregate().Errors())
+	}
+
+	return nil
+}
+
+// validateNetworkPluginMode validates a NetworkPluginMode.
+func (m *AzureManagedControlPlane) validateNetworkPluginMode(_ client.Client) error {
+	var allErrs field.ErrorList
+
+	const kubenet = "kubenet"
+	if ptr.Deref(m.Spec.NetworkPluginMode, "") == NetworkPluginModeOverlay &&
+		ptr.Deref(m.Spec.NetworkPlugin, "") == kubenet {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "NetworkPluginMode"), m.Spec.NetworkPluginMode, fmt.Sprintf("cannot be set to %q when NetworkPlugin is %q", NetworkPluginModeOverlay, kubenet)))
+	}
+
+	if len(allErrs) > 0 {
+		return kerrors.NewAggregate(allErrs.ToAggregate().Errors())
+	}
+
+	return nil
 }

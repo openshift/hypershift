@@ -368,7 +368,7 @@ func (requestBuilder *RequestBuilder) createMultipartFormRequestBody() (bodyRead
 	formWriter := multipart.NewWriter(bodyWriter)
 
 	go func() {
-		defer bodyWriter.Close()
+		defer bodyWriter.Close() // #nosec G307
 
 		// Create a form part from each entry found in the request body's Form map.
 		// Note: each entry will actually be a slice of values, and we'll create a separate
@@ -385,7 +385,7 @@ func (requestBuilder *RequestBuilder) createMultipartFormRequestBody() (bodyRead
 
 				// If the part's content is a ReadCloser, we'll need to close it when we're done.
 				if stream, ok := formPart.contents.(io.ReadCloser); ok {
-					defer stream.Close()
+					defer stream.Close() // #nosec G307
 				} else if stream, ok := formPart.contents.(*io.ReadCloser); ok {
 					defer (*stream).Close()
 				}

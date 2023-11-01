@@ -94,7 +94,7 @@ func (c *AzureClusterTemplate) setNodeOutboundLBDefaults() {
 
 		var needsOutboundLB bool
 		for _, subnet := range c.Spec.Template.Spec.NetworkSpec.Subnets {
-			if subnet.Role == SubnetNode && !subnet.IsNatGatewayEnabled() {
+			if subnet.Role == SubnetNode && subnet.IsIPv6Enabled() {
 				needsOutboundLB = true
 				break
 			}

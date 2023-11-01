@@ -3,6 +3,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/IBM-Cloud/power-go-client/helpers"
 	"github.com/IBM-Cloud/power-go-client/ibmpisession"
@@ -54,6 +55,10 @@ func (f *IBMPIInstanceClient) GetAll() (*models.PVMInstances, error) {
 
 // Create an Instance
 func (f *IBMPIInstanceClient) Create(body *models.PVMInstanceCreate) (*models.PVMInstanceList, error) {
+	// Check for satellite differences in this endpoint
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) && (body.SoftwareLicenses != nil || body.SharedProcessorPool != "") {
+		return nil, fmt.Errorf("softwareLicenses and sharedProcessorPool parameters are not supported in satellite location, check documentation")
+	}
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesPostParams().
 		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body)
@@ -131,6 +136,9 @@ func (f *IBMPIInstanceClient) PostConsoleURL(id string) (*models.PVMInstanceCons
 
 // List the available Console Languages for an Instance
 func (f *IBMPIInstanceClient) GetConsoleLanguages(id string) (*models.ConsoleLanguages, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesConsoleGetParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id)
@@ -146,6 +154,9 @@ func (f *IBMPIInstanceClient) GetConsoleLanguages(id string) (*models.ConsoleLan
 
 // Update the available Console Languages for an Instance
 func (f *IBMPIInstanceClient) UpdateConsoleLanguage(id string, body *models.ConsoleLanguage) (*models.ConsoleLanguage, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_p_vm_instances.NewPcloudPvminstancesConsolePutParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithPvmInstanceID(id).

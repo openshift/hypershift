@@ -23,24 +23,20 @@ package zapcore
 import (
 	"encoding/base64"
 	"math"
-	"sync"
 	"time"
 	"unicode/utf8"
 
 	"go.uber.org/zap/buffer"
 	"go.uber.org/zap/internal/bufferpool"
+	"go.uber.org/zap/internal/pool"
 )
 
 // For JSON-escaping; see jsonEncoder.safeAddString below.
 const _hex = "0123456789abcdef"
 
-var _jsonPool = sync.Pool{New: func() interface{} {
+var _jsonPool = pool.New(func() *jsonEncoder {
 	return &jsonEncoder{}
-}}
-
-func getJSONEncoder() *jsonEncoder {
-	return _jsonPool.Get().(*jsonEncoder)
-}
+})
 
 func putJSONEncoder(enc *jsonEncoder) {
 	if enc.reflectBuf != nil {
@@ -71,7 +67,9 @@ type jsonEncoder struct {
 //
 // Note that the encoder doesn't deduplicate keys, so it's possible to produce
 // a message like
-//   {"foo":"bar","foo":"baz"}
+//
+//	{"foo":"bar","foo":"baz"}
+//
 // This is permitted by the JSON specification, but not encouraged. Many
 // libraries will ignore duplicate key-value pairs (typically keeping the last
 // pair) when unmarshaling, but users should attempt to avoid adding duplicate
@@ -352,7 +350,7 @@ func (enc *jsonEncoder) Clone() Encoder {
 }
 
 func (enc *jsonEncoder) clone() *jsonEncoder {
-	clone := getJSONEncoder()
+	clone := _jsonPool.Get()
 	clone.EncoderConfig = enc.EncoderConfig
 	clone.spaced = enc.spaced
 	clone.openNamespaces = enc.openNamespaces
@@ -525,7 +523,7 @@ func (enc *jsonEncoder) tryAddRuneSelf(b byte) bool {
 	if b >= utf8.RuneSelf {
 		return false
 	}
-	if 0x20 <= b && b != '\\' && b != '"' {
+	if b >= 0x20 && b != '\\' && b != '"' {
 		enc.buf.AppendByte(b)
 		return true
 	}
