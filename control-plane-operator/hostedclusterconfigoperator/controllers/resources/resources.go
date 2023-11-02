@@ -225,7 +225,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
 	if r.operateOnReleaseImage != "" && r.operateOnReleaseImage != hcp.Spec.ReleaseImage {
-		log.Info("releaseImage is %s, but this operator is configured for %s, skipping reconciliation", hcp.Spec.ReleaseImage, r.operateOnReleaseImage)
+		log.Info("releaseImage is " + hcp.Spec.ReleaseImage + ", but this operator is configured for " + r.operateOnReleaseImage + ", skipping reconciliation")
 		return ctrl.Result{}, nil
 	}
 
