@@ -35951,7 +35951,7 @@ objects:
                       x-kubernetes-validations:
                       - message: spec.configuration.oauth.tokenConfig.accessTokenInactivityTimeout
                           minimum acceptable token timeout value is 300 seconds
-                        rule: '!has(self.tokenConfig.accessTokenInactivityTimeout)
+                        rule: '!has(self.tokenConfig) || !has(self.tokenConfig.accessTokenInactivityTimeout)
                           || duration(self.tokenConfig.accessTokenInactivityTimeout).getSeconds()
                           >= 300'
                     proxy:
@@ -44051,7 +44051,7 @@ objects:
                       x-kubernetes-validations:
                       - message: spec.configuration.oauth.tokenConfig.accessTokenInactivityTimeout
                           minimum acceptable token timeout value is 300 seconds
-                        rule: '!has(self.tokenConfig.accessTokenInactivityTimeout)
+                        rule: '!has(self.tokenConfig) || !has(self.tokenConfig.accessTokenInactivityTimeout)
                           || duration(self.tokenConfig.accessTokenInactivityTimeout).getSeconds()
                           >= 300'
                     proxy:
