@@ -195,11 +195,13 @@ spec:
                     - ref
                     type: object
                   metadata:
-                    description: "Metadata is the metadata applied to the machines
-                      of the ControlPlane. At runtime this metadata is merged with
-                      the corresponding metadata from the topology. \n This field
-                      is supported if and only if the control plane provider template
-                      referenced is Machine based."
+                    description: "Metadata is the metadata applied to the ControlPlane
+                      and the Machines of the ControlPlane if the ControlPlaneTemplate
+                      referenced is machine based. If not, it is applied only to the
+                      ControlPlane. At runtime this metadata is merged with the corresponding
+                      metadata from the topology. \n This field is supported if and
+                      only if the control plane provider template referenced is Machine
+                      based."
                     properties:
                       annotations:
                         additionalProperties:
@@ -218,6 +220,22 @@ spec:
                           match selectors of replication controllers and services.
                           More info: http://kubernetes.io/docs/user-guide/labels'
                         type: object
+                    type: object
+                  namingStrategy:
+                    description: NamingStrategy allows changing the naming pattern
+                      used when creating the control plane provider object.
+                    properties:
+                      template:
+                        description: 'Template defines the template to use for generating
+                          the name of the ControlPlane object. If not defined, it
+                          will fallback to `{{ .cluster.name }}-{{ .random }}`. If
+                          the templated string exceeds 63 characters, it will be trimmed
+                          to 58 characters and will get concatenated with a random
+                          suffix of length 5. The templating mechanism provides the
+                          following arguments: * `.cluster.name`: The name of the
+                          cluster object. * `.random`: A random alphanumeric string,
+                          without vowels, of length 5.'
+                        type: string
                     type: object
                   nodeDeletionTimeout:
                     description: 'NodeDeletionTimeout defines how long the controller
@@ -466,10 +484,21 @@ spec:
                       description: 'External defines an external patch. Note: Exactly
                         one of Definitions or External must be set.'
                       properties:
+                        discoverVariablesExtension:
+                          description: DiscoverVariablesExtension references an extension
+                            which is called to discover variables.
+                          type: string
                         generateExtension:
                           description: GenerateExtension references an extension which
                             is called to generate patches.
                           type: string
+                        settings:
+                          additionalProperties:
+                            type: string
+                          description: Settings defines key value pairs to be passed
+                            to the extensions. Values defined here take precedence
+                            over the values defined in the corresponding ExtensionConfig.
+                          type: object
                         validateExtension:
                           description: ValidateExtension references an extension which
                             is called to validate the topology.
@@ -777,6 +806,25 @@ spec:
                             using this MachineDeploymentClass.'
                           format: int32
                           type: integer
+                        namingStrategy:
+                          description: NamingStrategy allows changing the naming pattern
+                            used when creating the MachineDeployment.
+                          properties:
+                            template:
+                              description: 'Template defines the template to use for
+                                generating the name of the MachineDeployment object.
+                                If not defined, it will fallback to `{{ .cluster.name
+                                }}-{{ .machineDeployment.topologyName }}-{{ .random
+                                }}`. If the templated string exceeds 63 characters,
+                                it will be trimmed to 58 characters and will get concatenated
+                                with a random suffix of length 5. The templating mechanism
+                                provides the following arguments: * `.cluster.name`:
+                                The name of the cluster object. * `.random`: A random
+                                alphanumeric string, without vowels, of length 5.
+                                * `.machineDeployment.topologyName`: The name of the
+                                MachineDeployment topology (Cluster.spec.topology.workers.machineDeployments[].name).'
+                              type: string
+                          type: object
                         nodeDeletionTimeout:
                           description: 'NodeDeletionTimeout defines how long the controller
                             will attempt to delete the Node that the Machine hosts
@@ -985,9 +1033,9 @@ spec:
                               type: object
                             metadata:
                               description: Metadata is the metadata applied to the
-                                machines of the MachineDeployment. At runtime this
-                                metadata is merged with the corresponding metadata
-                                from the topology.
+                                MachineDeployment and the machines of the MachineDeployment.
+                                At runtime this metadata is merged with the corresponding
+                                metadata from the topology.
                               properties:
                                 annotations:
                                   additionalProperties:
@@ -1064,6 +1112,200 @@ spec:
                   - lastTransitionTime
                   - status
                   - type
+                  type: object
+                type: array
+              observedGeneration:
+                description: ObservedGeneration is the latest generation observed
+                  by the controller.
+                format: int64
+                type: integer
+              variables:
+                description: Variables is a list of ClusterClassStatusVariable that
+                  are defined for the ClusterClass.
+                items:
+                  description: ClusterClassStatusVariable defines a variable which
+                    appears in the status of a ClusterClass.
+                  properties:
+                    definitions:
+                      description: Definitions is a list of definitions for a variable.
+                      items:
+                        description: ClusterClassStatusVariableDefinition defines
+                          a variable which appears in the status of a ClusterClass.
+                        properties:
+                          from:
+                            description: From specifies the origin of the variable
+                              definition. This will be `inline` for variables defined
+                              in the ClusterClass or the name of a patch defined in
+                              the ClusterClass for variables discovered from a DiscoverVariables
+                              runtime extensions.
+                            type: string
+                          required:
+                            description: 'Required specifies if the variable is required.
+                              Note: this applies to the variable as a whole and thus
+                              the top-level object defined in the schema. If nested
+                              fields are required, this will be specified inside the
+                              schema.'
+                            type: boolean
+                          schema:
+                            description: Schema defines the schema of the variable.
+                            properties:
+                              openAPIV3Schema:
+                                description: OpenAPIV3Schema defines the schema of
+                                  a variable via OpenAPI v3 schema. The schema is
+                                  a subset of the schema used in Kubernetes CRDs.
+                                properties:
+                                  additionalProperties:
+                                    description: 'AdditionalProperties specifies the
+                                      schema of values in a map (keys are always strings).
+                                      NOTE: Can only be set if type is object. NOTE:
+                                      AdditionalProperties is mutually exclusive with
+                                      Properties. NOTE: This field uses PreserveUnknownFields
+                                      and Schemaless, because recursive validation
+                                      is not possible.'
+                                    x-kubernetes-preserve-unknown-fields: true
+                                  default:
+                                    description: 'Default is the default value of
+                                      the variable. NOTE: Can be set for all types.'
+                                    x-kubernetes-preserve-unknown-fields: true
+                                  description:
+                                    description: Description is a human-readable description
+                                      of this variable.
+                                    type: string
+                                  enum:
+                                    description: 'Enum is the list of valid values
+                                      of the variable. NOTE: Can be set for all types.'
+                                    items:
+                                      x-kubernetes-preserve-unknown-fields: true
+                                    type: array
+                                  example:
+                                    description: Example is an example for this variable.
+                                    x-kubernetes-preserve-unknown-fields: true
+                                  exclusiveMaximum:
+                                    description: 'ExclusiveMaximum specifies if the
+                                      Maximum is exclusive. NOTE: Can only be set
+                                      if type is integer or number.'
+                                    type: boolean
+                                  exclusiveMinimum:
+                                    description: 'ExclusiveMinimum specifies if the
+                                      Minimum is exclusive. NOTE: Can only be set
+                                      if type is integer or number.'
+                                    type: boolean
+                                  format:
+                                    description: 'Format is an OpenAPI v3 format string.
+                                      Unknown formats are ignored. For a list of supported
+                                      formats please see: (of the k8s.io/apiextensions-apiserver
+                                      version we''re currently using) https://github.com/kubernetes/apiextensions-apiserver/blob/master/pkg/apiserver/validation/formats.go
+                                      NOTE: Can only be set if type is string.'
+                                    type: string
+                                  items:
+                                    description: 'Items specifies fields of an array.
+                                      NOTE: Can only be set if type is array. NOTE:
+                                      This field uses PreserveUnknownFields and Schemaless,
+                                      because recursive validation is not possible.'
+                                    x-kubernetes-preserve-unknown-fields: true
+                                  maxItems:
+                                    description: 'MaxItems is the max length of an
+                                      array variable. NOTE: Can only be set if type
+                                      is array.'
+                                    format: int64
+                                    type: integer
+                                  maxLength:
+                                    description: 'MaxLength is the max length of a
+                                      string variable. NOTE: Can only be set if type
+                                      is string.'
+                                    format: int64
+                                    type: integer
+                                  maximum:
+                                    description: 'Maximum is the maximum of an integer
+                                      or number variable. If ExclusiveMaximum is false,
+                                      the variable is valid if it is lower than, or
+                                      equal to, the value of Maximum. If ExclusiveMaximum
+                                      is true, the variable is valid if it is strictly
+                                      lower than the value of Maximum. NOTE: Can only
+                                      be set if type is integer or number.'
+                                    format: int64
+                                    type: integer
+                                  minItems:
+                                    description: 'MinItems is the min length of an
+                                      array variable. NOTE: Can only be set if type
+                                      is array.'
+                                    format: int64
+                                    type: integer
+                                  minLength:
+                                    description: 'MinLength is the min length of a
+                                      string variable. NOTE: Can only be set if type
+                                      is string.'
+                                    format: int64
+                                    type: integer
+                                  minimum:
+                                    description: 'Minimum is the minimum of an integer
+                                      or number variable. If ExclusiveMinimum is false,
+                                      the variable is valid if it is greater than,
+                                      or equal to, the value of Minimum. If ExclusiveMinimum
+                                      is true, the variable is valid if it is strictly
+                                      greater than the value of Minimum. NOTE: Can
+                                      only be set if type is integer or number.'
+                                    format: int64
+                                    type: integer
+                                  pattern:
+                                    description: 'Pattern is the regex which a string
+                                      variable must match. NOTE: Can only be set if
+                                      type is string.'
+                                    type: string
+                                  properties:
+                                    description: 'Properties specifies fields of an
+                                      object. NOTE: Can only be set if type is object.
+                                      NOTE: Properties is mutually exclusive with
+                                      AdditionalProperties. NOTE: This field uses
+                                      PreserveUnknownFields and Schemaless, because
+                                      recursive validation is not possible.'
+                                    x-kubernetes-preserve-unknown-fields: true
+                                  required:
+                                    description: 'Required specifies which fields
+                                      of an object are required. NOTE: Can only be
+                                      set if type is object.'
+                                    items:
+                                      type: string
+                                    type: array
+                                  type:
+                                    description: 'Type is the type of the variable.
+                                      Valid values are: object, array, string, integer,
+                                      number or boolean.'
+                                    type: string
+                                  uniqueItems:
+                                    description: 'UniqueItems specifies if items in
+                                      an array must be unique. NOTE: Can only be set
+                                      if type is array.'
+                                    type: boolean
+                                  x-kubernetes-preserve-unknown-fields:
+                                    description: XPreserveUnknownFields allows setting
+                                      fields in a variable object which are not defined
+                                      in the variable schema. This affects fields
+                                      recursively, except if nested properties or
+                                      additionalProperties are specified in the schema.
+                                    type: boolean
+                                required:
+                                - type
+                                type: object
+                            required:
+                            - openAPIV3Schema
+                            type: object
+                        required:
+                        - from
+                        - required
+                        - schema
+                        type: object
+                      type: array
+                    definitionsConflict:
+                      description: DefinitionsConflict specifies whether or not there
+                        are conflicting definitions for a single variable name.
+                      type: boolean
+                    name:
+                      description: Name is the name of the variable.
+                      type: string
+                  required:
+                  - definitions
+                  - name
                   type: object
                 type: array
             type: object

@@ -147,12 +147,47 @@ spec:
                                 parameters for the data disk.
                               properties:
                                 diskEncryptionSet:
-                                  description: DiskEncryptionSetParameters defines
-                                    disk encryption options.
+                                  description: DiskEncryptionSet specifies the customer-managed
+                                    disk encryption set resource id for the managed
+                                    disk.
                                   properties:
                                     id:
                                       description: ID defines resourceID for diskEncryptionSet
                                         resource. It must be in the same subscription
+                                      type: string
+                                  type: object
+                                securityProfile:
+                                  description: SecurityProfile specifies the security
+                                    profile for the managed disk.
+                                  properties:
+                                    diskEncryptionSet:
+                                      description: DiskEncryptionSet specifies the
+                                        customer-managed disk encryption set resource
+                                        id for the managed disk that is used for Customer
+                                        Managed Key encrypted ConfidentialVM OS Disk
+                                        and VMGuest blob.
+                                      properties:
+                                        id:
+                                          description: ID defines resourceID for diskEncryptionSet
+                                            resource. It must be in the same subscription
+                                          type: string
+                                      type: object
+                                    securityEncryptionType:
+                                      description: SecurityEncryptionType specifies
+                                        the encryption type of the managed disk. It
+                                        is set to DiskWithVMGuestState to encrypt
+                                        the managed disk along with the VMGuestState
+                                        blob, and to VMGuestStateOnly to encrypt the
+                                        VMGuestState blob only. When set to VMGuestStateOnly,
+                                        VirtualizedTrustedPlatformModule should be
+                                        set to Enabled. When set to DiskWithVMGuestState,
+                                        EncryptionAtHost should be disabled, SecureBoot
+                                        and VirtualizedTrustedPlatformModule should
+                                        be set to Enabled. It can be set only for
+                                        Confidential VMs.
+                                      enum:
+                                      - VMGuestStateOnly
+                                      - DiskWithVMGuestState
                                       type: string
                                   type: object
                                 storageAccountType:
@@ -478,7 +513,7 @@ spec:
                             properties:
                               option:
                                 description: Option enables ephemeral OS when set
-                                  to "Local" See https://docs.microsoft.com/en-us/azure/virtual-machines/ephemeral-os-disks
+                                  to "Local" See https://learn.microsoft.com/azure/virtual-machines/ephemeral-os-disks
                                   for full details
                                 enum:
                                 - Local
@@ -496,12 +531,45 @@ spec:
                               for the OS disk.
                             properties:
                               diskEncryptionSet:
-                                description: DiskEncryptionSetParameters defines disk
-                                  encryption options.
+                                description: DiskEncryptionSet specifies the customer-managed
+                                  disk encryption set resource id for the managed
+                                  disk.
                                 properties:
                                   id:
                                     description: ID defines resourceID for diskEncryptionSet
                                       resource. It must be in the same subscription
+                                    type: string
+                                type: object
+                              securityProfile:
+                                description: SecurityProfile specifies the security
+                                  profile for the managed disk.
+                                properties:
+                                  diskEncryptionSet:
+                                    description: DiskEncryptionSet specifies the customer-managed
+                                      disk encryption set resource id for the managed
+                                      disk that is used for Customer Managed Key encrypted
+                                      ConfidentialVM OS Disk and VMGuest blob.
+                                    properties:
+                                      id:
+                                        description: ID defines resourceID for diskEncryptionSet
+                                          resource. It must be in the same subscription
+                                        type: string
+                                    type: object
+                                  securityEncryptionType:
+                                    description: SecurityEncryptionType specifies
+                                      the encryption type of the managed disk. It
+                                      is set to DiskWithVMGuestState to encrypt the
+                                      managed disk along with the VMGuestState blob,
+                                      and to VMGuestStateOnly to encrypt the VMGuestState
+                                      blob only. When set to VMGuestStateOnly, VirtualizedTrustedPlatformModule
+                                      should be set to Enabled. When set to DiskWithVMGuestState,
+                                      EncryptionAtHost should be disabled, SecureBoot
+                                      and VirtualizedTrustedPlatformModule should
+                                      be set to Enabled. It can be set only for Confidential
+                                      VMs.
+                                    enum:
+                                    - VMGuestStateOnly
+                                    - DiskWithVMGuestState
                                     type: string
                                 type: object
                               storageAccountType:
@@ -527,8 +595,48 @@ spec:
                           encryptionAtHost:
                             description: This field indicates whether Host Encryption
                               should be enabled or disabled for a virtual machine
-                              or virtual machine scale set. Default is disabled.
+                              or virtual machine scale set. This should be disabled
+                              when SecurityEncryptionType is set to DiskWithVMGuestState.
+                              Default is disabled.
                             type: boolean
+                          securityType:
+                            description: 'SecurityType specifies the SecurityType
+                              of the virtual machine. It has to be set to any specified
+                              value to enable UefiSettings. The default behavior is:
+                              UefiSettings will not be enabled unless this property
+                              is set.'
+                            enum:
+                            - ConfidentialVM
+                            - TrustedLaunch
+                            type: string
+                          uefiSettings:
+                            description: UefiSettings specifies the security settings
+                              like secure boot and vTPM used while creating the virtual
+                              machine.
+                            properties:
+                              secureBootEnabled:
+                                description: SecureBootEnabled specifies whether secure
+                                  boot should be enabled on the virtual machine. Secure
+                                  Boot verifies the digital signature of all boot
+                                  components and halts the boot process if signature
+                                  verification fails. If omitted, the platform chooses
+                                  a default, which is subject to change over time,
+                                  currently that default is false.
+                                type: boolean
+                              vTpmEnabled:
+                                description: VTpmEnabled specifies whether vTPM should
+                                  be enabled on the virtual machine. When true it
+                                  enables the virtualized trusted platform module
+                                  measurements to create a known good boot integrity
+                                  policy baseline. The integrity policy baseline is
+                                  used for comparison with measurements from subsequent
+                                  VM boots to determine if anything has changed. This
+                                  is required to be set to Enabled if SecurityEncryptionType
+                                  is defined. If omitted, the platform chooses a default,
+                                  which is subject to change over time, currently
+                                  that default is false.
+                                type: boolean
+                            type: object
                         type: object
                       spotVMOptions:
                         description: SpotVMOptions allows the ability to specify the
@@ -552,6 +660,9 @@ spec:
                             x-kubernetes-int-or-string: true
                         type: object
                       sshPublicKey:
+                        description: SSHPublicKey is the SSH public key string, base64-encoded
+                          to add to a Virtual Machine. Linux only. Refer to documentation
+                          on how to set up SSH access on Windows instances.
                         type: string
                       subnetName:
                         description: 'Deprecated: SubnetName should be set in the
@@ -584,7 +695,7 @@ spec:
                         description: UserAssignedIdentities is a list of standalone
                           Azure identities provided by the user The lifecycle of a
                           user-assigned identity is managed separately from the lifecycle
-                          of the AzureMachine. See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/how-to-manage-ua-identity-cli
+                          of the AzureMachine. See https://learn.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-manage-ua-identity-cli
                         items:
                           description: UserAssignedIdentity defines the user-assigned
                             identities provided by the user to be assigned to Azure
@@ -639,7 +750,6 @@ spec:
                         type: string
                     required:
                     - osDisk
-                    - sshPublicKey
                     - vmSize
                     type: object
                 required:

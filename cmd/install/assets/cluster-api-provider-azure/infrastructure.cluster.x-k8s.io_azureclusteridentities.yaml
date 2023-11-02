@@ -143,12 +143,14 @@ spec:
                 type: string
               type:
                 description: Type is the type of Azure Identity used. ServicePrincipal,
-                  ServicePrincipalCertificate, UserAssignedMSI or ManualServicePrincipal.
+                  ServicePrincipalCertificate, UserAssignedMSI, ManualServicePrincipal
+                  or WorkloadIdentity.
                 enum:
                 - ServicePrincipal
                 - UserAssignedMSI
                 - ManualServicePrincipal
                 - ServicePrincipalCertificate
+                - WorkloadIdentity
                 type: string
             required:
             - clientID
