@@ -3957,6 +3957,7 @@ func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) er
 	errs = append(errs, validateNetworkStackAddresses(hc)...)
 	errs = append(errs, validateSliceNetworkCIDRs(hc)...)
 	errs = append(errs, checkAdvertiseAddressOverlapping(hc)...)
+	errs = append(errs, validateNodePortVsServiceNetwork(hc)...)
 
 	return errs.ToAggregate()
 }
@@ -4100,7 +4101,23 @@ func checkAdvertiseAddressOverlapping(hc *hyperv1.HostedCluster) field.ErrorList
 			))
 		}
 	}
+	return errs
+}
 
+// Validate that the nodeport IP is not within the ServiceNetwork CIDR.
+func validateNodePortVsServiceNetwork(hc *hyperv1.HostedCluster) field.ErrorList {
+	var errs field.ErrorList
+
+	ip := getNodePortIP(hc)
+	if ip != nil {
+		// Validate that the nodeport IP is not within the ServiceNetwork CIDR.
+		for _, cidr := range hc.Spec.Networking.ServiceNetwork {
+			netCIDR := (net.IPNet)(cidr.CIDR)
+			if netCIDR.Contains(ip) {
+				errs = append(errs, field.Invalid(field.NewPath("spec.networking.ServiceNetwork"), cidr.CIDR.String(), fmt.Sprintf("Nodeport IP is within the service network range: %s is within %s", ip, cidr.CIDR.String())))
+			}
+		}
+	}
 	return errs
 }
 
@@ -4851,6 +4868,15 @@ func reportHostedClusterDeletionDuration(hcluster *hyperv1.HostedCluster, funcCl
 	// SLI: HostedCluster deletion duration.
 	deletionDuration := funcClock.Since(hcluster.DeletionTimestamp.Time).Seconds()
 	hcmetrics.HostedClusterDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(deletionDuration)
+}
+
+func getNodePortIP(hcluster *hyperv1.HostedCluster) net.IP {
+	for _, svc := range hcluster.Spec.Services {
+		if svc.Service == hyperv1.APIServer && svc.Type == hyperv1.NodePort {
+			return net.ParseIP(svc.NodePort.Address)
+		}
+	}
+	return nil
 }
 
 func isAPIServerRoute(hcluster *hyperv1.HostedCluster) bool {
