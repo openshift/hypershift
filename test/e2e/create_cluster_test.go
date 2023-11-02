@@ -43,7 +43,7 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 		t.Skip("Skipping request serving isolation test")
 	}
 	if globalOpts.Platform != hyperv1.AWSPlatform {
-		t.Skip("Request serving isolation test requirest the AWS platform")
+		t.Skip("Request serving isolation test requires the AWS platform")
 	}
 	t.Parallel()
 
@@ -69,6 +69,8 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		guestClient := e2eutil.WaitForGuestClient(t, testContext, mgtClient, hostedCluster)
 		e2eutil.EnsurePSANotPrivileged(t, ctx, guestClient)
+		e2eutil.EnsureAllReqServingPodsLandOnReqServingNodes(t, ctx, guestClient)
+		e2eutil.EnsureOnlyRequestServingPodsOnRequestServingNodes(t, ctx, guestClient)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
