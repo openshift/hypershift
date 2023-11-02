@@ -391,6 +391,73 @@ func ReconcilePodSecurityAdmissionLabelSyncerControllerClusterRole(r *rbacv1.Clu
 	return nil
 }
 
+func ReconcilePodSecurityAdmissionLabelSyncerControllerRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:openshift:controller:podsecurity-admission-label-syncer-controller",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      "podsecurity-admission-label-syncer-controller",
+			Namespace: "openshift-infra",
+		},
+	}
+	return nil
+}
+
+func ReconcilePriviligedNamespacesPSALabelSyncerClusterRole(r *rbacv1.ClusterRole) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"namespaces"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		},
+		{
+			APIGroups:     []string{""},
+			Resources:     []string{"namespaces"},
+			ResourceNames: []string{"default", "kube-system", "kube-public"},
+			Verbs: []string{
+				"patch",
+			},
+		},
+	}
+	return nil
+}
+
+func ReconcilePriviligedNamespacesPSALabelSyncerClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:openshift:controller:privileged-namespaces-psa-label-syncer",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      "privileged-namespaces-psa-label-syncer",
+			Namespace: "openshift-infra",
+		},
+	}
+	return nil
+}
+
 func ReconcileImageTriggerControllerClusterRole(r *rbacv1.ClusterRole) error {
 	r.Rules = []rbacv1.PolicyRule{
 		{
@@ -446,26 +513,6 @@ func ReconcileImageTriggerControllerClusterRole(r *rbacv1.ClusterRole) error {
 				"watch",
 				"update",
 			},
-		},
-	}
-	return nil
-}
-
-func ReconcilePodSecurityAdmissionLabelSyncerControllerRoleBinding(r *rbacv1.ClusterRoleBinding) error {
-	if r.Annotations == nil {
-		r.Annotations = map[string]string{}
-	}
-	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
-	r.RoleRef = rbacv1.RoleRef{
-		APIGroup: rbacv1.SchemeGroupVersion.Group,
-		Kind:     "ClusterRole",
-		Name:     "system:openshift:controller:podsecurity-admission-label-syncer-controller",
-	}
-	r.Subjects = []rbacv1.Subject{
-		{
-			Kind:      "ServiceAccount",
-			Name:      "podsecurity-admission-label-syncer-controller",
-			Namespace: "openshift-infra",
 		},
 	}
 	return nil
