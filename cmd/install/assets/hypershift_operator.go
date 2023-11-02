@@ -306,6 +306,7 @@ type HyperShiftOperatorDeployment struct {
 	EnableOCPClusterMonitoring     bool
 	EnableCIDebugOutput            bool
 	EnableWebhook                  bool
+	EnableValidatingWebhook        bool
 	PrivatePlatform                string
 	AWSPrivateSecret               *corev1.Secret
 	AWSPrivateSecretKey            string
@@ -371,6 +372,10 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		args = append(args,
 			"--cert-dir=/var/run/secrets/serving-cert",
 		)
+
+		if o.EnableValidatingWebhook {
+			args = append(args, "--enable-validating-webhook=true")
+		}
 	}
 
 	if len(o.OIDCBucketName) > 0 && len(o.OIDCBucketRegion) > 0 && len(o.OIDCStorageProviderS3SecretKey) > 0 &&
@@ -1571,4 +1576,87 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 		},
 	}
 	return mutatingWebhookConfiguration
+}
+
+type HyperShiftValidatingWebhookConfiguration struct {
+	Namespace string
+}
+
+func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistrationv1.ValidatingWebhookConfiguration {
+	scope := admissionregistrationv1.NamespacedScope
+	hcPath := "/validate-hypershift-openshift-io-v1beta1-hostedcluster"
+	npPath := "/validate-hypershift-openshift-io-v1beta1-nodepool"
+	sideEffects := admissionregistrationv1.SideEffectClassNone
+	timeout := int32(15)
+	failurePolicy := admissionregistrationv1.Fail
+
+	return &admissionregistrationv1.ValidatingWebhookConfiguration{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ValidatingWebhookConfiguration",
+			APIVersion: admissionregistrationv1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: o.Namespace,
+			Name:      hyperv1.GroupVersion.Group,
+			Annotations: map[string]string{
+				"service.beta.openshift.io/inject-cabundle": "true",
+			},
+		},
+		Webhooks: []admissionregistrationv1.ValidatingWebhook{
+			{
+				Name: "hostedclusters.hypershift.openshift.io",
+				Rules: []admissionregistrationv1.RuleWithOperations{
+					{
+						Operations: []admissionregistrationv1.OperationType{
+							admissionregistrationv1.Create,
+						},
+						Rule: admissionregistrationv1.Rule{
+							APIGroups:   []string{"hypershift.openshift.io"},
+							APIVersions: []string{"v1beta1"},
+							Resources:   []string{"hostedclusters"},
+							Scope:       &scope,
+						},
+					},
+				},
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					Service: &admissionregistrationv1.ServiceReference{
+						Namespace: "hypershift",
+						Name:      "operator",
+						Path:      &hcPath,
+					},
+				},
+				SideEffects:             &sideEffects,
+				AdmissionReviewVersions: []string{"v1"},
+				TimeoutSeconds:          &timeout,
+				FailurePolicy:           &failurePolicy,
+			},
+			{
+				Name: "nodepools.hypershift.openshift.io",
+				Rules: []admissionregistrationv1.RuleWithOperations{
+					{
+						Operations: []admissionregistrationv1.OperationType{
+							admissionregistrationv1.Create,
+						},
+						Rule: admissionregistrationv1.Rule{
+							APIGroups:   []string{"hypershift.openshift.io"},
+							APIVersions: []string{"v1beta1"},
+							Resources:   []string{"nodepools"},
+							Scope:       &scope,
+						},
+					},
+				},
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					Service: &admissionregistrationv1.ServiceReference{
+						Namespace: "hypershift",
+						Name:      "operator",
+						Path:      &npPath,
+					},
+				},
+				SideEffects:             &sideEffects,
+				AdmissionReviewVersions: []string{"v1"},
+				TimeoutSeconds:          &timeout,
+				FailurePolicy:           &failurePolicy,
+			},
+		},
+	}
 }
