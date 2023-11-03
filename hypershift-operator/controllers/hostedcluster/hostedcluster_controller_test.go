@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 
 	"github.com/go-logr/logr"
@@ -16,7 +17,7 @@ import (
 	"github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	version "github.com/openshift/hypershift/cmd/version"
+	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
@@ -2684,6 +2685,8 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 			}
 
 			ctx := context.Background()
+			ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+			ctrl.LoggerInto(ctx, ctrl.Log)
 
 			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
 			if err != nil {
@@ -2695,7 +2698,7 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			if diff := cmp.Diff(result, tc.expected); diff != "" {
+			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -2779,7 +2782,7 @@ func TestReportAvailableTime(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			if diff := cmp.Diff(result, tc.expected); diff != "" {
+			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -2887,7 +2890,7 @@ func TestReportClusterVersionRolloutTime(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			if diff := cmp.Diff(result, tc.expected); diff != "" {
+			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -2980,7 +2983,7 @@ func TestReportLimitedSuportEnabled(t *testing.T) {
 			}
 
 			// Validate.
-			if diff := cmp.Diff(result, tc.expected); diff != "" {
+			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -3073,7 +3076,7 @@ func TestReportSilencedAlerts(t *testing.T) {
 			}
 
 			// Validate.
-			if diff := cmp.Diff(result, tc.expected); diff != "" {
+			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -3191,7 +3194,7 @@ func TestReportProxyConfig(t *testing.T) {
 			}
 
 			// Validate.
-			if diff := cmp.Diff(result, tc.expected); diff != "" {
+			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -3270,7 +3273,7 @@ func TestReportHostedClusterGuestCloudResourcesDeletionDuration(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			if diff := cmp.Diff(result, tc.expected); diff != "" {
+			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -3337,7 +3340,7 @@ func TestReportHostedClusterDeletionDuration(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			if diff := cmp.Diff(result, tc.expected); diff != "" {
+			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -4086,4 +4089,8 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 		},
 		)
 	}
+}
+
+func ignoreUnexportedDto() cmp.Option {
+	return cmpopts.IgnoreUnexported(dto.MetricFamily{}, dto.Metric{}, dto.LabelPair{}, dto.Gauge{})
 }
