@@ -33,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/spf13/cobra"
 
@@ -191,9 +193,13 @@ func NewStartCommand() *cobra.Command {
 		renewDeadline := time.Second * 40
 		retryPeriod := time.Second * 15
 		mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-			Scheme:                        hyperapi.Scheme,
-			MetricsBindAddress:            metricsAddr,
-			Port:                          9443,
+			Scheme: hyperapi.Scheme,
+			Metrics: metricsserver.Options{
+				BindAddress: metricsAddr,
+			},
+			WebhookServer: webhook.NewServer(webhook.Options{
+				Port: 9443,
+			}),
 			LeaderElection:                true,
 			LeaderElectionID:              "control-plane-operator-leader-elect",
 			LeaderElectionResourceLock:    "leases",
@@ -203,12 +209,12 @@ func NewStartCommand() *cobra.Command {
 			RenewDeadline:                 &renewDeadline,
 			RetryPeriod:                   &retryPeriod,
 			HealthProbeBindAddress:        healthProbeAddr,
-			NewCache: cache.BuilderWithOptions(cache.Options{
-				DefaultSelector: cache.ObjectSelector{Field: fields.OneTermEqualSelector("metadata.namespace", namespace)},
-				SelectorsByObject: cache.SelectorsByObject{
+			Cache: cache.Options{
+				DefaultFieldSelector: fields.OneTermEqualSelector("metadata.namespace", namespace),
+				ByObject: map[crclient.Object]cache.ByObject{
 					&operatorv1.IngressController{}: {Field: fields.OneTermEqualSelector("metadata.namespace", manifests.IngressPrivateIngressController("").Namespace)},
 				},
-			}),
+			},
 		})
 		if err != nil {
 			setupLog.Error(err, "unable to start manager")

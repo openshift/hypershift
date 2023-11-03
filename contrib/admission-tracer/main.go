@@ -24,9 +24,11 @@ func main() {
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "admission-differ"
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-		Scheme:  hyperapi.Scheme,
-		Port:    9443,
-		CertDir: "/var/run/secrets/serving-cert",
+		Scheme: hyperapi.Scheme,
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port:    9443,
+			CertDir: "/var/run/secrets/serving-cert",
+		}),
 	})
 	if err != nil {
 		log.Fatalf("unable to start manager: %s", err.Error())

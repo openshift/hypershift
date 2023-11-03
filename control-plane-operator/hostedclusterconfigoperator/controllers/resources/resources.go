@@ -118,7 +118,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 	uncachedClient, err := client.New(opts.Manager.GetConfig(), client.Options{
 		Scheme: opts.Manager.GetScheme(),
 		Mapper: opts.Manager.GetRESTMapper(),
-		Opts: client.WarningHandlerOptions{
+		WarningHandler: client.WarningHandlerOptions{
 			SuppressWarnings: true,
 		},
 	})
@@ -130,7 +130,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 	kubevirtInfraClient, err := client.New(opts.KubevirtInfraConfig, client.Options{
 		Scheme: opts.Manager.GetScheme(),
 		Mapper: opts.Manager.GetRESTMapper(),
-		Opts: client.WarningHandlerOptions{
+		WarningHandler: client.WarningHandlerOptions{
 			SuppressWarnings: true,
 		},
 	})
