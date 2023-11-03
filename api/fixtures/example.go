@@ -63,8 +63,8 @@ type ExampleOptions struct {
 	ImageContentSources              []hyperv1.ImageContentSource
 	InfraID                          string
 	MachineCIDR                      string
-	ServiceCIDR                      string
-	ClusterCIDR                      string
+	ServiceCIDR                      []string
+	ClusterCIDR                      []string
 	NodeSelector                     map[string]string
 	BaseDomain                       string
 	BaseDomainPrefix                 string
@@ -472,12 +472,18 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		cluster.Spec.DNS.BaseDomainPrefix = pointer.String(o.BaseDomainPrefix)
 	}
 
-	if o.ClusterCIDR != "" {
-		cluster.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR(o.ClusterCIDR)}}
+	var clusterNetworkEntries []hyperv1.ClusterNetworkEntry
+	for _, cidr := range o.ClusterCIDR {
+		clusterNetworkEntries = append(clusterNetworkEntries, hyperv1.ClusterNetworkEntry{CIDR: *ipnet.MustParseCIDR(cidr)})
 	}
-	if o.ServiceCIDR != "" {
-		cluster.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR(o.ServiceCIDR)}}
+	cluster.Spec.Networking.ClusterNetwork = clusterNetworkEntries
+
+	var serviceNetworkEntries []hyperv1.ServiceNetworkEntry
+	for _, cidr := range o.ServiceCIDR {
+		serviceNetworkEntries = append(serviceNetworkEntries, hyperv1.ServiceNetworkEntry{CIDR: *ipnet.MustParseCIDR(cidr)})
 	}
+	cluster.Spec.Networking.ServiceNetwork = serviceNetworkEntries
+
 	if o.MachineCIDR != "" {
 		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(o.MachineCIDR)}}
 	}

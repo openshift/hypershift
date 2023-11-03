@@ -450,8 +450,8 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			CloudConnection: o.configurableClusterOptions.PowerVSCloudConnection,
 			VPC:             o.configurableClusterOptions.PowerVSVPC,
 		},
-		ServiceCIDR: "172.31.0.0/16",
-		ClusterCIDR: "10.132.0.0/14",
+		ServiceCIDR: []string{"172.31.0.0/16"},
+		ClusterCIDR: []string{"10.132.0.0/14"},
 		BeforeApply: o.BeforeApply,
 		Log:         util.NewLogr(t),
 		Annotations: []string{
