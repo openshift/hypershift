@@ -2625,6 +2625,7 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 					Namespace:         "any",
 					Labels:            map[string]string{hyperv1.SilenceClusterAlertsLabel: "clusterDeleting"},
 					DeletionTimestamp: &metav1.Time{Time: time.Now().Round(time.Second)},
+					Finalizers:        []string{"necessary"}, // fake client needs finalizers when a deletionTimestamp is set
 				},
 				Spec: hyperv1.HostedClusterSpec{
 					ClusterID: "id",
@@ -2655,6 +2656,7 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 					Name:              "fakeMachine",
 					Namespace:         hcpNs,
 					DeletionTimestamp: &metav1.Time{Time: time.Now().Round(time.Second)},
+					Finalizers:        []string{"necessary"}, // fake client needs finalizers when a deletionTimestamp is set
 				},
 			}
 			awsep := &hyperv1.AWSEndpointService{
@@ -2662,6 +2664,7 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 					Name:              "fakeAWSEp",
 					Namespace:         hcpNs,
 					DeletionTimestamp: &metav1.Time{Time: time.Now().Round(time.Second)},
+					Finalizers:        []string{"necessary"}, // fake client needs finalizers when a deletionTimestamp is set
 				},
 			}
 
