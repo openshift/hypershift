@@ -33,7 +33,7 @@ func main() {
 	}
 
 	hookServer := mgr.GetWebhookServer()
-	hookServer.Register("/awsendpointservices", &webhook.Admission{Handler: &awsEndpointServiceAdmissionTracer{}})
+	hookServer.Register("/awsendpointservices", &webhook.Admission{Handler: &awsEndpointServiceAdmissionTracer{decoder: admission.NewDecoder(mgr.GetScheme())}})
 
 	err = mgr.Start(ctx)
 	if err != nil {
@@ -68,11 +68,4 @@ func (v *awsEndpointServiceAdmissionTracer) Handle(_ context.Context, req admiss
 	}
 	fmt.Println(output.String())
 	return admission.Allowed("")
-}
-
-var _ admission.DecoderInjector = &awsEndpointServiceAdmissionTracer{}
-
-func (v *awsEndpointServiceAdmissionTracer) InjectDecoder(d *admission.Decoder) error {
-	v.decoder = d
-	return nil
 }

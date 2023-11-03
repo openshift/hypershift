@@ -48,7 +48,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/yaml"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
@@ -993,7 +992,7 @@ func TestEventHandling(t *testing.T) {
 		t.Fatalf("reconciliation failed: %v", err)
 	}
 
-	eventHandlerList := r.eventHandlers()
+	eventHandlerList := r.eventHandlers(c.Scheme(), c.RESTMapper())
 	eventHandlersByObject := make(map[schema.GroupVersionKind]handler.EventHandler, len(eventHandlerList))
 	for _, handler := range eventHandlerList {
 		gvk, err := apiutil.GVKForObject(handler.obj, api.Scheme)
@@ -1014,16 +1013,6 @@ func TestEventHandling(t *testing.T) {
 				t.Fatalf("reconciler creates %T but has no handler for them", createdObject)
 			}
 
-			if injectScheme, ok := handler.(inject.Scheme); ok {
-				if err := injectScheme.InjectScheme(api.Scheme); err != nil {
-					t.Fatalf("failed to inject scheme into handler: %v", err)
-				}
-			}
-			if injectMapper, ok := handler.(inject.Mapper); ok {
-				if err := injectMapper.InjectMapper(c.RESTMapper()); err != nil {
-					t.Fatalf("failed to inject mapper into handler: %v", err)
-				}
-			}
 
 			fakeQueue := &createTrackingWorkqueue{}
 			handler.Create(event.CreateEvent{Object: createdObject}, fakeQueue)

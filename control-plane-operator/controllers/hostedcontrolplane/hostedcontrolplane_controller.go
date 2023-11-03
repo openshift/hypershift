@@ -14,6 +14,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
@@ -173,8 +174,8 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 		})
-	for _, handler := range r.eventHandlers() {
 		b.Watches(&source.Kind{Type: handler.obj}, handler.handler)
+	for _, handler := range r.eventHandlers(mgr.GetScheme(), mgr.GetRESTMapper()) {
 	}
 	if _, err := b.Build(r); err != nil {
 		return fmt.Errorf("failed setting up with a controller manager %w", err)
@@ -249,24 +250,24 @@ type eventHandler struct {
 	handler handler.EventHandler
 }
 
-func (r *HostedControlPlaneReconciler) eventHandlers() []eventHandler {
+func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, restMapper meta.RESTMapper) []eventHandler {
 	handlers := []eventHandler{
 		{obj: &corev1.Event{}, handler: handler.EnqueueRequestsFromMapFunc(r.hostedControlPlaneInNamespace)},
-		{obj: &corev1.Service{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
-		{obj: &appsv1.Deployment{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
-		{obj: &appsv1.StatefulSet{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
-		{obj: &corev1.Secret{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
-		{obj: &corev1.ConfigMap{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
-		{obj: &corev1.ServiceAccount{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
-		{obj: &policyv1.PodDisruptionBudget{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
-		{obj: &prometheusoperatorv1.PodMonitor{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
-		{obj: &prometheusoperatorv1.ServiceMonitor{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
-		{obj: &prometheusoperatorv1.PrometheusRule{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
-		{obj: &rbacv1.Role{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
-		{obj: &rbacv1.RoleBinding{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}},
+		{obj: &corev1.Service{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &appsv1.Deployment{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &appsv1.StatefulSet{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &corev1.Secret{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &corev1.ConfigMap{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &corev1.ServiceAccount{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &policyv1.PodDisruptionBudget{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &prometheusoperatorv1.PodMonitor{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &prometheusoperatorv1.ServiceMonitor{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &prometheusoperatorv1.PrometheusRule{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &rbacv1.Role{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &rbacv1.RoleBinding{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 	}
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
-		handlers = append(handlers, eventHandler{obj: &routev1.Route{}, handler: &handler.EnqueueRequestForOwner{OwnerType: &hyperv1.HostedControlPlane{}}})
+		handlers = append(handlers, eventHandler{obj: &routev1.Route{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})})
 	}
 
 	return handlers
