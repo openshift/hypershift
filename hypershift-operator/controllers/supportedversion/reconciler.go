@@ -45,7 +45,7 @@ func (r *Reconciler) SetupWithManager(mgr manager.Manager) error {
 	initialSync := make(chan event.GenericEvent)
 	err := ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ConfigMap{}, builder.WithPredicates(predicate.NewPredicateFuncs(r.selectSupportedVersionsConfigMap))).
-		Watches(&source.Channel{Source: initialSync}, &handler.EnqueueRequestForObject{}).
+		WatchesRawSource(&source.Channel{Source: initialSync}, &handler.EnqueueRequestForObject{}).
 		Complete(r)
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)

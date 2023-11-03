@@ -194,7 +194,7 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(3*time.Second, 30*time.Second),
 			MaxConcurrentReconciles: 10,
 		}).
-		Watches(&source.Kind{Type: &hyperv1.HostedControlPlane{}}, handler.Funcs{UpdateFunc: r.enqueueOnAccessChange(mgr)}).
+		Watches(&hyperv1.HostedControlPlane{}, handler.Funcs{UpdateFunc: r.enqueueOnAccessChange(mgr)}).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager: %w", err)

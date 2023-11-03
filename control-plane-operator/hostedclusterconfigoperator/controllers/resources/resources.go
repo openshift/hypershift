@@ -193,11 +193,11 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&imageregistryv1.Config{},
 	}
 	for _, r := range resourcesToWatch {
-		if err := c.Watch(&source.Kind{Type: r}, eventHandler()); err != nil {
+		if err := c.Watch(source.Kind(opts.Manager.GetCache(), r), eventHandler()); err != nil {
 			return fmt.Errorf("failed to watch %T: %w", r, err)
 		}
 	}
-	if err := c.Watch(source.NewKindWithCache(&hyperv1.HostedControlPlane{}, opts.CPCluster.GetCache()), eventHandler()); err != nil {
+	if err := c.Watch(source.Kind(opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}), eventHandler()); err != nil {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
 	}
 	return nil
