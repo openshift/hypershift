@@ -1015,7 +1015,7 @@ func TestEventHandling(t *testing.T) {
 
 
 			fakeQueue := &createTrackingWorkqueue{}
-			handler.Create(event.CreateEvent{Object: createdObject}, fakeQueue)
+			handler.Create(context.Background(), event.CreateEvent{Object: createdObject}, fakeQueue)
 
 			if len(fakeQueue.items) != 1 || fakeQueue.items[0].Namespace != hcp.Namespace || fakeQueue.items[0].Name != hcp.Name {
 				t.Errorf("object %+v didn't correctly create event", createdObject)

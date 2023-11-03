@@ -105,7 +105,7 @@ type reconciler struct {
 // it uses an empty request but always reconciles everything.
 func eventHandler() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(
-		func(client.Object) []reconcile.Request {
+		func(context.Context, client.Object) []reconcile.Request {
 			return []reconcile.Request{{}}
 		})
 }

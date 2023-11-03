@@ -367,7 +367,7 @@ func predicateForNames(names ...string) predicate.Predicate {
 }
 
 func mapRequestTo(obj client.Object) handler.MapFunc {
-	return func(o client.Object) []reconcile.Request {
+	return func(ctx context.Context, o client.Object) []reconcile.Request {
 		return []reconcile.Request{
 			{
 				NamespacedName: types.NamespacedName{

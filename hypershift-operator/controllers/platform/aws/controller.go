@@ -61,8 +61,8 @@ type AWSEndpointServiceReconciler struct {
 	controlPlaneOperatorRoleARNFn func(context.Context, *hyperv1.HostedCluster) (string, error)
 }
 
-func mapNodePoolToAWSEndpointServicesFunc(c client.Client) func(obj client.Object) []reconcile.Request {
-	return func(obj client.Object) []reconcile.Request {
+func mapNodePoolToAWSEndpointServicesFunc(c client.Client) handler.MapFunc {
+	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		nodePool, ok := obj.(*hyperv1.NodePool)
 		if !ok {
 			return []reconcile.Request{}
@@ -73,8 +73,8 @@ func mapNodePoolToAWSEndpointServicesFunc(c client.Client) func(obj client.Objec
 	}
 }
 
-func mapHostedClusterToAWSEndpointServicesFunc(c client.Client) func(obj client.Object) []reconcile.Request {
-	return func(obj client.Object) []reconcile.Request {
+func mapHostedClusterToAWSEndpointServicesFunc(c client.Client) handler.MapFunc {
+	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		hc, ok := obj.(*hyperv1.HostedCluster)
 		if !ok {
 			return []reconcile.Request{}

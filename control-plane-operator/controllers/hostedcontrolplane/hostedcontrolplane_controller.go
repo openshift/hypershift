@@ -3570,9 +3570,9 @@ func reconcileKubeadminPasswordSecret(secret *corev1.Secret, hcp *hyperv1.Hosted
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) hostedControlPlaneInNamespace(resource client.Object) []reconcile.Request {
+func (r *HostedControlPlaneReconciler) hostedControlPlaneInNamespace(ctx context.Context, resource client.Object) []reconcile.Request {
 	hcpList := &hyperv1.HostedControlPlaneList{}
-	if err := r.List(context.Background(), hcpList, &client.ListOptions{
+	if err := r.List(ctx, hcpList, &client.ListOptions{
 		Namespace: resource.GetNamespace(),
 	}); err != nil {
 		r.Log.Error(err, "failed to list hosted control planes in namespace", "namespace", resource.GetNamespace())

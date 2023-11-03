@@ -3524,15 +3524,15 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	return true, nil
 }
 
-func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace string, c client.Client) func(client.Object) []reconcile.Request {
-	return func(obj client.Object) []reconcile.Request {
+func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace string, c client.Client) handler.MapFunc {
+	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		log := ctrllog.Log
 		if metricsSet == metrics.MetricsSetSRE {
 			if _, isCM := obj.(*corev1.ConfigMap); isCM {
 				if obj.GetName() == metrics.SREConfigurationConfigMapName && obj.GetNamespace() == operatorNamespace {
 					// A change has occurred to the SRE metrics set configuration. We should requeue all HostedClusters
 					hcList := &hyperv1.HostedClusterList{}
-					if err := c.List(context.Background(), hcList); err != nil {
+					if err := c.List(ctx, hcList); err != nil {
 						// An error occurred, report it.
 						log.Error(err, "failed to list hosted clusters while processing SRE config event")
 					}

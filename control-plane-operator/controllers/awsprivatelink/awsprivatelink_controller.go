@@ -68,7 +68,7 @@ type PrivateServiceObserver struct {
 
 func nameMapper(names []string) handler.MapFunc {
 	nameSet := sets.NewString(names...)
-	return func(obj client.Object) []reconcile.Request {
+	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		if !nameSet.Has(obj.GetName()) {
 			return nil
 		}
@@ -213,8 +213,8 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	return nil
 }
 
-func (r *AWSEndpointServiceReconciler) enqueueOnAccessChange(mgr ctrl.Manager) func(event.UpdateEvent, workqueue.RateLimitingInterface) {
-	return func(e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (r *AWSEndpointServiceReconciler) enqueueOnAccessChange(mgr ctrl.Manager) func(context.Context, event.UpdateEvent, workqueue.RateLimitingInterface) {
+	return func(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
 		logger := mgr.GetLogger()
 		newHCP, isOk := e.ObjectNew.(*hyperv1.HostedControlPlane)
 		if !isOk {

@@ -36,7 +36,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		return fmt.Errorf("failed to watch HCP: %w", err)
 	}
 
-	clusterVersionMapper := func(crclient.Object) []reconcile.Request {
+	clusterVersionMapper := func(context.Context, crclient.Object) []reconcile.Request {
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: opts.Namespace, Name: opts.HCPName}}}
 	}
 	if err := c.Watch(&source.Kind{Type: &configv1.ClusterVersion{}}, handler.EnqueueRequestsFromMapFunc(clusterVersionMapper)); err != nil {
