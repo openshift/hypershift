@@ -992,7 +992,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		objects = append(objects, cluster)
 	}
 
-	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()}
+	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
 	r := &HostedClusterReconciler{
 		Client: client,
 		Clock:  clock.RealClock{},
@@ -2198,7 +2198,7 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 				},
 			}
 
-			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build()
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).WithStatusSubresource(hcluster).Build()
 			r := &HostedClusterReconciler{
 				Client: c,
 				overwriteReconcile: func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
@@ -2672,7 +2672,7 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 				t.Fatalf("registering SkippedCloudResourcesDeletion collector failed: %v", err)
 			}
 
-			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, hcp, awsep, orphanMachine).Build()
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, hcp, awsep, orphanMachine).WithStatusSubresource(hcluster).Build()
 			r := &HostedClusterReconciler{
 				Client:                        c,
 				Clock:                         clock.RealClock{},
@@ -4019,6 +4019,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().
 				WithScheme(api.Scheme).
 				WithObjects(testCase.objects...).
+				WithStatusSubresource(&hyperv1.HostedCluster{}).
 				Build()}
 
 			r := &HostedClusterReconciler{

@@ -959,6 +959,7 @@ func TestEventHandling(t *testing.T) {
 	c := &createTrackingClient{Client: fake.NewClientBuilder().
 		WithScheme(api.Scheme).
 		WithObjects(hcp, pullSecret, etcdEncryptionKey, fakeNodeTuningOperator, fakeNodeTuningOperatorTLS).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
 		WithRESTMapper(restMapper).
 		Build(),
 	}
@@ -1012,7 +1013,6 @@ func TestEventHandling(t *testing.T) {
 			if !found {
 				t.Fatalf("reconciler creates %T but has no handler for them", createdObject)
 			}
-
 
 			fakeQueue := &createTrackingWorkqueue{}
 			handler.Create(context.Background(), event.CreateEvent{Object: createdObject}, fakeQueue)
@@ -1311,7 +1311,7 @@ func TestReconcileRouter(t *testing.T) {
 func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 	hcp := sampleHCP(t)
 	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
-	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, pullSecret).Build()
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, pullSecret).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 	r := &HostedControlPlaneReconciler{
 		Client:                        c,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
