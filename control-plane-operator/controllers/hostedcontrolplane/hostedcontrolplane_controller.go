@@ -1071,8 +1071,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	}
 
 	r.Log.Info("Reconciling IngressOperator")
-	if err := r.reconcileIngressOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile ingress operator: %w", err)
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+		if err := r.reconcileIngressOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile ingress operator: %w", err)
+		}
+	} else {
+		r.Log.Info("Skipping IngressOperator reconciliation because the cluster does not support Routes")
 	}
 
 	// Reconcile hosted cluster config operator
