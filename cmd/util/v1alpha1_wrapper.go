@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/conversion"
 )
@@ -24,6 +25,18 @@ func v1alpha1Client(client crclient.Client) crclient.Client {
 // where v1beta1 does not exist yet.
 type v1alpha1Wrapper struct {
 	innerClient crclient.Client
+}
+
+func (w *v1alpha1Wrapper) SubResource(subResource string) crclient.SubResourceClient {
+	return w.innerClient.SubResource(subResource)
+}
+
+func (w *v1alpha1Wrapper) GroupVersionKindFor(obj runtime.Object) (schema.GroupVersionKind, error) {
+	return w.innerClient.GroupVersionKindFor(obj)
+}
+
+func (w *v1alpha1Wrapper) IsObjectNamespaced(obj runtime.Object) (bool, error) {
+	return w.innerClient.IsObjectNamespaced(obj)
 }
 
 func (w *v1alpha1Wrapper) Scheme() *runtime.Scheme {
