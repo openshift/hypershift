@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/kubevirtexternalinfra"
@@ -103,6 +104,8 @@ var kvValidator = kubevirtClusterValidator{
 	clientMap: kubevirtexternalinfra.NewKubevirtInfraClientMap(),
 }
 
+var _ admission.CustomValidator = (*hostedClusterValidator)(nil)
+
 type hostedClusterValidator struct {
 	client client.Client
 }
@@ -113,31 +116,31 @@ func newHostedClusterValidator(client client.Client) *hostedClusterValidator {
 	}
 }
 
-func (v hostedClusterValidator) ValidateCreate(ctx context.Context, obj runtime.Object) error {
+func (v hostedClusterValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	hc, ok := obj.(*hyperv1.HostedCluster)
 	if !ok {
-		return fmt.Errorf("wrong type %T for validation, instead of HostedCluster", obj)
+		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", obj)
 	}
 
 	switch hc.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		return v.validateCreateKubevirtHostedCluster(ctx, hc)
 	default:
-		return nil // no validation needed
+		return nil, nil // no validation needed
 	}
 }
 
-func (v hostedClusterValidator) ValidateUpdate(_ context.Context, _, _ runtime.Object) error {
-	return nil
+func (v hostedClusterValidator) ValidateUpdate(_ context.Context, _, _ runtime.Object) (admission.Warnings, error) {
+	return nil, nil
 }
 
-func (v hostedClusterValidator) ValidateDelete(_ context.Context, _ runtime.Object) error {
-	return nil
+func (v hostedClusterValidator) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+	return nil, nil
 }
 
-func (v hostedClusterValidator) validateCreateKubevirtHostedCluster(ctx context.Context, hc *hyperv1.HostedCluster) error {
+func (v hostedClusterValidator) validateCreateKubevirtHostedCluster(ctx context.Context, hc *hyperv1.HostedCluster) (admission.Warnings, error) {
 	if hc.Spec.Platform.Kubevirt == nil {
-		return fmt.Errorf("the spec.platform.kubevirt field is missing in the HostedCluster resource")
+		return nil, fmt.Errorf("the spec.platform.kubevirt field is missing in the HostedCluster resource")
 	}
 
 	return kvValidator.validate(ctx, v.client, hc)
@@ -153,33 +156,33 @@ func newNodePoolValidator(client client.Client) *nodePoolValidator {
 	}
 }
 
-func (v nodePoolValidator) ValidateCreate(ctx context.Context, obj runtime.Object) error {
+func (v nodePoolValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
 	np, ok := obj.(*hyperv1.NodePool)
 	if !ok {
-		return fmt.Errorf("wrong type %T for validation, instead of NodePool", obj)
+		return nil, fmt.Errorf("wrong type %T for validation, instead of NodePool", obj)
 	}
 
 	switch np.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		return v.validateCreateKubevirtNodePool(ctx, np)
 	default:
-		return nil // no validation needed
+		return nil, nil // no validation needed
 	}
 }
 
-func (v nodePoolValidator) ValidateUpdate(_ context.Context, _, _ runtime.Object) error {
-	return nil
+func (v nodePoolValidator) ValidateUpdate(_ context.Context, _, _ runtime.Object) (admission.Warnings, error) {
+	return nil, nil
 }
 
-func (v nodePoolValidator) ValidateDelete(_ context.Context, _ runtime.Object) error {
-	return nil
+func (v nodePoolValidator) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+	return nil, nil
 }
 
-func (v nodePoolValidator) validateCreateKubevirtNodePool(ctx context.Context, np *hyperv1.NodePool) error {
+func (v nodePoolValidator) validateCreateKubevirtNodePool(ctx context.Context, np *hyperv1.NodePool) (admission.Warnings, error) {
 	hc := &hyperv1.HostedCluster{}
 	err := v.client.Get(ctx, client.ObjectKey{Name: np.Spec.ClusterName, Namespace: np.Namespace}, hc)
 	if err != nil {
-		return fmt.Errorf("failed to retrive HostedCluster %s/%s; %w", np.Namespace, np.Spec.ClusterName, err)
+		return nil, fmt.Errorf("failed to retrive HostedCluster %s/%s; %w", np.Namespace, np.Spec.ClusterName, err)
 	}
 
 	return kvValidator.validate(ctx, v.client, hc)
@@ -189,15 +192,15 @@ type kubevirtClusterValidator struct {
 	clientMap kubevirtexternalinfra.KubevirtInfraClientMap
 }
 
-func (v kubevirtClusterValidator) validate(ctx context.Context, cli client.Client, hc *hyperv1.HostedCluster) error {
+func (v kubevirtClusterValidator) validate(ctx context.Context, cli client.Client, hc *hyperv1.HostedCluster) (admission.Warnings, error) {
 	if hc.Spec.Platform.Kubevirt == nil {
-		return fmt.Errorf("the spec.platform.kubevirt field is missing in the HostedCluster resource")
+		return nil, fmt.Errorf("the spec.platform.kubevirt field is missing in the HostedCluster resource")
 	}
 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name).Name
 	cl, err := v.clientMap.DiscoverKubevirtClusterClient(ctx, cli, hc.Spec.InfraID, hc.Spec.Platform.Kubevirt.Credentials, controlPlaneNamespace, hc.Namespace)
 	if err != nil {
-		return fmt.Errorf("failed to connect external infra cluster; %w", err)
+		return nil, fmt.Errorf("failed to connect external infra cluster; %w", err)
 	}
 
 	if _, isTimeout := ctx.Deadline(); !isTimeout {
@@ -206,5 +209,5 @@ func (v kubevirtClusterValidator) validate(ctx context.Context, cli client.Clien
 		defer cancel()
 	}
 
-	return kubevirtexternalinfra.ValidateClusterVersions(ctx, cl)
+	return nil, kubevirtexternalinfra.ValidateClusterVersions(ctx, cl)
 }
