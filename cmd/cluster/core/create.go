@@ -60,8 +60,8 @@ type CreateOptions struct {
 	ReleaseStream                    string
 	Render                           bool
 	SSHKeyFile                       string
-	ServiceCIDR                      string
-	ClusterCIDR                      string
+	ServiceCIDR                      []string
+	ClusterCIDR                      []string
 	ExternalDNSDomain                string
 	Arch                             string
 	NodeSelector                     map[string]string

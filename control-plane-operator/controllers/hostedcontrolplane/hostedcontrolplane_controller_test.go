@@ -1361,7 +1361,6 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 				Selector: map[string]string{"app": "private-router"},
 				Ports: []corev1.ServicePort{
 					{Name: "https", Port: 443, TargetPort: intstr.FromString("https"), Protocol: corev1.ProtocolTCP},
-					{Name: "kube-apiserver", Port: 6443, TargetPort: intstr.FromString("https"), Protocol: corev1.ProtocolTCP},
 				},
 			},
 		}

@@ -17,7 +17,7 @@ func NewCreateCommands() *cobra.Command {
 	opts := &core.CreateOptions{
 		AdditionalTrustBundle:          "",
 		Arch:                           "amd64",
-		ClusterCIDR:                    "10.132.0.0/14",
+		ClusterCIDR:                    []string{"10.132.0.0/14"},
 		ControlPlaneAvailabilityPolicy: "HighlyAvailable",
 		ImageContentSources:            "",
 		InfraID:                        "",
@@ -30,7 +30,7 @@ func NewCreateCommands() *cobra.Command {
 		PullSecretFile:                 "",
 		ReleaseImage:                   "",
 		Render:                         false,
-		ServiceCIDR:                    "172.31.0.0/16",
+		ServiceCIDR:                    []string{"172.31.0.0/16"},
 		Timeout:                        0,
 		Wait:                           false,
 		PausedUntil:                    "",
@@ -46,7 +46,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringArrayVar(&opts.Annotations, "annotations", opts.Annotations, "Annotations to apply to the HostedCluster (format: key=value). Annotations can be specified multiple times.")
 	cmd.PersistentFlags().BoolVar(&opts.AutoRepair, "auto-repair", opts.AutoRepair, "Enables machine auto-repair with machine health checks.")
 	cmd.PersistentFlags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "Ingress base domain for the cluster.")
-	cmd.PersistentFlags().StringVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "CIDR of the cluster network.")
+	cmd.PersistentFlags().StringArrayVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "CIDR of the cluster network. Can be specified multiple times.")
 	cmd.PersistentFlags().StringVar(&opts.ControlPlaneAvailabilityPolicy, "control-plane-availability-policy", opts.ControlPlaneAvailabilityPolicy, "Availability policy for HostedCluster components. Supported options: SingleReplica, HighlyAvailable.")
 	cmd.PersistentFlags().StringVar(&opts.EtcdStorageClass, "etcd-storage-class", opts.EtcdStorageClass, "Persistent volume storage class for etcd data volumes")
 	cmd.PersistentFlags().BoolVar(&opts.FIPS, "fips", opts.FIPS, "Enables FIPS mode for nodes in the cluster.")
@@ -64,7 +64,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "Filepath to a pull secret.")
 	cmd.PersistentFlags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the HostedCluster.")
 	cmd.PersistentFlags().BoolVar(&opts.Render, "render", opts.Render, "Renders the HostedCluster manifest output as YAML to stdout instead of automatically applying the manifests to the management cluster.")
-	cmd.PersistentFlags().StringVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network.")
+	cmd.PersistentFlags().StringArrayVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network. Can be specified multiple times.")
 	cmd.PersistentFlags().StringVar(&opts.SSHKeyFile, "ssh-key", opts.SSHKeyFile, "Filepath to an SSH key file.")
 	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the duration of the wait (Examples: 30s, 1h30m45s, etc.) 0 means no timeout.")
 	cmd.PersistentFlags().BoolVar(&opts.Wait, "wait", opts.Wait, "If true, the create command will block until the HostedCluster is up. Requires at least one NodePool with at least one node.")

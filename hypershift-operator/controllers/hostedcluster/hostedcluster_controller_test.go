@@ -831,7 +831,10 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	releaseImage, _ := version.LookupDefaultOCPVersion("")
 	hostedClusters := []*hyperv1.HostedCluster{
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "agent"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "agent",
+				Namespace: "test",
+			},
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type:  hyperv1.AgentPlatform,
@@ -846,7 +849,10 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "aws"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "aws",
+				Namespace: "test",
+			},
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.AWSPlatform,
@@ -869,7 +875,10 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "none"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "none",
+				Namespace: "test",
+			},
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.NonePlatform,
@@ -880,7 +889,10 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{Name: "ibm"},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ibm",
+				Namespace: "test",
+			},
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type:     hyperv1.IBMCloudPlatform,
@@ -893,7 +905,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "kubevirt",
+				Name:      "kubevirt",
+				Namespace: "test",
 				Annotations: map[string]string{
 					hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation: "true",
 				},
@@ -912,6 +925,14 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						},
 					},
 				},
+				SecretEncryption: &hyperv1.SecretEncryptionSpec{
+					Type: hyperv1.AESCBC,
+					AESCBC: &hyperv1.AESCBCSpec{
+						ActiveKey: corev1.LocalObjectReference{
+							Name: "kubevirt" + etcdEncKeyPostfix,
+						},
+					},
+				},
 				Release: hyperv1.Release{
 					Image: releaseImage.PullSpec,
 				},
@@ -922,7 +943,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	objects := []crclient.Object{
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: "secret",
+				Name:      "secret",
+				Namespace: "test",
 			},
 			Data: map[string][]byte{
 				"credentials":       []byte("creds"),
@@ -944,6 +966,15 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ibm"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubevirt"}},
 		&corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}},
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "kubevirt" + etcdEncKeyPostfix, Namespace: "test"},
+			Data: map[string][]byte{
+				hyperv1.AESCBCKeySecretKey: {
+					0, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+					17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+				},
+			},
+		},
 	}
 	for _, cluster := range hostedClusters {
 		cluster.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
@@ -986,7 +1017,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 
 	for _, hc := range hostedClusters {
 		t.Run(hc.Name, func(t *testing.T) {
-			if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}}); err != nil {
+			_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}})
+			if err != nil {
 				t.Fatalf("Reconcile failed: %v", err)
 			}
 		})
@@ -1146,6 +1178,34 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 					},
 				}},
 			expectedResult: errors.New(`cannot parse cluster ID "foobar": invalid UUID length: 6`),
+		},
+		{
+			name: "Setting Service network CIDR and NodePort IP overlapping, not allowed",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Networking: hyperv1.ClusterNetworking{
+						MachineNetwork: machineNet,
+						ClusterNetwork: clusterNet,
+						ServiceNetwork: serviceNet,
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "172.16.3.3",
+									Port:    4433,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedResult: errors.New(`[spec.networking.MachineNetwork: Invalid value: "172.16.1.0/24": spec.networking.MachineNetwork and spec.networking.ServiceNetwork overlap: 172.16.1.0/24 and 172.16.1.252/32, spec.networking.ServiceNetwork: Invalid value: "172.16.3.0/24": Nodeport IP is within the service network range: 172.16.3.3 is within 172.16.3.0/24]`),
 		},
 		{
 			name: "Setting network CIDRs overlapped, not allowed",
@@ -3667,5 +3727,359 @@ func TestReconcileCAPIProviderDeployment(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(deployment.Spec.Selector).To(BeEquivalentTo(tc.expected))
 		})
+	}
+}
+
+func TestKubevirtETCDEncKey(t *testing.T) {
+	for _, testCase := range []struct {
+		name           string
+		hc             *hyperv1.HostedCluster
+		secretName     string
+		secretExpected bool
+		objects        []crclient.Object
+	}{
+		{
+			name: "secret encryption already defined",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubevirt",
+					Namespace: "test",
+					Annotations: map[string]string{
+						hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{
+							GenerateID: "123456789",
+							Credentials: &hyperv1.KubevirtPlatformCredentials{
+								InfraNamespace: "kubevirt-kubevirt",
+								InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
+									Name: "secret",
+									Key:  "key",
+								},
+							},
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.AESCBC,
+						AESCBC: &hyperv1.AESCBCSpec{
+							ActiveKey: corev1.LocalObjectReference{
+								Name: "kubevirt" + etcdEncKeyPostfix,
+							},
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							AdvertiseAddress: pointer.String("1.2.3.4"),
+						},
+					},
+				},
+			},
+			secretName:     "kubevirt" + etcdEncKeyPostfix,
+			secretExpected: true,
+			objects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "kubevirt" + etcdEncKeyPostfix, Namespace: "test"},
+					Data: map[string][]byte{
+						hyperv1.AESCBCKeySecretKey: {1, 2, 3, 4, 5, 6, 7, 8, 9, 0},
+					},
+				},
+			},
+		},
+		{
+			name: "secret encryption not defined",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubevirt",
+					Namespace: "test",
+					Annotations: map[string]string{
+						hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{
+							GenerateID: "123456789",
+							Credentials: &hyperv1.KubevirtPlatformCredentials{
+								InfraNamespace: "kubevirt-kubevirt",
+								InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
+									Name: "secret",
+									Key:  "key",
+								},
+							},
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							AdvertiseAddress: pointer.String("1.2.3.4"),
+						},
+					},
+				},
+			},
+			secretName:     "kubevirt" + etcdEncKeyPostfix,
+			secretExpected: true,
+		},
+		{
+			name: "secret encryption with no type",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubevirt",
+					Namespace: "test",
+					Annotations: map[string]string{
+						hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{
+							GenerateID: "123456789",
+							Credentials: &hyperv1.KubevirtPlatformCredentials{
+								InfraNamespace: "kubevirt-kubevirt",
+								InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
+									Name: "secret",
+									Key:  "key",
+								},
+							},
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{},
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							AdvertiseAddress: pointer.String("1.2.3.4"),
+						},
+					},
+				},
+			},
+			secretName:     "kubevirt" + etcdEncKeyPostfix,
+			secretExpected: true,
+		},
+		{
+			name: "secret encryption with no details",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubevirt",
+					Namespace: "test",
+					Annotations: map[string]string{
+						hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{
+							GenerateID: "123456789",
+							Credentials: &hyperv1.KubevirtPlatformCredentials{
+								InfraNamespace: "kubevirt-kubevirt",
+								InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
+									Name: "secret",
+									Key:  "key",
+								},
+							},
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.AESCBC,
+					},
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							AdvertiseAddress: pointer.String("1.2.3.4"),
+						},
+					},
+				},
+			},
+			secretName:     "kubevirt" + etcdEncKeyPostfix,
+			secretExpected: true,
+		},
+		{
+			name: "secret encryption with no name",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubevirt",
+					Namespace: "test",
+					Annotations: map[string]string{
+						hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{
+							GenerateID: "123456789",
+							Credentials: &hyperv1.KubevirtPlatformCredentials{
+								InfraNamespace: "kubevirt-kubevirt",
+								InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
+									Name: "secret",
+									Key:  "key",
+								},
+							},
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type:   hyperv1.AESCBC,
+						AESCBC: &hyperv1.AESCBCSpec{},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							AdvertiseAddress: pointer.String("1.2.3.4"),
+						},
+					},
+				},
+			},
+			secretName:     "kubevirt" + etcdEncKeyPostfix,
+			secretExpected: true,
+		},
+		{
+			name: "secret encryption with custom name",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubevirt",
+					Namespace: "test",
+					Annotations: map[string]string{
+						hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{
+							GenerateID: "123456789",
+							Credentials: &hyperv1.KubevirtPlatformCredentials{
+								InfraNamespace: "kubevirt-kubevirt",
+								InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
+									Name: "secret",
+									Key:  "key",
+								},
+							},
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.AESCBC,
+						AESCBC: &hyperv1.AESCBCSpec{
+							ActiveKey: corev1.LocalObjectReference{
+								Name: "custom-name",
+							},
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							AdvertiseAddress: pointer.String("1.2.3.4"),
+						},
+					},
+				},
+			},
+			secretName:     "custom-name",
+			secretExpected: false,
+		},
+		{
+			name: "secret encryption not defined and secret exists with no key",
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubevirt",
+					Namespace: "test",
+					Annotations: map[string]string{
+						hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{
+							GenerateID: "123456789",
+							Credentials: &hyperv1.KubevirtPlatformCredentials{
+								InfraNamespace: "kubevirt-kubevirt",
+								InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
+									Name: "secret",
+									Key:  "key",
+								},
+							},
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							AdvertiseAddress: pointer.String("1.2.3.4"),
+						},
+					},
+				},
+			},
+			secretName:     "kubevirt" + etcdEncKeyPostfix,
+			secretExpected: true,
+			objects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "kubevirt" + etcdEncKeyPostfix, Namespace: "test"},
+				},
+			},
+		},
+	} {
+		t.Run(testCase.name, func(tt *testing.T) {
+			testCase.objects = append(testCase.objects, testCase.hc)
+			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(testCase.objects...).
+				Build()}
+
+			r := &HostedClusterReconciler{
+				Client: client,
+				Clock:  clock.RealClock{},
+				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(
+					capabilities.CapabilityInfrastructure,
+					capabilities.CapabilityIngress,
+					capabilities.CapabilityProxy,
+				),
+				createOrUpdate:        func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+				ReleaseProvider:       &fakereleaseprovider.FakeReleaseProvider{},
+				ImageMetadataProvider: &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}},
+				now:                   metav1.Now,
+			}
+
+			if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testCase.hc.Namespace, Name: testCase.hc.Name}}); err != nil {
+				tt.Fatalf("Reconcile failed: %v", err)
+			}
+
+			if testCase.secretExpected {
+				secList := &corev1.SecretList{}
+				err := client.List(context.Background(), secList)
+				if err != nil {
+					tt.Fatalf("should create etcd encryptiuon key secret, but no secret found")
+				}
+
+				if numSec := len(secList.Items); numSec != 1 {
+					tt.Fatalf("should create 1 secret, but found %d", numSec)
+				}
+
+				sec := secList.Items[0]
+				if sec.Name != testCase.secretName {
+					tt.Errorf("secret should be with name of %q, but it's %q", testCase.secretName, secList.Items[0].Name)
+				}
+
+				if _, keyExist := sec.Data[hyperv1.AESCBCKeySecretKey]; !keyExist {
+					tt.Errorf("the secret should contain the %q key", hyperv1.AESCBCKeySecretKey)
+				}
+			}
+
+			hcFromTest := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testCase.hc.Name,
+					Namespace: testCase.hc.Namespace,
+				},
+			}
+
+			err := client.Get(context.Background(), crclient.ObjectKeyFromObject(hcFromTest), hcFromTest)
+			if err != nil {
+				tt.Fatalf("should read the hosted cluster but got error; %v", err)
+			}
+
+			if hcFromTest.Spec.SecretEncryption == nil ||
+				hcFromTest.Spec.SecretEncryption.Type != hyperv1.AESCBC ||
+				hcFromTest.Spec.SecretEncryption.AESCBC == nil ||
+				hcFromTest.Spec.SecretEncryption.AESCBC.ActiveKey.Name != testCase.secretName {
+
+				tt.Errorf("wrong SecretEncryption %#v", hcFromTest.Spec.SecretEncryption)
+			}
+		},
+		)
 	}
 }

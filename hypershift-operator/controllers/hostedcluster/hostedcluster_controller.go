@@ -15,6 +15,7 @@ package hostedcluster
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
@@ -122,6 +123,8 @@ const (
 	controlPlaneOperatorManagesMachineAutoscaler               = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
+
+	etcdEncKeyPostfix = "-etcd-encryption-key"
 )
 
 var (
@@ -491,8 +494,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	createOrUpdate := r.createOrUpdate(req)
+
 	// Reconcile platform defaults
-	if err := r.reconcilePlatformDefaultSettings(ctx, hcluster); err != nil {
+	if err := r.reconcilePlatformDefaultSettings(ctx, hcluster, createOrUpdate, log); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -1028,8 +1033,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 	}
-
-	createOrUpdate := r.createOrUpdate(req)
 
 	var pullSecret corev1.Secret
 	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
@@ -3957,6 +3960,7 @@ func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) er
 	errs = append(errs, validateNetworkStackAddresses(hc)...)
 	errs = append(errs, validateSliceNetworkCIDRs(hc)...)
 	errs = append(errs, checkAdvertiseAddressOverlapping(hc)...)
+	errs = append(errs, validateNodePortVsServiceNetwork(hc)...)
 
 	return errs.ToAggregate()
 }
@@ -4100,7 +4104,23 @@ func checkAdvertiseAddressOverlapping(hc *hyperv1.HostedCluster) field.ErrorList
 			))
 		}
 	}
+	return errs
+}
 
+// Validate that the nodeport IP is not within the ServiceNetwork CIDR.
+func validateNodePortVsServiceNetwork(hc *hyperv1.HostedCluster) field.ErrorList {
+	var errs field.ErrorList
+
+	ip := getNodePortIP(hc)
+	if ip != nil {
+		// Validate that the nodeport IP is not within the ServiceNetwork CIDR.
+		for _, cidr := range hc.Spec.Networking.ServiceNetwork {
+			netCIDR := (net.IPNet)(cidr.CIDR)
+			if netCIDR.Contains(ip) {
+				errs = append(errs, field.Invalid(field.NewPath("spec.networking.ServiceNetwork"), cidr.CIDR.String(), fmt.Sprintf("Nodeport IP is within the service network range: %s is within %s", ip, cidr.CIDR.String())))
+			}
+		}
+	}
 	return errs
 }
 
@@ -4548,7 +4568,7 @@ func (r *HostedClusterReconciler) serviceAccountSigningKeyBytes(ctx context.Cont
 	return privateKeyPEMBytes, publicKeyPEMBytes, nil
 }
 
-func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx context.Context, hc *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx context.Context, hc *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN, logger logr.Logger) error {
 	if hc.Spec.Platform.Kubevirt == nil {
 		hc.Spec.Platform.Kubevirt = &hyperv1.KubevirtPlatformSpec{}
 	}
@@ -4606,14 +4626,64 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 		}
 	}
 
-	return nil
+	if hc.Spec.SecretEncryption == nil ||
+		len(hc.Spec.SecretEncryption.Type) == 0 ||
+		(hc.Spec.SecretEncryption.Type == hyperv1.AESCBC &&
+			(hc.Spec.SecretEncryption.AESCBC == nil || len(hc.Spec.SecretEncryption.AESCBC.ActiveKey.Name) == 0)) {
 
+		logger.Info("no etcd encryption key configuration found; adding", "hostedCluster name", hc.Name, "hostedCluster namespace", hc.Namespace)
+		etcdEncSec := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: hc.Namespace,
+				Name:      hc.Name + etcdEncKeyPostfix,
+			},
+		}
+
+		_, err := createOrUpdate(ctx, r.Client, etcdEncSec, func() error {
+			// don't override existing key just in case something weird happened
+			_, exists := etcdEncSec.Data[hyperv1.AESCBCKeySecretKey]
+			if exists {
+				return nil
+			}
+
+			generatedKey := make([]byte, 32)
+			_, err := rand.Read(generatedKey)
+			if err != nil {
+				return fmt.Errorf("failed to generate the etcd encryption key; %w", err)
+			}
+
+			if etcdEncSec.Data == nil {
+				etcdEncSec.Data = map[string][]byte{}
+			}
+			etcdEncSec.Data[hyperv1.AESCBCKeySecretKey] = generatedKey
+			etcdEncSec.Type = corev1.SecretTypeOpaque
+
+			ownerRef := config.OwnerRefFrom(hc)
+			ownerRef.ApplyTo(etcdEncSec)
+			return nil
+		})
+
+		if err != nil {
+			return fmt.Errorf("failed to create ETCD SecretEncryption key for KubeVirt platform HostedCluster: %w", err)
+		}
+
+		hc.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
+			Type: hyperv1.AESCBC,
+			AESCBC: &hyperv1.AESCBCSpec{
+				ActiveKey: corev1.LocalObjectReference{
+					Name: etcdEncSec.Name,
+				},
+			},
+		}
+	}
+
+	return nil
 }
 
-func (r *HostedClusterReconciler) reconcilePlatformDefaultSettings(ctx context.Context, hc *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) reconcilePlatformDefaultSettings(ctx context.Context, hc *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN, logger logr.Logger) error {
 	switch hc.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
-		return r.reconcileKubevirtPlatformDefaultSettings(ctx, hc)
+		return r.reconcileKubevirtPlatformDefaultSettings(ctx, hc, createOrUpdate, logger)
 	}
 	return nil
 }
@@ -4851,6 +4921,15 @@ func reportHostedClusterDeletionDuration(hcluster *hyperv1.HostedCluster, funcCl
 	// SLI: HostedCluster deletion duration.
 	deletionDuration := funcClock.Since(hcluster.DeletionTimestamp.Time).Seconds()
 	hcmetrics.HostedClusterDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(deletionDuration)
+}
+
+func getNodePortIP(hcluster *hyperv1.HostedCluster) net.IP {
+	for _, svc := range hcluster.Spec.Services {
+		if svc.Service == hyperv1.APIServer && svc.Type == hyperv1.NodePort {
+			return net.ParseIP(svc.NodePort.Address)
+		}
+	}
+	return nil
 }
 
 func isAPIServerRoute(hcluster *hyperv1.HostedCluster) bool {
