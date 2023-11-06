@@ -11,6 +11,7 @@ func init() {
 }
 
 // HostedControlPlane defines the desired state of HostedControlPlane
+// +genclient
 // +kubebuilder:resource:path=hostedcontrolplanes,shortName=hcp;hcps,scope=Namespaced,categories=cluster-api
 // +kubebuilder:storageversion
 // +kubebuilder:subresource:status
