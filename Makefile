@@ -46,7 +46,7 @@ pre-commit: all verify test
 build: hypershift-operator control-plane-operator hypershift product-cli
 
 .PHONY: update
-update: deps api api-docs app-sre-saas-template
+update: deps api api-docs app-sre-saas-template clients
 
 .PHONY: verify
 verify: update staticcheck fmt vet promtool
@@ -130,6 +130,10 @@ cluster-api-provider-azure: $(CONTROLLER_GEN)
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)
 	hack/gen-api-docs.sh $(GENAPIDOCS) $(DIR)
+
+.PHONY: clients
+clients:
+	hack/update-codegen.sh
 
 
 .PHONY: release
