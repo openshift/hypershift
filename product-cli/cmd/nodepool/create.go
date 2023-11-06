@@ -3,7 +3,7 @@ package nodepool
 import (
 	"github.com/spf13/cobra"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/openshift/hypershift/product-cli/cmd/nodepool/agent"
 	"github.com/openshift/hypershift/product-cli/cmd/nodepool/aws"

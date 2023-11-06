@@ -1,7 +1,7 @@
 package nodepool
 
 import (
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/spf13/cobra"
 
 	"github.com/openshift/hypershift/cmd/nodepool/agent"
