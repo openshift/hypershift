@@ -153,6 +153,20 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, networkType hype
 				},
 			},
 			{
+				APIGroups: []string{corev1.SchemeGroupVersion.Group},
+				Resources: []string{
+					"configmaps",
+				},
+				ResourceNames: []string{
+					"ovnkube-identity-cm",
+				},
+				Verbs: []string{
+					"create",
+					"patch",
+					"update",
+				},
+			},
+			{
 				APIGroups: []string{appsv1.SchemeGroupVersion.Group},
 				Resources: []string{"statefulsets", "deployments"},
 				Verbs:     []string{"list", "watch"},
@@ -162,6 +176,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, networkType hype
 				Resources: []string{"deployments"},
 				ResourceNames: []string{
 					"multus-admission-controller",
+					"network-node-identity",
 				},
 				Verbs: []string{"*"},
 			},
@@ -170,6 +185,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, networkType hype
 				Resources: []string{"services"},
 				ResourceNames: []string{
 					"multus-admission-controller",
+					"network-node-identity",
 				},
 				Verbs: []string{"*"},
 			},
