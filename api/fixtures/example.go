@@ -34,7 +34,6 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 	objects := []crclient.Object{
 		o.Namespace,
 		o.PullSecret,
-		o.Cluster,
 	}
 	objects = append(objects, o.Resources...)
 	if o.SSHKey != nil {
@@ -43,6 +42,9 @@ func (o *ExampleResources) AsObjects() []crclient.Object {
 	if o.AdditionalTrustBundle != nil {
 		objects = append(objects, o.AdditionalTrustBundle)
 	}
+
+	objects = append(objects, o.Cluster)
+
 	for _, nodePool := range o.NodePools {
 		objects = append(objects, nodePool)
 	}
