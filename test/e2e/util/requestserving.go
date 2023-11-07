@@ -3,6 +3,7 @@ package util
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/scheduler"
 	"os"
 	"testing"
 
@@ -58,7 +59,8 @@ func SetupRequestServingNodePools(ctx context.Context, t *testing.T, kubeconfigP
 		np.Spec.Replicas = pointer.Int32(1)
 		np.Spec.AutoScaling = nil
 		np.Spec.NodeLabels = map[string]string{
-			hyperv1.RequestServingComponentLabel: "true",
+			hyperv1.RequestServingComponentLabel:      "true",
+			scheduler.OSDFleetManagerPairedNodesLabel: "true",
 		}
 		np.Spec.Taints = []hyperv1.Taint{
 			{
