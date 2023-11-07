@@ -1641,3 +1641,45 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 		}
 	})
 }
+
+func EnsureOnlyRequestServingPodsOnRequestServingNodes(t *testing.T, ctx context.Context, client crclient.Client) {
+	g := NewWithT(t)
+
+	var reqServingNodes corev1.NodeList
+	if err := client.List(ctx, &reqServingNodes, crclient.MatchingLabels{hyperv1.RequestServingComponentLabel: "true"}); err != nil {
+		t.Fatalf("failed to list requestServing nodes in guest cluster: %v", err)
+	}
+
+	for _, node := range reqServingNodes.Items {
+		var podObj corev1.Pod
+		var podList corev1.PodList
+
+		if err := client.List(ctx, &podList, crclient.MatchingFields{podObj.Spec.NodeName: node.Name}); err != nil {
+			t.Fatalf("failed to list pods for node: %v , error: %v", node.Name, err)
+		}
+
+		for _, pod := range podList.Items {
+			g.Expect(pod.Labels).To(HaveKeyWithValue(hyperv1.RequestServingComponentLabel, "true"))
+		}
+	}
+}
+
+func EnsureAllReqServingPodsLandOnReqServingNodes(t *testing.T, ctx context.Context, client crclient.Client) {
+	g := NewWithT(t)
+
+	var reqServingPods corev1.PodList
+	if err := client.List(ctx, &reqServingPods, crclient.MatchingLabels{hyperv1.RequestServingComponentLabel: "true"}); err != nil {
+		t.Fatalf("failed to list requestServing pods in guest cluster: %v", err)
+	}
+
+	for _, pod := range reqServingPods.Items {
+		var node corev1.Node
+		node.Name = pod.Spec.NodeName
+
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(&node), &node); err != nil {
+			t.Fatalf("failed to get node: %v , error: %v", node.Name, err)
+		}
+
+		g.Expect(node.Labels).To(HaveKeyWithValue(hyperv1.RequestServingComponentLabel, "true"))
+	}
+}
