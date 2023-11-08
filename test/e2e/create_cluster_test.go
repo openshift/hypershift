@@ -51,7 +51,9 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 	defer cancel()
 
 	nodePools := e2eutil.SetupRequestServingNodePools(ctx, t, globalOpts.ManagementParentKubeconfig, globalOpts.ManagementClusterNamespace, globalOpts.ManagementClusterName)
-	defer e2eutil.TearDownRequestServingNodePools(ctx, t, globalOpts.ManagementParentKubeconfig, nodePools)
+	nonReqServingNodePool := e2eutil.SetupNonRequestServingNodePool(ctx, t, globalOpts.ManagementParentKubeconfig, globalOpts.ManagementClusterNamespace, globalOpts.ManagementClusterName)
+	nodePools = append(nodePools, nonReqServingNodePool)
+	defer e2eutil.TearDownNodePools(ctx, t, globalOpts.ManagementParentKubeconfig, nodePools)
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	zones := strings.Split(globalOpts.configurableClusterOptions.Zone.String(), ",")
@@ -61,6 +63,7 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 		clusterOpts.AWSPlatform.Zones = zones
 		clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 		clusterOpts.NodePoolReplicas = 1
+		clusterOpts.NodeSelector = map[string]string{"hypershift.openshift.io/control-plane": "true"}
 	}
 
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
@@ -71,6 +74,7 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 		e2eutil.EnsurePSANotPrivileged(t, ctx, guestClient)
 		e2eutil.EnsureAllReqServingPodsLandOnReqServingNodes(t, ctx, guestClient)
 		e2eutil.EnsureOnlyRequestServingPodsOnRequestServingNodes(t, ctx, guestClient)
+		e2eutil.EnsureNoHCPPodsLandOnDefaultNode(t, ctx, guestClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 

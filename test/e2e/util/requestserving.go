@@ -62,6 +62,7 @@ func SetupRequestServingNodePools(ctx context.Context, t *testing.T, kubeconfigP
 		np.Spec.NodeLabels = map[string]string{
 			hyperv1.RequestServingComponentLabel:      "true",
 			scheduler.OSDFleetManagerPairedNodesLabel: "true",
+			"hypershift.openshift.io/control-plane":   "true",
 		}
 		np.Spec.Taints = []hyperv1.Taint{
 			{
@@ -90,12 +91,57 @@ func SetupRequestServingNodePools(ctx context.Context, t *testing.T, kubeconfigP
 	return result
 }
 
-func TearDownRequestServingNodePools(ctx context.Context, t *testing.T, kubeconfigPath string, nodePools []*hyperv1.NodePool) {
+func SetupNonRequestServingNodePool(ctx context.Context, t *testing.T, kubeconfigPath, mgmtHCNamespace, mgmtHCName string) *hyperv1.NodePool {
+	g := NewWithT(t)
+	mgmtParentClient := kubeClient(t, kubeconfigPath)
+	nodePoolList := &hyperv1.NodePoolList{}
+	err := mgmtParentClient.List(ctx, nodePoolList, client.InNamespace(mgmtHCNamespace))
+	g.Expect(err).ToNot(HaveOccurred(), "cannot list nodepools in management parent cluster namespace "+mgmtHCNamespace)
+
+	// filter  management cluster nodepools
+	var np *hyperv1.NodePool
+	for _, nodePool := range nodePoolList.Items {
+		if nodePool.Spec.ClusterName == mgmtHCName && nodePool.Spec.Platform.AWS != nil {
+			np = &nodePool
+		}
+	}
+	g.Expect(np).ToNot(BeNil(), "did not find any nodepools in parent")
+
+	// Prepare and create nodepool for non request serving components
+	nonReqServingNodePool := np.DeepCopy()
+
+	prepareNodePool := func(np *hyperv1.NodePool) {
+		np.ObjectMeta = metav1.ObjectMeta{
+			Name:      SimpleNameGenerator.GenerateName(fmt.Sprintf("%s-non-reqserving-", mgmtHCName)),
+			Namespace: mgmtHCNamespace,
+		}
+		np.Status = hyperv1.NodePoolStatus{}
+		np.Spec.Replicas = pointer.Int32(1)
+		np.Spec.AutoScaling = nil
+		np.Spec.NodeLabels = map[string]string{
+			"hypershift.openshift.io/control-plane": "true",
+		}
+	}
+
+	prepareNodePool(nonReqServingNodePool)
+	createErr := mgmtParentClient.Create(ctx, nonReqServingNodePool)
+	g.Expect(createErr).ToNot(HaveOccurred(), "failed to create non request management nodepool")
+	t.Logf("Created non request serving nodepool %s/%s", nonReqServingNodePool.Namespace, nonReqServingNodePool.Name)
+
+	// Wait for nodes to become available
+	mgmtClient, err := GetClient()
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get management cluster client")
+	_ = WaitForNReadyNodesByNodePool(t, ctx, mgmtClient, 1, hyperv1.AWSPlatform, nonReqServingNodePool.Name)
+
+	return nonReqServingNodePool
+}
+
+func TearDownNodePools(ctx context.Context, t *testing.T, kubeconfigPath string, nodePools []*hyperv1.NodePool) {
 	g := NewWithT(t)
 	mgmtParentClient := kubeClient(t, kubeconfigPath)
 	var errs []error
 	for _, np := range nodePools {
-		t.Logf("Tearing down request serving nodepool %s/%s", np.Namespace, np.Name)
+		t.Logf("Tearing down custom nodepool %s/%s", np.Namespace, np.Name)
 		_, err := supportutil.DeleteIfNeeded(ctx, mgmtParentClient, np)
 		if err != nil {
 			errs = append(errs, err)
