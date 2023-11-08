@@ -323,8 +323,8 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 
 	// TODO: Extract this from the release image or require a parameter
 	// Extraction is done like this:
-	// docker run --rm -it --entrypoint cat quay.io/openshift-release-dev/ocp-release:4.10.0-rc.0-x86_64 release-manifests/0000_50_installer_coreos-bootimages.yaml |yaml2json |jq .data.stream -r|jq '.architectures.x86_64["rhel-coreos-extensions"]["azure-disk"].url'
-	sourceURL := "https://rhcos.blob.core.windows.net/imagebucket/rhcos-49.84.202110081407-0-azure.x86_64.vhd"
+	// podman run --rm -it --entrypoint cat quay.io/openshift-release-dev/ocp-release:4.14.1-x86_64 release-manifests/0000_50_installer_coreos-bootimages.yaml |yq .data.stream -r|yq '.architectures.x86_64["rhel-coreos-extensions"]["azure-disk"].url'
+	sourceURL := "https://rhcos.blob.core.windows.net/imagebucket/rhcos-414.92.202310170514-0-azure.x86_64.vhd"
 	blobName := "rhcos.x86_64.vhd"
 
 	// Explicitly check this, Azure API makes inferring the problem from the error message extremely hard
