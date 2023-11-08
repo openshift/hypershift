@@ -1,5 +1,5 @@
 /**
- * (C) Copyright IBM Corp. 2021.
+ * (C) Copyright IBM Corp. 2023.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
  */
 
 /*
- * IBM OpenAPI SDK Code Generator Version: 99-SNAPSHOT-4c92c221-20210211-060810
+ * IBM OpenAPI SDK Code Generator Version: 3.70.0-7df966bf-20230419-195904
  */
 
 // Package globalcatalogv1 : Operations and models for the GlobalCatalogV1 service
@@ -25,13 +25,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/IBM/go-sdk-core/v5/core"
-	common "github.com/IBM/platform-services-go-sdk/common"
-	"github.com/go-openapi/strfmt"
 	"io"
 	"net/http"
 	"reflect"
 	"time"
+
+	"github.com/IBM/go-sdk-core/v5/core"
+	common "github.com/IBM/platform-services-go-sdk/common"
+	"github.com/go-openapi/strfmt"
 )
 
 // GlobalCatalogV1 : The catalog service manages offerings across geographies as the system of record. The catalog
@@ -41,7 +42,7 @@ import (
 // provisioning, regions, and more. For more information, see the [catalog
 // documentation](https://cloud.ibm.com/docs/overview/catalog.html#global-catalog-overview).
 //
-// Version: 1.0.3
+// API Version: 1.0.3
 type GlobalCatalogV1 struct {
 	Service *core.BaseService
 }
@@ -237,11 +238,13 @@ func (globalCatalog *GlobalCatalogV1) ListCatalogEntriesWithContext(ctx context.
 	if err != nil {
 		return
 	}
-	err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalEntrySearchResult)
-	if err != nil {
-		return
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalEntrySearchResult)
+		if err != nil {
+			return
+		}
+		response.Result = result
 	}
-	response.Result = result
 
 	return
 }
@@ -340,11 +343,13 @@ func (globalCatalog *GlobalCatalogV1) CreateCatalogEntryWithContext(ctx context.
 	if err != nil {
 		return
 	}
-	err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalCatalogEntry)
-	if err != nil {
-		return
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalCatalogEntry)
+		if err != nil {
+			return
+		}
+		response.Result = result
 	}
-	response.Result = result
 
 	return
 }
@@ -416,11 +421,13 @@ func (globalCatalog *GlobalCatalogV1) GetCatalogEntryWithContext(ctx context.Con
 	if err != nil {
 		return
 	}
-	err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalCatalogEntry)
-	if err != nil {
-		return
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalCatalogEntry)
+		if err != nil {
+			return
+		}
+		response.Result = result
 	}
-	response.Result = result
 
 	return
 }
@@ -522,11 +529,13 @@ func (globalCatalog *GlobalCatalogV1) UpdateCatalogEntryWithContext(ctx context.
 	if err != nil {
 		return
 	}
-	err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalCatalogEntry)
-	if err != nil {
-		return
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalCatalogEntry)
+		if err != nil {
+			return
+		}
+		response.Result = result
 	}
-	response.Result = result
 
 	return
 }
@@ -667,11 +676,13 @@ func (globalCatalog *GlobalCatalogV1) GetChildObjectsWithContext(ctx context.Con
 	if err != nil {
 		return
 	}
-	err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalEntrySearchResult)
-	if err != nil {
-		return
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalEntrySearchResult)
+		if err != nil {
+			return
+		}
+		response.Result = result
 	}
-	response.Result = result
 
 	return
 }
@@ -783,11 +794,13 @@ func (globalCatalog *GlobalCatalogV1) GetVisibilityWithContext(ctx context.Conte
 	if err != nil {
 		return
 	}
-	err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalVisibility)
-	if err != nil {
-		return
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalVisibility)
+		if err != nil {
+			return
+		}
+		response.Result = result
 	}
-	response.Result = result
 
 	return
 }
@@ -915,11 +928,79 @@ func (globalCatalog *GlobalCatalogV1) GetPricingWithContext(ctx context.Context,
 	if err != nil {
 		return
 	}
-	err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalPricingGet)
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalPricingGet)
+		if err != nil {
+			return
+		}
+		response.Result = result
+	}
+
+	return
+}
+
+// GetPricingDeployments : Get the pricing deployments for a plan
+// This endpoint returns the deployment pricing for a plan. For a plan it returns a pricing for each visible child
+// deployment object. Static pricing is defined in the catalog. Dynamic pricing is stored in IBM Cloud Pricing Catalog.
+// This can be used by an unauthenticated user for publicly available services.
+func (globalCatalog *GlobalCatalogV1) GetPricingDeployments(getPricingDeploymentsOptions *GetPricingDeploymentsOptions) (result *PricingSearchResult, response *core.DetailedResponse, err error) {
+	return globalCatalog.GetPricingDeploymentsWithContext(context.Background(), getPricingDeploymentsOptions)
+}
+
+// GetPricingDeploymentsWithContext is an alternate form of the GetPricingDeployments method which supports a Context parameter
+func (globalCatalog *GlobalCatalogV1) GetPricingDeploymentsWithContext(ctx context.Context, getPricingDeploymentsOptions *GetPricingDeploymentsOptions) (result *PricingSearchResult, response *core.DetailedResponse, err error) {
+	err = core.ValidateNotNil(getPricingDeploymentsOptions, "getPricingDeploymentsOptions cannot be nil")
 	if err != nil {
 		return
 	}
-	response.Result = result
+	err = core.ValidateStruct(getPricingDeploymentsOptions, "getPricingDeploymentsOptions")
+	if err != nil {
+		return
+	}
+
+	pathParamsMap := map[string]string{
+		"id": *getPricingDeploymentsOptions.ID,
+	}
+
+	builder := core.NewRequestBuilder(core.GET)
+	builder = builder.WithContext(ctx)
+	builder.EnableGzipCompression = globalCatalog.GetEnableGzipCompression()
+	_, err = builder.ResolveRequestURL(globalCatalog.Service.Options.URL, `/{id}/pricing/deployment`, pathParamsMap)
+	if err != nil {
+		return
+	}
+
+	for headerName, headerValue := range getPricingDeploymentsOptions.Headers {
+		builder.AddHeader(headerName, headerValue)
+	}
+
+	sdkHeaders := common.GetSdkHeaders("global_catalog", "V1", "GetPricingDeployments")
+	for headerName, headerValue := range sdkHeaders {
+		builder.AddHeader(headerName, headerValue)
+	}
+	builder.AddHeader("Accept", "application/json")
+
+	if getPricingDeploymentsOptions.Account != nil {
+		builder.AddQuery("account", fmt.Sprint(*getPricingDeploymentsOptions.Account))
+	}
+
+	request, err := builder.Build()
+	if err != nil {
+		return
+	}
+
+	var rawResponse map[string]json.RawMessage
+	response, err = globalCatalog.Service.Request(request, &rawResponse)
+	if err != nil {
+		return
+	}
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalPricingSearchResult)
+		if err != nil {
+			return
+		}
+		response.Result = result
+	}
 
 	return
 }
@@ -989,11 +1070,13 @@ func (globalCatalog *GlobalCatalogV1) GetAuditLogsWithContext(ctx context.Contex
 	if err != nil {
 		return
 	}
-	err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalAuditSearchResult)
-	if err != nil {
-		return
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalAuditSearchResult)
+		if err != nil {
+			return
+		}
+		response.Result = result
 	}
-	response.Result = result
 
 	return
 }
@@ -1051,11 +1134,13 @@ func (globalCatalog *GlobalCatalogV1) ListArtifactsWithContext(ctx context.Conte
 	if err != nil {
 		return
 	}
-	err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalArtifacts)
-	if err != nil {
-		return
+	if rawResponse != nil {
+		err = core.UnmarshalModel(rawResponse, "", &result, UnmarshalArtifacts)
+		if err != nil {
+			return
+		}
+		response.Result = result
 	}
-	response.Result = result
 
 	return
 }
@@ -2027,6 +2112,16 @@ type CatalogEntryMetadataPricing struct {
 	// Plan-specific starting price information.
 	StartingPrice *StartingPrice `json:"starting_price,omitempty"`
 
+	// The deployment object id this pricing is from. Only set if object kind is deployment.
+	DeploymentID *string `json:"deployment_id,omitempty"`
+
+	// The deployment location this pricing is from. Only set if object kind is deployment.
+	DeploymentLocation *string `json:"deployment_location,omitempty"`
+
+	// Is the location price not available. Only set in api /pricing/deployment and only set if true. This means for the
+	// given deployment object there was no pricing set in pricing catalog.
+	DeploymentLocationNoPriceAvailable *bool `json:"deployment_location_no_price_available,omitempty"`
+
 	// Plan-specific cost metric structure.
 	Metrics []Metrics `json:"metrics,omitempty"`
 }
@@ -2046,6 +2141,18 @@ func UnmarshalCatalogEntryMetadataPricing(m map[string]json.RawMessage, result i
 	if err != nil {
 		return
 	}
+	err = core.UnmarshalPrimitive(m, "deployment_id", &obj.DeploymentID)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "deployment_location", &obj.DeploymentLocation)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "deployment_location_no_price_available", &obj.DeploymentLocationNoPriceAvailable)
+	if err != nil {
+		return
+	}
 	err = core.UnmarshalModel(m, "metrics", &obj.Metrics, UnmarshalMetrics)
 	if err != nil {
 		return
@@ -2058,47 +2165,47 @@ func UnmarshalCatalogEntryMetadataPricing(m map[string]json.RawMessage, result i
 type CreateCatalogEntryOptions struct {
 	// Programmatic name for this catalog entry, which must be formatted like a CRN segment. See the display name in
 	// OverviewUI for a user-readable name.
-	Name *string `validate:"required"`
+	Name *string `json:"name" validate:"required"`
 
 	// The type of catalog entry, **service**, **template**, **dashboard**, which determines the type and shape of the
 	// object.
-	Kind *string `validate:"required"`
+	Kind *string `json:"kind" validate:"required"`
 
 	// Overview is nested in the top level. The key value pair is `[_language_]overview_ui`.
-	OverviewUI map[string]Overview `validate:"required"`
+	OverviewUI map[string]Overview `json:"overview_ui" validate:"required"`
 
 	// Image annotation for this catalog entry. The image is a URL.
-	Images *Image `validate:"required"`
+	Images *Image `json:"images" validate:"required"`
 
 	// Boolean value that determines the global visibility for the catalog entry, and its children. If it is not enabled,
 	// all plans are disabled.
-	Disabled *bool `validate:"required"`
+	Disabled *bool `json:"disabled" validate:"required"`
 
 	// A list of tags. For example, IBM, 3rd Party, Beta, GA, and Single Tenant.
-	Tags []string `validate:"required"`
+	Tags []string `json:"tags" validate:"required"`
 
 	// Information related to the provider associated with a catalog entry.
-	Provider *Provider `validate:"required"`
+	Provider *Provider `json:"provider" validate:"required"`
 
 	// Catalog entry's unique ID. It's the same across all catalog instances.
-	ID *string `validate:"required"`
+	ID *string `json:"id" validate:"required"`
 
 	// The ID of the parent catalog entry if it exists.
-	ParentID *string
+	ParentID *string `json:"parent_id,omitempty"`
 
 	// Boolean value that determines whether the catalog entry is a group.
-	Group *bool
+	Group *bool `json:"group,omitempty"`
 
 	// Boolean value that describes whether the service is active.
-	Active *bool
+	Active *bool `json:"active,omitempty"`
 
 	// Model used to describe metadata object that can be set.
-	Metadata *ObjectMetadataSet
+	Metadata *ObjectMetadataSet `json:"metadata,omitempty"`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -2128,81 +2235,81 @@ func (*GlobalCatalogV1) NewCreateCatalogEntryOptions(name string, kind string, o
 }
 
 // SetName : Allow user to set Name
-func (options *CreateCatalogEntryOptions) SetName(name string) *CreateCatalogEntryOptions {
-	options.Name = core.StringPtr(name)
-	return options
+func (_options *CreateCatalogEntryOptions) SetName(name string) *CreateCatalogEntryOptions {
+	_options.Name = core.StringPtr(name)
+	return _options
 }
 
 // SetKind : Allow user to set Kind
-func (options *CreateCatalogEntryOptions) SetKind(kind string) *CreateCatalogEntryOptions {
-	options.Kind = core.StringPtr(kind)
-	return options
+func (_options *CreateCatalogEntryOptions) SetKind(kind string) *CreateCatalogEntryOptions {
+	_options.Kind = core.StringPtr(kind)
+	return _options
 }
 
 // SetOverviewUI : Allow user to set OverviewUI
-func (options *CreateCatalogEntryOptions) SetOverviewUI(overviewUI map[string]Overview) *CreateCatalogEntryOptions {
-	options.OverviewUI = overviewUI
-	return options
+func (_options *CreateCatalogEntryOptions) SetOverviewUI(overviewUI map[string]Overview) *CreateCatalogEntryOptions {
+	_options.OverviewUI = overviewUI
+	return _options
 }
 
 // SetImages : Allow user to set Images
-func (options *CreateCatalogEntryOptions) SetImages(images *Image) *CreateCatalogEntryOptions {
-	options.Images = images
-	return options
+func (_options *CreateCatalogEntryOptions) SetImages(images *Image) *CreateCatalogEntryOptions {
+	_options.Images = images
+	return _options
 }
 
 // SetDisabled : Allow user to set Disabled
-func (options *CreateCatalogEntryOptions) SetDisabled(disabled bool) *CreateCatalogEntryOptions {
-	options.Disabled = core.BoolPtr(disabled)
-	return options
+func (_options *CreateCatalogEntryOptions) SetDisabled(disabled bool) *CreateCatalogEntryOptions {
+	_options.Disabled = core.BoolPtr(disabled)
+	return _options
 }
 
 // SetTags : Allow user to set Tags
-func (options *CreateCatalogEntryOptions) SetTags(tags []string) *CreateCatalogEntryOptions {
-	options.Tags = tags
-	return options
+func (_options *CreateCatalogEntryOptions) SetTags(tags []string) *CreateCatalogEntryOptions {
+	_options.Tags = tags
+	return _options
 }
 
 // SetProvider : Allow user to set Provider
-func (options *CreateCatalogEntryOptions) SetProvider(provider *Provider) *CreateCatalogEntryOptions {
-	options.Provider = provider
-	return options
+func (_options *CreateCatalogEntryOptions) SetProvider(provider *Provider) *CreateCatalogEntryOptions {
+	_options.Provider = provider
+	return _options
 }
 
 // SetID : Allow user to set ID
-func (options *CreateCatalogEntryOptions) SetID(id string) *CreateCatalogEntryOptions {
-	options.ID = core.StringPtr(id)
-	return options
+func (_options *CreateCatalogEntryOptions) SetID(id string) *CreateCatalogEntryOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
 }
 
 // SetParentID : Allow user to set ParentID
-func (options *CreateCatalogEntryOptions) SetParentID(parentID string) *CreateCatalogEntryOptions {
-	options.ParentID = core.StringPtr(parentID)
-	return options
+func (_options *CreateCatalogEntryOptions) SetParentID(parentID string) *CreateCatalogEntryOptions {
+	_options.ParentID = core.StringPtr(parentID)
+	return _options
 }
 
 // SetGroup : Allow user to set Group
-func (options *CreateCatalogEntryOptions) SetGroup(group bool) *CreateCatalogEntryOptions {
-	options.Group = core.BoolPtr(group)
-	return options
+func (_options *CreateCatalogEntryOptions) SetGroup(group bool) *CreateCatalogEntryOptions {
+	_options.Group = core.BoolPtr(group)
+	return _options
 }
 
 // SetActive : Allow user to set Active
-func (options *CreateCatalogEntryOptions) SetActive(active bool) *CreateCatalogEntryOptions {
-	options.Active = core.BoolPtr(active)
-	return options
+func (_options *CreateCatalogEntryOptions) SetActive(active bool) *CreateCatalogEntryOptions {
+	_options.Active = core.BoolPtr(active)
+	return _options
 }
 
 // SetMetadata : Allow user to set Metadata
-func (options *CreateCatalogEntryOptions) SetMetadata(metadata *ObjectMetadataSet) *CreateCatalogEntryOptions {
-	options.Metadata = metadata
-	return options
+func (_options *CreateCatalogEntryOptions) SetMetadata(metadata *ObjectMetadataSet) *CreateCatalogEntryOptions {
+	_options.Metadata = metadata
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *CreateCatalogEntryOptions) SetAccount(account string) *CreateCatalogEntryOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *CreateCatalogEntryOptions) SetAccount(account string) *CreateCatalogEntryOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -2238,15 +2345,15 @@ func UnmarshalDrMetaData(m map[string]json.RawMessage, result interface{}) (err 
 // DeleteArtifactOptions : The DeleteArtifact options.
 type DeleteArtifactOptions struct {
 	// The object's unique ID.
-	ObjectID *string `validate:"required,ne="`
+	ObjectID *string `json:"object_id" validate:"required,ne="`
 
 	// The artifact's ID.
-	ArtifactID *string `validate:"required,ne="`
+	ArtifactID *string `json:"artifact_id" validate:"required,ne="`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -2261,21 +2368,21 @@ func (*GlobalCatalogV1) NewDeleteArtifactOptions(objectID string, artifactID str
 }
 
 // SetObjectID : Allow user to set ObjectID
-func (options *DeleteArtifactOptions) SetObjectID(objectID string) *DeleteArtifactOptions {
-	options.ObjectID = core.StringPtr(objectID)
-	return options
+func (_options *DeleteArtifactOptions) SetObjectID(objectID string) *DeleteArtifactOptions {
+	_options.ObjectID = core.StringPtr(objectID)
+	return _options
 }
 
 // SetArtifactID : Allow user to set ArtifactID
-func (options *DeleteArtifactOptions) SetArtifactID(artifactID string) *DeleteArtifactOptions {
-	options.ArtifactID = core.StringPtr(artifactID)
-	return options
+func (_options *DeleteArtifactOptions) SetArtifactID(artifactID string) *DeleteArtifactOptions {
+	_options.ArtifactID = core.StringPtr(artifactID)
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *DeleteArtifactOptions) SetAccount(account string) *DeleteArtifactOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *DeleteArtifactOptions) SetAccount(account string) *DeleteArtifactOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -2287,16 +2394,16 @@ func (options *DeleteArtifactOptions) SetHeaders(param map[string]string) *Delet
 // DeleteCatalogEntryOptions : The DeleteCatalogEntry options.
 type DeleteCatalogEntryOptions struct {
 	// The object's unique ID.
-	ID *string `validate:"required,ne="`
+	ID *string `json:"id" validate:"required,ne="`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// This will cause entry to be deleted fully. By default it is archived for two weeks, so that it can be restored if
 	// necessary.
-	Force *bool
+	Force *bool `json:"force,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -2310,21 +2417,21 @@ func (*GlobalCatalogV1) NewDeleteCatalogEntryOptions(id string) *DeleteCatalogEn
 }
 
 // SetID : Allow user to set ID
-func (options *DeleteCatalogEntryOptions) SetID(id string) *DeleteCatalogEntryOptions {
-	options.ID = core.StringPtr(id)
-	return options
+func (_options *DeleteCatalogEntryOptions) SetID(id string) *DeleteCatalogEntryOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *DeleteCatalogEntryOptions) SetAccount(account string) *DeleteCatalogEntryOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *DeleteCatalogEntryOptions) SetAccount(account string) *DeleteCatalogEntryOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetForce : Allow user to set Force
-func (options *DeleteCatalogEntryOptions) SetForce(force bool) *DeleteCatalogEntryOptions {
-	options.Force = core.BoolPtr(force)
-	return options
+func (_options *DeleteCatalogEntryOptions) SetForce(force bool) *DeleteCatalogEntryOptions {
+	_options.Force = core.BoolPtr(force)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -2482,18 +2589,18 @@ func UnmarshalEntrySearchResult(m map[string]json.RawMessage, result interface{}
 // GetArtifactOptions : The GetArtifact options.
 type GetArtifactOptions struct {
 	// The object's unique ID.
-	ObjectID *string `validate:"required,ne="`
+	ObjectID *string `json:"object_id" validate:"required,ne="`
 
 	// The artifact's ID.
-	ArtifactID *string `validate:"required,ne="`
+	ArtifactID *string `json:"artifact_id" validate:"required,ne="`
 
 	// The type of the response:  or *_/_*.
-	Accept *string
+	Accept *string `json:"Accept,omitempty"`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -2508,27 +2615,27 @@ func (*GlobalCatalogV1) NewGetArtifactOptions(objectID string, artifactID string
 }
 
 // SetObjectID : Allow user to set ObjectID
-func (options *GetArtifactOptions) SetObjectID(objectID string) *GetArtifactOptions {
-	options.ObjectID = core.StringPtr(objectID)
-	return options
+func (_options *GetArtifactOptions) SetObjectID(objectID string) *GetArtifactOptions {
+	_options.ObjectID = core.StringPtr(objectID)
+	return _options
 }
 
 // SetArtifactID : Allow user to set ArtifactID
-func (options *GetArtifactOptions) SetArtifactID(artifactID string) *GetArtifactOptions {
-	options.ArtifactID = core.StringPtr(artifactID)
-	return options
+func (_options *GetArtifactOptions) SetArtifactID(artifactID string) *GetArtifactOptions {
+	_options.ArtifactID = core.StringPtr(artifactID)
+	return _options
 }
 
 // SetAccept : Allow user to set Accept
-func (options *GetArtifactOptions) SetAccept(accept string) *GetArtifactOptions {
-	options.Accept = core.StringPtr(accept)
-	return options
+func (_options *GetArtifactOptions) SetAccept(accept string) *GetArtifactOptions {
+	_options.Accept = core.StringPtr(accept)
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *GetArtifactOptions) SetAccount(account string) *GetArtifactOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *GetArtifactOptions) SetAccount(account string) *GetArtifactOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -2540,28 +2647,28 @@ func (options *GetArtifactOptions) SetHeaders(param map[string]string) *GetArtif
 // GetAuditLogsOptions : The GetAuditLogs options.
 type GetAuditLogsOptions struct {
 	// The object's unique ID.
-	ID *string `validate:"required,ne="`
+	ID *string `json:"id" validate:"required,ne="`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// Sets the sort order. False is descending.
-	Ascending *string
+	Ascending *string `json:"ascending,omitempty"`
 
 	// Starting time for the logs. If it's descending then the entries will be equal or earlier. The default is latest. For
 	// ascending it will entries equal or later. The default is earliest. It can be either a number or a string. If a
 	// number then it is in the format of Unix timestamps. If it is a string then it is a date in the format
 	// YYYY-MM-DDTHH:MM:SSZ  and the time is UTC. The T and the Z are required. For example: 2017-12-24T12:00:00Z for Noon
 	// UTC on Dec 24, 2017.
-	Startat *string
+	Startat *string `json:"startat,omitempty"`
 
 	// Count of number of log entries to skip before returning logs. The default is zero.
-	Offset *int64
+	Offset *int64 `json:"_offset,omitempty"`
 
 	// Count of number of entries to return. The default is fifty. The maximum value is two hundred.
-	Limit *int64
+	Limit *int64 `json:"_limit,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -2575,39 +2682,39 @@ func (*GlobalCatalogV1) NewGetAuditLogsOptions(id string) *GetAuditLogsOptions {
 }
 
 // SetID : Allow user to set ID
-func (options *GetAuditLogsOptions) SetID(id string) *GetAuditLogsOptions {
-	options.ID = core.StringPtr(id)
-	return options
+func (_options *GetAuditLogsOptions) SetID(id string) *GetAuditLogsOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *GetAuditLogsOptions) SetAccount(account string) *GetAuditLogsOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *GetAuditLogsOptions) SetAccount(account string) *GetAuditLogsOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetAscending : Allow user to set Ascending
-func (options *GetAuditLogsOptions) SetAscending(ascending string) *GetAuditLogsOptions {
-	options.Ascending = core.StringPtr(ascending)
-	return options
+func (_options *GetAuditLogsOptions) SetAscending(ascending string) *GetAuditLogsOptions {
+	_options.Ascending = core.StringPtr(ascending)
+	return _options
 }
 
 // SetStartat : Allow user to set Startat
-func (options *GetAuditLogsOptions) SetStartat(startat string) *GetAuditLogsOptions {
-	options.Startat = core.StringPtr(startat)
-	return options
+func (_options *GetAuditLogsOptions) SetStartat(startat string) *GetAuditLogsOptions {
+	_options.Startat = core.StringPtr(startat)
+	return _options
 }
 
 // SetOffset : Allow user to set Offset
-func (options *GetAuditLogsOptions) SetOffset(offset int64) *GetAuditLogsOptions {
-	options.Offset = core.Int64Ptr(offset)
-	return options
+func (_options *GetAuditLogsOptions) SetOffset(offset int64) *GetAuditLogsOptions {
+	_options.Offset = core.Int64Ptr(offset)
+	return _options
 }
 
 // SetLimit : Allow user to set Limit
-func (options *GetAuditLogsOptions) SetLimit(limit int64) *GetAuditLogsOptions {
-	options.Limit = core.Int64Ptr(limit)
-	return options
+func (_options *GetAuditLogsOptions) SetLimit(limit int64) *GetAuditLogsOptions {
+	_options.Limit = core.Int64Ptr(limit)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -2618,32 +2725,32 @@ func (options *GetAuditLogsOptions) SetHeaders(param map[string]string) *GetAudi
 
 // GetCatalogEntryOptions : The GetCatalogEntry options.
 type GetCatalogEntryOptions struct {
-	// The catalog entry's unqiue ID.
-	ID *string `validate:"required,ne="`
+	// The catalog entry's unique ID.
+	ID *string `json:"id" validate:"required,ne="`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// A GET call by default returns a basic set of properties. To include other properties, you must add this parameter. A
 	// wildcard (`*`) includes all properties for an object, for example `GET /id?include=*`. To include specific metadata
 	// fields, separate each field with a colon (:), for example `GET /id?include=metadata.ui:metadata.pricing`.
-	Include *string
+	Include *string `json:"include,omitempty"`
 
-	// Return the data strings in the specified langauge. By default the strings returned are of the language preferred by
-	// your browser through the Accept-Langauge header, which allows an override of the header. Languages are specified in
+	// Return the data strings in the specified language. By default the strings returned are of the language preferred by
+	// your browser through the Accept-Language header, which allows an override of the header. Languages are specified in
 	// standard form, such as `en-us`. To include all languages use a wildcard (*).
-	Languages *string
+	Languages *string `json:"languages,omitempty"`
 
 	// Returns all available fields for all languages. Use the value `?complete=true` as shortcut for
 	// ?include=*&languages=*.
-	Complete *bool
+	Complete *bool `json:"complete,omitempty"`
 
 	// Return the children down to the requested depth. Use * to include the entire children tree. If there are more
 	// children than the maximum permitted an error will be returned. Be judicious with this as it can cause a large number
 	// of database accesses and can result in a large amount of data returned.
-	Depth *int64
+	Depth *int64 `json:"depth,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -2657,39 +2764,39 @@ func (*GlobalCatalogV1) NewGetCatalogEntryOptions(id string) *GetCatalogEntryOpt
 }
 
 // SetID : Allow user to set ID
-func (options *GetCatalogEntryOptions) SetID(id string) *GetCatalogEntryOptions {
-	options.ID = core.StringPtr(id)
-	return options
+func (_options *GetCatalogEntryOptions) SetID(id string) *GetCatalogEntryOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *GetCatalogEntryOptions) SetAccount(account string) *GetCatalogEntryOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *GetCatalogEntryOptions) SetAccount(account string) *GetCatalogEntryOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetInclude : Allow user to set Include
-func (options *GetCatalogEntryOptions) SetInclude(include string) *GetCatalogEntryOptions {
-	options.Include = core.StringPtr(include)
-	return options
+func (_options *GetCatalogEntryOptions) SetInclude(include string) *GetCatalogEntryOptions {
+	_options.Include = core.StringPtr(include)
+	return _options
 }
 
 // SetLanguages : Allow user to set Languages
-func (options *GetCatalogEntryOptions) SetLanguages(languages string) *GetCatalogEntryOptions {
-	options.Languages = core.StringPtr(languages)
-	return options
+func (_options *GetCatalogEntryOptions) SetLanguages(languages string) *GetCatalogEntryOptions {
+	_options.Languages = core.StringPtr(languages)
+	return _options
 }
 
 // SetComplete : Allow user to set Complete
-func (options *GetCatalogEntryOptions) SetComplete(complete bool) *GetCatalogEntryOptions {
-	options.Complete = core.BoolPtr(complete)
-	return options
+func (_options *GetCatalogEntryOptions) SetComplete(complete bool) *GetCatalogEntryOptions {
+	_options.Complete = core.BoolPtr(complete)
+	return _options
 }
 
 // SetDepth : Allow user to set Depth
-func (options *GetCatalogEntryOptions) SetDepth(depth int64) *GetCatalogEntryOptions {
-	options.Depth = core.Int64Ptr(depth)
-	return options
+func (_options *GetCatalogEntryOptions) SetDepth(depth int64) *GetCatalogEntryOptions {
+	_options.Depth = core.Int64Ptr(depth)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -2701,45 +2808,45 @@ func (options *GetCatalogEntryOptions) SetHeaders(param map[string]string) *GetC
 // GetChildObjectsOptions : The GetChildObjects options.
 type GetChildObjectsOptions struct {
 	// The parent catalog entry's ID.
-	ID *string `validate:"required,ne="`
+	ID *string `json:"id" validate:"required,ne="`
 
 	// The **kind** of child catalog entries to search for. A wildcard (*) includes all child catalog entries for all
 	// kinds, for example `GET /service_name/_*`.
-	Kind *string `validate:"required,ne="`
+	Kind *string `json:"kind" validate:"required,ne="`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// A colon (:) separated list of properties to include. A GET call by defaults return a limited set of properties. To
 	// include other properties, you must add the include parameter.  A wildcard (*) includes all properties.
-	Include *string
+	Include *string `json:"include,omitempty"`
 
 	// A query filter, for example, `q=kind:iaas IBM`  will filter on entries of **kind** iaas that has `IBM` in their
 	// name, display name, or description.
-	Q *string
+	Q *string `json:"q,omitempty"`
 
 	// The field on which to sort the output. By default by name. Available fields are **name**, **kind**, and
 	// **provider**.
-	SortBy *string
+	SortBy *string `json:"sort-by,omitempty"`
 
 	// The sort order. The default is false, which is ascending.
-	Descending *string
+	Descending *string `json:"descending,omitempty"`
 
-	// Return the data strings in the specified langauge. By default the strings returned are of the language preferred by
-	// your browser through the Accept-Langauge header. This allows an override of the header. Languages are specified in
+	// Return the data strings in the specified language. By default the strings returned are of the language preferred by
+	// your browser through the Accept-Language header. This allows an override of the header. Languages are specified in
 	// standard form, such as `en-us`. To include all languages use the wildcard (*).
-	Languages *string
+	Languages *string `json:"languages,omitempty"`
 
 	// Use the value `?complete=true` as shortcut for ?include=*&languages=*.
-	Complete *bool
+	Complete *bool `json:"complete,omitempty"`
 
 	// Useful for pagination, specifies index (origin 0) of first item to return in response.
-	Offset *int64
+	Offset *int64 `json:"_offset,omitempty"`
 
 	// Useful for pagination, specifies the maximum number of items to return in the response.
-	Limit *int64
+	Limit *int64 `json:"_limit,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -2754,69 +2861,69 @@ func (*GlobalCatalogV1) NewGetChildObjectsOptions(id string, kind string) *GetCh
 }
 
 // SetID : Allow user to set ID
-func (options *GetChildObjectsOptions) SetID(id string) *GetChildObjectsOptions {
-	options.ID = core.StringPtr(id)
-	return options
+func (_options *GetChildObjectsOptions) SetID(id string) *GetChildObjectsOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
 }
 
 // SetKind : Allow user to set Kind
-func (options *GetChildObjectsOptions) SetKind(kind string) *GetChildObjectsOptions {
-	options.Kind = core.StringPtr(kind)
-	return options
+func (_options *GetChildObjectsOptions) SetKind(kind string) *GetChildObjectsOptions {
+	_options.Kind = core.StringPtr(kind)
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *GetChildObjectsOptions) SetAccount(account string) *GetChildObjectsOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *GetChildObjectsOptions) SetAccount(account string) *GetChildObjectsOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetInclude : Allow user to set Include
-func (options *GetChildObjectsOptions) SetInclude(include string) *GetChildObjectsOptions {
-	options.Include = core.StringPtr(include)
-	return options
+func (_options *GetChildObjectsOptions) SetInclude(include string) *GetChildObjectsOptions {
+	_options.Include = core.StringPtr(include)
+	return _options
 }
 
 // SetQ : Allow user to set Q
-func (options *GetChildObjectsOptions) SetQ(q string) *GetChildObjectsOptions {
-	options.Q = core.StringPtr(q)
-	return options
+func (_options *GetChildObjectsOptions) SetQ(q string) *GetChildObjectsOptions {
+	_options.Q = core.StringPtr(q)
+	return _options
 }
 
 // SetSortBy : Allow user to set SortBy
-func (options *GetChildObjectsOptions) SetSortBy(sortBy string) *GetChildObjectsOptions {
-	options.SortBy = core.StringPtr(sortBy)
-	return options
+func (_options *GetChildObjectsOptions) SetSortBy(sortBy string) *GetChildObjectsOptions {
+	_options.SortBy = core.StringPtr(sortBy)
+	return _options
 }
 
 // SetDescending : Allow user to set Descending
-func (options *GetChildObjectsOptions) SetDescending(descending string) *GetChildObjectsOptions {
-	options.Descending = core.StringPtr(descending)
-	return options
+func (_options *GetChildObjectsOptions) SetDescending(descending string) *GetChildObjectsOptions {
+	_options.Descending = core.StringPtr(descending)
+	return _options
 }
 
 // SetLanguages : Allow user to set Languages
-func (options *GetChildObjectsOptions) SetLanguages(languages string) *GetChildObjectsOptions {
-	options.Languages = core.StringPtr(languages)
-	return options
+func (_options *GetChildObjectsOptions) SetLanguages(languages string) *GetChildObjectsOptions {
+	_options.Languages = core.StringPtr(languages)
+	return _options
 }
 
 // SetComplete : Allow user to set Complete
-func (options *GetChildObjectsOptions) SetComplete(complete bool) *GetChildObjectsOptions {
-	options.Complete = core.BoolPtr(complete)
-	return options
+func (_options *GetChildObjectsOptions) SetComplete(complete bool) *GetChildObjectsOptions {
+	_options.Complete = core.BoolPtr(complete)
+	return _options
 }
 
 // SetOffset : Allow user to set Offset
-func (options *GetChildObjectsOptions) SetOffset(offset int64) *GetChildObjectsOptions {
-	options.Offset = core.Int64Ptr(offset)
-	return options
+func (_options *GetChildObjectsOptions) SetOffset(offset int64) *GetChildObjectsOptions {
+	_options.Offset = core.Int64Ptr(offset)
+	return _options
 }
 
 // SetLimit : Allow user to set Limit
-func (options *GetChildObjectsOptions) SetLimit(limit int64) *GetChildObjectsOptions {
-	options.Limit = core.Int64Ptr(limit)
-	return options
+func (_options *GetChildObjectsOptions) SetLimit(limit int64) *GetChildObjectsOptions {
+	_options.Limit = core.Int64Ptr(limit)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -2825,15 +2932,54 @@ func (options *GetChildObjectsOptions) SetHeaders(param map[string]string) *GetC
 	return options
 }
 
-// GetPricingOptions : The GetPricing options.
-type GetPricingOptions struct {
+// GetPricingDeploymentsOptions : The GetPricingDeployments options.
+type GetPricingDeploymentsOptions struct {
 	// The object's unique ID.
-	ID *string `validate:"required,ne="`
+	ID *string `json:"id" validate:"required,ne="`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
+
+	// Allows users to set headers on API requests
+	Headers map[string]string
+}
+
+// NewGetPricingDeploymentsOptions : Instantiate GetPricingDeploymentsOptions
+func (*GlobalCatalogV1) NewGetPricingDeploymentsOptions(id string) *GetPricingDeploymentsOptions {
+	return &GetPricingDeploymentsOptions{
+		ID: core.StringPtr(id),
+	}
+}
+
+// SetID : Allow user to set ID
+func (_options *GetPricingDeploymentsOptions) SetID(id string) *GetPricingDeploymentsOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
+}
+
+// SetAccount : Allow user to set Account
+func (_options *GetPricingDeploymentsOptions) SetAccount(account string) *GetPricingDeploymentsOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
+}
+
+// SetHeaders : Allow user to set Headers
+func (options *GetPricingDeploymentsOptions) SetHeaders(param map[string]string) *GetPricingDeploymentsOptions {
+	options.Headers = param
+	return options
+}
+
+// GetPricingOptions : The GetPricing options.
+type GetPricingOptions struct {
+	// The object's unique ID.
+	ID *string `json:"id" validate:"required,ne="`
+
+	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
+	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
+	// `GET /?account=global`.
+	Account *string `json:"account,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -2847,15 +2993,15 @@ func (*GlobalCatalogV1) NewGetPricingOptions(id string) *GetPricingOptions {
 }
 
 // SetID : Allow user to set ID
-func (options *GetPricingOptions) SetID(id string) *GetPricingOptions {
-	options.ID = core.StringPtr(id)
-	return options
+func (_options *GetPricingOptions) SetID(id string) *GetPricingOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *GetPricingOptions) SetAccount(account string) *GetPricingOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *GetPricingOptions) SetAccount(account string) *GetPricingOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -2867,12 +3013,12 @@ func (options *GetPricingOptions) SetHeaders(param map[string]string) *GetPricin
 // GetVisibilityOptions : The GetVisibility options.
 type GetVisibilityOptions struct {
 	// The object's unique ID.
-	ID *string `validate:"required,ne="`
+	ID *string `json:"id" validate:"required,ne="`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -2886,15 +3032,15 @@ func (*GlobalCatalogV1) NewGetVisibilityOptions(id string) *GetVisibilityOptions
 }
 
 // SetID : Allow user to set ID
-func (options *GetVisibilityOptions) SetID(id string) *GetVisibilityOptions {
-	options.ID = core.StringPtr(id)
-	return options
+func (_options *GetVisibilityOptions) SetID(id string) *GetVisibilityOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *GetVisibilityOptions) SetAccount(account string) *GetVisibilityOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *GetVisibilityOptions) SetAccount(account string) *GetVisibilityOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -2919,11 +3065,11 @@ type Image struct {
 }
 
 // NewImage : Instantiate Image (Generic Model Constructor)
-func (*GlobalCatalogV1) NewImage(image string) (model *Image, err error) {
-	model = &Image{
+func (*GlobalCatalogV1) NewImage(image string) (_model *Image, err error) {
+	_model = &Image{
 		Image: core.StringPtr(image),
 	}
-	err = core.ValidateStruct(model, "required parameters")
+	err = core.ValidateStruct(_model, "required parameters")
 	return
 }
 
@@ -2953,12 +3099,12 @@ func UnmarshalImage(m map[string]json.RawMessage, result interface{}) (err error
 // ListArtifactsOptions : The ListArtifacts options.
 type ListArtifactsOptions struct {
 	// The object's unique ID.
-	ObjectID *string `validate:"required,ne="`
+	ObjectID *string `json:"object_id" validate:"required,ne="`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -2972,15 +3118,15 @@ func (*GlobalCatalogV1) NewListArtifactsOptions(objectID string) *ListArtifactsO
 }
 
 // SetObjectID : Allow user to set ObjectID
-func (options *ListArtifactsOptions) SetObjectID(objectID string) *ListArtifactsOptions {
-	options.ObjectID = core.StringPtr(objectID)
-	return options
+func (_options *ListArtifactsOptions) SetObjectID(objectID string) *ListArtifactsOptions {
+	_options.ObjectID = core.StringPtr(objectID)
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *ListArtifactsOptions) SetAccount(account string) *ListArtifactsOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *ListArtifactsOptions) SetAccount(account string) *ListArtifactsOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -2994,47 +3140,47 @@ type ListCatalogEntriesOptions struct {
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// A GET call by default returns a basic set of properties. To include other properties, you must add this parameter. A
 	// wildcard (`*`) includes all properties for an object, for example `GET /?include=*`. To include specific metadata
 	// fields, separate each field with a colon (:), for example `GET /?include=metadata.ui:metadata.pricing`.
-	Include *string
+	Include *string `json:"include,omitempty"`
 
 	// Searches the catalog entries for keywords. Add filters to refine your search. A query filter, for example,
 	// `q=kind:iaas service_name rc:true`, filters entries of kind iaas with metadata.service.rc_compatible set to true and
 	//  have a service name is in their name, display name, or description.  Valid tags are **kind**:<string>,
 	// **tag**:<strging>, **rc**:[true|false], **iam**:[true|false], **active**:[true|false], **geo**:<string>, and
 	// **price**:<string>.
-	Q *string
+	Q *string `json:"q,omitempty"`
 
 	// The field on which the output is sorted. Sorts by default by **name** property. Available fields are **name**,
 	// **displayname** (overview_ui.display_name), **kind**, **provider** (provider.name), **sbsindex**
 	// (metadata.ui.side_by_side_index), and the time **created**, and **updated**.
-	SortBy *string
+	SortBy *string `json:"sort-by,omitempty"`
 
 	// Sets the sort order. The default is false, which is ascending.
-	Descending *string
+	Descending *string `json:"descending,omitempty"`
 
-	// Return the data strings in a specified langauge. By default, the strings returned are of the language preferred by
-	// your browser through the Accept-Langauge header, which allows an override of the header. Languages are specified in
+	// Return the data strings in a specified language. By default, the strings returned are of the language preferred by
+	// your browser through the Accept-Language header, which allows an override of the header. Languages are specified in
 	// standard form, such as `en-us`. To include all languages use a wildcard (*).
-	Languages *string
+	Languages *string `json:"languages,omitempty"`
 
 	// Checks to see if a catalog's object is visible, or if it's filtered by service, plan, deployment, or region. Use the
 	// value `?catalog=true`. If a `200` code is returned, the object is visible. If a `403` code is returned, the object
 	// is not visible for the user.
-	Catalog *bool
+	Catalog *bool `json:"catalog,omitempty"`
 
 	// Returns all available fields for all languages. Use the value `?complete=true` as shortcut for
 	// ?include=*&languages=*.
-	Complete *bool
+	Complete *bool `json:"complete,omitempty"`
 
 	// Useful for pagination, specifies index (origin 0) of first item to return in response.
-	Offset *int64
+	Offset *int64 `json:"_offset,omitempty"`
 
 	// Useful for pagination, specifies the maximum number of items to return in the response.
-	Limit *int64
+	Limit *int64 `json:"_limit,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -3046,63 +3192,63 @@ func (*GlobalCatalogV1) NewListCatalogEntriesOptions() *ListCatalogEntriesOption
 }
 
 // SetAccount : Allow user to set Account
-func (options *ListCatalogEntriesOptions) SetAccount(account string) *ListCatalogEntriesOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *ListCatalogEntriesOptions) SetAccount(account string) *ListCatalogEntriesOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetInclude : Allow user to set Include
-func (options *ListCatalogEntriesOptions) SetInclude(include string) *ListCatalogEntriesOptions {
-	options.Include = core.StringPtr(include)
-	return options
+func (_options *ListCatalogEntriesOptions) SetInclude(include string) *ListCatalogEntriesOptions {
+	_options.Include = core.StringPtr(include)
+	return _options
 }
 
 // SetQ : Allow user to set Q
-func (options *ListCatalogEntriesOptions) SetQ(q string) *ListCatalogEntriesOptions {
-	options.Q = core.StringPtr(q)
-	return options
+func (_options *ListCatalogEntriesOptions) SetQ(q string) *ListCatalogEntriesOptions {
+	_options.Q = core.StringPtr(q)
+	return _options
 }
 
 // SetSortBy : Allow user to set SortBy
-func (options *ListCatalogEntriesOptions) SetSortBy(sortBy string) *ListCatalogEntriesOptions {
-	options.SortBy = core.StringPtr(sortBy)
-	return options
+func (_options *ListCatalogEntriesOptions) SetSortBy(sortBy string) *ListCatalogEntriesOptions {
+	_options.SortBy = core.StringPtr(sortBy)
+	return _options
 }
 
 // SetDescending : Allow user to set Descending
-func (options *ListCatalogEntriesOptions) SetDescending(descending string) *ListCatalogEntriesOptions {
-	options.Descending = core.StringPtr(descending)
-	return options
+func (_options *ListCatalogEntriesOptions) SetDescending(descending string) *ListCatalogEntriesOptions {
+	_options.Descending = core.StringPtr(descending)
+	return _options
 }
 
 // SetLanguages : Allow user to set Languages
-func (options *ListCatalogEntriesOptions) SetLanguages(languages string) *ListCatalogEntriesOptions {
-	options.Languages = core.StringPtr(languages)
-	return options
+func (_options *ListCatalogEntriesOptions) SetLanguages(languages string) *ListCatalogEntriesOptions {
+	_options.Languages = core.StringPtr(languages)
+	return _options
 }
 
 // SetCatalog : Allow user to set Catalog
-func (options *ListCatalogEntriesOptions) SetCatalog(catalog bool) *ListCatalogEntriesOptions {
-	options.Catalog = core.BoolPtr(catalog)
-	return options
+func (_options *ListCatalogEntriesOptions) SetCatalog(catalog bool) *ListCatalogEntriesOptions {
+	_options.Catalog = core.BoolPtr(catalog)
+	return _options
 }
 
 // SetComplete : Allow user to set Complete
-func (options *ListCatalogEntriesOptions) SetComplete(complete bool) *ListCatalogEntriesOptions {
-	options.Complete = core.BoolPtr(complete)
-	return options
+func (_options *ListCatalogEntriesOptions) SetComplete(complete bool) *ListCatalogEntriesOptions {
+	_options.Complete = core.BoolPtr(complete)
+	return _options
 }
 
 // SetOffset : Allow user to set Offset
-func (options *ListCatalogEntriesOptions) SetOffset(offset int64) *ListCatalogEntriesOptions {
-	options.Offset = core.Int64Ptr(offset)
-	return options
+func (_options *ListCatalogEntriesOptions) SetOffset(offset int64) *ListCatalogEntriesOptions {
+	_options.Offset = core.Int64Ptr(offset)
+	return _options
 }
 
 // SetLimit : Allow user to set Limit
-func (options *ListCatalogEntriesOptions) SetLimit(limit int64) *ListCatalogEntriesOptions {
-	options.Limit = core.Int64Ptr(limit)
-	return options
+func (_options *ListCatalogEntriesOptions) SetLimit(limit int64) *ListCatalogEntriesOptions {
+	_options.Limit = core.Int64Ptr(limit)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -3216,7 +3362,7 @@ type Metrics struct {
 	ChargeUnitName *string `json:"charge_unit_name,omitempty"`
 
 	// The charge unit quantity.
-	ChargeUnitQuantity *string `json:"charge_unit_quantity,omitempty"`
+	ChargeUnitQuantity *int64 `json:"charge_unit_quantity,omitempty"`
 
 	// Display name of the resource.
 	ResourceDisplayName *string `json:"resource_display_name,omitempty"`
@@ -3423,13 +3569,13 @@ type Overview struct {
 }
 
 // NewOverview : Instantiate Overview (Generic Model Constructor)
-func (*GlobalCatalogV1) NewOverview(displayName string, longDescription string, description string) (model *Overview, err error) {
-	model = &Overview{
+func (*GlobalCatalogV1) NewOverview(displayName string, longDescription string, description string) (_model *Overview, err error) {
+	_model = &Overview{
 		DisplayName: core.StringPtr(displayName),
 		LongDescription: core.StringPtr(longDescription),
 		Description: core.StringPtr(description),
 	}
-	err = core.ValidateStruct(model, "required parameters")
+	err = core.ValidateStruct(_model, "required parameters")
 	return
 }
 
@@ -3556,6 +3702,16 @@ func UnmarshalPrice(m map[string]json.RawMessage, result interface{}) (err error
 
 // PricingGet : Pricing-related information.
 type PricingGet struct {
+	// The deployment object id this pricing is from. Only set if object kind is deployment.
+	DeploymentID *string `json:"deployment_id,omitempty"`
+
+	// The deployment location this pricing is from. Only set if object kind is deployment.
+	DeploymentLocation *string `json:"deployment_location,omitempty"`
+
+	// Is the location price not available. Only set in api /pricing/deployment and only set if true. This means for the
+	// given deployment object there was no pricing set in pricing catalog.
+	DeploymentLocationNoPriceAvailable *bool `json:"deployment_location_no_price_available,omitempty"`
+
 	// Type of plan. Valid values are `free`, `trial`, `paygo`, `bluemix-subscription`, and `ibm-subscription`.
 	Type *string `json:"type,omitempty"`
 
@@ -3572,6 +3728,18 @@ type PricingGet struct {
 // UnmarshalPricingGet unmarshals an instance of PricingGet from the specified map of raw messages.
 func UnmarshalPricingGet(m map[string]json.RawMessage, result interface{}) (err error) {
 	obj := new(PricingGet)
+	err = core.UnmarshalPrimitive(m, "deployment_id", &obj.DeploymentID)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "deployment_location", &obj.DeploymentLocation)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "deployment_location_no_price_available", &obj.DeploymentLocationNoPriceAvailable)
+	if err != nil {
+		return
+	}
 	err = core.UnmarshalPrimitive(m, "type", &obj.Type)
 	if err != nil {
 		return
@@ -3585,6 +3753,79 @@ func UnmarshalPricingGet(m map[string]json.RawMessage, result interface{}) (err 
 		return
 	}
 	err = core.UnmarshalModel(m, "metrics", &obj.Metrics, UnmarshalMetrics)
+	if err != nil {
+		return
+	}
+	reflect.ValueOf(result).Elem().Set(reflect.ValueOf(obj))
+	return
+}
+
+// PricingSearchResult : A paginated result containing pricing entries.
+type PricingSearchResult struct {
+	// The offset (origin 0) of the first resource in this page of search results.
+	Offset *int64 `json:"offset,omitempty"`
+
+	// The maximum number of resources returned in each page of search results.
+	Limit *int64 `json:"limit,omitempty"`
+
+	// The overall total number of resources in the search result set.
+	Count *int64 `json:"count,omitempty"`
+
+	// The number of resources returned in this page of search results.
+	ResourceCount *int64 `json:"resource_count,omitempty"`
+
+	// A URL for retrieving the first page of search results.
+	First *string `json:"first,omitempty"`
+
+	// A URL for retrieving the last page of search results.
+	Last *string `json:"last,omitempty"`
+
+	// A URL for retrieving the previous page of search results.
+	Prev *string `json:"prev,omitempty"`
+
+	// A URL for retrieving the next page of search results.
+	Next *string `json:"next,omitempty"`
+
+	// The resources (prices) contained in this page of search results.
+	Resources []PricingGet `json:"resources,omitempty"`
+}
+
+// UnmarshalPricingSearchResult unmarshals an instance of PricingSearchResult from the specified map of raw messages.
+func UnmarshalPricingSearchResult(m map[string]json.RawMessage, result interface{}) (err error) {
+	obj := new(PricingSearchResult)
+	err = core.UnmarshalPrimitive(m, "offset", &obj.Offset)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "limit", &obj.Limit)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "count", &obj.Count)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "resource_count", &obj.ResourceCount)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "first", &obj.First)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "last", &obj.Last)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "prev", &obj.Prev)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "next", &obj.Next)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalModel(m, "resources", &obj.Resources, UnmarshalPricingGet)
 	if err != nil {
 		return
 	}
@@ -3642,12 +3883,12 @@ type Provider struct {
 }
 
 // NewProvider : Instantiate Provider (Generic Model Constructor)
-func (*GlobalCatalogV1) NewProvider(email string, name string) (model *Provider, err error) {
-	model = &Provider{
+func (*GlobalCatalogV1) NewProvider(email string, name string) (_model *Provider, err error) {
+	_model = &Provider{
 		Email: core.StringPtr(email),
 		Name: core.StringPtr(name),
 	}
-	err = core.ValidateStruct(model, "required parameters")
+	err = core.ValidateStruct(_model, "required parameters")
 	return
 }
 
@@ -3681,12 +3922,12 @@ func UnmarshalProvider(m map[string]json.RawMessage, result interface{}) (err er
 // RestoreCatalogEntryOptions : The RestoreCatalogEntry options.
 type RestoreCatalogEntryOptions struct {
 	// The catalog entry's unique ID.
-	ID *string `validate:"required,ne="`
+	ID *string `json:"id" validate:"required,ne="`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -3700,15 +3941,15 @@ func (*GlobalCatalogV1) NewRestoreCatalogEntryOptions(id string) *RestoreCatalog
 }
 
 // SetID : Allow user to set ID
-func (options *RestoreCatalogEntryOptions) SetID(id string) *RestoreCatalogEntryOptions {
-	options.ID = core.StringPtr(id)
-	return options
+func (_options *RestoreCatalogEntryOptions) SetID(id string) *RestoreCatalogEntryOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *RestoreCatalogEntryOptions) SetAccount(account string) *RestoreCatalogEntryOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *RestoreCatalogEntryOptions) SetAccount(account string) *RestoreCatalogEntryOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -3727,10 +3968,10 @@ type SLAMetaData struct {
 	Tenancy *string `json:"tenancy,omitempty"`
 
 	// Provisioning reliability, for example, 99.95.
-	Provisioning *string `json:"provisioning,omitempty"`
+	Provisioning *float64 `json:"provisioning,omitempty"`
 
 	// Uptime reliability of the service, for example, 99.95.
-	Responsiveness *string `json:"responsiveness,omitempty"`
+	Responsiveness *float64 `json:"responsiveness,omitempty"`
 
 	// SLA Disaster Recovery-related metadata.
 	Dr *DrMetaData `json:"dr,omitempty"`
@@ -3971,6 +4212,30 @@ func UnmarshalTemplateMetaData(m map[string]json.RawMessage, result interface{})
 	return
 }
 
+// UIMediaSourceMetaData : Location of your applications media source files.
+type UIMediaSourceMetaData struct {
+	// Type of source, for example, git.
+	Type *string `json:"type,omitempty"`
+
+	// URL to source.
+	URL *string `json:"url,omitempty"`
+}
+
+// UnmarshalUIMediaSourceMetaData unmarshals an instance of UIMediaSourceMetaData from the specified map of raw messages.
+func UnmarshalUIMediaSourceMetaData(m map[string]json.RawMessage, result interface{}) (err error) {
+	obj := new(UIMediaSourceMetaData)
+	err = core.UnmarshalPrimitive(m, "type", &obj.Type)
+	if err != nil {
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "url", &obj.URL)
+	if err != nil {
+		return
+	}
+	reflect.ValueOf(result).Elem().Set(reflect.ValueOf(obj))
+	return
+}
+
 // UIMetaData : Information related to the UI presentation associated with a catalog entry.
 type UIMetaData struct {
 	// Language specific translation of translation properties, like label and description.
@@ -4009,7 +4274,7 @@ type UIMetaData struct {
 	// Denotes lite metering visibility.
 	HideLiteMetering *bool `json:"hide_lite_metering,omitempty"`
 
-	// Denotes whether an upgrade should occurr.
+	// Denotes whether an upgrade should occur.
 	NoUpgradeNextStep *bool `json:"no_upgrade_next_step,omitempty"`
 }
 
@@ -4086,8 +4351,8 @@ type UIMetaMedia struct {
 	// URL for media.
 	URL *string `json:"URL,omitempty"`
 
-	// Information related to list delimiters.
-	Source *Bullets `json:"source,omitempty"`
+	// UI media source data for for UI media data.
+	Source []UIMediaSourceMetaData `json:"source,omitempty"`
 }
 
 // UnmarshalUIMetaMedia unmarshals an instance of UIMetaMedia from the specified map of raw messages.
@@ -4109,7 +4374,7 @@ func UnmarshalUIMetaMedia(m map[string]json.RawMessage, result interface{}) (err
 	if err != nil {
 		return
 	}
-	err = core.UnmarshalModel(m, "source", &obj.Source, UnmarshalBullets)
+	err = core.UnmarshalModel(m, "source", &obj.Source, UnmarshalUIMediaSourceMetaData)
 	if err != nil {
 		return
 	}
@@ -4214,54 +4479,54 @@ func UnmarshalUrls(m map[string]json.RawMessage, result interface{}) (err error)
 // UpdateCatalogEntryOptions : The UpdateCatalogEntry options.
 type UpdateCatalogEntryOptions struct {
 	// The object's unique ID.
-	ID *string `validate:"required,ne="`
+	ID *string `json:"id" validate:"required,ne="`
 
 	// Programmatic name for this catalog entry, which must be formatted like a CRN segment. See the display name in
 	// OverviewUI for a user-readable name.
-	Name *string `validate:"required"`
+	Name *string `json:"name" validate:"required"`
 
 	// The type of catalog entry, **service**, **template**, **dashboard**, which determines the type and shape of the
 	// object.
-	Kind *string `validate:"required"`
+	Kind *string `json:"kind" validate:"required"`
 
 	// Overview is nested in the top level. The key value pair is `[_language_]overview_ui`.
-	OverviewUI map[string]Overview `validate:"required"`
+	OverviewUI map[string]Overview `json:"overview_ui" validate:"required"`
 
 	// Image annotation for this catalog entry. The image is a URL.
-	Images *Image `validate:"required"`
+	Images *Image `json:"images" validate:"required"`
 
 	// Boolean value that determines the global visibility for the catalog entry, and its children. If it is not enabled,
 	// all plans are disabled.
-	Disabled *bool `validate:"required"`
+	Disabled *bool `json:"disabled" validate:"required"`
 
 	// A list of tags. For example, IBM, 3rd Party, Beta, GA, and Single Tenant.
-	Tags []string `validate:"required"`
+	Tags []string `json:"tags" validate:"required"`
 
 	// Information related to the provider associated with a catalog entry.
-	Provider *Provider `validate:"required"`
+	Provider *Provider `json:"provider" validate:"required"`
 
 	// The ID of the parent catalog entry if it exists.
-	ParentID *string
+	ParentID *string `json:"parent_id,omitempty"`
 
 	// Boolean value that determines whether the catalog entry is a group.
-	Group *bool
+	Group *bool `json:"group,omitempty"`
 
 	// Boolean value that describes whether the service is active.
-	Active *bool
+	Active *bool `json:"active,omitempty"`
 
 	// Model used to describe metadata object that can be set.
-	Metadata *ObjectMetadataSet
+	Metadata *ObjectMetadataSet `json:"metadata,omitempty"`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// Reparenting object. In the body set the parent_id to a different parent. Or remove the parent_id field to reparent
 	// to the root of the catalog. If this is not set to 'true' then changing the parent_id in the body of the request will
 	// not be permitted. If this is 'true' and no change to parent_id then this is also error. This is to prevent
 	// accidental changing of parent.
-	Move *string
+	Move *string `json:"move,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -4291,87 +4556,87 @@ func (*GlobalCatalogV1) NewUpdateCatalogEntryOptions(id string, name string, kin
 }
 
 // SetID : Allow user to set ID
-func (options *UpdateCatalogEntryOptions) SetID(id string) *UpdateCatalogEntryOptions {
-	options.ID = core.StringPtr(id)
-	return options
+func (_options *UpdateCatalogEntryOptions) SetID(id string) *UpdateCatalogEntryOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
 }
 
 // SetName : Allow user to set Name
-func (options *UpdateCatalogEntryOptions) SetName(name string) *UpdateCatalogEntryOptions {
-	options.Name = core.StringPtr(name)
-	return options
+func (_options *UpdateCatalogEntryOptions) SetName(name string) *UpdateCatalogEntryOptions {
+	_options.Name = core.StringPtr(name)
+	return _options
 }
 
 // SetKind : Allow user to set Kind
-func (options *UpdateCatalogEntryOptions) SetKind(kind string) *UpdateCatalogEntryOptions {
-	options.Kind = core.StringPtr(kind)
-	return options
+func (_options *UpdateCatalogEntryOptions) SetKind(kind string) *UpdateCatalogEntryOptions {
+	_options.Kind = core.StringPtr(kind)
+	return _options
 }
 
 // SetOverviewUI : Allow user to set OverviewUI
-func (options *UpdateCatalogEntryOptions) SetOverviewUI(overviewUI map[string]Overview) *UpdateCatalogEntryOptions {
-	options.OverviewUI = overviewUI
-	return options
+func (_options *UpdateCatalogEntryOptions) SetOverviewUI(overviewUI map[string]Overview) *UpdateCatalogEntryOptions {
+	_options.OverviewUI = overviewUI
+	return _options
 }
 
 // SetImages : Allow user to set Images
-func (options *UpdateCatalogEntryOptions) SetImages(images *Image) *UpdateCatalogEntryOptions {
-	options.Images = images
-	return options
+func (_options *UpdateCatalogEntryOptions) SetImages(images *Image) *UpdateCatalogEntryOptions {
+	_options.Images = images
+	return _options
 }
 
 // SetDisabled : Allow user to set Disabled
-func (options *UpdateCatalogEntryOptions) SetDisabled(disabled bool) *UpdateCatalogEntryOptions {
-	options.Disabled = core.BoolPtr(disabled)
-	return options
+func (_options *UpdateCatalogEntryOptions) SetDisabled(disabled bool) *UpdateCatalogEntryOptions {
+	_options.Disabled = core.BoolPtr(disabled)
+	return _options
 }
 
 // SetTags : Allow user to set Tags
-func (options *UpdateCatalogEntryOptions) SetTags(tags []string) *UpdateCatalogEntryOptions {
-	options.Tags = tags
-	return options
+func (_options *UpdateCatalogEntryOptions) SetTags(tags []string) *UpdateCatalogEntryOptions {
+	_options.Tags = tags
+	return _options
 }
 
 // SetProvider : Allow user to set Provider
-func (options *UpdateCatalogEntryOptions) SetProvider(provider *Provider) *UpdateCatalogEntryOptions {
-	options.Provider = provider
-	return options
+func (_options *UpdateCatalogEntryOptions) SetProvider(provider *Provider) *UpdateCatalogEntryOptions {
+	_options.Provider = provider
+	return _options
 }
 
 // SetParentID : Allow user to set ParentID
-func (options *UpdateCatalogEntryOptions) SetParentID(parentID string) *UpdateCatalogEntryOptions {
-	options.ParentID = core.StringPtr(parentID)
-	return options
+func (_options *UpdateCatalogEntryOptions) SetParentID(parentID string) *UpdateCatalogEntryOptions {
+	_options.ParentID = core.StringPtr(parentID)
+	return _options
 }
 
 // SetGroup : Allow user to set Group
-func (options *UpdateCatalogEntryOptions) SetGroup(group bool) *UpdateCatalogEntryOptions {
-	options.Group = core.BoolPtr(group)
-	return options
+func (_options *UpdateCatalogEntryOptions) SetGroup(group bool) *UpdateCatalogEntryOptions {
+	_options.Group = core.BoolPtr(group)
+	return _options
 }
 
 // SetActive : Allow user to set Active
-func (options *UpdateCatalogEntryOptions) SetActive(active bool) *UpdateCatalogEntryOptions {
-	options.Active = core.BoolPtr(active)
-	return options
+func (_options *UpdateCatalogEntryOptions) SetActive(active bool) *UpdateCatalogEntryOptions {
+	_options.Active = core.BoolPtr(active)
+	return _options
 }
 
 // SetMetadata : Allow user to set Metadata
-func (options *UpdateCatalogEntryOptions) SetMetadata(metadata *ObjectMetadataSet) *UpdateCatalogEntryOptions {
-	options.Metadata = metadata
-	return options
+func (_options *UpdateCatalogEntryOptions) SetMetadata(metadata *ObjectMetadataSet) *UpdateCatalogEntryOptions {
+	_options.Metadata = metadata
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *UpdateCatalogEntryOptions) SetAccount(account string) *UpdateCatalogEntryOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *UpdateCatalogEntryOptions) SetAccount(account string) *UpdateCatalogEntryOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetMove : Allow user to set Move
-func (options *UpdateCatalogEntryOptions) SetMove(move string) *UpdateCatalogEntryOptions {
-	options.Move = core.StringPtr(move)
-	return options
+func (_options *UpdateCatalogEntryOptions) SetMove(move string) *UpdateCatalogEntryOptions {
+	_options.Move = core.StringPtr(move)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -4383,21 +4648,21 @@ func (options *UpdateCatalogEntryOptions) SetHeaders(param map[string]string) *U
 // UpdateVisibilityOptions : The UpdateVisibility options.
 type UpdateVisibilityOptions struct {
 	// The object's unique ID.
-	ID *string `validate:"required,ne="`
+	ID *string `json:"id" validate:"required,ne="`
 
 	// Allows the visibility to be extenable.
-	Extendable *bool
+	Extendable *bool `json:"extendable,omitempty"`
 
 	// Visibility details related to a catalog entry.
-	Include *VisibilityDetail
+	Include *VisibilityDetail `json:"include,omitempty"`
 
 	// Visibility details related to a catalog entry.
-	Exclude *VisibilityDetail
+	Exclude *VisibilityDetail `json:"exclude,omitempty"`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -4411,33 +4676,33 @@ func (*GlobalCatalogV1) NewUpdateVisibilityOptions(id string) *UpdateVisibilityO
 }
 
 // SetID : Allow user to set ID
-func (options *UpdateVisibilityOptions) SetID(id string) *UpdateVisibilityOptions {
-	options.ID = core.StringPtr(id)
-	return options
+func (_options *UpdateVisibilityOptions) SetID(id string) *UpdateVisibilityOptions {
+	_options.ID = core.StringPtr(id)
+	return _options
 }
 
 // SetExtendable : Allow user to set Extendable
-func (options *UpdateVisibilityOptions) SetExtendable(extendable bool) *UpdateVisibilityOptions {
-	options.Extendable = core.BoolPtr(extendable)
-	return options
+func (_options *UpdateVisibilityOptions) SetExtendable(extendable bool) *UpdateVisibilityOptions {
+	_options.Extendable = core.BoolPtr(extendable)
+	return _options
 }
 
 // SetInclude : Allow user to set Include
-func (options *UpdateVisibilityOptions) SetInclude(include *VisibilityDetail) *UpdateVisibilityOptions {
-	options.Include = include
-	return options
+func (_options *UpdateVisibilityOptions) SetInclude(include *VisibilityDetail) *UpdateVisibilityOptions {
+	_options.Include = include
+	return _options
 }
 
 // SetExclude : Allow user to set Exclude
-func (options *UpdateVisibilityOptions) SetExclude(exclude *VisibilityDetail) *UpdateVisibilityOptions {
-	options.Exclude = exclude
-	return options
+func (_options *UpdateVisibilityOptions) SetExclude(exclude *VisibilityDetail) *UpdateVisibilityOptions {
+	_options.Exclude = exclude
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *UpdateVisibilityOptions) SetAccount(account string) *UpdateVisibilityOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *UpdateVisibilityOptions) SetAccount(account string) *UpdateVisibilityOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -4449,20 +4714,20 @@ func (options *UpdateVisibilityOptions) SetHeaders(param map[string]string) *Upd
 // UploadArtifactOptions : The UploadArtifact options.
 type UploadArtifactOptions struct {
 	// The object's unique ID.
-	ObjectID *string `validate:"required,ne="`
+	ObjectID *string `json:"object_id" validate:"required,ne="`
 
 	// The artifact's ID.
-	ArtifactID *string `validate:"required,ne="`
+	ArtifactID *string `json:"artifact_id" validate:"required,ne="`
 
-	Artifact io.ReadCloser
+	Artifact io.ReadCloser `json:"artifact,omitempty"`
 
 	// The type of the input.
-	ContentType *string
+	ContentType *string `json:"Content-Type,omitempty"`
 
 	// This changes the scope of the request regardless of the authorization header. Example scopes are `account` and
 	// `global`. `account=global` is reqired if operating with a service ID that has a global admin policy, for example
 	// `GET /?account=global`.
-	Account *string
+	Account *string `json:"account,omitempty"`
 
 	// Allows users to set headers on API requests
 	Headers map[string]string
@@ -4477,33 +4742,33 @@ func (*GlobalCatalogV1) NewUploadArtifactOptions(objectID string, artifactID str
 }
 
 // SetObjectID : Allow user to set ObjectID
-func (options *UploadArtifactOptions) SetObjectID(objectID string) *UploadArtifactOptions {
-	options.ObjectID = core.StringPtr(objectID)
-	return options
+func (_options *UploadArtifactOptions) SetObjectID(objectID string) *UploadArtifactOptions {
+	_options.ObjectID = core.StringPtr(objectID)
+	return _options
 }
 
 // SetArtifactID : Allow user to set ArtifactID
-func (options *UploadArtifactOptions) SetArtifactID(artifactID string) *UploadArtifactOptions {
-	options.ArtifactID = core.StringPtr(artifactID)
-	return options
+func (_options *UploadArtifactOptions) SetArtifactID(artifactID string) *UploadArtifactOptions {
+	_options.ArtifactID = core.StringPtr(artifactID)
+	return _options
 }
 
 // SetArtifact : Allow user to set Artifact
-func (options *UploadArtifactOptions) SetArtifact(artifact io.ReadCloser) *UploadArtifactOptions {
-	options.Artifact = artifact
-	return options
+func (_options *UploadArtifactOptions) SetArtifact(artifact io.ReadCloser) *UploadArtifactOptions {
+	_options.Artifact = artifact
+	return _options
 }
 
 // SetContentType : Allow user to set ContentType
-func (options *UploadArtifactOptions) SetContentType(contentType string) *UploadArtifactOptions {
-	options.ContentType = core.StringPtr(contentType)
-	return options
+func (_options *UploadArtifactOptions) SetContentType(contentType string) *UploadArtifactOptions {
+	_options.ContentType = core.StringPtr(contentType)
+	return _options
 }
 
 // SetAccount : Allow user to set Account
-func (options *UploadArtifactOptions) SetAccount(account string) *UploadArtifactOptions {
-	options.Account = core.StringPtr(account)
-	return options
+func (_options *UploadArtifactOptions) SetAccount(account string) *UploadArtifactOptions {
+	_options.Account = core.StringPtr(account)
+	return _options
 }
 
 // SetHeaders : Allow user to set Headers
@@ -4574,11 +4839,11 @@ type VisibilityDetail struct {
 }
 
 // NewVisibilityDetail : Instantiate VisibilityDetail (Generic Model Constructor)
-func (*GlobalCatalogV1) NewVisibilityDetail(accounts *VisibilityDetailAccounts) (model *VisibilityDetail, err error) {
-	model = &VisibilityDetail{
+func (*GlobalCatalogV1) NewVisibilityDetail(accounts *VisibilityDetailAccounts) (_model *VisibilityDetail, err error) {
+	_model = &VisibilityDetail{
 		Accounts: accounts,
 	}
-	err = core.ValidateStruct(model, "required parameters")
+	err = core.ValidateStruct(_model, "required parameters")
 	return
 }
 

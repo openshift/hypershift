@@ -17,8 +17,6 @@ import (
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
@@ -68,8 +66,7 @@ func init() {
 	osinv1.AddToScheme(Scheme)
 	routev1.AddToScheme(Scheme)
 	imagev1.AddToScheme(Scheme)
-	rbacv1.AddToScheme(Scheme)
-	corev1.AddToScheme(Scheme)
+	clientgoscheme.AddToScheme(Scheme)
 	apiextensionsv1.AddToScheme(Scheme)
 	kasv1beta1.AddToScheme(Scheme)
 	openshiftcpv1.AddToScheme(Scheme)

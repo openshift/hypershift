@@ -558,7 +558,7 @@ func (r *Reconciler) reconcileUpgradeConfigmap(ctx context.Context, configmap *c
 	return nil
 }
 
-func (r *Reconciler) nodeToMachineSet(o client.Object) []reconcile.Request {
+func (r *Reconciler) nodeToMachineSet(ctx context.Context, o client.Object) []reconcile.Request {
 	node, ok := o.(*corev1.Node)
 	if !ok {
 		panic(fmt.Sprintf("Expected a Node but got a %T", o))
@@ -582,7 +582,7 @@ func (r *Reconciler) nodeToMachineSet(o client.Object) []reconcile.Request {
 			Name:      machineName,
 		},
 	}
-	if err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(machine), machine); err != nil {
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(machine), machine); err != nil {
 		return nil
 	}
 

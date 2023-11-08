@@ -67,7 +67,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -129,16 +128,16 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	controller, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.NodePool{}).
 		// We want to reconcile when the HostedCluster IgnitionEndpoint is available.
-		Watches(&source.Kind{Type: &hyperv1.HostedCluster{}}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster)).
-		Watches(&source.Kind{Type: &capiv1.MachineDeployment{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		Watches(&source.Kind{Type: &capiv1.MachineSet{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		Watches(&source.Kind{Type: &capiaws.AWSMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		Watches(&source.Kind{Type: &agentv1.AgentMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
-		Watches(&source.Kind{Type: &capiazure.AzureMachineTemplate{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster)).
+		Watches(&capiv1.MachineDeployment{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&capiv1.MachineSet{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&capiaws.AWSMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&agentv1.AgentMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&capiazure.AzureMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
-		Watches(&source.Kind{Type: &corev1.Secret{}}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool)).
 		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
-		Watches(&source.Kind{Type: &corev1.ConfigMap{}}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig)).
+		Watches(&corev1.ConfigMap{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForConfig)).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
@@ -1509,7 +1508,7 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	if machineDeployment.GetLabels() == nil {
 		machineDeployment.Labels = map[string]string{}
 	}
-	machineDeployment.Labels[capiv1.ClusterLabelName] = CAPIClusterName
+	machineDeployment.Labels[capiv1.ClusterNameLabel] = CAPIClusterName
 
 	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	machineDeployment.Spec.MinReadySeconds = k8sutilspointer.Int32(int32(0))
@@ -1532,12 +1531,12 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 		machineDeployment.Spec.Selector.MatchLabels = map[string]string{}
 	}
 	machineDeployment.Spec.Selector.MatchLabels[resourcesName] = resourcesName
-	machineDeployment.Spec.Selector.MatchLabels[capiv1.ClusterLabelName] = CAPIClusterName
+	machineDeployment.Spec.Selector.MatchLabels[capiv1.ClusterNameLabel] = CAPIClusterName
 	machineDeployment.Spec.Template = capiv1.MachineTemplateSpec{
 		ObjectMeta: capiv1.ObjectMeta{
 			Labels: map[string]string{
 				resourcesName:           resourcesName,
-				capiv1.ClusterLabelName: CAPIClusterName,
+				capiv1.ClusterNameLabel: CAPIClusterName,
 			},
 			// Annotations here propagate down to Machines
 			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.
@@ -2205,7 +2204,7 @@ func GetHostedClusterByName(ctx context.Context, c client.Client, namespace, nam
 	return hcluster, nil
 }
 
-func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(obj client.Object) []reconcile.Request {
+func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(ctx context.Context, obj client.Object) []reconcile.Request {
 	var result []reconcile.Request
 
 	hc, ok := obj.(*hyperv1.HostedCluster)
@@ -2214,8 +2213,8 @@ func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(obj client.Object)
 	}
 
 	nodePoolList := &hyperv1.NodePoolList{}
-	if err := r.List(context.Background(), nodePoolList, client.InNamespace(hc.Namespace)); err != nil {
-		ctrl.LoggerFrom(context.Background()).Error(err, "Failed to list nodePools")
+	if err := r.List(ctx, nodePoolList, client.InNamespace(hc.Namespace)); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "Failed to list nodePools")
 		return result
 	}
 
@@ -2231,7 +2230,7 @@ func (r *NodePoolReconciler) enqueueNodePoolsForHostedCluster(obj client.Object)
 	return result
 }
 
-func (r *NodePoolReconciler) enqueueNodePoolsForConfig(obj client.Object) []reconcile.Request {
+func (r *NodePoolReconciler) enqueueNodePoolsForConfig(ctx context.Context, obj client.Object) []reconcile.Request {
 	var result []reconcile.Request
 
 	cm, ok := obj.(*corev1.ConfigMap)
@@ -2241,7 +2240,7 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(obj client.Object) []reco
 
 	// Get all NodePools in the ConfigMap Namespace.
 	nodePoolList := &hyperv1.NodePoolList{}
-	if err := r.List(context.Background(), nodePoolList, client.InNamespace(cm.Namespace)); err != nil {
+	if err := r.List(ctx, nodePoolList, client.InNamespace(cm.Namespace)); err != nil {
 		return result
 	}
 
@@ -2258,7 +2257,7 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(obj client.Object) []reco
 	// If the ConfigMap is generated by the NodePool controller and contains Tuned manifests
 	// return the ConfigMaps parent NodePool.
 	if _, ok := obj.GetLabels()[tuningConfigMapLabel]; ok {
-		return enqueueParentNodePool(obj)
+		return enqueueParentNodePool(ctx, obj)
 	}
 
 	// Check if the ConfigMap is generated by an operator in the control plane namespace
@@ -2272,7 +2271,7 @@ func (r *NodePoolReconciler) enqueueNodePoolsForConfig(obj client.Object) []reco
 		obj.SetAnnotations(map[string]string{
 			nodePoolAnnotation: nodePoolNamespacedName.String(),
 		})
-		return enqueueParentNodePool(obj)
+		return enqueueParentNodePool(ctx, obj)
 	}
 
 	// Otherwise reconcile NodePools which are referencing the given ConfigMap.
@@ -2323,7 +2322,7 @@ func (r *NodePoolReconciler) getNodePoolNamespacedName(nodePoolName string, cont
 	return types.NamespacedName{Name: nodePoolName, Namespace: nodePoolNamespace}, nil
 }
 
-func enqueueParentNodePool(obj client.Object) []reconcile.Request {
+func enqueueParentNodePool(ctx context.Context, obj client.Object) []reconcile.Request {
 	var nodePoolName string
 	if obj.GetAnnotations() != nil {
 		nodePoolName = obj.GetAnnotations()[nodePoolAnnotation]

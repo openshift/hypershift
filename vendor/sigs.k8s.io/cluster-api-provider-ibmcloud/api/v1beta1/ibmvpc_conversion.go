@@ -196,7 +196,7 @@ func Convert_v1beta2_IBMVPCMachineSpec_To_v1beta1_IBMVPCMachineSpec(in *infrav1b
 	return autoConvert_v1beta2_IBMVPCMachineSpec_To_v1beta1_IBMVPCMachineSpec(in, out, s)
 }
 
-func Convert_Slice_Pointer_string_To_Slice_Pointer_v1beta2_IBMVPCResourceReference(in *[]*string, out *[]*infrav1beta2.IBMVPCResourceReference, s apiconversion.Scope) error {
+func Convert_Slice_Pointer_string_To_Slice_Pointer_v1beta2_IBMVPCResourceReference(in *[]*string, out *[]*infrav1beta2.IBMVPCResourceReference, _ apiconversion.Scope) error {
 	for _, sshKey := range *in {
 		*out = append(*out, &infrav1beta2.IBMVPCResourceReference{
 			ID: sshKey,
@@ -205,7 +205,7 @@ func Convert_Slice_Pointer_string_To_Slice_Pointer_v1beta2_IBMVPCResourceReferen
 	return nil
 }
 
-func Convert_Slice_Pointer_v1beta2_IBMVPCResourceReference_To_Slice_Pointer_string(in *[]*infrav1beta2.IBMVPCResourceReference, out *[]*string, s apiconversion.Scope) error {
+func Convert_Slice_Pointer_v1beta2_IBMVPCResourceReference_To_Slice_Pointer_string(in *[]*infrav1beta2.IBMVPCResourceReference, out *[]*string, _ apiconversion.Scope) error {
 	if in != nil {
 		for _, sshKey := range *in {
 			if sshKey.ID != nil {

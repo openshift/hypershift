@@ -23,6 +23,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // log is for logging in this package.
@@ -50,24 +51,24 @@ func (r *IBMVPCMachineTemplate) Default() {
 var _ webhook.Validator = &IBMVPCMachineTemplate{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMVPCMachineTemplate) ValidateCreate() error {
+func (r *IBMVPCMachineTemplate) ValidateCreate() (admission.Warnings, error) {
 	ibmvpcmachinetemplatelog.Info("validate create", "name", r.Name)
 	var allErrs field.ErrorList
 	allErrs = append(allErrs, r.validateIBMVPCMachineBootVolume()...)
 
-	return aggregateObjErrors(r.GroupVersionKind().GroupKind(), r.Name, allErrs)
+	return nil, aggregateObjErrors(r.GroupVersionKind().GroupKind(), r.Name, allErrs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMVPCMachineTemplate) ValidateUpdate(old runtime.Object) error {
+func (r *IBMVPCMachineTemplate) ValidateUpdate(_ runtime.Object) (admission.Warnings, error) {
 	ibmvpcmachinetemplatelog.Info("validate update", "name", r.Name)
-	return nil
+	return nil, nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMVPCMachineTemplate) ValidateDelete() error {
+func (r *IBMVPCMachineTemplate) ValidateDelete() (admission.Warnings, error) {
 	ibmvpcmachinetemplatelog.Info("validate delete", "name", r.Name)
-	return nil
+	return nil, nil
 }
 
 func (r *IBMVPCMachineTemplate) validateIBMVPCMachineBootVolume() field.ErrorList {

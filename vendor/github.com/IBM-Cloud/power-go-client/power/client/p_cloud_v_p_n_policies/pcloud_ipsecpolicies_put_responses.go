@@ -66,7 +66,7 @@ func (o *PcloudIpsecpoliciesPutReader) ReadResponse(response runtime.ClientRespo
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[PUT /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ipsec-policies/{ipsec_policy_id}] pcloud.ipsecpolicies.put", response, response.Code())
 	}
 }
 
@@ -107,6 +107,11 @@ func (o *PcloudIpsecpoliciesPutOK) IsServerError() bool {
 // IsCode returns true when this pcloud ipsecpolicies put o k response a status code equal to that given
 func (o *PcloudIpsecpoliciesPutOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud ipsecpolicies put o k response
+func (o *PcloudIpsecpoliciesPutOK) Code() int {
+	return 200
 }
 
 func (o *PcloudIpsecpoliciesPutOK) Error() string {
@@ -172,6 +177,11 @@ func (o *PcloudIpsecpoliciesPutBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the pcloud ipsecpolicies put bad request response
+func (o *PcloudIpsecpoliciesPutBadRequest) Code() int {
+	return 400
+}
+
 func (o *PcloudIpsecpoliciesPutBadRequest) Error() string {
 	return fmt.Sprintf("[PUT /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ipsec-policies/{ipsec_policy_id}][%d] pcloudIpsecpoliciesPutBadRequest  %+v", 400, o.Payload)
 }
@@ -233,6 +243,11 @@ func (o *PcloudIpsecpoliciesPutUnauthorized) IsServerError() bool {
 // IsCode returns true when this pcloud ipsecpolicies put unauthorized response a status code equal to that given
 func (o *PcloudIpsecpoliciesPutUnauthorized) IsCode(code int) bool {
 	return code == 401
+}
+
+// Code gets the status code for the pcloud ipsecpolicies put unauthorized response
+func (o *PcloudIpsecpoliciesPutUnauthorized) Code() int {
+	return 401
 }
 
 func (o *PcloudIpsecpoliciesPutUnauthorized) Error() string {
@@ -298,6 +313,11 @@ func (o *PcloudIpsecpoliciesPutForbidden) IsCode(code int) bool {
 	return code == 403
 }
 
+// Code gets the status code for the pcloud ipsecpolicies put forbidden response
+func (o *PcloudIpsecpoliciesPutForbidden) Code() int {
+	return 403
+}
+
 func (o *PcloudIpsecpoliciesPutForbidden) Error() string {
 	return fmt.Sprintf("[PUT /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ipsec-policies/{ipsec_policy_id}][%d] pcloudIpsecpoliciesPutForbidden  %+v", 403, o.Payload)
 }
@@ -359,6 +379,11 @@ func (o *PcloudIpsecpoliciesPutConflict) IsServerError() bool {
 // IsCode returns true when this pcloud ipsecpolicies put conflict response a status code equal to that given
 func (o *PcloudIpsecpoliciesPutConflict) IsCode(code int) bool {
 	return code == 409
+}
+
+// Code gets the status code for the pcloud ipsecpolicies put conflict response
+func (o *PcloudIpsecpoliciesPutConflict) Code() int {
+	return 409
 }
 
 func (o *PcloudIpsecpoliciesPutConflict) Error() string {
@@ -424,6 +449,11 @@ func (o *PcloudIpsecpoliciesPutUnprocessableEntity) IsCode(code int) bool {
 	return code == 422
 }
 
+// Code gets the status code for the pcloud ipsecpolicies put unprocessable entity response
+func (o *PcloudIpsecpoliciesPutUnprocessableEntity) Code() int {
+	return 422
+}
+
 func (o *PcloudIpsecpoliciesPutUnprocessableEntity) Error() string {
 	return fmt.Sprintf("[PUT /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ipsec-policies/{ipsec_policy_id}][%d] pcloudIpsecpoliciesPutUnprocessableEntity  %+v", 422, o.Payload)
 }
@@ -485,6 +515,11 @@ func (o *PcloudIpsecpoliciesPutInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud ipsecpolicies put internal server error response a status code equal to that given
 func (o *PcloudIpsecpoliciesPutInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud ipsecpolicies put internal server error response
+func (o *PcloudIpsecpoliciesPutInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudIpsecpoliciesPutInternalServerError) Error() string {

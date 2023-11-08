@@ -32,14 +32,14 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
-	if err := c.Watch(source.NewKindWithCache(&hyperv1.HostedControlPlane{}, opts.CPCluster.GetCache()), &handler.EnqueueRequestForObject{}); err != nil {
+	if err := c.Watch(source.Kind(opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}), &handler.EnqueueRequestForObject{}); err != nil {
 		return fmt.Errorf("failed to watch HCP: %w", err)
 	}
 
-	clusterVersionMapper := func(crclient.Object) []reconcile.Request {
+	clusterVersionMapper := func(context.Context, crclient.Object) []reconcile.Request {
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: opts.Namespace, Name: opts.HCPName}}}
 	}
-	if err := c.Watch(&source.Kind{Type: &configv1.ClusterVersion{}}, handler.EnqueueRequestsFromMapFunc(clusterVersionMapper)); err != nil {
+	if err := c.Watch(source.Kind(opts.Manager.GetCache(), &configv1.ClusterVersion{}), handler.EnqueueRequestsFromMapFunc(clusterVersionMapper)); err != nil {
 		return fmt.Errorf("failed to watch clusterversion: %w", err)
 	}
 

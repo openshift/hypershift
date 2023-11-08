@@ -24,16 +24,18 @@ func main() {
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "admission-differ"
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-		Scheme:  hyperapi.Scheme,
-		Port:    9443,
-		CertDir: "/var/run/secrets/serving-cert",
+		Scheme: hyperapi.Scheme,
+		WebhookServer: webhook.NewServer(webhook.Options{
+			Port:    9443,
+			CertDir: "/var/run/secrets/serving-cert",
+		}),
 	})
 	if err != nil {
 		log.Fatalf("unable to start manager: %s", err.Error())
 	}
 
 	hookServer := mgr.GetWebhookServer()
-	hookServer.Register("/awsendpointservices", &webhook.Admission{Handler: &awsEndpointServiceAdmissionTracer{}})
+	hookServer.Register("/awsendpointservices", &webhook.Admission{Handler: &awsEndpointServiceAdmissionTracer{decoder: admission.NewDecoder(mgr.GetScheme())}})
 
 	err = mgr.Start(ctx)
 	if err != nil {
@@ -68,11 +70,4 @@ func (v *awsEndpointServiceAdmissionTracer) Handle(_ context.Context, req admiss
 	}
 	fmt.Println(output.String())
 	return admission.Allowed("")
-}
-
-var _ admission.DecoderInjector = &awsEndpointServiceAdmissionTracer{}
-
-func (v *awsEndpointServiceAdmissionTracer) InjectDecoder(d *admission.Decoder) error {
-	v.decoder = d
-	return nil
 }

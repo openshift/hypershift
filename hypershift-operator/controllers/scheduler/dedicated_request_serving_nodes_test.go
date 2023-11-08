@@ -109,6 +109,7 @@ func TestHostedClusterScheduler(t *testing.T) {
 	deletedHC := func(hc *hyperv1.HostedCluster) {
 		now := metav1.Now()
 		hc.DeletionTimestamp = &now
+		hc.Finalizers = []string{"necessary"} // fake client needs finalizers when a deletionTimestamp is set
 	}
 	scheduledHC := func(hc *hyperv1.HostedCluster) {
 		hc.Annotations[hyperv1.HostedClusterScheduledAnnotation] = "true"

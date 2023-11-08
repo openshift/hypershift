@@ -23,7 +23,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 	"sigs.k8s.io/yaml"
 
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -51,7 +50,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Reconcile on the HyperShift operator deployment and watch monitoring namespaces
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&appsv1.Deployment{}, builder.WithPredicates(predicateForNamespacedName(manifests.OperatorDeployment(r.Namespace)))).
-		Watches(&source.Kind{Type: &corev1.Namespace{}}, handler.EnqueueRequestsFromMapFunc(mapRequestTo(manifests.OperatorDeployment(r.Namespace))),
+		Watches(&corev1.Namespace{}, handler.EnqueueRequestsFromMapFunc(mapRequestTo(manifests.OperatorDeployment(r.Namespace))),
 			builder.WithPredicates(predicateForNames(monitoring.MonitoringNamespace().Name, monitoring.UWMNamespace().Name))).
 		Build(r)
 	r.EventRecorder = mgr.GetEventRecorderFor("uwm-telemetry")
@@ -367,7 +366,7 @@ func predicateForNames(names ...string) predicate.Predicate {
 }
 
 func mapRequestTo(obj client.Object) handler.MapFunc {
-	return func(o client.Object) []reconcile.Request {
+	return func(ctx context.Context, o client.Object) []reconcile.Request {
 		return []reconcile.Request{
 			{
 				NamespacedName: types.NamespacedName{

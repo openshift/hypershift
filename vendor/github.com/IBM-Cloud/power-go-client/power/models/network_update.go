@@ -91,6 +91,11 @@ func (m *NetworkUpdate) contextValidateIPAddressRanges(ctx context.Context, form
 	for i := 0; i < len(m.IPAddressRanges); i++ {
 
 		if m.IPAddressRanges[i] != nil {
+
+			if swag.IsZero(m.IPAddressRanges[i]) { // not required
+				return nil
+			}
+
 			if err := m.IPAddressRanges[i].ContextValidate(ctx, formats); err != nil {
 				if ve, ok := err.(*errors.Validation); ok {
 					return ve.ValidateName("ipAddressRanges" + "." + strconv.Itoa(i))

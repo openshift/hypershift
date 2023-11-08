@@ -19,9 +19,10 @@ package v1beta1
 import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
-func (c *AzureClusterIdentity) validateClusterIdentity() error {
+func (c *AzureClusterIdentity) validateClusterIdentity() (admission.Warnings, error) {
 	var allErrs field.ErrorList
 	if c.Spec.Type == UserAssignedMSI && c.Spec.ResourceID == "" {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec", "resourceID"), c.Spec.ResourceID))
@@ -29,7 +30,7 @@ func (c *AzureClusterIdentity) validateClusterIdentity() error {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "resourceID"), c.Spec.ResourceID))
 	}
 	if len(allErrs) == 0 {
-		return nil
+		return nil, nil
 	}
-	return apierrors.NewInvalid(GroupVersion.WithKind("AzureClusterIdentity").GroupKind(), c.Name, allErrs)
+	return nil, apierrors.NewInvalid(GroupVersion.WithKind("AzureClusterIdentity").GroupKind(), c.Name, allErrs)
 }

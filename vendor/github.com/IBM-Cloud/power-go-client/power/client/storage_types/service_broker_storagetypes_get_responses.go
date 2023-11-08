@@ -29,6 +29,12 @@ func (o *ServiceBrokerStoragetypesGetReader) ReadResponse(response runtime.Clien
 			return nil, err
 		}
 		return result, nil
+	case 422:
+		result := NewServiceBrokerStoragetypesGetUnprocessableEntity()
+		if err := result.readResponse(response, consumer, o.formats); err != nil {
+			return nil, err
+		}
+		return nil, result
 	case 500:
 		result := NewServiceBrokerStoragetypesGetInternalServerError()
 		if err := result.readResponse(response, consumer, o.formats); err != nil {
@@ -36,7 +42,7 @@ func (o *ServiceBrokerStoragetypesGetReader) ReadResponse(response runtime.Clien
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /broker/v1/storage-types] serviceBroker.storagetypes.get", response, response.Code())
 	}
 }
 
@@ -79,6 +85,11 @@ func (o *ServiceBrokerStoragetypesGetOK) IsCode(code int) bool {
 	return code == 200
 }
 
+// Code gets the status code for the service broker storagetypes get o k response
+func (o *ServiceBrokerStoragetypesGetOK) Code() int {
+	return 200
+}
+
 func (o *ServiceBrokerStoragetypesGetOK) Error() string {
 	return fmt.Sprintf("[GET /broker/v1/storage-types][%d] serviceBrokerStoragetypesGetOK  %+v", 200, o.Payload)
 }
@@ -95,6 +106,74 @@ func (o *ServiceBrokerStoragetypesGetOK) readResponse(response runtime.ClientRes
 
 	// response payload
 	if err := consumer.Consume(response.Body(), &o.Payload); err != nil && err != io.EOF {
+		return err
+	}
+
+	return nil
+}
+
+// NewServiceBrokerStoragetypesGetUnprocessableEntity creates a ServiceBrokerStoragetypesGetUnprocessableEntity with default headers values
+func NewServiceBrokerStoragetypesGetUnprocessableEntity() *ServiceBrokerStoragetypesGetUnprocessableEntity {
+	return &ServiceBrokerStoragetypesGetUnprocessableEntity{}
+}
+
+/*
+ServiceBrokerStoragetypesGetUnprocessableEntity describes a response with status code 422, with default header values.
+
+Unprocessable Entity
+*/
+type ServiceBrokerStoragetypesGetUnprocessableEntity struct {
+	Payload *models.Error
+}
+
+// IsSuccess returns true when this service broker storagetypes get unprocessable entity response has a 2xx status code
+func (o *ServiceBrokerStoragetypesGetUnprocessableEntity) IsSuccess() bool {
+	return false
+}
+
+// IsRedirect returns true when this service broker storagetypes get unprocessable entity response has a 3xx status code
+func (o *ServiceBrokerStoragetypesGetUnprocessableEntity) IsRedirect() bool {
+	return false
+}
+
+// IsClientError returns true when this service broker storagetypes get unprocessable entity response has a 4xx status code
+func (o *ServiceBrokerStoragetypesGetUnprocessableEntity) IsClientError() bool {
+	return true
+}
+
+// IsServerError returns true when this service broker storagetypes get unprocessable entity response has a 5xx status code
+func (o *ServiceBrokerStoragetypesGetUnprocessableEntity) IsServerError() bool {
+	return false
+}
+
+// IsCode returns true when this service broker storagetypes get unprocessable entity response a status code equal to that given
+func (o *ServiceBrokerStoragetypesGetUnprocessableEntity) IsCode(code int) bool {
+	return code == 422
+}
+
+// Code gets the status code for the service broker storagetypes get unprocessable entity response
+func (o *ServiceBrokerStoragetypesGetUnprocessableEntity) Code() int {
+	return 422
+}
+
+func (o *ServiceBrokerStoragetypesGetUnprocessableEntity) Error() string {
+	return fmt.Sprintf("[GET /broker/v1/storage-types][%d] serviceBrokerStoragetypesGetUnprocessableEntity  %+v", 422, o.Payload)
+}
+
+func (o *ServiceBrokerStoragetypesGetUnprocessableEntity) String() string {
+	return fmt.Sprintf("[GET /broker/v1/storage-types][%d] serviceBrokerStoragetypesGetUnprocessableEntity  %+v", 422, o.Payload)
+}
+
+func (o *ServiceBrokerStoragetypesGetUnprocessableEntity) GetPayload() *models.Error {
+	return o.Payload
+}
+
+func (o *ServiceBrokerStoragetypesGetUnprocessableEntity) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
+
+	o.Payload = new(models.Error)
+
+	// response payload
+	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
 		return err
 	}
 
@@ -138,6 +217,11 @@ func (o *ServiceBrokerStoragetypesGetInternalServerError) IsServerError() bool {
 // IsCode returns true when this service broker storagetypes get internal server error response a status code equal to that given
 func (o *ServiceBrokerStoragetypesGetInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the service broker storagetypes get internal server error response
+func (o *ServiceBrokerStoragetypesGetInternalServerError) Code() int {
+	return 500
 }
 
 func (o *ServiceBrokerStoragetypesGetInternalServerError) Error() string {

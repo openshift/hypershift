@@ -271,30 +271,30 @@ func waitUntilAvailable(ctx context.Context, opts Options) error {
 	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
 
-	fmt.Printf("Waiting for operator rollout...\n")
+	deployment := operatorDeployment(opts)
+	fmt.Printf("Waiting for deployment %q in namespace %q rollout for operator...\n", deployment.Name, deployment.Namespace)
 	err = wait.PollImmediateUntilWithContext(waitCtx, 2*time.Second, func(ctx context.Context) (bool, error) {
-		deployment := operatorDeployment(opts)
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
 			return false, err
 		}
 		if deployment.Generation <= deployment.Status.ObservedGeneration {
 			cond := getDeploymentCondition(deployment.Status, appsv1.DeploymentProgressing)
 			if cond != nil && cond.Reason == "ProgressDeadlineExceeded" {
-				return false, fmt.Errorf("deployment %q exceeded its progress deadline", deployment.Name)
+				return false, fmt.Errorf("deployment %q in namespace %q exceeded its progress deadline", deployment.Name, deployment.Namespace)
 			}
 			if deployment.Spec.Replicas != nil && deployment.Status.UpdatedReplicas < *deployment.Spec.Replicas {
-				fmt.Printf("Waiting for deployment %q rollout to finish: %d out of %d new replicas have been updated...\n", deployment.Name, deployment.Status.UpdatedReplicas, *deployment.Spec.Replicas)
+				fmt.Printf("Waiting for deployment %q in namespace %q rollout to finish: %d out of %d new replicas have been updated...\n", deployment.Name, deployment.Namespace, deployment.Status.UpdatedReplicas, *deployment.Spec.Replicas)
 				return false, nil
 			}
 			if deployment.Status.Replicas > deployment.Status.UpdatedReplicas {
-				fmt.Printf("Waiting for deployment %q rollout to finish: %d old replicas are pending termination...\n", deployment.Name, deployment.Status.Replicas-deployment.Status.UpdatedReplicas)
+				fmt.Printf("Waiting for deployment %q in namespace %q rollout to finish: %d old replicas are pending termination...\n", deployment.Name, deployment.Namespace, deployment.Status.Replicas-deployment.Status.UpdatedReplicas)
 				return false, nil
 			}
 			if deployment.Status.AvailableReplicas < deployment.Status.UpdatedReplicas {
-				fmt.Printf("Waiting for deployment %q rollout to finish: %d of %d updated replicas are available...\n", deployment.Name, deployment.Status.AvailableReplicas, deployment.Status.UpdatedReplicas)
+				fmt.Printf("Waiting for deployment %q in namespace %q rollout to finish: %d of %d updated replicas are available...\n", deployment.Name, deployment.Namespace, deployment.Status.AvailableReplicas, deployment.Status.UpdatedReplicas)
 				return false, nil
 			}
-			fmt.Printf("Deployment %q successfully rolled out\n", deployment.Name)
+			fmt.Printf("Deployment %q in namespace %q successfully rolled out\n", deployment.Name, deployment.Namespace)
 			return true, nil
 		} else {
 			fmt.Printf("Waiting for operator deployment to be observed\n")
@@ -312,13 +312,13 @@ func waitUntilAvailable(ctx context.Context, opts Options) error {
 		endpoints := operatorEndpoints(opts)
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(endpoints), endpoints); err != nil {
 			if apierrors.IsNotFound(err) {
-				fmt.Printf("Operator service endpoints have not been created yet\n")
+				fmt.Printf("Operator service endpoints %q in nameppace %q have not been created yet\n", endpoints.Name, endpoints.Namespace)
 				return false, nil
 			}
 			return false, err
 		}
 		if len(endpoints.Subsets) == 0 || len(endpoints.Subsets[0].Addresses) == 0 {
-			fmt.Printf("Waiting for endpoints addresses to be populated\n")
+			fmt.Printf("Waiting for endpoints %q in nameppace %q to have addresses populated\n", endpoints.Name, endpoints.Namespace)
 			return false, nil
 		}
 		fmt.Printf("Endpoints available\n")

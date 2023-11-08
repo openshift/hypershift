@@ -48,7 +48,7 @@ func (o *PcloudV2ImagesExportGetReader) ReadResponse(response runtime.ClientResp
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /pcloud/v2/cloud-instances/{cloud_instance_id}/images/{image_id}/export] pcloud.v2.images.export.get", response, response.Code())
 	}
 }
 
@@ -89,6 +89,11 @@ func (o *PcloudV2ImagesExportGetOK) IsServerError() bool {
 // IsCode returns true when this pcloud v2 images export get o k response a status code equal to that given
 func (o *PcloudV2ImagesExportGetOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud v2 images export get o k response
+func (o *PcloudV2ImagesExportGetOK) Code() int {
+	return 200
 }
 
 func (o *PcloudV2ImagesExportGetOK) Error() string {
@@ -154,6 +159,11 @@ func (o *PcloudV2ImagesExportGetUnauthorized) IsCode(code int) bool {
 	return code == 401
 }
 
+// Code gets the status code for the pcloud v2 images export get unauthorized response
+func (o *PcloudV2ImagesExportGetUnauthorized) Code() int {
+	return 401
+}
+
 func (o *PcloudV2ImagesExportGetUnauthorized) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v2/cloud-instances/{cloud_instance_id}/images/{image_id}/export][%d] pcloudV2ImagesExportGetUnauthorized  %+v", 401, o.Payload)
 }
@@ -217,6 +227,11 @@ func (o *PcloudV2ImagesExportGetNotFound) IsCode(code int) bool {
 	return code == 404
 }
 
+// Code gets the status code for the pcloud v2 images export get not found response
+func (o *PcloudV2ImagesExportGetNotFound) Code() int {
+	return 404
+}
+
 func (o *PcloudV2ImagesExportGetNotFound) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v2/cloud-instances/{cloud_instance_id}/images/{image_id}/export][%d] pcloudV2ImagesExportGetNotFound  %+v", 404, o.Payload)
 }
@@ -278,6 +293,11 @@ func (o *PcloudV2ImagesExportGetInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud v2 images export get internal server error response a status code equal to that given
 func (o *PcloudV2ImagesExportGetInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud v2 images export get internal server error response
+func (o *PcloudV2ImagesExportGetInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudV2ImagesExportGetInternalServerError) Error() string {

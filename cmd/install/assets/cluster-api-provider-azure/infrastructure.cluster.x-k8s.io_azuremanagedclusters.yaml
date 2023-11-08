@@ -41,7 +41,8 @@ spec:
             properties:
               controlPlaneEndpoint:
                 description: ControlPlaneEndpoint represents the endpoint used to
-                  communicate with the control plane.
+                  communicate with the control plane. Immutable, populated by the
+                  AKS API at create.
                 properties:
                   host:
                     description: The hostname on which the API server is serving.

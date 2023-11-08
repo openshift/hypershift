@@ -36,7 +36,7 @@ func (o *BluemixServiceInstanceGetReader) ReadResponse(response runtime.ClientRe
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /bluemix_v1/service_instances/{instance_id}] bluemix.serviceInstance.get", response, response.Code())
 	}
 }
 
@@ -77,6 +77,11 @@ func (o *BluemixServiceInstanceGetOK) IsServerError() bool {
 // IsCode returns true when this bluemix service instance get o k response a status code equal to that given
 func (o *BluemixServiceInstanceGetOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the bluemix service instance get o k response
+func (o *BluemixServiceInstanceGetOK) Code() int {
+	return 200
 }
 
 func (o *BluemixServiceInstanceGetOK) Error() string {
@@ -140,6 +145,11 @@ func (o *BluemixServiceInstanceGetBadRequest) IsServerError() bool {
 // IsCode returns true when this bluemix service instance get bad request response a status code equal to that given
 func (o *BluemixServiceInstanceGetBadRequest) IsCode(code int) bool {
 	return code == 400
+}
+
+// Code gets the status code for the bluemix service instance get bad request response
+func (o *BluemixServiceInstanceGetBadRequest) Code() int {
+	return 400
 }
 
 func (o *BluemixServiceInstanceGetBadRequest) Error() string {

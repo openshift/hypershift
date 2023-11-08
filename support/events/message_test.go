@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -86,8 +87,14 @@ func TestErrorMessages(t *testing.T) {
 			eventList := &corev1.EventList{
 				Items: test.events,
 			}
-			fakeObj := &corev1.Pod{}
-			client := fake.NewClientBuilder().WithLists(eventList).Build()
+			fakeObj := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					UID: fakeObjUID,
+				},
+			}
+			client := fake.NewClientBuilder().WithIndex(&corev1.Event{}, "involvedObject.uid", func(object client.Object) []string {
+				return []string{string(object.(*corev1.Event).InvolvedObject.UID)}
+			}).WithLists(eventList).Build()
 			collector := NewMessageCollector(context.Background(), client)
 			result, err := collector.ErrorMessages(fakeObj)
 			g.Expect(err).ToNot(HaveOccurred())

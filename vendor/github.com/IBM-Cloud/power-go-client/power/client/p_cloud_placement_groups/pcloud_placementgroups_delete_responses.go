@@ -54,7 +54,7 @@ func (o *PcloudPlacementgroupsDeleteReader) ReadResponse(response runtime.Client
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[DELETE /pcloud/v1/cloud-instances/{cloud_instance_id}/placement-groups/{placement_group_id}] pcloud.placementgroups.delete", response, response.Code())
 	}
 }
 
@@ -95,6 +95,11 @@ func (o *PcloudPlacementgroupsDeleteOK) IsServerError() bool {
 // IsCode returns true when this pcloud placementgroups delete o k response a status code equal to that given
 func (o *PcloudPlacementgroupsDeleteOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud placementgroups delete o k response
+func (o *PcloudPlacementgroupsDeleteOK) Code() int {
+	return 200
 }
 
 func (o *PcloudPlacementgroupsDeleteOK) Error() string {
@@ -156,6 +161,11 @@ func (o *PcloudPlacementgroupsDeleteBadRequest) IsServerError() bool {
 // IsCode returns true when this pcloud placementgroups delete bad request response a status code equal to that given
 func (o *PcloudPlacementgroupsDeleteBadRequest) IsCode(code int) bool {
 	return code == 400
+}
+
+// Code gets the status code for the pcloud placementgroups delete bad request response
+func (o *PcloudPlacementgroupsDeleteBadRequest) Code() int {
+	return 400
 }
 
 func (o *PcloudPlacementgroupsDeleteBadRequest) Error() string {
@@ -221,6 +231,11 @@ func (o *PcloudPlacementgroupsDeleteForbidden) IsCode(code int) bool {
 	return code == 403
 }
 
+// Code gets the status code for the pcloud placementgroups delete forbidden response
+func (o *PcloudPlacementgroupsDeleteForbidden) Code() int {
+	return 403
+}
+
 func (o *PcloudPlacementgroupsDeleteForbidden) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/cloud-instances/{cloud_instance_id}/placement-groups/{placement_group_id}][%d] pcloudPlacementgroupsDeleteForbidden  %+v", 403, o.Payload)
 }
@@ -284,6 +299,11 @@ func (o *PcloudPlacementgroupsDeleteNotFound) IsCode(code int) bool {
 	return code == 404
 }
 
+// Code gets the status code for the pcloud placementgroups delete not found response
+func (o *PcloudPlacementgroupsDeleteNotFound) Code() int {
+	return 404
+}
+
 func (o *PcloudPlacementgroupsDeleteNotFound) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/cloud-instances/{cloud_instance_id}/placement-groups/{placement_group_id}][%d] pcloudPlacementgroupsDeleteNotFound  %+v", 404, o.Payload)
 }
@@ -345,6 +365,11 @@ func (o *PcloudPlacementgroupsDeleteInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud placementgroups delete internal server error response a status code equal to that given
 func (o *PcloudPlacementgroupsDeleteInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud placementgroups delete internal server error response
+func (o *PcloudPlacementgroupsDeleteInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudPlacementgroupsDeleteInternalServerError) Error() string {

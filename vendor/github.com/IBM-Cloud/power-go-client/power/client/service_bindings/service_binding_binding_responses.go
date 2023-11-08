@@ -60,7 +60,7 @@ func (o *ServiceBindingBindingReader) ReadResponse(response runtime.ClientRespon
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[PUT /v2/service_instances/{instance_id}/service_bindings/{binding_id}] serviceBinding.binding", response, response.Code())
 	}
 }
 
@@ -101,6 +101,11 @@ func (o *ServiceBindingBindingOK) IsServerError() bool {
 // IsCode returns true when this service binding binding o k response a status code equal to that given
 func (o *ServiceBindingBindingOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the service binding binding o k response
+func (o *ServiceBindingBindingOK) Code() int {
+	return 200
 }
 
 func (o *ServiceBindingBindingOK) Error() string {
@@ -166,6 +171,11 @@ func (o *ServiceBindingBindingCreated) IsCode(code int) bool {
 	return code == 201
 }
 
+// Code gets the status code for the service binding binding created response
+func (o *ServiceBindingBindingCreated) Code() int {
+	return 201
+}
+
 func (o *ServiceBindingBindingCreated) Error() string {
 	return fmt.Sprintf("[PUT /v2/service_instances/{instance_id}/service_bindings/{binding_id}][%d] serviceBindingBindingCreated  %+v", 201, o.Payload)
 }
@@ -227,6 +237,11 @@ func (o *ServiceBindingBindingAccepted) IsServerError() bool {
 // IsCode returns true when this service binding binding accepted response a status code equal to that given
 func (o *ServiceBindingBindingAccepted) IsCode(code int) bool {
 	return code == 202
+}
+
+// Code gets the status code for the service binding binding accepted response
+func (o *ServiceBindingBindingAccepted) Code() int {
+	return 202
 }
 
 func (o *ServiceBindingBindingAccepted) Error() string {
@@ -292,6 +307,11 @@ func (o *ServiceBindingBindingBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the service binding binding bad request response
+func (o *ServiceBindingBindingBadRequest) Code() int {
+	return 400
+}
+
 func (o *ServiceBindingBindingBadRequest) Error() string {
 	return fmt.Sprintf("[PUT /v2/service_instances/{instance_id}/service_bindings/{binding_id}][%d] serviceBindingBindingBadRequest  %+v", 400, o.Payload)
 }
@@ -355,6 +375,11 @@ func (o *ServiceBindingBindingConflict) IsCode(code int) bool {
 	return code == 409
 }
 
+// Code gets the status code for the service binding binding conflict response
+func (o *ServiceBindingBindingConflict) Code() int {
+	return 409
+}
+
 func (o *ServiceBindingBindingConflict) Error() string {
 	return fmt.Sprintf("[PUT /v2/service_instances/{instance_id}/service_bindings/{binding_id}][%d] serviceBindingBindingConflict  %+v", 409, o.Payload)
 }
@@ -416,6 +441,11 @@ func (o *ServiceBindingBindingUnprocessableEntity) IsServerError() bool {
 // IsCode returns true when this service binding binding unprocessable entity response a status code equal to that given
 func (o *ServiceBindingBindingUnprocessableEntity) IsCode(code int) bool {
 	return code == 422
+}
+
+// Code gets the status code for the service binding binding unprocessable entity response
+func (o *ServiceBindingBindingUnprocessableEntity) Code() int {
+	return 422
 }
 
 func (o *ServiceBindingBindingUnprocessableEntity) Error() string {

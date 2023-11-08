@@ -54,7 +54,7 @@ func (o *PcloudSapGetReader) ReadResponse(response runtime.ClientResponse, consu
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/sap/{sap_profile_id}] pcloud.sap.get", response, response.Code())
 	}
 }
 
@@ -95,6 +95,11 @@ func (o *PcloudSapGetOK) IsServerError() bool {
 // IsCode returns true when this pcloud sap get o k response a status code equal to that given
 func (o *PcloudSapGetOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud sap get o k response
+func (o *PcloudSapGetOK) Code() int {
+	return 200
 }
 
 func (o *PcloudSapGetOK) Error() string {
@@ -160,6 +165,11 @@ func (o *PcloudSapGetBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the pcloud sap get bad request response
+func (o *PcloudSapGetBadRequest) Code() int {
+	return 400
+}
+
 func (o *PcloudSapGetBadRequest) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/sap/{sap_profile_id}][%d] pcloudSapGetBadRequest  %+v", 400, o.Payload)
 }
@@ -221,6 +231,11 @@ func (o *PcloudSapGetUnauthorized) IsServerError() bool {
 // IsCode returns true when this pcloud sap get unauthorized response a status code equal to that given
 func (o *PcloudSapGetUnauthorized) IsCode(code int) bool {
 	return code == 401
+}
+
+// Code gets the status code for the pcloud sap get unauthorized response
+func (o *PcloudSapGetUnauthorized) Code() int {
+	return 401
 }
 
 func (o *PcloudSapGetUnauthorized) Error() string {
@@ -286,6 +301,11 @@ func (o *PcloudSapGetNotFound) IsCode(code int) bool {
 	return code == 404
 }
 
+// Code gets the status code for the pcloud sap get not found response
+func (o *PcloudSapGetNotFound) Code() int {
+	return 404
+}
+
 func (o *PcloudSapGetNotFound) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/sap/{sap_profile_id}][%d] pcloudSapGetNotFound  %+v", 404, o.Payload)
 }
@@ -347,6 +367,11 @@ func (o *PcloudSapGetInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud sap get internal server error response a status code equal to that given
 func (o *PcloudSapGetInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud sap get internal server error response
+func (o *PcloudSapGetInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudSapGetInternalServerError) Error() string {

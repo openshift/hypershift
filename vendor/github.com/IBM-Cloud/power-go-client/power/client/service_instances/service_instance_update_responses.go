@@ -48,7 +48,7 @@ func (o *ServiceInstanceUpdateReader) ReadResponse(response runtime.ClientRespon
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[PATCH /v2/service_instances/{instance_id}] serviceInstance.update", response, response.Code())
 	}
 }
 
@@ -89,6 +89,11 @@ func (o *ServiceInstanceUpdateOK) IsServerError() bool {
 // IsCode returns true when this service instance update o k response a status code equal to that given
 func (o *ServiceInstanceUpdateOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the service instance update o k response
+func (o *ServiceInstanceUpdateOK) Code() int {
+	return 200
 }
 
 func (o *ServiceInstanceUpdateOK) Error() string {
@@ -150,6 +155,11 @@ func (o *ServiceInstanceUpdateAccepted) IsServerError() bool {
 // IsCode returns true when this service instance update accepted response a status code equal to that given
 func (o *ServiceInstanceUpdateAccepted) IsCode(code int) bool {
 	return code == 202
+}
+
+// Code gets the status code for the service instance update accepted response
+func (o *ServiceInstanceUpdateAccepted) Code() int {
+	return 202
 }
 
 func (o *ServiceInstanceUpdateAccepted) Error() string {
@@ -215,6 +225,11 @@ func (o *ServiceInstanceUpdateBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the service instance update bad request response
+func (o *ServiceInstanceUpdateBadRequest) Code() int {
+	return 400
+}
+
 func (o *ServiceInstanceUpdateBadRequest) Error() string {
 	return fmt.Sprintf("[PATCH /v2/service_instances/{instance_id}][%d] serviceInstanceUpdateBadRequest  %+v", 400, o.Payload)
 }
@@ -276,6 +291,11 @@ func (o *ServiceInstanceUpdateUnprocessableEntity) IsServerError() bool {
 // IsCode returns true when this service instance update unprocessable entity response a status code equal to that given
 func (o *ServiceInstanceUpdateUnprocessableEntity) IsCode(code int) bool {
 	return code == 422
+}
+
+// Code gets the status code for the service instance update unprocessable entity response
+func (o *ServiceInstanceUpdateUnprocessableEntity) Code() int {
+	return 422
 }
 
 func (o *ServiceInstanceUpdateUnprocessableEntity) Error() string {

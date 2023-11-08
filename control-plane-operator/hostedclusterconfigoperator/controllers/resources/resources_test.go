@@ -116,7 +116,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 	var totalCreates int
 	{
 		fakeClient := &testClient{
-			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).Build(),
+			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
 		}
 		uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 
@@ -141,7 +141,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 	// test with random get errors
 	for i := 0; i < 100; i++ {
 		fakeClient := &testClient{
-			Client:          fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).Build(),
+			Client:          fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
 			randomGetErrors: true,
 		}
 		r := &reconciler{
@@ -709,9 +709,9 @@ func TestDestroyCloudResources(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			fakeHCP := fakeHostedControlPlane()
-			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existing...).Build()
-			uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existingUncached...).Build()
-			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP).Build()
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existing...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+			uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existingUncached...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			r := &reconciler{
 				client:                 guestClient,
 				uncachedClient:         uncachedClient,

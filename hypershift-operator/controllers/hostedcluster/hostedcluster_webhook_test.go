@@ -2,8 +2,9 @@ package hostedcluster
 
 import (
 	"context"
-	"github.com/openshift/hypershift/kubevirtexternalinfra"
 	"testing"
+
+	"github.com/openshift/hypershift/kubevirtexternalinfra"
 
 	"github.com/openshift/hypershift/api/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -14,11 +15,12 @@ import (
 
 func TestValidateKubevirtCluster(t *testing.T) {
 	for _, testCase := range []struct {
-		name        string
-		hc          *v1beta1.HostedCluster
-		cnvVersion  string
-		k8sVersion  string
-		expectError bool
+		name           string
+		hc             *v1beta1.HostedCluster
+		cnvVersion     string
+		k8sVersion     string
+		expectError    bool
+		expectWarnings bool
 	}{
 		{
 			name: "happy case - versions are valid",
@@ -100,12 +102,17 @@ func TestValidateKubevirtCluster(t *testing.T) {
 				clientMap: clientMap,
 			}
 
-			err := v.validate(context.Background(), cl, testCase.hc)
+			warnings, err := v.validate(context.Background(), cl, testCase.hc)
 
 			if testCase.expectError && err == nil {
 				t.Error("should return error but didn't")
 			} else if !testCase.expectError && err != nil {
 				t.Errorf("should not return error but returned %q", err.Error())
+			}
+			if testCase.expectWarnings && warnings == nil {
+				t.Error("should return warnings but didn't")
+			} else if !testCase.expectWarnings && warnings != nil {
+				t.Errorf("should not return warnings but returned %q", warnings)
 			}
 		})
 	}

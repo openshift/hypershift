@@ -29,12 +29,14 @@ import (
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_networks"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_p_vm_instances"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_placement_groups"
+	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_pod_capacity"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_s_a_p"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_s_p_p_placement_groups"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_service_d_h_c_p"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_shared_processor_pools"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_snapshots"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_storage_capacity"
+	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_storage_tiers"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_system_pools"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_tasks"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_tenants"
@@ -111,12 +113,14 @@ func New(transport runtime.ClientTransport, formats strfmt.Registry) *PowerIaasA
 	cli.PCloudNetworks = p_cloud_networks.New(transport, formats)
 	cli.PCloudpVMInstances = p_cloud_p_vm_instances.New(transport, formats)
 	cli.PCloudPlacementGroups = p_cloud_placement_groups.New(transport, formats)
+	cli.PCloudPodCapacity = p_cloud_pod_capacity.New(transport, formats)
 	cli.PCloudsap = p_cloud_s_a_p.New(transport, formats)
 	cli.PCloudsppPlacementGroups = p_cloud_s_p_p_placement_groups.New(transport, formats)
 	cli.PCloudServicedhcp = p_cloud_service_d_h_c_p.New(transport, formats)
 	cli.PCloudSharedProcessorPools = p_cloud_shared_processor_pools.New(transport, formats)
 	cli.PCloudSnapshots = p_cloud_snapshots.New(transport, formats)
 	cli.PCloudStorageCapacity = p_cloud_storage_capacity.New(transport, formats)
+	cli.PCloudStorageTiers = p_cloud_storage_tiers.New(transport, formats)
 	cli.PCloudSystemPools = p_cloud_system_pools.New(transport, formats)
 	cli.PCloudTasks = p_cloud_tasks.New(transport, formats)
 	cli.PCloudTenants = p_cloud_tenants.New(transport, formats)
@@ -212,6 +216,8 @@ type PowerIaasAPI struct {
 
 	PCloudPlacementGroups p_cloud_placement_groups.ClientService
 
+	PCloudPodCapacity p_cloud_pod_capacity.ClientService
+
 	PCloudsap p_cloud_s_a_p.ClientService
 
 	PCloudsppPlacementGroups p_cloud_s_p_p_placement_groups.ClientService
@@ -223,6 +229,8 @@ type PowerIaasAPI struct {
 	PCloudSnapshots p_cloud_snapshots.ClientService
 
 	PCloudStorageCapacity p_cloud_storage_capacity.ClientService
+
+	PCloudStorageTiers p_cloud_storage_tiers.ClientService
 
 	PCloudSystemPools p_cloud_system_pools.ClientService
 
@@ -275,12 +283,14 @@ func (c *PowerIaasAPI) SetTransport(transport runtime.ClientTransport) {
 	c.PCloudNetworks.SetTransport(transport)
 	c.PCloudpVMInstances.SetTransport(transport)
 	c.PCloudPlacementGroups.SetTransport(transport)
+	c.PCloudPodCapacity.SetTransport(transport)
 	c.PCloudsap.SetTransport(transport)
 	c.PCloudsppPlacementGroups.SetTransport(transport)
 	c.PCloudServicedhcp.SetTransport(transport)
 	c.PCloudSharedProcessorPools.SetTransport(transport)
 	c.PCloudSnapshots.SetTransport(transport)
 	c.PCloudStorageCapacity.SetTransport(transport)
+	c.PCloudStorageTiers.SetTransport(transport)
 	c.PCloudSystemPools.SetTransport(transport)
 	c.PCloudTasks.SetTransport(transport)
 	c.PCloudTenants.SetTransport(transport)

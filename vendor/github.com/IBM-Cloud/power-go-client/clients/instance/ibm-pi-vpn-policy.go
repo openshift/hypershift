@@ -3,6 +3,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/IBM-Cloud/power-go-client/errors"
 	"github.com/IBM-Cloud/power-go-client/helpers"
@@ -27,6 +28,9 @@ func NewIBMPIVpnPolicyClient(ctx context.Context, sess *ibmpisession.IBMPISessio
 // IKE Policies
 // Get an IKE Policy
 func (f *IBMPIVpnPolicyClient) GetIKEPolicy(id string) (*models.IKEPolicy, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_v_p_n_policies.NewPcloudIkepoliciesGetParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithIkePolicyID(id)
@@ -42,6 +46,9 @@ func (f *IBMPIVpnPolicyClient) GetIKEPolicy(id string) (*models.IKEPolicy, error
 
 // Create an IKE Policy
 func (f *IBMPIVpnPolicyClient) CreateIKEPolicy(body *models.IKEPolicyCreate) (*models.IKEPolicy, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_v_p_n_policies.NewPcloudIkepoliciesPostParams().
 		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body)
@@ -57,6 +64,9 @@ func (f *IBMPIVpnPolicyClient) CreateIKEPolicy(body *models.IKEPolicyCreate) (*m
 
 // Update an IKE Policy
 func (f *IBMPIVpnPolicyClient) UpdateIKEPolicy(id string, body *models.IKEPolicyUpdate) (*models.IKEPolicy, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_v_p_n_policies.NewPcloudIkepoliciesPutParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithIkePolicyID(id).
@@ -73,6 +83,9 @@ func (f *IBMPIVpnPolicyClient) UpdateIKEPolicy(id string, body *models.IKEPolicy
 
 // Get All IKE Policies
 func (f *IBMPIVpnPolicyClient) GetAllIKEPolicies() (*models.IKEPolicies, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_v_p_n_policies.NewPcloudIkepoliciesGetallParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID)
@@ -88,6 +101,9 @@ func (f *IBMPIVpnPolicyClient) GetAllIKEPolicies() (*models.IKEPolicies, error) 
 
 // Delete an IKE Policy
 func (f *IBMPIVpnPolicyClient) DeleteIKEPolicy(id string) error {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_v_p_n_policies.NewPcloudIkepoliciesDeleteParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithIkePolicyID(id)
@@ -101,6 +117,9 @@ func (f *IBMPIVpnPolicyClient) DeleteIKEPolicy(id string) error {
 // IPSec Policies
 // Get an IPSec Policy
 func (f *IBMPIVpnPolicyClient) GetIPSecPolicy(id string) (*models.IPSecPolicy, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_v_p_n_policies.NewPcloudIpsecpoliciesGetParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithIpsecPolicyID(id)
@@ -116,6 +135,9 @@ func (f *IBMPIVpnPolicyClient) GetIPSecPolicy(id string) (*models.IPSecPolicy, e
 
 // Create an IPSec Policy
 func (f *IBMPIVpnPolicyClient) CreateIPSecPolicy(body *models.IPSecPolicyCreate) (*models.IPSecPolicy, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_v_p_n_policies.NewPcloudIpsecpoliciesPostParams().
 		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body)
@@ -131,6 +153,9 @@ func (f *IBMPIVpnPolicyClient) CreateIPSecPolicy(body *models.IPSecPolicyCreate)
 
 // Update an IPSec Policy
 func (f *IBMPIVpnPolicyClient) UpdateIPSecPolicy(id string, body *models.IPSecPolicyUpdate) (*models.IPSecPolicy, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_v_p_n_policies.NewPcloudIpsecpoliciesPutParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithIpsecPolicyID(id).
@@ -147,6 +172,9 @@ func (f *IBMPIVpnPolicyClient) UpdateIPSecPolicy(id string, body *models.IPSecPo
 
 // Get All IPSec Policies
 func (f *IBMPIVpnPolicyClient) GetAllIPSecPolicies() (*models.IPSecPolicies, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_v_p_n_policies.NewPcloudIpsecpoliciesGetallParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID)
@@ -162,6 +190,9 @@ func (f *IBMPIVpnPolicyClient) GetAllIPSecPolicies() (*models.IPSecPolicies, err
 
 // Delete an IPSec Policy
 func (f *IBMPIVpnPolicyClient) DeleteIPSecPolicy(id string) error {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_v_p_n_policies.NewPcloudIpsecpoliciesDeleteParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithIpsecPolicyID(id)

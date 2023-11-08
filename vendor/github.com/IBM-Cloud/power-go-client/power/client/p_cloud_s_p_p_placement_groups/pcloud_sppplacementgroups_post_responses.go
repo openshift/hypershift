@@ -66,7 +66,7 @@ func (o *PcloudSppplacementgroupsPostReader) ReadResponse(response runtime.Clien
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/spp-placement-groups] pcloud.sppplacementgroups.post", response, response.Code())
 	}
 }
 
@@ -107,6 +107,11 @@ func (o *PcloudSppplacementgroupsPostOK) IsServerError() bool {
 // IsCode returns true when this pcloud sppplacementgroups post o k response a status code equal to that given
 func (o *PcloudSppplacementgroupsPostOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud sppplacementgroups post o k response
+func (o *PcloudSppplacementgroupsPostOK) Code() int {
+	return 200
 }
 
 func (o *PcloudSppplacementgroupsPostOK) Error() string {
@@ -172,6 +177,11 @@ func (o *PcloudSppplacementgroupsPostBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the pcloud sppplacementgroups post bad request response
+func (o *PcloudSppplacementgroupsPostBadRequest) Code() int {
+	return 400
+}
+
 func (o *PcloudSppplacementgroupsPostBadRequest) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/spp-placement-groups][%d] pcloudSppplacementgroupsPostBadRequest  %+v", 400, o.Payload)
 }
@@ -233,6 +243,11 @@ func (o *PcloudSppplacementgroupsPostUnauthorized) IsServerError() bool {
 // IsCode returns true when this pcloud sppplacementgroups post unauthorized response a status code equal to that given
 func (o *PcloudSppplacementgroupsPostUnauthorized) IsCode(code int) bool {
 	return code == 401
+}
+
+// Code gets the status code for the pcloud sppplacementgroups post unauthorized response
+func (o *PcloudSppplacementgroupsPostUnauthorized) Code() int {
+	return 401
 }
 
 func (o *PcloudSppplacementgroupsPostUnauthorized) Error() string {
@@ -298,6 +313,11 @@ func (o *PcloudSppplacementgroupsPostForbidden) IsCode(code int) bool {
 	return code == 403
 }
 
+// Code gets the status code for the pcloud sppplacementgroups post forbidden response
+func (o *PcloudSppplacementgroupsPostForbidden) Code() int {
+	return 403
+}
+
 func (o *PcloudSppplacementgroupsPostForbidden) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/spp-placement-groups][%d] pcloudSppplacementgroupsPostForbidden  %+v", 403, o.Payload)
 }
@@ -359,6 +379,11 @@ func (o *PcloudSppplacementgroupsPostConflict) IsServerError() bool {
 // IsCode returns true when this pcloud sppplacementgroups post conflict response a status code equal to that given
 func (o *PcloudSppplacementgroupsPostConflict) IsCode(code int) bool {
 	return code == 409
+}
+
+// Code gets the status code for the pcloud sppplacementgroups post conflict response
+func (o *PcloudSppplacementgroupsPostConflict) Code() int {
+	return 409
 }
 
 func (o *PcloudSppplacementgroupsPostConflict) Error() string {
@@ -424,6 +449,11 @@ func (o *PcloudSppplacementgroupsPostUnprocessableEntity) IsCode(code int) bool 
 	return code == 422
 }
 
+// Code gets the status code for the pcloud sppplacementgroups post unprocessable entity response
+func (o *PcloudSppplacementgroupsPostUnprocessableEntity) Code() int {
+	return 422
+}
+
 func (o *PcloudSppplacementgroupsPostUnprocessableEntity) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/spp-placement-groups][%d] pcloudSppplacementgroupsPostUnprocessableEntity  %+v", 422, o.Payload)
 }
@@ -485,6 +515,11 @@ func (o *PcloudSppplacementgroupsPostInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud sppplacementgroups post internal server error response a status code equal to that given
 func (o *PcloudSppplacementgroupsPostInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud sppplacementgroups post internal server error response
+func (o *PcloudSppplacementgroupsPostInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudSppplacementgroupsPostInternalServerError) Error() string {

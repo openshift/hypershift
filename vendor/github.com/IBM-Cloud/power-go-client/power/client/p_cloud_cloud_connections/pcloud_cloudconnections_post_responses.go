@@ -83,6 +83,12 @@ func (o *PcloudCloudconnectionsPostReader) ReadResponse(response runtime.ClientR
 			return nil, err
 		}
 		return nil, result
+	case 503:
+		result := NewPcloudCloudconnectionsPostServiceUnavailable()
+		if err := result.readResponse(response, consumer, o.formats); err != nil {
+			return nil, err
+		}
+		return nil, result
 	case 504:
 		result := NewPcloudCloudconnectionsPostGatewayTimeout()
 		if err := result.readResponse(response, consumer, o.formats); err != nil {
@@ -90,7 +96,7 @@ func (o *PcloudCloudconnectionsPostReader) ReadResponse(response runtime.ClientR
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections] pcloud.cloudconnections.post", response, response.Code())
 	}
 }
 
@@ -131,6 +137,11 @@ func (o *PcloudCloudconnectionsPostOK) IsServerError() bool {
 // IsCode returns true when this pcloud cloudconnections post o k response a status code equal to that given
 func (o *PcloudCloudconnectionsPostOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud cloudconnections post o k response
+func (o *PcloudCloudconnectionsPostOK) Code() int {
+	return 200
 }
 
 func (o *PcloudCloudconnectionsPostOK) Error() string {
@@ -196,6 +207,11 @@ func (o *PcloudCloudconnectionsPostCreated) IsCode(code int) bool {
 	return code == 201
 }
 
+// Code gets the status code for the pcloud cloudconnections post created response
+func (o *PcloudCloudconnectionsPostCreated) Code() int {
+	return 201
+}
+
 func (o *PcloudCloudconnectionsPostCreated) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections][%d] pcloudCloudconnectionsPostCreated  %+v", 201, o.Payload)
 }
@@ -257,6 +273,11 @@ func (o *PcloudCloudconnectionsPostAccepted) IsServerError() bool {
 // IsCode returns true when this pcloud cloudconnections post accepted response a status code equal to that given
 func (o *PcloudCloudconnectionsPostAccepted) IsCode(code int) bool {
 	return code == 202
+}
+
+// Code gets the status code for the pcloud cloudconnections post accepted response
+func (o *PcloudCloudconnectionsPostAccepted) Code() int {
+	return 202
 }
 
 func (o *PcloudCloudconnectionsPostAccepted) Error() string {
@@ -322,6 +343,11 @@ func (o *PcloudCloudconnectionsPostBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the pcloud cloudconnections post bad request response
+func (o *PcloudCloudconnectionsPostBadRequest) Code() int {
+	return 400
+}
+
 func (o *PcloudCloudconnectionsPostBadRequest) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections][%d] pcloudCloudconnectionsPostBadRequest  %+v", 400, o.Payload)
 }
@@ -383,6 +409,11 @@ func (o *PcloudCloudconnectionsPostUnauthorized) IsServerError() bool {
 // IsCode returns true when this pcloud cloudconnections post unauthorized response a status code equal to that given
 func (o *PcloudCloudconnectionsPostUnauthorized) IsCode(code int) bool {
 	return code == 401
+}
+
+// Code gets the status code for the pcloud cloudconnections post unauthorized response
+func (o *PcloudCloudconnectionsPostUnauthorized) Code() int {
+	return 401
 }
 
 func (o *PcloudCloudconnectionsPostUnauthorized) Error() string {
@@ -448,6 +479,11 @@ func (o *PcloudCloudconnectionsPostNotFound) IsCode(code int) bool {
 	return code == 404
 }
 
+// Code gets the status code for the pcloud cloudconnections post not found response
+func (o *PcloudCloudconnectionsPostNotFound) Code() int {
+	return 404
+}
+
 func (o *PcloudCloudconnectionsPostNotFound) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections][%d] pcloudCloudconnectionsPostNotFound  %+v", 404, o.Payload)
 }
@@ -509,6 +545,11 @@ func (o *PcloudCloudconnectionsPostRequestTimeout) IsServerError() bool {
 // IsCode returns true when this pcloud cloudconnections post request timeout response a status code equal to that given
 func (o *PcloudCloudconnectionsPostRequestTimeout) IsCode(code int) bool {
 	return code == 408
+}
+
+// Code gets the status code for the pcloud cloudconnections post request timeout response
+func (o *PcloudCloudconnectionsPostRequestTimeout) Code() int {
+	return 408
 }
 
 func (o *PcloudCloudconnectionsPostRequestTimeout) Error() string {
@@ -574,6 +615,11 @@ func (o *PcloudCloudconnectionsPostConflict) IsCode(code int) bool {
 	return code == 409
 }
 
+// Code gets the status code for the pcloud cloudconnections post conflict response
+func (o *PcloudCloudconnectionsPostConflict) Code() int {
+	return 409
+}
+
 func (o *PcloudCloudconnectionsPostConflict) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections][%d] pcloudCloudconnectionsPostConflict  %+v", 409, o.Payload)
 }
@@ -635,6 +681,11 @@ func (o *PcloudCloudconnectionsPostUnprocessableEntity) IsServerError() bool {
 // IsCode returns true when this pcloud cloudconnections post unprocessable entity response a status code equal to that given
 func (o *PcloudCloudconnectionsPostUnprocessableEntity) IsCode(code int) bool {
 	return code == 422
+}
+
+// Code gets the status code for the pcloud cloudconnections post unprocessable entity response
+func (o *PcloudCloudconnectionsPostUnprocessableEntity) Code() int {
+	return 422
 }
 
 func (o *PcloudCloudconnectionsPostUnprocessableEntity) Error() string {
@@ -700,6 +751,11 @@ func (o *PcloudCloudconnectionsPostInternalServerError) IsCode(code int) bool {
 	return code == 500
 }
 
+// Code gets the status code for the pcloud cloudconnections post internal server error response
+func (o *PcloudCloudconnectionsPostInternalServerError) Code() int {
+	return 500
+}
+
 func (o *PcloudCloudconnectionsPostInternalServerError) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections][%d] pcloudCloudconnectionsPostInternalServerError  %+v", 500, o.Payload)
 }
@@ -713,6 +769,74 @@ func (o *PcloudCloudconnectionsPostInternalServerError) GetPayload() *models.Err
 }
 
 func (o *PcloudCloudconnectionsPostInternalServerError) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
+
+	o.Payload = new(models.Error)
+
+	// response payload
+	if err := consumer.Consume(response.Body(), o.Payload); err != nil && err != io.EOF {
+		return err
+	}
+
+	return nil
+}
+
+// NewPcloudCloudconnectionsPostServiceUnavailable creates a PcloudCloudconnectionsPostServiceUnavailable with default headers values
+func NewPcloudCloudconnectionsPostServiceUnavailable() *PcloudCloudconnectionsPostServiceUnavailable {
+	return &PcloudCloudconnectionsPostServiceUnavailable{}
+}
+
+/*
+PcloudCloudconnectionsPostServiceUnavailable describes a response with status code 503, with default header values.
+
+Service Unavailable
+*/
+type PcloudCloudconnectionsPostServiceUnavailable struct {
+	Payload *models.Error
+}
+
+// IsSuccess returns true when this pcloud cloudconnections post service unavailable response has a 2xx status code
+func (o *PcloudCloudconnectionsPostServiceUnavailable) IsSuccess() bool {
+	return false
+}
+
+// IsRedirect returns true when this pcloud cloudconnections post service unavailable response has a 3xx status code
+func (o *PcloudCloudconnectionsPostServiceUnavailable) IsRedirect() bool {
+	return false
+}
+
+// IsClientError returns true when this pcloud cloudconnections post service unavailable response has a 4xx status code
+func (o *PcloudCloudconnectionsPostServiceUnavailable) IsClientError() bool {
+	return false
+}
+
+// IsServerError returns true when this pcloud cloudconnections post service unavailable response has a 5xx status code
+func (o *PcloudCloudconnectionsPostServiceUnavailable) IsServerError() bool {
+	return true
+}
+
+// IsCode returns true when this pcloud cloudconnections post service unavailable response a status code equal to that given
+func (o *PcloudCloudconnectionsPostServiceUnavailable) IsCode(code int) bool {
+	return code == 503
+}
+
+// Code gets the status code for the pcloud cloudconnections post service unavailable response
+func (o *PcloudCloudconnectionsPostServiceUnavailable) Code() int {
+	return 503
+}
+
+func (o *PcloudCloudconnectionsPostServiceUnavailable) Error() string {
+	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections][%d] pcloudCloudconnectionsPostServiceUnavailable  %+v", 503, o.Payload)
+}
+
+func (o *PcloudCloudconnectionsPostServiceUnavailable) String() string {
+	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections][%d] pcloudCloudconnectionsPostServiceUnavailable  %+v", 503, o.Payload)
+}
+
+func (o *PcloudCloudconnectionsPostServiceUnavailable) GetPayload() *models.Error {
+	return o.Payload
+}
+
+func (o *PcloudCloudconnectionsPostServiceUnavailable) readResponse(response runtime.ClientResponse, consumer runtime.Consumer, formats strfmt.Registry) error {
 
 	o.Payload = new(models.Error)
 
@@ -761,6 +885,11 @@ func (o *PcloudCloudconnectionsPostGatewayTimeout) IsServerError() bool {
 // IsCode returns true when this pcloud cloudconnections post gateway timeout response a status code equal to that given
 func (o *PcloudCloudconnectionsPostGatewayTimeout) IsCode(code int) bool {
 	return code == 504
+}
+
+// Code gets the status code for the pcloud cloudconnections post gateway timeout response
+func (o *PcloudCloudconnectionsPostGatewayTimeout) Code() int {
+	return 504
 }
 
 func (o *PcloudCloudconnectionsPostGatewayTimeout) Error() string {

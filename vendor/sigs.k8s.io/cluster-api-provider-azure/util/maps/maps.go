@@ -33,3 +33,18 @@ func FilterByKeyPrefix(input map[string]string, prefix string) map[string]string
 	}
 	return result
 }
+
+// Merge merges the two maps and returns the result. For overlapping keys,
+// values from overrides take precedence.
+func Merge[K comparable, V any](base map[K]V, overrides map[K]V) map[K]V {
+	m := make(map[K]V)
+
+	for k, v := range base {
+		m[k] = v
+	}
+	for k, v := range overrides {
+		m[k] = v
+	}
+
+	return m
+}

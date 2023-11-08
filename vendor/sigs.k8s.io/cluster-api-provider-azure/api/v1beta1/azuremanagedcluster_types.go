@@ -24,6 +24,7 @@ import (
 // AzureManagedClusterSpec defines the desired state of AzureManagedCluster.
 type AzureManagedClusterSpec struct {
 	// ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
+	// Immutable, populated by the AKS API at create.
 	// +optional
 	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint"`
 }

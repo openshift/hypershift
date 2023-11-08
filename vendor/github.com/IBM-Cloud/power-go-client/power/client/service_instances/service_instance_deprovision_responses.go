@@ -60,7 +60,7 @@ func (o *ServiceInstanceDeprovisionReader) ReadResponse(response runtime.ClientR
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[DELETE /v2/service_instances/{instance_id}] serviceInstance.deprovision", response, response.Code())
 	}
 }
 
@@ -101,6 +101,11 @@ func (o *ServiceInstanceDeprovisionOK) IsServerError() bool {
 // IsCode returns true when this service instance deprovision o k response a status code equal to that given
 func (o *ServiceInstanceDeprovisionOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the service instance deprovision o k response
+func (o *ServiceInstanceDeprovisionOK) Code() int {
+	return 200
 }
 
 func (o *ServiceInstanceDeprovisionOK) Error() string {
@@ -162,6 +167,11 @@ func (o *ServiceInstanceDeprovisionAccepted) IsServerError() bool {
 // IsCode returns true when this service instance deprovision accepted response a status code equal to that given
 func (o *ServiceInstanceDeprovisionAccepted) IsCode(code int) bool {
 	return code == 202
+}
+
+// Code gets the status code for the service instance deprovision accepted response
+func (o *ServiceInstanceDeprovisionAccepted) Code() int {
+	return 202
 }
 
 func (o *ServiceInstanceDeprovisionAccepted) Error() string {
@@ -227,6 +237,11 @@ func (o *ServiceInstanceDeprovisionBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the service instance deprovision bad request response
+func (o *ServiceInstanceDeprovisionBadRequest) Code() int {
+	return 400
+}
+
 func (o *ServiceInstanceDeprovisionBadRequest) Error() string {
 	return fmt.Sprintf("[DELETE /v2/service_instances/{instance_id}][%d] serviceInstanceDeprovisionBadRequest  %+v", 400, o.Payload)
 }
@@ -288,6 +303,11 @@ func (o *ServiceInstanceDeprovisionUnauthorized) IsServerError() bool {
 // IsCode returns true when this service instance deprovision unauthorized response a status code equal to that given
 func (o *ServiceInstanceDeprovisionUnauthorized) IsCode(code int) bool {
 	return code == 401
+}
+
+// Code gets the status code for the service instance deprovision unauthorized response
+func (o *ServiceInstanceDeprovisionUnauthorized) Code() int {
+	return 401
 }
 
 func (o *ServiceInstanceDeprovisionUnauthorized) Error() string {
@@ -353,6 +373,11 @@ func (o *ServiceInstanceDeprovisionGone) IsCode(code int) bool {
 	return code == 410
 }
 
+// Code gets the status code for the service instance deprovision gone response
+func (o *ServiceInstanceDeprovisionGone) Code() int {
+	return 410
+}
+
 func (o *ServiceInstanceDeprovisionGone) Error() string {
 	return fmt.Sprintf("[DELETE /v2/service_instances/{instance_id}][%d] serviceInstanceDeprovisionGone  %+v", 410, o.Payload)
 }
@@ -414,6 +439,11 @@ func (o *ServiceInstanceDeprovisionUnprocessableEntity) IsServerError() bool {
 // IsCode returns true when this service instance deprovision unprocessable entity response a status code equal to that given
 func (o *ServiceInstanceDeprovisionUnprocessableEntity) IsCode(code int) bool {
 	return code == 422
+}
+
+// Code gets the status code for the service instance deprovision unprocessable entity response
+func (o *ServiceInstanceDeprovisionUnprocessableEntity) Code() int {
+	return 422
 }
 
 func (o *ServiceInstanceDeprovisionUnprocessableEntity) Error() string {

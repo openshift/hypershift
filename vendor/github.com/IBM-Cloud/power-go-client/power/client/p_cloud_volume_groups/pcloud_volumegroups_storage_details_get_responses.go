@@ -60,7 +60,7 @@ func (o *PcloudVolumegroupsStorageDetailsGetReader) ReadResponse(response runtim
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details] pcloud.volumegroups.storageDetails.get", response, response.Code())
 	}
 }
 
@@ -101,6 +101,11 @@ func (o *PcloudVolumegroupsStorageDetailsGetOK) IsServerError() bool {
 // IsCode returns true when this pcloud volumegroups storage details get o k response a status code equal to that given
 func (o *PcloudVolumegroupsStorageDetailsGetOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud volumegroups storage details get o k response
+func (o *PcloudVolumegroupsStorageDetailsGetOK) Code() int {
+	return 200
 }
 
 func (o *PcloudVolumegroupsStorageDetailsGetOK) Error() string {
@@ -166,6 +171,11 @@ func (o *PcloudVolumegroupsStorageDetailsGetBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the pcloud volumegroups storage details get bad request response
+func (o *PcloudVolumegroupsStorageDetailsGetBadRequest) Code() int {
+	return 400
+}
+
 func (o *PcloudVolumegroupsStorageDetailsGetBadRequest) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetBadRequest  %+v", 400, o.Payload)
 }
@@ -227,6 +237,11 @@ func (o *PcloudVolumegroupsStorageDetailsGetForbidden) IsServerError() bool {
 // IsCode returns true when this pcloud volumegroups storage details get forbidden response a status code equal to that given
 func (o *PcloudVolumegroupsStorageDetailsGetForbidden) IsCode(code int) bool {
 	return code == 403
+}
+
+// Code gets the status code for the pcloud volumegroups storage details get forbidden response
+func (o *PcloudVolumegroupsStorageDetailsGetForbidden) Code() int {
+	return 403
 }
 
 func (o *PcloudVolumegroupsStorageDetailsGetForbidden) Error() string {
@@ -292,6 +307,11 @@ func (o *PcloudVolumegroupsStorageDetailsGetNotFound) IsCode(code int) bool {
 	return code == 404
 }
 
+// Code gets the status code for the pcloud volumegroups storage details get not found response
+func (o *PcloudVolumegroupsStorageDetailsGetNotFound) Code() int {
+	return 404
+}
+
 func (o *PcloudVolumegroupsStorageDetailsGetNotFound) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetNotFound  %+v", 404, o.Payload)
 }
@@ -355,6 +375,11 @@ func (o *PcloudVolumegroupsStorageDetailsGetTooManyRequests) IsCode(code int) bo
 	return code == 429
 }
 
+// Code gets the status code for the pcloud volumegroups storage details get too many requests response
+func (o *PcloudVolumegroupsStorageDetailsGetTooManyRequests) Code() int {
+	return 429
+}
+
 func (o *PcloudVolumegroupsStorageDetailsGetTooManyRequests) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/volume-groups/{volume_group_id}/storage-details][%d] pcloudVolumegroupsStorageDetailsGetTooManyRequests  %+v", 429, o.Payload)
 }
@@ -416,6 +441,11 @@ func (o *PcloudVolumegroupsStorageDetailsGetInternalServerError) IsServerError()
 // IsCode returns true when this pcloud volumegroups storage details get internal server error response a status code equal to that given
 func (o *PcloudVolumegroupsStorageDetailsGetInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud volumegroups storage details get internal server error response
+func (o *PcloudVolumegroupsStorageDetailsGetInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudVolumegroupsStorageDetailsGetInternalServerError) Error() string {

@@ -42,7 +42,7 @@ func (o *ServiceBrokerAuthLoginReader) ReadResponse(response runtime.ClientRespo
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /auth/v1/login] serviceBroker.auth.login", response, response.Code())
 	}
 }
 
@@ -83,6 +83,11 @@ func (o *ServiceBrokerAuthLoginOK) IsServerError() bool {
 // IsCode returns true when this service broker auth login o k response a status code equal to that given
 func (o *ServiceBrokerAuthLoginOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the service broker auth login o k response
+func (o *ServiceBrokerAuthLoginOK) Code() int {
+	return 200
 }
 
 func (o *ServiceBrokerAuthLoginOK) Error() string {
@@ -148,6 +153,11 @@ func (o *ServiceBrokerAuthLoginUnauthorized) IsCode(code int) bool {
 	return code == 401
 }
 
+// Code gets the status code for the service broker auth login unauthorized response
+func (o *ServiceBrokerAuthLoginUnauthorized) Code() int {
+	return 401
+}
+
 func (o *ServiceBrokerAuthLoginUnauthorized) Error() string {
 	return fmt.Sprintf("[GET /auth/v1/login][%d] serviceBrokerAuthLoginUnauthorized  %+v", 401, o.Payload)
 }
@@ -209,6 +219,11 @@ func (o *ServiceBrokerAuthLoginInternalServerError) IsServerError() bool {
 // IsCode returns true when this service broker auth login internal server error response a status code equal to that given
 func (o *ServiceBrokerAuthLoginInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the service broker auth login internal server error response
+func (o *ServiceBrokerAuthLoginInternalServerError) Code() int {
+	return 500
 }
 
 func (o *ServiceBrokerAuthLoginInternalServerError) Error() string {

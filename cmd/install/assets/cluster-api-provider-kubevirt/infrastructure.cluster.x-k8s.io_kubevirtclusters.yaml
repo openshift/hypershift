@@ -60,8 +60,10 @@ spec:
                   to modify the service metadata and the service type.
                 properties:
                   metadata:
-                    description: Service metadata allows to set labels and annotations
-                      for the service. This field is optional.
+                    description: Service metadata allows to set labels, annotations
+                      and namespace for the service. When infraClusterSecretRef is
+                      used, ControlPlaneService take the kubeconfig namespace by default
+                      if metadata.namespace is not specified. This field is optional.
                     nullable: true
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
@@ -234,6 +236,7 @@ spec:
                   if we populate it.
                 type: object
               ready:
+                default: false
                 description: Ready denotes that the infrastructure is ready.
                 type: boolean
             required:

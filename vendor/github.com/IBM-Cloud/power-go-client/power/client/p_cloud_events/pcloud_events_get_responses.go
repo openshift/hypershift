@@ -54,7 +54,7 @@ func (o *PcloudEventsGetReader) ReadResponse(response runtime.ClientResponse, co
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/events/{event_id}] pcloud.events.get", response, response.Code())
 	}
 }
 
@@ -95,6 +95,11 @@ func (o *PcloudEventsGetOK) IsServerError() bool {
 // IsCode returns true when this pcloud events get o k response a status code equal to that given
 func (o *PcloudEventsGetOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud events get o k response
+func (o *PcloudEventsGetOK) Code() int {
+	return 200
 }
 
 func (o *PcloudEventsGetOK) Error() string {
@@ -160,6 +165,11 @@ func (o *PcloudEventsGetBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the pcloud events get bad request response
+func (o *PcloudEventsGetBadRequest) Code() int {
+	return 400
+}
+
 func (o *PcloudEventsGetBadRequest) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/events/{event_id}][%d] pcloudEventsGetBadRequest  %+v", 400, o.Payload)
 }
@@ -221,6 +231,11 @@ func (o *PcloudEventsGetForbidden) IsServerError() bool {
 // IsCode returns true when this pcloud events get forbidden response a status code equal to that given
 func (o *PcloudEventsGetForbidden) IsCode(code int) bool {
 	return code == 403
+}
+
+// Code gets the status code for the pcloud events get forbidden response
+func (o *PcloudEventsGetForbidden) Code() int {
+	return 403
 }
 
 func (o *PcloudEventsGetForbidden) Error() string {
@@ -286,6 +301,11 @@ func (o *PcloudEventsGetNotFound) IsCode(code int) bool {
 	return code == 404
 }
 
+// Code gets the status code for the pcloud events get not found response
+func (o *PcloudEventsGetNotFound) Code() int {
+	return 404
+}
+
 func (o *PcloudEventsGetNotFound) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/events/{event_id}][%d] pcloudEventsGetNotFound  %+v", 404, o.Payload)
 }
@@ -347,6 +367,11 @@ func (o *PcloudEventsGetInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud events get internal server error response a status code equal to that given
 func (o *PcloudEventsGetInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud events get internal server error response
+func (o *PcloudEventsGetInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudEventsGetInternalServerError) Error() string {

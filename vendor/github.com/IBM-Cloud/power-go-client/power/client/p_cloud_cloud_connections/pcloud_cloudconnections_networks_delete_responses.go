@@ -72,7 +72,7 @@ func (o *PcloudCloudconnectionsNetworksDeleteReader) ReadResponse(response runti
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[DELETE /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections/{cloud_connection_id}/networks/{network_id}] pcloud.cloudconnections.networks.delete", response, response.Code())
 	}
 }
 
@@ -113,6 +113,11 @@ func (o *PcloudCloudconnectionsNetworksDeleteOK) IsServerError() bool {
 // IsCode returns true when this pcloud cloudconnections networks delete o k response a status code equal to that given
 func (o *PcloudCloudconnectionsNetworksDeleteOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud cloudconnections networks delete o k response
+func (o *PcloudCloudconnectionsNetworksDeleteOK) Code() int {
+	return 200
 }
 
 func (o *PcloudCloudconnectionsNetworksDeleteOK) Error() string {
@@ -174,6 +179,11 @@ func (o *PcloudCloudconnectionsNetworksDeleteAccepted) IsServerError() bool {
 // IsCode returns true when this pcloud cloudconnections networks delete accepted response a status code equal to that given
 func (o *PcloudCloudconnectionsNetworksDeleteAccepted) IsCode(code int) bool {
 	return code == 202
+}
+
+// Code gets the status code for the pcloud cloudconnections networks delete accepted response
+func (o *PcloudCloudconnectionsNetworksDeleteAccepted) Code() int {
+	return 202
 }
 
 func (o *PcloudCloudconnectionsNetworksDeleteAccepted) Error() string {
@@ -239,6 +249,11 @@ func (o *PcloudCloudconnectionsNetworksDeleteBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the pcloud cloudconnections networks delete bad request response
+func (o *PcloudCloudconnectionsNetworksDeleteBadRequest) Code() int {
+	return 400
+}
+
 func (o *PcloudCloudconnectionsNetworksDeleteBadRequest) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections/{cloud_connection_id}/networks/{network_id}][%d] pcloudCloudconnectionsNetworksDeleteBadRequest  %+v", 400, o.Payload)
 }
@@ -300,6 +315,11 @@ func (o *PcloudCloudconnectionsNetworksDeleteUnauthorized) IsServerError() bool 
 // IsCode returns true when this pcloud cloudconnections networks delete unauthorized response a status code equal to that given
 func (o *PcloudCloudconnectionsNetworksDeleteUnauthorized) IsCode(code int) bool {
 	return code == 401
+}
+
+// Code gets the status code for the pcloud cloudconnections networks delete unauthorized response
+func (o *PcloudCloudconnectionsNetworksDeleteUnauthorized) Code() int {
+	return 401
 }
 
 func (o *PcloudCloudconnectionsNetworksDeleteUnauthorized) Error() string {
@@ -365,6 +385,11 @@ func (o *PcloudCloudconnectionsNetworksDeleteNotFound) IsCode(code int) bool {
 	return code == 404
 }
 
+// Code gets the status code for the pcloud cloudconnections networks delete not found response
+func (o *PcloudCloudconnectionsNetworksDeleteNotFound) Code() int {
+	return 404
+}
+
 func (o *PcloudCloudconnectionsNetworksDeleteNotFound) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections/{cloud_connection_id}/networks/{network_id}][%d] pcloudCloudconnectionsNetworksDeleteNotFound  %+v", 404, o.Payload)
 }
@@ -426,6 +451,11 @@ func (o *PcloudCloudconnectionsNetworksDeleteRequestTimeout) IsServerError() boo
 // IsCode returns true when this pcloud cloudconnections networks delete request timeout response a status code equal to that given
 func (o *PcloudCloudconnectionsNetworksDeleteRequestTimeout) IsCode(code int) bool {
 	return code == 408
+}
+
+// Code gets the status code for the pcloud cloudconnections networks delete request timeout response
+func (o *PcloudCloudconnectionsNetworksDeleteRequestTimeout) Code() int {
+	return 408
 }
 
 func (o *PcloudCloudconnectionsNetworksDeleteRequestTimeout) Error() string {
@@ -491,6 +521,11 @@ func (o *PcloudCloudconnectionsNetworksDeleteGone) IsCode(code int) bool {
 	return code == 410
 }
 
+// Code gets the status code for the pcloud cloudconnections networks delete gone response
+func (o *PcloudCloudconnectionsNetworksDeleteGone) Code() int {
+	return 410
+}
+
 func (o *PcloudCloudconnectionsNetworksDeleteGone) Error() string {
 	return fmt.Sprintf("[DELETE /pcloud/v1/cloud-instances/{cloud_instance_id}/cloud-connections/{cloud_connection_id}/networks/{network_id}][%d] pcloudCloudconnectionsNetworksDeleteGone  %+v", 410, o.Payload)
 }
@@ -552,6 +587,11 @@ func (o *PcloudCloudconnectionsNetworksDeleteInternalServerError) IsServerError(
 // IsCode returns true when this pcloud cloudconnections networks delete internal server error response a status code equal to that given
 func (o *PcloudCloudconnectionsNetworksDeleteInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud cloudconnections networks delete internal server error response
+func (o *PcloudCloudconnectionsNetworksDeleteInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudCloudconnectionsNetworksDeleteInternalServerError) Error() string {

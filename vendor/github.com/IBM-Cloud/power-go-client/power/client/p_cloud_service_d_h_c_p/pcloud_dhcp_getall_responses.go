@@ -42,7 +42,7 @@ func (o *PcloudDhcpGetallReader) ReadResponse(response runtime.ClientResponse, c
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/services/dhcp] pcloud.dhcp.getall", response, response.Code())
 	}
 }
 
@@ -83,6 +83,11 @@ func (o *PcloudDhcpGetallOK) IsServerError() bool {
 // IsCode returns true when this pcloud dhcp getall o k response a status code equal to that given
 func (o *PcloudDhcpGetallOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud dhcp getall o k response
+func (o *PcloudDhcpGetallOK) Code() int {
+	return 200
 }
 
 func (o *PcloudDhcpGetallOK) Error() string {
@@ -146,6 +151,11 @@ func (o *PcloudDhcpGetallForbidden) IsCode(code int) bool {
 	return code == 403
 }
 
+// Code gets the status code for the pcloud dhcp getall forbidden response
+func (o *PcloudDhcpGetallForbidden) Code() int {
+	return 403
+}
+
 func (o *PcloudDhcpGetallForbidden) Error() string {
 	return fmt.Sprintf("[GET /pcloud/v1/cloud-instances/{cloud_instance_id}/services/dhcp][%d] pcloudDhcpGetallForbidden  %+v", 403, o.Payload)
 }
@@ -207,6 +217,11 @@ func (o *PcloudDhcpGetallInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud dhcp getall internal server error response a status code equal to that given
 func (o *PcloudDhcpGetallInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud dhcp getall internal server error response
+func (o *PcloudDhcpGetallInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudDhcpGetallInternalServerError) Error() string {

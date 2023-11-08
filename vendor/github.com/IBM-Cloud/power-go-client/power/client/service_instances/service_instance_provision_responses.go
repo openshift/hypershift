@@ -60,7 +60,7 @@ func (o *ServiceInstanceProvisionReader) ReadResponse(response runtime.ClientRes
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[PUT /v2/service_instances/{instance_id}] serviceInstance.provision", response, response.Code())
 	}
 }
 
@@ -101,6 +101,11 @@ func (o *ServiceInstanceProvisionOK) IsServerError() bool {
 // IsCode returns true when this service instance provision o k response a status code equal to that given
 func (o *ServiceInstanceProvisionOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the service instance provision o k response
+func (o *ServiceInstanceProvisionOK) Code() int {
+	return 200
 }
 
 func (o *ServiceInstanceProvisionOK) Error() string {
@@ -166,6 +171,11 @@ func (o *ServiceInstanceProvisionCreated) IsCode(code int) bool {
 	return code == 201
 }
 
+// Code gets the status code for the service instance provision created response
+func (o *ServiceInstanceProvisionCreated) Code() int {
+	return 201
+}
+
 func (o *ServiceInstanceProvisionCreated) Error() string {
 	return fmt.Sprintf("[PUT /v2/service_instances/{instance_id}][%d] serviceInstanceProvisionCreated  %+v", 201, o.Payload)
 }
@@ -227,6 +237,11 @@ func (o *ServiceInstanceProvisionAccepted) IsServerError() bool {
 // IsCode returns true when this service instance provision accepted response a status code equal to that given
 func (o *ServiceInstanceProvisionAccepted) IsCode(code int) bool {
 	return code == 202
+}
+
+// Code gets the status code for the service instance provision accepted response
+func (o *ServiceInstanceProvisionAccepted) Code() int {
+	return 202
 }
 
 func (o *ServiceInstanceProvisionAccepted) Error() string {
@@ -292,6 +307,11 @@ func (o *ServiceInstanceProvisionBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the service instance provision bad request response
+func (o *ServiceInstanceProvisionBadRequest) Code() int {
+	return 400
+}
+
 func (o *ServiceInstanceProvisionBadRequest) Error() string {
 	return fmt.Sprintf("[PUT /v2/service_instances/{instance_id}][%d] serviceInstanceProvisionBadRequest  %+v", 400, o.Payload)
 }
@@ -355,6 +375,11 @@ func (o *ServiceInstanceProvisionConflict) IsCode(code int) bool {
 	return code == 409
 }
 
+// Code gets the status code for the service instance provision conflict response
+func (o *ServiceInstanceProvisionConflict) Code() int {
+	return 409
+}
+
 func (o *ServiceInstanceProvisionConflict) Error() string {
 	return fmt.Sprintf("[PUT /v2/service_instances/{instance_id}][%d] serviceInstanceProvisionConflict  %+v", 409, o.Payload)
 }
@@ -416,6 +441,11 @@ func (o *ServiceInstanceProvisionUnprocessableEntity) IsServerError() bool {
 // IsCode returns true when this service instance provision unprocessable entity response a status code equal to that given
 func (o *ServiceInstanceProvisionUnprocessableEntity) IsCode(code int) bool {
 	return code == 422
+}
+
+// Code gets the status code for the service instance provision unprocessable entity response
+func (o *ServiceInstanceProvisionUnprocessableEntity) Code() int {
+	return 422
 }
 
 func (o *ServiceInstanceProvisionUnprocessableEntity) Error() string {

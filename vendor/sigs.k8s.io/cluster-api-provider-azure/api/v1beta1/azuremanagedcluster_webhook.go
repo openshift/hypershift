@@ -25,10 +25,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/cluster-api-provider-azure/feature"
 	"sigs.k8s.io/cluster-api-provider-azure/util/maps"
-	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 	capifeature "sigs.k8s.io/cluster-api/feature"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // SetupWebhookWithManager sets up and registers the webhook with the manager.
@@ -38,37 +38,25 @@ func (r *AzureManagedCluster) SetupWebhookWithManager(mgr ctrl.Manager) error {
 		Complete()
 }
 
-// +kubebuilder:webhook:verbs=update,path=/validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremanagedcluster,mutating=false,failurePolicy=fail,groups=infrastructure.cluster.x-k8s.io,resources=azuremanagedclusters,versions=v1beta1,name=validation.azuremanagedclusters.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1;v1beta1
+// +kubebuilder:webhook:verbs=create;update,path=/validate-infrastructure-cluster-x-k8s-io-v1beta1-azuremanagedcluster,mutating=false,failurePolicy=fail,groups=infrastructure.cluster.x-k8s.io,resources=azuremanagedclusters,versions=v1beta1,name=validation.azuremanagedclusters.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1;v1beta1
 
 var _ webhook.Validator = &AzureManagedCluster{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AzureManagedCluster) ValidateCreate() error {
+func (r *AzureManagedCluster) ValidateCreate() (admission.Warnings, error) {
 	// NOTE: AzureManagedCluster relies upon MachinePools, which is behind a feature gate flag.
 	// The webhook must prevent creating new objects in case the feature flag is disabled.
 	if !feature.Gates.Enabled(capifeature.MachinePool) {
-		return field.Forbidden(
+		return nil, field.Forbidden(
 			field.NewPath("spec"),
 			"can be set only if the Cluster API 'MachinePool' feature flag is enabled",
 		)
 	}
-	if r.Spec.ControlPlaneEndpoint.Host != "" {
-		return field.Forbidden(
-			field.NewPath("Spec", "ControlPlaneEndpoint", "Host"),
-			controlPlaneEndpointErrorMessage,
-		)
-	}
-	if r.Spec.ControlPlaneEndpoint.Port != 0 {
-		return field.Forbidden(
-			field.NewPath("Spec", "ControlPlaneEndpoint", "Port"),
-			controlPlaneEndpointErrorMessage,
-		)
-	}
-	return nil
+	return nil, nil
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AzureManagedCluster) ValidateUpdate(oldRaw runtime.Object) error {
+func (r *AzureManagedCluster) ValidateUpdate(oldRaw runtime.Object) (admission.Warnings, error) {
 	old := oldRaw.(*AzureManagedCluster)
 	var allErrs field.ErrorList
 
@@ -83,32 +71,14 @@ func (r *AzureManagedCluster) ValidateUpdate(oldRaw runtime.Object) error {
 				fmt.Sprintf("annotations with '%s' prefix are immutable", CustomHeaderPrefix)))
 	}
 
-	if old.Spec.ControlPlaneEndpoint.Host != "" {
-		if err := webhookutils.ValidateImmutable(
-			field.NewPath("Spec", "ControlPlaneEndpoint", "Host"),
-			old.Spec.ControlPlaneEndpoint.Host,
-			r.Spec.ControlPlaneEndpoint.Host); err != nil {
-			allErrs = append(allErrs, err)
-		}
-	}
-
-	if old.Spec.ControlPlaneEndpoint.Port != 0 {
-		if err := webhookutils.ValidateImmutable(
-			field.NewPath("Spec", "ControlPlaneEndpoint", "Port"),
-			old.Spec.ControlPlaneEndpoint.Port,
-			r.Spec.ControlPlaneEndpoint.Port); err != nil {
-			allErrs = append(allErrs, err)
-		}
-	}
-
 	if len(allErrs) != 0 {
-		return apierrors.NewInvalid(GroupVersion.WithKind("AzureManagedCluster").GroupKind(), r.Name, allErrs)
+		return nil, apierrors.NewInvalid(GroupVersion.WithKind("AzureManagedCluster").GroupKind(), r.Name, allErrs)
 	}
 
-	return nil
+	return nil, nil
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *AzureManagedCluster) ValidateDelete() error {
-	return nil
+func (r *AzureManagedCluster) ValidateDelete() (admission.Warnings, error) {
+	return nil, nil
 }

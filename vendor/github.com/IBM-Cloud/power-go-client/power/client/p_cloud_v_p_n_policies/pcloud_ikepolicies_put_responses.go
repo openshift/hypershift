@@ -60,7 +60,7 @@ func (o *PcloudIkepoliciesPutReader) ReadResponse(response runtime.ClientRespons
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[PUT /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies/{ike_policy_id}] pcloud.ikepolicies.put", response, response.Code())
 	}
 }
 
@@ -101,6 +101,11 @@ func (o *PcloudIkepoliciesPutOK) IsServerError() bool {
 // IsCode returns true when this pcloud ikepolicies put o k response a status code equal to that given
 func (o *PcloudIkepoliciesPutOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the pcloud ikepolicies put o k response
+func (o *PcloudIkepoliciesPutOK) Code() int {
+	return 200
 }
 
 func (o *PcloudIkepoliciesPutOK) Error() string {
@@ -166,6 +171,11 @@ func (o *PcloudIkepoliciesPutBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the pcloud ikepolicies put bad request response
+func (o *PcloudIkepoliciesPutBadRequest) Code() int {
+	return 400
+}
+
 func (o *PcloudIkepoliciesPutBadRequest) Error() string {
 	return fmt.Sprintf("[PUT /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies/{ike_policy_id}][%d] pcloudIkepoliciesPutBadRequest  %+v", 400, o.Payload)
 }
@@ -227,6 +237,11 @@ func (o *PcloudIkepoliciesPutUnauthorized) IsServerError() bool {
 // IsCode returns true when this pcloud ikepolicies put unauthorized response a status code equal to that given
 func (o *PcloudIkepoliciesPutUnauthorized) IsCode(code int) bool {
 	return code == 401
+}
+
+// Code gets the status code for the pcloud ikepolicies put unauthorized response
+func (o *PcloudIkepoliciesPutUnauthorized) Code() int {
+	return 401
 }
 
 func (o *PcloudIkepoliciesPutUnauthorized) Error() string {
@@ -292,6 +307,11 @@ func (o *PcloudIkepoliciesPutForbidden) IsCode(code int) bool {
 	return code == 403
 }
 
+// Code gets the status code for the pcloud ikepolicies put forbidden response
+func (o *PcloudIkepoliciesPutForbidden) Code() int {
+	return 403
+}
+
 func (o *PcloudIkepoliciesPutForbidden) Error() string {
 	return fmt.Sprintf("[PUT /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies/{ike_policy_id}][%d] pcloudIkepoliciesPutForbidden  %+v", 403, o.Payload)
 }
@@ -355,6 +375,11 @@ func (o *PcloudIkepoliciesPutUnprocessableEntity) IsCode(code int) bool {
 	return code == 422
 }
 
+// Code gets the status code for the pcloud ikepolicies put unprocessable entity response
+func (o *PcloudIkepoliciesPutUnprocessableEntity) Code() int {
+	return 422
+}
+
 func (o *PcloudIkepoliciesPutUnprocessableEntity) Error() string {
 	return fmt.Sprintf("[PUT /pcloud/v1/cloud-instances/{cloud_instance_id}/vpn/ike-policies/{ike_policy_id}][%d] pcloudIkepoliciesPutUnprocessableEntity  %+v", 422, o.Payload)
 }
@@ -416,6 +441,11 @@ func (o *PcloudIkepoliciesPutInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud ikepolicies put internal server error response a status code equal to that given
 func (o *PcloudIkepoliciesPutInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud ikepolicies put internal server error response
+func (o *PcloudIkepoliciesPutInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudIkepoliciesPutInternalServerError) Error() string {

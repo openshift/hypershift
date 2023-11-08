@@ -60,7 +60,7 @@ func (o *PcloudPvminstancesNetworksPostReader) ReadResponse(response runtime.Cli
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/pvm-instances/{pvm_instance_id}/networks] pcloud.pvminstances.networks.post", response, response.Code())
 	}
 }
 
@@ -101,6 +101,11 @@ func (o *PcloudPvminstancesNetworksPostCreated) IsServerError() bool {
 // IsCode returns true when this pcloud pvminstances networks post created response a status code equal to that given
 func (o *PcloudPvminstancesNetworksPostCreated) IsCode(code int) bool {
 	return code == 201
+}
+
+// Code gets the status code for the pcloud pvminstances networks post created response
+func (o *PcloudPvminstancesNetworksPostCreated) Code() int {
+	return 201
 }
 
 func (o *PcloudPvminstancesNetworksPostCreated) Error() string {
@@ -166,6 +171,11 @@ func (o *PcloudPvminstancesNetworksPostBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
+// Code gets the status code for the pcloud pvminstances networks post bad request response
+func (o *PcloudPvminstancesNetworksPostBadRequest) Code() int {
+	return 400
+}
+
 func (o *PcloudPvminstancesNetworksPostBadRequest) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/pvm-instances/{pvm_instance_id}/networks][%d] pcloudPvminstancesNetworksPostBadRequest  %+v", 400, o.Payload)
 }
@@ -227,6 +237,11 @@ func (o *PcloudPvminstancesNetworksPostUnauthorized) IsServerError() bool {
 // IsCode returns true when this pcloud pvminstances networks post unauthorized response a status code equal to that given
 func (o *PcloudPvminstancesNetworksPostUnauthorized) IsCode(code int) bool {
 	return code == 401
+}
+
+// Code gets the status code for the pcloud pvminstances networks post unauthorized response
+func (o *PcloudPvminstancesNetworksPostUnauthorized) Code() int {
+	return 401
 }
 
 func (o *PcloudPvminstancesNetworksPostUnauthorized) Error() string {
@@ -292,6 +307,11 @@ func (o *PcloudPvminstancesNetworksPostConflict) IsCode(code int) bool {
 	return code == 409
 }
 
+// Code gets the status code for the pcloud pvminstances networks post conflict response
+func (o *PcloudPvminstancesNetworksPostConflict) Code() int {
+	return 409
+}
+
 func (o *PcloudPvminstancesNetworksPostConflict) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/pvm-instances/{pvm_instance_id}/networks][%d] pcloudPvminstancesNetworksPostConflict  %+v", 409, o.Payload)
 }
@@ -355,6 +375,11 @@ func (o *PcloudPvminstancesNetworksPostUnprocessableEntity) IsCode(code int) boo
 	return code == 422
 }
 
+// Code gets the status code for the pcloud pvminstances networks post unprocessable entity response
+func (o *PcloudPvminstancesNetworksPostUnprocessableEntity) Code() int {
+	return 422
+}
+
 func (o *PcloudPvminstancesNetworksPostUnprocessableEntity) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/pvm-instances/{pvm_instance_id}/networks][%d] pcloudPvminstancesNetworksPostUnprocessableEntity  %+v", 422, o.Payload)
 }
@@ -416,6 +441,11 @@ func (o *PcloudPvminstancesNetworksPostInternalServerError) IsServerError() bool
 // IsCode returns true when this pcloud pvminstances networks post internal server error response a status code equal to that given
 func (o *PcloudPvminstancesNetworksPostInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the pcloud pvminstances networks post internal server error response
+func (o *PcloudPvminstancesNetworksPostInternalServerError) Code() int {
+	return 500
 }
 
 func (o *PcloudPvminstancesNetworksPostInternalServerError) Error() string {

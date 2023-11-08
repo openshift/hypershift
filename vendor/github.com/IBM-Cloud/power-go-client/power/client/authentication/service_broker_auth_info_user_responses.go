@@ -36,7 +36,7 @@ func (o *ServiceBrokerAuthInfoUserReader) ReadResponse(response runtime.ClientRe
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /auth/v1/info/user] serviceBroker.auth.info.user", response, response.Code())
 	}
 }
 
@@ -77,6 +77,11 @@ func (o *ServiceBrokerAuthInfoUserOK) IsServerError() bool {
 // IsCode returns true when this service broker auth info user o k response a status code equal to that given
 func (o *ServiceBrokerAuthInfoUserOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the service broker auth info user o k response
+func (o *ServiceBrokerAuthInfoUserOK) Code() int {
+	return 200
 }
 
 func (o *ServiceBrokerAuthInfoUserOK) Error() string {
@@ -140,6 +145,11 @@ func (o *ServiceBrokerAuthInfoUserInternalServerError) IsServerError() bool {
 // IsCode returns true when this service broker auth info user internal server error response a status code equal to that given
 func (o *ServiceBrokerAuthInfoUserInternalServerError) IsCode(code int) bool {
 	return code == 500
+}
+
+// Code gets the status code for the service broker auth info user internal server error response
+func (o *ServiceBrokerAuthInfoUserInternalServerError) Code() int {
+	return 500
 }
 
 func (o *ServiceBrokerAuthInfoUserInternalServerError) Error() string {

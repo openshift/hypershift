@@ -3,6 +3,7 @@ package instance
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/IBM-Cloud/power-go-client/errors"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_shared_processor_pools"
@@ -26,6 +27,9 @@ func NewIBMPISharedProcessorPoolClient(ctx context.Context, sess *ibmpisession.I
 
 // Get a PI Shared Processor Pool
 func (f *IBMPISharedProcessorPoolClient) Get(id string) (*models.SharedProcessorPoolDetail, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_shared_processor_pools.NewPcloudSharedprocessorpoolsGetParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithSharedProcessorPoolID(id)
@@ -41,6 +45,9 @@ func (f *IBMPISharedProcessorPoolClient) Get(id string) (*models.SharedProcessor
 
 // Get All Shared Processor Pools
 func (f *IBMPISharedProcessorPoolClient) GetAll() (*models.SharedProcessorPools, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_shared_processor_pools.NewPcloudSharedprocessorpoolsGetallParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID)
@@ -56,6 +63,9 @@ func (f *IBMPISharedProcessorPoolClient) GetAll() (*models.SharedProcessorPools,
 
 // Create a Shared Processor Pool
 func (f *IBMPISharedProcessorPoolClient) Create(body *models.SharedProcessorPoolCreate) (*models.SharedProcessorPool, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_shared_processor_pools.NewPcloudSharedprocessorpoolsPostParams().
 		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body)
@@ -71,6 +81,9 @@ func (f *IBMPISharedProcessorPoolClient) Create(body *models.SharedProcessorPool
 
 // Delete a Shared Processor Pool
 func (f *IBMPISharedProcessorPoolClient) Delete(id string) error {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_shared_processor_pools.NewPcloudSharedprocessorpoolsDeleteParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithSharedProcessorPoolID(id)
@@ -83,6 +96,9 @@ func (f *IBMPISharedProcessorPoolClient) Delete(id string) error {
 
 // Update a PI Shared Processor Pool
 func (f *IBMPISharedProcessorPoolClient) Update(id string, body *models.SharedProcessorPoolUpdate) (*models.SharedProcessorPool, error) {
+	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
+		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+	}
 	params := p_cloud_shared_processor_pools.NewPcloudSharedprocessorpoolsPutParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body).WithSharedProcessorPoolID(id)

@@ -16,7 +16,9 @@ limitations under the License.
 
 package v1beta1
 
-import corev1 "k8s.io/api/core/v1"
+import (
+	corev1 "k8s.io/api/core/v1"
+)
 
 // AzureClusterClassSpec defines the AzureCluster properties that may be shared across several Azure clusters.
 type AzureClusterClassSpec struct {
@@ -50,7 +52,7 @@ type AzureClusterClassSpec struct {
 	// CloudProviderConfigOverrides is an optional set of configuration values that can be overridden in azure cloud provider config.
 	// This is only a subset of options that are available in azure cloud provider config.
 	// Some values for the cloud provider config are inferred from other parts of cluster api provider azure spec, and may not be available for overrides.
-	// See: https://kubernetes-sigs.github.io/cloud-provider-azure/install/configs
+	// See: https://cloud-provider-azure.sigs.k8s.io/install/configs
 	// Note: All cloud provider config values can be customized by creating the secret beforehand. CloudProviderConfigOverrides is only used when the secret is managed by the Azure Provider.
 	// +optional
 	CloudProviderConfigOverrides *CloudProviderConfigOverrides `json:"cloudProviderConfigOverrides,omitempty"`

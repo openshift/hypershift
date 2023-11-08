@@ -30,7 +30,7 @@ func (o *ServiceBrokerTestTimeoutReader) ReadResponse(response runtime.ClientRes
 		}
 		return result, nil
 	default:
-		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
+		return nil, runtime.NewAPIError("[GET /broker/v1/test/timeout] serviceBroker.test.timeout", response, response.Code())
 	}
 }
 
@@ -71,6 +71,11 @@ func (o *ServiceBrokerTestTimeoutOK) IsServerError() bool {
 // IsCode returns true when this service broker test timeout o k response a status code equal to that given
 func (o *ServiceBrokerTestTimeoutOK) IsCode(code int) bool {
 	return code == 200
+}
+
+// Code gets the status code for the service broker test timeout o k response
+func (o *ServiceBrokerTestTimeoutOK) Code() int {
+	return 200
 }
 
 func (o *ServiceBrokerTestTimeoutOK) Error() string {
