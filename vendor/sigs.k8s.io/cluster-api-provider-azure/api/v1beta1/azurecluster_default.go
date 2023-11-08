@@ -193,6 +193,10 @@ func (c *AzureCluster) setAPIServerLBDefaults() {
 			}
 		}
 	}
+
+	if lb.BackendPool.Name == "" {
+		lb.BackendPool.Name = generateBackendAddressPoolName(lb.Name)
+	}
 }
 
 // SetNodeOutboundLBDefaults sets the default values for the NodeOutboundLB.
@@ -223,13 +227,19 @@ func (c *AzureCluster) SetNodeOutboundLBDefaults() {
 	lb := c.Spec.NetworkSpec.NodeOutboundLB
 	lb.LoadBalancerClassSpec.setNodeOutboundLBDefaults()
 
-	lb.Name = c.ObjectMeta.Name
+	if lb.Name == "" {
+		lb.Name = c.ObjectMeta.Name
+	}
 
 	if lb.FrontendIPsCount == nil {
-		lb.FrontendIPsCount = pointer.Int32Ptr(1)
+		lb.FrontendIPsCount = pointer.Int32(1)
 	}
 
 	c.setOutboundLBFrontendIPs(lb, generateNodeOutboundIPName)
+
+	if lb.BackendPool.Name == "" {
+		lb.BackendPool.Name = generateOutboundBackendAddressPoolName(lb.Name)
+	}
 }
 
 // SetControlPlaneOutboundLBDefaults sets the default values for the control plane's outbound LB.
@@ -245,9 +255,13 @@ func (c *AzureCluster) SetControlPlaneOutboundLBDefaults() {
 		lb.Name = generateControlPlaneOutboundLBName(c.ObjectMeta.Name)
 	}
 	if lb.FrontendIPsCount == nil {
-		lb.FrontendIPsCount = pointer.Int32Ptr(1)
+		lb.FrontendIPsCount = pointer.Int32(1)
 	}
 	c.setOutboundLBFrontendIPs(lb, generateControlPlaneOutboundIPName)
+
+	if lb.BackendPool.Name == "" {
+		lb.BackendPool.Name = generateOutboundBackendAddressPoolName(generateControlPlaneOutboundLBName(c.ObjectMeta.Name))
+	}
 }
 
 // setOutboundLBFrontendIPs sets the frontend ips for the given load balancer.
@@ -308,7 +322,7 @@ func (lb *LoadBalancerClassSpec) setAPIServerLBDefaults() {
 		lb.SKU = SKUStandard
 	}
 	if lb.IdleTimeoutInMinutes == nil {
-		lb.IdleTimeoutInMinutes = pointer.Int32Ptr(DefaultOutboundRuleIdleTimeoutInMinutes)
+		lb.IdleTimeoutInMinutes = pointer.Int32(DefaultOutboundRuleIdleTimeoutInMinutes)
 	}
 }
 
@@ -324,7 +338,7 @@ func (lb *LoadBalancerClassSpec) setOutboundLBDefaults() {
 	lb.Type = Public
 	lb.SKU = SKUStandard
 	if lb.IdleTimeoutInMinutes == nil {
-		lb.IdleTimeoutInMinutes = pointer.Int32Ptr(DefaultOutboundRuleIdleTimeoutInMinutes)
+		lb.IdleTimeoutInMinutes = pointer.Int32(DefaultOutboundRuleIdleTimeoutInMinutes)
 	}
 }
 
@@ -343,7 +357,7 @@ func setControlPlaneOutboundLBDefaults(lb *LoadBalancerClassSpec, apiserverLBTyp
 	lb.SKU = SKUStandard
 
 	if lb.IdleTimeoutInMinutes == nil {
-		lb.IdleTimeoutInMinutes = pointer.Int32Ptr(DefaultOutboundRuleIdleTimeoutInMinutes)
+		lb.IdleTimeoutInMinutes = pointer.Int32(DefaultOutboundRuleIdleTimeoutInMinutes)
 	}
 }
 
@@ -430,4 +444,14 @@ func generateNatGatewayIPName(clusterName, subnetName string) string {
 // withIndex appends the index as suffix to a generated name.
 func withIndex(name string, n int) string {
 	return fmt.Sprintf("%s-%d", name, n)
+}
+
+// generateBackendAddressPoolName generates a load balancer backend address pool name.
+func generateBackendAddressPoolName(lbName string) string {
+	return fmt.Sprintf("%s-%s", lbName, "backendPool")
+}
+
+// generateOutboundBackendAddressPoolName generates a load balancer outbound backend address pool name.
+func generateOutboundBackendAddressPoolName(lbName string) string {
+	return fmt.Sprintf("%s-%s", lbName, "outboundBackendPool")
 }

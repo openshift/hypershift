@@ -13769,7 +13769,16 @@ objects:
       singular: azureclusteridentity
     scope: Namespaced
     versions:
-    - name: v1beta1
+    - additionalPrinterColumns:
+      - description: Type of Azure Identity
+        jsonPath: .spec.type
+        name: Type
+        type: string
+      - description: Time duration since creation of this AzureClusterIdentity
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
+      name: v1beta1
       schema:
         openAPIV3Schema:
           description: AzureClusterIdentity is the Schema for the azureclustersidentities
@@ -14014,6 +14023,10 @@ objects:
         name: Endpoint
         priority: 1
         type: string
+      - description: Time duration since creation of this AzureCluster
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
       name: v1beta1
       schema:
         openAPIV3Schema:
@@ -14057,6 +14070,11 @@ objects:
                       description: AzureBastion specifies how the Azure Bastion cloud
                         component should be configured.
                       properties:
+                        enableTunneling:
+                          default: false
+                          description: EnableTunneling enables the native client support
+                            feature for the Azure Bastion Host. Defaults to false.
+                          type: boolean
                         name:
                           type: string
                         publicIP:
@@ -14089,6 +14107,15 @@ objects:
                           required:
                           - name
                           type: object
+                        sku:
+                          default: Basic
+                          description: BastionHostSkuName configures the tier of the
+                            Azure Bastion Host. Can be either Basic or Standard. Defaults
+                            to Basic.
+                          enum:
+                          - Basic
+                          - Standard
+                          type: string
                         subnet:
                           description: SubnetSpec configures an Azure subnet.
                           properties:
@@ -14148,6 +14175,90 @@ objects:
                               required:
                               - name
                               type: object
+                            privateEndpoints:
+                              description: PrivateEndpoints defines a list of private
+                                endpoints that should be attached to this subnet.
+                              items:
+                                description: PrivateEndpointSpec configures an Azure
+                                  Private Endpoint.
+                                properties:
+                                  applicationSecurityGroups:
+                                    description: ApplicationSecurityGroups specifies
+                                      the Application security group in which the
+                                      private endpoint IP configuration is included.
+                                    items:
+                                      type: string
+                                    type: array
+                                  customNetworkInterfaceName:
+                                    description: CustomNetworkInterfaceName specifies
+                                      the network interface name associated with the
+                                      private endpoint.
+                                    type: string
+                                  location:
+                                    description: Location specifies the region to
+                                      create the private endpoint.
+                                    type: string
+                                  manualApproval:
+                                    description: ManualApproval specifies if the connection
+                                      approval needs to be done manually or not. Set
+                                      it true when the network admin does not have
+                                      access to approve connections to the remote
+                                      resource. Defaults to false.
+                                    type: boolean
+                                  name:
+                                    description: Name specifies the name of the private
+                                      endpoint.
+                                    type: string
+                                  privateIPAddresses:
+                                    description: PrivateIPAddresses specifies the
+                                      IP addresses for the network interface associated
+                                      with the private endpoint. They have to be part
+                                      of the subnet where the private endpoint is
+                                      linked.
+                                    items:
+                                      type: string
+                                    type: array
+                                  privateLinkServiceConnections:
+                                    description: PrivateLinkServiceConnections specifies
+                                      Private Link Service Connections of the private
+                                      endpoint.
+                                    items:
+                                      description: PrivateLinkServiceConnection defines
+                                        the specification for a private link service
+                                        connection associated with a private endpoint.
+                                      properties:
+                                        groupIDs:
+                                          description: GroupIDs specifies the ID(s)
+                                            of the group(s) obtained from the remote
+                                            resource that this private endpoint should
+                                            connect to.
+                                          items:
+                                            type: string
+                                          type: array
+                                        name:
+                                          description: Name specifies the name of
+                                            the private link service.
+                                          type: string
+                                        privateLinkServiceID:
+                                          description: PrivateLinkServiceID specifies
+                                            the resource ID of the private link service.
+                                          type: string
+                                        requestMessage:
+                                          description: RequestMessage specifies a
+                                            message passed to the owner of the remote
+                                            resource with the private endpoint connection
+                                            request.
+                                          maxLength: 140
+                                          type: string
+                                      type: object
+                                    type: array
+                                required:
+                                - name
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
                             role:
                               description: Role defines the subnet role (eg. Node,
                                 ControlPlane)
@@ -14402,6 +14513,22 @@ objects:
                   - host
                   - port
                   type: object
+                extendedLocation:
+                  description: ExtendedLocation is an optional set of ExtendedLocation
+                    properties for clusters on Azure public MEC.
+                  properties:
+                    name:
+                      description: Name defines the name for the extended location.
+                      type: string
+                    type:
+                      description: Type defines the type for the extended location.
+                      enum:
+                      - EdgeZone
+                      type: string
+                  required:
+                  - name
+                  - type
+                  type: object
                 identityRef:
                   description: IdentityRef is a reference to an AzureIdentity to be
                     used when reconciling this cluster
@@ -14450,6 +14577,16 @@ objects:
                       description: APIServerLB is the configuration for the control-plane
                         load balancer.
                       properties:
+                        backendPool:
+                          description: BackendPool describes the backend pool of the
+                            load balancer.
+                          properties:
+                            name:
+                              description: Name specifies the name of backend pool
+                                for the load balancer. If not specified, the default
+                                name will be set, depending on the load balancer role.
+                              type: string
+                          type: object
                         frontendIPs:
                           items:
                             description: FrontendIP defines a load balancer frontend
@@ -14523,6 +14660,16 @@ objects:
                         from APIServerLB, and is used only in private clusters (optionally)
                         for enabling outbound traffic.
                       properties:
+                        backendPool:
+                          description: BackendPool describes the backend pool of the
+                            load balancer.
+                          properties:
+                            name:
+                              description: Name specifies the name of backend pool
+                                for the load balancer. If not specified, the default
+                                name will be set, depending on the load balancer role.
+                              type: string
+                          type: object
                         frontendIPs:
                           items:
                             description: FrontendIP defines a load balancer frontend
@@ -14594,6 +14741,16 @@ objects:
                       description: NodeOutboundLB is the configuration for the node
                         outbound load balancer.
                       properties:
+                        backendPool:
+                          description: BackendPool describes the backend pool of the
+                            load balancer.
+                          properties:
+                            name:
+                              description: Name specifies the name of backend pool
+                                for the load balancer. If not specified, the default
+                                name will be set, depending on the load balancer role.
+                              type: string
+                          type: object
                         frontendIPs:
                           items:
                             description: FrontendIP defines a load balancer frontend
@@ -14726,6 +14883,88 @@ objects:
                             required:
                             - name
                             type: object
+                          privateEndpoints:
+                            description: PrivateEndpoints defines a list of private
+                              endpoints that should be attached to this subnet.
+                            items:
+                              description: PrivateEndpointSpec configures an Azure
+                                Private Endpoint.
+                              properties:
+                                applicationSecurityGroups:
+                                  description: ApplicationSecurityGroups specifies
+                                    the Application security group in which the private
+                                    endpoint IP configuration is included.
+                                  items:
+                                    type: string
+                                  type: array
+                                customNetworkInterfaceName:
+                                  description: CustomNetworkInterfaceName specifies
+                                    the network interface name associated with the
+                                    private endpoint.
+                                  type: string
+                                location:
+                                  description: Location specifies the region to create
+                                    the private endpoint.
+                                  type: string
+                                manualApproval:
+                                  description: ManualApproval specifies if the connection
+                                    approval needs to be done manually or not. Set
+                                    it true when the network admin does not have access
+                                    to approve connections to the remote resource.
+                                    Defaults to false.
+                                  type: boolean
+                                name:
+                                  description: Name specifies the name of the private
+                                    endpoint.
+                                  type: string
+                                privateIPAddresses:
+                                  description: PrivateIPAddresses specifies the IP
+                                    addresses for the network interface associated
+                                    with the private endpoint. They have to be part
+                                    of the subnet where the private endpoint is linked.
+                                  items:
+                                    type: string
+                                  type: array
+                                privateLinkServiceConnections:
+                                  description: PrivateLinkServiceConnections specifies
+                                    Private Link Service Connections of the private
+                                    endpoint.
+                                  items:
+                                    description: PrivateLinkServiceConnection defines
+                                      the specification for a private link service
+                                      connection associated with a private endpoint.
+                                    properties:
+                                      groupIDs:
+                                        description: GroupIDs specifies the ID(s)
+                                          of the group(s) obtained from the remote
+                                          resource that this private endpoint should
+                                          connect to.
+                                        items:
+                                          type: string
+                                        type: array
+                                      name:
+                                        description: Name specifies the name of the
+                                          private link service.
+                                        type: string
+                                      privateLinkServiceID:
+                                        description: PrivateLinkServiceID specifies
+                                          the resource ID of the private link service.
+                                        type: string
+                                      requestMessage:
+                                        description: RequestMessage specifies a message
+                                          passed to the owner of the remote resource
+                                          with the private endpoint connection request.
+                                        maxLength: 140
+                                        type: string
+                                    type: object
+                                  type: array
+                              required:
+                              - name
+                              type: object
+                            type: array
+                            x-kubernetes-list-map-keys:
+                            - name
+                            x-kubernetes-list-type: map
                           role:
                             description: Role defines the subnet role (eg. Node, ControlPlane)
                             enum:
@@ -15005,7 +15244,7 @@ objects:
                     maps to Availability Zone with an Azure Region (if the region
                     support them). An Availability Zone is a separate data center
                     within a region and they can be used to ensure the cluster is
-                    more resilient to failure. See: https://docs.microsoft.com/en-us/azure/availability-zones/az-overview
+                    more resilient to failure. See: https://learn.microsoft.com/azure/reliability/availability-zones-overview
                     This list will be used by Cluster API to try and spread the machines
                     across the failure domains.'
                   type: object
@@ -15155,6 +15394,96 @@ objects:
                                       required:
                                       - name
                                       type: object
+                                    privateEndpoints:
+                                      description: PrivateEndpoints defines a list
+                                        of private endpoints that should be attached
+                                        to this subnet.
+                                      items:
+                                        description: PrivateEndpointSpec configures
+                                          an Azure Private Endpoint.
+                                        properties:
+                                          applicationSecurityGroups:
+                                            description: ApplicationSecurityGroups
+                                              specifies the Application security group
+                                              in which the private endpoint IP configuration
+                                              is included.
+                                            items:
+                                              type: string
+                                            type: array
+                                          customNetworkInterfaceName:
+                                            description: CustomNetworkInterfaceName
+                                              specifies the network interface name
+                                              associated with the private endpoint.
+                                            type: string
+                                          location:
+                                            description: Location specifies the region
+                                              to create the private endpoint.
+                                            type: string
+                                          manualApproval:
+                                            description: ManualApproval specifies
+                                              if the connection approval needs to
+                                              be done manually or not. Set it true
+                                              when the network admin does not have
+                                              access to approve connections to the
+                                              remote resource. Defaults to false.
+                                            type: boolean
+                                          name:
+                                            description: Name specifies the name of
+                                              the private endpoint.
+                                            type: string
+                                          privateIPAddresses:
+                                            description: PrivateIPAddresses specifies
+                                              the IP addresses for the network interface
+                                              associated with the private endpoint.
+                                              They have to be part of the subnet where
+                                              the private endpoint is linked.
+                                            items:
+                                              type: string
+                                            type: array
+                                          privateLinkServiceConnections:
+                                            description: PrivateLinkServiceConnections
+                                              specifies Private Link Service Connections
+                                              of the private endpoint.
+                                            items:
+                                              description: PrivateLinkServiceConnection
+                                                defines the specification for a private
+                                                link service connection associated
+                                                with a private endpoint.
+                                              properties:
+                                                groupIDs:
+                                                  description: GroupIDs specifies
+                                                    the ID(s) of the group(s) obtained
+                                                    from the remote resource that
+                                                    this private endpoint should connect
+                                                    to.
+                                                  items:
+                                                    type: string
+                                                  type: array
+                                                name:
+                                                  description: Name specifies the
+                                                    name of the private link service.
+                                                  type: string
+                                                privateLinkServiceID:
+                                                  description: PrivateLinkServiceID
+                                                    specifies the resource ID of the
+                                                    private link service.
+                                                  type: string
+                                                requestMessage:
+                                                  description: RequestMessage specifies
+                                                    a message passed to the owner
+                                                    of the remote resource with the
+                                                    private endpoint connection request.
+                                                  maxLength: 140
+                                                  type: string
+                                              type: object
+                                            type: array
+                                        required:
+                                        - name
+                                        type: object
+                                      type: array
+                                      x-kubernetes-list-map-keys:
+                                      - name
+                                      x-kubernetes-list-type: map
                                     role:
                                       description: Role defines the subnet role (eg.
                                         Node, ControlPlane)
@@ -15383,6 +15712,24 @@ objects:
                                 type: object
                               type: array
                           type: object
+                        extendedLocation:
+                          description: ExtendedLocation is an optional set of ExtendedLocation
+                            properties for clusters on Azure public MEC.
+                          properties:
+                            name:
+                              description: Name defines the name for the extended
+                                location.
+                              type: string
+                            type:
+                              description: Type defines the type for the extended
+                                location.
+                              enum:
+                              - EdgeZone
+                              type: string
+                          required:
+                          - name
+                          - type
+                          type: object
                         identityRef:
                           description: IdentityRef is a reference to an AzureIdentity
                             to be used when reconciling this cluster
@@ -15516,6 +15863,95 @@ objects:
                                     required:
                                     - name
                                     type: object
+                                  privateEndpoints:
+                                    description: PrivateEndpoints defines a list of
+                                      private endpoints that should be attached to
+                                      this subnet.
+                                    items:
+                                      description: PrivateEndpointSpec configures
+                                        an Azure Private Endpoint.
+                                      properties:
+                                        applicationSecurityGroups:
+                                          description: ApplicationSecurityGroups specifies
+                                            the Application security group in which
+                                            the private endpoint IP configuration
+                                            is included.
+                                          items:
+                                            type: string
+                                          type: array
+                                        customNetworkInterfaceName:
+                                          description: CustomNetworkInterfaceName
+                                            specifies the network interface name associated
+                                            with the private endpoint.
+                                          type: string
+                                        location:
+                                          description: Location specifies the region
+                                            to create the private endpoint.
+                                          type: string
+                                        manualApproval:
+                                          description: ManualApproval specifies if
+                                            the connection approval needs to be done
+                                            manually or not. Set it true when the
+                                            network admin does not have access to
+                                            approve connections to the remote resource.
+                                            Defaults to false.
+                                          type: boolean
+                                        name:
+                                          description: Name specifies the name of
+                                            the private endpoint.
+                                          type: string
+                                        privateIPAddresses:
+                                          description: PrivateIPAddresses specifies
+                                            the IP addresses for the network interface
+                                            associated with the private endpoint.
+                                            They have to be part of the subnet where
+                                            the private endpoint is linked.
+                                          items:
+                                            type: string
+                                          type: array
+                                        privateLinkServiceConnections:
+                                          description: PrivateLinkServiceConnections
+                                            specifies Private Link Service Connections
+                                            of the private endpoint.
+                                          items:
+                                            description: PrivateLinkServiceConnection
+                                              defines the specification for a private
+                                              link service connection associated with
+                                              a private endpoint.
+                                            properties:
+                                              groupIDs:
+                                                description: GroupIDs specifies the
+                                                  ID(s) of the group(s) obtained from
+                                                  the remote resource that this private
+                                                  endpoint should connect to.
+                                                items:
+                                                  type: string
+                                                type: array
+                                              name:
+                                                description: Name specifies the name
+                                                  of the private link service.
+                                                type: string
+                                              privateLinkServiceID:
+                                                description: PrivateLinkServiceID
+                                                  specifies the resource ID of the
+                                                  private link service.
+                                                type: string
+                                              requestMessage:
+                                                description: RequestMessage specifies
+                                                  a message passed to the owner of
+                                                  the remote resource with the private
+                                                  endpoint connection request.
+                                                maxLength: 140
+                                                type: string
+                                            type: object
+                                          type: array
+                                      required:
+                                      - name
+                                      type: object
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
                                   role:
                                     description: Role defines the subnet role (eg.
                                       Node, ControlPlane)
@@ -15763,6 +16199,10 @@ objects:
         name: VM Size
         priority: 1
         type: string
+      - description: Time duration since creation of this AzureMachine
+        jsonPath: .metadata.creationTimestamp
+        name: Age
+        type: date
       name: v1beta1
       schema:
         openAPIV3Schema:
@@ -15785,11 +16225,8 @@ objects:
               description: AzureMachineSpec defines the desired state of AzureMachine.
               properties:
                 acceleratedNetworking:
-                  description: AcceleratedNetworking enables or disables Azure accelerated
-                    networking. If omitted, it will be set based on whether the requested
-                    VMSize supports accelerated networking. If AcceleratedNetworking
-                    is set to true with a VMSize that does not support it, Azure will
-                    return an error.
+                  description: 'Deprecated: AcceleratedNetworking should be set in
+                    the networkInterfaces field.'
                   type: boolean
                 additionalCapabilities:
                   description: AdditionalCapabilities specifies additional capabilities
@@ -15867,6 +16304,51 @@ objects:
                     - nameSuffix
                     type: object
                   type: array
+                diagnostics:
+                  description: Diagnostics specifies the diagnostics settings for
+                    a virtual machine. If not specified then Boot diagnostics (Managed)
+                    will be enabled.
+                  properties:
+                    boot:
+                      description: Boot configures the boot diagnostics settings for
+                        the virtual machine. This allows to configure capturing serial
+                        output from the virtual machine on boot. This is useful for
+                        debugging software based launch issues. If not specified then
+                        Boot diagnostics (Managed) will be enabled.
+                      properties:
+                        storageAccountType:
+                          description: StorageAccountType determines if the storage
+                            account for storing the diagnostics data should be disabled
+                            (Disabled), provisioned by Azure (Managed) or by the user
+                            (UserManaged).
+                          enum:
+                          - Managed
+                          - UserManaged
+                          - Disabled
+                          type: string
+                        userManaged:
+                          description: UserManaged provides a reference to the user-managed
+                            storage account.
+                          properties:
+                            storageAccountURI:
+                              description: 'StorageAccountURI is the URI of the user-managed
+                                storage account. The URI typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
+                                but may differ if you are using Azure DNS zone endpoints.
+                                You can find the correct endpoint by looking for the
+                                Blob Primary Endpoint in the endpoints tab in the
+                                Azure console or with the CLI by issuing `az storage
+                                account list --query=''[].{name: name, "resource group":
+                                resourceGroup, "blob endpoint": primaryEndpoints.blob}''`.'
+                              maxLength: 1024
+                              pattern: ^https://
+                              type: string
+                          required:
+                          - storageAccountURI
+                          type: object
+                      required:
+                      - storageAccountType
+                      type: object
+                  type: object
                 dnsServers:
                   description: DNSServers adds a list of DNS Server IP addresses to
                     the VM NICs.
@@ -16075,6 +16557,33 @@ objects:
                       - version
                       type: object
                   type: object
+                networkInterfaces:
+                  description: NetworkInterfaces specifies a list of network interface
+                    configurations. If left unspecified, the VM will get a single
+                    network interface with a single IPConfig in the subnet specified
+                    in the cluster's node subnet field. The primary interface will
+                    be the first networkInterface specified (index 0) in the list.
+                  items:
+                    description: NetworkInterface defines a network interface.
+                    properties:
+                      acceleratedNetworking:
+                        description: AcceleratedNetworking enables or disables Azure
+                          accelerated networking. If omitted, it will be set based
+                          on whether the requested VMSize supports accelerated networking.
+                          If AcceleratedNetworking is set to true with a VMSize that
+                          does not support it, Azure will return an error.
+                        type: boolean
+                      privateIPConfigs:
+                        description: PrivateIPConfigs specifies the number of private
+                          IP addresses to attach to the interface. Defaults to 1 if
+                          not specified.
+                        type: integer
+                      subnetName:
+                        description: SubnetName specifies the subnet in which the
+                          new network interface will be placed.
+                        type: string
+                    type: object
+                  type: array
                 osDisk:
                   description: OSDisk specifies the parameters for the operating system
                     disk of the machine
@@ -16131,9 +16640,8 @@ objects:
                     the cloud provider.
                   type: string
                 roleAssignmentName:
-                  description: RoleAssignmentName is the name of the role assignment
-                    to create for a system assigned identity. It can be any valid
-                    GUID. If not specified, a random GUID will be generated.
+                  description: 'Deprecated: RoleAssignmentName should be set in the
+                    systemAssignedIdentityRole field.'
                   type: string
                 securityProfile:
                   description: SecurityProfile specifies the Security profile settings
@@ -16168,9 +16676,29 @@ objects:
                 sshPublicKey:
                   type: string
                 subnetName:
-                  description: SubnetName selects the Subnet where the VM will be
-                    placed
+                  description: 'Deprecated: SubnetName should be set in the networkInterfaces
+                    field.'
                   type: string
+                systemAssignedIdentityRole:
+                  description: SystemAssignedIdentityRole defines the role and scope
+                    to assign to the system-assigned identity.
+                  properties:
+                    definitionID:
+                      description: 'DefinitionID is the ID of the role definition
+                        to create for a system assigned identity. It can be an Azure
+                        built-in role or a custom role. Refer to built-in roles: https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles'
+                      type: string
+                    name:
+                      description: Name is the name of the role assignment to create
+                        for a system assigned identity. It can be any valid UUID.
+                        If not specified, a random UUID will be generated.
+                      type: string
+                    scope:
+                      description: Scope is the scope that the role assignment or
+                        definition applies to. The scope can be any REST resource
+                        instance. If not specified, the scope will be the subscription.
+                      type: string
+                  type: object
                 userAssignedIdentities:
                   description: UserAssignedIdentities is a list of standalone Azure
                     identities provided by the user The lifecycle of a user-assigned
@@ -16479,11 +17007,8 @@ objects:
                         of the machine.
                       properties:
                         acceleratedNetworking:
-                          description: AcceleratedNetworking enables or disables Azure
-                            accelerated networking. If omitted, it will be set based
-                            on whether the requested VMSize supports accelerated networking.
-                            If AcceleratedNetworking is set to true with a VMSize
-                            that does not support it, Azure will return an error.
+                          description: 'Deprecated: AcceleratedNetworking should be
+                            set in the networkInterfaces field.'
                           type: boolean
                         additionalCapabilities:
                           description: AdditionalCapabilities specifies additional
@@ -16562,6 +17087,54 @@ objects:
                             - nameSuffix
                             type: object
                           type: array
+                        diagnostics:
+                          description: Diagnostics specifies the diagnostics settings
+                            for a virtual machine. If not specified then Boot diagnostics
+                            (Managed) will be enabled.
+                          properties:
+                            boot:
+                              description: Boot configures the boot diagnostics settings
+                                for the virtual machine. This allows to configure
+                                capturing serial output from the virtual machine on
+                                boot. This is useful for debugging software based
+                                launch issues. If not specified then Boot diagnostics
+                                (Managed) will be enabled.
+                              properties:
+                                storageAccountType:
+                                  description: StorageAccountType determines if the
+                                    storage account for storing the diagnostics data
+                                    should be disabled (Disabled), provisioned by
+                                    Azure (Managed) or by the user (UserManaged).
+                                  enum:
+                                  - Managed
+                                  - UserManaged
+                                  - Disabled
+                                  type: string
+                                userManaged:
+                                  description: UserManaged provides a reference to
+                                    the user-managed storage account.
+                                  properties:
+                                    storageAccountURI:
+                                      description: 'StorageAccountURI is the URI of
+                                        the user-managed storage account. The URI
+                                        typically will be `https://<mystorageaccountname>.blob.core.windows.net/`
+                                        but may differ if you are using Azure DNS
+                                        zone endpoints. You can find the correct endpoint
+                                        by looking for the Blob Primary Endpoint in
+                                        the endpoints tab in the Azure console or
+                                        with the CLI by issuing `az storage account
+                                        list --query=''[].{name: name, "resource group":
+                                        resourceGroup, "blob endpoint": primaryEndpoints.blob}''`.'
+                                      maxLength: 1024
+                                      pattern: ^https://
+                                      type: string
+                                  required:
+                                  - storageAccountURI
+                                  type: object
+                              required:
+                              - storageAccountType
+                              type: object
+                          type: object
                         dnsServers:
                           description: DNSServers adds a list of DNS Server IP addresses
                             to the VM NICs.
@@ -16781,6 +17354,35 @@ objects:
                               - version
                               type: object
                           type: object
+                        networkInterfaces:
+                          description: NetworkInterfaces specifies a list of network
+                            interface configurations. If left unspecified, the VM
+                            will get a single network interface with a single IPConfig
+                            in the subnet specified in the cluster's node subnet field.
+                            The primary interface will be the first networkInterface
+                            specified (index 0) in the list.
+                          items:
+                            description: NetworkInterface defines a network interface.
+                            properties:
+                              acceleratedNetworking:
+                                description: AcceleratedNetworking enables or disables
+                                  Azure accelerated networking. If omitted, it will
+                                  be set based on whether the requested VMSize supports
+                                  accelerated networking. If AcceleratedNetworking
+                                  is set to true with a VMSize that does not support
+                                  it, Azure will return an error.
+                                type: boolean
+                              privateIPConfigs:
+                                description: PrivateIPConfigs specifies the number
+                                  of private IP addresses to attach to the interface.
+                                  Defaults to 1 if not specified.
+                                type: integer
+                              subnetName:
+                                description: SubnetName specifies the subnet in which
+                                  the new network interface will be placed.
+                                type: string
+                            type: object
+                          type: array
                         osDisk:
                           description: OSDisk specifies the parameters for the operating
                             system disk of the machine
@@ -16838,10 +17440,8 @@ objects:
                             by the cloud provider.
                           type: string
                         roleAssignmentName:
-                          description: RoleAssignmentName is the name of the role
-                            assignment to create for a system assigned identity. It
-                            can be any valid GUID. If not specified, a random GUID
-                            will be generated.
+                          description: 'Deprecated: RoleAssignmentName should be set
+                            in the systemAssignedIdentityRole field.'
                           type: string
                         securityProfile:
                           description: SecurityProfile specifies the Security profile
@@ -16877,9 +17477,32 @@ objects:
                         sshPublicKey:
                           type: string
                         subnetName:
-                          description: SubnetName selects the Subnet where the VM
-                            will be placed
+                          description: 'Deprecated: SubnetName should be set in the
+                            networkInterfaces field.'
                           type: string
+                        systemAssignedIdentityRole:
+                          description: SystemAssignedIdentityRole defines the role
+                            and scope to assign to the system-assigned identity.
+                          properties:
+                            definitionID:
+                              description: 'DefinitionID is the ID of the role definition
+                                to create for a system assigned identity. It can be
+                                an Azure built-in role or a custom role. Refer to
+                                built-in roles: https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles'
+                              type: string
+                            name:
+                              description: Name is the name of the role assignment
+                                to create for a system assigned identity. It can be
+                                any valid UUID. If not specified, a random UUID will
+                                be generated.
+                              type: string
+                            scope:
+                              description: Scope is the scope that the role assignment
+                                or definition applies to. The scope can be any REST
+                                resource instance. If not specified, the scope will
+                                be the subscription.
+                              type: string
+                          type: object
                         userAssignedIdentities:
                           description: UserAssignedIdentities is a list of standalone
                             Azure identities provided by the user The lifecycle of
@@ -16951,6 +17574,1336 @@ objects:
           type: object
       served: true
       storage: true
+  status:
+    acceptedNames:
+      kind: ""
+      plural: ""
+    conditions: null
+    storedVersions: null
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.12.0
+    creationTimestamp: null
+    name: azuremanagedclusters.infrastructure.cluster.x-k8s.io
+  spec:
+    group: infrastructure.cluster.x-k8s.io
+    names:
+      categories:
+      - cluster-api
+      kind: AzureManagedCluster
+      listKind: AzureManagedClusterList
+      plural: azuremanagedclusters
+      shortNames:
+      - amc
+      singular: azuremanagedcluster
+    scope: Namespaced
+    versions:
+    - name: v1beta1
+      schema:
+        openAPIV3Schema:
+          description: AzureManagedCluster is the Schema for the azuremanagedclusters
+            API.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource
+                this object represents. Servers may infer this from the endpoint the
+                client submits requests to. Cannot be updated. In CamelCase. More
+                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AzureManagedClusterSpec defines the desired state of AzureManagedCluster.
+              properties:
+                controlPlaneEndpoint:
+                  description: ControlPlaneEndpoint represents the endpoint used to
+                    communicate with the control plane.
+                  properties:
+                    host:
+                      description: The hostname on which the API server is serving.
+                      type: string
+                    port:
+                      description: The port on which the API server is serving.
+                      format: int32
+                      type: integer
+                  required:
+                  - host
+                  - port
+                  type: object
+              type: object
+            status:
+              description: AzureManagedClusterStatus defines the observed state of
+                AzureManagedCluster.
+              properties:
+                ready:
+                  description: Ready is true when the provider resource is ready.
+                  type: boolean
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+  status:
+    acceptedNames:
+      kind: ""
+      plural: ""
+    conditions: null
+    storedVersions: null
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.12.0
+    creationTimestamp: null
+    name: azuremanagedcontrolplanes.infrastructure.cluster.x-k8s.io
+  spec:
+    group: infrastructure.cluster.x-k8s.io
+    names:
+      categories:
+      - cluster-api
+      kind: AzureManagedControlPlane
+      listKind: AzureManagedControlPlaneList
+      plural: azuremanagedcontrolplanes
+      shortNames:
+      - amcp
+      singular: azuremanagedcontrolplane
+    scope: Namespaced
+    versions:
+    - name: v1beta1
+      schema:
+        openAPIV3Schema:
+          description: AzureManagedControlPlane is the Schema for the azuremanagedcontrolplanes
+            API.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource
+                this object represents. Servers may infer this from the endpoint the
+                client submits requests to. Cannot be updated. In CamelCase. More
+                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AzureManagedControlPlaneSpec defines the desired state
+                of AzureManagedControlPlane.
+              properties:
+                aadProfile:
+                  description: AadProfile is Azure Active Directory configuration
+                    to integrate with AKS for aad authentication.
+                  properties:
+                    adminGroupObjectIDs:
+                      description: AdminGroupObjectIDs - AAD group object IDs that
+                        will have admin role of the cluster.
+                      items:
+                        type: string
+                      type: array
+                    managed:
+                      description: Managed - Whether to enable managed AAD.
+                      type: boolean
+                  required:
+                  - adminGroupObjectIDs
+                  - managed
+                  type: object
+                additionalTags:
+                  additionalProperties:
+                    type: string
+                  description: AdditionalTags is an optional set of tags to add to
+                    Azure resources managed by the Azure provider, in addition to
+                    the ones added by default.
+                  type: object
+                addonProfiles:
+                  description: AddonProfiles are the profiles of managed cluster add-on.
+                  items:
+                    description: AddonProfile represents a managed cluster add-on.
+                    properties:
+                      config:
+                        additionalProperties:
+                          type: string
+                        description: Config - Key-value pairs for configuring the
+                          add-on.
+                        type: object
+                      enabled:
+                        description: Enabled - Whether the add-on is enabled or not.
+                        type: boolean
+                      name:
+                        description: Name - The name of the managed cluster add-on.
+                        type: string
+                    required:
+                    - enabled
+                    - name
+                    type: object
+                  type: array
+                apiServerAccessProfile:
+                  description: APIServerAccessProfile is the access profile for AKS
+                    API server.
+                  properties:
+                    authorizedIPRanges:
+                      description: AuthorizedIPRanges - Authorized IP Ranges to kubernetes
+                        API server.
+                      items:
+                        type: string
+                      type: array
+                    enablePrivateCluster:
+                      description: EnablePrivateCluster - Whether to create the cluster
+                        as a private cluster or not.
+                      type: boolean
+                    enablePrivateClusterPublicFQDN:
+                      description: EnablePrivateClusterPublicFQDN - Whether to create
+                        additional public FQDN for private cluster or not.
+                      type: boolean
+                    privateDNSZone:
+                      description: PrivateDNSZone - Private dns zone mode for private
+                        cluster.
+                      enum:
+                      - System
+                      - None
+                      type: string
+                  type: object
+                autoscalerProfile:
+                  description: AutoscalerProfile is the parameters to be applied to
+                    the cluster-autoscaler when enabled
+                  properties:
+                    balanceSimilarNodeGroups:
+                      description: BalanceSimilarNodeGroups - Valid values are 'true'
+                        and 'false'. The default is false.
+                      enum:
+                      - "true"
+                      - "false"
+                      type: string
+                    expander:
+                      description: Expander - If not specified, the default is 'random'.
+                        See [expanders](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-are-expanders)
+                        for more information.
+                      enum:
+                      - least-waste
+                      - most-pods
+                      - priority
+                      - random
+                      type: string
+                    maxEmptyBulkDelete:
+                      description: MaxEmptyBulkDelete - The default is 10.
+                      type: string
+                    maxGracefulTerminationSec:
+                      description: MaxGracefulTerminationSec - The default is 600.
+                      pattern: ^(\d+)$
+                      type: string
+                    maxNodeProvisionTime:
+                      description: MaxNodeProvisionTime - The default is '15m'. Values
+                        must be an integer followed by an 'm'. No unit of time other
+                        than minutes (m) is supported.
+                      pattern: ^(\d+)m$
+                      type: string
+                    maxTotalUnreadyPercentage:
+                      description: MaxTotalUnreadyPercentage - The default is 45.
+                        The maximum is 100 and the minimum is 0.
+                      maxLength: 3
+                      minLength: 1
+                      pattern: ^(\d+)$
+                      type: string
+                    newPodScaleUpDelay:
+                      description: NewPodScaleUpDelay - For scenarios like burst/batch
+                        scale where you don't want CA to act before the kubernetes
+                        scheduler could schedule all the pods, you can tell CA to
+                        ignore unscheduled pods before they're a certain age. The
+                        default is '0s'. Values must be an integer followed by a unit
+                        ('s' for seconds, 'm' for minutes, 'h' for hours, etc).
+                      type: string
+                    okTotalUnreadyCount:
+                      description: OkTotalUnreadyCount - This must be an integer.
+                        The default is 3.
+                      pattern: ^(\d+)$
+                      type: string
+                    scaleDownDelayAfterAdd:
+                      description: ScaleDownDelayAfterAdd - The default is '10m'.
+                        Values must be an integer followed by an 'm'. No unit of time
+                        other than minutes (m) is supported.
+                      pattern: ^(\d+)m$
+                      type: string
+                    scaleDownDelayAfterDelete:
+                      description: ScaleDownDelayAfterDelete - The default is the
+                        scan-interval. Values must be an integer followed by an 's'.
+                        No unit of time other than seconds (s) is supported.
+                      pattern: ^(\d+)s$
+                      type: string
+                    scaleDownDelayAfterFailure:
+                      description: ScaleDownDelayAfterFailure - The default is '3m'.
+                        Values must be an integer followed by an 'm'. No unit of time
+                        other than minutes (m) is supported.
+                      pattern: ^(\d+)m$
+                      type: string
+                    scaleDownUnneededTime:
+                      description: ScaleDownUnneededTime - The default is '10m'. Values
+                        must be an integer followed by an 'm'. No unit of time other
+                        than minutes (m) is supported.
+                      pattern: ^(\d+)m$
+                      type: string
+                    scaleDownUnreadyTime:
+                      description: ScaleDownUnreadyTime - The default is '20m'. Values
+                        must be an integer followed by an 'm'. No unit of time other
+                        than minutes (m) is supported.
+                      pattern: ^(\d+)m$
+                      type: string
+                    scaleDownUtilizationThreshold:
+                      description: ScaleDownUtilizationThreshold - The default is
+                        '0.5'.
+                      type: string
+                    scanInterval:
+                      description: ScanInterval - How often cluster is reevaluated
+                        for scale up or down. The default is '10s'.
+                      pattern: ^(\d+)s$
+                      type: string
+                    skipNodesWithLocalStorage:
+                      description: SkipNodesWithLocalStorage - The default is false.
+                      enum:
+                      - "true"
+                      - "false"
+                      type: string
+                    skipNodesWithSystemPods:
+                      description: SkipNodesWithSystemPods - The default is true.
+                      enum:
+                      - "true"
+                      - "false"
+                      type: string
+                  type: object
+                controlPlaneEndpoint:
+                  description: ControlPlaneEndpoint represents the endpoint used to
+                    communicate with the control plane.
+                  properties:
+                    host:
+                      description: The hostname on which the API server is serving.
+                      type: string
+                    port:
+                      description: The port on which the API server is serving.
+                      format: int32
+                      type: integer
+                  required:
+                  - host
+                  - port
+                  type: object
+                dnsServiceIP:
+                  description: DNSServiceIP is an IP address assigned to the Kubernetes
+                    DNS service. It must be within the Kubernetes service address
+                    range specified in serviceCidr.
+                  type: string
+                identityRef:
+                  description: IdentityRef is a reference to a AzureClusterIdentity
+                    to be used when reconciling this cluster
+                  properties:
+                    apiVersion:
+                      description: API version of the referent.
+                      type: string
+                    fieldPath:
+                      description: 'If referring to a piece of an object instead of
+                        an entire object, this string should contain a valid JSON/Go
+                        field access statement, such as desiredState.manifest.containers[2].
+                        For example, if the object reference is to a container within
+                        a pod, this would take on a value like: "spec.containers{name}"
+                        (where "name" refers to the name of the container that triggered
+                        the event) or if no container name is specified "spec.containers[2]"
+                        (container with index 2 in this pod). This syntax is chosen
+                        only to have some well-defined way of referencing a part of
+                        an object. TODO: this design is not final and this field is
+                        subject to change in the future.'
+                      type: string
+                    kind:
+                      description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                      type: string
+                    name:
+                      description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                      type: string
+                    namespace:
+                      description: 'Namespace of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                      type: string
+                    resourceVersion:
+                      description: 'Specific resourceVersion to which this reference
+                        is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                      type: string
+                    uid:
+                      description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                loadBalancerProfile:
+                  description: LoadBalancerProfile is the profile of the cluster load
+                    balancer.
+                  properties:
+                    allocatedOutboundPorts:
+                      description: AllocatedOutboundPorts - Desired number of allocated
+                        SNAT ports per VM. Allowed values must be in the range of
+                        0 to 64000 (inclusive). The default value is 0 which results
+                        in Azure dynamically allocating ports.
+                      format: int32
+                      type: integer
+                    idleTimeoutInMinutes:
+                      description: IdleTimeoutInMinutes - Desired outbound flow idle
+                        timeout in minutes. Allowed values must be in the range of
+                        4 to 120 (inclusive). The default value is 30 minutes.
+                      format: int32
+                      type: integer
+                    managedOutboundIPs:
+                      description: ManagedOutboundIPs - Desired managed outbound IPs
+                        for the cluster load balancer.
+                      format: int32
+                      type: integer
+                    outboundIPPrefixes:
+                      description: OutboundIPPrefixes - Desired outbound IP Prefix
+                        resources for the cluster load balancer.
+                      items:
+                        type: string
+                      type: array
+                    outboundIPs:
+                      description: OutboundIPs - Desired outbound IP resources for
+                        the cluster load balancer.
+                      items:
+                        type: string
+                      type: array
+                  type: object
+                loadBalancerSKU:
+                  description: LoadBalancerSKU is the SKU of the loadBalancer to be
+                    provisioned.
+                  enum:
+                  - Basic
+                  - Standard
+                  type: string
+                location:
+                  description: 'Location is a string matching one of the canonical
+                    Azure region names. Examples: "westus2", "eastus".'
+                  type: string
+                networkPlugin:
+                  description: NetworkPlugin used for building Kubernetes network.
+                  enum:
+                  - azure
+                  - kubenet
+                  type: string
+                networkPolicy:
+                  description: NetworkPolicy used for building Kubernetes network.
+                  enum:
+                  - azure
+                  - calico
+                  type: string
+                nodeResourceGroupName:
+                  description: NodeResourceGroupName is the name of the resource group
+                    containing cluster IaaS resources. Will be populated to default
+                    in webhook.
+                  type: string
+                outboundType:
+                  description: Outbound configuration used by Nodes.
+                  enum:
+                  - loadBalancer
+                  - managedNATGateway
+                  - userAssignedNATGateway
+                  - userDefinedRouting
+                  type: string
+                resourceGroupName:
+                  description: ResourceGroupName is the name of the Azure resource
+                    group for this AKS Cluster.
+                  type: string
+                sku:
+                  description: SKU is the SKU of the AKS to be provisioned.
+                  properties:
+                    tier:
+                      description: Tier - Tier of an AKS cluster.
+                      enum:
+                      - Free
+                      - Paid
+                      type: string
+                  required:
+                  - tier
+                  type: object
+                sshPublicKey:
+                  description: SSHPublicKey is a string literal containing an ssh
+                    public key base64 encoded.
+                  type: string
+                subscriptionID:
+                  description: SubscriptionID is the GUID of the Azure subscription
+                    to hold this cluster.
+                  type: string
+                version:
+                  description: Version defines the desired Kubernetes version.
+                  minLength: 2
+                  type: string
+                virtualNetwork:
+                  description: VirtualNetwork describes the vnet for the AKS cluster.
+                    Will be created if it does not exist.
+                  properties:
+                    cidrBlock:
+                      type: string
+                    name:
+                      type: string
+                    resourceGroup:
+                      description: ResourceGroup is the name of the Azure resource
+                        group for the VNet and Subnet.
+                      type: string
+                    subnet:
+                      description: ManagedControlPlaneSubnet describes a subnet for
+                        an AKS cluster.
+                      properties:
+                        cidrBlock:
+                          type: string
+                        name:
+                          type: string
+                        privateEndpoints:
+                          description: PrivateEndpoints is a slice of Virtual Network
+                            private endpoints to create for the subnets.
+                          items:
+                            description: PrivateEndpointSpec configures an Azure Private
+                              Endpoint.
+                            properties:
+                              applicationSecurityGroups:
+                                description: ApplicationSecurityGroups specifies the
+                                  Application security group in which the private
+                                  endpoint IP configuration is included.
+                                items:
+                                  type: string
+                                type: array
+                              customNetworkInterfaceName:
+                                description: CustomNetworkInterfaceName specifies
+                                  the network interface name associated with the private
+                                  endpoint.
+                                type: string
+                              location:
+                                description: Location specifies the region to create
+                                  the private endpoint.
+                                type: string
+                              manualApproval:
+                                description: ManualApproval specifies if the connection
+                                  approval needs to be done manually or not. Set it
+                                  true when the network admin does not have access
+                                  to approve connections to the remote resource. Defaults
+                                  to false.
+                                type: boolean
+                              name:
+                                description: Name specifies the name of the private
+                                  endpoint.
+                                type: string
+                              privateIPAddresses:
+                                description: PrivateIPAddresses specifies the IP addresses
+                                  for the network interface associated with the private
+                                  endpoint. They have to be part of the subnet where
+                                  the private endpoint is linked.
+                                items:
+                                  type: string
+                                type: array
+                              privateLinkServiceConnections:
+                                description: PrivateLinkServiceConnections specifies
+                                  Private Link Service Connections of the private
+                                  endpoint.
+                                items:
+                                  description: PrivateLinkServiceConnection defines
+                                    the specification for a private link service connection
+                                    associated with a private endpoint.
+                                  properties:
+                                    groupIDs:
+                                      description: GroupIDs specifies the ID(s) of
+                                        the group(s) obtained from the remote resource
+                                        that this private endpoint should connect
+                                        to.
+                                      items:
+                                        type: string
+                                      type: array
+                                    name:
+                                      description: Name specifies the name of the
+                                        private link service.
+                                      type: string
+                                    privateLinkServiceID:
+                                      description: PrivateLinkServiceID specifies
+                                        the resource ID of the private link service.
+                                      type: string
+                                    requestMessage:
+                                      description: RequestMessage specifies a message
+                                        passed to the owner of the remote resource
+                                        with the private endpoint connection request.
+                                      maxLength: 140
+                                      type: string
+                                  type: object
+                                type: array
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        serviceEndpoints:
+                          description: ServiceEndpoints is a slice of Virtual Network
+                            service endpoints to enable for the subnets.
+                          items:
+                            description: ServiceEndpointSpec configures an Azure Service
+                              Endpoint.
+                            properties:
+                              locations:
+                                items:
+                                  type: string
+                                type: array
+                              service:
+                                type: string
+                            required:
+                            - locations
+                            - service
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - service
+                          x-kubernetes-list-type: map
+                      required:
+                      - cidrBlock
+                      - name
+                      type: object
+                  required:
+                  - cidrBlock
+                  - name
+                  type: object
+              required:
+              - location
+              - resourceGroupName
+              - sshPublicKey
+              - version
+              type: object
+            status:
+              description: AzureManagedControlPlaneStatus defines the observed state
+                of AzureManagedControlPlane.
+              properties:
+                conditions:
+                  description: Conditions defines current service state of the AzureManagedControlPlane.
+                  items:
+                    description: Condition defines an observation of a Cluster API
+                      resource operational state.
+                    properties:
+                      lastTransitionTime:
+                        description: Last time the condition transitioned from one
+                          status to another. This should be when the underlying condition
+                          changed. If that is not known, then using the time when
+                          the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: A human readable message indicating details about
+                          the transition. This field may be empty.
+                        type: string
+                      reason:
+                        description: The reason for the condition's last transition
+                          in CamelCase. The specific API may choose whether or not
+                          this field is considered a guaranteed API. This field may
+                          not be empty.
+                        type: string
+                      severity:
+                        description: Severity provides an explicit classification
+                          of Reason code, so the users or machines can immediately
+                          understand the current situation and act accordingly. The
+                          Severity field MUST be set only when Status=False.
+                        type: string
+                      status:
+                        description: Status of the condition, one of True, False,
+                          Unknown.
+                        type: string
+                      type:
+                        description: Type of condition in CamelCase or in foo.example.com/CamelCase.
+                          Many .condition.type values are consistent across resources
+                          like Available, but because arbitrary conditions can be
+                          useful (see .node.status.conditions), the ability to deconflict
+                          is important.
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - status
+                    - type
+                    type: object
+                  type: array
+                initialized:
+                  description: Initialized is true when the control plane is available
+                    for initial contact. This may occur before the control plane is
+                    fully ready. In the AzureManagedControlPlane implementation, these
+                    are identical.
+                  type: boolean
+                longRunningOperationStates:
+                  description: LongRunningOperationStates saves the states for Azure
+                    long-running operations so they can be continued on the next reconciliation
+                    loop.
+                  items:
+                    description: Future contains the data needed for an Azure long-running
+                      operation to continue across reconcile loops.
+                    properties:
+                      data:
+                        description: Data is the base64 url encoded json Azure AutoRest
+                          Future.
+                        type: string
+                      name:
+                        description: Name is the name of the Azure resource. Together
+                          with the service name, this forms the unique identifier
+                          for the future.
+                        type: string
+                      resourceGroup:
+                        description: ResourceGroup is the Azure resource group for
+                          the resource.
+                        type: string
+                      serviceName:
+                        description: ServiceName is the name of the Azure service.
+                          Together with the name of the resource, this forms the unique
+                          identifier for the future.
+                        type: string
+                      type:
+                        description: Type describes the type of future, such as update,
+                          create, delete, etc.
+                        type: string
+                    required:
+                    - data
+                    - name
+                    - serviceName
+                    - type
+                    type: object
+                  type: array
+                ready:
+                  description: Ready is true when the provider resource is ready.
+                  type: boolean
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+  status:
+    acceptedNames:
+      kind: ""
+      plural: ""
+    conditions: null
+    storedVersions: null
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.12.0
+    creationTimestamp: null
+    name: azuremanagedmachinepools.infrastructure.cluster.x-k8s.io
+  spec:
+    group: infrastructure.cluster.x-k8s.io
+    names:
+      categories:
+      - cluster-api
+      kind: AzureManagedMachinePool
+      listKind: AzureManagedMachinePoolList
+      plural: azuremanagedmachinepools
+      shortNames:
+      - ammp
+      singular: azuremanagedmachinepool
+    scope: Namespaced
+    versions:
+    - additionalPrinterColumns:
+      - jsonPath: .spec.mode
+        name: Mode
+        type: string
+      name: v1beta1
+      schema:
+        openAPIV3Schema:
+          description: AzureManagedMachinePool is the Schema for the azuremanagedmachinepools
+            API.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource
+                this object represents. Servers may infer this from the endpoint the
+                client submits requests to. Cannot be updated. In CamelCase. More
+                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AzureManagedMachinePoolSpec defines the desired state of
+                AzureManagedMachinePool.
+              properties:
+                additionalTags:
+                  additionalProperties:
+                    type: string
+                  description: AdditionalTags is an optional set of tags to add to
+                    Azure resources managed by the Azure provider, in addition to
+                    the ones added by default.
+                  type: object
+                availabilityZones:
+                  description: AvailabilityZones - Availability zones for nodes. Must
+                    use VirtualMachineScaleSets AgentPoolType.
+                  items:
+                    type: string
+                  type: array
+                enableNodePublicIP:
+                  description: EnableNodePublicIP controls whether or not nodes in
+                    the pool each have a public IP address.
+                  type: boolean
+                enableUltraSSD:
+                  description: EnableUltraSSD enables the storage type UltraSSD_LRS
+                    for the agent pool.
+                  type: boolean
+                kubeletConfig:
+                  description: KubeletConfig specifies the kubelet configurations
+                    for nodes.
+                  properties:
+                    allowedUnsafeSysctls:
+                      description: AllowedUnsafeSysctls - Allowlist of unsafe sysctls
+                        or unsafe sysctl patterns (ending in `*`).
+                      items:
+                        type: string
+                      type: array
+                    containerLogMaxFiles:
+                      description: ContainerLogMaxFiles - The maximum number of container
+                        log files that can be present for a container. The number
+                        must be ≥ 2.
+                      format: int32
+                      minimum: 2
+                      type: integer
+                    containerLogMaxSizeMB:
+                      description: ContainerLogMaxSizeMB - The maximum size (e.g.
+                        10Mi) of container log file before it is rotated.
+                      format: int32
+                      type: integer
+                    cpuCfsQuota:
+                      description: CPUCfsQuota - Enable CPU CFS quota enforcement
+                        for containers that specify CPU limits.
+                      type: boolean
+                    cpuCfsQuotaPeriod:
+                      description: CPUCfsQuotaPeriod - Sets CPU CFS quota period value.
+                      type: string
+                    cpuManagerPolicy:
+                      description: CPUManagerPolicy - CPU Manager policy to use.
+                      enum:
+                      - none
+                      - static
+                      type: string
+                    failSwapOn:
+                      description: FailSwapOn - If set to true it will make the Kubelet
+                        fail to start if swap is enabled on the node.
+                      type: boolean
+                    imageGcHighThreshold:
+                      description: ImageGcHighThreshold - The percent of disk usage
+                        after which image garbage collection is always run.
+                      format: int32
+                      maximum: 100
+                      minimum: 0
+                      type: integer
+                    imageGcLowThreshold:
+                      description: ImageGcLowThreshold - The percent of disk usage
+                        before which image garbage collection is never run.
+                      format: int32
+                      maximum: 100
+                      minimum: 0
+                      type: integer
+                    podMaxPids:
+                      description: PodMaxPids - The maximum number of processes per
+                        pod.
+                      format: int32
+                      minimum: -1
+                      type: integer
+                    topologyManagerPolicy:
+                      description: TopologyManagerPolicy - Topology Manager policy
+                        to use.
+                      enum:
+                      - none
+                      - best-effort
+                      - restricted
+                      - single-numa-node
+                      type: string
+                  type: object
+                kubeletDiskType:
+                  description: 'KubeletDiskType specifies the kubelet disk type. Default
+                    to OS. Possible values include: ''OS'', ''Temporary''. Requires
+                    kubeletDisk preview feature to be set.'
+                  enum:
+                  - OS
+                  - Temporary
+                  type: string
+                linuxOSConfig:
+                  description: LinuxOSConfig specifies the custom Linux OS settings
+                    and configurations.
+                  properties:
+                    swapFileSizeMB:
+                      description: 'SwapFileSizeMB specifies size in MB of a swap
+                        file will be created on the agent nodes from this node pool.
+                        Max value of SwapFileSizeMB should be the size of temporary
+                        disk(/dev/sdb). Refer: https://learn.microsoft.com/en-us/azure/virtual-machines/managed-disks-overview#temporary-disk'
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    sysctls:
+                      description: Sysctl specifies the settings for Linux agent nodes.
+                      properties:
+                        fsAioMaxNr:
+                          description: FsAioMaxNr specifies the maximum number of
+                            system-wide asynchronous io requests. Maps to fs.aio-max-nr.
+                          format: int32
+                          maximum: 6553500
+                          minimum: 65536
+                          type: integer
+                        fsFileMax:
+                          description: FsFileMax specifies the max number of file-handles
+                            that the Linux kernel will allocate, by increasing increases
+                            the maximum number of open files permitted. Maps to fs.file-max.
+                          format: int32
+                          maximum: 12000500
+                          minimum: 8192
+                          type: integer
+                        fsInotifyMaxUserWatches:
+                          description: FsInotifyMaxUserWatches specifies the number
+                            of file watches allowed by the system. Each watch is roughly
+                            90 bytes on a 32-bit kernel, and roughly 160 bytes on
+                            a 64-bit kernel. Maps to fs.inotify.max_user_watches.
+                          format: int32
+                          maximum: 2097152
+                          minimum: 781250
+                          type: integer
+                        fsNrOpen:
+                          description: FsNrOpen specifies the maximum number of file-handles
+                            a process can allocate. Maps to fs.nr_open.
+                          format: int32
+                          maximum: 20000500
+                          minimum: 8192
+                          type: integer
+                        kernelThreadsMax:
+                          description: KernelThreadsMax specifies the maximum number
+                            of all threads that can be created. Maps to kernel.threads-max.
+                          format: int32
+                          maximum: 513785
+                          minimum: 20
+                          type: integer
+                        netCoreNetdevMaxBacklog:
+                          description: NetCoreNetdevMaxBacklog specifies maximum number
+                            of packets, queued on the INPUT side, when the interface
+                            receives packets faster than kernel can process them.
+                            Maps to net.core.netdev_max_backlog.
+                          format: int32
+                          maximum: 3240000
+                          minimum: 1000
+                          type: integer
+                        netCoreOptmemMax:
+                          description: NetCoreOptmemMax specifies the maximum ancillary
+                            buffer size (option memory buffer) allowed per socket.
+                            Socket option memory is used in a few cases to store extra
+                            structures relating to usage of the socket. Maps to net.core.optmem_max.
+                          format: int32
+                          maximum: 4194304
+                          minimum: 20480
+                          type: integer
+                        netCoreRmemDefault:
+                          description: NetCoreRmemDefault specifies the default receive
+                            socket buffer size in bytes. Maps to net.core.rmem_default.
+                          format: int32
+                          maximum: 134217728
+                          minimum: 212992
+                          type: integer
+                        netCoreRmemMax:
+                          description: NetCoreRmemMax specifies the maximum receive
+                            socket buffer size in bytes. Maps to net.core.rmem_max.
+                          format: int32
+                          maximum: 134217728
+                          minimum: 212992
+                          type: integer
+                        netCoreSomaxconn:
+                          description: NetCoreSomaxconn specifies maximum number of
+                            connection requests that can be queued for any given listening
+                            socket. An upper limit for the value of the backlog parameter
+                            passed to the listen(2)(https://man7.org/linux/man-pages/man2/listen.2.html)
+                            function. If the backlog argument is greater than the
+                            somaxconn, then it's silently truncated to this limit.
+                            Maps to net.core.somaxconn.
+                          format: int32
+                          maximum: 3240000
+                          minimum: 4096
+                          type: integer
+                        netCoreWmemDefault:
+                          description: NetCoreWmemDefault specifies the default send
+                            socket buffer size in bytes. Maps to net.core.wmem_default.
+                          format: int32
+                          maximum: 134217728
+                          minimum: 212992
+                          type: integer
+                        netCoreWmemMax:
+                          description: NetCoreWmemMax specifies the maximum send socket
+                            buffer size in bytes. Maps to net.core.wmem_max.
+                          format: int32
+                          maximum: 134217728
+                          minimum: 212992
+                          type: integer
+                        netIpv4IPLocalPortRange:
+                          description: NetIpv4IPLocalPortRange is used by TCP and
+                            UDP traffic to choose the local port on the agent node.
+                            PortRange should be specified in the format "first last".
+                            First, being an integer, must be between [1024 - 60999].
+                            Last, being an integer, must be between [32768 - 65000].
+                            Maps to net.ipv4.ip_local_port_range.
+                          type: string
+                        netIpv4NeighDefaultGcThresh1:
+                          description: NetIpv4NeighDefaultGcThresh1 specifies the
+                            minimum number of entries that may be in the ARP cache.
+                            Garbage collection won't be triggered if the number of
+                            entries is below this setting. Maps to net.ipv4.neigh.default.gc_thresh1.
+                          format: int32
+                          maximum: 80000
+                          minimum: 128
+                          type: integer
+                        netIpv4NeighDefaultGcThresh2:
+                          description: NetIpv4NeighDefaultGcThresh2 specifies soft
+                            maximum number of entries that may be in the ARP cache.
+                            ARP garbage collection will be triggered about 5 seconds
+                            after reaching this soft maximum. Maps to net.ipv4.neigh.default.gc_thresh2.
+                          format: int32
+                          maximum: 90000
+                          minimum: 512
+                          type: integer
+                        netIpv4NeighDefaultGcThresh3:
+                          description: NetIpv4NeighDefaultGcThresh3 specified hard
+                            maximum number of entries in the ARP cache. Maps to net.ipv4.neigh.default.gc_thresh3.
+                          format: int32
+                          maximum: 100000
+                          minimum: 1024
+                          type: integer
+                        netIpv4TCPFinTimeout:
+                          description: NetIpv4TCPFinTimeout specifies the length of
+                            time an orphaned connection will remain in the FIN_WAIT_2
+                            state before it's aborted at the local end. Maps to net.ipv4.tcp_fin_timeout.
+                          format: int32
+                          maximum: 120
+                          minimum: 5
+                          type: integer
+                        netIpv4TCPKeepaliveProbes:
+                          description: NetIpv4TCPKeepaliveProbes specifies the number
+                            of keepalive probes TCP sends out, until it decides the
+                            connection is broken. Maps to net.ipv4.tcp_keepalive_probes.
+                          format: int32
+                          maximum: 15
+                          minimum: 1
+                          type: integer
+                        netIpv4TCPKeepaliveTime:
+                          description: NetIpv4TCPKeepaliveTime specifies the rate
+                            at which TCP sends out a keepalive message when keepalive
+                            is enabled. Maps to net.ipv4.tcp_keepalive_time.
+                          format: int32
+                          maximum: 432000
+                          minimum: 30
+                          type: integer
+                        netIpv4TCPMaxSynBacklog:
+                          description: NetIpv4TCPMaxSynBacklog specifies the maximum
+                            number of queued connection requests that have still not
+                            received an acknowledgment from the connecting client.
+                            If this number is exceeded, the kernel will begin dropping
+                            requests. Maps to net.ipv4.tcp_max_syn_backlog.
+                          format: int32
+                          maximum: 3240000
+                          minimum: 128
+                          type: integer
+                        netIpv4TCPMaxTwBuckets:
+                          description: NetIpv4TCPMaxTwBuckets specifies maximal number
+                            of timewait sockets held by system simultaneously. If
+                            this number is exceeded, time-wait socket is immediately
+                            destroyed and warning is printed. Maps to net.ipv4.tcp_max_tw_buckets.
+                          format: int32
+                          maximum: 1440000
+                          minimum: 8000
+                          type: integer
+                        netIpv4TCPTwReuse:
+                          description: NetIpv4TCPTwReuse is used to allow to reuse
+                            TIME-WAIT sockets for new connections when it's safe from
+                            protocol viewpoint. Maps to net.ipv4.tcp_tw_reuse.
+                          type: boolean
+                        netIpv4TCPkeepaliveIntvl:
+                          description: NetIpv4TCPkeepaliveIntvl specifies the frequency
+                            of the probes sent out. Multiplied by tcpKeepaliveprobes,
+                            it makes up the time to kill a connection that isn't responding,
+                            after probes started. Maps to net.ipv4.tcp_keepalive_intvl.
+                          format: int32
+                          maximum: 75
+                          minimum: 1
+                          type: integer
+                        netNetfilterNfConntrackBuckets:
+                          description: NetNetfilterNfConntrackBuckets specifies the
+                            size of hash table used by nf_conntrack module to record
+                            the established connection record of the TCP protocol.
+                            Maps to net.netfilter.nf_conntrack_buckets.
+                          format: int32
+                          maximum: 147456
+                          minimum: 65536
+                          type: integer
+                        netNetfilterNfConntrackMax:
+                          description: NetNetfilterNfConntrackMax specifies the maximum
+                            number of connections supported by the nf_conntrack module
+                            or the size of connection tracking table. Maps to net.netfilter.nf_conntrack_max.
+                          format: int32
+                          maximum: 1048576
+                          minimum: 131072
+                          type: integer
+                        vmMaxMapCount:
+                          description: VMMaxMapCount specifies the maximum number
+                            of memory map areas a process may have. Maps to vm.max_map_count.
+                          format: int32
+                          maximum: 262144
+                          minimum: 65530
+                          type: integer
+                        vmSwappiness:
+                          description: VMSwappiness specifies aggressiveness of the
+                            kernel in swapping memory pages. Higher values will increase
+                            aggressiveness, lower values decrease the amount of swap.
+                            Maps to vm.swappiness.
+                          format: int32
+                          maximum: 100
+                          minimum: 0
+                          type: integer
+                        vmVfsCachePressure:
+                          description: VMVfsCachePressure specifies the percentage
+                            value that controls tendency of the kernel to reclaim
+                            the memory, which is used for caching of directory and
+                            inode objects. Maps to vm.vfs_cache_pressure.
+                          format: int32
+                          maximum: 500
+                          minimum: 1
+                          type: integer
+                      type: object
+                    transparentHugePageDefrag:
+                      description: TransparentHugePageDefrag specifies whether the
+                        kernel should make aggressive use of memory compaction to
+                        make more hugepages available. Refer to https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html#admin-guide-transhuge
+                        for more details.
+                      enum:
+                      - always
+                      - defer
+                      - defer+madvise
+                      - madvise
+                      - never
+                      type: string
+                    transparentHugePageEnabled:
+                      description: TransparentHugePageEnabled specifies various modes
+                        of Transparent Hugepages. Refer to https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html#admin-guide-transhuge
+                        for more details.
+                      enum:
+                      - always
+                      - madvise
+                      - never
+                      type: string
+                  type: object
+                maxPods:
+                  description: MaxPods specifies the kubelet --max-pods configuration
+                    for the node pool.
+                  format: int32
+                  type: integer
+                mode:
+                  description: 'Mode - represents mode of an agent pool. Possible
+                    values include: System, User.'
+                  enum:
+                  - System
+                  - User
+                  type: string
+                name:
+                  description: Name - name of the agent pool. If not specified, CAPZ
+                    uses the name of the CR as the agent pool name.
+                  type: string
+                nodeLabels:
+                  additionalProperties:
+                    type: string
+                  description: Node labels - labels for all of the nodes present in
+                    node pool
+                  type: object
+                nodePublicIPPrefixID:
+                  description: NodePublicIPPrefixID specifies the public IP prefix
+                    resource ID which VM nodes should use IPs from.
+                  type: string
+                osDiskSizeGB:
+                  description: OSDiskSizeGB is the disk size for every machine in
+                    this agent pool. If you specify 0, it will apply the default osDisk
+                    size according to the vmSize specified.
+                  format: int32
+                  type: integer
+                osDiskType:
+                  default: Managed
+                  description: OsDiskType specifies the OS disk type for each node
+                    in the pool. Allowed values are 'Ephemeral' and 'Managed'.
+                  enum:
+                  - Ephemeral
+                  - Managed
+                  type: string
+                osType:
+                  description: 'OSType specifies the virtual machine operating system.
+                    Default to Linux. Possible values include: ''Linux'', ''Windows'''
+                  enum:
+                  - Linux
+                  - Windows
+                  type: string
+                providerIDList:
+                  description: ProviderIDList is the unique identifier as specified
+                    by the cloud provider.
+                  items:
+                    type: string
+                  type: array
+                scaleSetPriority:
+                  description: 'ScaleSetPriority specifies the ScaleSetPriority value.
+                    Default to Regular. Possible values include: ''Regular'', ''Spot'''
+                  enum:
+                  - Regular
+                  - Spot
+                  type: string
+                scaling:
+                  description: Scaling specifies the autoscaling parameters for the
+                    node pool.
+                  properties:
+                    maxSize:
+                      format: int32
+                      type: integer
+                    minSize:
+                      format: int32
+                      type: integer
+                  type: object
+                sku:
+                  description: SKU is the size of the VMs in the node pool.
+                  type: string
+                taints:
+                  description: Taints specifies the taints for nodes present in this
+                    agent pool.
+                  items:
+                    description: Taint represents a Kubernetes taint.
+                    properties:
+                      effect:
+                        description: Effect specifies the effect for the taint
+                        enum:
+                        - NoSchedule
+                        - NoExecute
+                        - PreferNoSchedule
+                        type: string
+                      key:
+                        description: Key is the key of the taint
+                        type: string
+                      value:
+                        description: Value is the value of the taint
+                        type: string
+                    required:
+                    - effect
+                    - key
+                    - value
+                    type: object
+                  type: array
+              required:
+              - mode
+              - sku
+              type: object
+            status:
+              description: AzureManagedMachinePoolStatus defines the observed state
+                of AzureManagedMachinePool.
+              properties:
+                conditions:
+                  description: Conditions defines current service state of the AzureManagedControlPlane.
+                  items:
+                    description: Condition defines an observation of a Cluster API
+                      resource operational state.
+                    properties:
+                      lastTransitionTime:
+                        description: Last time the condition transitioned from one
+                          status to another. This should be when the underlying condition
+                          changed. If that is not known, then using the time when
+                          the API field changed is acceptable.
+                        format: date-time
+                        type: string
+                      message:
+                        description: A human readable message indicating details about
+                          the transition. This field may be empty.
+                        type: string
+                      reason:
+                        description: The reason for the condition's last transition
+                          in CamelCase. The specific API may choose whether or not
+                          this field is considered a guaranteed API. This field may
+                          not be empty.
+                        type: string
+                      severity:
+                        description: Severity provides an explicit classification
+                          of Reason code, so the users or machines can immediately
+                          understand the current situation and act accordingly. The
+                          Severity field MUST be set only when Status=False.
+                        type: string
+                      status:
+                        description: Status of the condition, one of True, False,
+                          Unknown.
+                        type: string
+                      type:
+                        description: Type of condition in CamelCase or in foo.example.com/CamelCase.
+                          Many .condition.type values are consistent across resources
+                          like Available, but because arbitrary conditions can be
+                          useful (see .node.status.conditions), the ability to deconflict
+                          is important.
+                        type: string
+                    required:
+                    - lastTransitionTime
+                    - status
+                    - type
+                    type: object
+                  type: array
+                errorMessage:
+                  description: Any transient errors that occur during the reconciliation
+                    of Machines can be added as events to the Machine object and/or
+                    logged in the controller's output.
+                  type: string
+                errorReason:
+                  description: Any transient errors that occur during the reconciliation
+                    of Machines can be added as events to the Machine object and/or
+                    logged in the controller's output.
+                  type: string
+                longRunningOperationStates:
+                  description: LongRunningOperationStates saves the states for Azure
+                    long-running operations so they can be continued on the next reconciliation
+                    loop.
+                  items:
+                    description: Future contains the data needed for an Azure long-running
+                      operation to continue across reconcile loops.
+                    properties:
+                      data:
+                        description: Data is the base64 url encoded json Azure AutoRest
+                          Future.
+                        type: string
+                      name:
+                        description: Name is the name of the Azure resource. Together
+                          with the service name, this forms the unique identifier
+                          for the future.
+                        type: string
+                      resourceGroup:
+                        description: ResourceGroup is the Azure resource group for
+                          the resource.
+                        type: string
+                      serviceName:
+                        description: ServiceName is the name of the Azure service.
+                          Together with the name of the resource, this forms the unique
+                          identifier for the future.
+                        type: string
+                      type:
+                        description: Type describes the type of future, such as update,
+                          create, delete, etc.
+                        type: string
+                    required:
+                    - data
+                    - name
+                    - serviceName
+                    - type
+                    type: object
+                  type: array
+                ready:
+                  description: Ready is true when the provider resource is ready.
+                  type: boolean
+                replicas:
+                  description: Replicas is the most recently observed number of replicas.
+                  format: int32
+                  type: integer
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
   status:
     acceptedNames:
       kind: ""

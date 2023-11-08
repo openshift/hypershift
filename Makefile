@@ -125,7 +125,7 @@ cluster-api-provider-agent: $(CONTROLLER_GEN)
 .PHONY: cluster-api-provider-azure
 cluster-api-provider-azure: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-azure/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-azure/api/v1beta1" output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-azure
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-azure/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-azure
 
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)

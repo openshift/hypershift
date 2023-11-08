@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/blang/semver"
+
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/agent"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
@@ -16,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	imgUtil "github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,10 +25,12 @@ import (
 
 const (
 	AWSCAPIProvider     = "aws-cluster-api-controllers"
+	AzureCAPIProvider   = "azure-cluster-api-controllers"
 	PowerVSCAPIProvider = "ibmcloud-cluster-api-controllers"
 )
 
 var _ Platform = aws.AWS{}
+var _ Platform = azure.Azure{}
 var _ Platform = ibmcloud.IBMCloud{}
 var _ Platform = none.None{}
 var _ Platform = agent.Agent{}
@@ -104,7 +108,13 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 	case hyperv1.KubevirtPlatform:
 		platform = &kubevirt.Kubevirt{}
 	case hyperv1.AzurePlatform:
-		platform = &azure.Azure{}
+		if pullSecretBytes != nil {
+			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, AzureCAPIProvider, pullSecretBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
+			}
+		}
+		platform = azure.New(capiImageProvider)
 	case hyperv1.PowerVSPlatform:
 		if pullSecretBytes != nil {
 			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, PowerVSCAPIProvider, pullSecretBytes)

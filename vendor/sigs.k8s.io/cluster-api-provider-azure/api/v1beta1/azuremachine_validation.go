@@ -50,7 +50,38 @@ func ValidateAzureMachineSpec(spec AzureMachineSpec) field.ErrorList {
 		allErrs = append(allErrs, errs...)
 	}
 
+	if errs := ValidateDiagnostics(spec.Diagnostics, field.NewPath("diagnostics")); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+
+	if errs := ValidateNetwork(spec.SubnetName, spec.AcceleratedNetworking, spec.NetworkInterfaces, field.NewPath("networkInterfaces")); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+
+	if errs := ValidateSystemAssignedIdentityRole(spec.Identity, spec.RoleAssignmentName, spec.SystemAssignedIdentityRole, field.NewPath("systemAssignedIdentityRole")); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+
 	return allErrs
+}
+
+// ValidateNetwork validates the network configuration.
+func ValidateNetwork(subnetName string, acceleratedNetworking *bool, networkInterfaces []NetworkInterface, fldPath *field.Path) field.ErrorList {
+	if (networkInterfaces != nil) && len(networkInterfaces) > 0 && subnetName != "" {
+		return field.ErrorList{field.Invalid(fldPath, networkInterfaces, "cannot set both networkInterfaces and machine subnetName")}
+	}
+
+	if (networkInterfaces != nil) && len(networkInterfaces) > 0 && acceleratedNetworking != nil {
+		return field.ErrorList{field.Invalid(fldPath, networkInterfaces, "cannot set both networkInterfaces and machine acceleratedNetworking")}
+	}
+
+	for _, nic := range networkInterfaces {
+		if nic.PrivateIPConfigs < 1 {
+			return field.ErrorList{field.Invalid(fldPath, networkInterfaces, "number of privateIPConfigs per interface must be at least 1")}
+		}
+	}
+
+	return field.ErrorList{}
 }
 
 // ValidateSSHKey validates an SSHKey.
@@ -90,11 +121,31 @@ func ValidateSystemAssignedIdentity(identityType VMIdentity, oldIdentity, newIde
 }
 
 // ValidateUserAssignedIdentity validates the user-assigned identities list.
-func ValidateUserAssignedIdentity(identityType VMIdentity, userAssignedIdenteties []UserAssignedIdentity, fldPath *field.Path) field.ErrorList {
+func ValidateUserAssignedIdentity(identityType VMIdentity, userAssignedIdentities []UserAssignedIdentity, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
-	if identityType == VMIdentityUserAssigned && len(userAssignedIdenteties) == 0 {
+	if identityType == VMIdentityUserAssigned && len(userAssignedIdentities) == 0 {
 		allErrs = append(allErrs, field.Required(fldPath, "must be specified for the 'UserAssigned' identity type"))
+	}
+	return allErrs
+}
+
+// ValidateSystemAssignedIdentityRole validates the system-assigned identity role.
+func ValidateSystemAssignedIdentityRole(identityType VMIdentity, roleAssignmentName string, role *SystemAssignedIdentityRole, fldPath *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+	if roleAssignmentName != "" && role != nil && role.Name != "" {
+		allErrs = append(allErrs, field.Invalid(fldPath, role.Name, "cannot set both roleAssignmentName and systemAssignedIdentityRole.name"))
+	}
+	if identityType == VMIdentitySystemAssigned {
+		if role.DefinitionID == "" {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "SystemAssignedIdentityRole", "DefinitionID"), role.DefinitionID, "the definitionID field cannot be empty"))
+		}
+		if role.Scope == "" {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("Spec", "SystemAssignedIdentityRole", "Scope"), role.Scope, "the scope field cannot be empty"))
+		}
+	}
+	if identityType != VMIdentitySystemAssigned && role != nil {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("Spec", "Role"), "systemAssignedIdentityRole can only be set when identity is set to SystemAssigned"))
 	}
 	return allErrs
 }
@@ -291,5 +342,39 @@ func validateCachingType(cachingType string, fieldPath *field.Path, managedDisk 
 	}
 
 	allErrs = append(allErrs, field.Invalid(cachingTypeChildPath, cachingType, fmt.Sprintf("allowed values are %v", compute.PossibleCachingTypesValues())))
+	return allErrs
+}
+
+// ValidateDiagnostics validates the Diagnostic spec.
+func ValidateDiagnostics(diagnostics *Diagnostics, fieldPath *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if diagnostics != nil && diagnostics.Boot != nil {
+		switch diagnostics.Boot.StorageAccountType {
+		case UserManagedDiagnosticsStorage:
+			if diagnostics.Boot.UserManaged == nil {
+				allErrs = append(allErrs, field.Required(fieldPath.Child("UserManaged"),
+					fmt.Sprintf("userManaged must be specified when storageAccountType is '%s'", UserManagedDiagnosticsStorage)))
+			} else if diagnostics.Boot.UserManaged.StorageAccountURI == "" {
+				allErrs = append(allErrs, field.Required(fieldPath.Child("StorageAccountURI"),
+					fmt.Sprintf("StorageAccountURI cannot be empty when storageAccountType is '%s'", UserManagedDiagnosticsStorage)))
+			}
+		case ManagedDiagnosticsStorage:
+			if diagnostics.Boot.UserManaged != nil &&
+				diagnostics.Boot.UserManaged.StorageAccountURI != "" {
+				allErrs = append(allErrs, field.Invalid(fieldPath.Child("StorageAccountURI"), diagnostics.Boot.UserManaged.StorageAccountURI,
+					fmt.Sprintf("StorageAccountURI cannot be set when storageAccountType is '%s'",
+						ManagedDiagnosticsStorage)))
+			}
+		case DisabledDiagnosticsStorage:
+			if diagnostics.Boot.UserManaged != nil &&
+				diagnostics.Boot.UserManaged.StorageAccountURI != "" {
+				allErrs = append(allErrs, field.Invalid(fieldPath.Child("StorageAccountURI"), diagnostics.Boot.UserManaged.StorageAccountURI,
+					fmt.Sprintf("StorageAccountURI cannot be set when storageAccountType is '%s'",
+						ManagedDiagnosticsStorage)))
+			}
+		}
+	}
+
 	return allErrs
 }

@@ -90,6 +90,95 @@ spec:
                                     required:
                                     - name
                                     type: object
+                                  privateEndpoints:
+                                    description: PrivateEndpoints defines a list of
+                                      private endpoints that should be attached to
+                                      this subnet.
+                                    items:
+                                      description: PrivateEndpointSpec configures
+                                        an Azure Private Endpoint.
+                                      properties:
+                                        applicationSecurityGroups:
+                                          description: ApplicationSecurityGroups specifies
+                                            the Application security group in which
+                                            the private endpoint IP configuration
+                                            is included.
+                                          items:
+                                            type: string
+                                          type: array
+                                        customNetworkInterfaceName:
+                                          description: CustomNetworkInterfaceName
+                                            specifies the network interface name associated
+                                            with the private endpoint.
+                                          type: string
+                                        location:
+                                          description: Location specifies the region
+                                            to create the private endpoint.
+                                          type: string
+                                        manualApproval:
+                                          description: ManualApproval specifies if
+                                            the connection approval needs to be done
+                                            manually or not. Set it true when the
+                                            network admin does not have access to
+                                            approve connections to the remote resource.
+                                            Defaults to false.
+                                          type: boolean
+                                        name:
+                                          description: Name specifies the name of
+                                            the private endpoint.
+                                          type: string
+                                        privateIPAddresses:
+                                          description: PrivateIPAddresses specifies
+                                            the IP addresses for the network interface
+                                            associated with the private endpoint.
+                                            They have to be part of the subnet where
+                                            the private endpoint is linked.
+                                          items:
+                                            type: string
+                                          type: array
+                                        privateLinkServiceConnections:
+                                          description: PrivateLinkServiceConnections
+                                            specifies Private Link Service Connections
+                                            of the private endpoint.
+                                          items:
+                                            description: PrivateLinkServiceConnection
+                                              defines the specification for a private
+                                              link service connection associated with
+                                              a private endpoint.
+                                            properties:
+                                              groupIDs:
+                                                description: GroupIDs specifies the
+                                                  ID(s) of the group(s) obtained from
+                                                  the remote resource that this private
+                                                  endpoint should connect to.
+                                                items:
+                                                  type: string
+                                                type: array
+                                              name:
+                                                description: Name specifies the name
+                                                  of the private link service.
+                                                type: string
+                                              privateLinkServiceID:
+                                                description: PrivateLinkServiceID
+                                                  specifies the resource ID of the
+                                                  private link service.
+                                                type: string
+                                              requestMessage:
+                                                description: RequestMessage specifies
+                                                  a message passed to the owner of
+                                                  the remote resource with the private
+                                                  endpoint connection request.
+                                                maxLength: 140
+                                                type: string
+                                            type: object
+                                          type: array
+                                      required:
+                                      - name
+                                      type: object
+                                    type: array
+                                    x-kubernetes-list-map-keys:
+                                    - name
+                                    x-kubernetes-list-type: map
                                   role:
                                     description: Role defines the subnet role (eg.
                                       Node, ControlPlane)
@@ -316,6 +405,22 @@ spec:
                               type: object
                             type: array
                         type: object
+                      extendedLocation:
+                        description: ExtendedLocation is an optional set of ExtendedLocation
+                          properties for clusters on Azure public MEC.
+                        properties:
+                          name:
+                            description: Name defines the name for the extended location.
+                            type: string
+                          type:
+                            description: Type defines the type for the extended location.
+                            enum:
+                            - EdgeZone
+                            type: string
+                        required:
+                        - name
+                        - type
+                        type: object
                       identityRef:
                         description: IdentityRef is a reference to an AzureIdentity
                           to be used when reconciling this cluster
@@ -444,6 +549,94 @@ spec:
                                   required:
                                   - name
                                   type: object
+                                privateEndpoints:
+                                  description: PrivateEndpoints defines a list of
+                                    private endpoints that should be attached to this
+                                    subnet.
+                                  items:
+                                    description: PrivateEndpointSpec configures an
+                                      Azure Private Endpoint.
+                                    properties:
+                                      applicationSecurityGroups:
+                                        description: ApplicationSecurityGroups specifies
+                                          the Application security group in which
+                                          the private endpoint IP configuration is
+                                          included.
+                                        items:
+                                          type: string
+                                        type: array
+                                      customNetworkInterfaceName:
+                                        description: CustomNetworkInterfaceName specifies
+                                          the network interface name associated with
+                                          the private endpoint.
+                                        type: string
+                                      location:
+                                        description: Location specifies the region
+                                          to create the private endpoint.
+                                        type: string
+                                      manualApproval:
+                                        description: ManualApproval specifies if the
+                                          connection approval needs to be done manually
+                                          or not. Set it true when the network admin
+                                          does not have access to approve connections
+                                          to the remote resource. Defaults to false.
+                                        type: boolean
+                                      name:
+                                        description: Name specifies the name of the
+                                          private endpoint.
+                                        type: string
+                                      privateIPAddresses:
+                                        description: PrivateIPAddresses specifies
+                                          the IP addresses for the network interface
+                                          associated with the private endpoint. They
+                                          have to be part of the subnet where the
+                                          private endpoint is linked.
+                                        items:
+                                          type: string
+                                        type: array
+                                      privateLinkServiceConnections:
+                                        description: PrivateLinkServiceConnections
+                                          specifies Private Link Service Connections
+                                          of the private endpoint.
+                                        items:
+                                          description: PrivateLinkServiceConnection
+                                            defines the specification for a private
+                                            link service connection associated with
+                                            a private endpoint.
+                                          properties:
+                                            groupIDs:
+                                              description: GroupIDs specifies the
+                                                ID(s) of the group(s) obtained from
+                                                the remote resource that this private
+                                                endpoint should connect to.
+                                              items:
+                                                type: string
+                                              type: array
+                                            name:
+                                              description: Name specifies the name
+                                                of the private link service.
+                                              type: string
+                                            privateLinkServiceID:
+                                              description: PrivateLinkServiceID specifies
+                                                the resource ID of the private link
+                                                service.
+                                              type: string
+                                            requestMessage:
+                                              description: RequestMessage specifies
+                                                a message passed to the owner of the
+                                                remote resource with the private endpoint
+                                                connection request.
+                                              maxLength: 140
+                                              type: string
+                                          type: object
+                                        type: array
+                                    required:
+                                    - name
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-map-keys:
+                                  - name
+                                  x-kubernetes-list-type: map
                                 role:
                                   description: Role defines the subnet role (eg. Node,
                                     ControlPlane)

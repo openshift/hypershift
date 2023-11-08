@@ -32,8 +32,9 @@ import (
 
 // AzureMachineTemplateImmutableMsg ...
 const (
-	AzureMachineTemplateImmutableMsg          = "AzureMachineTemplate spec.template.spec field is immutable. Please create new resource instead. ref doc: https://cluster-api.sigs.k8s.io/tasks/updating-machine-templates.html"
-	AzureMachineTemplateRoleAssignmentNameMsg = "AzureMachineTemplate spec.template.spec.roleAssignmentName field can't be set"
+	AzureMachineTemplateImmutableMsg                      = "AzureMachineTemplate spec.template.spec field is immutable. Please create new resource instead. ref doc: https://cluster-api.sigs.k8s.io/tasks/updating-machine-templates.html"
+	AzureMachineTemplateRoleAssignmentNameMsg             = "AzureMachineTemplate spec.template.spec.roleAssignmentName field can't be set"
+	AzureMachineTemplateSystemAssignedIdentityRoleNameMsg = "AzureMachineTemplate spec.template.spec.systemAssignedIdentityRole.name field can't be set"
 )
 
 // SetupWebhookWithManager sets up and registers the webhook with the manager.
@@ -62,6 +63,26 @@ func (r *AzureMachineTemplate) ValidateCreate(ctx context.Context, obj runtime.O
 		allErrs = append(allErrs,
 			field.Invalid(field.NewPath("AzureMachineTemplate", "spec", "template", "spec", "roleAssignmentName"), t, AzureMachineTemplateRoleAssignmentNameMsg),
 		)
+	}
+
+	if spec.SystemAssignedIdentityRole != nil && spec.SystemAssignedIdentityRole.Name != "" {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("AzureMachineTemplate", "spec", "template", "spec", "systemAssignedIdentityRole", "name"), t, AzureMachineTemplateSystemAssignedIdentityRoleNameMsg),
+		)
+	}
+
+	if (r.Spec.Template.Spec.NetworkInterfaces != nil) && len(r.Spec.Template.Spec.NetworkInterfaces) > 0 && r.Spec.Template.Spec.SubnetName != "" {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("AzureMachineTemplate", "spec", "template", "spec", "networkInterfaces"), r.Spec.Template.Spec.NetworkInterfaces, "cannot set both NetworkInterfaces and machine SubnetName"))
+	}
+
+	if (r.Spec.Template.Spec.NetworkInterfaces != nil) && len(r.Spec.Template.Spec.NetworkInterfaces) > 0 && r.Spec.Template.Spec.AcceleratedNetworking != nil {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("AzureMachineTemplate", "spec", "template", "spec", "acceleratedNetworking"), r.Spec.Template.Spec.NetworkInterfaces, "cannot set both NetworkInterfaces and machine AcceleratedNetworking"))
+	}
+
+	for i, networkInterface := range r.Spec.Template.Spec.NetworkInterfaces {
+		if networkInterface.PrivateIPConfigs < 1 {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("AzureMachineTemplate", "spec", "template", "spec", "networkInterfaces", "privateIPConfigs"), r.Spec.Template.Spec.NetworkInterfaces[i].PrivateIPConfigs, "networkInterface privateIPConfigs must be set to a minimum value of 1"))
+		}
 	}
 
 	if len(allErrs) == 0 {
@@ -128,5 +149,6 @@ func (r *AzureMachineTemplate) Default(ctx context.Context, obj runtime.Object) 
 	}
 	t.Spec.Template.Spec.SetDefaultCachingType()
 	t.Spec.Template.Spec.SetDataDisksDefaults()
+	t.Spec.Template.Spec.SetNetworkInterfacesDefaults()
 	return nil
 }

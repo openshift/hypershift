@@ -17,14 +17,23 @@ limitations under the License.
 package v1beta1
 
 import (
+	"context"
 	"encoding/base64"
+	"fmt"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-11-01/compute"
+	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	utilSSH "sigs.k8s.io/cluster-api-provider-azure/util/ssh"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// ContributorRoleID is the ID of the built-in "Contributor" role.
+const ContributorRoleID = "b24988ac-6180-42a0-ab88-20f7382dd24c"
 
 // SetDefaultSSHPublicKey sets the default SSHPublicKey for an AzureMachine.
 func (s *AzureMachineSpec) SetDefaultSSHPublicKey() error {
@@ -79,10 +88,32 @@ func (s *AzureMachineSpec) SetDataDisksDefaults() {
 }
 
 // SetIdentityDefaults sets the defaults for VM Identity.
-func (s *AzureMachineSpec) SetIdentityDefaults() {
+func (s *AzureMachineSpec) SetIdentityDefaults(subscriptionID string) {
+	// Ensure the deprecated fields and new fields are not populated simultaneously
+	if s.RoleAssignmentName != "" && s.SystemAssignedIdentityRole != nil && s.SystemAssignedIdentityRole.Name != "" {
+		// Both the deprecated and the new fields are both set, return without changes
+		// and reject the request in the validating webhook which runs later.
+		return
+	}
 	if s.Identity == VMIdentitySystemAssigned {
-		if s.RoleAssignmentName == "" {
-			s.RoleAssignmentName = string(uuid.NewUUID())
+		if s.SystemAssignedIdentityRole == nil {
+			s.SystemAssignedIdentityRole = &SystemAssignedIdentityRole{}
+		}
+		if s.RoleAssignmentName != "" {
+			// Move the existing value from the deprecated RoleAssignmentName field.
+			s.SystemAssignedIdentityRole.Name = s.RoleAssignmentName
+			s.RoleAssignmentName = ""
+		} else if s.SystemAssignedIdentityRole.Name == "" {
+			// Default role name to a generated UUID.
+			s.SystemAssignedIdentityRole.Name = string(uuid.NewUUID())
+		}
+		if s.SystemAssignedIdentityRole.Scope == "" && subscriptionID != "" {
+			// Default scope to the subscription.
+			s.SystemAssignedIdentityRole.Scope = fmt.Sprintf("/subscriptions/%s/", subscriptionID)
+		}
+		if s.SystemAssignedIdentityRole.DefinitionID == "" && subscriptionID != "" {
+			// Default role definition ID to Contributor role.
+			s.SystemAssignedIdentityRole.DefinitionID = fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", subscriptionID, ContributorRoleID)
 		}
 	}
 }
@@ -98,13 +129,97 @@ func (s *AzureMachineSpec) SetSpotEvictionPolicyDefaults() {
 	}
 }
 
-// SetDefaults sets to the defaults for the AzureMachineSpec.
-func (s *AzureMachineSpec) SetDefaults() {
-	if err := s.SetDefaultSSHPublicKey(); err != nil {
-		ctrl.Log.WithName("SetDefault").Error(err, "SetDefaultSshPublicKey failed")
+// SetDiagnosticsDefaults sets the defaults for Diagnostic settings for an AzureMachinePool.
+func (s *AzureMachineSpec) SetDiagnosticsDefaults() {
+	bootDiagnosticsDefault := &BootDiagnostics{
+		StorageAccountType: ManagedDiagnosticsStorage,
 	}
-	s.SetDefaultCachingType()
-	s.SetDataDisksDefaults()
-	s.SetIdentityDefaults()
-	s.SetSpotEvictionPolicyDefaults()
+
+	diagnosticsDefault := &Diagnostics{Boot: bootDiagnosticsDefault}
+
+	if s.Diagnostics == nil {
+		s.Diagnostics = diagnosticsDefault
+	}
+
+	if s.Diagnostics.Boot == nil {
+		s.Diagnostics.Boot = bootDiagnosticsDefault
+	}
+}
+
+// SetNetworkInterfacesDefaults sets the defaults for the network interfaces.
+func (s *AzureMachineSpec) SetNetworkInterfacesDefaults() {
+	// Ensure the deprecated fields and new fields are not populated simultaneously
+	if (s.SubnetName != "" || s.AcceleratedNetworking != nil) && len(s.NetworkInterfaces) > 0 {
+		// Both the deprecated and the new fields are both set, return without changes
+		// and reject the request in the validating webhook which runs later.
+		return
+	}
+
+	if len(s.NetworkInterfaces) == 0 {
+		s.NetworkInterfaces = []NetworkInterface{
+			{
+				SubnetName:            s.SubnetName,
+				AcceleratedNetworking: s.AcceleratedNetworking,
+			},
+		}
+		s.SubnetName = ""
+		s.AcceleratedNetworking = nil
+	}
+
+	// Ensure that PrivateIPConfigs defaults to 1 if not specified.
+	for i := 0; i < len(s.NetworkInterfaces); i++ {
+		if s.NetworkInterfaces[i].PrivateIPConfigs == 0 {
+			s.NetworkInterfaces[i].PrivateIPConfigs = 1
+		}
+	}
+}
+
+// GetSubscriptionID returns the subscription ID for the given cluster name and namespace.
+func GetSubscriptionID(cli client.Client, clusterName string, namespace string, maxAttempts int) (string, error) {
+	ctx := context.Background()
+
+	ownerCluster := &AzureCluster{}
+	key := client.ObjectKey{
+		Namespace: namespace,
+		Name:      clusterName,
+	}
+
+	for i := 1; ; i++ {
+		err := cli.Get(ctx, key, ownerCluster)
+		if err != nil {
+			if i > maxAttempts {
+				return "", errors.Wrapf(err, "failed to find owner cluster for %s/%s", namespace, clusterName)
+			}
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		break
+	}
+
+	return ownerCluster.Spec.SubscriptionID, nil
+}
+
+// SetDefaults sets to the defaults for the AzureMachineSpec.
+func (m *AzureMachine) SetDefaults(client client.Client) {
+	if err := m.Spec.SetDefaultSSHPublicKey(); err != nil {
+		ctrl.Log.WithName("SetDefault").Error(err, "failed to set default SSH public key")
+	}
+
+	// Fetch the Cluster.
+	clusterName, ok := m.Labels[clusterv1.ClusterLabelName]
+	if !ok {
+		ctrl.Log.WithName("SetDefault").Error(errors.Errorf("failed to fetch owner ClusterName for AzureMachine %s/%s", m.Namespace, m.Name), "failed to fetch ClusterName")
+	}
+
+	subscriptionID, err := GetSubscriptionID(client, clusterName, m.Namespace, 5)
+	if err != nil {
+		ctrl.Log.WithName("SetDefault").Error(err, "failed to fetch subscription ID for AzureMachine %s/%s", m.Namespace, m.Name)
+	}
+
+	m.Spec.SetDefaultCachingType()
+	m.Spec.SetDataDisksDefaults()
+	m.Spec.SetIdentityDefaults(subscriptionID)
+	m.Spec.SetSpotEvictionPolicyDefaults()
+	m.Spec.SetDiagnosticsDefaults()
+	m.Spec.SetNetworkInterfacesDefaults()
 }
