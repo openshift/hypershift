@@ -8,9 +8,12 @@ import (
 	"syscall"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	"github.com/openshift/hypershift/support/infraid"
+	"github.com/openshift/hypershift/support/releaseinfo"
+
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/yaml"
 )
@@ -76,6 +79,11 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			return fmt.Errorf("failed to deserialize infra json file: %w", err)
 		}
 	} else {
+		rhcosImage, err := lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.PullSecretFile)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve RHCOS image: %w", err)
+		}
+
 		infraID := infraid.New(opts.Name)
 		infra, err = (&azureinfra.CreateInfraOptions{
 			Name:            opts.Name,
@@ -83,6 +91,7 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 			InfraID:         infraID,
 			CredentialsFile: opts.AzurePlatform.CredentialsFile,
 			BaseDomain:      opts.BaseDomain,
+			RHCOSImage:      rhcosImage,
 		}).Run(ctx, opts.Log)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
@@ -115,4 +124,33 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		return fmt.Errorf("failed to unmarshal --azure-creds file: %w", err)
 	}
 	return nil
+}
+
+// lookupRHCOSImage looks up a release image and extracts the RHCOS VHD image based on the nodepool arch
+func lookupRHCOSImage(ctx context.Context, arch string, image string, pullSecretFile string) (string, error) {
+	rhcosImage := ""
+	releaseProvider := &releaseinfo.RegistryClientProvider{}
+
+	pullSecret, err := os.ReadFile(pullSecretFile)
+	if err != nil {
+		return "", fmt.Errorf("lookupRHCOSImage: failed to read pull secret file")
+	}
+
+	releaseImage, err := releaseProvider.Lookup(ctx, image, pullSecret)
+	if err != nil {
+		return "", fmt.Errorf("lookupRHCOSImage: failed to lookup release image")
+	}
+
+	// We need to translate amd64 to x86_64 and arm64 to aarch64 since that is what is in the release image stream
+	if _, ok := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[arch]]; !ok {
+		return "", fmt.Errorf("lookupRHCOSImage: arch does not exist in release image, arch: %s", arch)
+	}
+
+	rhcosImage = releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[arch]].RHCOS.AzureDisk.URL
+
+	if rhcosImage == "" {
+		return "", fmt.Errorf("lookupRHCOSImage: RHCOS VHD image is empty")
+	}
+
+	return rhcosImage, nil
 }

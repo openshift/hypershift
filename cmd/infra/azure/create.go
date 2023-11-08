@@ -43,6 +43,7 @@ type CreateInfraOptions struct {
 	CredentialsFile string
 	Credentials     *apifixtures.AzureCreds
 	OutputFile      string
+	RHCOSImage      string
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -321,10 +322,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 	l.Info("Successflly created blobcontainer", "name", *imageContainer.Name)
 
-	// TODO: Extract this from the release image or require a parameter
-	// Extraction is done like this:
-	// podman run --rm -it --entrypoint cat quay.io/openshift-release-dev/ocp-release:4.14.1-x86_64 release-manifests/0000_50_installer_coreos-bootimages.yaml |yq .data.stream -r|yq '.architectures.x86_64["rhel-coreos-extensions"]["azure-disk"].url'
-	sourceURL := "https://rhcos.blob.core.windows.net/imagebucket/rhcos-414.92.202310170514-0-azure.x86_64.vhd"
+	sourceURL := o.RHCOSImage
 	blobName := "rhcos.x86_64.vhd"
 
 	// Explicitly check this, Azure API makes inferring the problem from the error message extremely hard

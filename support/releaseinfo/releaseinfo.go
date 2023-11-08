@@ -47,6 +47,7 @@ type CoreOSArchitecture struct {
 	// Artifacts is a map of platform name to Artifacts
 	Artifacts map[string]CoreOSArtifact `json:"artifacts"`
 	Images    CoreOSImages              `json:"images"`
+	RHCOS     CoreRHCOSImage            `json:"rhel-coreos-extensions"`
 }
 
 type CoreOSArtifact struct {
@@ -65,6 +66,15 @@ type CoreOSImages struct {
 	AWS      CoreOSAWSImages      `json:"aws"`
 	PowerVS  CoreOSPowerVSImages  `json:"powervs"`
 	Kubevirt CoreOSKubevirtImages `json:"kubevirt"`
+}
+
+type CoreRHCOSImage struct {
+	AzureDisk CoreAzureDisk `json:"azure-disk"`
+}
+
+type CoreAzureDisk struct {
+	Release string `json:"release"`
+	URL     string `json:"url"`
 }
 
 type CoreOSAWSImages struct {
