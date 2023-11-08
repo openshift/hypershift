@@ -336,7 +336,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	if r.OperateOnReleaseImage != "" && r.OperateOnReleaseImage != util.HCPControlPlaneReleaseImage(hostedControlPlane) {
-		r.Log.Info("releaseImage is %s, but this operator is configured for %s, skipping reconciliation", util.HCPControlPlaneReleaseImage(hostedControlPlane), r.OperateOnReleaseImage)
+		r.Log.Info("releaseImage is " + util.HCPControlPlaneReleaseImage(hostedControlPlane) + ", but this operator is configured for " + r.OperateOnReleaseImage + ", skipping reconciliation")
 		return ctrl.Result{}, nil
 	}
 
