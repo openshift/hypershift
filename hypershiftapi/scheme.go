@@ -1,7 +1,10 @@
-package hypershift-api
+package hypershiftapi
 
 import (
 	"os"
+
+	hyperv1alpha1 "hypershiftapi/v1alpha1"
+	hyperv1beta1 "hypershiftapi/v1beta1"
 
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
@@ -11,8 +14,6 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
-	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
-	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"

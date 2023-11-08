@@ -90,9 +90,9 @@ api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ib
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN)
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
+	cd api && $(CONTROLLER_GEN) object:headerFile="../hack/boilerplate.go.txt" paths="./..."
 	rm -rf cmd/install/assets/hypershift-operator/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
+	cd api && $(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./..." output:crd:artifacts:config=../cmd/install/assets/hypershift-operator
 
 .PHONY: cluster-api
 cluster-api: $(CONTROLLER_GEN)
@@ -188,6 +188,10 @@ deps:
 	$(GO) mod tidy
 	$(GO) mod vendor
 	$(GO) mod verify
+	cd api && \
+	  $(GO) mod tidy && \
+	  $(GO) mod vendor && \
+	  $(GO) mod verify
 	$(GO) list -m -mod=readonly -json all > /dev/null
 
 # Run staticcheck
