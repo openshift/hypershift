@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"reflect"
 	"sort"
@@ -3644,6 +3645,10 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err)
 	}
 
+	if disconnected, err := isDisconnected(hc); err != nil && disconnected {
+		hc.Spec.OLMCatalogPlacement = hyperv1.GuestOLMCatalogPlacement
+	}
+
 	// TODO(IBM): Revisit after fleets no longer use conflicting network CIDRs
 	if hc.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
 		if err := r.validateNetworks(hc); err != nil {
@@ -4938,4 +4943,45 @@ func isAPIServerRoute(hcluster *hyperv1.HostedCluster) bool {
 		}
 	}
 	return false
+}
+
+func isDisconnected(hc *hyperv1.HostedCluster) (bool, error) {
+	var foundPrivateIP bool
+
+	if hc.Spec.AdditionalTrustBundle == nil || hc.Spec.ImageContentSources == nil {
+		return false, nil
+	}
+
+	for _, contentSource := range hc.Spec.ImageContentSources {
+		for _, mirror := range contentSource.Mirrors {
+			// Is valid URL?
+			mirrorURL, err := url.Parse("https://" + mirror)
+			if err != nil {
+				return false, fmt.Errorf("failed to parse mirror URL: %w", err)
+			}
+			// Is resolvable?
+			ips, err := net.LookupIP(mirrorURL.Hostname())
+			if err != nil {
+				return false, fmt.Errorf("failed to resolve mirror URL: %w", err)
+			}
+
+			// Is Public or Private IP?
+			for _, ip := range ips {
+				if ip.IsPrivate() {
+					foundPrivateIP = true
+					break
+				}
+			}
+
+			if foundPrivateIP {
+				break
+			}
+		}
+
+		if foundPrivateIP {
+			break
+		}
+	}
+
+	return foundPrivateIP, nil
 }

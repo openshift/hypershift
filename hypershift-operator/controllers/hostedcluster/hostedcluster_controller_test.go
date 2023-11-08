@@ -4094,3 +4094,117 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 func ignoreUnexportedDto() cmp.Option {
 	return cmpopts.IgnoreUnexported(dto.MetricFamily{}, dto.Metric{}, dto.LabelPair{}, dto.Gauge{})
 }
+
+// All the cases which uses directly private IPs are not fully realistic
+// because a real situation will need a TLS certificate and an according DNS entry
+// to work on a disconnected environment. We cannot add a private DNS entry in the
+// test to avoid the overengineering on just a test implementation.
+func TestIsDisconnected(t *testing.T) {
+	testCase := []struct {
+		name                  string
+		imageContentSources   []hyperv1.ImageContentSource
+		additionalTrustBundle bool
+		want                  bool
+		wantErr               bool
+	}{
+		{
+			name: "given a list of public imageContentSource and additionalTrustBundle, it should return false",
+			imageContentSources: []hyperv1.ImageContentSource{
+				{
+					Mirrors: []string{
+						"quay.io/openshift-release-dev/ocp-release",
+					},
+				},
+				{
+					Mirrors: []string{
+						"quay.io/openshift-release-dev/ocp-v4.0-art-dev",
+					},
+				},
+			},
+			additionalTrustBundle: true,
+			want:                  false,
+			wantErr:               false,
+		},
+		{
+
+			name: "given a list of private imageContentSource and additionalTrustBundle, it should return true",
+			imageContentSources: []hyperv1.ImageContentSource{
+				{
+					Mirrors: []string{
+						"10.0.0.1/openshift-release-dev/ocp-release",
+					},
+				},
+				{
+					Mirrors: []string{
+						"10.0.0.1/openshift-release-dev/ocp-v4.0-art-dev",
+					},
+				},
+			},
+			additionalTrustBundle: true,
+			want:                  true,
+			wantErr:               false,
+		},
+		{
+			name: "given a list of private imageContentSource but not AdditionalTrustBundle, it should return false",
+			imageContentSources: []hyperv1.ImageContentSource{
+				{
+					Mirrors: []string{
+						"registry.sample.local/openshift-release-dev/ocp-release",
+					},
+				},
+				{
+					Mirrors: []string{
+						"registry.sample.local/openshift-release-dev/ocp-v4.0-art-dev",
+					},
+				},
+			},
+			additionalTrustBundle: false,
+			want:                  false,
+			wantErr:               false,
+		},
+		{
+			name:                  "given an empty ImageContentSources and AdditionalTrustBundle, it should return false",
+			imageContentSources:   []hyperv1.ImageContentSource{},
+			additionalTrustBundle: true,
+			want:                  false,
+			wantErr:               false,
+		},
+		{
+			name: "given a mirror based on IPaddress and AdditionalTrustBundle, it should return true",
+			imageContentSources: []hyperv1.ImageContentSource{
+				{
+					Mirrors: []string{
+						"10.0.0.1/openshift-release-dev/ocp-release",
+					},
+				},
+			},
+			additionalTrustBundle: true,
+			want:                  true,
+			wantErr:               false,
+		},
+	}
+
+	for _, tt := range testCase {
+		t.Run(tt.name, func(t *testing.T) {
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "any",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ImageContentSources: tt.imageContentSources,
+				},
+			}
+			if tt.additionalTrustBundle {
+				hc.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{
+					Name: "test-sample",
+				}
+			}
+
+			g := NewGomegaWithT(t)
+			disconnected, err := isDisconnected(hc)
+			g.Expect(disconnected).To(Equal(tt.want), "isDisconnected() wantErr %v, err %v", tt.wantErr, err)
+			g.Expect((err != nil)).To(Equal(tt.wantErr))
+		})
+	}
+}
