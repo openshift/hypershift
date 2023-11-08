@@ -33,7 +33,9 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 				StorageAccountType: nodePool.Spec.Platform.Azure.DiskStorageAccountType,
 			},
 		},
-		SubnetName:             hcluster.Spec.Platform.Azure.SubnetName,
+		NetworkInterfaces: []capiazure.NetworkInterface{{
+			SubnetName: hcluster.Spec.Platform.Azure.SubnetName,
+		}},
 		Identity:               capiazure.VMIdentityUserAssigned,
 		UserAssignedIdentities: []capiazure.UserAssignedIdentity{{ProviderID: hcluster.Spec.Platform.Azure.MachineIdentityID}},
 		SSHPublicKey:           sshKey,
