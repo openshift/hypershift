@@ -181,7 +181,7 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	featureGates := append([]string{}, p.FeatureGates...)
 	featureGates = append(featureGates, "StructuredAuthenticationConfiguration=true")
 	args.Set("feature-gates", featureGates...)
-	args.Set("goaway-chance", "0")
+	args.Set("goaway-chance", "0.001")
 	args.Set("http2-max-streams-per-connection", "2000")
 	args.Set("kubelet-certificate-authority", cpath(kasVolumeKubeletClientCA().Name, certs.CASignerCertMapKey))
 	args.Set("kubelet-client-certificate", cpath(kasVolumeKubeletClientCert().Name, corev1.TLSCertKey))
