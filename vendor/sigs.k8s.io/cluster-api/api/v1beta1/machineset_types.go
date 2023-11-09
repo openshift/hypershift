@@ -46,8 +46,8 @@ type MachineSetSpec struct {
 	// +kubebuilder:default=1
 	Replicas *int32 `json:"replicas,omitempty"`
 
-	// MinReadySeconds is the minimum number of seconds for which a Node for a newly created machine should be ready before considering the replica available.
-	// Defaults to 0 (machine will be considered available as soon as the Node is ready)
+	// MinReadySeconds is the minimum number of seconds for which a newly created machine should be ready.
+	// Defaults to 0 (machine will be considered available as soon as it is ready)
 	// +optional
 	MinReadySeconds int32 `json:"minReadySeconds,omitempty"`
 
@@ -181,7 +181,7 @@ func (m *MachineSet) Validate() field.ErrorList {
 
 	// validate spec.selector and spec.template.labels
 	fldPath := field.NewPath("spec")
-	errors = append(errors, metav1validation.ValidateLabelSelector(&m.Spec.Selector, metav1validation.LabelSelectorValidationOptions{}, fldPath.Child("selector"))...)
+	errors = append(errors, metav1validation.ValidateLabelSelector(&m.Spec.Selector, fldPath.Child("selector"))...)
 	if len(m.Spec.Selector.MatchLabels)+len(m.Spec.Selector.MatchExpressions) == 0 {
 		errors = append(errors, field.Invalid(fldPath.Child("selector"), m.Spec.Selector, "empty selector is not valid for MachineSet."))
 	}

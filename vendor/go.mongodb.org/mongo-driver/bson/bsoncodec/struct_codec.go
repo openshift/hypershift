@@ -59,44 +59,14 @@ type Zeroer interface {
 }
 
 // StructCodec is the Codec used for struct values.
-//
-// Deprecated: Use [go.mongodb.org/mongo-driver/bson.NewRegistry] to get a registry with the
-// StructCodec registered.
 type StructCodec struct {
-	cache  map[reflect.Type]*structDescription
-	l      sync.RWMutex
-	parser StructTagParser
-
-	// DecodeZeroStruct causes DecodeValue to delete any existing values from Go structs in the
-	// destination value passed to Decode before unmarshaling BSON documents into them.
-	//
-	// Deprecated: Use bson.Decoder.ZeroStructs instead.
-	DecodeZeroStruct bool
-
-	// DecodeDeepZeroInline causes DecodeValue to delete any existing values from Go structs in the
-	// destination value passed to Decode before unmarshaling BSON documents into them.
-	//
-	// Deprecated: DecodeDeepZeroInline will not be supported in Go Driver 2.0.
-	DecodeDeepZeroInline bool
-
-	// EncodeOmitDefaultStruct causes the Encoder to consider the zero value for a struct (e.g.
-	// MyStruct{}) as empty and omit it from the marshaled BSON when the "omitempty" struct tag
-	// option is set.
-	//
-	// Deprecated: Use bson.Encoder.OmitZeroStruct instead.
-	EncodeOmitDefaultStruct bool
-
-	// AllowUnexportedFields allows encoding and decoding values from un-exported struct fields.
-	//
-	// Deprecated: AllowUnexportedFields does not work on recent versions of Go and will not be
-	// supported in Go Driver 2.0.
-	AllowUnexportedFields bool
-
-	// OverwriteDuplicatedInlinedFields, if false, causes EncodeValue to return an error if there is
-	// a duplicate field in the marshaled BSON when the "inline" struct tag option is set. The
-	// default value is true.
-	//
-	// Deprecated: Use bson.Encoder.ErrorOnInlineDuplicates instead.
+	cache                            map[reflect.Type]*structDescription
+	l                                sync.RWMutex
+	parser                           StructTagParser
+	DecodeZeroStruct                 bool
+	DecodeDeepZeroInline             bool
+	EncodeOmitDefaultStruct          bool
+	AllowUnexportedFields            bool
 	OverwriteDuplicatedInlinedFields bool
 }
 
@@ -104,9 +74,6 @@ var _ ValueEncoder = &StructCodec{}
 var _ ValueDecoder = &StructCodec{}
 
 // NewStructCodec returns a StructCodec that uses p for struct tag parsing.
-//
-// Deprecated: Use [go.mongodb.org/mongo-driver/bson.NewRegistry] to get a registry with the
-// StructCodec registered.
 func NewStructCodec(p StructTagParser, opts ...*bsonoptions.StructCodecOptions) (*StructCodec, error) {
 	if p == nil {
 		return nil, errors.New("a StructTagParser must be provided to NewStructCodec")
@@ -139,12 +106,12 @@ func NewStructCodec(p StructTagParser, opts ...*bsonoptions.StructCodecOptions) 
 }
 
 // EncodeValue handles encoding generic struct types.
-func (sc *StructCodec) EncodeValue(ec EncodeContext, vw bsonrw.ValueWriter, val reflect.Value) error {
+func (sc *StructCodec) EncodeValue(r EncodeContext, vw bsonrw.ValueWriter, val reflect.Value) error {
 	if !val.IsValid() || val.Kind() != reflect.Struct {
 		return ValueEncoderError{Name: "StructCodec.EncodeValue", Kinds: []reflect.Kind{reflect.Struct}, Received: val}
 	}
 
-	sd, err := sc.describeStruct(ec.Registry, val.Type(), ec.useJSONStructTags, ec.errorOnInlineDuplicates)
+	sd, err := sc.describeStruct(r.Registry, val.Type())
 	if err != nil {
 		return err
 	}
@@ -164,7 +131,7 @@ func (sc *StructCodec) EncodeValue(ec EncodeContext, vw bsonrw.ValueWriter, val 
 			}
 		}
 
-		desc.encoder, rv, err = defaultValueEncoders.lookupElementEncoder(ec, desc.encoder, rv)
+		desc.encoder, rv, err = defaultValueEncoders.lookupElementEncoder(r, desc.encoder, rv)
 
 		if err != nil && err != errInvalidValue {
 			return err
@@ -191,18 +158,17 @@ func (sc *StructCodec) EncodeValue(ec EncodeContext, vw bsonrw.ValueWriter, val 
 
 		encoder := desc.encoder
 
-		var zero bool
+		var isZero bool
 		rvInterface := rv.Interface()
 		if cz, ok := encoder.(CodecZeroer); ok {
-			zero = cz.IsTypeZero(rvInterface)
+			isZero = cz.IsTypeZero(rvInterface)
 		} else if rv.Kind() == reflect.Interface {
-			// isZero will not treat an interface rv as an interface, so we need to check for the
-			// zero interface separately.
-			zero = rv.IsNil()
+			// sc.isZero will not treat an interface rv as an interface, so we need to check for the zero interface separately.
+			isZero = rv.IsNil()
 		} else {
-			zero = isZero(rvInterface, sc.EncodeOmitDefaultStruct || ec.omitZeroStruct)
+			isZero = sc.isZero(rvInterface)
 		}
-		if desc.omitEmpty && zero {
+		if desc.omitEmpty && isZero {
 			continue
 		}
 
@@ -211,17 +177,7 @@ func (sc *StructCodec) EncodeValue(ec EncodeContext, vw bsonrw.ValueWriter, val 
 			return err
 		}
 
-		ectx := EncodeContext{
-			Registry:                ec.Registry,
-			MinSize:                 desc.minSize || ec.MinSize,
-			errorOnInlineDuplicates: ec.errorOnInlineDuplicates,
-			stringifyMapKeysWithFmt: ec.stringifyMapKeysWithFmt,
-			nilMapAsEmpty:           ec.nilMapAsEmpty,
-			nilSliceAsEmpty:         ec.nilSliceAsEmpty,
-			nilByteSliceAsEmpty:     ec.nilByteSliceAsEmpty,
-			omitZeroStruct:          ec.omitZeroStruct,
-			useJSONStructTags:       ec.useJSONStructTags,
-		}
+		ectx := EncodeContext{Registry: r.Registry, MinSize: desc.minSize}
 		err = encoder.EncodeValue(ectx, vw2, rv)
 		if err != nil {
 			return err
@@ -235,7 +191,7 @@ func (sc *StructCodec) EncodeValue(ec EncodeContext, vw bsonrw.ValueWriter, val 
 			return exists
 		}
 
-		return defaultMapCodec.mapEncodeValue(ec, dw, rv, collisionFn)
+		return defaultMapCodec.mapEncodeValue(r, dw, rv, collisionFn)
 	}
 
 	return dw.WriteDocumentEnd()
@@ -257,7 +213,7 @@ func newDecodeError(key string, original error) error {
 // DecodeValue implements the Codec interface.
 // By default, map types in val will not be cleared. If a map has existing key/value pairs, it will be extended with the new ones from vr.
 // For slices, the decoder will set the length of the slice to zero and append all elements. The underlying array will not be cleared.
-func (sc *StructCodec) DecodeValue(dc DecodeContext, vr bsonrw.ValueReader, val reflect.Value) error {
+func (sc *StructCodec) DecodeValue(r DecodeContext, vr bsonrw.ValueReader, val reflect.Value) error {
 	if !val.CanSet() || val.Kind() != reflect.Struct {
 		return ValueDecoderError{Name: "StructCodec.DecodeValue", Kinds: []reflect.Kind{reflect.Struct}, Received: val}
 	}
@@ -282,12 +238,12 @@ func (sc *StructCodec) DecodeValue(dc DecodeContext, vr bsonrw.ValueReader, val 
 		return fmt.Errorf("cannot decode %v into a %s", vrType, val.Type())
 	}
 
-	sd, err := sc.describeStruct(dc.Registry, val.Type(), dc.useJSONStructTags, false)
+	sd, err := sc.describeStruct(r.Registry, val.Type())
 	if err != nil {
 		return err
 	}
 
-	if sc.DecodeZeroStruct || dc.zeroStructs {
+	if sc.DecodeZeroStruct {
 		val.Set(reflect.Zero(val.Type()))
 	}
 	if sc.DecodeDeepZeroInline && sd.inline {
@@ -298,7 +254,7 @@ func (sc *StructCodec) DecodeValue(dc DecodeContext, vr bsonrw.ValueReader, val 
 	var inlineMap reflect.Value
 	if sd.inlineMap >= 0 {
 		inlineMap = val.Field(sd.inlineMap)
-		decoder, err = dc.LookupDecoder(inlineMap.Type().Elem())
+		decoder, err = r.LookupDecoder(inlineMap.Type().Elem())
 		if err != nil {
 			return err
 		}
@@ -342,8 +298,8 @@ func (sc *StructCodec) DecodeValue(dc DecodeContext, vr bsonrw.ValueReader, val 
 			}
 
 			elem := reflect.New(inlineMap.Type().Elem()).Elem()
-			dc.Ancestor = inlineMap.Type()
-			err = decoder.DecodeValue(dc, vr, elem)
+			r.Ancestor = inlineMap.Type()
+			err = decoder.DecodeValue(r, vr, elem)
 			if err != nil {
 				return err
 			}
@@ -370,17 +326,7 @@ func (sc *StructCodec) DecodeValue(dc DecodeContext, vr bsonrw.ValueReader, val 
 		}
 		field = field.Addr()
 
-		dctx := DecodeContext{
-			Registry:            dc.Registry,
-			Truncate:            fd.truncate || dc.Truncate,
-			defaultDocumentType: dc.defaultDocumentType,
-			binaryAsSlice:       dc.binaryAsSlice,
-			useJSONStructTags:   dc.useJSONStructTags,
-			useLocalTimeZone:    dc.useLocalTimeZone,
-			zeroMaps:            dc.zeroMaps,
-			zeroStructs:         dc.zeroStructs,
-		}
-
+		dctx := DecodeContext{Registry: r.Registry, Truncate: fd.truncate || r.Truncate}
 		if fd.decoder == nil {
 			return newDecodeError(fd.name, ErrNoDecoder{Type: field.Elem().Type()})
 		}
@@ -394,7 +340,7 @@ func (sc *StructCodec) DecodeValue(dc DecodeContext, vr bsonrw.ValueReader, val 
 	return nil
 }
 
-func isZero(i interface{}, omitZeroStruct bool) bool {
+func (sc *StructCodec) isZero(i interface{}) bool {
 	v := reflect.ValueOf(i)
 
 	// check the value validity
@@ -420,27 +366,22 @@ func isZero(i interface{}, omitZeroStruct bool) bool {
 	case reflect.Interface, reflect.Ptr:
 		return v.IsNil()
 	case reflect.Struct:
-		if !omitZeroStruct {
-			return false
-		}
-
-		// TODO(GODRIVER-2820): Update the logic to be able to handle private struct fields.
-		// TODO Use condition "reflect.Zero(v.Type()).Equal(v)" instead.
-
-		vt := v.Type()
-		if vt == tTime {
-			return v.Interface().(time.Time).IsZero()
-		}
-		for i := 0; i < v.NumField(); i++ {
-			if vt.Field(i).PkgPath != "" && !vt.Field(i).Anonymous {
-				continue // Private field
+		if sc.EncodeOmitDefaultStruct {
+			vt := v.Type()
+			if vt == tTime {
+				return v.Interface().(time.Time).IsZero()
 			}
-			fld := v.Field(i)
-			if !isZero(fld.Interface(), omitZeroStruct) {
-				return false
+			for i := 0; i < v.NumField(); i++ {
+				if vt.Field(i).PkgPath != "" && !vt.Field(i).Anonymous {
+					continue // Private field
+				}
+				fld := v.Field(i)
+				if !sc.isZero(fld.Interface()) {
+					return false
+				}
 			}
+			return true
 		}
-		return true
 	}
 
 	return false
@@ -494,12 +435,7 @@ func (bi byIndex) Less(i, j int) bool {
 	return len(bi[i].inline) < len(bi[j].inline)
 }
 
-func (sc *StructCodec) describeStruct(
-	r *Registry,
-	t reflect.Type,
-	useJSONStructTags bool,
-	errorOnDuplicates bool,
-) (*structDescription, error) {
+func (sc *StructCodec) describeStruct(r *Registry, t reflect.Type) (*structDescription, error) {
 	// We need to analyze the struct, including getting the tags, collecting
 	// information about inlining, and create a map of the field name to the field.
 	sc.l.RLock()
@@ -541,14 +477,7 @@ func (sc *StructCodec) describeStruct(
 			decoder:   decoder,
 		}
 
-		var stags StructTags
-		// If the caller requested that we use JSON struct tags, use the JSONFallbackStructTagParser
-		// instead of the parser defined on the codec.
-		if useJSONStructTags {
-			stags, err = JSONFallbackStructTagParser.ParseStructTags(sf)
-		} else {
-			stags, err = sc.parser.ParseStructTags(sf)
-		}
+		stags, err := sc.parser.ParseStructTags(sf)
 		if err != nil {
 			return nil, err
 		}
@@ -578,7 +507,7 @@ func (sc *StructCodec) describeStruct(
 				}
 				fallthrough
 			case reflect.Struct:
-				inlinesf, err := sc.describeStruct(r, sfType, useJSONStructTags, errorOnDuplicates)
+				inlinesf, err := sc.describeStruct(r, sfType)
 				if err != nil {
 					return nil, err
 				}
@@ -630,7 +559,7 @@ func (sc *StructCodec) describeStruct(
 			continue
 		}
 		dominant, ok := dominantField(fields[i : i+advance])
-		if !ok || !sc.OverwriteDuplicatedInlinedFields || errorOnDuplicates {
+		if !ok || !sc.OverwriteDuplicatedInlinedFields {
 			return nil, fmt.Errorf("struct %s has duplicated key %s", t.String(), name)
 		}
 		sd.fl = append(sd.fl, dominant)

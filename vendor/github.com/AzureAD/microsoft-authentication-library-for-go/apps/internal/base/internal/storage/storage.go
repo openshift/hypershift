@@ -83,7 +83,7 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 }
 
 // Read reads a storage token from the cache if it exists.
-func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams) (TokenResponse, error) {
+func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (TokenResponse, error) {
 	tr := TokenResponse{}
 	homeAccountID := authParameters.HomeAccountID
 	realm := authParameters.AuthorityInfo.Tenant
@@ -103,8 +103,7 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 	accessToken := m.readAccessToken(homeAccountID, aliases, realm, clientID, scopes)
 	tr.AccessToken = accessToken
 
-	if homeAccountID == "" {
-		// caller didn't specify a user, so there's no reason to search for an ID or refresh token
+	if account.IsZero() {
 		return tr, nil
 	}
 	// errors returned by read* methods indicate a cache miss and are therefore non-fatal. We continue populating
@@ -123,7 +122,7 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 		}
 	}
 
-	account, err := m.readAccount(homeAccountID, aliases, realm)
+	account, err = m.readAccount(homeAccountID, aliases, realm)
 	if err == nil {
 		tr.Account = account
 	}
@@ -134,7 +133,8 @@ const scopeSeparator = " "
 
 // Write writes a token response to the cache and returns the account information the token is stored with.
 func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error) {
-	homeAccountID := tokenResponse.HomeAccountID()
+	authParameters.HomeAccountID = tokenResponse.ClientInfo.HomeAccountID()
+	homeAccountID := authParameters.HomeAccountID
 	environment := authParameters.AuthorityInfo.Host
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
@@ -493,8 +493,6 @@ func (m *Manager) update(cache *Contract) {
 
 // Marshal implements cache.Marshaler.
 func (m *Manager) Marshal() ([]byte, error) {
-	m.contractMu.RLock()
-	defer m.contractMu.RUnlock()
 	return json.Marshal(m.contract)
 }
 

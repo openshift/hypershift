@@ -1,6 +1,6 @@
 package core
 
-// (C) Copyright IBM Corp. 2021, 2023..
+// (C) Copyright IBM Corp. 2021.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -39,8 +39,7 @@ type ContainerAuthenticator struct {
 
 	// [optional] The name of the file containing the injected CR token value (applies to
 	// IKS-managed compute resources).
-	// Default value: (1) "/var/run/secrets/tokens/vault-token" or (2) "/var/run/secrets/tokens/sa-token",
-	// whichever is found first.
+	// Default value: "/var/run/secrets/tokens/vault-token"
 	CRTokenFilename string
 
 	// [optional] The name of the linked trusted IAM profile to be used when obtaining the IAM access token.
@@ -95,9 +94,8 @@ type ContainerAuthenticator struct {
 }
 
 const (
-	defaultCRTokenFilename1 = "/var/run/secrets/tokens/vault-token"      // #nosec G101
-	defaultCRTokenFilename2 = "/var/run/secrets/tokens/sa-token"         // #nosec G101
-	iamGrantTypeCRToken     = "urn:ibm:params:oauth:grant-type:cr-token" // #nosec G101
+	defaultCRTokenFilename = "/var/run/secrets/tokens/vault-token"      // #nosec G101
+	iamGrantTypeCRToken    = "urn:ibm:params:oauth:grant-type:cr-token" // #nosec G101
 )
 
 var craRequestTokenMutex sync.Mutex
@@ -473,7 +471,7 @@ func (authenticator *ContainerAuthenticator) RequestToken() (*IamTokenServerResp
 	// Good response, so unmarshal the response body into an IamTokenServerResponse instance.
 	tokenResponse := &IamTokenServerResponse{}
 	_ = json.NewDecoder(resp.Body).Decode(tokenResponse)
-	defer resp.Body.Close() // #nosec G307
+	defer resp.Body.Close()
 
 	return tokenResponse, nil
 }
@@ -481,41 +479,25 @@ func (authenticator *ContainerAuthenticator) RequestToken() (*IamTokenServerResp
 // retrieveCRToken tries to read the CR token value from the local file system.
 func (authenticator *ContainerAuthenticator) retrieveCRToken() (crToken string, err error) {
 
-	if authenticator.CRTokenFilename != "" {
-		// Use the file specified by the user.
-		crToken, err = authenticator.readFile(authenticator.CRTokenFilename)
-	} else {
-		// If the user didn't specify a filename, try our two defaults.
-		crToken, err = authenticator.readFile(defaultCRTokenFilename1)
-		if err != nil {
-			crToken, err = authenticator.readFile(defaultCRTokenFilename2)
-		}
+	// Use the default filename if one wasn't supplied by the user.
+	crTokenFilename := authenticator.CRTokenFilename
+	if crTokenFilename == "" {
+		crTokenFilename = defaultCRTokenFilename
 	}
 
+	GetLogger().Debug("Attempting to read CR token from file: %s\n", crTokenFilename)
+
+	// Read the entire file into a byte slice, then convert to string.
+	var bytes []byte
+	bytes, err = os.ReadFile(crTokenFilename) // #nosec G304
 	if err != nil {
 		err = fmt.Errorf(ERRORMSG_UNABLE_RETRIEVE_CRTOKEN, err.Error())
 		GetLogger().Debug(err.Error())
 		return
 	}
 
-	return
-}
-
-// readFile attempts to read the specified cr token file and return its contents as a string.
-func (authenticator *ContainerAuthenticator) readFile(filename string) (crToken string, err error) {
-	GetLogger().Debug("Attempting to read CR token from file: %s\n", filename)
-
-	// Read the entire file into a byte slice, then convert to string.
-	var bytes []byte
-	bytes, err = os.ReadFile(filename) // #nosec G304
-	if err != nil {
-		GetLogger().Debug(err.Error())
-		return
-	}
-
-	GetLogger().Debug("Successfully read CR token from file: %s\n", filename)
-
 	crToken = string(bytes)
+	GetLogger().Debug("Successfully read CR token from file: %s\n", crTokenFilename)
 
 	return
 }

@@ -109,7 +109,7 @@ func TestLabelEnforcingUpsertProvider(t *testing.T) {
 
 	provider := &LabelEnforcingUpsertProvider{
 		Upstream:  upsert.New(false),
-		APIClient: client,
+		APIReader: client,
 	}
 
 	ctx := context.Background()

@@ -57,7 +57,7 @@ func (d *Date) UnmarshalText(text []byte) error {
 	if len(text) == 0 {
 		return nil
 	}
-	dd, err := time.ParseInLocation(RFC3339FullDate, string(text), DefaultTimeLocation)
+	dd, err := time.Parse(RFC3339FullDate, string(text))
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (d *Date) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &strdate); err != nil {
 		return err
 	}
-	tt, err := time.ParseInLocation(RFC3339FullDate, strdate, DefaultTimeLocation)
+	tt, err := time.Parse(RFC3339FullDate, strdate)
 	if err != nil {
 		return err
 	}
@@ -126,7 +126,7 @@ func (d *Date) UnmarshalBSON(data []byte) error {
 	}
 
 	if data, ok := m["data"].(string); ok {
-		rd, err := time.ParseInLocation(RFC3339FullDate, data, DefaultTimeLocation)
+		rd, err := time.Parse(RFC3339FullDate, data)
 		if err != nil {
 			return err
 		}

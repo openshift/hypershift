@@ -63,10 +63,7 @@ func powerJSONConsumer() runtime.Consumer {
 
 // getPIClient generates a PowerIaas client
 func getPIClient(debug bool, host string, scheme string) *client.PowerIaasAPI {
-	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{
-		InsecureSkipVerify: false,
-		MinVersion:         tls.VersionTLS12,
-	}
+	http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: false}
 	if scheme == "" {
 		scheme = SCHEME_HTTPS
 	}

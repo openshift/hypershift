@@ -25,14 +25,11 @@ import (
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 )
 
 const namespaceEnvVariableName = "MY_NAMESPACE"
@@ -123,16 +120,11 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "ignition-server-manager"
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
-		Scheme: hyperapi.Scheme,
-		WebhookServer: webhook.NewServer(webhook.Options{
-			Port: 9443,
-		}),
-		Metrics: metricsserver.Options{
-			BindAddress: metricsAddr,
-		},
-		Cache: cache.Options{
-			DefaultNamespaces: map[string]cache.Config{os.Getenv(namespaceEnvVariableName): {}},
-		},
+		Scheme:             hyperapi.Scheme,
+		Port:               9443,
+		MetricsBindAddress: metricsAddr,
+		// LeaderElection:     opts.EnableLeaderElection,
+		Namespace: os.Getenv(namespaceEnvVariableName),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("unable to start manager: %w", err)

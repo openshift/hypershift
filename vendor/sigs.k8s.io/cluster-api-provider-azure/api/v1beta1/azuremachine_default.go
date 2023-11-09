@@ -22,13 +22,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-11-01/compute"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
-	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	utilSSH "sigs.k8s.io/cluster-api-provider-azure/util/ssh"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -78,10 +78,10 @@ func (s *AzureMachineSpec) SetDataDisksDefaults() {
 		}
 		if disk.CachingType == "" {
 			if s.DataDisks[i].ManagedDisk != nil &&
-				s.DataDisks[i].ManagedDisk.StorageAccountType == string(armcompute.StorageAccountTypesUltraSSDLRS) {
-				s.DataDisks[i].CachingType = string(armcompute.CachingTypesNone)
+				s.DataDisks[i].ManagedDisk.StorageAccountType == string(compute.StorageAccountTypesUltraSSDLRS) {
+				s.DataDisks[i].CachingType = string(compute.CachingTypesNone)
 			} else {
-				s.DataDisks[i].CachingType = string(armcompute.CachingTypesReadWrite)
+				s.DataDisks[i].CachingType = string(compute.CachingTypesReadWrite)
 			}
 		}
 	}
@@ -174,20 +174,21 @@ func (s *AzureMachineSpec) SetNetworkInterfacesDefaults() {
 	}
 }
 
-// GetOwnerAzureClusterNameAndNamespace returns the owner azure cluster's name and namespace for the given cluster name and namespace.
-func GetOwnerAzureClusterNameAndNamespace(cli client.Client, clusterName string, namespace string, maxAttempts int) (azureClusterName string, azureClusterNamespace string, err error) {
+// GetSubscriptionID returns the subscription ID for the given cluster name and namespace.
+func GetSubscriptionID(cli client.Client, clusterName string, namespace string, maxAttempts int) (string, error) {
 	ctx := context.Background()
 
-	ownerCluster := &clusterv1.Cluster{}
+	ownerCluster := &AzureCluster{}
 	key := client.ObjectKey{
 		Namespace: namespace,
 		Name:      clusterName,
 	}
 
 	for i := 1; ; i++ {
-		if err := cli.Get(ctx, key, ownerCluster); err != nil {
+		err := cli.Get(ctx, key, ownerCluster)
+		if err != nil {
 			if i > maxAttempts {
-				return "", "", errors.Wrapf(err, "failed to find owner cluster for %s/%s", namespace, clusterName)
+				return "", errors.Wrapf(err, "failed to find owner cluster for %s/%s", namespace, clusterName)
 			}
 			time.Sleep(1 * time.Second)
 			continue
@@ -195,53 +196,24 @@ func GetOwnerAzureClusterNameAndNamespace(cli client.Client, clusterName string,
 		break
 	}
 
-	return ownerCluster.Spec.InfrastructureRef.Name, ownerCluster.Spec.InfrastructureRef.Namespace, nil
-}
-
-// GetSubscriptionID returns the subscription ID for the AzureCluster given the cluster name and namespace.
-func GetSubscriptionID(cli client.Client, ownerAzureClusterName string, ownerAzureClusterNamespace string, maxAttempts int) (string, error) {
-	ctx := context.Background()
-
-	ownerAzureCluster := &AzureCluster{}
-	key := client.ObjectKey{
-		Namespace: ownerAzureClusterNamespace,
-		Name:      ownerAzureClusterName,
-	}
-	for i := 1; ; i++ {
-		if err := cli.Get(ctx, key, ownerAzureCluster); err != nil {
-			if i >= maxAttempts {
-				return "", errors.Wrapf(err, "failed to find AzureCluster for owner cluster %s/%s", ownerAzureClusterNamespace, ownerAzureClusterName)
-			}
-			time.Sleep(1 * time.Second)
-			continue
-		}
-		break
-	}
-
-	return ownerAzureCluster.Spec.SubscriptionID, nil
+	return ownerCluster.Spec.SubscriptionID, nil
 }
 
 // SetDefaults sets to the defaults for the AzureMachineSpec.
-func (m *AzureMachine) SetDefaults(client client.Client) error {
-	var errs []error
+func (m *AzureMachine) SetDefaults(client client.Client) {
 	if err := m.Spec.SetDefaultSSHPublicKey(); err != nil {
-		errs = append(errs, errors.Wrap(err, "failed to set default SSH public key"))
+		ctrl.Log.WithName("SetDefault").Error(err, "failed to set default SSH public key")
 	}
 
 	// Fetch the Cluster.
-	clusterName, ok := m.Labels[clusterv1.ClusterNameLabel]
+	clusterName, ok := m.Labels[clusterv1.ClusterLabelName]
 	if !ok {
-		errs = append(errs, errors.Errorf("failed to fetch ClusterName for AzureMachine %s/%s", m.Namespace, m.Name))
+		ctrl.Log.WithName("SetDefault").Error(errors.Errorf("failed to fetch owner ClusterName for AzureMachine %s/%s", m.Namespace, m.Name), "failed to fetch ClusterName")
 	}
 
-	ownerAzureClusterName, ownerAzureClusterNamespace, err := GetOwnerAzureClusterNameAndNamespace(client, clusterName, m.Namespace, 5)
+	subscriptionID, err := GetSubscriptionID(client, clusterName, m.Namespace, 5)
 	if err != nil {
-		errs = append(errs, errors.Wrapf(err, "failed to fetch owner cluster for AzureMachine %s/%s", m.Namespace, m.Name))
-	}
-
-	subscriptionID, err := GetSubscriptionID(client, ownerAzureClusterName, ownerAzureClusterNamespace, 5)
-	if err != nil {
-		errs = append(errs, errors.Wrapf(err, "failed to fetch subscription ID for AzureMachine %s/%s", m.Namespace, m.Name))
+		ctrl.Log.WithName("SetDefault").Error(err, "failed to fetch subscription ID for AzureMachine %s/%s", m.Namespace, m.Name)
 	}
 
 	m.Spec.SetDefaultCachingType()
@@ -250,6 +222,4 @@ func (m *AzureMachine) SetDefaults(client client.Client) error {
 	m.Spec.SetSpotEvictionPolicyDefaults()
 	m.Spec.SetDiagnosticsDefaults()
 	m.Spec.SetNetworkInterfacesDefaults()
-
-	return kerrors.NewAggregate(errs)
 }

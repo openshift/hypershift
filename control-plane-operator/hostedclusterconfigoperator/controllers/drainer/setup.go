@@ -27,7 +27,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
 
-	if err := c.Watch(source.Kind(opts.Manager.GetCache(), &corev1.Node{}), &handler.EnqueueRequestForObject{}); err != nil {
+	if err := c.Watch(&source.Kind{Type: &corev1.Node{}}, &handler.EnqueueRequestForObject{}); err != nil {
 		return fmt.Errorf("failed to watch Nodes: %w", err)
 	}
 

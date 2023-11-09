@@ -23,7 +23,7 @@ package ztest
 import (
 	"bytes"
 	"errors"
-	"io"
+	"io/ioutil"
 	"strings"
 )
 
@@ -50,12 +50,12 @@ func (s *Syncer) Called() bool {
 	return s.called
 }
 
-// A Discarder sends all writes to io.Discard.
+// A Discarder sends all writes to ioutil.Discard.
 type Discarder struct{ Syncer }
 
 // Write implements io.Writer.
 func (d *Discarder) Write(b []byte) (int, error) {
-	return io.Discard.Write(b)
+	return ioutil.Discard.Write(b)
 }
 
 // FailWriter is a WriteSyncer that always returns an error on writes.

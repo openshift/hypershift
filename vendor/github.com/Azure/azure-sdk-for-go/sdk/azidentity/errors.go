@@ -39,11 +39,15 @@ type AuthenticationFailedError struct {
 
 	credType string
 	message  string
-	err      error
 }
 
-func newAuthenticationFailedError(credType string, message string, resp *http.Response, err error) error {
-	return &AuthenticationFailedError{credType: credType, message: message, RawResponse: resp, err: err}
+func newAuthenticationFailedError(credType string, message string, resp *http.Response) error {
+	return &AuthenticationFailedError{credType: credType, message: message, RawResponse: resp}
+}
+
+func newAuthenticationFailedErrorFromMSALError(credType string, err error) error {
+	res := getResponseFromError(err)
+	return newAuthenticationFailedError(credType, err.Error(), res)
 }
 
 // Error implements the error interface. Note that the message contents are not contractual and can change over time.
@@ -83,8 +87,6 @@ func (e *AuthenticationFailedError) Error() string {
 		anchor = "managed-id"
 	case credNameUserPassword:
 		anchor = "username-password"
-	case credNameWorkloadIdentity:
-		anchor = "workload"
 	}
 	if anchor != "" {
 		fmt.Fprintf(msg, "To troubleshoot, visit https://aka.ms/azsdk/go/identity/troubleshoot#%s", anchor)
@@ -99,31 +101,24 @@ func (*AuthenticationFailedError) NonRetriable() {
 
 var _ errorinfo.NonRetriable = (*AuthenticationFailedError)(nil)
 
-// credentialUnavailableError indicates a credential can't attempt authentication because it lacks required
-// data or state
+// credentialUnavailableError indicates a credential can't attempt
+// authentication because it lacks required data or state.
 type credentialUnavailableError struct {
-	message string
+	credType string
+	message  string
 }
 
-// newCredentialUnavailableError is an internal helper that ensures consistent error message formatting
 func newCredentialUnavailableError(credType, message string) error {
-	msg := fmt.Sprintf("%s: %s", credType, message)
-	return &credentialUnavailableError{msg}
+	return &credentialUnavailableError{credType: credType, message: message}
 }
 
-// NewCredentialUnavailableError constructs an error indicating a credential can't attempt authentication
-// because it lacks required data or state. When [ChainedTokenCredential] receives this error it will try
-// its next credential, if any.
-func NewCredentialUnavailableError(message string) error {
-	return &credentialUnavailableError{message}
-}
-
-// Error implements the error interface. Note that the message contents are not contractual and can change over time.
 func (e *credentialUnavailableError) Error() string {
-	return e.message
+	return e.credType + ": " + e.message
 }
 
-// NonRetriable is a marker method indicating this error should not be retried. It has no implementation.
-func (e *credentialUnavailableError) NonRetriable() {}
+// NonRetriable indicates that this error should not be retried.
+func (e *credentialUnavailableError) NonRetriable() {
+	// marker method
+}
 
 var _ errorinfo.NonRetriable = (*credentialUnavailableError)(nil)

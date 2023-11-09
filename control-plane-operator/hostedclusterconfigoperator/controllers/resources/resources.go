@@ -105,7 +105,7 @@ type reconciler struct {
 // it uses an empty request but always reconciles everything.
 func eventHandler() handler.EventHandler {
 	return handler.EnqueueRequestsFromMapFunc(
-		func(context.Context, client.Object) []reconcile.Request {
+		func(client.Object) []reconcile.Request {
 			return []reconcile.Request{{}}
 		})
 }
@@ -118,7 +118,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 	uncachedClient, err := client.New(opts.Manager.GetConfig(), client.Options{
 		Scheme: opts.Manager.GetScheme(),
 		Mapper: opts.Manager.GetRESTMapper(),
-		WarningHandler: client.WarningHandlerOptions{
+		Opts: client.WarningHandlerOptions{
 			SuppressWarnings: true,
 		},
 	})
@@ -130,7 +130,7 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 	kubevirtInfraClient, err := client.New(opts.KubevirtInfraConfig, client.Options{
 		Scheme: opts.Manager.GetScheme(),
 		Mapper: opts.Manager.GetRESTMapper(),
-		WarningHandler: client.WarningHandlerOptions{
+		Opts: client.WarningHandlerOptions{
 			SuppressWarnings: true,
 		},
 	})
@@ -193,11 +193,11 @@ func Setup(opts *operator.HostedClusterConfigOperatorConfig) error {
 		&imageregistryv1.Config{},
 	}
 	for _, r := range resourcesToWatch {
-		if err := c.Watch(source.Kind(opts.Manager.GetCache(), r), eventHandler()); err != nil {
+		if err := c.Watch(&source.Kind{Type: r}, eventHandler()); err != nil {
 			return fmt.Errorf("failed to watch %T: %w", r, err)
 		}
 	}
-	if err := c.Watch(source.Kind(opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}), eventHandler()); err != nil {
+	if err := c.Watch(source.NewKindWithCache(&hyperv1.HostedControlPlane{}, opts.CPCluster.GetCache()), eventHandler()); err != nil {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
 	}
 	return nil

@@ -48,7 +48,7 @@ func (o *ServiceBindingUnbindingReader) ReadResponse(response runtime.ClientResp
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("[DELETE /v2/service_instances/{instance_id}/service_bindings/{binding_id}] serviceBinding.unbinding", response, response.Code())
+		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
 	}
 }
 
@@ -89,11 +89,6 @@ func (o *ServiceBindingUnbindingOK) IsServerError() bool {
 // IsCode returns true when this service binding unbinding o k response a status code equal to that given
 func (o *ServiceBindingUnbindingOK) IsCode(code int) bool {
 	return code == 200
-}
-
-// Code gets the status code for the service binding unbinding o k response
-func (o *ServiceBindingUnbindingOK) Code() int {
-	return 200
 }
 
 func (o *ServiceBindingUnbindingOK) Error() string {
@@ -155,11 +150,6 @@ func (o *ServiceBindingUnbindingAccepted) IsServerError() bool {
 // IsCode returns true when this service binding unbinding accepted response a status code equal to that given
 func (o *ServiceBindingUnbindingAccepted) IsCode(code int) bool {
 	return code == 202
-}
-
-// Code gets the status code for the service binding unbinding accepted response
-func (o *ServiceBindingUnbindingAccepted) Code() int {
-	return 202
 }
 
 func (o *ServiceBindingUnbindingAccepted) Error() string {
@@ -225,11 +215,6 @@ func (o *ServiceBindingUnbindingBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
-// Code gets the status code for the service binding unbinding bad request response
-func (o *ServiceBindingUnbindingBadRequest) Code() int {
-	return 400
-}
-
 func (o *ServiceBindingUnbindingBadRequest) Error() string {
 	return fmt.Sprintf("[DELETE /v2/service_instances/{instance_id}/service_bindings/{binding_id}][%d] serviceBindingUnbindingBadRequest  %+v", 400, o.Payload)
 }
@@ -291,11 +276,6 @@ func (o *ServiceBindingUnbindingGone) IsServerError() bool {
 // IsCode returns true when this service binding unbinding gone response a status code equal to that given
 func (o *ServiceBindingUnbindingGone) IsCode(code int) bool {
 	return code == 410
-}
-
-// Code gets the status code for the service binding unbinding gone response
-func (o *ServiceBindingUnbindingGone) Code() int {
-	return 410
 }
 
 func (o *ServiceBindingUnbindingGone) Error() string {

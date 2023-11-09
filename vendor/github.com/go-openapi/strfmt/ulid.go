@@ -15,12 +15,9 @@ import (
 
 // ULID represents a ulid string format
 // ref:
-//
-//	https://github.com/ulid/spec
-//
+//   https://github.com/ulid/spec
 // impl:
-//
-//	https://github.com/oklog/ulid
+//   https://github.com/oklog/ulid
 //
 // swagger:strfmt ulid
 type ULID struct {
@@ -92,9 +89,7 @@ func NewULIDZero() ULID {
 }
 
 // NewULID generates new unique ULID value and a error if any
-func NewULID() (ULID, error) {
-	var u ULID
-
+func NewULID() (u ULID, err error) {
 	obj := ulidEntropyPool.Get()
 	entropy, ok := obj.(io.Reader)
 	if !ok {

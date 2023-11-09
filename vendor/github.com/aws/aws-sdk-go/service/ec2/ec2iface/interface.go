@@ -116,10 +116,6 @@ type EC2API interface {
 	AssignPrivateIpAddressesWithContext(aws.Context, *ec2.AssignPrivateIpAddressesInput, ...request.Option) (*ec2.AssignPrivateIpAddressesOutput, error)
 	AssignPrivateIpAddressesRequest(*ec2.AssignPrivateIpAddressesInput) (*request.Request, *ec2.AssignPrivateIpAddressesOutput)
 
-	AssignPrivateNatGatewayAddress(*ec2.AssignPrivateNatGatewayAddressInput) (*ec2.AssignPrivateNatGatewayAddressOutput, error)
-	AssignPrivateNatGatewayAddressWithContext(aws.Context, *ec2.AssignPrivateNatGatewayAddressInput, ...request.Option) (*ec2.AssignPrivateNatGatewayAddressOutput, error)
-	AssignPrivateNatGatewayAddressRequest(*ec2.AssignPrivateNatGatewayAddressInput) (*request.Request, *ec2.AssignPrivateNatGatewayAddressOutput)
-
 	AssociateAddress(*ec2.AssociateAddressInput) (*ec2.AssociateAddressOutput, error)
 	AssociateAddressWithContext(aws.Context, *ec2.AssociateAddressInput, ...request.Option) (*ec2.AssociateAddressOutput, error)
 	AssociateAddressRequest(*ec2.AssociateAddressInput) (*request.Request, *ec2.AssociateAddressOutput)
@@ -147,10 +143,6 @@ type EC2API interface {
 	AssociateIpamResourceDiscovery(*ec2.AssociateIpamResourceDiscoveryInput) (*ec2.AssociateIpamResourceDiscoveryOutput, error)
 	AssociateIpamResourceDiscoveryWithContext(aws.Context, *ec2.AssociateIpamResourceDiscoveryInput, ...request.Option) (*ec2.AssociateIpamResourceDiscoveryOutput, error)
 	AssociateIpamResourceDiscoveryRequest(*ec2.AssociateIpamResourceDiscoveryInput) (*request.Request, *ec2.AssociateIpamResourceDiscoveryOutput)
-
-	AssociateNatGatewayAddress(*ec2.AssociateNatGatewayAddressInput) (*ec2.AssociateNatGatewayAddressOutput, error)
-	AssociateNatGatewayAddressWithContext(aws.Context, *ec2.AssociateNatGatewayAddressInput, ...request.Option) (*ec2.AssociateNatGatewayAddressOutput, error)
-	AssociateNatGatewayAddressRequest(*ec2.AssociateNatGatewayAddressInput) (*request.Request, *ec2.AssociateNatGatewayAddressOutput)
 
 	AssociateRouteTable(*ec2.AssociateRouteTableInput) (*ec2.AssociateRouteTableOutput, error)
 	AssociateRouteTableWithContext(aws.Context, *ec2.AssociateRouteTableInput, ...request.Option) (*ec2.AssociateRouteTableOutput, error)
@@ -1922,10 +1914,6 @@ type EC2API interface {
 	DisassociateIpamResourceDiscoveryWithContext(aws.Context, *ec2.DisassociateIpamResourceDiscoveryInput, ...request.Option) (*ec2.DisassociateIpamResourceDiscoveryOutput, error)
 	DisassociateIpamResourceDiscoveryRequest(*ec2.DisassociateIpamResourceDiscoveryInput) (*request.Request, *ec2.DisassociateIpamResourceDiscoveryOutput)
 
-	DisassociateNatGatewayAddress(*ec2.DisassociateNatGatewayAddressInput) (*ec2.DisassociateNatGatewayAddressOutput, error)
-	DisassociateNatGatewayAddressWithContext(aws.Context, *ec2.DisassociateNatGatewayAddressInput, ...request.Option) (*ec2.DisassociateNatGatewayAddressOutput, error)
-	DisassociateNatGatewayAddressRequest(*ec2.DisassociateNatGatewayAddressInput) (*request.Request, *ec2.DisassociateNatGatewayAddressOutput)
-
 	DisassociateRouteTable(*ec2.DisassociateRouteTableInput) (*ec2.DisassociateRouteTableOutput, error)
 	DisassociateRouteTableWithContext(aws.Context, *ec2.DisassociateRouteTableInput, ...request.Option) (*ec2.DisassociateRouteTableOutput, error)
 	DisassociateRouteTableRequest(*ec2.DisassociateRouteTableInput) (*request.Request, *ec2.DisassociateRouteTableOutput)
@@ -2798,10 +2786,6 @@ type EC2API interface {
 	UnassignPrivateIpAddressesWithContext(aws.Context, *ec2.UnassignPrivateIpAddressesInput, ...request.Option) (*ec2.UnassignPrivateIpAddressesOutput, error)
 	UnassignPrivateIpAddressesRequest(*ec2.UnassignPrivateIpAddressesInput) (*request.Request, *ec2.UnassignPrivateIpAddressesOutput)
 
-	UnassignPrivateNatGatewayAddress(*ec2.UnassignPrivateNatGatewayAddressInput) (*ec2.UnassignPrivateNatGatewayAddressOutput, error)
-	UnassignPrivateNatGatewayAddressWithContext(aws.Context, *ec2.UnassignPrivateNatGatewayAddressInput, ...request.Option) (*ec2.UnassignPrivateNatGatewayAddressOutput, error)
-	UnassignPrivateNatGatewayAddressRequest(*ec2.UnassignPrivateNatGatewayAddressInput) (*request.Request, *ec2.UnassignPrivateNatGatewayAddressOutput)
-
 	UnmonitorInstances(*ec2.UnmonitorInstancesInput) (*ec2.UnmonitorInstancesOutput, error)
 	UnmonitorInstancesWithContext(aws.Context, *ec2.UnmonitorInstancesInput, ...request.Option) (*ec2.UnmonitorInstancesOutput, error)
 	UnmonitorInstancesRequest(*ec2.UnmonitorInstancesInput) (*request.Request, *ec2.UnmonitorInstancesOutput)
@@ -2883,9 +2867,6 @@ type EC2API interface {
 
 	WaitUntilSnapshotCompleted(*ec2.DescribeSnapshotsInput) error
 	WaitUntilSnapshotCompletedWithContext(aws.Context, *ec2.DescribeSnapshotsInput, ...request.WaiterOption) error
-
-	WaitUntilSnapshotImported(*ec2.DescribeImportSnapshotTasksInput) error
-	WaitUntilSnapshotImportedWithContext(aws.Context, *ec2.DescribeImportSnapshotTasksInput, ...request.WaiterOption) error
 
 	WaitUntilSpotInstanceRequestFulfilled(*ec2.DescribeSpotInstanceRequestsInput) error
 	WaitUntilSpotInstanceRequestFulfilledWithContext(aws.Context, *ec2.DescribeSpotInstanceRequestsInput, ...request.WaiterOption) error

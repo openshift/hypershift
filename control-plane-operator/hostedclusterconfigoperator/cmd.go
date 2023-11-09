@@ -29,13 +29,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/pkg/version"
-	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
@@ -215,9 +212,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	mgr := operator.Mgr(cfg, cpConfig, o.Namespace)
 	mgr.GetLogger().Info("Starting hosted-cluster-config-operator", "version", version.String())
 	cpCluster, err := cluster.New(cpConfig, func(opt *cluster.Options) {
-		opt.Cache = cache.Options{
-			DefaultNamespaces: map[string]cache.Config{o.Namespace: {}},
-		}
+		opt.Namespace = o.Namespace
 		opt.Scheme = api.Scheme
 	})
 	if err != nil {
@@ -256,17 +251,11 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
 
-	apiReadingClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: hyperapi.Scheme})
-	if err != nil {
-		return fmt.Errorf("failed to construct api reading client: %w", err)
-	}
-
 	operatorConfig := &operator.HostedClusterConfigOperatorConfig{
 		TargetCreateOrUpdateProvider: &labelenforcingclient.LabelEnforcingUpsertProvider{
 			Upstream:  upsert.New(o.enableCIDebugOutput),
-			APIClient: apiReadingClient,
+			APIReader: mgr.GetAPIReader(),
 		},
-
 		Config:                cpConfig,
 		TargetConfig:          cfg,
 		KubevirtInfraConfig:   kubevirtInfraConfig,

@@ -282,7 +282,6 @@ func (m *IPSecPolicy) ContextValidate(ctx context.Context, formats strfmt.Regist
 func (m *IPSecPolicy) contextValidateAuthentication(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.Authentication != nil {
-
 		if err := m.Authentication.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("authentication")
@@ -299,7 +298,6 @@ func (m *IPSecPolicy) contextValidateAuthentication(ctx context.Context, formats
 func (m *IPSecPolicy) contextValidateKeyLifetime(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.KeyLifetime != nil {
-
 		if err := m.KeyLifetime.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("keyLifetime")

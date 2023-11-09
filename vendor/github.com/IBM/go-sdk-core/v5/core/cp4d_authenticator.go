@@ -356,7 +356,7 @@ func (authenticator *CloudPakForDataAuthenticator) requestToken() (tokenResponse
 
 	tokenResponse = &cp4dTokenServerResponse{}
 	err = json.NewDecoder(resp.Body).Decode(tokenResponse)
-	defer resp.Body.Close() // #nosec G307
+	defer resp.Body.Close()
 	if err != nil {
 		err = fmt.Errorf(ERRORMSG_UNMARSHAL_AUTH_RESPONSE, err.Error())
 		tokenResponse = nil

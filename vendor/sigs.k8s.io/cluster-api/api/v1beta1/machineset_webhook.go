@@ -24,15 +24,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"sigs.k8s.io/cluster-api/feature"
-	"sigs.k8s.io/cluster-api/util/labels/format"
+	capilabels "sigs.k8s.io/cluster-api/internal/labels"
 	"sigs.k8s.io/cluster-api/util/version"
 )
 
@@ -53,7 +49,7 @@ func (m *MachineSet) Default() {
 	if m.Labels == nil {
 		m.Labels = make(map[string]string)
 	}
-	m.Labels[ClusterNameLabel] = m.Spec.ClusterName
+	m.Labels[ClusterLabelName] = m.Spec.ClusterName
 
 	if m.Spec.DeletePolicy == "" {
 		randomPolicy := string(RandomMachineSetDeletePolicy)
@@ -70,8 +66,8 @@ func (m *MachineSet) Default() {
 
 	if len(m.Spec.Selector.MatchLabels) == 0 && len(m.Spec.Selector.MatchExpressions) == 0 {
 		// Note: MustFormatValue is used here as the value of this label will be a hash if the MachineSet name is longer than 63 characters.
-		m.Spec.Selector.MatchLabels[MachineSetNameLabel] = format.MustFormatValue(m.Name)
-		m.Spec.Template.Labels[MachineSetNameLabel] = format.MustFormatValue(m.Name)
+		m.Spec.Selector.MatchLabels[MachineSetLabelName] = capilabels.MustFormatValue(m.Name)
+		m.Spec.Template.Labels[MachineSetLabelName] = capilabels.MustFormatValue(m.Name)
 	}
 
 	if m.Spec.Template.Spec.Version != nil && !strings.HasPrefix(*m.Spec.Template.Spec.Version, "v") {
@@ -81,22 +77,22 @@ func (m *MachineSet) Default() {
 }
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (m *MachineSet) ValidateCreate() (admission.Warnings, error) {
-	return nil, m.validate(nil)
+func (m *MachineSet) ValidateCreate() error {
+	return m.validate(nil)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (m *MachineSet) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
+func (m *MachineSet) ValidateUpdate(old runtime.Object) error {
 	oldMS, ok := old.(*MachineSet)
 	if !ok {
-		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected a MachineSet but got a %T", old))
+		return apierrors.NewBadRequest(fmt.Sprintf("expected a MachineSet but got a %T", old))
 	}
-	return nil, m.validate(oldMS)
+	return m.validate(oldMS)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (m *MachineSet) ValidateDelete() (admission.Warnings, error) {
-	return nil, nil
+func (m *MachineSet) ValidateDelete() error {
+	return nil
 }
 
 func (m *MachineSet) validate(old *MachineSet) error {
@@ -121,12 +117,6 @@ func (m *MachineSet) validate(old *MachineSet) error {
 				fmt.Sprintf("must match spec.selector %q", selector.String()),
 			),
 		)
-	}
-
-	if feature.Gates.Enabled(feature.MachineSetPreflightChecks) {
-		if err := validateSkippedMachineSetPreflightChecks(m); err != nil {
-			allErrs = append(allErrs, err)
-		}
 	}
 
 	if old != nil && old.Spec.ClusterName != m.Spec.ClusterName {
@@ -157,38 +147,4 @@ func (m *MachineSet) validate(old *MachineSet) error {
 	}
 
 	return apierrors.NewInvalid(GroupVersion.WithKind("MachineSet").GroupKind(), m.Name, allErrs)
-}
-
-func validateSkippedMachineSetPreflightChecks(o client.Object) *field.Error {
-	if o == nil {
-		return nil
-	}
-	skip := o.GetAnnotations()[MachineSetSkipPreflightChecksAnnotation]
-	if skip == "" {
-		return nil
-	}
-
-	supported := sets.New[MachineSetPreflightCheck](
-		MachineSetPreflightCheckAll,
-		MachineSetPreflightCheckKubeadmVersionSkew,
-		MachineSetPreflightCheckKubernetesVersionSkew,
-		MachineSetPreflightCheckControlPlaneIsStable,
-	)
-
-	skippedList := strings.Split(skip, ",")
-	invalid := []MachineSetPreflightCheck{}
-	for i := range skippedList {
-		skipped := MachineSetPreflightCheck(strings.TrimSpace(skippedList[i]))
-		if !supported.Has(skipped) {
-			invalid = append(invalid, skipped)
-		}
-	}
-	if len(invalid) > 0 {
-		return field.Invalid(
-			field.NewPath("metadata", "annotations", MachineSetSkipPreflightChecksAnnotation),
-			invalid,
-			fmt.Sprintf("skipped preflight check(s) must be among: %v", sets.List(supported)),
-		)
-	}
-	return nil
 }

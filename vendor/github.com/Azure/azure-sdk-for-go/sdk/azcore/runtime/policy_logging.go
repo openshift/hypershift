@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -67,24 +66,17 @@ func NewLogPolicy(o *policy.LogOptions) policy.Policy {
 		allowedHeaders[strings.ToLower(ah)] = struct{}{}
 	}
 	// now do the same thing for query params
-	allowedQP := getAllowedQueryParams(o.AllowedQueryParams)
+	allowedQP := map[string]struct{}{
+		"api-version": {},
+	}
+	for _, qp := range o.AllowedQueryParams {
+		allowedQP[strings.ToLower(qp)] = struct{}{}
+	}
 	return &logPolicy{
 		includeBody:    o.IncludeBody,
 		allowedHeaders: allowedHeaders,
 		allowedQP:      allowedQP,
 	}
-}
-
-// getAllowedQueryParams merges the default set of allowed query parameters
-// with a custom set (usually comes from client options).
-func getAllowedQueryParams(customAllowedQP []string) map[string]struct{} {
-	allowedQP := map[string]struct{}{
-		"api-version": {},
-	}
-	for _, qp := range customAllowedQP {
-		allowedQP[strings.ToLower(qp)] = struct{}{}
-	}
-	return allowedQP
 }
 
 // logPolicyOpValues is the struct containing the per-operation values
@@ -148,24 +140,20 @@ func (p *logPolicy) Do(req *policy.Request) (*http.Response, error) {
 
 const redactedValue = "REDACTED"
 
-// getSanitizedURL returns a sanitized string for the provided url.URL
-func getSanitizedURL(u url.URL, allowedQueryParams map[string]struct{}) string {
-	// redact applicable query params
-	qp := u.Query()
-	for k := range qp {
-		if _, ok := allowedQueryParams[strings.ToLower(k)]; !ok {
-			qp.Set(k, redactedValue)
-		}
-	}
-	u.RawQuery = qp.Encode()
-	return u.String()
-}
-
 // writeRequestWithResponse appends a formatted HTTP request into a Buffer. If request and/or err are
 // not nil, then these are also written into the Buffer.
 func (p *logPolicy) writeRequestWithResponse(b *bytes.Buffer, req *policy.Request, resp *http.Response, err error) {
+	// redact applicable query params
+	cpURL := *req.Raw().URL
+	qp := cpURL.Query()
+	for k := range qp {
+		if _, ok := p.allowedQP[strings.ToLower(k)]; !ok {
+			qp.Set(k, redactedValue)
+		}
+	}
+	cpURL.RawQuery = qp.Encode()
 	// Write the request into the buffer.
-	fmt.Fprint(b, "   "+req.Raw().Method+" "+getSanitizedURL(*req.Raw().URL, p.allowedQP)+"\n")
+	fmt.Fprint(b, "   "+req.Raw().Method+" "+cpURL.String()+"\n")
 	p.writeHeader(b, req.Raw().Header)
 	if resp != nil {
 		fmt.Fprintln(b, "   --------------------------------------------------------------------------------")

@@ -139,10 +139,6 @@ func (m *PVMInstanceUpdateResponse) ContextValidate(ctx context.Context, formats
 
 func (m *PVMInstanceUpdateResponse) contextValidatePinPolicy(ctx context.Context, formats strfmt.Registry) error {
 
-	if swag.IsZero(m.PinPolicy) { // not required
-		return nil
-	}
-
 	if err := m.PinPolicy.ContextValidate(ctx, formats); err != nil {
 		if ve, ok := err.(*errors.Validation); ok {
 			return ve.ValidateName("pinPolicy")

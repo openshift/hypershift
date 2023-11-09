@@ -48,6 +48,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/runtime/inject"
 	"sigs.k8s.io/yaml"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
@@ -959,7 +960,6 @@ func TestEventHandling(t *testing.T) {
 	c := &createTrackingClient{Client: fake.NewClientBuilder().
 		WithScheme(api.Scheme).
 		WithObjects(hcp, pullSecret, etcdEncryptionKey, fakeNodeTuningOperator, fakeNodeTuningOperatorTLS).
-		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
 		WithRESTMapper(restMapper).
 		Build(),
 	}
@@ -993,7 +993,7 @@ func TestEventHandling(t *testing.T) {
 		t.Fatalf("reconciliation failed: %v", err)
 	}
 
-	eventHandlerList := r.eventHandlers(c.Scheme(), c.RESTMapper())
+	eventHandlerList := r.eventHandlers()
 	eventHandlersByObject := make(map[schema.GroupVersionKind]handler.EventHandler, len(eventHandlerList))
 	for _, handler := range eventHandlerList {
 		gvk, err := apiutil.GVKForObject(handler.obj, api.Scheme)
@@ -1014,8 +1014,19 @@ func TestEventHandling(t *testing.T) {
 				t.Fatalf("reconciler creates %T but has no handler for them", createdObject)
 			}
 
+			if injectScheme, ok := handler.(inject.Scheme); ok {
+				if err := injectScheme.InjectScheme(api.Scheme); err != nil {
+					t.Fatalf("failed to inject scheme into handler: %v", err)
+				}
+			}
+			if injectMapper, ok := handler.(inject.Mapper); ok {
+				if err := injectMapper.InjectMapper(c.RESTMapper()); err != nil {
+					t.Fatalf("failed to inject mapper into handler: %v", err)
+				}
+			}
+
 			fakeQueue := &createTrackingWorkqueue{}
-			handler.Create(context.Background(), event.CreateEvent{Object: createdObject}, fakeQueue)
+			handler.Create(event.CreateEvent{Object: createdObject}, fakeQueue)
 
 			if len(fakeQueue.items) != 1 || fakeQueue.items[0].Namespace != hcp.Namespace || fakeQueue.items[0].Name != hcp.Name {
 				t.Errorf("object %+v didn't correctly create event", createdObject)
@@ -1311,7 +1322,7 @@ func TestReconcileRouter(t *testing.T) {
 func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 	hcp := sampleHCP(t)
 	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
-	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, pullSecret).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, pullSecret).Build()
 	r := &HostedControlPlaneReconciler{
 		Client:                        c,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},

@@ -16,30 +16,18 @@ import (
 )
 
 // ByteSliceCodec is the Codec used for []byte values.
-//
-// Deprecated: Use [go.mongodb.org/mongo-driver/bson.NewRegistry] to get a registry with the
-// ByteSliceCodec registered.
 type ByteSliceCodec struct {
-	// EncodeNilAsEmpty causes EncodeValue to marshal nil Go byte slices as empty BSON binary values
-	// instead of BSON null.
-	//
-	// Deprecated: Use bson.Encoder.NilByteSliceAsEmpty instead.
 	EncodeNilAsEmpty bool
 }
 
 var (
 	defaultByteSliceCodec = NewByteSliceCodec()
 
-	// Assert that defaultByteSliceCodec satisfies the typeDecoder interface, which allows it to be
-	// used by collection type decoders (e.g. map, slice, etc) to set individual values in a
-	// collection.
+	_ ValueCodec  = defaultByteSliceCodec
 	_ typeDecoder = defaultByteSliceCodec
 )
 
-// NewByteSliceCodec returns a ByteSliceCodec with options opts.
-//
-// Deprecated: Use [go.mongodb.org/mongo-driver/bson.NewRegistry] to get a registry with the
-// ByteSliceCodec registered.
+// NewByteSliceCodec returns a StringCodec with options opts.
 func NewByteSliceCodec(opts ...*bsonoptions.ByteSliceCodecOptions) *ByteSliceCodec {
 	byteSliceOpt := bsonoptions.MergeByteSliceCodecOptions(opts...)
 	codec := ByteSliceCodec{}
@@ -54,13 +42,13 @@ func (bsc *ByteSliceCodec) EncodeValue(ec EncodeContext, vw bsonrw.ValueWriter, 
 	if !val.IsValid() || val.Type() != tByteSlice {
 		return ValueEncoderError{Name: "ByteSliceEncodeValue", Types: []reflect.Type{tByteSlice}, Received: val}
 	}
-	if val.IsNil() && !bsc.EncodeNilAsEmpty && !ec.nilByteSliceAsEmpty {
+	if val.IsNil() && !bsc.EncodeNilAsEmpty {
 		return vw.WriteNull()
 	}
 	return vw.WriteBinary(val.Interface().([]byte))
 }
 
-func (bsc *ByteSliceCodec) decodeType(_ DecodeContext, vr bsonrw.ValueReader, t reflect.Type) (reflect.Value, error) {
+func (bsc *ByteSliceCodec) decodeType(dc DecodeContext, vr bsonrw.ValueReader, t reflect.Type) (reflect.Value, error) {
 	if t != tByteSlice {
 		return emptyValue, ValueDecoderError{
 			Name:     "ByteSliceDecodeValue",

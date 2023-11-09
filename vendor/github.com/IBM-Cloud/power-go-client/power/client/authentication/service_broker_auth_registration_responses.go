@@ -42,7 +42,7 @@ func (o *ServiceBrokerAuthRegistrationReader) ReadResponse(response runtime.Clie
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("[GET /auth/v1/registration] serviceBroker.auth.registration", response, response.Code())
+		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
 	}
 }
 
@@ -83,11 +83,6 @@ func (o *ServiceBrokerAuthRegistrationOK) IsServerError() bool {
 // IsCode returns true when this service broker auth registration o k response a status code equal to that given
 func (o *ServiceBrokerAuthRegistrationOK) IsCode(code int) bool {
 	return code == 200
-}
-
-// Code gets the status code for the service broker auth registration o k response
-func (o *ServiceBrokerAuthRegistrationOK) Code() int {
-	return 200
 }
 
 func (o *ServiceBrokerAuthRegistrationOK) Error() string {
@@ -153,11 +148,6 @@ func (o *ServiceBrokerAuthRegistrationUnauthorized) IsCode(code int) bool {
 	return code == 401
 }
 
-// Code gets the status code for the service broker auth registration unauthorized response
-func (o *ServiceBrokerAuthRegistrationUnauthorized) Code() int {
-	return 401
-}
-
 func (o *ServiceBrokerAuthRegistrationUnauthorized) Error() string {
 	return fmt.Sprintf("[GET /auth/v1/registration][%d] serviceBrokerAuthRegistrationUnauthorized  %+v", 401, o.Payload)
 }
@@ -219,11 +209,6 @@ func (o *ServiceBrokerAuthRegistrationInternalServerError) IsServerError() bool 
 // IsCode returns true when this service broker auth registration internal server error response a status code equal to that given
 func (o *ServiceBrokerAuthRegistrationInternalServerError) IsCode(code int) bool {
 	return code == 500
-}
-
-// Code gets the status code for the service broker auth registration internal server error response
-func (o *ServiceBrokerAuthRegistrationInternalServerError) Code() int {
-	return 500
 }
 
 func (o *ServiceBrokerAuthRegistrationInternalServerError) Error() string {

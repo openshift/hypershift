@@ -1,37 +1,18 @@
 SHELL := /bin/bash
-RAGEL := ragel
-GOFMT := go fmt
 
-export GO_TEST=env GOTRACEBACK=all go test $(GO_ARGS)
-
-.PHONY: build
 build: machine.go
 
-.PHONY: clean
-clean:
-	@rm -rf docs
-	@rm -f machine.go
-
-.PHONY: images
 images: docs/urn.png
 
-.PHONY: removecomments
-removecomments:
-	@cd ./tools/removecomments; go build -o ../../removecomments ./main.go
-
 machine.go: machine.go.rl
-
-machine.go: removecomments
-
-machine.go:
-	$(RAGEL) -Z -G2 -e -o $@ $<
-	@./removecomments $@
-	$(MAKE) -s file=$@ snake2camel
-	$(GOFMT) $@
+	ragel -Z -G2 -e -o $@ $<
+	@sed -i '/^\/\/line/d' $@
+	@$(MAKE) -s file=$@ snake2camel
+	@gofmt -w -s $@
 
 docs/urn.dot: machine.go.rl
 	@mkdir -p docs
-	$(RAGEL) -Z -e -Vp $< -o $@
+	ragel -Z -e -Vp $< -o $@
 
 docs/urn.png: docs/urn.dot
 	dot $< -Tpng -o $@
@@ -41,8 +22,13 @@ bench: *_test.go machine.go
 	go test -bench=. -benchmem -benchtime=5s ./...
 
 .PHONY: tests
-tests: *_test.go 
-	$(GO_TEST) ./...
+tests: *_test.go machine.go
+	go test -race -timeout 10s -coverprofile=coverage.out -covermode=atomic -v ./...
+
+.PHONY: clean
+clean:
+	@rm -rf docs
+	@rm -f machine.go
 
 .PHONY: snake2camel
 snake2camel:

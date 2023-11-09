@@ -81,13 +81,10 @@ func (c *ChainedTokenCredential) GetToken(ctx context.Context, opts policy.Token
 		}
 	}
 
-	var (
-		err                  error
-		errs                 []error
-		successfulCredential azcore.TokenCredential
-		token                azcore.AccessToken
-		unavailableErr       *credentialUnavailableError
-	)
+	var err error
+	var errs []error
+	var token azcore.AccessToken
+	var successfulCredential azcore.TokenCredential
 	for _, cred := range c.sources {
 		token, err = cred.GetToken(ctx, opts)
 		if err == nil {
@@ -96,14 +93,12 @@ func (c *ChainedTokenCredential) GetToken(ctx context.Context, opts policy.Token
 			break
 		}
 		errs = append(errs, err)
-		// continue to the next source iff this one returned credentialUnavailableError
-		if !errors.As(err, &unavailableErr) {
+		if _, ok := err.(*credentialUnavailableError); !ok {
 			break
 		}
 	}
 	if c.iterating {
 		c.cond.L.Lock()
-		// this is nil when all credentials returned an error
 		c.successfulCredential = successfulCredential
 		c.iterating = false
 		c.cond.L.Unlock()
@@ -113,11 +108,11 @@ func (c *ChainedTokenCredential) GetToken(ctx context.Context, opts policy.Token
 	if err != nil {
 		// return credentialUnavailableError iff all sources did so; return AuthenticationFailedError otherwise
 		msg := createChainedErrorMessage(errs)
-		if errors.As(err, &unavailableErr) {
+		if _, ok := err.(*credentialUnavailableError); ok {
 			err = newCredentialUnavailableError(c.name, msg)
 		} else {
 			res := getResponseFromError(err)
-			err = newAuthenticationFailedError(c.name, msg, res, err)
+			err = newAuthenticationFailedError(c.name, msg, res)
 		}
 	}
 	return token, err

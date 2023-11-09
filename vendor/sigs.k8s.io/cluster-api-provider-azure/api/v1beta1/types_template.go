@@ -16,10 +16,7 @@ limitations under the License.
 
 package v1beta1
 
-import (
-	"github.com/pkg/errors"
-	"k8s.io/utils/net"
-)
+import "github.com/pkg/errors"
 
 // AzureClusterTemplateResourceSpec specifies an Azure cluster template resource.
 type AzureClusterTemplateResourceSpec struct {
@@ -107,16 +104,6 @@ type SubnetTemplateSpec struct {
 // IsNatGatewayEnabled returns true if the NAT gateway is enabled.
 func (s SubnetTemplateSpec) IsNatGatewayEnabled() bool {
 	return s.NatGateway.Name != ""
-}
-
-// IsIPv6Enabled returns whether or not IPv6 is enabled on the subnet.
-func (s SubnetTemplateSpec) IsIPv6Enabled() bool {
-	for _, cidr := range s.CIDRBlocks {
-		if net.IsIPv6CIDRString(cidr) {
-			return true
-		}
-	}
-	return false
 }
 
 // SubnetTemplatesSpec specifies a list of subnet templates.

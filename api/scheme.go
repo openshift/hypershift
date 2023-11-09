@@ -15,6 +15,8 @@ import (
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
@@ -59,7 +61,8 @@ func init() {
 	operatorv1.AddToScheme(Scheme)
 	securityv1.AddToScheme(Scheme)
 	routev1.AddToScheme(Scheme)
-	clientgoscheme.AddToScheme(Scheme)
+	rbacv1.AddToScheme(Scheme)
+	corev1.AddToScheme(Scheme)
 	apiextensionsv1.AddToScheme(Scheme)
 	kasv1beta1.AddToScheme(Scheme)
 	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {

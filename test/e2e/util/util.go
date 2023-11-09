@@ -1521,7 +1521,7 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 }
 
 func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	t.Run("EnsureHCPPodsAffinitiesAndTolerations", func(t *testing.T) {
+	t.Run("EnsureHCPPodsAffinitiesAndTolerations ", func(t *testing.T) {
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
 		awsEbsCsiDriverOperatorPodSubstring := "aws-ebs-csi-driver-operator"
 		controlPlaneLabelTolerationKey := "hypershift.openshift.io/control-plane"
@@ -1623,7 +1623,6 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 		}
 
 		for _, pod := range podList.Items {
-			t.Logf("checking pod %s/%s for tolerations and node affinities", pod.Namespace, pod.Name)
 			// Skip KubeVirt VM worker node related pods
 			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
 				continue

@@ -79,22 +79,6 @@ spec:
               providerID:
                 description: ProviderID TBD what to use for Kubevirt
                 type: string
-              virtualMachineBootstrapCheck:
-                description: BootstrapCheckSpec defines how the CAPK controller is
-                  checking CAPI Sentinel file inside the VM.
-                properties:
-                  checkStrategy:
-                    default: ssh
-                    description: 'CheckStrategy describes how CAPK controller will
-                      validate a successful CAPI bootstrap. Following specified method,
-                      CAPK will try to retrieve the state of the CAPI Sentinel file
-                      from the VM. Possible values are: "none" or "ssh" (default is
-                      "ssh") and this value is validated by apiserver.'
-                    enum:
-                    - none
-                    - ssh
-                    type: string
-                type: object
               virtualMachineTemplate:
                 description: VirtualMachineTemplateSpec defines the desired state
                   of the kubevirt VM.
@@ -192,13 +176,10 @@ spec:
                                         If the provisioner or an external controller
                                         can support the specified data source, it
                                         will create a new volume based on the contents
-                                        of the specified data source. When the AnyVolumeDataSource
-                                        feature gate is enabled, dataSource contents
-                                        will be copied to dataSourceRef, and dataSourceRef
-                                        contents will be copied to dataSource when
-                                        dataSourceRef.namespace is not specified.
-                                        If the namespace is specified, then dataSourceRef
-                                        will not be copied to dataSource.'
+                                        of the specified data source. If the AnyVolumeDataSource
+                                        feature gate is enabled, this field will always
+                                        have the same contents as the DataSourceRef
+                                        field.'
                                       properties:
                                         apiGroup:
                                           description: APIGroup is the group for the
@@ -224,37 +205,29 @@ spec:
                                       description: 'dataSourceRef specifies the object
                                         from which to populate the volume with data,
                                         if a non-empty volume is desired. This may
-                                        be any object from a non-empty API group (non
-                                        core object) or a PersistentVolumeClaim object.
-                                        When this field is specified, volume binding
-                                        will only succeed if the type of the specified
-                                        object matches some installed volume populator
-                                        or dynamic provisioner. This field will replace
-                                        the functionality of the dataSource field
-                                        and as such if both fields are non-empty,
+                                        be any local object from a non-empty API group
+                                        (non core object) or a PersistentVolumeClaim
+                                        object. When this field is specified, volume
+                                        binding will only succeed if the type of the
+                                        specified object matches some installed volume
+                                        populator or dynamic provisioner. This field
+                                        will replace the functionality of the DataSource
+                                        field and as such if both fields are non-empty,
                                         they must have the same value. For backwards
-                                        compatibility, when namespace isn''t specified
-                                        in dataSourceRef, both fields (dataSource
-                                        and dataSourceRef) will be set to the same
-                                        value automatically if one of them is empty
-                                        and the other is non-empty. When namespace
-                                        is specified in dataSourceRef, dataSource
-                                        isn''t set to the same value and must be empty.
-                                        There are three important differences between
-                                        dataSource and dataSourceRef: * While dataSource
-                                        only allows two specific types of objects,
-                                        dataSourceRef allows any non-core object,
-                                        as well as PersistentVolumeClaim objects.
-                                        * While dataSource ignores disallowed values
-                                        (dropping them), dataSourceRef preserves all
-                                        values, and generates an error if a disallowed
-                                        value is specified. * While dataSource only
-                                        allows local objects, dataSourceRef allows
-                                        objects in any namespaces. (Beta) Using this
-                                        field requires the AnyVolumeDataSource feature
-                                        gate to be enabled. (Alpha) Using the namespace
-                                        field of dataSourceRef requires the CrossNamespaceVolumeDataSource
-                                        feature gate to be enabled.'
+                                        compatibility, both fields (DataSource and
+                                        DataSourceRef) will be set to the same value
+                                        automatically if one of them is empty and
+                                        the other is non-empty. There are two important
+                                        differences between DataSource and DataSourceRef:
+                                        * While DataSource only allows two specific
+                                        types of objects, DataSourceRef allows any
+                                        non-core object, as well as PersistentVolumeClaim
+                                        objects. * While DataSource ignores disallowed
+                                        values (dropping them), DataSourceRef preserves
+                                        all values, and generates an error if a disallowed
+                                        value is specified. (Beta) Using this field
+                                        requires the AnyVolumeDataSource feature gate
+                                        to be enabled.'
                                       properties:
                                         apiGroup:
                                           description: APIGroup is the group for the
@@ -271,21 +244,11 @@ spec:
                                           description: Name is the name of resource
                                             being referenced
                                           type: string
-                                        namespace:
-                                          description: Namespace is the namespace
-                                            of resource being referenced Note that
-                                            when a namespace is specified, a gateway.networking.k8s.io/ReferenceGrant
-                                            object is required in the referent namespace
-                                            to allow that namespace's owner to accept
-                                            the reference. See the ReferenceGrant
-                                            documentation for details. (Alpha) This
-                                            field requires the CrossNamespaceVolumeDataSource
-                                            feature gate to be enabled.
-                                          type: string
                                       required:
                                       - kind
                                       - name
                                       type: object
+                                      x-kubernetes-map-type: atomic
                                     resources:
                                       description: 'resources represents the minimum
                                         resources the volume should have. If RecoverVolumeExpansionFailure
@@ -295,32 +258,6 @@ spec:
                                         capacity recorded in the status field of the
                                         claim. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources'
                                       properties:
-                                        claims:
-                                          description: "Claims lists the names of
-                                            resources, defined in spec.resourceClaims,
-                                            that are used by this container. \n This
-                                            is an alpha field and requires enabling
-                                            the DynamicResourceAllocation feature
-                                            gate. \n This field is immutable. It can
-                                            only be set for containers."
-                                          items:
-                                            description: ResourceClaim references
-                                              one entry in PodSpec.ResourceClaims.
-                                            properties:
-                                              name:
-                                                description: Name must match the name
-                                                  of one entry in pod.spec.resourceClaims
-                                                  of the Pod where this field is used.
-                                                  It makes that resource available
-                                                  inside a container.
-                                                type: string
-                                            required:
-                                            - name
-                                            type: object
-                                          type: array
-                                          x-kubernetes-list-map-keys:
-                                          - name
-                                          x-kubernetes-list-type: map
                                         limits:
                                           additionalProperties:
                                             anyOf:
@@ -344,8 +281,7 @@ spec:
                                             If Requests is omitted for a container,
                                             it defaults to Limits if that is explicitly
                                             specified, otherwise to an implementation-defined
-                                            value. Requests cannot exceed Limits.
-                                            More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                            value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                           type: object
                                       type: object
                                     selector:
@@ -658,32 +594,6 @@ spec:
                                         resources the volume should have. More info:
                                         https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources'
                                       properties:
-                                        claims:
-                                          description: "Claims lists the names of
-                                            resources, defined in spec.resourceClaims,
-                                            that are used by this container. \n This
-                                            is an alpha field and requires enabling
-                                            the DynamicResourceAllocation feature
-                                            gate. \n This field is immutable. It can
-                                            only be set for containers."
-                                          items:
-                                            description: ResourceClaim references
-                                              one entry in PodSpec.ResourceClaims.
-                                            properties:
-                                              name:
-                                                description: Name must match the name
-                                                  of one entry in pod.spec.resourceClaims
-                                                  of the Pod where this field is used.
-                                                  It makes that resource available
-                                                  inside a container.
-                                                type: string
-                                            required:
-                                            - name
-                                            type: object
-                                          type: array
-                                          x-kubernetes-list-map-keys:
-                                          - name
-                                          x-kubernetes-list-type: map
                                         limits:
                                           additionalProperties:
                                             anyOf:
@@ -707,8 +617,7 @@ spec:
                                             If Requests is omitted for a container,
                                             it defaults to Limits if that is explicitly
                                             specified, otherwise to an implementation-defined
-                                            value. Requests cannot exceed Limits.
-                                            More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
+                                            value. More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/'
                                           type: object
                                       type: object
                                     selector:
@@ -793,13 +702,6 @@ spec:
                         description: InstancetypeMatcher references a instancetype
                           that is used to fill fields in Template
                         properties:
-                          inferFromVolume:
-                            description: InferFromVolume lists the name of a volume
-                              that should be used to infer or discover the instancetype
-                              to be used through known annotations on the underlying
-                              resource. Once applied to the InstancetypeMatcher this
-                              field is removed.
-                            type: string
                           kind:
                             description: 'Kind specifies which instancetype resource
                               is referenced. Allowed values are: "VirtualMachineInstancetype"
@@ -817,36 +719,13 @@ spec:
                               is initially captured the first time the instancetype
                               is applied to the VirtualMachineInstance.
                             type: string
-                        type: object
-                      liveUpdateFeatures:
-                        description: LiveUpdateFeatures references a configuration
-                          of hotpluggable resources
-                        properties:
-                          cpu:
-                            description: LiveUpdateCPU holds hotplug configuration
-                              for the CPU resource. Empty struct indicates that default
-                              will be used for maxSockets. Default is specified on
-                              cluster level. Absence of the struct means opt-out from
-                              CPU hotplug functionality.
-                            properties:
-                              maxSockets:
-                                description: The maximum amount of sockets that can
-                                  be hot-plugged to the Virtual Machine
-                                format: int32
-                                type: integer
-                            type: object
+                        required:
+                        - name
                         type: object
                       preference:
                         description: PreferenceMatcher references a set of preference
                           that is used to fill fields in Template
                         properties:
-                          inferFromVolume:
-                            description: InferFromVolume lists the name of a volume
-                              that should be used to infer or discover the preference
-                              to be used through known annotations on the underlying
-                              resource. Once applied to the PreferenceMatcher this
-                              field is removed.
-                            type: string
                           kind:
                             description: 'Kind specifies which preference resource
                               is referenced. Allowed values are: "VirtualMachinePreference"
@@ -864,6 +743,8 @@ spec:
                               is initially captured the first time the instancetype
                               is applied to the VirtualMachineInstance.
                             type: string
+                        required:
+                        - name
                         type: object
                       runStrategy:
                         description: Running state indicates the requested running
@@ -2032,11 +1913,6 @@ spec:
                                         type: array
                                     type: object
                                 type: object
-                              architecture:
-                                description: Specifies the architecture of the vm
-                                  guest you are attempting to run. Defaults to the
-                                  compiled architecture of the KubeVirt components
-                                type: string
                               dnsConfig:
                                 description: Specifies the DNS parameters of a pod.
                                   Parameters specified here will be merged to the
@@ -2271,11 +2147,6 @@ spec:
                                           for the VMI to place the emulator thread
                                           on it.
                                         type: boolean
-                                      maxSockets:
-                                        description: MaxSockets specifies the maximum
-                                          amount of sockets that can be hotplugged
-                                        format: int32
-                                        type: integer
                                       model:
                                         description: Model specifies the CPU model
                                           inside the VMI. List of available models
@@ -2353,11 +2224,6 @@ spec:
                                           serial console or not. Serial console access
                                           will not be available if set to false. Defaults
                                           to true.
-                                        type: boolean
-                                      autoattachVSOCK:
-                                        description: Whether to attach the VSOCK CID
-                                          to the VM or not. VSOCK access will be available
-                                          if set to true. Defaults to false.
                                         type: boolean
                                       blockMultiQueue:
                                         description: Whether or not to enable virtio
@@ -2489,12 +2355,6 @@ spec:
                                                 readonly:
                                                   description: ReadOnly. Defaults
                                                     to false.
-                                                  type: boolean
-                                                reservation:
-                                                  description: Reservation indicates
-                                                    if the disk needs to support the
-                                                    persistent reservation for the
-                                                    SCSI disk
                                                   type: boolean
                                               type: object
                                             name:
@@ -2637,15 +2497,6 @@ spec:
                                           which are added to the vmi.
                                         items:
                                           properties:
-                                            acpiIndex:
-                                              description: If specified, the ACPI
-                                                index is used to provide network interface
-                                                device naming, that is stable across
-                                                changes in PCI addresses assigned
-                                                to the device. This value is required
-                                                to be unique across all devices and
-                                                be between 1 and (16*1024-1).
-                                              type: integer
                                             bootOrder:
                                               description: BootOrder is an integer
                                                 value > 0, used to determine ordering
@@ -2789,13 +2640,6 @@ spec:
                                                 to a given network by passing-through
                                                 an SR-IOV PCI device via vfio.
                                               type: object
-                                            state:
-                                              description: State represents the requested
-                                                operational state of the interface.
-                                                The (only) value supported is `absent`,
-                                                expressing a request to remove the
-                                                interface.
-                                              type: string
                                             tag:
                                               description: If specified, the virtual
                                                 network interface address and its
@@ -2837,12 +2681,6 @@ spec:
                                         type: object
                                       tpm:
                                         description: Whether to emulate a TPM device.
-                                        properties:
-                                          persistent:
-                                            description: Persistent indicates the
-                                              state of the TPM device should be kept
-                                              accross reboots Defaults to false
-                                            type: boolean
                                         type: object
                                       useVirtioTransitional:
                                         description: Fall back to legacy virtio 0.9
@@ -3222,20 +3060,6 @@ spec:
                                       sev:
                                         description: AMD Secure Encrypted Virtualization
                                           (SEV).
-                                        properties:
-                                          policy:
-                                            description: 'Guest policy flags as defined
-                                              in AMD SEV API specification. Note:
-                                              due to security reasons it is not allowed
-                                              to enable guest debugging. Therefore
-                                              NoDebug flag is not exposed to users
-                                              and is always true.'
-                                            properties:
-                                              encryptedState:
-                                                description: SEV-ES is required. Defaults
-                                                  to false.
-                                                type: boolean
-                                            type: object
                                         type: object
                                     type: object
                                   machine:
@@ -3378,10 +3202,7 @@ spec:
                                             header to be used in HTTP probes
                                           properties:
                                             name:
-                                              description: The header field name.
-                                                This will be canonicalized upon output,
-                                                so case-variant names will be understood
-                                                as the same header.
+                                              description: The header field name
                                               type: string
                                             value:
                                               description: The header field value
@@ -3577,10 +3398,7 @@ spec:
                                             header to be used in HTTP probes
                                           properties:
                                             name:
-                                              description: The header field name.
-                                                This will be canonicalized upon output,
-                                                so case-variant names will be understood
-                                                as the same header.
+                                              description: The header field name
                                               type: string
                                             value:
                                               description: The header field value
@@ -3799,21 +3617,16 @@ spec:
                                       type: object
                                       x-kubernetes-map-type: atomic
                                     matchLabelKeys:
-                                      description: "MatchLabelKeys is a set of pod
+                                      description: MatchLabelKeys is a set of pod
                                         label keys to select the pods over which spreading
                                         will be calculated. The keys are used to lookup
                                         values from the incoming pod labels, those
                                         key-value labels are ANDed with labelSelector
                                         to select the group of existing pods over
                                         which spreading will be calculated for the
-                                        incoming pod. The same key is forbidden to
-                                        exist in both MatchLabelKeys and LabelSelector.
-                                        MatchLabelKeys cannot be set when LabelSelector
-                                        isn't set. Keys that don't exist in the incoming
-                                        pod labels will be ignored. A null or empty
-                                        list means only match against labelSelector.
-                                        \n This is a beta field and requires the MatchLabelKeysInPodTopologySpread
-                                        feature gate to be enabled (enabled by default)."
+                                        incoming pod. Keys that don't exist in the
+                                        incoming pod labels will be ignored. A null
+                                        or empty list means only match against labelSelector.
                                       items:
                                         type: string
                                       type: array
@@ -3885,9 +3698,9 @@ spec:
                                         are ignored. All nodes are included in the
                                         calculations. \n If this value is nil, the
                                         behavior is equivalent to the Honor policy.
-                                        This is a beta-level feature default enabled
-                                        by the NodeInclusionPolicyInPodTopologySpread
-                                        feature flag."
+                                        This is a alpha-level feature enabled by the
+                                        NodeInclusionPolicyInPodTopologySpread feature
+                                        flag."
                                       type: string
                                     nodeTaintsPolicy:
                                       description: "NodeTaintsPolicy indicates how
@@ -3898,8 +3711,8 @@ spec:
                                         are included. - Ignore: node taints are ignored.
                                         All nodes are included. \n If this value is
                                         nil, the behavior is equivalent to the Ignore
-                                        policy. This is a beta-level feature default
-                                        enabled by the NodeInclusionPolicyInPodTopologySpread
+                                        policy. This is a alpha-level feature enabled
+                                        by the NodeInclusionPolicyInPodTopologySpread
                                         feature flag."
                                       type: string
                                     topologyKey:
@@ -4125,10 +3938,8 @@ spec:
                                             the volume can be hotplugged and hotunplugged.
                                           type: boolean
                                         name:
-                                          description: Name of both the DataVolume
-                                            and the PVC in the same namespace. After
-                                            PVC population the DataVolume is garbage
-                                            collected by default.
+                                          description: Name represents the name of
+                                            the DataVolume in the same namespace
                                           type: string
                                       required:
                                       - name
@@ -4447,8 +4258,8 @@ spec:
                       description: The machine address.
                       type: string
                     type:
-                      description: Machine address type, one of Hostname, ExternalIP,
-                        InternalIP, ExternalDNS or InternalDNS.
+                      description: Machine address type, one of Hostname, ExternalIP
+                        or InternalIP.
                       type: string
                   required:
                   - address

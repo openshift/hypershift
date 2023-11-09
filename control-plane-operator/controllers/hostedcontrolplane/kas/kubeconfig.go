@@ -30,7 +30,7 @@ func ReconcileServiceCAPIKubeconfigSecret(secret, cert *corev1.Secret, ca *corev
 	if secret.Labels == nil {
 		secret.Labels = make(map[string]string)
 	}
-	secret.Labels[capiv1.ClusterNameLabel] = capiClusterName
+	secret.Labels[capiv1.ClusterLabelName] = capiClusterName
 
 	return pki.ReconcileKubeConfig(secret, cert, ca, svcURL, "value", "capi", ownerRef)
 }

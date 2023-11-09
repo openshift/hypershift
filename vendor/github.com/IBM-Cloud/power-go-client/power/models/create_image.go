@@ -52,8 +52,6 @@ type CreateImage struct {
 	SecretKey string `json:"secretKey,omitempty"`
 
 	// Source of the image
-	// >*Note*: url option is deprecated, this option is supported till Oct 2022
-	//
 	// Required: true
 	// Enum: [root-project url]
 	Source *string `json:"source"`
@@ -214,11 +212,6 @@ func (m *CreateImage) ContextValidate(ctx context.Context, formats strfmt.Regist
 func (m *CreateImage) contextValidateStorageAffinity(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.StorageAffinity != nil {
-
-		if swag.IsZero(m.StorageAffinity) { // not required
-			return nil
-		}
-
 		if err := m.StorageAffinity.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("storageAffinity")

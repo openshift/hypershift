@@ -291,21 +291,8 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 		o.KubeconfigVolumeName = "kubeconfig"
 		o.RequiredAPIs = []schema.GroupVersionKind{
 			{Group: "imageregistry.operator.openshift.io", Version: "v1", Kind: "Config"},
-			{Group: "config.openshift.io", Version: "v1", Kind: "Infrastructure"},
-			{Group: "config.openshift.io", Version: "v1", Kind: "DNS"},
-			{Group: "config.openshift.io", Version: "v1", Kind: "Ingress"},
-			{Group: "config.openshift.io", Version: "v1", Kind: "Network"},
-			{Group: "config.openshift.io", Version: "v1", Kind: "Proxy"},
-			{Group: "config.openshift.io", Version: "v1", Kind: "Build"},
-			{Group: "config.openshift.io", Version: "v1", Kind: "Image"},
-			{Group: "config.openshift.io", Version: "v1", Kind: "Project"},
-			{Group: "config.openshift.io", Version: "v1", Kind: "ClusterVersion"},
-			{Group: "config.openshift.io", Version: "v1", Kind: "FeatureGate"},
 			{Group: "config.openshift.io", Version: "v1", Kind: "ClusterOperator"},
-			{Group: "config.openshift.io", Version: "v1", Kind: "OperatorHub"},
-			{Group: "operator.openshift.io", Version: "v1", Kind: "Network"},
-			{Group: "operator.openshift.io", Version: "v1", Kind: "CloudCredential"},
-			{Group: "operator.openshift.io", Version: "v1", Kind: "IngressController"},
+			{Group: "config.openshift.io", Version: "v1", Kind: "ClusterVersion"},
 		}
 	})
 	return nil

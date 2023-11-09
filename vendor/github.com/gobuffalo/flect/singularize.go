@@ -19,7 +19,10 @@ func Singularize(s string) string {
 //	SingularizeWithSize("user", 1) = user
 //	SingularizeWithSize("user", 2) = users
 func SingularizeWithSize(s string, i int) string {
-	return PluralizeWithSize(s, i)
+	if i == 1 || i == -1 {
+		return New(s).Singularize().String()
+	}
+	return New(s).Pluralize().String()
 }
 
 // Singularize returns a singular version of the string
@@ -35,14 +38,6 @@ func (i Ident) Singularize() Ident {
 	singularMoot.RLock()
 	defer singularMoot.RUnlock()
 
-	// check if the Original has an explicit entry in the map
-	if p, ok := pluralToSingle[i.Original]; ok {
-		return i.ReplaceSuffix(i.Original, p)
-	}
-	if _, ok := singleToPlural[i.Original]; ok {
-		return i
-	}
-
 	ls := strings.ToLower(s)
 	if p, ok := pluralToSingle[ls]; ok {
 		if s == Capitalize(s) {
@@ -50,13 +45,11 @@ func (i Ident) Singularize() Ident {
 		}
 		return i.ReplaceSuffix(s, p)
 	}
-
 	if _, ok := singleToPlural[ls]; ok {
 		return i
 	}
-
 	for _, r := range singularRules {
-		if strings.HasSuffix(s, r.suffix) {
+		if strings.HasSuffix(ls, r.suffix) {
 			return i.ReplaceSuffix(s, r.fn(s))
 		}
 	}
@@ -64,6 +57,5 @@ func (i Ident) Singularize() Ident {
 	if strings.HasSuffix(s, "s") {
 		return i.ReplaceSuffix("s", "")
 	}
-
 	return i
 }

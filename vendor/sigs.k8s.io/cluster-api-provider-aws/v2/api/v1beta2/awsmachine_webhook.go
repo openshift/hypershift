@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"sigs.k8s.io/cluster-api-provider-aws/v2/feature"
 )
@@ -47,7 +46,7 @@ var (
 )
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AWSMachine) ValidateCreate() (admission.Warnings, error) {
+func (r *AWSMachine) ValidateCreate() error {
 	var allErrs field.ErrorList
 
 	allErrs = append(allErrs, r.validateCloudInitSecret()...)
@@ -58,20 +57,20 @@ func (r *AWSMachine) ValidateCreate() (admission.Warnings, error) {
 	allErrs = append(allErrs, r.validateAdditionalSecurityGroups()...)
 	allErrs = append(allErrs, r.Spec.AdditionalTags.Validate()...)
 
-	return nil, aggregateObjErrors(r.GroupVersionKind().GroupKind(), r.Name, allErrs)
+	return aggregateObjErrors(r.GroupVersionKind().GroupKind(), r.Name, allErrs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AWSMachine) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
+func (r *AWSMachine) ValidateUpdate(old runtime.Object) error {
 	newAWSMachine, err := runtime.DefaultUnstructuredConverter.ToUnstructured(r)
 	if err != nil {
-		return nil, apierrors.NewInvalid(GroupVersion.WithKind("AWSMachine").GroupKind(), r.Name, field.ErrorList{
+		return apierrors.NewInvalid(GroupVersion.WithKind("AWSMachine").GroupKind(), r.Name, field.ErrorList{
 			field.InternalError(nil, errors.Wrap(err, "failed to convert new AWSMachine to unstructured object")),
 		})
 	}
 	oldAWSMachine, err := runtime.DefaultUnstructuredConverter.ToUnstructured(old)
 	if err != nil {
-		return nil, apierrors.NewInvalid(GroupVersion.WithKind("AWSMachine").GroupKind(), r.Name, field.ErrorList{
+		return apierrors.NewInvalid(GroupVersion.WithKind("AWSMachine").GroupKind(), r.Name, field.ErrorList{
 			field.InternalError(nil, errors.Wrap(err, "failed to convert old AWSMachine to unstructured object")),
 		})
 	}
@@ -79,7 +78,6 @@ func (r *AWSMachine) ValidateUpdate(old runtime.Object) (admission.Warnings, err
 	var allErrs field.ErrorList
 
 	allErrs = append(allErrs, r.validateCloudInitSecret()...)
-	allErrs = append(allErrs, r.validateAdditionalSecurityGroups()...)
 	allErrs = append(allErrs, r.Spec.AdditionalTags.Validate()...)
 
 	newAWSMachineSpec := newAWSMachine["spec"].(map[string]interface{})
@@ -118,7 +116,7 @@ func (r *AWSMachine) ValidateUpdate(old runtime.Object) (admission.Warnings, err
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec"), "cannot be modified"))
 	}
 
-	return nil, aggregateObjErrors(r.GroupVersionKind().GroupKind(), r.Name, allErrs)
+	return aggregateObjErrors(r.GroupVersionKind().GroupKind(), r.Name, allErrs)
 }
 
 func (r *AWSMachine) validateCloudInitSecret() field.ErrorList {
@@ -205,7 +203,7 @@ func (r *AWSMachine) validateNonRootVolumes() field.ErrorList {
 	var allErrs field.ErrorList
 
 	for _, volume := range r.Spec.NonRootVolumes {
-		if VolumeTypesProvisioned.Has(string(volume.Type)) && volume.IOPS == 0 {
+		if VolumeTypesProvisioned.Has(string(r.Spec.RootVolume.Type)) && volume.IOPS == 0 {
 			allErrs = append(allErrs, field.Required(field.NewPath("spec.nonRootVolumes.iops"), "iops required if type is 'io1' or 'io2'"))
 		}
 
@@ -227,8 +225,8 @@ func (r *AWSMachine) validateNonRootVolumes() field.ErrorList {
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *AWSMachine) ValidateDelete() (admission.Warnings, error) {
-	return nil, nil
+func (r *AWSMachine) ValidateDelete() error {
+	return nil
 }
 
 // Default implements webhook.Defaulter such that an empty CloudInit will be defined with a default

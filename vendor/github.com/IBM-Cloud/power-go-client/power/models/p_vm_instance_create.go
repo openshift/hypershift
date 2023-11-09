@@ -514,11 +514,6 @@ func (m *PVMInstanceCreate) contextValidateNetworks(ctx context.Context, formats
 	for i := 0; i < len(m.Networks); i++ {
 
 		if m.Networks[i] != nil {
-
-			if swag.IsZero(m.Networks[i]) { // not required
-				return nil
-			}
-
 			if err := m.Networks[i].ContextValidate(ctx, formats); err != nil {
 				if ve, ok := err.(*errors.Validation); ok {
 					return ve.ValidateName("networks" + "." + strconv.Itoa(i))
@@ -536,10 +531,6 @@ func (m *PVMInstanceCreate) contextValidateNetworks(ctx context.Context, formats
 
 func (m *PVMInstanceCreate) contextValidatePinPolicy(ctx context.Context, formats strfmt.Registry) error {
 
-	if swag.IsZero(m.PinPolicy) { // not required
-		return nil
-	}
-
 	if err := m.PinPolicy.ContextValidate(ctx, formats); err != nil {
 		if ve, ok := err.(*errors.Validation); ok {
 			return ve.ValidateName("pinPolicy")
@@ -555,11 +546,6 @@ func (m *PVMInstanceCreate) contextValidatePinPolicy(ctx context.Context, format
 func (m *PVMInstanceCreate) contextValidateSoftwareLicenses(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.SoftwareLicenses != nil {
-
-		if swag.IsZero(m.SoftwareLicenses) { // not required
-			return nil
-		}
-
 		if err := m.SoftwareLicenses.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("softwareLicenses")
@@ -576,11 +562,6 @@ func (m *PVMInstanceCreate) contextValidateSoftwareLicenses(ctx context.Context,
 func (m *PVMInstanceCreate) contextValidateStorageAffinity(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.StorageAffinity != nil {
-
-		if swag.IsZero(m.StorageAffinity) { // not required
-			return nil
-		}
-
 		if err := m.StorageAffinity.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("storageAffinity")
@@ -597,11 +578,6 @@ func (m *PVMInstanceCreate) contextValidateStorageAffinity(ctx context.Context, 
 func (m *PVMInstanceCreate) contextValidateVirtualCores(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.VirtualCores != nil {
-
-		if swag.IsZero(m.VirtualCores) { // not required
-			return nil
-		}
-
 		if err := m.VirtualCores.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("virtualCores")

@@ -18,29 +18,18 @@ import (
 const credNameAssertion = "ClientAssertionCredential"
 
 // ClientAssertionCredential authenticates an application with assertions provided by a callback function.
-// This credential is for advanced scenarios. [ClientCertificateCredential] has a more convenient API for
+// This credential is for advanced scenarios. ClientCertificateCredential has a more convenient API for
 // the most common assertion scenario, authenticating a service principal with a certificate. See
 // [Azure AD documentation] for details of the assertion format.
 //
 // [Azure AD documentation]: https://docs.microsoft.com/azure/active-directory/develop/active-directory-certificate-credentials#assertion-format
 type ClientAssertionCredential struct {
 	client confidentialClient
-	s      *syncer
 }
 
 // ClientAssertionCredentialOptions contains optional parameters for ClientAssertionCredential.
 type ClientAssertionCredentialOptions struct {
 	azcore.ClientOptions
-
-	// AdditionallyAllowedTenants specifies additional tenants for which the credential may acquire tokens.
-	// Add the wildcard value "*" to allow the credential to acquire tokens for any tenant in which the
-	// application is registered.
-	AdditionallyAllowedTenants []string
-	// DisableInstanceDiscovery should be set true only by applications authenticating in disconnected clouds, or
-	// private clouds such as Azure Stack. It determines whether the credential requests Azure AD instance metadata
-	// from https://login.microsoft.com before authenticating. Setting this to true will skip this request, making
-	// the application responsible for ensuring the configured authority is valid and trustworthy.
-	DisableInstanceDiscovery bool
 }
 
 // NewClientAssertionCredential constructs a ClientAssertionCredential. The getAssertion function must be thread safe. Pass nil for options to accept defaults.
@@ -56,27 +45,29 @@ func NewClientAssertionCredential(tenantID, clientID string, getAssertion func(c
 			return getAssertion(ctx)
 		},
 	)
-	c, err := getConfidentialClient(clientID, tenantID, cred, &options.ClientOptions, confidential.WithInstanceDiscovery(!options.DisableInstanceDiscovery))
+	c, err := getConfidentialClient(clientID, tenantID, cred, &options.ClientOptions)
 	if err != nil {
 		return nil, err
 	}
-	cac := ClientAssertionCredential{client: c}
-	cac.s = newSyncer(credNameAssertion, tenantID, options.AdditionallyAllowedTenants, cac.requestToken, cac.silentAuth)
-	return &cac, nil
+	return &ClientAssertionCredential{client: c}, nil
 }
 
 // GetToken requests an access token from Azure Active Directory. This method is called automatically by Azure SDK clients.
 func (c *ClientAssertionCredential) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	return c.s.GetToken(ctx, opts)
-}
+	if len(opts.Scopes) == 0 {
+		return azcore.AccessToken{}, errors.New(credNameAssertion + ": GetToken() requires at least one scope")
+	}
+	ar, err := c.client.AcquireTokenSilent(ctx, opts.Scopes)
+	if err == nil {
+		logGetTokenSuccess(c, opts)
+		return azcore.AccessToken{Token: ar.AccessToken, ExpiresOn: ar.ExpiresOn.UTC()}, err
+	}
 
-func (c *ClientAssertionCredential) silentAuth(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	ar, err := c.client.AcquireTokenSilent(ctx, opts.Scopes, confidential.WithTenantID(opts.TenantID))
-	return azcore.AccessToken{Token: ar.AccessToken, ExpiresOn: ar.ExpiresOn.UTC()}, err
-}
-
-func (c *ClientAssertionCredential) requestToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	ar, err := c.client.AcquireTokenByCredential(ctx, opts.Scopes, confidential.WithTenantID(opts.TenantID))
+	ar, err = c.client.AcquireTokenByCredential(ctx, opts.Scopes)
+	if err != nil {
+		return azcore.AccessToken{}, newAuthenticationFailedErrorFromMSALError(credNameAssertion, err)
+	}
+	logGetTokenSuccess(c, opts)
 	return azcore.AccessToken{Token: ar.AccessToken, ExpiresOn: ar.ExpiresOn.UTC()}, err
 }
 

@@ -12,8 +12,6 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/internal/exported"
 )
 
 // NewResponseError creates a new *ResponseError from the provided HTTP response.
@@ -31,7 +29,7 @@ func NewResponseError(resp *http.Response) error {
 	}
 
 	// if we didn't get x-ms-error-code, check in the response body
-	body, err := exported.Payload(resp, nil)
+	body, err := Payload(resp)
 	if err != nil {
 		return err
 	}
@@ -123,7 +121,7 @@ func (e *ResponseError) Error() string {
 		fmt.Fprintln(msg, "ERROR CODE UNAVAILABLE")
 	}
 	fmt.Fprintln(msg, "--------------------------------------------------------------------------------")
-	body, err := exported.Payload(e.RawResponse, nil)
+	body, err := Payload(e.RawResponse)
 	if err != nil {
 		// this really shouldn't fail at this point as the response
 		// body is already cached (it was read in NewResponseError)

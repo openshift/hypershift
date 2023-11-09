@@ -1,7 +1,13 @@
+//go:generate mkwinsyscall -output zbrowser_windows.go browser_windows.go
+//sys ShellExecute(hwnd int, verb string, file string, args string, cwd string, showCmd int) (err error) = shell32.ShellExecuteW
 package browser
 
-import "golang.org/x/sys/windows"
+import "os/exec"
+const SW_SHOWNORMAL = 1
 
 func openBrowser(url string) error {
-	return windows.ShellExecute(0, nil, windows.StringToUTF16Ptr(url), nil, nil, windows.SW_SHOWNORMAL)
+   return ShellExecute(0, "", url, "", "", SW_SHOWNORMAL)
+}
+
+func setFlags(cmd *exec.Cmd) {
 }

@@ -224,7 +224,6 @@ func (m *VPNConnectionCreate) ContextValidate(ctx context.Context, formats strfm
 func (m *VPNConnectionCreate) contextValidatePeerGatewayAddress(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.PeerGatewayAddress != nil {
-
 		if err := m.PeerGatewayAddress.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("peerGatewayAddress")

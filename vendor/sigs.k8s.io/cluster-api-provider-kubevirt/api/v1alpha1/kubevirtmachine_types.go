@@ -47,25 +47,10 @@ type KubevirtMachineSpec struct {
 	// +optional
 	ProviderID *string `json:"providerID,omitempty"`
 
-	// BootstrapCheckSpec defines how the CAPK controller is checking CAPI Sentinel file inside the VM.
-	// +optional
-	BootstrapCheckSpec VirtualMachineBootstrapCheckSpec `json:"virtualMachineBootstrapCheck,omitempty"`
-
 	// InfraClusterSecretRef is a reference to a secret with a kubeconfig for external cluster used for infra.
 	// When nil, this defaults to the value present in the KubevirtCluster object's spec associated with this machine.
 	// +optional
 	InfraClusterSecretRef *corev1.ObjectReference `json:"infraClusterSecretRef,omitempty"`
-}
-
-// VirtualMachineBootstrapCheckSpec defines how the controller will remotely check CAPI Sentinel file content.
-type VirtualMachineBootstrapCheckSpec struct {
-	// CheckStrategy describes how CAPK controller will validate a successful CAPI bootstrap.
-	// Following specified method, CAPK will try to retrieve the state of the CAPI Sentinel file from the VM.
-	// Possible values are: "none" or "ssh" (default is "ssh") and this value is validated by apiserver.
-	// +optional
-	// +kubebuilder:validation:Enum=none;ssh
-	// +kubebuilder:default:=ssh
-	CheckStrategy string `json:"checkStrategy,omitempty"`
 }
 
 // KubevirtMachineStatus defines the observed state of KubevirtMachine.

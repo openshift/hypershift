@@ -25,7 +25,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // log is for logging in this package.
@@ -52,24 +51,24 @@ func (r *IBMPowerVSMachineTemplate) Default() {
 var _ webhook.Validator = &IBMPowerVSMachineTemplate{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMPowerVSMachineTemplate) ValidateCreate() (admission.Warnings, error) {
+func (r *IBMPowerVSMachineTemplate) ValidateCreate() error {
 	ibmpowervsmachinetemplatelog.Info("validate create", "name", r.Name)
 	return r.validateIBMPowerVSMachineTemplate()
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMPowerVSMachineTemplate) ValidateUpdate(_ runtime.Object) (admission.Warnings, error) {
+func (r *IBMPowerVSMachineTemplate) ValidateUpdate(old runtime.Object) error {
 	ibmpowervsmachinetemplatelog.Info("validate update", "name", r.Name)
 	return r.validateIBMPowerVSMachineTemplate()
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *IBMPowerVSMachineTemplate) ValidateDelete() (admission.Warnings, error) {
+func (r *IBMPowerVSMachineTemplate) ValidateDelete() error {
 	ibmpowervsmachinetemplatelog.Info("validate delete", "name", r.Name)
-	return nil, nil
+	return nil
 }
 
-func (r *IBMPowerVSMachineTemplate) validateIBMPowerVSMachineTemplate() (admission.Warnings, error) {
+func (r *IBMPowerVSMachineTemplate) validateIBMPowerVSMachineTemplate() error {
 	var allErrs field.ErrorList
 	if err := r.validateIBMPowerVSMachineTemplateNetwork(); err != nil {
 		allErrs = append(allErrs, err)
@@ -84,10 +83,10 @@ func (r *IBMPowerVSMachineTemplate) validateIBMPowerVSMachineTemplate() (admissi
 		allErrs = append(allErrs, err)
 	}
 	if len(allErrs) == 0 {
-		return nil, nil
+		return nil
 	}
 
-	return nil, apierrors.NewInvalid(
+	return apierrors.NewInvalid(
 		schema.GroupKind{Group: "infrastructure.cluster.x-k8s.io", Kind: "IBMPowerVSMachineTemplate"},
 		r.Name, allErrs)
 }

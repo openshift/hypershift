@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"sigs.k8s.io/cluster-api/util/version"
 )
@@ -51,7 +50,7 @@ func (m *Machine) Default() {
 	if m.Labels == nil {
 		m.Labels = make(map[string]string)
 	}
-	m.Labels[ClusterNameLabel] = m.Spec.ClusterName
+	m.Labels[ClusterLabelName] = m.Spec.ClusterName
 
 	if m.Spec.Bootstrap.ConfigRef != nil && m.Spec.Bootstrap.ConfigRef.Namespace == "" {
 		m.Spec.Bootstrap.ConfigRef.Namespace = m.Namespace
@@ -72,38 +71,35 @@ func (m *Machine) Default() {
 }
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (m *Machine) ValidateCreate() (admission.Warnings, error) {
-	return nil, m.validate(nil)
+func (m *Machine) ValidateCreate() error {
+	return m.validate(nil)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (m *Machine) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
+func (m *Machine) ValidateUpdate(old runtime.Object) error {
 	oldM, ok := old.(*Machine)
 	if !ok {
-		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected a Machine but got a %T", old))
+		return apierrors.NewBadRequest(fmt.Sprintf("expected a Machine but got a %T", old))
 	}
-	return nil, m.validate(oldM)
+	return m.validate(oldM)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (m *Machine) ValidateDelete() (admission.Warnings, error) {
-	return nil, nil
+func (m *Machine) ValidateDelete() error {
+	return nil
 }
 
 func (m *Machine) validate(old *Machine) error {
 	var allErrs field.ErrorList
 	specPath := field.NewPath("spec")
 	if m.Spec.Bootstrap.ConfigRef == nil && m.Spec.Bootstrap.DataSecretName == nil {
-		// MachinePool Machines don't have a bootstrap configRef, so don't require it. The bootstrap config is instead owned by the MachinePool.
-		if !isMachinePoolMachine(m) {
-			allErrs = append(
-				allErrs,
-				field.Required(
-					specPath.Child("bootstrap", "data"),
-					"expected either spec.bootstrap.dataSecretName or spec.bootstrap.configRef to be populated",
-				),
-			)
-		}
+		allErrs = append(
+			allErrs,
+			field.Required(
+				specPath.Child("bootstrap", "data"),
+				"expected either spec.bootstrap.dataSecretName or spec.bootstrap.configRef to be populated",
+			),
+		)
 	}
 
 	if m.Spec.Bootstrap.ConfigRef != nil && m.Spec.Bootstrap.ConfigRef.Namespace != m.Namespace {
@@ -145,14 +141,4 @@ func (m *Machine) validate(old *Machine) error {
 		return nil
 	}
 	return apierrors.NewInvalid(GroupVersion.WithKind("Machine").GroupKind(), m.Name, allErrs)
-}
-
-func isMachinePoolMachine(m *Machine) bool {
-	for _, owner := range m.OwnerReferences {
-		if owner.Kind == "MachinePool" {
-			return true
-		}
-	}
-
-	return false
 }

@@ -269,7 +269,6 @@ func (m *CloudInstance) ContextValidate(ctx context.Context, formats strfmt.Regi
 func (m *CloudInstance) contextValidateLimits(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.Limits != nil {
-
 		if err := m.Limits.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("limits")
@@ -288,11 +287,6 @@ func (m *CloudInstance) contextValidatePvmInstances(ctx context.Context, formats
 	for i := 0; i < len(m.PvmInstances); i++ {
 
 		if m.PvmInstances[i] != nil {
-
-			if swag.IsZero(m.PvmInstances[i]) { // not required
-				return nil
-			}
-
 			if err := m.PvmInstances[i].ContextValidate(ctx, formats); err != nil {
 				if ve, ok := err.(*errors.Validation); ok {
 					return ve.ValidateName("pvmInstances" + "." + strconv.Itoa(i))
@@ -311,7 +305,6 @@ func (m *CloudInstance) contextValidatePvmInstances(ctx context.Context, formats
 func (m *CloudInstance) contextValidateUsage(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.Usage != nil {
-
 		if err := m.Usage.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("usage")

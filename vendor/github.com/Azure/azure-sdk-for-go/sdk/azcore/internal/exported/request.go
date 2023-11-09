@@ -169,14 +169,3 @@ func (req *Request) Clone(ctx context.Context) *Request {
 	r2.req = req.req.Clone(ctx)
 	return &r2
 }
-
-// not exported but dependent on Request
-
-// PolicyFunc is a type that implements the Policy interface.
-// Use this type when implementing a stateless policy as a first-class function.
-type PolicyFunc func(*Request) (*http.Response, error)
-
-// Do implements the Policy interface on policyFunc.
-func (pf PolicyFunc) Do(req *Request) (*http.Response, error) {
-	return pf(req)
-}

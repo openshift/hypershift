@@ -48,7 +48,7 @@ func (o *PcloudDhcpPostReader) ReadResponse(response runtime.ClientResponse, con
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/services/dhcp] pcloud.dhcp.post", response, response.Code())
+		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
 	}
 }
 
@@ -89,11 +89,6 @@ func (o *PcloudDhcpPostAccepted) IsServerError() bool {
 // IsCode returns true when this pcloud dhcp post accepted response a status code equal to that given
 func (o *PcloudDhcpPostAccepted) IsCode(code int) bool {
 	return code == 202
-}
-
-// Code gets the status code for the pcloud dhcp post accepted response
-func (o *PcloudDhcpPostAccepted) Code() int {
-	return 202
 }
 
 func (o *PcloudDhcpPostAccepted) Error() string {
@@ -159,11 +154,6 @@ func (o *PcloudDhcpPostBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
-// Code gets the status code for the pcloud dhcp post bad request response
-func (o *PcloudDhcpPostBadRequest) Code() int {
-	return 400
-}
-
 func (o *PcloudDhcpPostBadRequest) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/services/dhcp][%d] pcloudDhcpPostBadRequest  %+v", 400, o.Payload)
 }
@@ -227,11 +217,6 @@ func (o *PcloudDhcpPostForbidden) IsCode(code int) bool {
 	return code == 403
 }
 
-// Code gets the status code for the pcloud dhcp post forbidden response
-func (o *PcloudDhcpPostForbidden) Code() int {
-	return 403
-}
-
 func (o *PcloudDhcpPostForbidden) Error() string {
 	return fmt.Sprintf("[POST /pcloud/v1/cloud-instances/{cloud_instance_id}/services/dhcp][%d] pcloudDhcpPostForbidden  %+v", 403, o.Payload)
 }
@@ -293,11 +278,6 @@ func (o *PcloudDhcpPostInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud dhcp post internal server error response a status code equal to that given
 func (o *PcloudDhcpPostInternalServerError) IsCode(code int) bool {
 	return code == 500
-}
-
-// Code gets the status code for the pcloud dhcp post internal server error response
-func (o *PcloudDhcpPostInternalServerError) Code() int {
-	return 500
 }
 
 func (o *PcloudDhcpPostInternalServerError) Error() string {

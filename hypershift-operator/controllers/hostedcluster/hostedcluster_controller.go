@@ -40,7 +40,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"gopkg.in/ini.v1"
+	ini "gopkg.in/ini.v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -71,6 +71,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/api/util/configrefs"
@@ -200,7 +201,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 			MaxConcurrentReconciles: 10,
 		})
 	for _, managedResource := range r.managedResources() {
-		builder.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())))
+		builder.Watches(&source.Kind{Type: managedResource}, handler.EnqueueRequestsFromMapFunc(enqueueHostedClustersFunc(metricsSet, operatorNamespace, mgr.GetClient())))
 	}
 
 	// Set based on SCC capability
@@ -3523,15 +3524,15 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	return true, nil
 }
 
-func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace string, c client.Client) handler.MapFunc {
-	return func(ctx context.Context, obj client.Object) []reconcile.Request {
+func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace string, c client.Client) func(client.Object) []reconcile.Request {
+	return func(obj client.Object) []reconcile.Request {
 		log := ctrllog.Log
 		if metricsSet == metrics.MetricsSetSRE {
 			if _, isCM := obj.(*corev1.ConfigMap); isCM {
 				if obj.GetName() == metrics.SREConfigurationConfigMapName && obj.GetNamespace() == operatorNamespace {
 					// A change has occurred to the SRE metrics set configuration. We should requeue all HostedClusters
 					hcList := &hyperv1.HostedClusterList{}
-					if err := c.List(ctx, hcList); err != nil {
+					if err := c.List(context.Background(), hcList); err != nil {
 						// An error occurred, report it.
 						log.Error(err, "failed to list hosted clusters while processing SRE config event")
 					}

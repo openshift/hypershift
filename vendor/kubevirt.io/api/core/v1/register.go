@@ -23,7 +23,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/pointer"
 
 	"kubevirt.io/api/core"
 )
@@ -34,19 +33,17 @@ const KubeVirtClientGoSchemeRegistrationVersionEnvVar = "KUBEVIRT_CLIENT_GO_SCHE
 var (
 	ApiLatestVersion            = "v1"
 	ApiSupportedWebhookVersions = []string{"v1alpha3", "v1"}
-	ApiStorageVersion           = "v1"
+	ApiStorageVersion           = "v1alpha3"
 	ApiSupportedVersions        = []extv1.CustomResourceDefinitionVersion{
 		{
 			Name:    "v1",
 			Served:  true,
-			Storage: true,
+			Storage: false,
 		},
 		{
-			Name:               "v1alpha3",
-			Served:             true,
-			Storage:            false,
-			Deprecated:         true,
-			DeprecationWarning: pointer.String("kubevirt.io/v1alpha3 is now deprecated and will be removed in a future release."),
+			Name:    "v1alpha3",
+			Served:  true,
+			Storage: true,
 		},
 	}
 )
@@ -65,7 +62,7 @@ var (
 
 	// SubresourceGroupVersions is group version list used to register these objects
 	// The preferred group version is the first item in the list.
-	SubresourceGroupVersions = []schema.GroupVersion{{Group: SubresourceGroupName, Version: ApiLatestVersion}, {Group: SubresourceGroupName, Version: "v1alpha3"}}
+	SubresourceGroupVersions = []schema.GroupVersion{{Group: SubresourceGroupName, Version: ApiLatestVersion}, {Group: SubresourceGroupName, Version: ApiStorageVersion}}
 
 	// SubresourceStorageGroupVersion is the group version our api is persistented internally as
 	SubresourceStorageGroupVersion = schema.GroupVersion{Group: SubresourceGroupName, Version: ApiStorageVersion}

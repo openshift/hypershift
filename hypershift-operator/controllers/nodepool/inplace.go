@@ -37,7 +37,7 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 	if machineSet.GetLabels() == nil {
 		machineSet.Labels = map[string]string{}
 	}
-	machineSet.Labels[capiv1.ClusterNameLabel] = CAPIClusterName
+	machineSet.Labels[capiv1.ClusterLabelName] = CAPIClusterName
 
 	resourcesName := generateName(CAPIClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	machineSet.Spec.MinReadySeconds = int32(0)
@@ -64,7 +64,7 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 		ObjectMeta: capiv1.ObjectMeta{
 			Labels: map[string]string{
 				resourcesName:           resourcesName,
-				capiv1.ClusterNameLabel: CAPIClusterName,
+				capiv1.ClusterLabelName: CAPIClusterName,
 			},
 			// Annotations here propagate down to Machines
 			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.

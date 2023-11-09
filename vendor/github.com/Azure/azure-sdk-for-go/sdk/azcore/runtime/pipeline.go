@@ -7,6 +7,8 @@
 package runtime
 
 import (
+	"net/http"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/internal/exported"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
@@ -44,7 +46,7 @@ func NewPipeline(module, version string, plOpts PipelineOptions, options *policy
 	}
 	// we put the includeResponsePolicy at the very beginning so that the raw response
 	// is populated with the final response (some policies might mutate the response)
-	policies := []policy.Policy{exported.PolicyFunc(includeResponsePolicy)}
+	policies := []policy.Policy{policyFunc(includeResponsePolicy)}
 	if cp.APIVersion != "" {
 		policies = append(policies, newAPIVersionPolicy(cp.APIVersion, &plOpts.APIVersion))
 	}
@@ -57,10 +59,19 @@ func NewPipeline(module, version string, plOpts PipelineOptions, options *policy
 	policies = append(policies, plOpts.PerRetry...)
 	policies = append(policies, cp.PerRetryPolicies...)
 	policies = append(policies, NewLogPolicy(&cp.Logging))
-	policies = append(policies, exported.PolicyFunc(httpHeaderPolicy), exported.PolicyFunc(bodyDownloadPolicy))
+	policies = append(policies, policyFunc(httpHeaderPolicy), policyFunc(bodyDownloadPolicy))
 	transport := cp.Transport
 	if transport == nil {
 		transport = defaultHTTPClient
 	}
 	return exported.NewPipeline(transport, policies...)
+}
+
+// policyFunc is a type that implements the Policy interface.
+// Use this type when implementing a stateless policy as a first-class function.
+type policyFunc func(*policy.Request) (*http.Response, error)
+
+// Do implements the Policy interface on policyFunc.
+func (pf policyFunc) Do(req *policy.Request) (*http.Response, error) {
+	return pf(req)
 }

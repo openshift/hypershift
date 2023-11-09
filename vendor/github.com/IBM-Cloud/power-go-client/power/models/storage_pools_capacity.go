@@ -110,11 +110,6 @@ func (m *StoragePoolsCapacity) ContextValidate(ctx context.Context, formats strf
 func (m *StoragePoolsCapacity) contextValidateMaximumStorageAllocation(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.MaximumStorageAllocation != nil {
-
-		if swag.IsZero(m.MaximumStorageAllocation) { // not required
-			return nil
-		}
-
 		if err := m.MaximumStorageAllocation.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("maximumStorageAllocation")
@@ -133,11 +128,6 @@ func (m *StoragePoolsCapacity) contextValidateStoragePoolsCapacity(ctx context.C
 	for i := 0; i < len(m.StoragePoolsCapacity); i++ {
 
 		if m.StoragePoolsCapacity[i] != nil {
-
-			if swag.IsZero(m.StoragePoolsCapacity[i]) { // not required
-				return nil
-			}
-
 			if err := m.StoragePoolsCapacity[i].ContextValidate(ctx, formats); err != nil {
 				if ve, ok := err.(*errors.Validation); ok {
 					return ve.ValidateName("storagePoolsCapacity" + "." + strconv.Itoa(i))

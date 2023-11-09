@@ -101,7 +101,7 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 	// check all aws machines have the new instance type
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name).Name
 	awsMachines := &capiaws.AWSMachineList{}
-	err = k.mgmtClient.List(k.ctx, awsMachines, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: nodePool.Name})
+	err = k.mgmtClient.List(k.ctx, awsMachines, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels{capiv1.MachineDeploymentLabelName: nodePool.Name})
 	g.Expect(err).ToNot(HaveOccurred(), "failed to list aws machines")
 
 	for _, machine := range awsMachines.Items {

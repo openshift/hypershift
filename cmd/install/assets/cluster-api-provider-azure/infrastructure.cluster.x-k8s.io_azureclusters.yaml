@@ -316,15 +316,6 @@ spec:
                                   description: SecurityRule defines an Azure security
                                     rule for security groups.
                                   properties:
-                                    action:
-                                      default: Allow
-                                      description: Action specifies whether network
-                                        traffic is allowed or denied. Can either be
-                                        "Allow" or "Deny". Defaults to "Allow".
-                                      enum:
-                                      - Allow
-                                      - Deny
-                                      type: string
                                     description:
                                       description: A description for this rule. Restricted
                                         to 140 chars.
@@ -439,7 +430,7 @@ spec:
                   is only a subset of options that are available in azure cloud provider
                   config. Some values for the cloud provider config are inferred from
                   other parts of cluster api provider azure spec, and may not be available
-                  for overrides. See: https://cloud-provider-azure.sigs.k8s.io/install/configs
+                  for overrides. See: https://kubernetes-sigs.github.io/cloud-provider-azure/install/configs
                   Note: All cloud provider config values can be customized by creating
                   the secret beforehand. CloudProviderConfigOverrides is only used
                   when the secret is managed by the Azure Provider.'
@@ -1030,15 +1021,6 @@ spec:
                                 description: SecurityRule defines an Azure security
                                   rule for security groups.
                                 properties:
-                                  action:
-                                    default: Allow
-                                    description: Action specifies whether network
-                                      traffic is allowed or denied. Can either be
-                                      "Allow" or "Deny". Defaults to "Allow".
-                                    enum:
-                                    - Allow
-                                    - Deny
-                                    type: string
                                   description:
                                     description: A description for this rule. Restricted
                                       to 140 chars.
@@ -1171,39 +1153,6 @@ spec:
                             virtual network to peer with the AzureCluster's virtual
                             network.
                           properties:
-                            forwardPeeringProperties:
-                              description: ForwardPeeringProperties specifies VnetPeeringProperties
-                                for peering from the cluster's virtual network to
-                                the remote virtual network.
-                              properties:
-                                allowForwardedTraffic:
-                                  description: AllowForwardedTraffic specifies whether
-                                    the forwarded traffic from the VMs in the local
-                                    virtual network will be allowed/disallowed in
-                                    remote virtual network.
-                                  type: boolean
-                                allowGatewayTransit:
-                                  description: AllowGatewayTransit specifies if gateway
-                                    links can be used in remote virtual networking
-                                    to link to this virtual network.
-                                  type: boolean
-                                allowVirtualNetworkAccess:
-                                  description: AllowVirtualNetworkAccess specifies
-                                    whether the VMs in the local virtual network space
-                                    would be able to access the VMs in remote virtual
-                                    network space.
-                                  type: boolean
-                                useRemoteGateways:
-                                  description: UseRemoteGateways specifies if remote
-                                    gateways can be used on this virtual network.
-                                    If the flag is set to true, and allowGatewayTransit
-                                    on remote peering is also set to true, the virtual
-                                    network will use the gateways of the remote virtual
-                                    network for transit. Only one peering can have
-                                    this flag set to true. This flag cannot be set
-                                    if virtual network already has a gateway.
-                                  type: boolean
-                              type: object
                             remoteVnetName:
                               description: RemoteVnetName defines name of the remote
                                 virtual network.
@@ -1212,39 +1161,6 @@ spec:
                               description: ResourceGroup is the resource group name
                                 of the remote virtual network.
                               type: string
-                            reversePeeringProperties:
-                              description: ReversePeeringProperties specifies VnetPeeringProperties
-                                for peering from the remote virtual network to the
-                                cluster's virtual network.
-                              properties:
-                                allowForwardedTraffic:
-                                  description: AllowForwardedTraffic specifies whether
-                                    the forwarded traffic from the VMs in the local
-                                    virtual network will be allowed/disallowed in
-                                    remote virtual network.
-                                  type: boolean
-                                allowGatewayTransit:
-                                  description: AllowGatewayTransit specifies if gateway
-                                    links can be used in remote virtual networking
-                                    to link to this virtual network.
-                                  type: boolean
-                                allowVirtualNetworkAccess:
-                                  description: AllowVirtualNetworkAccess specifies
-                                    whether the VMs in the local virtual network space
-                                    would be able to access the VMs in remote virtual
-                                    network space.
-                                  type: boolean
-                                useRemoteGateways:
-                                  description: UseRemoteGateways specifies if remote
-                                    gateways can be used on this virtual network.
-                                    If the flag is set to true, and allowGatewayTransit
-                                    on remote peering is also set to true, the virtual
-                                    network will use the gateways of the remote virtual
-                                    network for transit. Only one peering can have
-                                    this flag set to true. This flag cannot be set
-                                    if virtual network already has a gateway.
-                                  type: boolean
-                              type: object
                           required:
                           - remoteVnetName
                           type: object

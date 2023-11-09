@@ -25,7 +25,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // log is for logging in this package.
@@ -46,9 +45,9 @@ var (
 )
 
 // ValidateCreate will do any extra validation when creating an AWSClusterRoleIdentity.
-func (r *AWSClusterRoleIdentity) ValidateCreate() (admission.Warnings, error) {
+func (r *AWSClusterRoleIdentity) ValidateCreate() error {
 	if r.Spec.SourceIdentityRef == nil {
-		return nil, field.Invalid(field.NewPath("spec", "sourceIdentityRef"),
+		return field.Invalid(field.NewPath("spec", "sourceIdentityRef"),
 			r.Spec.SourceIdentityRef, "field cannot be set to nil")
 	}
 
@@ -56,28 +55,28 @@ func (r *AWSClusterRoleIdentity) ValidateCreate() (admission.Warnings, error) {
 	if r.Spec.AllowedNamespaces != nil {
 		_, err := metav1.LabelSelectorAsSelector(&r.Spec.AllowedNamespaces.Selector)
 		if err != nil {
-			return nil, field.Invalid(field.NewPath("spec", "allowedNamespaces", "selector"), r.Spec.AllowedNamespaces.Selector, err.Error())
+			return field.Invalid(field.NewPath("spec", "allowedNamespaces", "selector"), r.Spec.AllowedNamespaces.Selector, err.Error())
 		}
 	}
 
-	return nil, nil
+	return nil
 }
 
 // ValidateDelete allows you to add any extra validation when deleting an AWSClusterRoleIdentity.
-func (r *AWSClusterRoleIdentity) ValidateDelete() (admission.Warnings, error) {
-	return nil, nil
+func (r *AWSClusterRoleIdentity) ValidateDelete() error {
+	return nil
 }
 
 // ValidateUpdate will do any extra validation when updating an AWSClusterRoleIdentity.
-func (r *AWSClusterRoleIdentity) ValidateUpdate(old runtime.Object) (admission.Warnings, error) {
+func (r *AWSClusterRoleIdentity) ValidateUpdate(old runtime.Object) error {
 	oldP, ok := old.(*AWSClusterRoleIdentity)
 	if !ok {
-		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected an AWSClusterRoleIdentity but got a %T", old))
+		return apierrors.NewBadRequest(fmt.Sprintf("expected an AWSClusterRoleIdentity but got a %T", old))
 	}
 
 	// If a SourceIdentityRef is set, do not allow removal of it.
 	if oldP.Spec.SourceIdentityRef != nil && r.Spec.SourceIdentityRef == nil {
-		return nil, field.Invalid(field.NewPath("spec", "sourceIdentityRef"),
+		return field.Invalid(field.NewPath("spec", "sourceIdentityRef"),
 			r.Spec.SourceIdentityRef, "field cannot be set to nil")
 	}
 
@@ -85,11 +84,11 @@ func (r *AWSClusterRoleIdentity) ValidateUpdate(old runtime.Object) (admission.W
 	if r.Spec.AllowedNamespaces != nil {
 		_, err := metav1.LabelSelectorAsSelector(&r.Spec.AllowedNamespaces.Selector)
 		if err != nil {
-			return nil, field.Invalid(field.NewPath("spec", "allowedNamespaces", "selector"), r.Spec.AllowedNamespaces.Selector, err.Error())
+			return field.Invalid(field.NewPath("spec", "allowedNamespaces", "selector"), r.Spec.AllowedNamespaces.Selector, err.Error())
 		}
 	}
 
-	return nil, nil
+	return nil
 }
 
 // Default will set default values for the AWSClusterRoleIdentity.

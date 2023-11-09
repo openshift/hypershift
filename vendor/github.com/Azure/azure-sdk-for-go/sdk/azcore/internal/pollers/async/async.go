@@ -16,7 +16,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/internal/log"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/internal/pollers"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/internal/shared"
-	"github.com/Azure/azure-sdk-for-go/sdk/internal/poller"
 )
 
 // see https://github.com/Azure/azure-resource-manager-rpc/blob/master/v1.0/async-api-reference.md
@@ -69,15 +68,15 @@ func New[T any](pl exported.Pipeline, resp *http.Response, finalState pollers.Fi
 	if asyncURL == "" {
 		return nil, errors.New("response is missing Azure-AsyncOperation header")
 	}
-	if !poller.IsValidURL(asyncURL) {
+	if !pollers.IsValidURL(asyncURL) {
 		return nil, fmt.Errorf("invalid polling URL %s", asyncURL)
 	}
 	// check for provisioning state.  if the operation is a RELO
 	// and terminates synchronously this will prevent extra polling.
 	// it's ok if there's no provisioning state.
-	state, _ := poller.GetProvisioningState(resp)
+	state, _ := pollers.GetProvisioningState(resp)
 	if state == "" {
-		state = poller.StatusInProgress
+		state = pollers.StatusInProgress
 	}
 	p := &Poller[T]{
 		pl:         pl,
@@ -94,17 +93,17 @@ func New[T any](pl exported.Pipeline, resp *http.Response, finalState pollers.Fi
 
 // Done returns true if the LRO is in a terminal state.
 func (p *Poller[T]) Done() bool {
-	return poller.IsTerminalState(p.CurState)
+	return pollers.IsTerminalState(p.CurState)
 }
 
 // Poll retrieves the current state of the LRO.
 func (p *Poller[T]) Poll(ctx context.Context) (*http.Response, error) {
 	err := pollers.PollHelper(ctx, p.AsyncURL, p.pl, func(resp *http.Response) (string, error) {
-		if !poller.StatusCodeValid(resp) {
+		if !pollers.StatusCodeValid(resp) {
 			p.resp = resp
 			return "", exported.NewResponseError(resp)
 		}
-		state, err := poller.GetStatus(resp)
+		state, err := pollers.GetStatus(resp)
 		if err != nil {
 			return "", err
 		} else if state == "" {
@@ -123,7 +122,7 @@ func (p *Poller[T]) Poll(ctx context.Context) (*http.Response, error) {
 func (p *Poller[T]) Result(ctx context.Context, out *T) error {
 	if p.resp.StatusCode == http.StatusNoContent {
 		return nil
-	} else if poller.Failed(p.CurState) {
+	} else if pollers.Failed(p.CurState) {
 		return exported.NewResponseError(p.resp)
 	}
 	var req *exported.Request
@@ -155,5 +154,5 @@ func (p *Poller[T]) Result(ctx context.Context, out *T) error {
 		p.resp = resp
 	}
 
-	return pollers.ResultHelper(p.resp, poller.Failed(p.CurState), out)
+	return pollers.ResultHelper(p.resp, pollers.Failed(p.CurState), out)
 }

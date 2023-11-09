@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -76,7 +75,7 @@ type HostedClusterConfigOperatorConfig struct {
 
 func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 	cfg.UserAgent = "hosted-cluster-config-operator-manager"
-	allSelector := cache.ByObject{
+	allSelector := cache.ObjectSelector{
 		Label: labels.Everything(),
 	}
 	leaseDuration := time.Second * 60
@@ -93,12 +92,10 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 		RenewDeadline:                 &renewDeadline,
 		RetryPeriod:                   &retryPeriod,
 		HealthProbeBindAddress:        ":6060",
-		Metrics: metricsserver.Options{
-			BindAddress: "0.0.0.0:8080",
-		},
+		MetricsBindAddress:            "0.0.0.0:8080",
 
-		NewClient: func(config *rest.Config, options client.Options) (client.Client, error) {
-			client, err := client.New(config, options)
+		NewClient: func(cache cache.Cache, config *rest.Config, options client.Options, uncachedObjects ...client.Object) (client.Client, error) {
+			client, err := cluster.DefaultNewClient(cache, config, options, uncachedObjects...)
 			if err != nil {
 				return nil, err
 			}
@@ -107,9 +104,8 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				map[string]string{cacheLabelSelectorKey: cacheLabelSelectorValue},
 			), nil
 		},
-		Cache: cache.Options{
-			DefaultLabelSelector: cacheLabelSelector(),
-			ByObject: map[client.Object]cache.ByObject{
+		NewCache: cache.BuilderWithOptions(cache.Options{
+			SelectorsByObject: cache.SelectorsByObject{
 				&corev1.Namespace{}:           allSelector,
 				&configv1.Infrastructure{}:    allSelector,
 				&configv1.DNS{}:               allSelector,
@@ -138,7 +134,8 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				&operatorv1.IngressController{}: allSelector,
 				&imageregistryv1.Config{}:       allSelector,
 			},
-		},
+			DefaultSelector: cache.ObjectSelector{Label: cacheLabelSelector()},
+		}),
 		Scheme: api.Scheme,
 	})
 	if err != nil {

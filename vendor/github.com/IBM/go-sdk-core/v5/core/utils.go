@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"github.com/go-openapi/strfmt"
-	validator "github.com/go-playground/validator/v10"
+	validator "gopkg.in/go-playground/validator.v9"
 )
 
 // Validate is a shared validator instance used to perform validation of structs.
@@ -39,8 +39,8 @@ func init() {
 }
 
 const (
-	jsonMimePattern      = "(?i)^application\\/((json)|(merge\\-patch\\+json)|(vnd\\..*\\+json))(\\s*;.*)?$"
-	jsonPatchMimePattern = "(?i)^application\\/json\\-patch\\+json(\\s*;.*)?$"
+	jsonMimePattern      = "(?i)^application\\/((json)|(merge\\-patch\\+json)|(vnd\\..*\\+json))(;.*)?$"
+	jsonPatchMimePattern = "(?i)^application\\/json\\-patch\\+json(;.*)?$"
 )
 
 // IsNil checks if the specified object is nil or not.
@@ -316,82 +316,10 @@ func GetQueryParamAsInt(urlStr *string, param string) (value *int64, err error) 
 	return
 }
 
-// keywords that are redacted
-var redactedKeywords = []string{
-	"apikey",
-	"api_key",
-	"passcode",
-	"password",
-	"token",
-
-	"aadClientId",
-	"aadClientSecret",
-	"auth",
-	"auth_provider_x509_cert_url",
-	"auth_uri",
-	"client_email",
-	"client_id",
-	"client_x509_cert_url",
-	"key",
-	"project_id",
-	"secret",
-	"subscriptionId",
-	"tenantId",
-	"thumbprint",
-	"token_uri",
-
-	// Information from issue: https://github.com/IBM/go-sdk-core/issues/190
-	// // Redhat
-	// "ibm-cos-access-key",
-	// "ibm-cos-secret-key",
-	// "iam-api-key",
-	// "kms-root-key",
-	// "kms-api-key",
-
-	// // AWS
-	// "aws-access-key",
-	// "aws-secret-access-key",
-
-	// // Azure
-	// "tenantId",
-	// "subscriptionId",
-	// "aadClientId",
-	// "aadClientSecret",
-
-	// // Google
-	// "project_id",
-	// "private_key_id",
-	// "private_key",
-	// "client_email",
-	// "client_id",
-	// "auth_uri",
-	// "token_uri",
-	// "auth_provider_x509_cert_url",
-	// "client_x509_cert_url",
-
-	// // IBM
-	// "primary-gui-api-user",
-	// "primary-gui-api-password",
-	// "owning-gui-api-user",
-	// "owning-gui-api-password",
-	// "g2_api_key",
-
-	// // NetApp
-	// "username",
-	// "password",
-
-	// // VMware
-	// "vcenter-username",
-	// "vcenter-password",
-	// "thumbprint",
-}
-
-var redactedTokens = strings.Join(redactedKeywords, "|")
-
 // Pre-compiled regular expressions used by RedactSecrets().
 var reAuthHeader = regexp.MustCompile(`(?m)^(Authorization|X-Auth\S*): .*`)
-var rePropertySetting = regexp.MustCompile(`(?i)(` + redactedTokens + `)=[^&]*(&|$)`)
-var reJsonField = regexp.MustCompile(`(?i)"([^"]*(` + redactedTokens + `)[^"_]*)":\s*"[^\,]*"`)
+var rePassword1 = regexp.MustCompile(`(?i)(password|token|apikey|api_key|passcode)=[^&]*(&|$)`)
+var rePassword2 = regexp.MustCompile(`(?i)"([^"]*(password|token|apikey|api_key)[^"_]*)":\s*"[^\,]*"`)
 
 // RedactSecrets() returns the input string with secrets redacted.
 func RedactSecrets(input string) string {
@@ -399,8 +327,8 @@ func RedactSecrets(input string) string {
 
 	redactedString := input
 	redactedString = reAuthHeader.ReplaceAllString(redactedString, "$1: "+redacted)
-	redactedString = rePropertySetting.ReplaceAllString(redactedString, "$1="+redacted+"$2")
-	redactedString = reJsonField.ReplaceAllString(redactedString, fmt.Sprintf(`"$1":"%s"`, redacted))
+	redactedString = rePassword1.ReplaceAllString(redactedString, "$1="+redacted+"$2")
+	redactedString = rePassword2.ReplaceAllString(redactedString, fmt.Sprintf(`"$1":"%s"`, redacted))
 
 	return redactedString
 }

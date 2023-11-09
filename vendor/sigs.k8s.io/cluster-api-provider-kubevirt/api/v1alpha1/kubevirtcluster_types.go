@@ -36,8 +36,7 @@ const ( //labels
 )
 
 const ( // annotations
-	VmiDeletionGraceTime       = "capk.cluster.x-k8s.io/vmi-deletion-grace-time"
-	VmiDeletionGraceTimeEscape = "capk.cluster.x-k8s.io~1vmi-deletion-grace-time"
+	VmiDeletionGraceTime = "capk.cluster.x-k8s.io/vmi-deletion-grace-time"
 )
 
 // KubevirtClusterSpec defines the desired state of KubevirtCluster.
@@ -69,7 +68,6 @@ type KubevirtClusterSpec struct {
 // KubevirtClusterStatus defines the observed state of KubevirtCluster.
 type KubevirtClusterStatus struct {
 	// Ready denotes that the infrastructure is ready.
-	// +kubebuilder:default:=false
 	Ready bool `json:"ready"`
 
 	// FailureDomains don't mean much in CAPD since it's all local, but we can see how the rest of cluster API
@@ -105,8 +103,7 @@ type SSHKeys struct {
 
 // ControlPlaneServiceTemplate describes the template for the control plane service.
 type ControlPlaneServiceTemplate struct {
-	// Service metadata allows to set labels, annotations and namespace for the service.
-	// When infraClusterSecretRef is used, ControlPlaneService take the kubeconfig namespace by default if metadata.namespace is not specified.
+	// Service metadata allows to set labels and annotations for the service.
 	// This field is optional.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	// +nullable

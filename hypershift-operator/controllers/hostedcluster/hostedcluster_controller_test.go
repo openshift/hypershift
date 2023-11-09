@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 
 	"github.com/go-logr/logr"
@@ -17,7 +16,7 @@ import (
 	"github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/cmd/version"
+	version "github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
@@ -993,7 +992,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		objects = append(objects, cluster)
 	}
 
-	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
+	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()}
 	r := &HostedClusterReconciler{
 		Client: client,
 		Clock:  clock.RealClock{},
@@ -2199,7 +2198,7 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 				},
 			}
 
-			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).WithStatusSubresource(hcluster).Build()
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build()
 			r := &HostedClusterReconciler{
 				Client: c,
 				overwriteReconcile: func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
@@ -2626,7 +2625,6 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 					Namespace:         "any",
 					Labels:            map[string]string{hyperv1.SilenceClusterAlertsLabel: "clusterDeleting"},
 					DeletionTimestamp: &metav1.Time{Time: time.Now().Round(time.Second)},
-					Finalizers:        []string{"necessary"}, // fake client needs finalizers when a deletionTimestamp is set
 				},
 				Spec: hyperv1.HostedClusterSpec{
 					ClusterID: "id",
@@ -2657,7 +2655,6 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 					Name:              "fakeMachine",
 					Namespace:         hcpNs,
 					DeletionTimestamp: &metav1.Time{Time: time.Now().Round(time.Second)},
-					Finalizers:        []string{"necessary"}, // fake client needs finalizers when a deletionTimestamp is set
 				},
 			}
 			awsep := &hyperv1.AWSEndpointService{
@@ -2665,7 +2662,6 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 					Name:              "fakeAWSEp",
 					Namespace:         hcpNs,
 					DeletionTimestamp: &metav1.Time{Time: time.Now().Round(time.Second)},
-					Finalizers:        []string{"necessary"}, // fake client needs finalizers when a deletionTimestamp is set
 				},
 			}
 
@@ -2676,7 +2672,7 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 				t.Fatalf("registering SkippedCloudResourcesDeletion collector failed: %v", err)
 			}
 
-			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, hcp, awsep, orphanMachine).WithStatusSubresource(hcluster).Build()
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, hcp, awsep, orphanMachine).Build()
 			r := &HostedClusterReconciler{
 				Client:                        c,
 				Clock:                         clock.RealClock{},
@@ -2685,8 +2681,6 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 			}
 
 			ctx := context.Background()
-			ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
-			ctrl.LoggerInto(ctx, ctrl.Log)
 
 			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
 			if err != nil {
@@ -2698,7 +2692,7 @@ func TestSkipCloudResourceDeletionMetric(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -2782,7 +2776,7 @@ func TestReportAvailableTime(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -2890,7 +2884,7 @@ func TestReportClusterVersionRolloutTime(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -2983,7 +2977,7 @@ func TestReportLimitedSuportEnabled(t *testing.T) {
 			}
 
 			// Validate.
-			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -3076,7 +3070,7 @@ func TestReportSilencedAlerts(t *testing.T) {
 			}
 
 			// Validate.
-			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -3194,7 +3188,7 @@ func TestReportProxyConfig(t *testing.T) {
 			}
 
 			// Validate.
-			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -3273,7 +3267,7 @@ func TestReportHostedClusterGuestCloudResourcesDeletionDuration(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -3340,7 +3334,7 @@ func TestReportHostedClusterDeletionDuration(t *testing.T) {
 				t.Fatalf("gathering metrics failed: %v", err)
 			}
 
-			if diff := cmp.Diff(result, tc.expected, ignoreUnexportedDto()); diff != "" {
+			if diff := cmp.Diff(result, tc.expected); diff != "" {
 				t.Errorf("result differs from actual: %s", diff)
 			}
 		})
@@ -4025,7 +4019,6 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().
 				WithScheme(api.Scheme).
 				WithObjects(testCase.objects...).
-				WithStatusSubresource(&hyperv1.HostedCluster{}).
 				Build()}
 
 			r := &HostedClusterReconciler{
@@ -4089,8 +4082,4 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 		},
 		)
 	}
-}
-
-func ignoreUnexportedDto() cmp.Option {
-	return cmpopts.IgnoreUnexported(dto.MetricFamily{}, dto.Metric{}, dto.LabelPair{}, dto.Gauge{})
 }

@@ -240,6 +240,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.AWSLoadBalancerSpec)(nil), (*AWSLoadBalancerSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_AWSLoadBalancerSpec_To_v1beta1_AWSLoadBalancerSpec(a.(*v1beta2.AWSLoadBalancerSpec), b.(*AWSLoadBalancerSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*AWSMachine)(nil), (*v1beta2.AWSMachine)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_AWSMachine_To_v1beta2_AWSMachine(a.(*AWSMachine), b.(*v1beta2.AWSMachine), scope)
 	}); err != nil {
@@ -257,6 +262,11 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*v1beta2.AWSMachineList)(nil), (*AWSMachineList)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta2_AWSMachineList_To_v1beta1_AWSMachineList(a.(*v1beta2.AWSMachineList), b.(*AWSMachineList), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.AWSMachineSpec)(nil), (*AWSMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_AWSMachineSpec_To_v1beta1_AWSMachineSpec(a.(*v1beta2.AWSMachineSpec), b.(*AWSMachineSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -385,6 +395,16 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*ClassicELB)(nil), (*v1beta2.ClassicELB)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_ClassicELB_To_v1beta2_ClassicELB(a.(*ClassicELB), b.(*v1beta2.ClassicELB), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.ClassicELB)(nil), (*ClassicELB)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_ClassicELB_To_v1beta1_ClassicELB(a.(*v1beta2.ClassicELB), b.(*ClassicELB), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*ClassicELBAttributes)(nil), (*v1beta2.ClassicELBAttributes)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_ClassicELBAttributes_To_v1beta2_ClassicELBAttributes(a.(*ClassicELBAttributes), b.(*v1beta2.ClassicELBAttributes), scope)
 	}); err != nil {
@@ -460,8 +480,18 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.IngressRule)(nil), (*IngressRule)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_IngressRule_To_v1beta1_IngressRule(a.(*v1beta2.IngressRule), b.(*IngressRule), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*Instance)(nil), (*v1beta2.Instance)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_Instance_To_v1beta2_Instance(a.(*Instance), b.(*v1beta2.Instance), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.Instance)(nil), (*Instance)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_Instance_To_v1beta1_Instance(a.(*v1beta2.Instance), b.(*Instance), scope)
 	}); err != nil {
 		return err
 	}
@@ -470,8 +500,18 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkSpec)(nil), (*NetworkSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkSpec_To_v1beta1_NetworkSpec(a.(*v1beta2.NetworkSpec), b.(*NetworkSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddGeneratedConversionFunc((*NetworkStatus)(nil), (*v1beta2.NetworkStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_NetworkStatus_To_v1beta2_NetworkStatus(a.(*NetworkStatus), b.(*v1beta2.NetworkStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkStatus)(nil), (*NetworkStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkStatus_To_v1beta1_NetworkStatus(a.(*v1beta2.NetworkStatus), b.(*NetworkStatus), scope)
 	}); err != nil {
 		return err
 	}
@@ -555,48 +595,8 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddConversionFunc((*ClassicELB)(nil), (*v1beta2.LoadBalancer)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_ClassicELB_To_v1beta2_LoadBalancer(a.(*ClassicELB), b.(*v1beta2.LoadBalancer), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddConversionFunc((*v1beta2.AWSClusterSpec)(nil), (*AWSClusterSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta2_AWSClusterSpec_To_v1beta1_AWSClusterSpec(a.(*v1beta2.AWSClusterSpec), b.(*AWSClusterSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddConversionFunc((*v1beta2.AWSLoadBalancerSpec)(nil), (*AWSLoadBalancerSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_AWSLoadBalancerSpec_To_v1beta1_AWSLoadBalancerSpec(a.(*v1beta2.AWSLoadBalancerSpec), b.(*AWSLoadBalancerSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddConversionFunc((*v1beta2.AWSMachineSpec)(nil), (*AWSMachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_AWSMachineSpec_To_v1beta1_AWSMachineSpec(a.(*v1beta2.AWSMachineSpec), b.(*AWSMachineSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddConversionFunc((*v1beta2.IngressRule)(nil), (*IngressRule)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_IngressRule_To_v1beta1_IngressRule(a.(*v1beta2.IngressRule), b.(*IngressRule), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddConversionFunc((*v1beta2.Instance)(nil), (*Instance)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_Instance_To_v1beta1_Instance(a.(*v1beta2.Instance), b.(*Instance), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddConversionFunc((*v1beta2.LoadBalancer)(nil), (*ClassicELB)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_LoadBalancer_To_v1beta1_ClassicELB(a.(*v1beta2.LoadBalancer), b.(*ClassicELB), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddConversionFunc((*v1beta2.NetworkSpec)(nil), (*NetworkSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkSpec_To_v1beta1_NetworkSpec(a.(*v1beta2.NetworkSpec), b.(*NetworkSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddConversionFunc((*v1beta2.NetworkStatus)(nil), (*NetworkStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkStatus_To_v1beta1_NetworkStatus(a.(*v1beta2.NetworkStatus), b.(*NetworkStatus), scope)
 	}); err != nil {
 		return err
 	}
@@ -881,15 +881,7 @@ func autoConvert_v1beta1_AWSClusterSpec_To_v1beta2_AWSClusterSpec(in *AWSCluster
 	out.SSHKeyName = (*string)(unsafe.Pointer(in.SSHKeyName))
 	out.ControlPlaneEndpoint = in.ControlPlaneEndpoint
 	out.AdditionalTags = *(*v1beta2.Tags)(unsafe.Pointer(&in.AdditionalTags))
-	if in.ControlPlaneLoadBalancer != nil {
-		in, out := &in.ControlPlaneLoadBalancer, &out.ControlPlaneLoadBalancer
-		*out = new(v1beta2.AWSLoadBalancerSpec)
-		if err := Convert_v1beta1_AWSLoadBalancerSpec_To_v1beta2_AWSLoadBalancerSpec(*in, *out, s); err != nil {
-			return err
-		}
-	} else {
-		out.ControlPlaneLoadBalancer = nil
-	}
+	out.ControlPlaneLoadBalancer = (*v1beta2.AWSLoadBalancerSpec)(unsafe.Pointer(in.ControlPlaneLoadBalancer))
 	out.ImageLookupFormat = in.ImageLookupFormat
 	out.ImageLookupOrg = in.ImageLookupOrg
 	out.ImageLookupBaseOS = in.ImageLookupBaseOS
@@ -911,19 +903,10 @@ func autoConvert_v1beta2_AWSClusterSpec_To_v1beta1_AWSClusterSpec(in *v1beta2.AW
 		return err
 	}
 	out.Region = in.Region
-	// WARNING: in.Partition requires manual conversion: does not exist in peer-type
 	out.SSHKeyName = (*string)(unsafe.Pointer(in.SSHKeyName))
 	out.ControlPlaneEndpoint = in.ControlPlaneEndpoint
 	out.AdditionalTags = *(*Tags)(unsafe.Pointer(&in.AdditionalTags))
-	if in.ControlPlaneLoadBalancer != nil {
-		in, out := &in.ControlPlaneLoadBalancer, &out.ControlPlaneLoadBalancer
-		*out = new(AWSLoadBalancerSpec)
-		if err := Convert_v1beta2_AWSLoadBalancerSpec_To_v1beta1_AWSLoadBalancerSpec(*in, *out, s); err != nil {
-			return err
-		}
-	} else {
-		out.ControlPlaneLoadBalancer = nil
-	}
+	out.ControlPlaneLoadBalancer = (*AWSLoadBalancerSpec)(unsafe.Pointer(in.ControlPlaneLoadBalancer))
 	out.ImageLookupFormat = in.ImageLookupFormat
 	out.ImageLookupOrg = in.ImageLookupOrg
 	out.ImageLookupBaseOS = in.ImageLookupBaseOS
@@ -1015,15 +998,7 @@ func autoConvert_v1beta1_AWSClusterStatus_To_v1beta2_AWSClusterStatus(in *AWSClu
 		return err
 	}
 	out.FailureDomains = *(*apiv1beta1.FailureDomains)(unsafe.Pointer(&in.FailureDomains))
-	if in.Bastion != nil {
-		in, out := &in.Bastion, &out.Bastion
-		*out = new(v1beta2.Instance)
-		if err := Convert_v1beta1_Instance_To_v1beta2_Instance(*in, *out, s); err != nil {
-			return err
-		}
-	} else {
-		out.Bastion = nil
-	}
+	out.Bastion = (*v1beta2.Instance)(unsafe.Pointer(in.Bastion))
 	out.Conditions = *(*apiv1beta1.Conditions)(unsafe.Pointer(&in.Conditions))
 	return nil
 }
@@ -1039,15 +1014,7 @@ func autoConvert_v1beta2_AWSClusterStatus_To_v1beta1_AWSClusterStatus(in *v1beta
 		return err
 	}
 	out.FailureDomains = *(*apiv1beta1.FailureDomains)(unsafe.Pointer(&in.FailureDomains))
-	if in.Bastion != nil {
-		in, out := &in.Bastion, &out.Bastion
-		*out = new(Instance)
-		if err := Convert_v1beta2_Instance_To_v1beta1_Instance(*in, *out, s); err != nil {
-			return err
-		}
-	} else {
-		out.Bastion = nil
-	}
+	out.Bastion = (*Instance)(unsafe.Pointer(in.Bastion))
 	out.Conditions = *(*apiv1beta1.Conditions)(unsafe.Pointer(&in.Conditions))
 	return nil
 }
@@ -1199,10 +1166,10 @@ func Convert_v1beta2_AWSIdentityReference_To_v1beta1_AWSIdentityReference(in *v1
 
 func autoConvert_v1beta1_AWSLoadBalancerSpec_To_v1beta2_AWSLoadBalancerSpec(in *AWSLoadBalancerSpec, out *v1beta2.AWSLoadBalancerSpec, s conversion.Scope) error {
 	out.Name = (*string)(unsafe.Pointer(in.Name))
-	out.Scheme = (*v1beta2.ELBScheme)(unsafe.Pointer(in.Scheme))
+	out.Scheme = (*v1beta2.ClassicELBScheme)(unsafe.Pointer(in.Scheme))
 	out.CrossZoneLoadBalancing = in.CrossZoneLoadBalancing
 	out.Subnets = *(*[]string)(unsafe.Pointer(&in.Subnets))
-	out.HealthCheckProtocol = (*v1beta2.ELBProtocol)(unsafe.Pointer(in.HealthCheckProtocol))
+	out.HealthCheckProtocol = (*v1beta2.ClassicELBProtocol)(unsafe.Pointer(in.HealthCheckProtocol))
 	out.AdditionalSecurityGroups = *(*[]string)(unsafe.Pointer(&in.AdditionalSecurityGroups))
 	return nil
 }
@@ -1219,11 +1186,12 @@ func autoConvert_v1beta2_AWSLoadBalancerSpec_To_v1beta1_AWSLoadBalancerSpec(in *
 	out.Subnets = *(*[]string)(unsafe.Pointer(&in.Subnets))
 	out.HealthCheckProtocol = (*ClassicELBProtocol)(unsafe.Pointer(in.HealthCheckProtocol))
 	out.AdditionalSecurityGroups = *(*[]string)(unsafe.Pointer(&in.AdditionalSecurityGroups))
-	// WARNING: in.IngressRules requires manual conversion: does not exist in peer-type
-	// WARNING: in.LoadBalancerType requires manual conversion: does not exist in peer-type
-	// WARNING: in.DisableHostsRewrite requires manual conversion: does not exist in peer-type
-	// WARNING: in.PreserveClientIP requires manual conversion: does not exist in peer-type
 	return nil
+}
+
+// Convert_v1beta2_AWSLoadBalancerSpec_To_v1beta1_AWSLoadBalancerSpec is an autogenerated conversion function.
+func Convert_v1beta2_AWSLoadBalancerSpec_To_v1beta1_AWSLoadBalancerSpec(in *v1beta2.AWSLoadBalancerSpec, out *AWSLoadBalancerSpec, s conversion.Scope) error {
+	return autoConvert_v1beta2_AWSLoadBalancerSpec_To_v1beta1_AWSLoadBalancerSpec(in, out, s)
 }
 
 func autoConvert_v1beta1_AWSMachine_To_v1beta2_AWSMachine(in *AWSMachine, out *v1beta2.AWSMachine, s conversion.Scope) error {
@@ -1351,7 +1319,6 @@ func autoConvert_v1beta1_AWSMachineSpec_To_v1beta2_AWSMachineSpec(in *AWSMachine
 func autoConvert_v1beta2_AWSMachineSpec_To_v1beta1_AWSMachineSpec(in *v1beta2.AWSMachineSpec, out *AWSMachineSpec, s conversion.Scope) error {
 	out.ProviderID = (*string)(unsafe.Pointer(in.ProviderID))
 	out.InstanceID = (*string)(unsafe.Pointer(in.InstanceID))
-	// WARNING: in.InstanceMetadataOptions requires manual conversion: does not exist in peer-type
 	if err := Convert_v1beta2_AMIReference_To_v1beta1_AMIReference(&in.AMI, &out.AMI, s); err != nil {
 		return err
 	}
@@ -1392,9 +1359,13 @@ func autoConvert_v1beta2_AWSMachineSpec_To_v1beta1_AWSMachineSpec(in *v1beta2.AW
 	}
 	out.Ignition = (*Ignition)(unsafe.Pointer(in.Ignition))
 	out.SpotMarketOptions = (*SpotMarketOptions)(unsafe.Pointer(in.SpotMarketOptions))
-	// WARNING: in.PlacementGroupName requires manual conversion: does not exist in peer-type
 	out.Tenancy = in.Tenancy
 	return nil
+}
+
+// Convert_v1beta2_AWSMachineSpec_To_v1beta1_AWSMachineSpec is an autogenerated conversion function.
+func Convert_v1beta2_AWSMachineSpec_To_v1beta1_AWSMachineSpec(in *v1beta2.AWSMachineSpec, out *AWSMachineSpec, s conversion.Scope) error {
+	return autoConvert_v1beta2_AWSMachineSpec_To_v1beta1_AWSMachineSpec(in, out, s)
 }
 
 func autoConvert_v1beta1_AWSMachineStatus_To_v1beta2_AWSMachineStatus(in *AWSMachineStatus, out *v1beta2.AWSMachineStatus, s conversion.Scope) error {
@@ -1745,6 +1716,48 @@ func Convert_v1beta2_CNISpec_To_v1beta1_CNISpec(in *v1beta2.CNISpec, out *CNISpe
 	return autoConvert_v1beta2_CNISpec_To_v1beta1_CNISpec(in, out, s)
 }
 
+func autoConvert_v1beta1_ClassicELB_To_v1beta2_ClassicELB(in *ClassicELB, out *v1beta2.ClassicELB, s conversion.Scope) error {
+	out.Name = in.Name
+	out.DNSName = in.DNSName
+	out.Scheme = v1beta2.ClassicELBScheme(in.Scheme)
+	out.AvailabilityZones = *(*[]string)(unsafe.Pointer(&in.AvailabilityZones))
+	out.SubnetIDs = *(*[]string)(unsafe.Pointer(&in.SubnetIDs))
+	out.SecurityGroupIDs = *(*[]string)(unsafe.Pointer(&in.SecurityGroupIDs))
+	out.Listeners = *(*[]v1beta2.ClassicELBListener)(unsafe.Pointer(&in.Listeners))
+	out.HealthCheck = (*v1beta2.ClassicELBHealthCheck)(unsafe.Pointer(in.HealthCheck))
+	if err := Convert_v1beta1_ClassicELBAttributes_To_v1beta2_ClassicELBAttributes(&in.Attributes, &out.Attributes, s); err != nil {
+		return err
+	}
+	out.Tags = *(*map[string]string)(unsafe.Pointer(&in.Tags))
+	return nil
+}
+
+// Convert_v1beta1_ClassicELB_To_v1beta2_ClassicELB is an autogenerated conversion function.
+func Convert_v1beta1_ClassicELB_To_v1beta2_ClassicELB(in *ClassicELB, out *v1beta2.ClassicELB, s conversion.Scope) error {
+	return autoConvert_v1beta1_ClassicELB_To_v1beta2_ClassicELB(in, out, s)
+}
+
+func autoConvert_v1beta2_ClassicELB_To_v1beta1_ClassicELB(in *v1beta2.ClassicELB, out *ClassicELB, s conversion.Scope) error {
+	out.Name = in.Name
+	out.DNSName = in.DNSName
+	out.Scheme = ClassicELBScheme(in.Scheme)
+	out.AvailabilityZones = *(*[]string)(unsafe.Pointer(&in.AvailabilityZones))
+	out.SubnetIDs = *(*[]string)(unsafe.Pointer(&in.SubnetIDs))
+	out.SecurityGroupIDs = *(*[]string)(unsafe.Pointer(&in.SecurityGroupIDs))
+	out.Listeners = *(*[]ClassicELBListener)(unsafe.Pointer(&in.Listeners))
+	out.HealthCheck = (*ClassicELBHealthCheck)(unsafe.Pointer(in.HealthCheck))
+	if err := Convert_v1beta2_ClassicELBAttributes_To_v1beta1_ClassicELBAttributes(&in.Attributes, &out.Attributes, s); err != nil {
+		return err
+	}
+	out.Tags = *(*map[string]string)(unsafe.Pointer(&in.Tags))
+	return nil
+}
+
+// Convert_v1beta2_ClassicELB_To_v1beta1_ClassicELB is an autogenerated conversion function.
+func Convert_v1beta2_ClassicELB_To_v1beta1_ClassicELB(in *v1beta2.ClassicELB, out *ClassicELB, s conversion.Scope) error {
+	return autoConvert_v1beta2_ClassicELB_To_v1beta1_ClassicELB(in, out, s)
+}
+
 func autoConvert_v1beta1_ClassicELBAttributes_To_v1beta2_ClassicELBAttributes(in *ClassicELBAttributes, out *v1beta2.ClassicELBAttributes, s conversion.Scope) error {
 	out.IdleTimeout = time.Duration(in.IdleTimeout)
 	out.CrossZoneLoadBalancing = in.CrossZoneLoadBalancing
@@ -1796,9 +1809,9 @@ func Convert_v1beta2_ClassicELBHealthCheck_To_v1beta1_ClassicELBHealthCheck(in *
 }
 
 func autoConvert_v1beta1_ClassicELBListener_To_v1beta2_ClassicELBListener(in *ClassicELBListener, out *v1beta2.ClassicELBListener, s conversion.Scope) error {
-	out.Protocol = v1beta2.ELBProtocol(in.Protocol)
+	out.Protocol = v1beta2.ClassicELBProtocol(in.Protocol)
 	out.Port = in.Port
-	out.InstanceProtocol = v1beta2.ELBProtocol(in.InstanceProtocol)
+	out.InstanceProtocol = v1beta2.ClassicELBProtocol(in.InstanceProtocol)
 	out.InstancePort = in.InstancePort
 	return nil
 }
@@ -1937,8 +1950,12 @@ func autoConvert_v1beta2_IngressRule_To_v1beta1_IngressRule(in *v1beta2.IngressR
 	out.CidrBlocks = *(*[]string)(unsafe.Pointer(&in.CidrBlocks))
 	out.IPv6CidrBlocks = *(*[]string)(unsafe.Pointer(&in.IPv6CidrBlocks))
 	out.SourceSecurityGroupIDs = *(*[]string)(unsafe.Pointer(&in.SourceSecurityGroupIDs))
-	// WARNING: in.SourceSecurityGroupRoles requires manual conversion: does not exist in peer-type
 	return nil
+}
+
+// Convert_v1beta2_IngressRule_To_v1beta1_IngressRule is an autogenerated conversion function.
+func Convert_v1beta2_IngressRule_To_v1beta1_IngressRule(in *v1beta2.IngressRule, out *IngressRule, s conversion.Scope) error {
+	return autoConvert_v1beta2_IngressRule_To_v1beta1_IngressRule(in, out, s)
 }
 
 func autoConvert_v1beta1_Instance_To_v1beta2_Instance(in *Instance, out *v1beta2.Instance, s conversion.Scope) error {
@@ -1993,11 +2010,14 @@ func autoConvert_v1beta2_Instance_To_v1beta1_Instance(in *v1beta2.Instance, out 
 	out.Tags = *(*map[string]string)(unsafe.Pointer(&in.Tags))
 	out.AvailabilityZone = in.AvailabilityZone
 	out.SpotMarketOptions = (*SpotMarketOptions)(unsafe.Pointer(in.SpotMarketOptions))
-	// WARNING: in.PlacementGroupName requires manual conversion: does not exist in peer-type
 	out.Tenancy = in.Tenancy
 	out.VolumeIDs = *(*[]string)(unsafe.Pointer(&in.VolumeIDs))
-	// WARNING: in.InstanceMetadataOptions requires manual conversion: does not exist in peer-type
 	return nil
+}
+
+// Convert_v1beta2_Instance_To_v1beta1_Instance is an autogenerated conversion function.
+func Convert_v1beta2_Instance_To_v1beta1_Instance(in *v1beta2.Instance, out *Instance, s conversion.Scope) error {
+	return autoConvert_v1beta2_Instance_To_v1beta1_Instance(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkSpec_To_v1beta2_NetworkSpec(in *NetworkSpec, out *v1beta2.NetworkSpec, s conversion.Scope) error {
@@ -2022,25 +2042,17 @@ func autoConvert_v1beta2_NetworkSpec_To_v1beta1_NetworkSpec(in *v1beta2.NetworkS
 	out.Subnets = *(*Subnets)(unsafe.Pointer(&in.Subnets))
 	out.CNI = (*CNISpec)(unsafe.Pointer(in.CNI))
 	out.SecurityGroupOverrides = *(*map[SecurityGroupRole]string)(unsafe.Pointer(&in.SecurityGroupOverrides))
-	// WARNING: in.AdditionalControlPlaneIngressRules requires manual conversion: does not exist in peer-type
 	return nil
 }
 
+// Convert_v1beta2_NetworkSpec_To_v1beta1_NetworkSpec is an autogenerated conversion function.
+func Convert_v1beta2_NetworkSpec_To_v1beta1_NetworkSpec(in *v1beta2.NetworkSpec, out *NetworkSpec, s conversion.Scope) error {
+	return autoConvert_v1beta2_NetworkSpec_To_v1beta1_NetworkSpec(in, out, s)
+}
+
 func autoConvert_v1beta1_NetworkStatus_To_v1beta2_NetworkStatus(in *NetworkStatus, out *v1beta2.NetworkStatus, s conversion.Scope) error {
-	if in.SecurityGroups != nil {
-		in, out := &in.SecurityGroups, &out.SecurityGroups
-		*out = make(map[v1beta2.SecurityGroupRole]v1beta2.SecurityGroup, len(*in))
-		for key, val := range *in {
-			newVal := new(v1beta2.SecurityGroup)
-			if err := Convert_v1beta1_SecurityGroup_To_v1beta2_SecurityGroup(&val, newVal, s); err != nil {
-				return err
-			}
-			(*out)[v1beta2.SecurityGroupRole(key)] = *newVal
-		}
-	} else {
-		out.SecurityGroups = nil
-	}
-	if err := Convert_v1beta1_ClassicELB_To_v1beta2_LoadBalancer(&in.APIServerELB, &out.APIServerELB, s); err != nil {
+	out.SecurityGroups = *(*map[v1beta2.SecurityGroupRole]v1beta2.SecurityGroup)(unsafe.Pointer(&in.SecurityGroups))
+	if err := Convert_v1beta1_ClassicELB_To_v1beta2_ClassicELB(&in.APIServerELB, &out.APIServerELB, s); err != nil {
 		return err
 	}
 	return nil
@@ -2052,24 +2064,16 @@ func Convert_v1beta1_NetworkStatus_To_v1beta2_NetworkStatus(in *NetworkStatus, o
 }
 
 func autoConvert_v1beta2_NetworkStatus_To_v1beta1_NetworkStatus(in *v1beta2.NetworkStatus, out *NetworkStatus, s conversion.Scope) error {
-	if in.SecurityGroups != nil {
-		in, out := &in.SecurityGroups, &out.SecurityGroups
-		*out = make(map[SecurityGroupRole]SecurityGroup, len(*in))
-		for key, val := range *in {
-			newVal := new(SecurityGroup)
-			if err := Convert_v1beta2_SecurityGroup_To_v1beta1_SecurityGroup(&val, newVal, s); err != nil {
-				return err
-			}
-			(*out)[SecurityGroupRole(key)] = *newVal
-		}
-	} else {
-		out.SecurityGroups = nil
-	}
-	if err := Convert_v1beta2_LoadBalancer_To_v1beta1_ClassicELB(&in.APIServerELB, &out.APIServerELB, s); err != nil {
+	out.SecurityGroups = *(*map[SecurityGroupRole]SecurityGroup)(unsafe.Pointer(&in.SecurityGroups))
+	if err := Convert_v1beta2_ClassicELB_To_v1beta1_ClassicELB(&in.APIServerELB, &out.APIServerELB, s); err != nil {
 		return err
 	}
-	// WARNING: in.NatGatewaysIPs requires manual conversion: does not exist in peer-type
 	return nil
+}
+
+// Convert_v1beta2_NetworkStatus_To_v1beta1_NetworkStatus is an autogenerated conversion function.
+func Convert_v1beta2_NetworkStatus_To_v1beta1_NetworkStatus(in *v1beta2.NetworkStatus, out *NetworkStatus, s conversion.Scope) error {
+	return autoConvert_v1beta2_NetworkStatus_To_v1beta1_NetworkStatus(in, out, s)
 }
 
 func autoConvert_v1beta1_RouteTable_To_v1beta2_RouteTable(in *RouteTable, out *v1beta2.RouteTable, s conversion.Scope) error {
@@ -2119,17 +2123,7 @@ func Convert_v1beta2_S3Bucket_To_v1beta1_S3Bucket(in *v1beta2.S3Bucket, out *S3B
 func autoConvert_v1beta1_SecurityGroup_To_v1beta2_SecurityGroup(in *SecurityGroup, out *v1beta2.SecurityGroup, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Name = in.Name
-	if in.IngressRules != nil {
-		in, out := &in.IngressRules, &out.IngressRules
-		*out = make(v1beta2.IngressRules, len(*in))
-		for i := range *in {
-			if err := Convert_v1beta1_IngressRule_To_v1beta2_IngressRule(&(*in)[i], &(*out)[i], s); err != nil {
-				return err
-			}
-		}
-	} else {
-		out.IngressRules = nil
-	}
+	out.IngressRules = *(*v1beta2.IngressRules)(unsafe.Pointer(&in.IngressRules))
 	out.Tags = *(*v1beta2.Tags)(unsafe.Pointer(&in.Tags))
 	return nil
 }
@@ -2142,17 +2136,7 @@ func Convert_v1beta1_SecurityGroup_To_v1beta2_SecurityGroup(in *SecurityGroup, o
 func autoConvert_v1beta2_SecurityGroup_To_v1beta1_SecurityGroup(in *v1beta2.SecurityGroup, out *SecurityGroup, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Name = in.Name
-	if in.IngressRules != nil {
-		in, out := &in.IngressRules, &out.IngressRules
-		*out = make(IngressRules, len(*in))
-		for i := range *in {
-			if err := Convert_v1beta2_IngressRule_To_v1beta1_IngressRule(&(*in)[i], &(*out)[i], s); err != nil {
-				return err
-			}
-		}
-	} else {
-		out.IngressRules = nil
-	}
+	out.IngressRules = *(*IngressRules)(unsafe.Pointer(&in.IngressRules))
 	out.Tags = *(*Tags)(unsafe.Pointer(&in.Tags))
 	return nil
 }

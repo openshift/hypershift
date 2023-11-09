@@ -3,7 +3,6 @@ package instance
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/IBM-Cloud/power-go-client/errors"
 	"github.com/IBM-Cloud/power-go-client/helpers"
@@ -27,9 +26,6 @@ func NewIBMPIVpnConnectionClient(ctx context.Context, sess *ibmpisession.IBMPISe
 
 // Get a VPN Connection
 func (f *IBMPIVpnConnectionClient) Get(id string) (*models.VPNConnection, error) {
-	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
-	}
 	params := p_cloud_v_p_n_connections.NewPcloudVpnconnectionsGetParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVpnConnectionID(id)
@@ -45,9 +41,6 @@ func (f *IBMPIVpnConnectionClient) Get(id string) (*models.VPNConnection, error)
 
 // Create a VPN Connection
 func (f *IBMPIVpnConnectionClient) Create(body *models.VPNConnectionCreate) (*models.VPNConnectionCreateResponse, error) {
-	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
-	}
 	params := p_cloud_v_p_n_connections.NewPcloudVpnconnectionsPostParams().
 		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithBody(body)
@@ -63,9 +56,6 @@ func (f *IBMPIVpnConnectionClient) Create(body *models.VPNConnectionCreate) (*mo
 
 // Update a VPN Connection
 func (f *IBMPIVpnConnectionClient) Update(id string, body *models.VPNConnectionUpdate) (*models.VPNConnection, error) {
-	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
-	}
 	params := p_cloud_v_p_n_connections.NewPcloudVpnconnectionsPutParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVpnConnectionID(id).
@@ -82,9 +72,6 @@ func (f *IBMPIVpnConnectionClient) Update(id string, body *models.VPNConnectionU
 
 // Get All VPN Connections
 func (f *IBMPIVpnConnectionClient) GetAll() (*models.VPNConnections, error) {
-	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
-	}
 	params := p_cloud_v_p_n_connections.NewPcloudVpnconnectionsGetallParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID)
@@ -100,9 +87,6 @@ func (f *IBMPIVpnConnectionClient) GetAll() (*models.VPNConnections, error) {
 
 // Delete a VPN Connection
 func (f *IBMPIVpnConnectionClient) Delete(id string) (*models.JobReference, error) {
-	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
-	}
 	params := p_cloud_v_p_n_connections.NewPcloudVpnconnectionsDeleteParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVpnConnectionID(id)
@@ -118,9 +102,6 @@ func (f *IBMPIVpnConnectionClient) Delete(id string) (*models.JobReference, erro
 
 // Get a VPN Connection's Network
 func (f *IBMPIVpnConnectionClient) GetNetwork(id string) (*models.NetworkIDs, error) {
-	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
-	}
 	params := p_cloud_v_p_n_connections.NewPcloudVpnconnectionsNetworksGetParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVpnConnectionID(id)
@@ -136,9 +117,6 @@ func (f *IBMPIVpnConnectionClient) GetNetwork(id string) (*models.NetworkIDs, er
 
 // Attach a Network to a VPN Connection
 func (f *IBMPIVpnConnectionClient) AddNetwork(id, networkID string) (*models.JobReference, error) {
-	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
-	}
 	params := p_cloud_v_p_n_connections.NewPcloudVpnconnectionsNetworksPutParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVpnConnectionID(id).
@@ -155,9 +133,6 @@ func (f *IBMPIVpnConnectionClient) AddNetwork(id, networkID string) (*models.Job
 
 // Detach a Network from a VPN Connection
 func (f *IBMPIVpnConnectionClient) DeleteNetwork(id, networkID string) (*models.JobReference, error) {
-	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
-	}
 	params := p_cloud_v_p_n_connections.NewPcloudVpnconnectionsNetworksDeleteParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVpnConnectionID(id).
@@ -174,9 +149,6 @@ func (f *IBMPIVpnConnectionClient) DeleteNetwork(id, networkID string) (*models.
 
 // Get a VPN Connection's Subnet
 func (f *IBMPIVpnConnectionClient) GetSubnet(id string) (*models.PeerSubnets, error) {
-	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
-	}
 	params := p_cloud_v_p_n_connections.NewPcloudVpnconnectionsPeersubnetsGetParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVpnConnectionID(id)
@@ -192,9 +164,6 @@ func (f *IBMPIVpnConnectionClient) GetSubnet(id string) (*models.PeerSubnets, er
 
 // Attach a Subnet to a VPN Connection
 func (f *IBMPIVpnConnectionClient) AddSubnet(id, subnet string) (*models.PeerSubnets, error) {
-	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
-	}
 	params := p_cloud_v_p_n_connections.NewPcloudVpnconnectionsPeersubnetsPutParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVpnConnectionID(id).
@@ -211,9 +180,6 @@ func (f *IBMPIVpnConnectionClient) AddSubnet(id, subnet string) (*models.PeerSub
 
 // Detach a Subnet from a VPN Connection
 func (f *IBMPIVpnConnectionClient) DeleteSubnet(id, subnet string) (*models.PeerSubnets, error) {
-	if strings.Contains(f.session.Options.Zone, helpers.PIStratosRegionPrefix) {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
-	}
 	params := p_cloud_v_p_n_connections.NewPcloudVpnconnectionsPeersubnetsDeleteParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
 		WithCloudInstanceID(f.cloudInstanceID).WithVpnConnectionID(id).

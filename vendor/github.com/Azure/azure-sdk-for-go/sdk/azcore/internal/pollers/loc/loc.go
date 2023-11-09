@@ -16,7 +16,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/internal/log"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/internal/pollers"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/internal/shared"
-	"github.com/Azure/azure-sdk-for-go/sdk/internal/poller"
 )
 
 // Kind is the identifier of this type in a resume token.
@@ -62,15 +61,15 @@ func New[T any](pl exported.Pipeline, resp *http.Response) (*Poller[T], error) {
 	if locURL == "" {
 		return nil, errors.New("response is missing Location header")
 	}
-	if !poller.IsValidURL(locURL) {
+	if !pollers.IsValidURL(locURL) {
 		return nil, fmt.Errorf("invalid polling URL %s", locURL)
 	}
 	// check for provisioning state.  if the operation is a RELO
 	// and terminates synchronously this will prevent extra polling.
 	// it's ok if there's no provisioning state.
-	state, _ := poller.GetProvisioningState(resp)
+	state, _ := pollers.GetProvisioningState(resp)
 	if state == "" {
-		state = poller.StatusInProgress
+		state = pollers.StatusInProgress
 	}
 	return &Poller[T]{
 		pl:       pl,
@@ -82,7 +81,7 @@ func New[T any](pl exported.Pipeline, resp *http.Response) (*Poller[T], error) {
 }
 
 func (p *Poller[T]) Done() bool {
-	return poller.IsTerminalState(p.CurState)
+	return pollers.IsTerminalState(p.CurState)
 }
 
 func (p *Poller[T]) Poll(ctx context.Context) (*http.Response, error) {
@@ -94,17 +93,17 @@ func (p *Poller[T]) Poll(ctx context.Context) (*http.Response, error) {
 		// if provisioning state is available, use that.  this is only
 		// for some ARM LRO scenarios (e.g. DELETE with a Location header)
 		// so if it's missing then use HTTP status code.
-		provState, _ := poller.GetProvisioningState(resp)
+		provState, _ := pollers.GetProvisioningState(resp)
 		p.resp = resp
 		if provState != "" {
 			p.CurState = provState
 		} else if resp.StatusCode == http.StatusAccepted {
-			p.CurState = poller.StatusInProgress
+			p.CurState = pollers.StatusInProgress
 		} else if resp.StatusCode > 199 && resp.StatusCode < 300 {
 			// any 2xx other than a 202 indicates success
-			p.CurState = poller.StatusSucceeded
+			p.CurState = pollers.StatusSucceeded
 		} else {
-			p.CurState = poller.StatusFailed
+			p.CurState = pollers.StatusFailed
 		}
 		return p.CurState, nil
 	})
@@ -115,5 +114,5 @@ func (p *Poller[T]) Poll(ctx context.Context) (*http.Response, error) {
 }
 
 func (p *Poller[T]) Result(ctx context.Context, out *T) error {
-	return pollers.ResultHelper(p.resp, poller.Failed(p.CurState), out)
+	return pollers.ResultHelper(p.resp, pollers.Failed(p.CurState), out)
 }

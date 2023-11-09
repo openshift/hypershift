@@ -3,6 +3,7 @@ package ut
 import (
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -40,6 +41,7 @@ const (
 func (t *UniversalTranslator) Export(format ImportExportFormat, dirname string) error {
 
 	_, err := os.Stat(dirname)
+	fmt.Println(dirname, err, os.IsNotExist(err))
 	if err != nil {
 
 		if !os.IsNotExist(err) {
@@ -136,7 +138,7 @@ func (t *UniversalTranslator) Export(format ImportExportFormat, dirname string) 
 			return err
 		}
 
-		err = os.WriteFile(filepath.Join(dirname, fmt.Sprintf("%s%s", locale.Locale(), ext)), b, 0644)
+		err = ioutil.WriteFile(filepath.Join(dirname, fmt.Sprintf("%s%s", locale.Locale(), ext)), b, 0644)
 		if err != nil {
 			return err
 		}
@@ -198,7 +200,7 @@ func (t *UniversalTranslator) Import(format ImportExportFormat, dirnameOrFilenam
 // NOTE: generally used when assets have been embedded into the binary and are already in memory.
 func (t *UniversalTranslator) ImportByReader(format ImportExportFormat, reader io.Reader) error {
 
-	b, err := io.ReadAll(reader)
+	b, err := ioutil.ReadAll(reader)
 	if err != nil {
 		return err
 	}

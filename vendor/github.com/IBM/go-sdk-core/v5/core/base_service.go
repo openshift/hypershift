@@ -387,7 +387,7 @@ func (service *BaseService) Request(req *http.Request, result interface{}) (deta
 
 	// If debug is enabled, then dump the request.
 	if GetLogger().IsLogLevelEnabled(LevelDebug) {
-		buf, dumpErr := httputil.DumpRequestOut(req, !IsNil(req.Body))
+		buf, dumpErr := httputil.DumpRequestOut(req, req.Body != nil)
 		if dumpErr == nil {
 			GetLogger().Debug("Request:\n%s\n", RedactSecrets(string(buf)))
 		} else {
@@ -407,7 +407,7 @@ func (service *BaseService) Request(req *http.Request, result interface{}) (deta
 
 	// If debug is enabled, then dump the response.
 	if GetLogger().IsLogLevelEnabled(LevelDebug) {
-		buf, dumpErr := httputil.DumpResponse(httpResponse, !IsNil(httpResponse.Body))
+		buf, dumpErr := httputil.DumpResponse(httpResponse, httpResponse.Body != nil)
 		if err == nil {
 			GetLogger().Debug("Response:\n%s\n", RedactSecrets(string(buf)))
 		} else {
@@ -430,10 +430,10 @@ func (service *BaseService) Request(req *http.Request, result interface{}) (deta
 		var responseBody []byte
 
 		// First, read the response body into a byte array.
-		if !IsNil(httpResponse.Body) {
+		if httpResponse.Body != nil {
 			var readErr error
 
-			defer httpResponse.Body.Close() // #nosec G307
+			defer httpResponse.Body.Close()
 			responseBody, readErr = io.ReadAll(httpResponse.Body)
 			if readErr != nil {
 				err = fmt.Errorf(ERRORMSG_READ_RESPONSE_BODY, readErr.Error())
@@ -480,7 +480,7 @@ func (service *BaseService) Request(req *http.Request, result interface{}) (deta
 		} else {
 
 			// First, read the response body into a byte array.
-			defer httpResponse.Body.Close() // #nosec G307
+			defer httpResponse.Body.Close()
 			responseBody, readErr := io.ReadAll(httpResponse.Body)
 			if readErr != nil {
 				err = fmt.Errorf(ERRORMSG_READ_RESPONSE_BODY, readErr.Error())
@@ -533,10 +533,6 @@ func (service *BaseService) Request(req *http.Request, result interface{}) (deta
 				return
 			}
 		}
-	} else if !IsNil(httpResponse.Body) {
-		// We weren't expecting a response, but we have a reponse body,
-		// so we need to close it now since we're not going to consume it.
-		_ = httpResponse.Body.Close()
 	}
 
 	return

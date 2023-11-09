@@ -9,7 +9,6 @@ package runtime
 import (
 	"net/http"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/internal/shared"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/internal/uuid"
 )
@@ -22,12 +21,13 @@ func NewRequestIDPolicy() policy.Policy {
 }
 
 func (r *requestIDPolicy) Do(req *policy.Request) (*http.Response, error) {
-	if req.Raw().Header.Get(shared.HeaderXMSClientRequestID) == "" {
+	const requestIdHeader = "x-ms-client-request-id"
+	if req.Raw().Header.Get(requestIdHeader) == "" {
 		id, err := uuid.New()
 		if err != nil {
 			return nil, err
 		}
-		req.Raw().Header.Set(shared.HeaderXMSClientRequestID, id.String())
+		req.Raw().Header.Set(requestIdHeader, id.String())
 	}
 
 	return req.Next()

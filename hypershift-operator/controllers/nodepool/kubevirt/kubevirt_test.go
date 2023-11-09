@@ -81,7 +81,6 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
-						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(4),
@@ -130,7 +129,6 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
-						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
 							storageTmpltOpt("32Gi"),
 							guaranteedResourcesOpt(4, "5Gi"),
@@ -178,7 +176,6 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
-						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(4),
@@ -227,7 +224,6 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			expected: &capikubevirt.KubevirtMachineTemplateSpec{
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
-						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(4),

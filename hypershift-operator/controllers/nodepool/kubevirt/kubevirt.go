@@ -2,10 +2,9 @@ package kubevirt
 
 import (
 	"fmt"
-	"strings"
-
 	"k8s.io/utils/pointer"
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
@@ -334,7 +333,6 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, bootImage BootImage, hclust
 		Template: capikubevirt.KubevirtMachineTemplateResource{
 			Spec: capikubevirt.KubevirtMachineSpec{
 				VirtualMachineTemplate: *vmTemplate,
-				BootstrapCheckSpec:     capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 			},
 		},
 	}

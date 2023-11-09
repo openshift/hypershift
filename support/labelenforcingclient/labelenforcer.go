@@ -2,6 +2,7 @@ package labelenforcingclient
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/openshift/hypershift/support/upsert"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -55,7 +56,7 @@ func (l *LabelEnforcingClient) setLabels(obj client.Object) {
 // simply re-runs the upsert logic with an api reading client if an IsAlreadyExists happened.
 type LabelEnforcingUpsertProvider struct {
 	Upstream  upsert.CreateOrUpdateProvider
-	APIClient client.Client
+	APIReader client.Reader
 }
 
 func (l *LabelEnforcingUpsertProvider) CreateOrUpdate(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
@@ -64,5 +65,13 @@ func (l *LabelEnforcingUpsertProvider) CreateOrUpdate(ctx context.Context, c cli
 		return result, err
 	}
 
-	return l.Upstream.CreateOrUpdate(ctx, l.APIClient, obj, f)
+	apiReadingClient, err := client.NewDelegatingClient(client.NewDelegatingClientInput{
+		CacheReader: l.APIReader,
+		Client:      c,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to construct api reading client: %w", err)
+	}
+
+	return l.Upstream.CreateOrUpdate(ctx, apiReadingClient, obj, f)
 }

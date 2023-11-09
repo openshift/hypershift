@@ -54,7 +54,7 @@ func (o *PcloudCloudinstancesPutReader) ReadResponse(response runtime.ClientResp
 		}
 		return nil, result
 	default:
-		return nil, runtime.NewAPIError("[PUT /pcloud/v1/cloud-instances/{cloud_instance_id}] pcloud.cloudinstances.put", response, response.Code())
+		return nil, runtime.NewAPIError("response status code does not match any response statuses defined for this endpoint in the swagger spec", response, response.Code())
 	}
 }
 
@@ -95,11 +95,6 @@ func (o *PcloudCloudinstancesPutOK) IsServerError() bool {
 // IsCode returns true when this pcloud cloudinstances put o k response a status code equal to that given
 func (o *PcloudCloudinstancesPutOK) IsCode(code int) bool {
 	return code == 200
-}
-
-// Code gets the status code for the pcloud cloudinstances put o k response
-func (o *PcloudCloudinstancesPutOK) Code() int {
-	return 200
 }
 
 func (o *PcloudCloudinstancesPutOK) Error() string {
@@ -165,11 +160,6 @@ func (o *PcloudCloudinstancesPutBadRequest) IsCode(code int) bool {
 	return code == 400
 }
 
-// Code gets the status code for the pcloud cloudinstances put bad request response
-func (o *PcloudCloudinstancesPutBadRequest) Code() int {
-	return 400
-}
-
 func (o *PcloudCloudinstancesPutBadRequest) Error() string {
 	return fmt.Sprintf("[PUT /pcloud/v1/cloud-instances/{cloud_instance_id}][%d] pcloudCloudinstancesPutBadRequest  %+v", 400, o.Payload)
 }
@@ -231,11 +221,6 @@ func (o *PcloudCloudinstancesPutUnauthorized) IsServerError() bool {
 // IsCode returns true when this pcloud cloudinstances put unauthorized response a status code equal to that given
 func (o *PcloudCloudinstancesPutUnauthorized) IsCode(code int) bool {
 	return code == 401
-}
-
-// Code gets the status code for the pcloud cloudinstances put unauthorized response
-func (o *PcloudCloudinstancesPutUnauthorized) Code() int {
-	return 401
 }
 
 func (o *PcloudCloudinstancesPutUnauthorized) Error() string {
@@ -301,11 +286,6 @@ func (o *PcloudCloudinstancesPutUnprocessableEntity) IsCode(code int) bool {
 	return code == 422
 }
 
-// Code gets the status code for the pcloud cloudinstances put unprocessable entity response
-func (o *PcloudCloudinstancesPutUnprocessableEntity) Code() int {
-	return 422
-}
-
 func (o *PcloudCloudinstancesPutUnprocessableEntity) Error() string {
 	return fmt.Sprintf("[PUT /pcloud/v1/cloud-instances/{cloud_instance_id}][%d] pcloudCloudinstancesPutUnprocessableEntity  %+v", 422, o.Payload)
 }
@@ -367,11 +347,6 @@ func (o *PcloudCloudinstancesPutInternalServerError) IsServerError() bool {
 // IsCode returns true when this pcloud cloudinstances put internal server error response a status code equal to that given
 func (o *PcloudCloudinstancesPutInternalServerError) IsCode(code int) bool {
 	return code == 500
-}
-
-// Code gets the status code for the pcloud cloudinstances put internal server error response
-func (o *PcloudCloudinstancesPutInternalServerError) Code() int {
-	return 500
 }
 
 func (o *PcloudCloudinstancesPutInternalServerError) Error() string {

@@ -75,6 +75,7 @@ type ConfigMapVolumeSource struct {
 type SecretVolumeSource struct {
 	// Name of the secret in the pod's namespace to use.
 	// More info: https://kubernetes.io/docs/concepts/storage/volumes#secret
+	// +optional
 	SecretName string `json:"secretName,omitempty"`
 	// Specify whether the Secret or it's keys must be defined
 	// +optional
@@ -293,9 +294,6 @@ type CPU struct {
 	// Sockets specifies the number of sockets inside the vmi.
 	// Must be a value greater or equal 1.
 	Sockets uint32 `json:"sockets,omitempty"`
-	// MaxSockets specifies the maximum amount of sockets that can
-	// be hotplugged
-	MaxSockets uint32 `json:"maxSockets,omitempty"`
 	// Threads specifies the number of threads inside the vmi.
 	// Must be a value greater or equal 1.
 	Threads uint32 `json:"threads,omitempty"`
@@ -433,9 +431,6 @@ type Devices struct {
 	// Defaults to false.
 	// +optional
 	AutoattachInputDevice *bool `json:"autoattachInputDevice,omitempty"`
-	// Whether to attach the VSOCK CID to the VM or not.
-	// VSOCK access will be available if set to true. Defaults to false.
-	AutoattachVSOCK *bool `json:"autoattachVSOCK,omitempty"`
 	// Whether to have random number generator from host
 	// +optional
 	Rng *Rng `json:"rng,omitempty"`
@@ -495,11 +490,7 @@ type SoundDevice struct {
 	Model string `json:"model,omitempty"`
 }
 
-type TPMDevice struct {
-	// Persistent indicates the state of the TPM device should be kept accross reboots
-	// Defaults to false
-	Persistent *bool `json:"persistent,omitempty"`
-}
+type TPMDevice struct{}
 
 type InputBus string
 
@@ -637,7 +628,7 @@ type DiskBus string
 const (
 	DiskBusSCSI   DiskBus = "scsi"
 	DiskBusSATA   DiskBus = "sata"
-	DiskBusVirtio DiskBus = VirtIO
+	DiskBusVirtio DiskBus = "virtio"
 	DiskBusUSB    DiskBus = "usb"
 )
 
@@ -659,16 +650,6 @@ type LaunchSecurity struct {
 }
 
 type SEV struct {
-	// Guest policy flags as defined in AMD SEV API specification.
-	// Note: due to security reasons it is not allowed to enable guest debugging. Therefore NoDebug flag is not exposed to users and is always true.
-	Policy *SEVPolicy `json:"policy,omitempty"`
-}
-
-type SEVPolicy struct {
-	// SEV-ES is required.
-	// Defaults to false.
-	// +optional
-	EncryptedState *bool `json:"encryptedState,omitempty"`
 }
 
 type LunTarget struct {
@@ -678,8 +659,6 @@ type LunTarget struct {
 	// ReadOnly.
 	// Defaults to false.
 	ReadOnly bool `json:"readonly,omitempty"`
-	// Reservation indicates if the disk needs to support the persistent reservation for the SCSI disk
-	Reservation bool `json:"reservation,omitempty"`
 }
 
 // TrayState indicates if a tray of a cdrom is open or closed.
@@ -795,8 +774,7 @@ type HotplugVolumeSource struct {
 }
 
 type DataVolumeSource struct {
-	// Name of both the DataVolume and the PVC in the same namespace.
-	// After PVC population the DataVolume is garbage collected by default.
+	// Name represents the name of the DataVolume in the same namespace
 	Name string `json:"name"`
 	// Hotpluggable indicates whether the volume can be hotplugged and hotunplugged.
 	// +optional
@@ -879,7 +857,7 @@ type Clock struct {
 	ClockOffset `json:",inline"`
 	// Timer specifies whih timers are attached to the vmi.
 	// +optional
-	Timer *Timer `json:"timer,omitempty"`
+	Timer *Timer `json:"timer"`
 }
 
 // Represents all available timers in a vmi.
@@ -1194,22 +1172,7 @@ type Interface struct {
 	// If specified, the virtual network interface address and its tag will be provided to the guest via config drive
 	// +optional
 	Tag string `json:"tag,omitempty"`
-	// If specified, the ACPI index is used to provide network interface device naming, that is stable across changes
-	// in PCI addresses assigned to the device.
-	// This value is required to be unique across all devices and be between 1 and (16*1024-1).
-	// +optional
-	ACPIIndex int `json:"acpiIndex,omitempty"`
-	// State represents the requested operational state of the interface.
-	// The (only) value supported is `absent`, expressing a request to remove the interface.
-	// +optional
-	State InterfaceState `json:"state,omitempty"`
 }
-
-type InterfaceState string
-
-const (
-	InterfaceStateAbsent InterfaceState = "absent"
-)
 
 // Extra DHCP options to use in the interface.
 type DHCPOptions struct {
@@ -1466,18 +1429,4 @@ type MultusNetwork struct {
 	// Select the default network and add it to the
 	// multus-cni.io/default-network annotation.
 	Default bool `json:"default,omitempty"`
-}
-
-// CPUTopology allows specifying the amount of cores, sockets
-// and threads.
-type CPUTopology struct {
-	// Cores specifies the number of cores inside the vmi.
-	// Must be a value greater or equal 1.
-	Cores uint32 `json:"cores,omitempty"`
-	// Sockets specifies the number of sockets inside the vmi.
-	// Must be a value greater or equal 1.
-	Sockets uint32 `json:"sockets,omitempty"`
-	// Threads specifies the number of threads inside the vmi.
-	// Must be a value greater or equal 1.
-	Threads uint32 `json:"threads,omitempty"`
 }

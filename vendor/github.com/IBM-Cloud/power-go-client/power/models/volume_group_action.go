@@ -257,11 +257,6 @@ func (m *VolumeGroupAction) ContextValidate(ctx context.Context, formats strfmt.
 func (m *VolumeGroupAction) contextValidateReset(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.Reset != nil {
-
-		if swag.IsZero(m.Reset) { // not required
-			return nil
-		}
-
 		if err := m.Reset.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("reset")
@@ -278,11 +273,6 @@ func (m *VolumeGroupAction) contextValidateReset(ctx context.Context, formats st
 func (m *VolumeGroupAction) contextValidateStart(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.Start != nil {
-
-		if swag.IsZero(m.Start) { // not required
-			return nil
-		}
-
 		if err := m.Start.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("start")
@@ -299,11 +289,6 @@ func (m *VolumeGroupAction) contextValidateStart(ctx context.Context, formats st
 func (m *VolumeGroupAction) contextValidateStop(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.Stop != nil {
-
-		if swag.IsZero(m.Stop) { // not required
-			return nil
-		}
-
 		if err := m.Stop.ContextValidate(ctx, formats); err != nil {
 			if ve, ok := err.(*errors.Validation); ok {
 				return ve.ValidateName("stop")

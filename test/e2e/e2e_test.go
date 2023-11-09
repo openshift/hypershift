@@ -38,7 +38,6 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/oidc"
@@ -282,11 +281,7 @@ func e2eObserverControllers(ctx context.Context, log logr.Logger, artifactDir st
 		log.Error(err, "failed to construct config for observers")
 		return
 	}
-	mgr, err := ctrl.NewManager(config, manager.Options{
-		Metrics: metricsserver.Options{
-			BindAddress: "0",
-		},
-	})
+	mgr, err := ctrl.NewManager(config, manager.Options{MetricsBindAddress: "0"})
 	if err != nil {
 		log.Error(err, "failed to construct manager for observers")
 		return
