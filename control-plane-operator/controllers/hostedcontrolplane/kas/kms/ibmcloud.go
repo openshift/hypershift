@@ -1,7 +1,6 @@
-package kas
+package kms
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -10,17 +9,18 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	v1 "k8s.io/apiserver/pkg/apis/config/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 var (
 	ibmCloudKMSVolumeMounts = util.PodVolumeMounts{
-		kasContainerMain().Name: {
+		KAS_CONTAINER_NAME: {
 			kasVolumeKMSSocket().Name: "/tmp",
 		},
 		kasContainerIBMCloudKMS().Name: {
@@ -29,7 +29,7 @@ var (
 			kasVolumeIBMCloudKMSProjectedToken().Name: "/etc/pod-identity-token",
 		},
 	}
-	ibmCloudKMSUnixSocket = fmt.Sprintf("unix://%s/%s", ibmCloudKMSVolumeMounts.Path(kasContainerMain().Name, kasVolumeKMSSocket().Name), ibmCloudKMSUnixSocketFileName)
+	ibmCloudKMSUnixSocket = fmt.Sprintf("unix://%s/%s", ibmCloudKMSVolumeMounts.Path(KAS_CONTAINER_NAME, kasVolumeKMSSocket().Name), ibmCloudKMSUnixSocketFileName)
 )
 
 const (
@@ -40,6 +40,61 @@ const (
 	ibmKeyNamePrefix              = "ibm"
 	ibmCloudKMSHealthPort         = 8081
 )
+
+var _ IKMSProvider = &ibmCloudKMSProvider{}
+
+type ibmCloudKMSProvider struct {
+	ibmCloud *hyperv1.IBMCloudKMSSpec
+	kmsImage string
+}
+
+func NewIBMCloudKMSProvider(ibmCloud *hyperv1.IBMCloudKMSSpec, kmsImage string) (*ibmCloudKMSProvider, error) {
+	if ibmCloud == nil || len(ibmCloud.KeyList) == 0 || len(ibmCloud.Region) == 0 || len(kmsImage) == 0 {
+		return nil, fmt.Errorf("ibmcloud kms metadata not specified")
+	}
+	return &ibmCloudKMSProvider{
+		ibmCloud: ibmCloud,
+		kmsImage: kmsImage,
+	}, nil
+}
+
+func (p *ibmCloudKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfiguration, error) {
+	keyVersionKeyEntryMap := buildIBMCloudKeyVersionKeyEntryMap(p.ibmCloud.KeyList)
+	keys := make([]int, 0, len(keyVersionKeyEntryMap))
+	for k := range keyVersionKeyEntryMap {
+		keys = append(keys, k)
+	}
+	sort.Ints(keys)
+	var providerConfiguration []v1.ProviderConfiguration
+	// iterate in reverse because highest version key should be used for new secret encryption
+	for i := len(keys) - 1; i >= 0; i-- {
+		configEntry := v1.ProviderConfiguration{
+			KMS: &v1.KMSConfiguration{
+				Name:      fmt.Sprintf("%s%d", ibmKeyNamePrefix, keyVersionKeyEntryMap[keys[i]].KeyVersion),
+				Endpoint:  ibmCloudKMSUnixSocket,
+				CacheSize: ptr.To[int32](100),
+				Timeout:   &metav1.Duration{Duration: 35 * time.Second},
+			},
+		}
+		providerConfiguration = append(providerConfiguration, configEntry)
+	}
+	providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
+		Identity: &v1.IdentityConfiguration{},
+	})
+	encryptionConfig := &v1.EncryptionConfiguration{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: v1.SchemeGroupVersion.String(),
+			Kind:       encryptionConfigurationKind,
+		},
+		Resources: []v1.ResourceConfiguration{
+			{
+				Resources: []string{"secrets"},
+				Providers: providerConfiguration,
+			},
+		},
+	}
+	return encryptionConfig, nil
+}
 
 type ibmCloudKMSInfoEnvVarEntry struct {
 	CRKID            string `json:"crkID"`
@@ -74,52 +129,6 @@ func buildIBMCloudKeyVersionKeyEntryMap(kmsKeyList []hyperv1.IBMCloudKMSKeyEntry
 		keyVersionKeyEntryMap[kmsKeyEntry.KeyVersion] = kmsKeyEntry
 	}
 	return keyVersionKeyEntryMap
-}
-
-func generateIBMCloudKMSEncryptionConfig(kmsKeyList []hyperv1.IBMCloudKMSKeyEntry) ([]byte, error) {
-	if len(kmsKeyList) == 0 {
-		return nil, fmt.Errorf("no keys specified")
-	}
-	keyVersionKeyEntryMap := buildIBMCloudKeyVersionKeyEntryMap(kmsKeyList)
-	keys := make([]int, 0, len(keyVersionKeyEntryMap))
-	for k := range keyVersionKeyEntryMap {
-		keys = append(keys, k)
-	}
-	sort.Ints(keys)
-	var providerConfiguration []v1.ProviderConfiguration
-	// iterate in reverse because highest version key should be used for new secret encryption
-	for i := len(keys) - 1; i >= 0; i-- {
-		configEntry := v1.ProviderConfiguration{
-			KMS: &v1.KMSConfiguration{
-				Name:      fmt.Sprintf("%s%d", ibmKeyNamePrefix, keyVersionKeyEntryMap[keys[i]].KeyVersion),
-				Endpoint:  ibmCloudKMSUnixSocket,
-				CacheSize: pointer.Int32(100),
-				Timeout:   &metav1.Duration{Duration: 35 * time.Second},
-			},
-		}
-		providerConfiguration = append(providerConfiguration, configEntry)
-	}
-	providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
-		Identity: &v1.IdentityConfiguration{},
-	})
-	encryptionConfig := v1.EncryptionConfiguration{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: v1.SchemeGroupVersion.String(),
-			Kind:       encryptionConfigurationKind,
-		},
-		Resources: []v1.ResourceConfiguration{
-			{
-				Resources: []string{"secrets"},
-				Providers: providerConfiguration,
-			},
-		},
-	}
-	bufferInstance := bytes.NewBuffer([]byte{})
-	err := api.YamlSerializer.Encode(&encryptionConfig, bufferInstance)
-	if err != nil {
-		return nil, err
-	}
-	return bufferInstance.Bytes(), nil
 }
 
 func kasContainerIBMCloudKMS() *corev1.Container {
@@ -166,7 +175,7 @@ func buildVolumeIBMCloudKMSProjectedToken(v *corev1.Volume) {
 			{
 				ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
 					Path:              podIdentityTokenIdentifier,
-					ExpirationSeconds: pointer.Int64(900),
+					ExpirationSeconds: ptr.To[int64](900),
 				},
 			},
 		},
@@ -241,41 +250,58 @@ func buildKASContainerIBMCloudKMS(image string, region string, kmsInfo string, c
 			},
 		}
 		c.VolumeMounts = ibmCloudKMSVolumeMounts.ContainerMounts(c.Name)
+		c.LivenessProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(ibmCloudKMSHealthPort)),
+					Path:   "healthz/liveness",
+				},
+			},
+			InitialDelaySeconds: 120,
+			PeriodSeconds:       300,
+			TimeoutSeconds:      160,
+			FailureThreshold:    3,
+			SuccessThreshold:    1,
+		}
+		c.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("10Mi"),
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+			},
+		}
 	}
 }
 
-func applyIBMCloudKMSConfig(podSpec *corev1.PodSpec, ibmCloud *hyperv1.IBMCloudKMSSpec, kmsImage string) error {
-	if ibmCloud == nil || len(ibmCloud.KeyList) == 0 || len(ibmCloud.Region) == 0 || len(kmsImage) == 0 {
-		return fmt.Errorf("ibmcloud kms metadata not specified")
-	}
-	kmsKPInfo, err := buildIBMCloudKMSInfoEnvVar(buildIBMCloudKeyVersionKeyEntryMap(ibmCloud.KeyList), ibmCloud.Auth.Type)
+func (p *ibmCloudKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
+	kmsKPInfo, err := buildIBMCloudKMSInfoEnvVar(buildIBMCloudKeyVersionKeyEntryMap(p.ibmCloud.KeyList), p.ibmCloud.Auth.Type)
 	if err != nil {
 		return fmt.Errorf("failed to generate kmsKPInfo env var: %w", err)
 	}
 	podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket), util.BuildVolume(kasVolumeIBMCloudKMSKP(), buildVolumeIBMCloudKMSKP), util.BuildVolume(kasVolumeIBMCloudKMSProjectedToken(), buildVolumeIBMCloudKMSProjectedToken))
 	var customerAPIKeyReference *corev1.EnvVarSource
-	switch ibmCloud.Auth.Type {
+	switch p.ibmCloud.Auth.Type {
 	case hyperv1.IBMCloudKMSUnmanagedAuth:
-		if len(ibmCloud.Auth.Unmanaged.Credentials.Name) == 0 {
+		if len(p.ibmCloud.Auth.Unmanaged.Credentials.Name) == 0 {
 			return fmt.Errorf("ibmcloud kms credential not specified")
 		}
 		customerAPIKeyReference = &corev1.EnvVarSource{
 			SecretKeyRef: &corev1.SecretKeySelector{
 				LocalObjectReference: corev1.LocalObjectReference{
-					Name: ibmCloud.Auth.Unmanaged.Credentials.Name,
+					Name: p.ibmCloud.Auth.Unmanaged.Credentials.Name,
 				},
 				Key: hyperv1.IBMCloudIAMAPIKeySecretKey,
 			},
 		}
-		podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeIBMCloudKMSCustomerCredentials(), buildVolumeIBMCloudKMSCustomerCredentials(ibmCloud.Auth.Unmanaged.Credentials.Name)))
+		podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeIBMCloudKMSCustomerCredentials(), buildVolumeIBMCloudKMSCustomerCredentials(p.ibmCloud.Auth.Unmanaged.Credentials.Name)))
 	case hyperv1.IBMCloudKMSManagedAuth:
 	default:
-		return fmt.Errorf("unrecognized ibmcloud kms auth type %s", ibmCloud.Auth.Type)
+		return fmt.Errorf("unrecognized ibmcloud kms auth type %s", p.ibmCloud.Auth.Type)
 	}
-	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerIBMCloudKMS(), buildKASContainerIBMCloudKMS(kmsImage, ibmCloud.Region, kmsKPInfo, customerAPIKeyReference)))
+	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerIBMCloudKMS(), buildKASContainerIBMCloudKMS(p.kmsImage, p.ibmCloud.Region, kmsKPInfo, customerAPIKeyReference)))
 	var container *corev1.Container
 	for i, c := range podSpec.Containers {
-		if c.Name == kasContainerMain().Name {
+		if c.Name == KAS_CONTAINER_NAME {
 			container = &podSpec.Containers[i]
 			break
 		}
@@ -284,6 +310,6 @@ func applyIBMCloudKMSConfig(podSpec *corev1.PodSpec, ibmCloud *hyperv1.IBMCloudK
 		panic("main kube apiserver container not found in spec")
 	}
 	container.VolumeMounts = append(container.VolumeMounts,
-		ibmCloudKMSVolumeMounts.ContainerMounts(kasContainerMain().Name)...)
+		ibmCloudKMSVolumeMounts.ContainerMounts(KAS_CONTAINER_NAME)...)
 	return nil
 }
