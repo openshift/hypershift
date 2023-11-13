@@ -61,7 +61,7 @@ func APIPort(hcp *hyperv1.HostedControlPlane) *int32 {
 
 // BindAPIPortWithDefault will retrieve the port the kube-apiserver binds on locally in the pod.
 // This comes from hcp.Spec.Networking.APIServer.Port if set and != 443
-func BindAPIPortWithDefault(hcp *hyperv1.HostedControlPlane, defaultValue int32) int32 {
+func BindAPIPortWithDefault(hcp *hyperv1.HostedControlPlane) int32 {
 	// Binding on 443 is not allowed. So returning default for that case.
 	// This provides backward compatibility for existing clusters which were defaulting to that value, ignoring it here and
 	// enforcing it in the data plane proxy by reconciling the endpoint. 443 API input is not allowed now.
@@ -69,7 +69,7 @@ func BindAPIPortWithDefault(hcp *hyperv1.HostedControlPlane, defaultValue int32)
 	if hcp.Spec.Networking.APIServer != nil && hcp.Spec.Networking.APIServer.Port != nil && *hcp.Spec.Networking.APIServer.Port != 443 {
 		return *hcp.Spec.Networking.APIServer.Port
 	}
-	return defaultValue
+	return 6443
 }
 
 // BindAPIPortWithDefaultFromHostedCluster will retrieve the port the kube-apiserver binds on locally in the pod.

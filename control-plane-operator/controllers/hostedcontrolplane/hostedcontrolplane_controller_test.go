@@ -216,6 +216,7 @@ func TestBuildOAuthVolumeTemplates(t *testing.T) {
 func TestReconcileAPIServerService(t *testing.T) {
 	targetNamespace := "test"
 	apiPort := int32(1234)
+	kasPort := "client"
 	hostname := "test.example.com"
 	allowCIDR := []hyperv1.CIDRBlock{"1.2.3.4/24"}
 	allowCIDRString := []string{"1.2.3.4/24"}
@@ -248,7 +249,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 					{
 						Protocol:   corev1.ProtocolTCP,
 						Port:       apiPort,
-						TargetPort: intstr.FromInt(int(apiPort)),
+						TargetPort: intstr.FromString(kasPort),
 					},
 				},
 				LoadBalancerSourceRanges: allowCIDRString,
