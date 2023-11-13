@@ -18,7 +18,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
-func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerServicePort int, apiServerListenPort int, apiAllowedCIDRBlocks []string, isPublic, isPrivate bool) error {
+func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerServicePort int, apiAllowedCIDRBlocks []string, isPublic, isPrivate bool) error {
 	util.EnsureOwnerRef(svc, owner)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = kasLabels()
@@ -40,7 +40,7 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	}
 	portSpec.Port = int32(apiServerServicePort)
 	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(apiServerListenPort)
+	portSpec.TargetPort = intstr.FromString("client")
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
 	}
@@ -117,7 +117,6 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 
 func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlane, owner *metav1.OwnerReference) error {
 	apiServerPort := util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
-	apiServerListenPort := util.BindAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	util.EnsureOwnerRef(svc, owner)
 	svc.Spec.Selector = kasLabels()
 	var portSpec corev1.ServicePort
@@ -128,7 +127,7 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	}
 	portSpec.Port = int32(apiServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(int(apiServerListenPort))
+	portSpec.TargetPort = intstr.FromString("client")
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}

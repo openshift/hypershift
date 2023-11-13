@@ -73,11 +73,9 @@ type KubeAPIServerParams struct {
 
 type KubeAPIServerServiceParams struct {
 	// APIServerPort is the port used for the SVC.
-	APIServerPort int
-	// APIServerListenPort is the port used for the TargetPort.
-	APIServerListenPort int
-	AllowedCIDRBlocks   []string
-	OwnerReference      *metav1.OwnerReference
+	APIServerPort     int
+	AllowedCIDRBlocks []string
+	OwnerReference    *metav1.OwnerReference
 }
 
 const (
@@ -123,7 +121,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 
 	params.AdvertiseAddress = util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
 
-	params.APIServerPort = util.BindAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
+	params.APIServerPort = util.BindAPIPortWithDefault(hcp)
 	if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
 		params.Images.Portieris = hcp.Annotations[hyperv1.PortierisImageAnnotation]
 	}
@@ -146,7 +144,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ProbeHandler: corev1.ProbeHandler{
 			HTTPGet: &corev1.HTTPGetAction{
 				Scheme: corev1.URISchemeHTTPS,
-				Port:   intstr.FromInt(int(params.APIServerPort)),
+				Port:   intstr.FromString("client"),
 				Path:   "livez?exclude=etcd",
 			},
 		},
@@ -261,7 +259,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
 					Scheme: corev1.URISchemeHTTPS,
-					Port:   intstr.FromInt(int(params.APIServerPort)),
+					Port:   intstr.FromString("client"),
 					Path:   "readyz",
 				},
 			},
@@ -532,16 +530,14 @@ func (p *KubeAPIServerParams) ServiceNodePortRange() string {
 }
 
 func NewKubeAPIServerServiceParams(hcp *hyperv1.HostedControlPlane) *KubeAPIServerServiceParams {
-	listenPort := util.BindAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	port := util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	var allowedCIDRBlocks []string
 	for _, block := range util.AllowedCIDRBlocks(hcp) {
 		allowedCIDRBlocks = append(allowedCIDRBlocks, string(block))
 	}
 	return &KubeAPIServerServiceParams{
-		APIServerPort:       int(port),
-		APIServerListenPort: int(listenPort),
-		AllowedCIDRBlocks:   allowedCIDRBlocks,
-		OwnerReference:      config.ControllerOwnerRef(hcp),
+		APIServerPort:     int(port),
+		AllowedCIDRBlocks: allowedCIDRBlocks,
+		OwnerReference:    config.ControllerOwnerRef(hcp),
 	}
 }
