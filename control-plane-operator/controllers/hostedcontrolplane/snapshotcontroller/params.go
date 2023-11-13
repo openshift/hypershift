@@ -21,7 +21,6 @@ type Params struct {
 	SnapshotWebhookImage            string
 	AvailabilityProberImage         string
 	Version                         string
-	APIPort                         *int32
 	config.DeploymentConfig
 }
 
@@ -38,7 +37,6 @@ func NewParams(
 		SnapshotWebhookImage:            releaseImageProvider.GetImage(snapshotWebhookImageName),
 		AvailabilityProberImage:         releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Version:                         version,
-		APIPort:                         util.APIPort(hcp),
 	}
 
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext

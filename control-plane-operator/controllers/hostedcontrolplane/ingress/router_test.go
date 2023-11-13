@@ -61,7 +61,7 @@ func TestGenerateRouterConfig(t *testing.T) {
 		Items: []routev1.Route{*ignition, *konnectivity, *oauthInternal, *oauthExternalPrivate, *oauthExternalPublic, *ovnKube, *metricsForwarder, *kasPublic, *kasPrivate},
 	}
 
-	cfg, err := generateRouterConfig(testNS, 6443, routeList, "172.30.0.10")
+	cfg, err := generateRouterConfig(testNS, routeList, "172.30.0.10")
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}

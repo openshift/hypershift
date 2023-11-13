@@ -229,7 +229,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, deploymentConfig *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, apiInternalPort *int32, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference, hcp *hyperv1.HostedControlPlane) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, deploymentConfig *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference, hcp *hyperv1.HostedControlPlane) error {
 	// Before this change we did
 	// 		Selector: &metav1.LabelSelector{
 	//			MatchLabels: hccLabels,
@@ -284,7 +284,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 	}
 
 	deploymentConfig.ApplyTo(deployment)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiInternalPort), availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
+	util.AvailabilityProber(kas.InClusterKASReadyURL(), availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
 		o.KubeconfigVolumeName = "kubeconfig"
 		o.RequiredAPIs = []schema.GroupVersionKind{
 			{Group: "imageregistry.operator.openshift.io", Version: "v1", Kind: "Config"},

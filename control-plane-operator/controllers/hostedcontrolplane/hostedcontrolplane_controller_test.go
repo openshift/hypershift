@@ -147,7 +147,7 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 
 func TestReconcileAPIServerService(t *testing.T) {
 	targetNamespace := "test"
-	apiPort := int32(1234)
+	apiPort := int32(config.KASSVCPort)
 	kasPort := "client"
 	hostname := "test.example.com"
 	allowCIDR := []hyperv1.CIDRBlock{"1.2.3.4/24"}
@@ -997,7 +997,7 @@ func TestReconcileRouter(t *testing.T) {
 	ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 		Name:      "hcp",
 		Namespace: namespace,
-	}}), routerCfg, 6443, &routev1.RouteList{}, "172.30.0.10")
+	}}), routerCfg, &routev1.RouteList{}, "172.30.0.10")
 
 	testCases := []struct {
 		name                         string

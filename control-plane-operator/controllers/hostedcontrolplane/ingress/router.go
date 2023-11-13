@@ -72,7 +72,7 @@ func (r byRouteName) Len() int           { return len(r) }
 func (r byRouteName) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
 func (r byRouteName) Less(i, j int) bool { return r[i].Name < r[j].Name }
 
-func generateRouterConfig(namespace string, kubeAPIPort int32, routeList *routev1.RouteList, nameServerIP string) (string, error) {
+func generateRouterConfig(namespace string, routeList *routev1.RouteList, nameServerIP string) (string, error) {
 	type backendDesc struct {
 		Name               string
 		HostName           string
@@ -82,7 +82,7 @@ func generateRouterConfig(namespace string, kubeAPIPort int32, routeList *routev
 	type templateParams struct {
 		HasKubeAPI   bool
 		Namespace    string
-		KubeAPIPort  int32
+		KASSVCPort   int32
 		Backends     []backendDesc
 		NameServerIP string
 	}
@@ -120,7 +120,7 @@ func generateRouterConfig(namespace string, kubeAPIPort int32, routeList *routev
 		}
 	}
 	if p.HasKubeAPI {
-		p.KubeAPIPort = kubeAPIPort
+		p.KASSVCPort = config.KASSVCPort
 	}
 	out := &bytes.Buffer{}
 	if err := routerConfigTemplate.Execute(out, p); err != nil {
@@ -129,13 +129,13 @@ func generateRouterConfig(namespace string, kubeAPIPort int32, routeList *routev
 	return out.String(), nil
 }
 
-func ReconcileRouterConfiguration(ownerRef config.OwnerRef, cm *corev1.ConfigMap, kubeAPIPort int32, routeList *routev1.RouteList, nameServerIP string) error {
+func ReconcileRouterConfiguration(ownerRef config.OwnerRef, cm *corev1.ConfigMap, routeList *routev1.RouteList, nameServerIP string) error {
 	ownerRef.ApplyTo(cm)
 
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	routerConfig, err := generateRouterConfig(cm.Namespace, kubeAPIPort, routeList, nameServerIP)
+	routerConfig, err := generateRouterConfig(cm.Namespace, routeList, nameServerIP)
 	if err != nil {
 		return err
 	}

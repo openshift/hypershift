@@ -47,7 +47,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, featureGates []string, policy configv1.ConfigMapNameReference, availabilityProberImage string, apiPort *int32, ciphers []string, tlsVersion string, disableProfiling bool, schedulerConfig *corev1.ConfigMap) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, config config.DeploymentConfig, image string, featureGates []string, policy configv1.ConfigMapNameReference, availabilityProberImage string, ciphers []string, tlsVersion string, disableProfiling bool, schedulerConfig *corev1.ConfigMap) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main scheduler container
@@ -94,7 +94,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		},
 	}
 	config.ApplyTo(deployment)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(), availabilityProberImage, &deployment.Spec.Template.Spec)
 	return nil
 }
 
