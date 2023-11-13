@@ -1,9 +1,12 @@
 package kubevirt
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -258,7 +261,7 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 	return template
 }
 
-func MachineTemplateSpec(nodePool *hyperv1.NodePool, bootImage BootImage, hcluster *hyperv1.HostedCluster) *capikubevirt.KubevirtMachineTemplateSpec {
+func MachineTemplateSpec(nodePool *hyperv1.NodePool, bootImage BootImage, hcluster *hyperv1.HostedCluster) (*capikubevirt.KubevirtMachineTemplateSpec, error) {
 	vmTemplate := virtualMachineTemplateBase(nodePool, bootImage)
 
 	vmTemplate.Spec.Template.Spec.Affinity = &corev1.Affinity{
@@ -309,11 +312,71 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, bootImage BootImage, hclust
 		vmTemplate.ObjectMeta.Namespace = hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace
 	}
 
+	if err := applyJsonPatches(nodePool, hcluster, vmTemplate); err != nil {
+		return nil, err
+	}
+
 	return &capikubevirt.KubevirtMachineTemplateSpec{
 		Template: capikubevirt.KubevirtMachineTemplateResource{
 			Spec: capikubevirt.KubevirtMachineSpec{
 				VirtualMachineTemplate: *vmTemplate,
 			},
 		},
+	}, nil
+}
+
+func applyJsonPatches(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, tmplt *capikubevirt.VirtualMachineTemplateSpec) error {
+	hcAnn, hcOK := hcluster.Annotations[hyperv1.JSONPatchAnnotation]
+	npAnn, npOK := nodePool.Annotations[hyperv1.JSONPatchAnnotation]
+
+	if !hcOK && !npOK { // nothing to do
+		return nil
 	}
+
+	//tmplt.Spec.Template.Spec.Networks[0].Multus.NetworkName
+	buff := &bytes.Buffer{}
+	dec := json.NewEncoder(buff)
+	err := dec.Encode(tmplt)
+	if err != nil {
+		return fmt.Errorf("json: failed to encode the vm template: %w", err)
+	}
+
+	templateBytes := buff.Bytes()
+
+	if hcOK {
+		if err = applyJsonPatch(&templateBytes, hcAnn); err != nil {
+			return err
+		}
+	}
+
+	if npOK {
+		if err = applyJsonPatch(&templateBytes, npAnn); err != nil {
+			return err
+		}
+	}
+
+	buff = bytes.NewBuffer(templateBytes)
+	enc := json.NewDecoder(buff)
+
+	if err = enc.Decode(tmplt); err != nil {
+		return fmt.Errorf("json: failed to decode the vm template: %w", err)
+	}
+
+	return nil
+}
+
+func applyJsonPatch(tmplt *[]byte, patch string) error {
+	patches, err := jsonpatch.DecodePatch([]byte(patch))
+	if err != nil {
+		return fmt.Errorf("failed to parse the %s annotation; wrong jsonpatch format: %w", hyperv1.JSONPatchAnnotation, err)
+	}
+
+	opts := jsonpatch.NewApplyOptions()
+	opts.EnsurePathExistsOnAdd = true
+	*tmplt, err = patches.ApplyWithOptions(*tmplt, opts)
+	if err != nil {
+		return fmt.Errorf("failed to apply json patch annotation: %w", err)
+	}
+
+	return nil
 }
