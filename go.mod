@@ -18,6 +18,7 @@ require (
 	github.com/clarketm/json v1.14.1
 	github.com/coreos/ignition/v2 v2.14.0
 	github.com/docker/distribution v2.8.2+incompatible
+	github.com/evanphx/json-patch/v5 v5.6.0
 	github.com/go-logr/logr v1.2.4
 	github.com/go-logr/zapr v1.2.3
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
@@ -63,7 +64,7 @@ require (
 	k8s.io/kube-scheduler v0.23.1
 	k8s.io/kubectl v0.25.0
 	k8s.io/pod-security-admission v0.23.5
-	k8s.io/utils v0.0.0-20230406110748-d93618cff8a2
+	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
 	kubevirt.io/api v0.58.0
 	kubevirt.io/containerized-data-importer-api v1.50.0
 	sigs.k8s.io/apiserver-network-proxy v0.0.24
@@ -103,7 +104,6 @@ require (
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
 	github.com/emicklei/go-restful/v3 v3.9.0 // indirect
 	github.com/evanphx/json-patch v5.6.0+incompatible // indirect
-	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-errors/errors v1.0.1 // indirect

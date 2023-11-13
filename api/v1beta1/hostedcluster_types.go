@@ -222,6 +222,9 @@ const (
 	// hosted control plane namespacces. The default is 'Restricted'. Valid values are 'Restricted', 'Baseline', or 'Privileged'
 	// See https://github.com/openshift/enhancements/blob/master/enhancements/authentication/pod-security-admission.md
 	PodSecurityAdmissionLabelOverrideAnnotation = "hypershift.openshift.io/pod-security-admission-label-override"
+
+	// JSONPatchAnnotation allow modifying the kubevirt VM template using jsonpatch
+	JSONPatchAnnotation = "hypershift.openshift.io/kubevirt-vm-jsonpatch"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
