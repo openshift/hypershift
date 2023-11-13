@@ -248,7 +248,8 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 
 			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
 			bootImage.dvName = bootImageNamePrefix + "12345"
-			result := MachineTemplateSpec(tc.nodePool, bootImage, tc.hcluster)
+			result, err := MachineTemplateSpec(tc.nodePool, bootImage, tc.hcluster)
+			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
 		})
 	}
@@ -401,6 +402,393 @@ func TestCacheImage(t *testing.T) {
 	}
 }
 
+func TestJsonPatch(t *testing.T) {
+	testCases := []struct {
+		name     string
+		nodePool *hyperv1.NodePool
+		hcluster *hyperv1.HostedCluster
+		expected *capikubevirt.KubevirtMachineTemplateSpec
+	}{
+		{
+			name: "single json patch in the nodepool",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.JSONPatchAnnotation: `[{"op": "add","path": "/spec/networks/-","value": {"name": "secondary", "multus": {"networkName": "mynetwork"}}}]`,
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							addNetworkOpt(kubevirtv1.Network{Name: "secondary", NetworkSource: kubevirtv1.NetworkSource{Multus: &kubevirtv1.MultusNetwork{NetworkName: "mynetwork"}}}),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "several json patches in the nodepool",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.JSONPatchAnnotation: `[
+                            {
+                                "op": "add",
+                                "path": "/spec/networks/-",
+                                "value": {"name": "secondary", "multus": {"networkName": "mynetwork"}}
+                            },
+                            {
+                                "op": "replace",
+                                "path": "/spec/domain/cpu/cores",
+                                "value": 5
+                            }
+                        ]`,
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(5),
+							storageTmpltOpt("32Gi"),
+							addNetworkOpt(kubevirtv1.Network{Name: "secondary", NetworkSource: kubevirtv1.NetworkSource{Multus: &kubevirtv1.MultusNetwork{NetworkName: "mynetwork"}}}),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "single json patch in the hosted cluster",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+					Annotations: map[string]string{
+						hyperv1.JSONPatchAnnotation: `[{"op": "add","path": "/spec/networks/1","value": {"name": "secondary", "multus": {"networkName": "mynetwork"}}}]`,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
+							storageTmpltOpt("32Gi"),
+							addNetworkOpt(kubevirtv1.Network{Name: "secondary", NetworkSource: kubevirtv1.NetworkSource{Multus: &kubevirtv1.MultusNetwork{NetworkName: "mynetwork"}}}),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "several json patches in the hosted cluster",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+					Annotations: map[string]string{
+						hyperv1.JSONPatchAnnotation: `[
+                            {
+                                "op": "add",
+                                "path": "/spec/networks/-",
+                                "value": {"name": "secondary", "multus": {"networkName": "mynetwork"}}
+                            },
+                            {
+                                "op": "replace",
+                                "path": "/spec/domain/cpu/cores",
+                                "value": 5
+                            }
+                        ]`,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(5),
+							storageTmpltOpt("32Gi"),
+							addNetworkOpt(kubevirtv1.Network{Name: "secondary", NetworkSource: kubevirtv1.NetworkSource{Multus: &kubevirtv1.MultusNetwork{NetworkName: "mynetwork"}}}),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "json patches both in the hosted cluster and the nodepool",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.JSONPatchAnnotation: `[
+                            {
+                                "op": "replace",
+                                "path": "/spec/domain/cpu/cores",
+                                "value": 5
+                            }
+                        ]`,
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+					Annotations: map[string]string{
+						hyperv1.JSONPatchAnnotation: `[
+                            {
+                                "op": "add",
+                                "path": "/spec/networks/-",
+                                "value": {"name": "secondary", "multus": {"networkName": "mynetwork"}}
+                            }
+                        ]`,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(5),
+							storageTmpltOpt("32Gi"),
+							addNetworkOpt(kubevirtv1.Network{Name: "secondary", NetworkSource: kubevirtv1.NetworkSource{Multus: &kubevirtv1.MultusNetwork{NetworkName: "mynetwork"}}}),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "json patches in the hosted cluster, overrode by the one in the nodepool",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.JSONPatchAnnotation: `[
+                            {
+                                "op": "replace",
+                                "path": "/spec/domain/cpu/cores",
+                                "value": 5
+                            }
+                        ]`,
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+					Annotations: map[string]string{
+						hyperv1.JSONPatchAnnotation: `[
+                            {
+                                "op": "replace",
+                                "path": "/spec/domain/cpu/cores",
+                                "value": 6
+                            }
+                        ]`,
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(5),
+							storageTmpltOpt("32Gi"),
+						),
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			g.Expect(PlatformValidation(tc.nodePool)).To(Succeed())
+
+			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
+			bootImage.dvName = bootImageNamePrefix + "12345"
+			result, err := MachineTemplateSpec(tc.nodePool, bootImage, tc.hcluster)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
+		})
+	}
+}
+
 func assertDV(g Gomega, dvs []v1beta1.DataVolume, expectedDVNamePrefix string, bootImage *cachedBootImage) {
 	g.ExpectWithOffset(1, dvs).Should(HaveLen(1), "failed to read the DataVolume back; No matched DataVolume")
 	g.ExpectWithOffset(1, dvs[0].Name).Should(HavePrefix(expectedDVNamePrefix))
@@ -543,6 +931,12 @@ func guaranteedResourcesOpt(cores uint32, memory string) nodeTemplateOption {
 
 		template.Spec.Template.Spec.Domain.Resources.Requests[corev1.ResourceCPU] = coresReq
 		template.Spec.Template.Spec.Domain.Resources.Limits[corev1.ResourceCPU] = coresReq
+	}
+}
+
+func addNetworkOpt(nw kubevirtv1.Network) nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.Networks = append(template.Spec.Template.Spec.Networks, nw)
 	}
 }
 
