@@ -50,9 +50,7 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	nodePools := e2eutil.SetupRequestServingNodePools(ctx, t, globalOpts.ManagementParentKubeconfig, globalOpts.ManagementClusterNamespace, globalOpts.ManagementClusterName)
-	nonReqServingNodePool := e2eutil.SetupNonRequestServingNodePool(ctx, t, globalOpts.ManagementParentKubeconfig, globalOpts.ManagementClusterNamespace, globalOpts.ManagementClusterName)
-	nodePools = append(nodePools, nonReqServingNodePool)
+	nodePools := e2eutil.SetupReqServingClusterNodePools(ctx, t, globalOpts.ManagementParentKubeconfig, globalOpts.ManagementClusterNamespace, globalOpts.ManagementClusterName)
 	defer e2eutil.TearDownNodePools(ctx, t, globalOpts.ManagementParentKubeconfig, nodePools)
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
