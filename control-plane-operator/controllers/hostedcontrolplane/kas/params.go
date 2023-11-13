@@ -51,11 +51,8 @@ type KubeAPIServerParams struct {
 	// This is used to build kas urls for generated internal kubeconfigs for example.
 	ExternalPort    int32  `json:"externalPort"`
 	InternalAddress string `json:"internalAddress"`
-	// InternalPort is the port that was used to expose the KAS SVC.
-	// This is used to build kas urls for generated external kubeconfigs for example.
-	InternalPort int32 `json:"internalPort"`
-	// APIServerPort is port to expose the KAS Pod.
-	APIServerPort        int32                        `json:"apiServerPort"`
+	// KASPodPort is the port to expose in the KAS Pod.
+	KASPodPort           int32                        `json:"apiServerPort"`
 	ExternalOAuthAddress string                       `json:"externalOAuthAddress"`
 	ExternalOAuthPort    int32                        `json:"externalOAuthPort"`
 	OIDCCAConfigMap      *corev1.LocalObjectReference `json:"oidcCAConfigMap"`
@@ -74,8 +71,6 @@ type KubeAPIServerParams struct {
 }
 
 type KubeAPIServerServiceParams struct {
-	// APIServerPort is the port used for the SVC.
-	APIServerPort     int
 	AllowedCIDRBlocks []string
 	OwnerReference    *metav1.OwnerReference
 }
@@ -93,7 +88,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		ExternalAddress:      externalAPIAddress,
 		ExternalPort:         externalAPIPort,
 		InternalAddress:      fmt.Sprintf("api.%s.hypershift.local", hcp.Name),
-		InternalPort:         util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort),
 		ExternalOAuthAddress: externalOAuthAddress,
 		ExternalOAuthPort:    externalOAuthPort,
 		ServiceAccountIssuer: hcp.Spec.IssuerURL,
@@ -124,7 +118,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 
 	params.AdvertiseAddress = util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
 
-	params.APIServerPort = util.BindAPIPortWithDefault(hcp)
+	params.KASPodPort = util.KASPodPort(hcp)
 	if _, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
 		params.Images.Portieris = hcp.Annotations[hyperv1.PortierisImageAnnotation]
 	}
@@ -425,7 +419,7 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		ClusterNetwork:               p.ClusterNetwork(),
 		ServiceNetwork:               p.ServiceNetwork(),
 		NamedCertificates:            p.NamedCertificates(),
-		APIServerPort:                p.APIServerPort,
+		KASPodPort:                   p.KASPodPort,
 		TLSSecurityProfile:           p.TLSSecurityProfile(),
 		AdditionalCORSAllowedOrigins: p.AdditionalCORSAllowedOrigins(),
 		InternalRegistryHostName:     p.InternalRegistryHostName(),
@@ -451,7 +445,7 @@ type KubeAPIServerConfigParams struct {
 	ClusterNetwork               []string
 	ServiceNetwork               []string
 	NamedCertificates            []configv1.APIServerNamedServingCert
-	APIServerPort                int32
+	KASPodPort                   int32
 	TLSSecurityProfile           *configv1.TLSSecurityProfile
 	AdditionalCORSAllowedOrigins []string
 	InternalRegistryHostName     string
@@ -535,13 +529,11 @@ func (p *KubeAPIServerParams) ServiceNodePortRange() string {
 }
 
 func NewKubeAPIServerServiceParams(hcp *hyperv1.HostedControlPlane) *KubeAPIServerServiceParams {
-	port := util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	var allowedCIDRBlocks []string
 	for _, block := range util.AllowedCIDRBlocks(hcp) {
 		allowedCIDRBlocks = append(allowedCIDRBlocks, string(block))
 	}
 	return &KubeAPIServerServiceParams{
-		APIServerPort:     int(port),
 		AllowedCIDRBlocks: allowedCIDRBlocks,
 		OwnerReference:    config.ControllerOwnerRef(hcp),
 	}

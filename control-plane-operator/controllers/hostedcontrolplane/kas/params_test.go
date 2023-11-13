@@ -29,14 +29,14 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 			name:               "not specified",
 			expectedAddress:    config.DefaultAdvertiseIPv4Address,
 			serviceNetworkCIDR: "10.0.0.0/24",
-			expectedPort:       config.DefaultAPIServerPort,
+			expectedPort:       config.KASPodDefaultPort,
 		},
 		{
 			name:               "address specified",
 			advertiseAddress:   "1.2.3.4",
 			serviceNetworkCIDR: "10.0.0.0/24",
 			expectedAddress:    "1.2.3.4",
-			expectedPort:       config.DefaultAPIServerPort,
+			expectedPort:       config.KASPodDefaultPort,
 		},
 		{
 			name:               "port set for default service publishing strategies",
@@ -72,7 +72,7 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 			if len(test.advertiseAddress) > 0 {
 				g.Expect(test.advertiseAddress).To(Equal(test.expectedAddress))
 			}
-			g.Expect(p.APIServerPort).To(Equal(test.expectedPort))
+			g.Expect(p.KASPodPort).To(Equal(test.expectedPort))
 		})
 	}
 }

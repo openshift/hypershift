@@ -43,5 +43,5 @@ backend {{ .Name }}
 {{ end -}}
 {{- if .HasKubeAPI }}
 backend kube_api
-  server kube_api kube-apiserver.{{ $ns }}.svc.cluster.local:{{ .KubeAPIPort }} check resolvers coredns init-addr last,libc,none
+  server kube_api kube-apiserver.{{ $ns }}.svc.cluster.local:{{ .KASSVCPort }} check resolvers coredns init-addr last,libc,none
 {{ end -}}

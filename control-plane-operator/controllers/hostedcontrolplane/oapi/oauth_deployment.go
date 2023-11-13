@@ -54,7 +54,7 @@ func openShiftOAuthAPIServerLabels() map[string]string {
 	}
 }
 
-func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, auditConfig *corev1.ConfigMap, p *OAuthDeploymentParams, apiPort *int32) error {
+func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, auditConfig *corev1.ConfigMap, p *OAuthDeploymentParams) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main oauth apiserver container
@@ -132,7 +132,7 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 		applyOauthAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, p.AuditWebhookRef)
 	}
 
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
+	util.AvailabilityProber(kas.InClusterKASReadyURL(), p.AvailabilityProberImage, &deployment.Spec.Template.Spec)
 	p.DeploymentConfig.ApplyTo(deployment)
 	return nil
 }

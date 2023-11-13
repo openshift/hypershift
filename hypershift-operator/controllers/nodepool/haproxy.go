@@ -114,7 +114,7 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 
 	// TODO (alberto): Technically this should call util.BindAPIPortWithDefaultFromHostedCluster and let 443 be an invalid value.
 	// How ever we allow it here to keep backward compatibility with existing clusters which defaulted .port to 443.
-	apiServerInternalPort := haproxyFrontendListenAddress(hcluster, config.DefaultAPIServerPort)
+	apiServerInternalPort := haproxyFrontendListenAddress(hcluster)
 	if hcluster.Spec.Networking.APIServer != nil {
 		if hcluster.Spec.Networking.APIServer.AdvertiseAddress != nil {
 			apiServerInternalAddress = *hcluster.Spec.Networking.APIServer.AdvertiseAddress
@@ -143,12 +143,13 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 	return buf.String(), false, nil
 }
 
-// TODO: this function can be removed when proper update to service Publish API for load balancer done
-func haproxyFrontendListenAddress(hc *hyperv1.HostedCluster, defaultValue int32) int32 {
+// TODO (alberto): Technically anything should be calling util.BindAPIPortWithDefaultFromHostedCluster and let 443 be an invalid value.
+// How ever we allow it here to keep backward compatibility with existing clusters which defaulted .port to 443.
+func haproxyFrontendListenAddress(hc *hyperv1.HostedCluster) int32 {
 	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.Port != nil {
 		return *hc.Spec.Networking.APIServer.Port
 	}
-	return defaultValue
+	return config.KASPodDefaultPort
 }
 
 func urlPort(u *url.URL) (int32, error) {

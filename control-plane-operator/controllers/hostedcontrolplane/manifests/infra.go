@@ -24,6 +24,15 @@ const (
 	packageServerServiceName                = "packageserver"
 )
 
+func KubeAPIServerServiceAzureLB(hostedClusterNamespace string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      KubeAPIServerServiceName + "lb",
+			Namespace: hostedClusterNamespace,
+		},
+	}
+}
+
 func KubeAPIServerService(hostedClusterNamespace string) *corev1.Service {
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{

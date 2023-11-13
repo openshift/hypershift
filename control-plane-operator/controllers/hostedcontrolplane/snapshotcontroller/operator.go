@@ -45,7 +45,7 @@ func ReconcileOperatorDeployment(
 		}
 	}
 	params.DeploymentConfig.ApplyTo(deployment)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, params.APIPort), params.AvailabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
+	util.AvailabilityProber(kas.InClusterKASReadyURL(), params.AvailabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
 		o.KubeconfigVolumeName = "guest-kubeconfig"
 		o.RequiredAPIs = []schema.GroupVersionKind{
 			{Group: "operator.openshift.io", Version: "v1", Kind: "CSISnapshotController"},
