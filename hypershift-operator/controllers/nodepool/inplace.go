@@ -7,7 +7,6 @@ import (
 
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -158,10 +157,6 @@ func (r *NodePoolReconciler) reconcileMachineSet(ctx context.Context,
 
 	if machineSetInPlaceRolloutIsComplete(machineSet) {
 		if nodePool.Status.Version != targetVersion {
-			if nodePool.Status.Version == "" {
-				metrics.RecordNodePoolInitialRolloutDuration(nodePool)
-			}
-
 			log.Info("Version upgrade complete",
 				"previous", nodePool.Status.Version, "new", targetVersion)
 			nodePool.Status.Version = targetVersion

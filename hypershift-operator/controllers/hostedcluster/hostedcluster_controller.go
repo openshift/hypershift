@@ -102,11 +102,8 @@ import (
 )
 
 const (
-	finalizer               = "hypershift.openshift.io/finalizer"
-	HostedClusterAnnotation = "hypershift.openshift.io/cluster"
-	// HasBeenAvailableAnnotation is an implementation detail to check if HC has ever been available.
-	// This is useful for e.g. monitor duration from creation to available and avoid noise from condition flipping.
-	HasBeenAvailableAnnotation          = "hypershift.openshift.io/HasBeenAvailable"
+	finalizer                           = "hypershift.openshift.io/finalizer"
+	HostedClusterAnnotation             = "hypershift.openshift.io/cluster"
 	clusterDeletionRequeueDuration      = 5 * time.Second
 	ReportingGracePeriodRequeueDuration = 25 * time.Second
 
@@ -397,10 +394,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	reportLimitedSuportEnabled(hcluster)
-	reportSilecedAlerts(hcluster)
-	reportProxyConfig(hcluster)
-
 	var hcDestroyGracePeriod time.Duration
 
 	if gracePeriodString := hcluster.Annotations[hyperv1.HCDestroyGracePeriodAnnotation]; len(gracePeriodString) > 0 {
@@ -412,8 +405,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// If deleted, clean up and return early.
 	if !hcluster.DeletionTimestamp.IsZero() {
-		reportHostedClusterGuestCloudResourcesDeletionDuration(hcluster)
-
 		// This new condition is necessary for OCM personnel to report any cloud dangling objects to the user.
 		// The grace period is customizable using an annotation called HCDestroyGracePeriodAnnotation. It's a time.Duration annotation.
 		// This annotation will create a new condition called HostedClusterDestroyed which in conjuntion with CloudResourcesDestroyed
@@ -431,9 +422,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
 			}
 		}
-
-		// Metric for deletion duration should not include grace period which is only used to report status
-		reportHostedClusterDeletionDuration(hcluster, r.Clock)
 
 		if hcDestroyGracePeriod > 0 {
 			if hostedClusterDestroyedCondition == nil {
@@ -541,9 +529,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set version status
 	hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
-
-	// compute ClusterUpgradeDuration and record metric if there were any upgrades
-	hcmetrics.ReportClusterUpgradeDuration(hcluster)
 
 	// Copy the CVO conditions from the HCP.
 	hcpCVOConditions := map[hyperv1.ConditionType]*metav1.Condition{
@@ -721,13 +706,25 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// conditions (so that it could incorporate e.g. HostedControlPlane and IgnitionServer
 	// availability in the ultimate HostedCluster Available condition)
 	{
-		meta.SetStatusCondition(&hcluster.Status.Conditions, computeHostedClusterAvailability(hcluster, hcp))
+		availableCondition := computeHostedClusterAvailability(hcluster, hcp)
+		_, isHasBeenAvailableAnnotationSet := hcluster.Annotations[hcmetrics.HasBeenAvailableAnnotation]
 
-		// SLI: Hosted Cluster available duration.
-		reportAvailableTime(hcluster)
+		meta.SetStatusCondition(&hcluster.Status.Conditions, availableCondition)
+
+		if availableCondition.Status == metav1.ConditionTrue && !isHasBeenAvailableAnnotationSet {
+			original := hcluster.DeepCopy()
+
+			if hcluster.Annotations == nil {
+				hcluster.Annotations = make(map[string]string)
+			}
+
+			hcluster.Annotations[hcmetrics.HasBeenAvailableAnnotation] = "true"
+
+			if err := r.Patch(ctx, hcluster, client.MergeFromWithOptions(original)); err != nil {
+				return ctrl.Result{}, fmt.Errorf("cannot patch hosted cluster with has been available annotation: %w", err)
+			}
+		}
 	}
-
-	reportClusterVersionRolloutTime(hcluster)
 
 	// Copy AWSEndpointAvailable and AWSEndpointServiceAvailable conditions from the AWSEndpointServices.
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -3189,6 +3186,7 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 			hcpAvailableMessage = "The hosted control plane is available"
 		}
 	}
+
 	return metav1.Condition{
 		Type:               string(hyperv1.HostedClusterAvailable),
 		Status:             hcpAvailableStatus,
@@ -3342,7 +3340,6 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
 				}
 			}
-			hcmetrics.SkippedCloudResourcesDeletion.WithLabelValues(hc.Namespace, hc.Name, hc.Spec.ClusterID).Set(float64(1))
 			log.Info("Removed CPO finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
 			continue
 		}
@@ -3374,19 +3371,6 @@ func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNa
 func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name).Name
 	log := ctrl.LoggerFrom(ctx)
-
-	// add `hyperv1.SilenceClusterAlertsLabel` label to the HostedCluster when it is deleting
-	// this will ensure that alerts triggered because of the deletion process aren't forwarded
-	if _, ok := hc.Labels[hyperv1.SilenceClusterAlertsLabel]; !ok {
-		original := hc.DeepCopy()
-		if hc.Labels == nil {
-			hc.Labels = make(map[string]string)
-		}
-		hc.Labels[hyperv1.SilenceClusterAlertsLabel] = "clusterDeleting"
-		if err := r.Patch(ctx, hc, client.MergeFromWithOptions(original)); err != nil {
-			return false, fmt.Errorf("cannot patch hosted cluster with silence label: %w", err)
-		}
-	}
 
 	// ensure that the cleanup annotation has been propagated to the hcp if it is set
 	if hc.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true" {
@@ -4815,111 +4799,6 @@ func (r *HostedClusterReconciler) reconcileSREMetricsConfig(ctx context.Context,
 		return fmt.Errorf("failed to update hosted cluster SRE metrics configuration: %w", err)
 	}
 	return nil
-}
-
-func hasBeenAvailable(hc *hyperv1.HostedCluster) bool {
-	_, ok := hc.Annotations[HasBeenAvailableAnnotation]
-	return ok
-}
-
-// clusterAvailableTime returns the time in seconds from cluster creation to first available transition.
-// If the condition is nil, false or the cluster has already been available it returns nil.
-func clusterAvailableTime(hc *hyperv1.HostedCluster) *float64 {
-	if hasBeenAvailable(hc) {
-		return nil
-	}
-	condition := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.HostedClusterAvailable))
-	if condition == nil {
-		return nil
-	}
-	if condition.Status == metav1.ConditionFalse {
-		return nil
-	}
-	transitionTime := condition.LastTransitionTime
-	return k8sutilspointer.Float64(transitionTime.Sub(hc.CreationTimestamp.Time).Seconds())
-}
-
-func clusterVersionRolloutTime(hc *hyperv1.HostedCluster) *float64 {
-	if hc.Status.Version == nil || len(hc.Status.Version.History) == 0 {
-		return nil
-	}
-	completionTime := hc.Status.Version.History[len(hc.Status.Version.History)-1].CompletionTime
-	if completionTime == nil {
-		return nil
-	}
-	return k8sutilspointer.Float64(completionTime.Sub(hc.CreationTimestamp.Time).Seconds())
-}
-
-func reportAvailableTime(hcluster *hyperv1.HostedCluster) {
-	// SLI: Hosted Cluster available duration.
-	availableTime := clusterAvailableTime(hcluster)
-	if availableTime != nil {
-		hcmetrics.HostedClusterAvailableDuration.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(*availableTime)
-		if hcluster.Annotations == nil {
-			hcluster.Annotations = make(map[string]string)
-		}
-		hcluster.Annotations[HasBeenAvailableAnnotation] = "true"
-	}
-}
-
-func reportClusterVersionRolloutTime(hcluster *hyperv1.HostedCluster) {
-	// SLI: Hosted Cluster roll out duration.
-	versionRolloutTime := clusterVersionRolloutTime(hcluster)
-	if versionRolloutTime != nil {
-		hcmetrics.HostedClusterInitialRolloutDuration.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(*versionRolloutTime)
-	}
-}
-
-func reportLimitedSuportEnabled(hcluster *hyperv1.HostedCluster) {
-	// Collect limited support metric.
-	if _, ok := hcluster.Labels[hyperv1.LimitedSupportLabel]; ok {
-		hcmetrics.LimitedSupportEnabled.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(1)
-	} else {
-		hcmetrics.LimitedSupportEnabled.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(0)
-	}
-}
-
-func reportSilecedAlerts(hcluster *hyperv1.HostedCluster) {
-	// Collect silence alerts metric
-	if _, ok := hcluster.Labels[hyperv1.SilenceClusterAlertsLabel]; ok {
-		hcmetrics.SilenceAlerts.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(1)
-	} else {
-		hcmetrics.SilenceAlerts.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(0)
-	}
-}
-
-func reportProxyConfig(hcluster *hyperv1.HostedCluster) {
-	// Collect proxy metric.
-	var proxyHTTP, proxyHTTPS, proxyTrustedCA string
-	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil {
-		if hcluster.Spec.Configuration.Proxy.HTTPProxy != "" {
-			proxyHTTP = "1"
-		}
-		if hcluster.Spec.Configuration.Proxy.HTTPSProxy != "" {
-			proxyHTTPS = "1"
-		}
-		if hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
-			proxyTrustedCA = "1"
-		}
-		hcmetrics.ProxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(1)
-	} else {
-		hcmetrics.ProxyConfig.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID, proxyHTTP, proxyHTTPS, proxyTrustedCA).Set(0)
-	}
-}
-
-func reportHostedClusterGuestCloudResourcesDeletionDuration(hcluster *hyperv1.HostedCluster) {
-	// SLI: Guest cluster resources deletion duration.
-	condition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-	if condition != nil && condition.Status == metav1.ConditionTrue {
-		guestClusterResourceDeletionDuration := condition.LastTransitionTime.Sub(hcluster.DeletionTimestamp.Time).Seconds()
-		hcmetrics.HostedClusterGuestCloudResourcesDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(guestClusterResourceDeletionDuration)
-	}
-}
-
-func reportHostedClusterDeletionDuration(hcluster *hyperv1.HostedCluster, funcClock clock.WithTickerAndDelayedExecution) {
-	// SLI: HostedCluster deletion duration.
-	deletionDuration := funcClock.Since(hcluster.DeletionTimestamp.Time).Seconds()
-	hcmetrics.HostedClusterDeletionDuration.WithLabelValues(hcluster.Namespace, hcluster.Name, hcluster.Spec.ClusterID).Set(deletionDuration)
 }
 
 func getNodePortIP(hcluster *hyperv1.HostedCluster) net.IP {

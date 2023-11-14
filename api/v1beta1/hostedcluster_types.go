@@ -719,6 +719,19 @@ const (
 	PowerVSPlatform PlatformType = "PowerVS"
 )
 
+// List all PlatformType instances
+func PlatformTypes() []PlatformType {
+	return []PlatformType{
+		AWSPlatform,
+		NonePlatform,
+		IBMCloudPlatform,
+		AgentPlatform,
+		KubevirtPlatform,
+		AzurePlatform,
+		PowerVSPlatform,
+	}
+}
+
 // PlatformSpec specifies the underlying infrastructure provider for the cluster
 // and is used to configure platform specific behavior.
 type PlatformSpec struct {

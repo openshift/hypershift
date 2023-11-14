@@ -20,7 +20,6 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	nodepoolmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -1310,7 +1309,9 @@ const (
 	HypershiftOperatorInfoName = "hypershift_operator_info"
 )
 
-func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster) {
+// Verifies that the given metrics are defined for the given hosted cluster if areMetricsExpectedToBePresent is set to true.
+// Verifies that the given metrics are not defined otherwise.
+func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, metricsNames []string, areMetricsExpectedToBePresent bool) {
 	t.Run("ValidateMetricsAreExposed", func(t *testing.T) {
 		// TODO (alberto) this test should pass in None.
 		// https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/artifacts/e2e-aws/run-e2e/artifacts/TestNoneCreateCluster_PreTeardownClusterDump/
@@ -1327,21 +1328,7 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 
 		// Polling to prevent races with prometheus scrape interval.
 		err = wait.PollImmediate(10*time.Second, 5*time.Minute, func() (bool, error) {
-			for _, metricName := range []string{
-				hcmetrics.DeletionDurationMetricName,
-				hcmetrics.GuestCloudResourcesDeletionDurationMetricName,
-				hcmetrics.AvailableDurationName,
-				hcmetrics.InitialRolloutDurationName,
-				hcmetrics.ClusterUpgradeDurationMetricName,
-				hcmetrics.ProxyName,
-				hcmetrics.SilenceAlertsName,
-				hcmetrics.LimitedSupportEnabledName,
-				HypershiftOperatorInfoName,
-				nodepoolmetrics.NodePoolSizeMetricName,
-				nodepoolmetrics.NodePoolAvailableReplicasMetricName,
-				nodepoolmetrics.NodePoolDeletionDurationMetricName,
-				nodepoolmetrics.NodePoolInitialRolloutDurationMetricName,
-			} {
+			for _, metricName := range metricsNames {
 				// Query fo HC specific metrics by hc.name.
 				query := fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name)
 				if metricName == HypershiftOperatorInfoName {
@@ -1352,7 +1339,7 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 					query = fmt.Sprintf("%v{cluster_name=\"%s\"}", metricName, hc.Name)
 				}
 				// upgrade metric is only available for TestUpgradeControlPlane
-				if metricName == hcmetrics.ClusterUpgradeDurationMetricName && !strings.HasPrefix("TestUpgradeControlPlane", t.Name()) {
+				if metricName == hcmetrics.UpgradingDurationMetricName && !strings.HasPrefix("TestUpgradeControlPlane", t.Name()) {
 					continue
 				}
 
@@ -1361,20 +1348,25 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 					return false, err
 				}
 
-				if len(result.Data.Result) < 1 {
-					t.Logf("Metric not found: %q", metricName)
-					return false, nil
-				}
-				for _, series := range result.Data.Result {
-					t.Logf("Found metric: %v", series.String())
+				if areMetricsExpectedToBePresent {
+					if len(result.Data.Result) < 1 {
+						t.Logf("Metric not found: %q", metricName)
+						return false, nil
+					}
+					for _, series := range result.Data.Result {
+						t.Logf("Time series found: %v", series.String())
+					}
+				} else {
+					if len(result.Data.Result) > 0 {
+						t.Logf("Metric found: %q", metricName)
+						return false, nil
+					}
 				}
 			}
 			return true, nil
 		})
 		if err != nil {
-			t.Errorf("Failed to validate that all metrics are exposed")
-		} else {
-			t.Logf("Destroyed cluster. Namespace: %s, name: %s", hc.Namespace, hc.Name)
+			t.Errorf("Failed to validate all metrics")
 		}
 	})
 }

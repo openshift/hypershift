@@ -27,7 +27,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -184,8 +183,6 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from nodepool: %w", err)
 			}
 		}
-
-		metrics.RecordNodePoolDeletionDuration(nodePool)
 
 		log.Info("Deleted nodepool", "name", req.NamespacedName)
 		return ctrl.Result{}, nil
@@ -649,8 +646,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 
 		SetStatusCondition(&nodePool.Status.Conditions, *reachedIgnitionEndpointCondition)
-
-		metrics.ObserveConditionTransitionDuration(nodePool, reachedIgnitionEndpointCondition, oldReachedIgnitionEndpointCondition)
 	}
 
 	// Validate tuningConfig input.
@@ -766,7 +761,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		message = hyperv1.AllIsWellMessage
 	}
 
-	oldAllMachinesReadyCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAllMachinesReadyConditionType)
 	allMachinesReadyCondition := &hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolAllMachinesReadyConditionType,
 		Status:             status,
@@ -775,8 +769,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		ObservedGeneration: nodePool.Generation,
 	}
 	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesReadyCondition)
-
-	metrics.ObserveConditionTransitionDuration(nodePool, allMachinesReadyCondition, oldAllMachinesReadyCondition)
 
 	// Set AllNodesHealthyCondition.
 	status = corev1.ConditionTrue
@@ -802,7 +794,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		message = hyperv1.AllIsWellMessage
 	}
 
-	oldAllMachinesHealthyCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolAllNodesHealthyConditionType)
 	allMachinesHealthyCondition := &hyperv1.NodePoolCondition{
 		Type:               hyperv1.NodePoolAllNodesHealthyConditionType,
 		Status:             status,
@@ -811,8 +802,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		ObservedGeneration: nodePool.Generation,
 	}
 	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesHealthyCondition)
-
-	metrics.ObserveConditionTransitionDuration(nodePool, allMachinesHealthyCondition, oldAllMachinesHealthyCondition)
 
 	// 2. - Reconcile towards expected state of the world.
 	compressedConfig, err := supportutil.CompressAndEncode([]byte(config))
@@ -978,8 +967,6 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		} else {
 			log.Info("Reconciled MachineSet", "result", result)
 		}
-		// we use machineSet.Spec.Replicas because .Spec.Replicas will not be set if autoscaling is enabled
-		metrics.RecordNodePoolSize(nodePool, float64(*ms.Spec.Replicas))
 	}
 
 	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
@@ -998,12 +985,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		} else {
 			log.Info("Reconciled MachineDeployment", "result", result)
 		}
-		// we use machineDeployment.Spec.Replicas because .Spec.Replicas will not be set if autoscaling is enabled
-		metrics.RecordNodePoolSize(nodePool, float64(*md.Spec.Replicas))
 	}
-
-	// .Status.Replicas is updated at this point, record metric
-	metrics.RecordNodePoolAvailableReplicas(nodePool)
 
 	mhc := machineHealthCheck(nodePool, controlPlaneNamespace)
 	if nodePool.Spec.Management.AutoRepair {
@@ -1663,10 +1645,6 @@ func (r *NodePoolReconciler) reconcileMachineDeployment(log logr.Logger,
 	// is at the expected version (spec.version) and config (userData Secret) so we reconcile status and annotation.
 	if MachineDeploymentComplete(machineDeployment) {
 		if nodePool.Status.Version != targetVersion {
-			if nodePool.Status.Version == "" {
-				metrics.RecordNodePoolInitialRolloutDuration(nodePool)
-			}
-
 			log.Info("Version update complete",
 				"previous", nodePool.Status.Version, "new", targetVersion)
 			nodePool.Status.Version = targetVersion
