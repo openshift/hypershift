@@ -16,8 +16,19 @@ func TestDeserializeImageStream(t *testing.T) {
 
 func TestDeserializeImageMetadata(t *testing.T) {
 	for _, imageMetadata := range [][]byte{fixtures.CoreOSBootImagesYAML_4_8, fixtures.CoreOSBootImagesYAML_4_10} {
-		if _, err := DeserializeImageMetadata(imageMetadata); err != nil {
+		var coreOSMetadata *CoreOSStreamMetadata
+		coreOSMetadata, err := DeserializeImageMetadata(imageMetadata)
+		if err != nil {
 			t.Fatal(err)
 		}
+
+		if _, ok := coreOSMetadata.Architectures["x86_64"]; !ok {
+			t.Fatal(err)
+		}
+
+		if coreOSMetadata.Architectures["x86_64"].RHCOS.AzureDisk.URL == "" {
+			t.Fatal(err)
+		}
+
 	}
 }
