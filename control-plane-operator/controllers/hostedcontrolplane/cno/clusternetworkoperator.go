@@ -553,7 +553,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 
 func isOVNSBDBExposedThroughHCPRouter(hcp *hyperv1.HostedControlPlane) bool {
 	publishingStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OVNSbDb)
-	if publishingStrategy == nil || publishingStrategy.Type != hyperv1.Route {
+	if publishingStrategy == nil || publishingStrategy.Type != hyperv1.Route || publishingStrategy.Route == nil {
 		return false
 	}
 

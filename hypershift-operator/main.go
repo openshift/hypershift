@@ -410,39 +410,41 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// If it exists, block default ingress controller from admitting HCP private routes
-	ic := &operatorv1.IngressController{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "default",
-			Namespace: "openshift-ingress-operator",
-		},
-	}
-	if err := apiReadingClient.Get(ctx, types.NamespacedName{Namespace: ic.Namespace, Name: ic.Name}, ic); err == nil {
-		if _, err := controllerutil.CreateOrUpdate(ctx, apiReadingClient, ic, func() error {
-			if ic.Spec.RouteSelector == nil {
-				ic.Spec.RouteSelector = &metav1.LabelSelector{}
-			}
-			if ic.Spec.RouteSelector.MatchExpressions == nil {
-				ic.Spec.RouteSelector.MatchExpressions = []metav1.LabelSelectorRequirement{}
-			}
-			for _, requirement := range ic.Spec.RouteSelector.MatchExpressions {
-				if requirement.Key != hyperutil.HCPRouteLabel {
-					continue
-				}
-				requirement.Operator = metav1.LabelSelectorOpDoesNotExist
-				return nil
-			}
-			ic.Spec.RouteSelector.MatchExpressions = append(ic.Spec.RouteSelector.MatchExpressions, metav1.LabelSelectorRequirement{
-				Key:      hyperutil.HCPRouteLabel,
-				Operator: metav1.LabelSelectorOpDoesNotExist,
-			})
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
+	if opts.PrivatePlatform == string(hyperv1.AWSPlatform) {
+		ic := &operatorv1.IngressController{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "default",
+				Namespace: "openshift-ingress-operator",
+			},
 		}
-		log.Info("reconciled default ingress controller")
-	}
-	if err != nil && apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to get ingress controller: %w", err)
+		if err := apiReadingClient.Get(ctx, types.NamespacedName{Namespace: ic.Namespace, Name: ic.Name}, ic); err == nil {
+			if _, err := controllerutil.CreateOrUpdate(ctx, apiReadingClient, ic, func() error {
+				if ic.Spec.RouteSelector == nil {
+					ic.Spec.RouteSelector = &metav1.LabelSelector{}
+				}
+				if ic.Spec.RouteSelector.MatchExpressions == nil {
+					ic.Spec.RouteSelector.MatchExpressions = []metav1.LabelSelectorRequirement{}
+				}
+				for _, requirement := range ic.Spec.RouteSelector.MatchExpressions {
+					if requirement.Key != hyperutil.HCPRouteLabel {
+						continue
+					}
+					requirement.Operator = metav1.LabelSelectorOpDoesNotExist
+					return nil
+				}
+				ic.Spec.RouteSelector.MatchExpressions = append(ic.Spec.RouteSelector.MatchExpressions, metav1.LabelSelectorRequirement{
+					Key:      hyperutil.HCPRouteLabel,
+					Operator: metav1.LabelSelectorOpDoesNotExist,
+				})
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile default ingress controller: %w", err)
+			}
+			log.Info("reconciled default ingress controller")
+		}
+		if err != nil && apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get ingress controller: %w", err)
+		}
 	}
 
 	if err := setupMetrics(mgr); err != nil {
