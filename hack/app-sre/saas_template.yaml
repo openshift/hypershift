@@ -24531,6 +24531,13 @@ objects:
                                 resource. Once applied to the InstancetypeMatcher
                                 this field is removed.
                               type: string
+                            inferFromVolumeFailurePolicy:
+                              description: 'InferFromVolumeFailurePolicy controls
+                                what should happen on failure when inferring the instancetype.
+                                Allowed values are: "RejectInferFromVolumeFailure"
+                                and "IgnoreInferFromVolumeFailure". If not specified,
+                                "RejectInferFromVolumeFailure" is used by default.'
+                              type: string
                             kind:
                               description: 'Kind specifies which instancetype resource
                                 is referenced. Allowed values are: "VirtualMachineInstancetype"
@@ -24553,6 +24560,10 @@ objects:
                           description: LiveUpdateFeatures references a configuration
                             of hotpluggable resources
                           properties:
+                            affinity:
+                              description: Affinity allows live updating the virtual
+                                machines node affinity
+                              type: object
                             cpu:
                               description: LiveUpdateCPU holds hotplug configuration
                                 for the CPU resource. Empty struct indicates that
@@ -24566,6 +24577,19 @@ objects:
                                   format: int32
                                   type: integer
                               type: object
+                            memory:
+                              description: MemoryLiveUpdateConfiguration defines the
+                                live update memory features for the VirtualMachine
+                              properties:
+                                maxGuest:
+                                  anyOf:
+                                  - type: integer
+                                  - type: string
+                                  description: MaxGuest defines the maximum amount
+                                    memory that can be allocated for the VM.
+                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                  x-kubernetes-int-or-string: true
+                              type: object
                           type: object
                         preference:
                           description: PreferenceMatcher references a set of preference
@@ -24577,6 +24601,13 @@ objects:
                                 to be used through known annotations on the underlying
                                 resource. Once applied to the PreferenceMatcher this
                                 field is removed.
+                              type: string
+                            inferFromVolumeFailurePolicy:
+                              description: 'InferFromVolumeFailurePolicy controls
+                                what should happen on failure when preference the
+                                instancetype. Allowed values are: "RejectInferFromVolumeFailure"
+                                and "IgnoreInferFromVolumeFailure". If not specified,
+                                "RejectInferFromVolumeFailure" is used by default.'
                               type: string
                             kind:
                               description: 'Kind specifies which preference resource
@@ -24641,6 +24672,12 @@ objects:
                                                   injected into the VM using metadata
                                                   using the configDrive cloud-init
                                                   provider
+                                                type: object
+                                              noCloud:
+                                                description: NoCloudPropagation means
+                                                  that the ssh public keys are injected
+                                                  into the VM using metadata using
+                                                  the noCloud cloud-init provider
                                                 type: object
                                               qemuGuestAgent:
                                                 description: QemuGuestAgentAccessCredentailPropagation
@@ -26147,7 +26184,7 @@ objects:
                                           type: boolean
                                         autoattachSerialConsole:
                                           description: Whether to attach the default
-                                            serial console or not. Serial console
+                                            virtio-serial console or not. Serial console
                                             access will not be available if set to
                                             false. Defaults to true.
                                           type: boolean
@@ -26272,6 +26309,11 @@ objects:
                                                       to false.
                                                     type: boolean
                                                 type: object
+                                              errorPolicy:
+                                                description: If specified, it can
+                                                  change the default error policy
+                                                  (stop) for the disk
+                                                type: string
                                               io:
                                                 description: 'IO specifies which QEMU
                                                   disk IO mode should be used. Supported
@@ -26320,6 +26362,11 @@ objects:
                                             - name
                                             type: object
                                           type: array
+                                        downwardMetrics:
+                                          description: DownwardMetrics creates a virtio
+                                            serials for exposing the downward metrics
+                                            to the vmi.
+                                          type: object
                                         filesystems:
                                           description: Filesystems describes filesystem
                                             which is connected to the vmi.
@@ -26448,6 +26495,23 @@ objects:
                                                   all devices and be between 1 and
                                                   (16*1024-1).
                                                 type: integer
+                                              binding:
+                                                description: 'Binding specifies the
+                                                  binding plugin that will be used
+                                                  to connect the interface to the
+                                                  guest. It provides an alternative
+                                                  to InterfaceBindingMethod. version:
+                                                  1alphav1'
+                                                properties:
+                                                  name:
+                                                    description: 'Name references
+                                                      to the binding name as denined
+                                                      in the kubevirt CR. version:
+                                                      1alphav1'
+                                                    type: string
+                                                required:
+                                                - name
+                                                type: object
                                               bootOrder:
                                                 description: BootOrder is an integer
                                                   value > 0, used to determine ordering
@@ -26610,6 +26674,15 @@ objects:
                                             - name
                                             type: object
                                           type: array
+                                        logSerialConsole:
+                                          description: Whether to log the auto-attached
+                                            default serial console or not. Serial
+                                            console logs will be collect to a file
+                                            and then streamed from a named `guest-console-log`.
+                                            Not relevant if autoattachSerialConsole
+                                            is disabled. Defaults to cluster wide
+                                            setting on VirtualMachineOptions.
+                                          type: boolean
                                         networkInterfaceMultiqueue:
                                           description: If specified, virtual network
                                             interfaces configured with a virtio bus
@@ -26957,6 +27030,11 @@ objects:
                                               description: If set, EFI will be used
                                                 instead of BIOS.
                                               properties:
+                                                persistent:
+                                                  description: If set to true, Persistent
+                                                    will persist the EFI NVRAM across
+                                                    reboots. Defaults to false
+                                                  type: boolean
                                                 secureBoot:
                                                   description: If set, SecureBoot
                                                     will be enabled and the OVMF roms
@@ -27033,6 +27111,14 @@ objects:
                                           description: AMD Secure Encrypted Virtualization
                                             (SEV).
                                           properties:
+                                            attestation:
+                                              description: If specified, run the attestation
+                                                process for a vmi.
+                                              type: object
+                                            dhCert:
+                                              description: Base64 encoded guest owner's
+                                                Diffie-Hellman key.
+                                              type: string
                                             policy:
                                               description: 'Guest policy flags as
                                                 defined in AMD SEV API specification.
@@ -27046,6 +27132,10 @@ objects:
                                                     Defaults to false.
                                                   type: boolean
                                               type: object
+                                            session:
+                                              description: Base64 encoded session
+                                                blob.
+                                              type: string
                                           type: object
                                       type: object
                                     machine:
@@ -27083,6 +27173,17 @@ objects:
                                                 valid values are 1Gi and 2Mi.
                                               type: string
                                           type: object
+                                        maxGuest:
+                                          anyOf:
+                                          - type: integer
+                                          - type: string
+                                          description: MaxGuest allows to specify
+                                            the maximum amount of memory which is
+                                            visible inside the Guest OS. The delta
+                                            between MaxGuest and Guest is the amount
+                                            of memory that can be hot(un)plugged.
+                                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                          x-kubernetes-int-or-string: true
                                       type: object
                                     resources:
                                       description: Resources describes the Compute
@@ -29304,6 +29405,14 @@ objects:
                                         Once applied to the InstancetypeMatcher this
                                         field is removed.
                                       type: string
+                                    inferFromVolumeFailurePolicy:
+                                      description: 'InferFromVolumeFailurePolicy controls
+                                        what should happen on failure when inferring
+                                        the instancetype. Allowed values are: "RejectInferFromVolumeFailure"
+                                        and "IgnoreInferFromVolumeFailure". If not
+                                        specified, "RejectInferFromVolumeFailure"
+                                        is used by default.'
+                                      type: string
                                     kind:
                                       description: 'Kind specifies which instancetype
                                         resource is referenced. Allowed values are:
@@ -29327,6 +29436,10 @@ objects:
                                   description: LiveUpdateFeatures references a configuration
                                     of hotpluggable resources
                                   properties:
+                                    affinity:
+                                      description: Affinity allows live updating the
+                                        virtual machines node affinity
+                                      type: object
                                     cpu:
                                       description: LiveUpdateCPU holds hotplug configuration
                                         for the CPU resource. Empty struct indicates
@@ -29342,6 +29455,20 @@ objects:
                                           format: int32
                                           type: integer
                                       type: object
+                                    memory:
+                                      description: MemoryLiveUpdateConfiguration defines
+                                        the live update memory features for the VirtualMachine
+                                      properties:
+                                        maxGuest:
+                                          anyOf:
+                                          - type: integer
+                                          - type: string
+                                          description: MaxGuest defines the maximum
+                                            amount memory that can be allocated for
+                                            the VM.
+                                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                          x-kubernetes-int-or-string: true
+                                      type: object
                                   type: object
                                 preference:
                                   description: PreferenceMatcher references a set
@@ -29354,6 +29481,14 @@ objects:
                                         known annotations on the underlying resource.
                                         Once applied to the PreferenceMatcher this
                                         field is removed.
+                                      type: string
+                                    inferFromVolumeFailurePolicy:
+                                      description: 'InferFromVolumeFailurePolicy controls
+                                        what should happen on failure when preference
+                                        the instancetype. Allowed values are: "RejectInferFromVolumeFailure"
+                                        and "IgnoreInferFromVolumeFailure". If not
+                                        specified, "RejectInferFromVolumeFailure"
+                                        is used by default.'
                                       type: string
                                     kind:
                                       description: 'Kind specifies which preference
@@ -29424,6 +29559,13 @@ objects:
                                                           VM using metadata using
                                                           the configDrive cloud-init
                                                           provider
+                                                        type: object
+                                                      noCloud:
+                                                        description: NoCloudPropagation
+                                                          means that the ssh public
+                                                          keys are injected into the
+                                                          VM using metadata using
+                                                          the noCloud cloud-init provider
                                                         type: object
                                                       qemuGuestAgent:
                                                         description: QemuGuestAgentAccessCredentailPropagation
@@ -31203,10 +31345,10 @@ objects:
                                                   type: boolean
                                                 autoattachSerialConsole:
                                                   description: Whether to attach the
-                                                    default serial console or not.
-                                                    Serial console access will not
-                                                    be available if set to false.
-                                                    Defaults to true.
+                                                    default virtio-serial console
+                                                    or not. Serial console access
+                                                    will not be available if set to
+                                                    false. Defaults to true.
                                                   type: boolean
                                                 autoattachVSOCK:
                                                   description: Whether to attach the
@@ -31343,6 +31485,12 @@ objects:
                                                               Defaults to false.
                                                             type: boolean
                                                         type: object
+                                                      errorPolicy:
+                                                        description: If specified,
+                                                          it can change the default
+                                                          error policy (stop) for
+                                                          the disk
+                                                        type: string
                                                       io:
                                                         description: 'IO specifies
                                                           which QEMU disk IO mode
@@ -31399,6 +31547,11 @@ objects:
                                                     - name
                                                     type: object
                                                   type: array
+                                                downwardMetrics:
+                                                  description: DownwardMetrics creates
+                                                    a virtio serials for exposing
+                                                    the downward metrics to the vmi.
+                                                  type: object
                                                 filesystems:
                                                   description: Filesystems describes
                                                     filesystem which is connected
@@ -31546,6 +31699,24 @@ objects:
                                                           be unique across all devices
                                                           and be between 1 and (16*1024-1).
                                                         type: integer
+                                                      binding:
+                                                        description: 'Binding specifies
+                                                          the binding plugin that
+                                                          will be used to connect
+                                                          the interface to the guest.
+                                                          It provides an alternative
+                                                          to InterfaceBindingMethod.
+                                                          version: 1alphav1'
+                                                        properties:
+                                                          name:
+                                                            description: 'Name references
+                                                              to the binding name
+                                                              as denined in the kubevirt
+                                                              CR. version: 1alphav1'
+                                                            type: string
+                                                        required:
+                                                        - name
+                                                        type: object
                                                       bootOrder:
                                                         description: BootOrder is
                                                           an integer value > 0, used
@@ -31734,6 +31905,16 @@ objects:
                                                     - name
                                                     type: object
                                                   type: array
+                                                logSerialConsole:
+                                                  description: Whether to log the
+                                                    auto-attached default serial console
+                                                    or not. Serial console logs will
+                                                    be collect to a file and then
+                                                    streamed from a named `guest-console-log`.
+                                                    Not relevant if autoattachSerialConsole
+                                                    is disabled. Defaults to cluster
+                                                    wide setting on VirtualMachineOptions.
+                                                  type: boolean
                                                 networkInterfaceMultiqueue:
                                                   description: If specified, virtual
                                                     network interfaces configured
@@ -32127,6 +32308,12 @@ objects:
                                                       description: If set, EFI will
                                                         be used instead of BIOS.
                                                       properties:
+                                                        persistent:
+                                                          description: If set to true,
+                                                            Persistent will persist
+                                                            the EFI NVRAM across reboots.
+                                                            Defaults to false
+                                                          type: boolean
                                                         secureBoot:
                                                           description: If set, SecureBoot
                                                             will be enabled and the
@@ -32211,6 +32398,16 @@ objects:
                                                   description: AMD Secure Encrypted
                                                     Virtualization (SEV).
                                                   properties:
+                                                    attestation:
+                                                      description: If specified, run
+                                                        the attestation process for
+                                                        a vmi.
+                                                      type: object
+                                                    dhCert:
+                                                      description: Base64 encoded
+                                                        guest owner's Diffie-Hellman
+                                                        key.
+                                                      type: string
                                                     policy:
                                                       description: 'Guest policy flags
                                                         as defined in AMD SEV API
@@ -32226,6 +32423,10 @@ objects:
                                                             Defaults to false.
                                                           type: boolean
                                                       type: object
+                                                    session:
+                                                      description: Base64 encoded
+                                                        session blob.
+                                                      type: string
                                                   type: object
                                               type: object
                                             machine:
@@ -32266,6 +32467,18 @@ objects:
                                                         are 1Gi and 2Mi.
                                                       type: string
                                                   type: object
+                                                maxGuest:
+                                                  anyOf:
+                                                  - type: integer
+                                                  - type: string
+                                                  description: MaxGuest allows to
+                                                    specify the maximum amount of
+                                                    memory which is visible inside
+                                                    the Guest OS. The delta between
+                                                    MaxGuest and Guest is the amount
+                                                    of memory that can be hot(un)plugged.
+                                                  pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                                  x-kubernetes-int-or-string: true
                                               type: object
                                             resources:
                                               description: Resources describes the
