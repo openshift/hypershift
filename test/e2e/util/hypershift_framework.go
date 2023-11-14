@@ -48,6 +48,7 @@ func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFun
 func (h *hypershiftTest) Execute(opts *core.CreateOptions, platform hyperv1.PlatformType, artifactDir string, serviceAccountSigningKey []byte) {
 	// create a hypershift cluster for the test
 	hostedCluster := h.createHostedCluster(opts, platform, artifactDir, serviceAccountSigningKey)
+
 	// if cluster creation failed, immediately try and clean up.
 	if h.Failed() {
 		h.teardown(hostedCluster, opts, artifactDir, false)
@@ -79,6 +80,10 @@ func (h *hypershiftTest) Execute(opts *core.CreateOptions, platform hyperv1.Plat
 	}
 
 	h.after(hostedCluster, opts, platform)
+
+	if h.Failed() {
+		h.summarizeHCConditions(hostedCluster)
+	}
 }
 
 // runs before each test.
@@ -320,5 +325,20 @@ func (h *hypershiftTest) teardownHostedCluster(ctx context.Context, hc *hyperv1.
 		if err != nil {
 			h.Errorf("Failed to dump cluster: %v", err)
 		}
+	}
+}
+
+func (h *hypershiftTest) summarizeHCConditions(hostedCluster *hyperv1.HostedCluster) {
+	conditions := hostedCluster.Status.Conditions
+
+	if conditions != nil {
+		h.Logf("Summarizing false conditions in the HostedCluster")
+		for _, condition := range conditions {
+			if condition.Status == "False" {
+				h.Logf("Condition %s is false for HostedCluster %s: %s", condition.Type, hostedCluster.Name, condition.Message)
+			}
+		}
+	} else {
+		h.Logf("HostedCluster %s has no false conditions to summarize", hostedCluster.Name)
 	}
 }
