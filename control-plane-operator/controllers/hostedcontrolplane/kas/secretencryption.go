@@ -3,7 +3,7 @@ package kas
 import (
 	"fmt"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	corev1 "k8s.io/api/core/v1"

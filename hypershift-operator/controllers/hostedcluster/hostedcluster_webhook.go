@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"

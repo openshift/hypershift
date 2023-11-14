@@ -11,5 +11,6 @@ import (
 	_ "github.com/prometheus/prometheus/cmd/promtool"
 	_ "gotest.tools/gotestsum"
 	_ "honnef.co/go/tools/cmd/staticcheck"
+	_ "k8s.io/code-generator"
 	_ "sigs.k8s.io/controller-tools/cmd/controller-gen"
 )

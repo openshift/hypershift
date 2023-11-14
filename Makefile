@@ -46,7 +46,7 @@ pre-commit: all verify test
 build: hypershift-operator control-plane-operator hypershift product-cli
 
 .PHONY: update
-update: deps api api-docs app-sre-saas-template
+update: deps api api-docs app-sre-saas-template clients
 
 .PHONY: verify
 verify: update staticcheck fmt vet promtool
@@ -90,9 +90,9 @@ api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ib
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN)
-	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
+	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/hypershift/..."
 	rm -rf cmd/install/assets/hypershift-operator/*.yaml
-	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/hypershift/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 
 .PHONY: cluster-api
 cluster-api: $(CONTROLLER_GEN)
@@ -130,6 +130,10 @@ cluster-api-provider-azure: $(CONTROLLER_GEN)
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)
 	hack/gen-api-docs.sh $(GENAPIDOCS) $(DIR)
+
+.PHONY: clients
+clients:
+	hack/update-codegen.sh
 
 
 .PHONY: release

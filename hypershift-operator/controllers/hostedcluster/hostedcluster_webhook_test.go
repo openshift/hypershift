@@ -6,7 +6,7 @@ import (
 
 	"github.com/openshift/hypershift/kubevirtexternalinfra"
 
-	"github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/api/hypershift/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
