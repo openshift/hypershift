@@ -65,7 +65,7 @@ func (h *hypershiftTest) Execute(opts *core.CreateOptions, platform hyperv1.Plat
 		h.postTeardown(hostedCluster, opts)
 	}()
 
-	// fail safe to gurantee teardown() is always executed.
+	// fail safe to guarantee teardown() is always executed.
 	// defer funcs will be skipped if any subtest panics
 	h.Cleanup(func() { h.teardown(hostedCluster, opts, artifactDir, true) })
 

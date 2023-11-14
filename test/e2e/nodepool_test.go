@@ -46,7 +46,7 @@ func TestNodePool(t *testing.T) {
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		hostedClusterClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-		// Get the newly created defautlt NodePool
+		// Get the newly created default NodePool
 		nodepools := &hyperv1.NodePoolList{}
 		if err := mgtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
 			t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
@@ -134,11 +134,11 @@ func nodePoolScaleDownToZero(ctx context.Context, client crclient.Client, nodePo
 // The situation should not happen in CI but it's useful in local testing.
 func nodePoolRecreate(t *testing.T, ctx context.Context, nodePool *hyperv1.NodePool, mgmtClient crclient.Client) error {
 	g := NewWithT(t)
-	existantNodePool := &hyperv1.NodePool{}
-	err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), existantNodePool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepool")
-	err = mgmtClient.Delete(ctx, existantNodePool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to Delete the existant NodePool")
+	existingNodePool := &hyperv1.NodePool{}
+	err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), existingNodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed getting existent nodepool")
+	err = mgmtClient.Delete(ctx, existingNodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to Delete the existent NodePool")
 	t.Logf("waiting for NodePools to be recreated")
 	err = wait.PollImmediateWithContext(ctx, 10*time.Second, 15*time.Minute, func(ctx context.Context) (bool, error) {
 		if ctx.Err() != nil {
