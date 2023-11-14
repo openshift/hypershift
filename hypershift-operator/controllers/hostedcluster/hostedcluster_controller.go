@@ -301,7 +301,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		ObservedGeneration: hcluster.Generation,
 		Status:             metav1.ConditionTrue,
 		Reason:             "ReconciliatonSucceeded",
-		Message:            "Reconciliation completed succesfully",
+		Message:            "Reconciliation completed successfully",
 		LastTransitionTime: r.now(),
 	}
 	if err != nil {

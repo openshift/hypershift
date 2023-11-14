@@ -237,7 +237,7 @@ If you face issues with Node Tuning, first check the Condition `ValidTuningConfi
   type: ValidTuningConfig
 ```
 
-If the NodePool condition shows no issues, it means that the configuration has been loaded and propagated to the NodePool. You can then check the status of the relevant `Profile` Custom Resource in your HostedCluster. In the conditions you should see if the configuration has been applied succesfully and whether there are any outstanding Warning or Errors. An example can be seen below.
+If the NodePool condition shows no issues, it means that the configuration has been loaded and propagated to the NodePool. You can then check the status of the relevant `Profile` Custom Resource in your HostedCluster. In the conditions you should see if the configuration has been applied successfully and whether there are any outstanding Warning or Errors. An example can be seen below.
 ```
 status:
   bootcmdline: ""
