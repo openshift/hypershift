@@ -3,6 +3,7 @@ package hostedcluster
 import (
 	"context"
 	"fmt"
+	jsonpatch "github.com/evanphx/json-patch/v5"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -130,7 +131,19 @@ func (v hostedClusterValidator) ValidateCreate(ctx context.Context, obj runtime.
 	}
 }
 
-func (v hostedClusterValidator) ValidateUpdate(_ context.Context, _, _ runtime.Object) (admission.Warnings, error) {
+func (v hostedClusterValidator) ValidateUpdate(_ context.Context, _, newHC runtime.Object) (admission.Warnings, error) {
+	hc, ok := newHC.(*hyperv1.HostedCluster)
+	if !ok {
+		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", newHC)
+	}
+
+	switch hc.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		err := validateJsonAnnotation(hc.Annotations)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return nil, nil
 }
 
@@ -139,6 +152,11 @@ func (v hostedClusterValidator) ValidateDelete(_ context.Context, _ runtime.Obje
 }
 
 func (v hostedClusterValidator) validateCreateKubevirtHostedCluster(ctx context.Context, hc *hyperv1.HostedCluster) (admission.Warnings, error) {
+	err := validateJsonAnnotation(hc.Annotations)
+	if err != nil {
+		return nil, err
+	}
+
 	if hc.Spec.Platform.Kubevirt == nil {
 		return nil, fmt.Errorf("the spec.platform.kubevirt field is missing in the HostedCluster resource")
 	}
@@ -170,7 +188,20 @@ func (v nodePoolValidator) ValidateCreate(ctx context.Context, obj runtime.Objec
 	}
 }
 
-func (v nodePoolValidator) ValidateUpdate(_ context.Context, _, _ runtime.Object) (admission.Warnings, error) {
+func (v nodePoolValidator) ValidateUpdate(_ context.Context, _, newNP runtime.Object) (admission.Warnings, error) {
+	np, ok := newNP.(*hyperv1.NodePool)
+	if !ok {
+		return nil, fmt.Errorf("wrong type %T for validation, instead of NodePool", newNP)
+	}
+
+	switch np.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		err := validateJsonAnnotation(np.Annotations)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return nil, nil
 }
 
@@ -179,8 +210,13 @@ func (v nodePoolValidator) ValidateDelete(_ context.Context, _ runtime.Object) (
 }
 
 func (v nodePoolValidator) validateCreateKubevirtNodePool(ctx context.Context, np *hyperv1.NodePool) (admission.Warnings, error) {
+	err := validateJsonAnnotation(np.Annotations)
+	if err != nil {
+		return nil, err
+	}
+
 	hc := &hyperv1.HostedCluster{}
-	err := v.client.Get(ctx, client.ObjectKey{Name: np.Spec.ClusterName, Namespace: np.Namespace}, hc)
+	err = v.client.Get(ctx, client.ObjectKey{Name: np.Spec.ClusterName, Namespace: np.Namespace}, hc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrive HostedCluster %s/%s; %w", np.Namespace, np.Spec.ClusterName, err)
 	}
@@ -210,4 +246,31 @@ func (v kubevirtClusterValidator) validate(ctx context.Context, cli client.Clien
 	}
 
 	return nil, kubevirtexternalinfra.ValidateClusterVersions(ctx, cl)
+}
+
+func validateJsonAnnotation(annotations map[string]string) error {
+	if ann, exists := annotations[hyperv1.JSONPatchAnnotation]; exists {
+		patch, err := jsonpatch.DecodePatch([]byte(ann))
+		if err != nil {
+			return fmt.Errorf("wrong json patch structure in the %q annotation: %w", hyperv1.JSONPatchAnnotation, err)
+		}
+
+		for _, p := range patch {
+			kind := p.Kind()
+			if kind == "unknown" {
+				return fmt.Errorf("wrong json patch structure in the %q annotation: missing op field", hyperv1.JSONPatchAnnotation)
+			} else if kind != "delete" {
+				v, err := p.ValueInterface()
+				if err != nil {
+					return fmt.Errorf("wrong json patch structure in the %q annotation: %w, %v", hyperv1.JSONPatchAnnotation, err, v)
+				}
+			}
+			_, err = p.Path()
+			if err != nil {
+				return fmt.Errorf("wrong json patch structure in the %q annotation: %w", hyperv1.JSONPatchAnnotation, err)
+			}
+		}
+	}
+
+	return nil
 }
