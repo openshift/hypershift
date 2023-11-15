@@ -1680,7 +1680,7 @@ func EnsureAllReqServingPodsLandOnReqServingNodes(t *testing.T, ctx context.Cont
 func EnsureNoHCPPodsLandOnDefaultNode(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	g := NewWithT(t)
 
-	namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+	namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	var podList corev1.PodList
 	if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
 		t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
