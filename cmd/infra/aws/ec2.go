@@ -224,7 +224,7 @@ func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API,
 	tagSpec := o.ec2TagSpecifications("subnet", name)
 	tagSpec[0].Tags = append(tagSpec[0].Tags, &ec2.Tag{
 		Key:   aws.String(scopeTag),
-		Value: aws.String("true"),
+		Value: aws.String("1"),
 	})
 
 	result, err := client.CreateSubnet(&ec2.CreateSubnetInput{
