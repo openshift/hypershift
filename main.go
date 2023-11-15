@@ -24,6 +24,7 @@ import (
 	"syscall"
 
 	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/openshift/hypershift/cmd/consolelogs"
 	createcmd "github.com/openshift/hypershift/cmd/create"
@@ -32,9 +33,16 @@ import (
 	installcmd "github.com/openshift/hypershift/cmd/install"
 	cliversion "github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/pkg/version"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 func main() {
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
+
 	cmd := &cobra.Command{
 		Use:              "hypershift",
 		SilenceUsage:     true,
