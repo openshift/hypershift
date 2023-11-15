@@ -61,6 +61,9 @@ const (
 	// If the security group is specified for the NodePool, this condition is always true. If no security group is specified
 	// for the NodePool, the status of this condition depends on the availability of the default security group in the HostedCluster.
 	NodePoolAWSSecurityGroupAvailableConditionType = "AWSSecurityGroupAvailable"
+
+	// NodePoolValidMachineTemplateConditionType signal that the machine template created by the node pool is valid
+	NodePoolValidMachineTemplateConditionType = "ValidMachineTemplate"
 )
 
 // Reasons
@@ -75,4 +78,5 @@ const (
 	DefaultAWSSecurityGroupNotReadyReason = "DefaultSGNotReady"
 	NodePoolValidArchPlatform             = "ValidArchPlatform"
 	NodePoolInvalidArchPlatform           = "InvalidArchPlatform"
+	InvalidKubevirtMachineTemplate        = "InvalidKubevirtMachineTemplate"
 )

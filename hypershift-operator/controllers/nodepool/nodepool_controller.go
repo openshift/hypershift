@@ -2491,8 +2491,19 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 		var err error
 		machineTemplateSpec, err = kubevirt.MachineTemplateSpec(nodePool, kubevirtBootImage, hcluster)
 		if err != nil {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidMachineTemplateConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.InvalidKubevirtMachineTemplate,
+				Message:            err.Error(),
+				ObservedGeneration: nodePool.Generation,
+			})
+
 			return nil, nil, "", err
+		} else {
+			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineTemplateConditionType)
 		}
+
 		mutateTemplate = func(object client.Object) error {
 			o, _ := object.(*capikubevirt.KubevirtMachineTemplate)
 			o.Spec = *machineTemplateSpec.(*capikubevirt.KubevirtMachineTemplateSpec)
