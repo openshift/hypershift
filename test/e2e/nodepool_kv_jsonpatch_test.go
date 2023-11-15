@@ -10,7 +10,6 @@ import (
 
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
@@ -23,29 +22,29 @@ import (
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 )
 
-type KubeVirtQoSClassGuaranteedTest struct {
+type KubeVirtJsonPatchTest struct {
 	ctx           context.Context
 	client        crclient.Client
 	hostedCluster *hyperv1.HostedCluster
 }
 
-func NewKubeVirtQoSClassGuaranteedTest(ctx context.Context, cl crclient.Client, hc *hyperv1.HostedCluster) *KubeVirtQoSClassGuaranteedTest {
-	return &KubeVirtQoSClassGuaranteedTest{
+func NewKubeKubeVirtJsonPatchTest(ctx context.Context, cl crclient.Client, hc *hyperv1.HostedCluster) *KubeVirtJsonPatchTest {
+	return &KubeVirtJsonPatchTest{
 		ctx:           ctx,
 		client:        cl,
 		hostedCluster: hc,
 	}
 }
 
-func (k KubeVirtQoSClassGuaranteedTest) Setup(t *testing.T) {
+func (k KubeVirtJsonPatchTest) Setup(t *testing.T) {
 	if globalOpts.Platform != hyperv1.KubevirtPlatform {
 		t.Skip("test only supported on platform KubeVirt")
 	}
 
-	t.Log("Starting test KubeVirtQoSClassGuaranteedTest")
+	t.Log("Starting test KubeKubeVirtJsonPatchTest")
 }
 
-func (k KubeVirtQoSClassGuaranteedTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []corev1.Node) {
+func (k KubeVirtJsonPatchTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []corev1.Node) {
 	g := NewWithT(t)
 
 	np := &hyperv1.NodePool{}
@@ -54,8 +53,6 @@ func (k KubeVirtQoSClassGuaranteedTest) Run(t *testing.T, nodePool hyperv1.NodeP
 		gg.Expect(np.Spec.Platform).ToNot(BeNil())
 		gg.Expect(np.Spec.Platform.Type).To(Equal(hyperv1.KubevirtPlatform))
 		gg.Expect(np.Spec.Platform.Kubevirt).ToNot(BeNil())
-		gg.Expect(np.Spec.Platform.Kubevirt.Compute).ToNot(BeNil())
-		gg.Expect(np.Spec.Platform.Kubevirt.Compute.QosClass).To(HaveValue(Equal(hyperv1.QoSClassGuaranteed)))
 	}).Within(5 * time.Minute).WithPolling(time.Second).Should(Succeed())
 
 	localInfraNS := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name).Name
@@ -90,42 +87,22 @@ func (k KubeVirtQoSClassGuaranteedTest) Run(t *testing.T, nodePool hyperv1.NodeP
 		gg.Expect(vmis.Items).To(HaveLen(1))
 		vmi := vmis.Items[0]
 
-		validateQuantity(vmi.Spec.Domain.Resources.Requests.Cpu(), vmi.Spec.Domain.Resources.Limits.Cpu(), gg)
-		validateQuantity(vmi.Spec.Domain.Resources.Requests.Memory(), vmi.Spec.Domain.Resources.Limits.Memory(), gg)
+		gg.Expect(vmi.Spec.Domain.CPU).ToNot(BeNil())
+		gg.Expect(vmi.Spec.Domain.CPU.Cores).To(Equal(uint32(3)))
 	}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
-
-	g.Eventually(func(gg Gomega) corev1.PodQOSClass {
-		pods := &corev1.PodList{}
-		gg.Expect(
-			infraClient.GetInfraClient().List(k.ctx, pods, &crclient.ListOptions{Namespace: guestNamespace, LabelSelector: labelSelector}),
-		).To(Succeed())
-
-		gg.Expect(pods.Items).To(HaveLen(1))
-		gg.Expect(pods.Items[0].Status.Phase).To(Equal(corev1.PodRunning))
-
-		return pods.Items[0].Status.QOSClass
-	}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Equal(corev1.PodQOSGuaranteed))
 }
 
-func validateQuantity(req, limit *resource.Quantity, g Gomega) {
-	g.ExpectWithOffset(1, req).ToNot(BeNil())
-	g.ExpectWithOffset(1, limit).ToNot(BeNil())
-	g.ExpectWithOffset(1, *req).To(Equal(*limit))
-}
-
-func (k KubeVirtQoSClassGuaranteedTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
+func (k KubeVirtJsonPatchTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      k.hostedCluster.Name + "-" + "test-kv-qos-guaranteed",
+			Name:      k.hostedCluster.Name + "-" + "test-kv-json-patch",
 			Namespace: k.hostedCluster.Namespace,
+			Annotations: map[string]string{
+				hyperv1.JSONPatchAnnotation: `[{"op": "replace","path": "/spec/domain/cpu/cores","value": 3}]`,
+			},
 		},
 	}
 	defaultNodepool.Spec.DeepCopyInto(&nodePool.Spec)
-
-	if nodePool.Spec.Platform.Kubevirt != nil &&
-		nodePool.Spec.Platform.Kubevirt.Compute != nil {
-		nodePool.Spec.Platform.Kubevirt.Compute.QosClass = ptr.To(hyperv1.QoSClassGuaranteed)
-	}
 
 	nodePool.Spec.Replicas = ptr.To(int32(1))
 
