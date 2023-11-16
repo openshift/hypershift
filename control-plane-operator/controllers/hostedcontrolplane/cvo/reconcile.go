@@ -108,7 +108,7 @@ func cvoLabels() map[string]string {
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneImage, image, cliImage, availabilityProberImage, clusterID string, apiPort *int32, platformType hyperv1.PlatformType) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneImage, image, cliImage, availabilityProberImage, clusterID string, apiPort *int32, platformType hyperv1.PlatformType, oauthEnabled bool) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -131,7 +131,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: pointer.Bool(false),
 				InitContainers: []corev1.Container{
-					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(image, platformType)),
+					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(image, platformType, oauthEnabled)),
 					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterID)),
 				},
 				Containers: []corev1.Container{
@@ -176,13 +176,13 @@ func cvoContainerMain() *corev1.Container {
 	}
 }
 
-func buildCVOContainerPrepPayload(image string, platformType hyperv1.PlatformType) func(c *corev1.Container) {
+func buildCVOContainerPrepPayload(image string, platformType hyperv1.PlatformType, oauthEnabled bool) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"/bin/bash"}
 		c.Args = []string{
 			"-c",
-			preparePayloadScript(platformType),
+			preparePayloadScript(platformType, oauthEnabled),
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
@@ -237,7 +237,7 @@ func ResourcesToRemove(platformType hyperv1.PlatformType) []client.Object {
 	}
 }
 
-func preparePayloadScript(platformType hyperv1.PlatformType) string {
+func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool) string {
 	payloadDir := volumeMounts.Path(cvoContainerPrepPayload().Name, cvoVolumePayload().Name)
 	var stmts []string
 
@@ -254,6 +254,9 @@ func preparePayloadScript(platformType hyperv1.PlatformType) string {
 			}
 		}
 		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", manifest)))
+	}
+	if !oauthEnabled {
+		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", "0000_50_console-operator_01-oauth.yaml")))
 	}
 	toRemove := ResourcesToRemove(platformType)
 	if len(toRemove) > 0 {
