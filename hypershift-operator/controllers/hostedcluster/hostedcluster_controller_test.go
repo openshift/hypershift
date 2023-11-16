@@ -127,7 +127,7 @@ func TestHasBeenAvailable(t *testing.T) {
 				},
 			}
 
-			hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name).Name
+			hcpNs := hcpmanifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 			hcp := controlplaneoperator.HostedControlPlane(hcpNs, hcluster.Name)
 
 			hcp.Status = hyperv1.HostedControlPlaneStatus{

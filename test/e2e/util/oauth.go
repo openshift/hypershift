@@ -145,7 +145,7 @@ func WaitForOAuthToken(t *testing.T, ctx context.Context, oauthRoute *routev1.Ro
 func WaitForOAuthRouteReady(t *testing.T, ctx context.Context, client crclient.Client, restConfig *restclient.Config, hostedCluster *hyperv1.HostedCluster) *routev1.Route {
 	g := NewWithT(t)
 
-	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	route := hcpmanifests.OauthServerExternalPublicRoute(hcpNamespace)
 
 	err := wait.PollImmediateWithContext(ctx, time.Second, time.Minute, func(ctx context.Context) (done bool, err error) {
@@ -225,7 +225,7 @@ const OAuthServerConfigKey = "config.yaml"
 func WaitForOauthConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	g := NewWithT(t)
 
-	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	oauthConfigCM := hcpmanifests.OAuthServerConfig(hcpNamespace)
 
 	err := wait.PollImmediateWithContext(ctx, time.Second, 10*time.Minute, func(ctx context.Context) (done bool, err error) {
@@ -256,7 +256,7 @@ func validateClusterPreIDP(t *testing.T, ctx context.Context, client crclient.Cl
 
 	g.Expect(hostedCluster.Status.KubeadminPassword).ToNot(BeNil())
 
-	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	kubeadminPasswordSecret := configmanifests.KubeadminPasswordSecret(hcpNamespace)
 	// validate kubeadmin secret exist
 	err := client.Get(ctx, crclient.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
@@ -277,7 +277,7 @@ func validateClusterPostIDP(t *testing.T, ctx context.Context, client crclient.C
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(hostedCluster.Status.KubeadminPassword).To(BeNil())
 
-	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	kubeadminPasswordSecret := configmanifests.KubeadminPasswordSecret(hcpNamespace)
 	// validate kubeadmin secret is deleted
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)

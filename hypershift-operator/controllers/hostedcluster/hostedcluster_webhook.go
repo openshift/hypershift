@@ -197,7 +197,7 @@ func (v kubevirtClusterValidator) validate(ctx context.Context, cli client.Clien
 		return nil, fmt.Errorf("the spec.platform.kubevirt field is missing in the HostedCluster resource")
 	}
 
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name).Name
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 	cl, err := v.clientMap.DiscoverKubevirtClusterClient(ctx, cli, hc.Spec.InfraID, hc.Spec.Platform.Kubevirt.Credentials, controlPlaneNamespace, hc.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect external infra cluster; %w", err)

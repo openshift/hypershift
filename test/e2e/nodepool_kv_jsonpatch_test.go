@@ -55,7 +55,7 @@ func (k KubeVirtJsonPatchTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 		gg.Expect(np.Spec.Platform.Kubevirt).ToNot(BeNil())
 	}).Within(5 * time.Minute).WithPolling(time.Second).Should(Succeed())
 
-	localInfraNS := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name).Name
+	localInfraNS := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
 	var guestNamespace string
 	if np.Status.Platform != nil &&
 		np.Status.Platform.KubeVirt != nil &&

@@ -58,7 +58,7 @@ func (k KubeVirtQoSClassGuaranteedTest) Run(t *testing.T, nodePool hyperv1.NodeP
 		gg.Expect(np.Spec.Platform.Kubevirt.Compute.QosClass).To(HaveValue(Equal(hyperv1.QoSClassGuaranteed)))
 	}).Within(5 * time.Minute).WithPolling(time.Second).Should(Succeed())
 
-	localInfraNS := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name).Name
+	localInfraNS := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
 	var guestNamespace string
 	if np.Status.Platform != nil &&
 		np.Status.Platform.KubeVirt != nil &&

@@ -54,7 +54,7 @@ func testKillRandomMembers(parentCtx context.Context, client crclient.Client, cl
 		ctx, cancel := context.WithCancel(parentCtx)
 		defer cancel()
 
-		guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name).Name
+		guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name)
 		t.Logf("Hosted control plane namespace is %s", guestNamespace)
 
 		// Get a client for the cluster
@@ -85,7 +85,7 @@ func testKillRandomMembers(parentCtx context.Context, client crclient.Client, cl
 
 		etcdPods := &corev1.PodList{}
 		err = client.List(ctx, etcdPods, &crclient.ListOptions{
-			Namespace:     manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name).Name,
+			Namespace:     guestNamespace,
 			LabelSelector: labels.Set(etcdSts.Spec.Selector.MatchLabels).AsSelector(),
 		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to list etcd pods")
@@ -147,7 +147,7 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 		ctx, cancel := context.WithCancel(parentCtx)
 		defer cancel()
 
-		guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name).Name
+		guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name)
 		t.Logf("Hosted control plane namespace is %s", guestNamespace)
 
 		// Get a client for the cluster
@@ -178,7 +178,7 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 
 		etcdPods := &corev1.PodList{}
 		err = client.List(ctx, etcdPods, &crclient.ListOptions{
-			Namespace:     manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name).Name,
+			Namespace:     guestNamespace,
 			LabelSelector: labels.Set(etcdSts.Spec.Selector.MatchLabels).AsSelector(),
 		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to list etcd pods")
@@ -257,7 +257,7 @@ func testSingleMemberRecovery(parentCtx context.Context, client crclient.Client,
 		ctx, cancel := context.WithCancel(parentCtx)
 		defer cancel()
 
-		guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name).Name
+		guestNamespace := manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name)
 		t.Logf("Hosted control plane namespace is %s", guestNamespace)
 
 		// Wait for a guest client to become available
@@ -271,7 +271,7 @@ func testSingleMemberRecovery(parentCtx context.Context, client crclient.Client,
 
 		etcdPods := &corev1.PodList{}
 		err = client.List(ctx, etcdPods, &crclient.ListOptions{
-			Namespace:     manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name).Name,
+			Namespace:     manifests.HostedControlPlaneNamespace(cluster.Namespace, cluster.Name),
 			LabelSelector: labels.Set(etcdSts.Spec.Selector.MatchLabels).AsSelector(),
 		})
 

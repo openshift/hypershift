@@ -150,7 +150,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
 		return fmt.Errorf("failed to get hosted cluster %s/%s: %w", opts.Namespace, opts.Name, err)
 	}
-	cpNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name).Name
+	cpNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name)
 	localPort := rand.Intn(45000-32767) + 32767
 	kubeconfigFileName, err := createGuestKubeconfig(ctx, c, cpNamespace, localPort, opts.Log)
 	if err != nil {
@@ -321,7 +321,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 
 	cmd.Run(ctx, objectType(&corev1.Node{}))
 
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name).Name
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name)
 
 	kubevirtExternalInfraClusters, localKubevirtInUse := shouldDumpKubevirt(nodePools)
 

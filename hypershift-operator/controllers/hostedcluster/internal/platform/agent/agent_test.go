@@ -107,7 +107,7 @@ func TestDeleteCredentials(t *testing.T) {
 func TestReconcileCAPIInfraCR(t *testing.T) {
 	hostedClusterNamespace := "clusters"
 	hostedClusterName := "hc1"
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName).Name
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName)
 
 	ignitionEndpoint := "ign"
 	caSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace)

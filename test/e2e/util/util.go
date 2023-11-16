@@ -330,7 +330,7 @@ func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, cl
 		hyperv1.ValidHostedControlPlaneConfiguration,
 	}
 	var rolloutIncompleteReasons []string
-	namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+	namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 	t.Logf("Waiting for hostedcontrolplane to rollout image. Namespace: %s, name: %s, image: %s", namespace, hostedCluster.Name, image)
 	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
@@ -409,7 +409,7 @@ func WaitForNodePoolDesiredNodes(t *testing.T, ctx context.Context, client crcli
 
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNoCrashingPods", func(t *testing.T) {
-		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		var podList corev1.PodList
 		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
@@ -444,7 +444,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 
 func NoticePreemptionOrFailedScheduling(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("NoticePreemptionOrFailedScheduling", func(t *testing.T) {
-		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		var eventList corev1.EventList
 		if err := client.List(ctx, &eventList, crclient.InNamespace(namespace)); err != nil {
@@ -463,7 +463,7 @@ func EnsureNoPodsWithTooHighPriority(t *testing.T, ctx context.Context, client c
 	// Priority of the etcd priority class, nothing should ever exceed this.
 	const maxAllowedPriority = 100002000
 	t.Run("EnsureNoPodsWithTooHighPriority", func(t *testing.T) {
-		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		var podList corev1.PodList
 		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
@@ -483,7 +483,7 @@ func EnsureNoPodsWithTooHighPriority(t *testing.T, ctx context.Context, client c
 
 func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureAllContainersHavePullPolicyIfNotPresent", func(t *testing.T) {
-		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		var podList corev1.PodList
 		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
@@ -528,7 +528,7 @@ func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, h
 
 func EnsureMachineDeploymentGeneration(t *testing.T, ctx context.Context, hostClient crclient.Client, hostedCluster *hyperv1.HostedCluster, expectedGeneration int64) {
 	t.Run("EnsureMachineDeploymentGeneration", func(t *testing.T) {
-		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		var machineDeploymentList capiv1.MachineDeploymentList
 		if err := hostClient.List(ctx, &machineDeploymentList, crclient.InNamespace(namespace)); err != nil {
 			t.Fatalf("failed to list machinedeployments: %v", err)
@@ -642,7 +642,7 @@ func EnsureAPIBudget(t *testing.T, ctx context.Context, client crclient.Client, 
 		v1api := promv1.NewAPI(promClient)
 
 		// Compare metrics against budgets
-		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		clusterAgeMinutes := int32(time.Since(hostedCluster.CreationTimestamp.Time).Round(time.Minute).Minutes())
 		budgets := []struct {
 			name   string
@@ -731,7 +731,7 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 			}
 		}
 		var routes routev1.RouteList
-		if err := hostClient.List(ctx, &routes, crclient.InNamespace(manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name)); err != nil {
+		if err := hostClient.List(ctx, &routes, crclient.InNamespace(manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name))); err != nil {
 			t.Fatalf("failed to list routes: %v", err)
 		}
 		for _, route := range routes.Items {
@@ -750,7 +750,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			t.Skip()
 		}
 
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		t.Run("EnsureComponentsHaveNeedManagementKASAccessLabel", func(t *testing.T) {
 			// Check for all components expected to have NeedManagementKASAccessLabel.
 			want := []string{
@@ -971,7 +971,7 @@ func getTokenFromSecret(ctx context.Context, secretName string, client crclient.
 
 func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureHCPContainersHaveResourceRequests", func(t *testing.T) {
-		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		var podList corev1.PodList
 		if err := client.List(ctx, &podList, &crclient.ListOptions{Namespace: namespace}); err != nil {
 			t.Fatalf("failed to list pods: %v", err)
@@ -1029,7 +1029,7 @@ func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedClus
 			secretEtcdKey,
 		}
 
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		out := new(bytes.Buffer)
 
 		podExecuter := PodExecOptions{
@@ -1514,7 +1514,7 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 
 func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureHCPPodsAffinitiesAndTolerations", func(t *testing.T) {
-		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name).Name
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		awsEbsCsiDriverOperatorPodSubstring := "aws-ebs-csi-driver-operator"
 		controlPlaneLabelTolerationKey := "hypershift.openshift.io/control-plane"
 		clusterNodeSchedulingAffinityWeight := 100
