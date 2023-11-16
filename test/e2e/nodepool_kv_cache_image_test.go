@@ -5,20 +5,19 @@ package e2e
 
 import (
 	"context"
+	"k8s.io/utils/pointer"
 	"testing"
 	"time"
 
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
-	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
-	"sigs.k8s.io/cluster-api/util"
-
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	"sigs.k8s.io/cluster-api/util"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 )
 
