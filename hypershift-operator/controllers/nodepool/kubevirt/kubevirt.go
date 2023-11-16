@@ -356,7 +356,7 @@ func applyJsonPatches(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluste
 	//tmplt.Spec.Template.Spec.Networks[0].Multus.NetworkName
 	buff := &bytes.Buffer{}
 	dec := json.NewEncoder(buff)
-	err := dec.Encode(tmplt.Spec.Template)
+	err := dec.Encode(tmplt)
 	if err != nil {
 		return fmt.Errorf("json: failed to encode the vm template: %w", err)
 	}
@@ -378,7 +378,7 @@ func applyJsonPatches(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluste
 	buff = bytes.NewBuffer(templateBytes)
 	enc := json.NewDecoder(buff)
 
-	if err = enc.Decode(tmplt.Spec.Template); err != nil {
+	if err = enc.Decode(tmplt); err != nil {
 		return fmt.Errorf("json: failed to decode the vm template: %w", err)
 	}
 
