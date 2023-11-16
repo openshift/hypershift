@@ -98,7 +98,7 @@ func (k KubeVirtJsonPatchTest) BuildNodePoolManifest(defaultNodepool hyperv1.Nod
 			Name:      k.hostedCluster.Name + "-" + "test-kv-json-patch",
 			Namespace: k.hostedCluster.Namespace,
 			Annotations: map[string]string{
-				hyperv1.JSONPatchAnnotation: `[{"op": "replace","path": "/spec/domain/cpu/cores","value": 3}]`,
+				hyperv1.JSONPatchAnnotation: `[{"op": "replace","path": "/spec/template/spec/domain/cpu/cores","value": 3}]`,
 			},
 		},
 	}

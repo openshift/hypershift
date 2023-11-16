@@ -416,7 +416,7 @@ func TestJsonPatch(t *testing.T) {
 					Name:      poolName,
 					Namespace: namespace,
 					Annotations: map[string]string{
-						hyperv1.JSONPatchAnnotation: `[{"op": "add","path": "/spec/networks/-","value": {"name": "secondary", "multus": {"networkName": "mynetwork"}}}]`,
+						hyperv1.JSONPatchAnnotation: `[{"op": "add","path": "/spec/template/spec/networks/-","value": {"name": "secondary", "multus": {"networkName": "mynetwork"}}}]`,
 					},
 				},
 				Spec: hyperv1.NodePoolSpec{
@@ -471,12 +471,12 @@ func TestJsonPatch(t *testing.T) {
 						hyperv1.JSONPatchAnnotation: `[
                             {
                                 "op": "add",
-                                "path": "/spec/networks/-",
+                                "path": "/spec/template/spec/networks/-",
                                 "value": {"name": "secondary", "multus": {"networkName": "mynetwork"}}
                             },
                             {
                                 "op": "replace",
-                                "path": "/spec/domain/cpu/cores",
+                                "path": "/spec/template/spec/domain/cpu/cores",
                                 "value": 5
                             }
                         ]`,
@@ -554,7 +554,7 @@ func TestJsonPatch(t *testing.T) {
 					Name:      "my-hostedcluster",
 					Namespace: "clusters",
 					Annotations: map[string]string{
-						hyperv1.JSONPatchAnnotation: `[{"op": "add","path": "/spec/networks/1","value": {"name": "secondary", "multus": {"networkName": "mynetwork"}}}]`,
+						hyperv1.JSONPatchAnnotation: `[{"op": "add","path": "/spec/template/spec/networks/1","value": {"name": "secondary", "multus": {"networkName": "mynetwork"}}}]`,
 					},
 				},
 				Spec: hyperv1.HostedClusterSpec{
@@ -609,12 +609,12 @@ func TestJsonPatch(t *testing.T) {
 						hyperv1.JSONPatchAnnotation: `[
                             {
                                 "op": "add",
-                                "path": "/spec/networks/-",
+                                "path": "/spec/template/spec/networks/-",
                                 "value": {"name": "secondary", "multus": {"networkName": "mynetwork"}}
                             },
                             {
                                 "op": "replace",
-                                "path": "/spec/domain/cpu/cores",
+                                "path": "/spec/template/spec/domain/cpu/cores",
                                 "value": 5
                             }
                         ]`,
@@ -649,7 +649,7 @@ func TestJsonPatch(t *testing.T) {
 						hyperv1.JSONPatchAnnotation: `[
                             {
                                 "op": "replace",
-                                "path": "/spec/domain/cpu/cores",
+                                "path": "/spec/template/spec/domain/cpu/cores",
                                 "value": 5
                             }
                         ]`,
@@ -681,7 +681,7 @@ func TestJsonPatch(t *testing.T) {
 						hyperv1.JSONPatchAnnotation: `[
                             {
                                 "op": "add",
-                                "path": "/spec/networks/-",
+                                "path": "/spec/template/spec/networks/-",
                                 "value": {"name": "secondary", "multus": {"networkName": "mynetwork"}}
                             }
                         ]`,
@@ -716,7 +716,7 @@ func TestJsonPatch(t *testing.T) {
 						hyperv1.JSONPatchAnnotation: `[
                             {
                                 "op": "replace",
-                                "path": "/spec/domain/cpu/cores",
+                                "path": "/spec/template/spec/domain/cpu/cores",
                                 "value": 5
                             }
                         ]`,
@@ -748,7 +748,7 @@ func TestJsonPatch(t *testing.T) {
 						hyperv1.JSONPatchAnnotation: `[
                             {
                                 "op": "replace",
-                                "path": "/spec/domain/cpu/cores",
+                                "path": "/spec/template/spec/domain/cpu/cores",
                                 "value": 6
                             }
                         ]`,
