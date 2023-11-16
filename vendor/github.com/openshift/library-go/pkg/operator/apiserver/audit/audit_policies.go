@@ -86,7 +86,9 @@ func DefaultPolicy() ([]byte, error) {
 
 // GetAuditPolicy computes the audit policy for the given audit config.
 // Note: the returned policy has Kind and APIVersion not set. This is responsibility of the caller
-//       when serializing it.
+//
+//	when serializing it.
+//
 // Note: the returned policy must not be modifed by the caller prior to a deepcopy.
 func GetAuditPolicy(audit configv1.Audit) (*auditv1.Policy, error) {
 	p := basePolicy.DeepCopy()
