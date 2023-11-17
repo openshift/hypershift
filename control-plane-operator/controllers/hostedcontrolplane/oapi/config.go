@@ -56,7 +56,7 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, auditWeb
 		return path.Join(dir, file)
 	}
 	cfg.APIServerArguments = map[string][]string{
-		"shutdown-delay-duration": {"3s"},
+		"shutdown-delay-duration": {"15s"},
 		"audit-log-format":        {"json"},
 		"audit-log-maxsize":       {"100"},
 		"audit-log-maxbackup":     {"10"},
