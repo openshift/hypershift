@@ -18,7 +18,7 @@ var (
 	packageServerDeployment = assets.MustDeployment(content.ReadFile, "assets/packageserver-deployment.yaml")
 )
 
-func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, apiPort *int32, noProxy []string) error {
+func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, olmImage, socks5ProxyImage, releaseVersion string, dc config.DeploymentConfig, availabilityProberImage string, noProxy []string) error {
 	ownerRef.ApplyTo(deployment)
 	deployment.Spec = packageServerDeployment.DeepCopy().Spec
 	for i, container := range deployment.Spec.Template.Spec.Containers {
@@ -43,7 +43,7 @@ func ReconcilePackageServerDeployment(deployment *appsv1.Deployment, ownerRef co
 		}
 	}
 	dc.ApplyTo(deployment)
-	util.AvailabilityProber(kas.InClusterKASReadyURL(deployment.Namespace, apiPort), availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
+	util.AvailabilityProber(kas.InClusterKASReadyURL(), availabilityProberImage, &deployment.Spec.Template.Spec, func(o *util.AvailabilityProberOpts) {
 		o.KubeconfigVolumeName = "kubeconfig"
 		o.RequiredAPIs = []schema.GroupVersionKind{
 			{Group: "operators.coreos.com", Version: "v1alpha1", Kind: "CatalogSource"},

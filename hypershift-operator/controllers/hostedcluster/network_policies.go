@@ -14,7 +14,6 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -148,7 +147,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 }
 
 func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
-	port := intstr.FromInt(int(hyperutil.BindAPIPortWithDefaultFromHostedCluster(hcluster, config.DefaultAPIServerPort)))
+	port := intstr.FromInt32(config.KASSVCPort)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{

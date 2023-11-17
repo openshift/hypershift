@@ -45,7 +45,6 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
-	"github.com/openshift/hypershift/support/config"
 	supportutil "github.com/openshift/hypershift/support/util"
 )
 
@@ -203,7 +202,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 		Out:       forwarderOutput,
 		ErrOut:    forwarderOutput,
 	}
-	podPort := supportutil.BindAPIPortWithDefaultFromHostedCluster(hostedCluster, config.DefaultAPIServerPort)
+	podPort := supportutil.KASPodPortFromHostedCluster(hostedCluster)
 	forwarderStop := make(chan struct{})
 	if err := forwarder.ForwardPorts([]string{fmt.Sprintf("%d:%d", localPort, podPort)}, forwarderStop); err != nil {
 		return fmt.Errorf("cannot forward kube apiserver port: %w, output: %s", err, forwarderOutput.String())

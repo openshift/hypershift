@@ -18,7 +18,6 @@ type Params struct {
 	ImageReplacer        *environmentReplacer
 
 	AvailabilityProberImage string
-	APIPort                 *int32
 	config.DeploymentConfig
 }
 
@@ -38,7 +37,6 @@ func NewParams(
 		StorageOperatorImage:    releaseImageProvider.GetImage(storageOperatorImageName),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		ImageReplacer:           ir,
-		APIPort:                 util.APIPort(hcp),
 	}
 	params.DeploymentConfig = config.DeploymentConfig{
 		AdditionalLabels: map[string]string{
