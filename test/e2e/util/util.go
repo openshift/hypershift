@@ -273,7 +273,7 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	start := time.Now()
 	g := NewWithT(t)
 
-	var rolloutIncompleteReason string
+	var rolloutIncompleteReason, prevRolloutIncompleteReason string
 	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
 		latest := hostedCluster.DeepCopy()
@@ -308,7 +308,8 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 			rolloutIncompleteReason = ""
 		}
 
-		if rolloutIncompleteReason != "" {
+		if rolloutIncompleteReason != "" && rolloutIncompleteReason != prevRolloutIncompleteReason {
+			prevRolloutIncompleteReason = rolloutIncompleteReason
 			t.Logf("Waiting for hostedcluster rollout. Image: %s: %s", image, rolloutIncompleteReason)
 			return false, nil
 		}

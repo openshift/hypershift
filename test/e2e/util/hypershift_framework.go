@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"fmt"
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -332,13 +333,17 @@ func (h *hypershiftTest) summarizeHCConditions(hostedCluster *hyperv1.HostedClus
 	conditions := hostedCluster.Status.Conditions
 
 	if conditions != nil {
-		h.Logf("Summarizing false conditions in the HostedCluster")
+		h.Logf("Summarizing false conditions for HostedCluster %s ", hostedCluster.Name)
 		for _, condition := range conditions {
-			if condition.Status == "False" {
-				h.Logf("Condition %s is false for HostedCluster %s: %s", condition.Type, hostedCluster.Name, condition.Message)
+			if condition.Status == metav1.ConditionFalse {
+				msg := fmt.Sprintf("%s: %s", condition.Type, condition.Reason)
+				if condition.Message != "" {
+					msg += fmt.Sprintf(": %s", condition.Message)
+				}
+				h.Logf(msg)
 			}
 		}
 	} else {
-		h.Logf("HostedCluster %s has no false conditions to summarize", hostedCluster.Name)
+		h.Logf("HostedCluster %s has no conditions", hostedCluster.Name)
 	}
 }
