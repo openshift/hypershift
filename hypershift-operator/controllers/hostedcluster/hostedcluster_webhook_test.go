@@ -117,3 +117,77 @@ func TestValidateKubevirtCluster(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateJsonAnnotation(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		annotations map[string]string
+		expectError bool
+	}{
+		{
+			name:        "no annotation",
+			annotations: nil,
+			expectError: false,
+		},
+		{
+			name: "valid annotation",
+			annotations: map[string]string{
+				v1beta1.JSONPatchAnnotation: `[{"op": "replace","path": "/spec/domain/cpu/cores","value": 3}]`,
+			},
+			expectError: false,
+		},
+		{
+			name: "not an array",
+			annotations: map[string]string{
+				v1beta1.JSONPatchAnnotation: `{"op": "replace","path": "/spec/domain/cpu/cores","value": 3}`,
+			},
+			expectError: true,
+		},
+		{
+			name: "corrupted json",
+			annotations: map[string]string{
+				v1beta1.JSONPatchAnnotation: `[{"op": "replace","path": "/spec/domain/cpu/cores","value": 3}`,
+			},
+			expectError: true,
+		},
+		{
+			name: "missing op",
+			annotations: map[string]string{
+				v1beta1.JSONPatchAnnotation: `[{"path": "/spec/domain/cpu/cores","value": 3}]`,
+			},
+			expectError: true,
+		},
+		{
+			name: "missing path",
+			annotations: map[string]string{
+				v1beta1.JSONPatchAnnotation: `[{"op": "replace","value": 3}]`,
+			},
+			expectError: true,
+		},
+		{
+			name: "missing value",
+			annotations: map[string]string{
+				v1beta1.JSONPatchAnnotation: `[{"op": "replace","path": "/spec/domain/cpu/cores"}]`,
+			},
+			expectError: true,
+		},
+		{
+			name: "valid: missing value on delete",
+			annotations: map[string]string{
+				v1beta1.JSONPatchAnnotation: `[{"op": "delete","path": "/spec/domain/cpu/cores"}]`,
+			},
+			expectError: false,
+		},
+	} {
+		t.Run(tc.name, func(tt *testing.T) {
+			err := validateJsonAnnotation(tc.annotations)
+			if (err != nil) != tc.expectError {
+				errMsgBool := []string{" ", "did"}
+				if !tc.expectError {
+					errMsgBool = []string{" not ", "didn't"}
+				}
+				tt.Errorf("should%sreturn error, but it %s. error: %v", errMsgBool[0], errMsgBool[1], err)
+			}
+		})
+	}
+}

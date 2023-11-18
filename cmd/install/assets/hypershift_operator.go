@@ -3,6 +3,7 @@ package assets
 import (
 	_ "embed"
 	"fmt"
+	"k8s.io/utils/ptr"
 
 	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -1588,7 +1589,6 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 	npPath := "/validate-hypershift-openshift-io-v1beta1-nodepool"
 	sideEffects := admissionregistrationv1.SideEffectClassNone
 	timeout := int32(15)
-	failurePolicy := admissionregistrationv1.Fail
 
 	return &admissionregistrationv1.ValidatingWebhookConfiguration{
 		TypeMeta: metav1.TypeMeta{
@@ -1609,6 +1609,7 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 					{
 						Operations: []admissionregistrationv1.OperationType{
 							admissionregistrationv1.Create,
+							admissionregistrationv1.Update,
 						},
 						Rule: admissionregistrationv1.Rule{
 							APIGroups:   []string{"hypershift.openshift.io"},
@@ -1628,7 +1629,7 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 				SideEffects:             &sideEffects,
 				AdmissionReviewVersions: []string{"v1"},
 				TimeoutSeconds:          &timeout,
-				FailurePolicy:           &failurePolicy,
+				FailurePolicy:           ptr.To(admissionregistrationv1.Fail),
 			},
 			{
 				Name: "nodepools.hypershift.openshift.io",
@@ -1636,6 +1637,7 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 					{
 						Operations: []admissionregistrationv1.OperationType{
 							admissionregistrationv1.Create,
+							admissionregistrationv1.Update,
 						},
 						Rule: admissionregistrationv1.Rule{
 							APIGroups:   []string{"hypershift.openshift.io"},
@@ -1655,7 +1657,7 @@ func (o HyperShiftValidatingWebhookConfiguration) Build() *admissionregistration
 				SideEffects:             &sideEffects,
 				AdmissionReviewVersions: []string{"v1"},
 				TimeoutSeconds:          &timeout,
-				FailurePolicy:           &failurePolicy,
+				FailurePolicy:           ptr.To(admissionregistrationv1.Fail),
 			},
 		},
 	}
