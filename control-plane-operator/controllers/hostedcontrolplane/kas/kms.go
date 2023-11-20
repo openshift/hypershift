@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas/kms"
 	"github.com/openshift/hypershift/support/api"
 	corev1 "k8s.io/api/core/v1"
@@ -46,6 +46,8 @@ func GetKMSProvider(kmsSpec *hyperv1.KMSSpec, images KubeAPIServerImages) (kms.I
 		return kms.NewIBMCloudKMSProvider(kmsSpec.IBMCloud, images.IBMCloudKMS)
 	case hyperv1.AWS:
 		return kms.NewAWSKMSProvider(kmsSpec.AWS, images.AWSKMS, images.TokenMinterImage)
+	case hyperv1.AZURE:
+		return kms.NewAzureKMSProvider(kmsSpec.Azure)
 	default:
 		return nil, fmt.Errorf("unrecognized kms provider %s", kmsSpec.Provider)
 	}

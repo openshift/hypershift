@@ -1730,12 +1730,13 @@ type SecretEncryptionSpec struct {
 }
 
 // KMSProvider defines the supported KMS providers
-// +kubebuilder:validation:Enum=IBMCloud;AWS
+// +kubebuilder:validation:Enum=IBMCloud;AWS;Azure
 type KMSProvider string
 
 const (
 	IBMCloud KMSProvider = "IBMCloud"
 	AWS      KMSProvider = "AWS"
+	AZURE    KMSProvider = "Azure"
 )
 
 // KMSSpec defines metadata about the kms secret encryption strategy
@@ -1749,6 +1750,24 @@ type KMSSpec struct {
 	// AWS defines metadata about the configuration of the AWS KMS Secret Encryption provider
 	// +optional
 	AWS *AWSKMSSpec `json:"aws,omitempty"`
+	// Azure defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
+	// +optional
+	Azure *AzureKMSSpec `json:"azure,omitempty"`
+}
+
+// AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
+type AzureKMSSpec struct {
+	// Location contains the Azure region
+	// +optional
+	Location string `json:"location"`
+	// KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+	// Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+	// `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+	KeyVaultName string `json:"keyVaultName"`
+	// KeyName is the name of the keyvault key used for encrypt/decrypt
+	KeyName string `json:"keyName"`
+	// KeyVersion contains the version of the key to use
+	KeyVersion string `json:"keyVersion"`
 }
 
 // IBMCloudKMSSpec defines metadata for the IBM Cloud KMS encryption strategy
