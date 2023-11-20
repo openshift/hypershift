@@ -40,6 +40,7 @@ func NewCreateCommands() *cobra.Command {
 		NodeDrainTimeout:               0,
 		NodeUpgradeType:                v1beta1.UpgradeTypeReplace,
 		Arch:                           "amd64",
+		OLMCatalogPlacement:            v1beta1.ManagementOLMCatalogPlacement,
 	}
 	cmd := &cobra.Command{
 		Use:          "cluster",
@@ -78,6 +79,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
 	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
 	cmd.PersistentFlags().Var(&opts.NodeUpgradeType, "node-upgrade-type", "The NodePool upgrade strategy for how nodes should behave when upgraded. Supported options: Replace, InPlace")
+	cmd.PersistentFlags().Var(&opts.OLMCatalogPlacement, "olmCatalogPlacement", "The OLM Catalog Placement for the HostedCluster. Supported options: Management, Guest")
 	cmd.PersistentFlags().StringVar(&opts.Arch, "arch", opts.Arch, "The default processor architecture for the NodePool (e.g. arm64, amd64)")
 	cmd.PersistentFlags().StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
 
