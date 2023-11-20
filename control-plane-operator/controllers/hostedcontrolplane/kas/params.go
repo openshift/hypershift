@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
@@ -382,12 +383,12 @@ func (p *KubeAPIServerParams) AuditPolicyConfig() configv1.Audit {
 }
 
 func (p *KubeAPIServerParams) ExternalURL() string {
-	return fmt.Sprintf("https://%s:%d", p.ExternalAddress, p.ExternalPort)
+	return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(p.ExternalAddress), p.ExternalPort)
 }
 
 // InternalURL is used by ReconcileBootstrapKubeconfigSecret.
 func (p *KubeAPIServerParams) InternalURL() string {
-	return fmt.Sprintf("https://%s:%d", p.InternalAddress, 443)
+	return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(p.InternalAddress), 443)
 }
 
 func (p *KubeAPIServerParams) ExternalKubeconfigKey() string {
