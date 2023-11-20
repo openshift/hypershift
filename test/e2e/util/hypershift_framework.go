@@ -3,6 +3,9 @@ package util
 import (
 	"context"
 	"fmt"
+	conditionsUtil "github.com/openshift/hypershift/support/conditions"
+	support "github.com/openshift/hypershift/support/util"
+
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -83,7 +86,7 @@ func (h *hypershiftTest) Execute(opts *core.CreateOptions, platform hyperv1.Plat
 	h.after(hostedCluster, opts, platform)
 
 	if h.Failed() {
-		h.summarizeHCConditions(hostedCluster)
+		h.summarizeHCConditions(hostedCluster, opts)
 	}
 }
 
@@ -329,13 +332,45 @@ func (h *hypershiftTest) teardownHostedCluster(ctx context.Context, hc *hyperv1.
 	}
 }
 
-func (h *hypershiftTest) summarizeHCConditions(hostedCluster *hyperv1.HostedCluster) {
+func (h *hypershiftTest) summarizeHCConditions(hostedCluster *hyperv1.HostedCluster, opts *core.CreateOptions) {
 	conditions := hostedCluster.Status.Conditions
+	expectedConditions := conditionsUtil.ExpectedHCConditions()
+
+	if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
+		// AWS KMS is not configured
+		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionUnknown
+	} else {
+		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionTrue
+	}
+
+	kasExternalHostname := support.ServiceExternalDNSHostnameByHC(hostedCluster, hyperv1.APIServer)
+	if kasExternalHostname == "" {
+		// ExternalDNS is not configured
+		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionUnknown
+	} else {
+		expectedConditions[hyperv1.ExternalDNSReachable] = metav1.ConditionTrue
+	}
+	if opts.NodePoolReplicas*int32(len(opts.AWSPlatform.Zones)) < 1 {
+		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
+		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
+		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
+	}
+
+	if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform &&
+		hostedCluster.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
+		expectedConditions[hyperv1.ValidKubeVirtInfraNetworkMTU] = metav1.ConditionTrue
+	}
 
 	if conditions != nil {
-		h.Logf("Summarizing false conditions for HostedCluster %s ", hostedCluster.Name)
+		h.Logf("Summarizing unexpected conditions for HostedCluster %s ", hostedCluster.Name)
 		for _, condition := range conditions {
-			if condition.Status == metav1.ConditionFalse {
+			expectedStatus, known := expectedConditions[hyperv1.ConditionType(condition.Type)]
+			if !known {
+				h.Logf("Unknown condition %s", condition.Type)
+				continue
+			}
+
+			if condition.Status != expectedStatus {
 				msg := fmt.Sprintf("%s: %s", condition.Type, condition.Reason)
 				if condition.Message != "" {
 					msg += fmt.Sprintf(": %s", condition.Message)
