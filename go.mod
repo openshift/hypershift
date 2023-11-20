@@ -64,7 +64,7 @@ require (
 	k8s.io/kube-aggregator v0.28.3
 	k8s.io/kube-scheduler v0.28.3
 	k8s.io/kubectl v0.28.3
-	k8s.io/pod-security-admission v0.23.5
+	k8s.io/pod-security-admission v0.28.3
 	k8s.io/utils v0.0.0-20230726121419-3b25d923346b
 	kubevirt.io/api v1.0.0
 	kubevirt.io/containerized-data-importer-api v1.57.0
@@ -196,7 +196,7 @@ require (
 
 replace (
 	k8s.io/client-go => k8s.io/client-go v0.28.3
-	k8s.io/kubernetes => k8s.io/kubernetes v0.23.3
+	k8s.io/kubernetes => k8s.io/kubernetes v0.28.3
 	kubevirt.io/client-go => kubevirt.io/client-go v0.0.0-00010101000000-000000000000
 	kubevirt.io/containerized-data-importer-api => github.com/kubevirt/containerized-data-importer-api v1.41.1-0.20211201033752-05520fb9f18d
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client => sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.24
