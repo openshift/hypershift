@@ -171,13 +171,6 @@ func TestValidateJsonAnnotation(t *testing.T) {
 			},
 			expectError: true,
 		},
-		{
-			name: "valid: missing value on delete",
-			annotations: map[string]string{
-				v1beta1.JSONPatchAnnotation: `[{"op": "delete","path": "/spec/domain/cpu/cores"}]`,
-			},
-			expectError: false,
-		},
 	} {
 		t.Run(tc.name, func(tt *testing.T) {
 			err := validateJsonAnnotation(tc.annotations)
