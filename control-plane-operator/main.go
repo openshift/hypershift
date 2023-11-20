@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
+	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	"github.com/openshift/hypershift/dnsresolver"
 	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
@@ -332,6 +333,12 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("Using CPO image", "image", cpoImage)
 
+		certRotationScale, err := pkiconfig.GetCertRotationScale()
+		if err != nil {
+			setupLog.Error(err, "failed to determine cert rotation scale")
+			os.Exit(1)
+		}
+
 		konnectivityServerImage := defaultKonnectivityImage
 		konnectivityAgentImage := defaultKonnectivityImage
 		if envImage := os.Getenv(images.KonnectivityEnvVar); len(envImage) > 0 {
@@ -396,6 +403,7 @@ func NewStartCommand() *cobra.Command {
 			OperateOnReleaseImage:         os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 			DefaultIngressDomain:          defaultIngressDomain,
 			MetricsSet:                    metricsSet,
+			CertRotationScale:             certRotationScale,
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)

@@ -172,6 +172,8 @@ type HostedClusterReconciler struct {
 	KubevirtInfraClients kvinfra.KubevirtInfraClientMap
 
 	MonitoringDashboards bool
+
+	CertRotationScale time.Duration
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -1628,7 +1630,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the control plane operator
-	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, openShiftTrustedCABundleConfigMapExists)
+	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, openShiftTrustedCABundleConfigMapExists, r.CertRotationScale)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
@@ -1985,7 +1987,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
-func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, openShiftTrustedCABundleConfigMapExists bool) error {
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, openShiftTrustedCABundleConfigMapExists bool, certRotationScale time.Duration) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -2073,7 +2075,8 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 			hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
 			defaultIngressDomain,
 			cpoHasUtilities,
-			r.MetricsSet)
+			r.MetricsSet,
+			certRotationScale)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -2213,11 +2216,12 @@ func reconcileControlPlaneOperatorDeployment(
 	setDefaultSecurityContext bool,
 	sa *corev1.ServiceAccount,
 	enableCIDebugOutput bool,
-	registryOverrideCommandLine string,
-	openShiftRegistryOverrides string,
+	registryOverrideCommandLine,
+	openShiftRegistryOverrides,
 	defaultIngressDomain string,
 	cpoHasUtilities bool,
-	metricsSet metrics.MetricsSet) error {
+	metricsSet metrics.MetricsSet,
+	certRotationScale time.Duration) error {
 
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
@@ -2304,6 +2308,10 @@ func reconcileControlPlaneOperatorDeployment(
 							{
 								Name:  "OPENSHIFT_IMG_OVERRIDES",
 								Value: openShiftRegistryOverrides,
+							},
+							{
+								Name:  "CERT_ROTATION_SCALE",
+								Value: certRotationScale.String(),
 							},
 							metrics.MetricsSetToEnv(metricsSet),
 						},

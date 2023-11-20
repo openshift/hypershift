@@ -57,8 +57,21 @@ func ReconcileAggregatorClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef,
 	return reconcileAggregateCA(cm, ownerRef, signer)
 }
 
-func ReconcileTotalClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, signers ...*corev1.Secret) error {
-	return reconcileAggregateCA(cm, ownerRef, signers...)
+func ReconcileTotalClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, additional []*corev1.ConfigMap, signers ...*corev1.Secret) error {
+	if err := reconcileAggregateCA(cm, ownerRef, signers...); err != nil {
+		return err
+	}
+	combined := &bytes.Buffer{}
+	if _, err := combined.WriteString(cm.Data[certs.CASignerCertMapKey]); err != nil {
+		return err
+	}
+	for _, add := range additional {
+		if _, err := combined.WriteString(add.Data[certs.OCPCASignerCertMapKey]); err != nil {
+			return err
+		}
+	}
+	cm.Data[certs.CASignerCertMapKey] = combined.String()
+	return nil
 }
 
 func ReconcileKubeletClientCA(cm *corev1.ConfigMap, ownerRef config.OwnerRef, signers ...*corev1.Secret) error {
