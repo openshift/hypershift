@@ -79,6 +79,7 @@ type ExampleOptions struct {
 	ExternalDNSDomain                string
 	Arch                             string
 	PausedUntil                      string
+	OLMCatalogPlacement              hyperv1.OLMCatalogPlacement
 	AWS                              *ExampleAWSOptions
 	None                             *ExampleNoneOptions
 	Agent                            *ExampleAgentOptions
@@ -465,6 +466,10 @@ func (o ExampleOptions) Resources() *ExampleResources {
 
 	if len(o.PausedUntil) > 0 {
 		cluster.Spec.PausedUntil = &o.PausedUntil
+	}
+
+	if len(o.OLMCatalogPlacement) > 0 {
+		cluster.Spec.OLMCatalogPlacement = hyperv1.OLMCatalogPlacement(o.OLMCatalogPlacement)
 	}
 
 	if o.BaseDomainPrefix == "none" {
