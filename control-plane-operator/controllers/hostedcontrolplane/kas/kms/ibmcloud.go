@@ -20,7 +20,7 @@ import (
 
 var (
 	ibmCloudKMSVolumeMounts = util.PodVolumeMounts{
-		KAS_CONTAINER_NAME: {
+		KasMainContainerName: {
 			kasVolumeKMSSocket().Name: "/tmp",
 		},
 		kasContainerIBMCloudKMS().Name: {
@@ -29,7 +29,7 @@ var (
 			kasVolumeIBMCloudKMSProjectedToken().Name: "/etc/pod-identity-token",
 		},
 	}
-	ibmCloudKMSUnixSocket = fmt.Sprintf("unix://%s/%s", ibmCloudKMSVolumeMounts.Path(KAS_CONTAINER_NAME, kasVolumeKMSSocket().Name), ibmCloudKMSUnixSocketFileName)
+	ibmCloudKMSUnixSocket = fmt.Sprintf("unix://%s/%s", ibmCloudKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), ibmCloudKMSUnixSocketFileName)
 )
 
 const (
@@ -301,7 +301,7 @@ func (p *ibmCloudKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerIBMCloudKMS(), buildKASContainerIBMCloudKMS(p.kmsImage, p.ibmCloud.Region, kmsKPInfo, customerAPIKeyReference)))
 	var container *corev1.Container
 	for i, c := range podSpec.Containers {
-		if c.Name == KAS_CONTAINER_NAME {
+		if c.Name == KasMainContainerName {
 			container = &podSpec.Containers[i]
 			break
 		}
@@ -310,6 +310,6 @@ func (p *ibmCloudKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 		panic("main kube apiserver container not found in spec")
 	}
 	container.VolumeMounts = append(container.VolumeMounts,
-		ibmCloudKMSVolumeMounts.ContainerMounts(KAS_CONTAINER_NAME)...)
+		ibmCloudKMSVolumeMounts.ContainerMounts(KasMainContainerName)...)
 	return nil
 }

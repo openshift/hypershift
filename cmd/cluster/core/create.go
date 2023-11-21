@@ -158,6 +158,7 @@ type AWSPlatformOptions struct {
 type AzurePlatformOptions struct {
 	CredentialsFile   string
 	Location          string
+	EncryptionKeyID   string
 	InstanceType      string
 	DiskSizeGB        int32
 	AvailabilityZones []string

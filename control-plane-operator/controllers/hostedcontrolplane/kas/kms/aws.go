@@ -29,7 +29,7 @@ const (
 
 var (
 	awsKMSVolumeMounts = util.PodVolumeMounts{
-		KAS_CONTAINER_NAME: {
+		KasMainContainerName: {
 			kasVolumeKMSSocket().Name: "/var/run",
 		},
 		kasContainerAWSKMSActive().Name: {
@@ -48,8 +48,8 @@ var (
 		},
 	}
 
-	backupAWSKMSUnixSocket = fmt.Sprintf("unix://%s/%s", awsKMSVolumeMounts.Path(KAS_CONTAINER_NAME, kasVolumeKMSSocket().Name), backupAWSKMSUnixSocketFileName)
-	activeAWSKMSUnixSocket = fmt.Sprintf("unix://%s/%s", awsKMSVolumeMounts.Path(KAS_CONTAINER_NAME, kasVolumeKMSSocket().Name), activeAWSKMSUnixSocketFileName)
+	backupAWSKMSUnixSocket = fmt.Sprintf("unix://%s/%s", awsKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), backupAWSKMSUnixSocketFileName)
+	activeAWSKMSUnixSocket = fmt.Sprintf("unix://%s/%s", awsKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), activeAWSKMSUnixSocketFileName)
 )
 
 var _ IKMSProvider = &awsKMSProvider{}
@@ -133,9 +133,9 @@ func (p *awsKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 		return fmt.Errorf("aws kms active key metadata is nil")
 	}
 	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSTokenMinter(), buildKASContainerAWSKMSTokenMinter(p.tokenMinterImage)))
-	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSActive(), buildKASContainerAWSKMS(p.kmsImage, p.activeKey.ARN, p.awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(KAS_CONTAINER_NAME, kasVolumeKMSSocket().Name), activeAWSKMSUnixSocketFileName), activeAWSKMSHealthPort)))
+	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSActive(), buildKASContainerAWSKMS(p.kmsImage, p.activeKey.ARN, p.awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), activeAWSKMSUnixSocketFileName), activeAWSKMSHealthPort)))
 	if p.backupKey != nil && len(p.backupKey.ARN) > 0 {
-		podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSBackup(), buildKASContainerAWSKMS(p.kmsImage, p.backupKey.ARN, p.awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(KAS_CONTAINER_NAME, kasVolumeKMSSocket().Name), backupAWSKMSUnixSocketFileName), backupAWSKMSHealthPort)))
+		podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSBackup(), buildKASContainerAWSKMS(p.kmsImage, p.backupKey.ARN, p.awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(KasMainContainerName, kasVolumeKMSSocket().Name), backupAWSKMSUnixSocketFileName), backupAWSKMSHealthPort)))
 	}
 	if len(p.awsAuth.AWSKMSRoleARN) == 0 {
 		return fmt.Errorf("aws kms role arn not specified")
@@ -147,7 +147,7 @@ func (p *awsKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 	)
 	var container *corev1.Container
 	for i, c := range podSpec.Containers {
-		if c.Name == KAS_CONTAINER_NAME {
+		if c.Name == KasMainContainerName {
 			container = &podSpec.Containers[i]
 			break
 		}
@@ -156,7 +156,7 @@ func (p *awsKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 		panic("main kube apiserver container not found in spec")
 	}
 	container.VolumeMounts = append(container.VolumeMounts,
-		awsKMSVolumeMounts.ContainerMounts(KAS_CONTAINER_NAME)...)
+		awsKMSVolumeMounts.ContainerMounts(KasMainContainerName)...)
 	return nil
 }
 

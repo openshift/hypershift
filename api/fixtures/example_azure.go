@@ -13,6 +13,8 @@ type ExampleAzureOptions struct {
 	SecurityGroupName string
 	DiskSizeGB        int32
 	AvailabilityZones []string
+
+	EncryptionKey *AzureEncryptionKey
 }
 
 // AzureCreds is the fileformat we expect for credentials. It is copied from the installer
@@ -23,4 +25,10 @@ type AzureCreds struct {
 	ClientID       string `json:"clientId,omitempty"`
 	ClientSecret   string `json:"clientSecret,omitempty"`
 	TenantID       string `json:"tenantId,omitempty"`
+}
+
+type AzureEncryptionKey struct {
+	KeyVaultName string
+	KeyName      string
+	KeyVersion   string
 }

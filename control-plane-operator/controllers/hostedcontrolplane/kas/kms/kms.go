@@ -12,7 +12,7 @@ type IKMSProvider interface {
 }
 
 const (
-	KAS_CONTAINER_NAME          = "kube-apiserver"
+	KasMainContainerName        = "kube-apiserver"
 	encryptionConfigurationKind = "EncryptionConfiguration"
 
 	kasVolumeLocalhostKubeconfig = "localhost-kubeconfig"

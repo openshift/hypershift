@@ -364,6 +364,22 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				SecurityGroupName: o.Azure.SecurityGroupName,
 			},
 		}
+
+		if o.Azure.EncryptionKey != nil {
+			secretEncryption = &hyperv1.SecretEncryptionSpec{
+				Type: hyperv1.KMS,
+				KMS: &hyperv1.KMSSpec{
+					Provider: hyperv1.AZURE,
+					Azure: &hyperv1.AzureKMSSpec{
+						Location:     o.Azure.Location,
+						KeyVaultName: o.Azure.EncryptionKey.KeyVaultName,
+						KeyName:      o.Azure.EncryptionKey.KeyName,
+						KeyVersion:   o.Azure.EncryptionKey.KeyVersion,
+					},
+				},
+			}
+		}
+
 		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
 
 	case o.PowerVS != nil:
