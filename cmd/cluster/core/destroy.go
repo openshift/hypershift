@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -162,14 +163,26 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 	}
 
 	if hostedClusterExists && sets.NewString(hostedCluster.Finalizers...).Has(destroyFinalizer) {
-		original := hostedCluster.DeepCopy()
-		controllerutil.RemoveFinalizer(hostedCluster, destroyFinalizer)
-		if err := c.Patch(ctx, hostedCluster, client.MergeFrom(original)); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to remove finalizer: %w", err)
+		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+			// Ensure that we have the latest hostedCluster resource
+			if err := c.Get(ctx, client.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to fetch latest HostedCluster: %w", err)
+				}
+				return nil
 			}
-		} else {
-			o.Log.Info("Finalized hosted cluster", "namespace", o.Namespace, "name", o.Name)
+			original := hostedCluster.DeepCopy()
+			controllerutil.RemoveFinalizer(hostedCluster, destroyFinalizer)
+			if err := c.Patch(ctx, hostedCluster, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return err
+				}
+			} else {
+				o.Log.Info("Finalized hosted cluster", "namespace", o.Namespace, "name", o.Name)
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
 	}
 
