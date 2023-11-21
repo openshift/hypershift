@@ -1189,7 +1189,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 	p := kas.NewKubeAPIServerServiceParams(hcp)
 	apiServerService := manifests.KubeAPIServerService(hcp.Namespace)
 	kasSVCPort := config.KASSVCPort
-	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+	if serviceStrategy.Type == hyperv1.LoadBalancer && hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 		// For Azure we currently hardcode 7443 for the SVC LB as 6443 collides with public LB rule for the management cluster.
 		// https://bugzilla.redhat.com/show_bug.cgi?id=2060650
 		// TODO(alberto): explore exposing multiple Azure frontend IPs on the load balancer.
@@ -1202,7 +1202,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerService(ctx context.Con
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
 
-	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+	if serviceStrategy.Type == hyperv1.LoadBalancer && hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 		// Create the svc clusterIP for Azure on config.KASSVCPort as expected by internal consumers.
 		kasSVC := manifests.KubeAPIServerService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, kasSVC, func() error {
@@ -1612,7 +1612,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 	}
 
 	kasSVCLBPort := config.KASSVCPort
-	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+	if serviceStrategy.Type == hyperv1.LoadBalancer && hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 		// If Azure we get the SVC handling the LB.
 		// TODO(alberto): remove this hack when having proper traffic management for Azure.
 		kasSVCLBPort = config.KASSVCLBAzurePort

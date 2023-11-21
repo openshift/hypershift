@@ -365,6 +365,34 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			},
 		}
 		services = getIngressServicePublishingStrategyMapping(o.NetworkType, o.ExternalDNSDomain != "")
+		if o.ExternalDNSDomain != "" {
+			for i, svc := range services {
+				switch svc.Service {
+				case hyperv1.APIServer:
+					services[i].Route = &hyperv1.RoutePublishingStrategy{
+						Hostname: fmt.Sprintf("api-%s.%s", o.Name, o.ExternalDNSDomain),
+					}
+
+				case hyperv1.OAuthServer:
+					services[i].Route = &hyperv1.RoutePublishingStrategy{
+						Hostname: fmt.Sprintf("oauth-%s.%s", o.Name, o.ExternalDNSDomain),
+					}
+
+				case hyperv1.Konnectivity:
+					services[i].Route = &hyperv1.RoutePublishingStrategy{
+						Hostname: fmt.Sprintf("konnectivity-%s.%s", o.Name, o.ExternalDNSDomain),
+					}
+				case hyperv1.Ignition:
+					services[i].Route = &hyperv1.RoutePublishingStrategy{
+						Hostname: fmt.Sprintf("ignition-%s.%s", o.Name, o.ExternalDNSDomain),
+					}
+				case hyperv1.OVNSbDb:
+					services[i].Route = &hyperv1.RoutePublishingStrategy{
+						Hostname: fmt.Sprintf("ovn-sbdb-%s.%s", o.Name, o.ExternalDNSDomain),
+					}
+				}
+			}
+		}
 
 	case o.PowerVS != nil:
 		resources = o.PowerVS.Resources.AsObjects()

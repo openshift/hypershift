@@ -18,8 +18,12 @@ clientSecret: <your_client_secret>
 ## Install the Hypershift Operator
 
 ```
-hypershift install
+hypershift install --external-dns-provider=azure \
+--external-dns-credentials <azure.json> \
+--external-dns-domain-filter=<service_provider_domain>
 ```
+
+See [external DNS docs](https://github.com/kubernetes-sigs/external-dns/blob/master/docs/tutorials/azure.md#creating-a-configuration-file-for-the-service-principal) for the format of the azure.json file.
 
 ## Creating the cluster
 
@@ -27,5 +31,11 @@ After the credentials file was set up, creating a cluster is a simple matter of 
 
 
 ```
-hypershift create cluster azure --pull-secret <pull_secret_file> --name <cluster_name> --azure-creds <path_to_azure_credentials_file> --location eastus --base-domain <base_domain> --release-image <release_image>
+hypershift create cluster azure --pull-secret <pull_secret_file> \
+--name <cluster_name> \
+--azure-creds <path_to_azure_credentials_file> \
+--location eastus --base-domain <base_domain> \
+--release-image <release_image> \
+--node-pool-replicas 3 \
+--external-dns-domain=<service_provider_domain>
 ```
