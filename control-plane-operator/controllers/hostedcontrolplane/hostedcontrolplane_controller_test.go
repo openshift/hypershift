@@ -997,7 +997,7 @@ func TestReconcileRouter(t *testing.T) {
 	ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 		Name:      "hcp",
 		Namespace: namespace,
-	}}), routerCfg, &routev1.RouteList{}, "172.30.0.10")
+	}}), routerCfg, &routev1.RouteList{}, map[string]string{})
 
 	testCases := []struct {
 		name                         string
@@ -1218,9 +1218,8 @@ func TestReconcileRouter(t *testing.T) {
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(tc.existingObjects, hcp)...).Build()
 
 			r := HostedControlPlaneReconciler{
-				Client:       c,
-				Log:          ctrl.LoggerFrom(ctx),
-				NameServerIP: "172.30.0.10",
+				Client: c,
+				Log:    ctrl.LoggerFrom(ctx),
 			}
 
 			releaseInfo := &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}
