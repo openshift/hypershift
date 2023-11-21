@@ -2,7 +2,6 @@ package routecm
 
 import (
 	"fmt"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"path"
 
 	corev1 "k8s.io/api/core/v1"
@@ -64,7 +63,6 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLS
 	}
 
 	cfg.LeaderElection.Name = "openshift-route-controllers"
-	cfg.KubeClientConfig.KubeConfig = cpath(routeOCMVolumeKubeconfig().Name, kas.KubeconfigKey)
 	cfg.ServingInfo = &configv1.HTTPServingInfo{
 		ServingInfo: configv1.ServingInfo{
 			BindAddress: fmt.Sprintf("0.0.0.0:%d", servingPort),
