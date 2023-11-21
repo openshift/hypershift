@@ -116,7 +116,7 @@ func applyAWSKMSConfig(podSpec *corev1.PodSpec, activeKey hyperv1.AWSKMSKeyEntry
 	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSTokenMinter(), buildKASContainerAWSKMSTokenMinter(tokenMinterImage)))
 	podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSActive(), buildKASContainerAWSKMS(kmsImage, activeKey.ARN, awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(kasContainerMain().Name, kasVolumeKMSSocket().Name), activeAWSKMSUnixSocketFileName), activeAWSKMSHealthPort)))
 	if backupKey != nil && len(backupKey.ARN) > 0 {
-		podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSBackup(), buildKASContainerAWSKMS(kmsImage, activeKey.ARN, awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(kasContainerMain().Name, kasVolumeKMSSocket().Name), backupAWSKMSUnixSocketFileName), backupAWSKMSHealthPort)))
+		podSpec.Containers = append(podSpec.Containers, util.BuildContainer(kasContainerAWSKMSBackup(), buildKASContainerAWSKMS(kmsImage, backupKey.ARN, awsRegion, fmt.Sprintf("%s/%s", awsKMSVolumeMounts.Path(kasContainerMain().Name, kasVolumeKMSSocket().Name), backupAWSKMSUnixSocketFileName), backupAWSKMSHealthPort)))
 	}
 	if len(awsAuth.AWSKMSRoleARN) == 0 {
 		return fmt.Errorf("aws kms role arn not specified")
