@@ -5041,6 +5041,38 @@ storageclass will be present for the corresponding guest clusters storageclass.<
 </tr>
 </tbody>
 </table>
+###KubevirtNetwork { #hypershift.openshift.io/v1beta1.KubevirtNetwork }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtNodePoolPlatform">KubevirtNodePoolPlatform</a>)
+</p>
+<p>
+<p>KubevirtNetwork specifies the configuration for a virtual machine
+network interface</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Name specify the network attached to the nodes
+it is a value with the format &ldquo;[namespace]/[name]&rdquo; to reference the
+multus network attachment definition</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###KubevirtNodePoolPlatform { #hypershift.openshift.io/v1beta1.KubevirtNodePoolPlatform }
 <p>
 (<em>Appears on:</em>
@@ -5099,6 +5131,33 @@ MultiQueueSetting
 <p>NetworkInterfaceMultiQueue If set to &ldquo;Enable&rdquo;, virtual network interfaces configured with a virtio bus will also
 enable the vhost multiqueue feature for network devices. The number of queues created depends on additional
 factors of the VirtualMachineInstance, like the number of guest CPUs.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalNetworks</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtNetwork">
+[]KubevirtNetwork
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AdditionalNetworks specify the extra networks attached to the nodes</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>attachDefaultNetwork</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AttachDefaultNetwork specify if the default pod network should be attached to the nodes
+this can only be set to false if AdditionalNetworks are configured</p>
 </td>
 </tr>
 </tbody>

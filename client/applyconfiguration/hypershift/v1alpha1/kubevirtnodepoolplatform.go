@@ -27,6 +27,8 @@ type KubevirtNodePoolPlatformApplyConfiguration struct {
 	RootVolume                 *KubevirtRootVolumeApplyConfiguration `json:"rootVolume,omitempty"`
 	Compute                    *KubevirtComputeApplyConfiguration    `json:"compute,omitempty"`
 	NetworkInterfaceMultiQueue *hypershiftv1alpha1.MultiQueueSetting `json:"networkInterfaceMultiqueue,omitempty"`
+	AdditionalNetworks         []KubevirtNetworkApplyConfiguration   `json:"additionalNetworks,omitempty"`
+	AttachDefaultNetwork       *bool                                 `json:"attachDefaultNetwork,omitempty"`
 }
 
 // KubevirtNodePoolPlatformApplyConfiguration constructs an declarative configuration of the KubevirtNodePoolPlatform type for use with
@@ -56,5 +58,26 @@ func (b *KubevirtNodePoolPlatformApplyConfiguration) WithCompute(value *Kubevirt
 // If called multiple times, the NetworkInterfaceMultiQueue field is set to the value of the last call.
 func (b *KubevirtNodePoolPlatformApplyConfiguration) WithNetworkInterfaceMultiQueue(value hypershiftv1alpha1.MultiQueueSetting) *KubevirtNodePoolPlatformApplyConfiguration {
 	b.NetworkInterfaceMultiQueue = &value
+	return b
+}
+
+// WithAdditionalNetworks adds the given value to the AdditionalNetworks field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the AdditionalNetworks field.
+func (b *KubevirtNodePoolPlatformApplyConfiguration) WithAdditionalNetworks(values ...*KubevirtNetworkApplyConfiguration) *KubevirtNodePoolPlatformApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithAdditionalNetworks")
+		}
+		b.AdditionalNetworks = append(b.AdditionalNetworks, *values[i])
+	}
+	return b
+}
+
+// WithAttachDefaultNetwork sets the AttachDefaultNetwork field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the AttachDefaultNetwork field is set to the value of the last call.
+func (b *KubevirtNodePoolPlatformApplyConfiguration) WithAttachDefaultNetwork(value bool) *KubevirtNodePoolPlatformApplyConfiguration {
+	b.AttachDefaultNetwork = &value
 	return b
 }

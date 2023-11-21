@@ -26,6 +26,8 @@ type ExampleKubevirtOptions struct {
 	InfraStorageClassMappings  []string
 	NetworkInterfaceMultiQueue *hyperv1.MultiQueueSetting
 	QoSClass                   *hyperv1.QoSClass
+	AdditionalNetworks         []hyperv1.KubevirtNetwork
+	AttachDefaultNetwork       *bool
 }
 
 func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoolPlatform {
@@ -58,7 +60,9 @@ func ExampleKubeVirtTemplate(o *ExampleKubevirtOptions) *hyperv1.KubevirtNodePoo
 				},
 			},
 		},
-		Compute: &hyperv1.KubevirtCompute{},
+		Compute:              &hyperv1.KubevirtCompute{},
+		AdditionalNetworks:   o.AdditionalNetworks,
+		AttachDefaultNetwork: o.AttachDefaultNetwork,
 	}
 
 	if o.RootVolumeVolumeMode != "" {

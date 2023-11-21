@@ -118,6 +118,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1alpha1.KubevirtDiskImageApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("KubevirtManualStorageDriverConfig"):
 		return &hypershiftv1alpha1.KubevirtManualStorageDriverConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("KubevirtNetwork"):
+		return &hypershiftv1alpha1.KubevirtNetworkApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("KubevirtNodePoolPlatform"):
 		return &hypershiftv1alpha1.KubevirtNodePoolPlatformApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("KubeVirtNodePoolStatus"):
@@ -292,6 +294,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.KubevirtDiskImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KubevirtManualStorageDriverConfig"):
 		return &hypershiftv1beta1.KubevirtManualStorageDriverConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("KubevirtNetwork"):
+		return &hypershiftv1beta1.KubevirtNetworkApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KubevirtNodePoolPlatform"):
 		return &hypershiftv1beta1.KubevirtNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KubeVirtNodePoolStatus"):

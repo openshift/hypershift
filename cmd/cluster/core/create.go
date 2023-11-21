@@ -130,6 +130,8 @@ type KubevirtPlatformCreateOptions struct {
 	InfraStorageClassMappings  []string
 	NetworkInterfaceMultiQueue string
 	QoSClass                   string
+	AdditionalNetworks         []string
+	AttachDefaultNetwork       *bool
 }
 
 type AWSPlatformOptions struct {
