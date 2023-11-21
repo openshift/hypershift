@@ -371,9 +371,9 @@ func (h *hypershiftTest) summarizeHCConditions(hostedCluster *hyperv1.HostedClus
 			}
 
 			if condition.Status != expectedStatus {
-				msg := fmt.Sprintf("%s: %s", condition.Type, condition.Reason)
+				msg := fmt.Sprintf("%s, Reason: %s", condition.Type, condition.Reason)
 				if condition.Message != "" {
-					msg += fmt.Sprintf(": %s", condition.Message)
+					msg += fmt.Sprintf(",Message: %s", condition.Message)
 				}
 				h.Logf(msg)
 			}

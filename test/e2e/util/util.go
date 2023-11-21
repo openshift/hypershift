@@ -1384,7 +1384,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
 	WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
-	// rollout will not complete if there are no wroker nodes.
+	// rollout will not complete if there are no worker nodes.
 	if numNodes > 0 {
 		// Wait for the rollout to be complete
 		t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
@@ -1452,6 +1452,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 
 func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool) {
 	expectedConditions := conditions.ExpectedHCConditions()
+	var previousConditions = make(map[hyperv1.ConditionType]metav1.ConditionStatus)
 
 	if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
 		// AWS KMS is not configured
@@ -1497,11 +1498,16 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 				return false, fmt.Errorf("unknown condition %s", condition.Type)
 			}
 
-			if condition.Status != expectedStatus {
-				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
-				return false, nil
+			prevStatus, _ := previousConditions[hyperv1.ConditionType(condition.Type)]
+
+			if condition.Status != prevStatus {
+				if condition.Status != expectedStatus {
+					t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
+					previousConditions[hyperv1.ConditionType(condition.Type)] = condition.Status
+					return false, nil
+				}
+				t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
 			}
-			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
 		}
 
 		return true, nil
