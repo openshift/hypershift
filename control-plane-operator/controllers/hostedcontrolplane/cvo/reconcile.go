@@ -412,6 +412,10 @@ func ReconcileService(svc *corev1.Service, owner config.OwnerRef) error {
 	owner.ApplyTo(svc)
 	svc.Spec.Selector = cvoLabels()
 
+	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.
+	IPFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
+	svc.Spec.IPFamilyPolicy = &IPFamilyPolicy
+
 	// Ensure labels propagate to endpoints so service monitors can select them
 	if svc.Labels == nil {
 		svc.Labels = map[string]string{}

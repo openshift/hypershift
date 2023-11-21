@@ -11,6 +11,9 @@ func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(svc)
 	svc.Labels = openShiftControllerManagerLabels()
 	svc.Spec.Selector = openShiftControllerManagerLabels()
+	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.
+	IPFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
+	svc.Spec.IPFamilyPolicy = &IPFamilyPolicy
 	var portSpec corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
 		portSpec = svc.Spec.Ports[0]
