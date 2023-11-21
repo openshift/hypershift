@@ -71,7 +71,7 @@ func (f *fakeEC2Client) ModifyVpcEndpointServicePermissions(in *ec2.ModifyVpcEnd
 }
 
 func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
-	const mockControlPlaneOperatorRoleArn = "fakeRoleARN"
+	const mockControlPlaneOperatorRoleArn = "arn:aws:12345678910::iam:role/fakeRoleARN"
 
 	tests := []struct {
 		name                        string
@@ -125,9 +125,6 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 
 			r := AWSEndpointServiceReconciler{
 				Client: client,
-				controlPlaneOperatorRoleARNFn: func(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
-					return mockControlPlaneOperatorRoleArn, nil
-				},
 			}
 
 			if err := r.reconcileAWSEndpointServiceStatus(context.Background(), &hyperv1.AWSEndpointService{}, &hyperv1.HostedCluster{
@@ -135,6 +132,9 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						AWS: &hyperv1.AWSPlatformSpec{
 							AdditionalAllowedPrincipals: test.additionalAllowedPrincipals,
+							RolesRef: hyperv1.AWSRolesRef{
+								ControlPlaneOperatorARN: mockControlPlaneOperatorRoleArn,
+							},
 						},
 					},
 				},
@@ -264,6 +264,55 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 						t.Errorf("expected %v, got %v", test.expected, actual)
 					}
 				}
+			}
+		})
+	}
+}
+
+func Test_controlPlaneOperatorRoleARNWithoutPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		hc       *hyperv1.HostedCluster
+		expected string
+	}{
+		{
+			name: "ARN without path",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							RolesRef: hyperv1.AWSRolesRef{
+								ControlPlaneOperatorARN: "arn:aws:iam::12345678910:role/test-name",
+							},
+						},
+					},
+				},
+			},
+			expected: "arn:aws:iam::12345678910:role/test-name",
+		},
+		{
+			name: "ARN with path",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							RolesRef: hyperv1.AWSRolesRef{
+								ControlPlaneOperatorARN: "arn:aws:iam::12345678910:role/prefix/subprefix/test-name",
+							},
+						},
+					},
+				},
+			},
+			expected: "arn:aws:iam::12345678910:role/test-name",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			r := AWSEndpointServiceReconciler{}
+			actual, _ := r.controlPlaneOperatorRoleARNWithoutPath(test.hc)
+			if test.expected != actual {
+				t.Errorf("expected: %v, got %v", test.expected, actual)
 			}
 		})
 	}
