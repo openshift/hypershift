@@ -220,6 +220,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 	hostname := "test.example.com"
 	allowCIDR := []hyperv1.CIDRBlock{"1.2.3.4/24"}
 	allowCIDRString := []string{"1.2.3.4/24"}
+	ipFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
 
 	ownerRef := metav1.OwnerReference{
 		APIVersion:         "hypershift.openshift.io/v1beta1",
@@ -244,7 +245,8 @@ func TestReconcileAPIServerService(t *testing.T) {
 				OwnerReferences: []metav1.OwnerReference{ownerRef},
 			},
 			Spec: corev1.ServiceSpec{
-				Type: corev1.ServiceTypeLoadBalancer,
+				Type:           corev1.ServiceTypeLoadBalancer,
+				IPFamilyPolicy: &ipFamilyPolicy,
 				Ports: []corev1.ServicePort{
 					{
 						Protocol:   corev1.ProtocolTCP,

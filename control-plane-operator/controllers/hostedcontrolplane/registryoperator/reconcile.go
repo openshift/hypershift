@@ -411,6 +411,9 @@ func buildVolumeWebIdentityToken(v *corev1.Volume) {
 
 func ReconcileService(svc *corev1.Service) {
 	svc.Spec.ClusterIP = "None"
+	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.
+	IPFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
+	svc.Spec.IPFamilyPolicy = &IPFamilyPolicy
 	var port corev1.ServicePort
 	if len(svc.Spec.Ports) > 0 {
 		port = svc.Spec.Ports[0]
