@@ -3594,6 +3594,9 @@ spec:
                   - type
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               controlPlaneEndpoint:
                 description: ControlPlaneEndpoint contains the endpoint information
                   by which external clients can access the control plane. This is
@@ -7503,6 +7506,9 @@ spec:
                   - type
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               controlPlaneEndpoint:
                 description: ControlPlaneEndpoint contains the endpoint information
                   by which external clients can access the control plane. This is

@@ -4,7 +4,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	runtime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -1938,6 +1938,10 @@ type HostedClusterStatus struct {
 	// Conditions represents the latest available observations of a control
 	// plane's current state.
 	// +optional
+	// +listType=map
+	// +listMapKey=type
+	// +patchMergeKey=type
+	// +patchStrategy=merge
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// Platform contains platform-specific status of the HostedCluster

@@ -150,6 +150,9 @@ spec:
                   - type
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               dnsName:
                 description: 'Deprecated: Use DNSNames instead'
                 type: string
@@ -312,6 +315,9 @@ spec:
                   - type
                   type: object
                 type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
               dnsNames:
                 description: DNSName are the names for the records created in the
                   hypershift private zone
