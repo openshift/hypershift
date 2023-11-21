@@ -481,6 +481,8 @@ objects:
                 fieldPath: metadata.name
           - name: METRICS_SET
             value: SRE
+          - name: CERT_ROTATION_SCALE
+            value: 24h0m0s
           - name: AWS_SHARED_CREDENTIALS_FILE
             value: /etc/provider/${AWS_PRIVATE_CREDS_SECRET_KEY}
           - name: AWS_REGION

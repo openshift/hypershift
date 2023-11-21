@@ -3,7 +3,7 @@ package assets
 import (
 	_ "embed"
 	"fmt"
-	"k8s.io/utils/ptr"
+	"time"
 
 	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -22,6 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -321,6 +322,7 @@ type HyperShiftOperatorDeployment struct {
 	UWMTelemetry                   bool
 	RHOBSMonitoring                bool
 	MonitoringDashboards           bool
+	CertRotationScale              time.Duration
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -355,6 +357,10 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			},
 		},
 		metrics.MetricsSetToEnv(o.MetricsSet),
+		{
+			Name:  "CERT_ROTATION_SCALE",
+			Value: o.CertRotationScale.String(),
+		},
 	}
 
 	if o.EnableWebhook {

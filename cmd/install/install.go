@@ -91,6 +91,7 @@ type Options struct {
 	RHOBSMonitoring                           bool
 	SLOsAlerts                                bool
 	MonitoringDashboards                      bool
+	CertRotationScale                         time.Duration
 }
 
 func (o *Options) Validate() error {
@@ -135,6 +136,10 @@ func (o *Options) Validate() error {
 		errs = append(errs, fmt.Errorf("when invoking this command with the --rhobs-monitoring flag, the RHOBS_MONITORING environment variable must be set to \"1\""))
 	}
 
+	if o.CertRotationScale > 24*time.Hour {
+		errs = append(errs, fmt.Errorf("cannot set --cert-rotation-scale longer than 24h, invalid value: %s", o.CertRotationScale.String()))
+	}
+
 	return errors.NewAggregate(errs)
 }
 
@@ -161,6 +166,7 @@ func NewCommand() *cobra.Command {
 	opts.MetricsSet = metrics.DefaultMetricsSet
 	opts.EnableConversionWebhook = true // default to enabling the conversion webhook
 	opts.ExternalDNSImage = ExternalDNSImage
+	opts.CertRotationScale = 24 * time.Hour
 
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", "hypershift", "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", version.HyperShiftImage, "The HyperShift image to deploy")
@@ -196,6 +202,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.RHOBSMonitoring, "rhobs-monitoring", opts.RHOBSMonitoring, "If true, HyperShift will generate and use the RHOBS version of monitoring resources (ServiceMonitors, PodMonitors, etc)")
 	cmd.PersistentFlags().BoolVar(&opts.SLOsAlerts, "slos-alerts", opts.SLOsAlerts, "If true, HyperShift will generate and use the prometheus alerts for monitoring HostedCluster and NodePools")
 	cmd.PersistentFlags().BoolVar(&opts.MonitoringDashboards, "monitoring-dashboards", opts.MonitoringDashboards, "If true, HyperShift will generate a monitoring dashboard for every HostedCluster that it creates")
+	cmd.PersistentFlags().DurationVar(&opts.CertRotationScale, "cert-rotation-scale", opts.CertRotationScale, "The scaling factor for certificate rotation. It is not supported to set this to anything other than 24h.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
@@ -588,6 +595,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, error) {
 		UWMTelemetry:                   opts.EnableUWMTelemetryRemoteWrite,
 		RHOBSMonitoring:                opts.RHOBSMonitoring,
 		MonitoringDashboards:           opts.MonitoringDashboards,
+		CertRotationScale:              opts.CertRotationScale,
 	}.Build()
 	objects = append(objects, operatorDeployment)
 
