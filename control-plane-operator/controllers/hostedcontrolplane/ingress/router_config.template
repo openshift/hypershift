@@ -27,21 +27,16 @@ frontend main
   {{- end }}
   {{- if .HasKubeAPI }}
   default_backend kube_api{{- end }}
-  
+
 listen health_check_http_url
   bind :::9444 v4v6
   mode http
   monitor-uri /haproxy_ready
-
-resolvers coredns
-  nameserver ns1 {{ .NameServerIP }}:53
-
-{{ $ns := .Namespace }}
-{{- range .Backends }}
+{{range .Backends }}
 backend {{ .Name }}
-  server {{ .Name }} {{ .DestinationService }}.{{ $ns }}.svc.cluster.local:{{.DestinationPort}} check resolvers coredns init-addr last,libc,none
+  server {{ .Name }} {{ .DestinationServiceIP }}:{{.DestinationPort}}
 {{ end -}}
 {{- if .HasKubeAPI }}
 backend kube_api
-  server kube_api kube-apiserver.{{ $ns }}.svc.cluster.local:{{ .KASSVCPort }} check resolvers coredns init-addr last,libc,none
+  server kube_api {{ .KASDestinationServiceIP }}:{{ .KASSVCPort }}
 {{ end -}}

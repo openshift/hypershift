@@ -1,6 +1,7 @@
 package ingress
 
 import (
+	"fmt"
 	"testing"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -61,7 +62,14 @@ func TestGenerateRouterConfig(t *testing.T) {
 		Items: []routev1.Route{*ignition, *konnectivity, *oauthInternal, *oauthExternalPrivate, *oauthExternalPublic, *ovnKube, *metricsForwarder, *kasPublic, *kasPrivate},
 	}
 
-	cfg, err := generateRouterConfig(testNS, routeList, "172.30.0.10")
+	svcsNameToIP := make(map[string]string)
+	i := 0
+	for _, r := range routeList.Items {
+		svcsNameToIP[r.Spec.To.Name] = fmt.Sprintf("0.0.0.%v", i)
+		i++
+	}
+
+	cfg, err := generateRouterConfig(routeList, svcsNameToIP)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}
