@@ -812,6 +812,7 @@ haproxy -f /tmp/haproxy.conf
 						},
 					},
 				},
+				ServiceAccountName: "",
 				Volumes: []corev1.Volume{
 					{
 						Name: "serving-cert",
