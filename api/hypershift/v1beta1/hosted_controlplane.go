@@ -267,6 +267,10 @@ type HostedControlPlaneStatus struct {
 	// Condition contains details for one aspect of the current state of the HostedControlPlane.
 	// Current condition types are: "Available"
 	// +optional
+	// +listType=map
+	// +listMapKey=type
+	// +patchMergeKey=type
+	// +patchStrategy=merge
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// Platform contains platform-specific status of the HostedCluster
