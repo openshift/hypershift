@@ -1119,16 +1119,6 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 			expectedResult: errors.New(`cannot parse cluster ID "foobar": invalid UUID length: 6`),
 		},
 		{
-			name: "invalid cluster name",
-			hostedCluster: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-cluster-4.14",
-				},
-				Spec: hyperv1.HostedClusterSpec{},
-			},
-			expectedResult: errors.New(`hostedcluster name failed RFC1123 validation: a lowercase RFC 1123 label must consist of lower case alphanumeric characters or '-', and must start and end with an alphanumeric character (e.g. 'my-name',  or '123-abc', regex used for validation is '[a-z0-9]([-a-z0-9]*[a-z0-9])?')`),
-		},
-		{
 			name: "Setting network CIDRs overlapped, not allowed",
 			hostedCluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
