@@ -36,6 +36,11 @@ func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *h
 	} else {
 		svc.Spec.Ports = []corev1.ServicePort{portSpec}
 	}
+
+	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.
+	IPFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
+	svc.Spec.IPFamilyPolicy = &IPFamilyPolicy
+
 	portSpec.Port = int32(OAuthServerPort)
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromInt(OAuthServerPort)

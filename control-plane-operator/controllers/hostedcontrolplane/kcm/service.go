@@ -18,6 +18,10 @@ func ReconcileService(svc *corev1.Service, owner config.OwnerRef) error {
 		svc.Labels[k] = v
 	}
 
+	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.
+	IPFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
+	svc.Spec.IPFamilyPolicy = &IPFamilyPolicy
+
 	svc.Spec.Type = corev1.ServiceTypeClusterIP
 
 	if len(svc.Spec.Ports) == 0 {
