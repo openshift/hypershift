@@ -23,6 +23,10 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
+const (
+	oapiAuditConfigHashAnnotation = "openshift-oauth-apiserver.hypershift.openshift.io/audit-config-hash"
+)
+
 var (
 	oauthVolumeMounts = util.PodVolumeMounts{
 		oauthContainerMain().Name: {
@@ -50,7 +54,7 @@ func openShiftOAuthAPIServerLabels() map[string]string {
 	}
 }
 
-func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, p *OAuthDeploymentParams, apiPort *int32) error {
+func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, auditConfig *corev1.ConfigMap, p *OAuthDeploymentParams, apiPort *int32) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main oauth apiserver container
@@ -61,6 +65,12 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 
 	maxUnavailable := intstr.FromInt(1)
 	maxSurge := intstr.FromInt(3)
+
+	auditConfigBytes, ok := auditConfig.Data[auditPolicyConfigMapKey]
+	if !ok {
+		return fmt.Errorf("openshift-oauth-apiserver audit configuration is not expected to be empty")
+	}
+	auditConfigHash := util.ComputeHash(auditConfigBytes)
 
 	deployment.Spec.Strategy = appsv1.DeploymentStrategy{
 		Type: appsv1.RollingUpdateDeploymentStrategyType,
@@ -75,6 +85,11 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 		}
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftOAuthAPIServerLabels()
+	if deployment.Spec.Template.Annotations == nil {
+		deployment.Spec.Template.Annotations = map[string]string{}
+	}
+	deployment.Spec.Template.Annotations[oapiAuditConfigHashAnnotation] = auditConfigHash
+
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: pointer.Bool(false),
 		Containers: []corev1.Container{
