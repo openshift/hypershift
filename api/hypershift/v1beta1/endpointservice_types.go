@@ -62,6 +62,10 @@ type AWSEndpointServiceStatus struct {
 	//
 	// Current condition types are: "Available"
 	// +optional
+	// +listType=map
+	// +listMapKey=type
+	// +patchMergeKey=type
+	// +patchStrategy=merge
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 

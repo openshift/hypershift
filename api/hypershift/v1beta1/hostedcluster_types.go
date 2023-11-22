@@ -2000,6 +2000,10 @@ type HostedClusterStatus struct {
 	// Conditions represents the latest available observations of a control
 	// plane's current state.
 	// +optional
+	// +listType=map
+	// +listMapKey=type
+	// +patchMergeKey=type
+	// +patchStrategy=merge
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// Platform contains platform-specific status of the HostedCluster

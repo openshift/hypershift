@@ -33785,6 +33785,9 @@ objects:
                     - type
                     type: object
                   type: array
+                  x-kubernetes-list-map-keys:
+                  - type
+                  x-kubernetes-list-type: map
                 dnsName:
                   description: 'Deprecated: Use DNSNames instead'
                   type: string
@@ -33951,6 +33954,9 @@ objects:
                     - type
                     type: object
                   type: array
+                  x-kubernetes-list-map-keys:
+                  - type
+                  x-kubernetes-list-type: map
                 dnsNames:
                   description: DNSName are the names for the records created in the
                     hypershift private zone
@@ -37658,6 +37664,9 @@ objects:
                     - type
                     type: object
                   type: array
+                  x-kubernetes-list-map-keys:
+                  - type
+                  x-kubernetes-list-type: map
                 controlPlaneEndpoint:
                   description: ControlPlaneEndpoint contains the endpoint information
                     by which external clients can access the control plane. This is
@@ -41642,6 +41651,9 @@ objects:
                     - type
                     type: object
                   type: array
+                  x-kubernetes-list-map-keys:
+                  - type
+                  x-kubernetes-list-type: map
                 controlPlaneEndpoint:
                   description: ControlPlaneEndpoint contains the endpoint information
                     by which external clients can access the control plane. This is
@@ -45758,6 +45770,9 @@ objects:
                     - type
                     type: object
                   type: array
+                  x-kubernetes-list-map-keys:
+                  - type
+                  x-kubernetes-list-type: map
                 controlPlaneEndpoint:
                   description: ControlPlaneEndpoint contains the endpoint information
                     by which external clients can access the control plane.  This
