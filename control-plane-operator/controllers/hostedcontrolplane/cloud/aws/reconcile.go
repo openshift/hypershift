@@ -93,6 +93,8 @@ func buildCCMContainer(controllerManagerImage string) func(c *corev1.Container) 
 			fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
 			fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
 			"--leader-elect-resource-namespace=openshift-cloud-controller-manager",
+			"--authentication-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig",
+			"--authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig",
 		}
 		c.VolumeMounts = podVolumeMounts().ContainerMounts(c.Name)
 	}
@@ -126,7 +128,6 @@ func ccmLabels() map[string]string {
 
 func additionalLabels() map[string]string {
 	return map[string]string{
-		hyperv1.ControlPlaneComponent:       "cloud-controller-manager",
-		config.NeedManagementKASAccessLabel: "true",
+		hyperv1.ControlPlaneComponent: "cloud-controller-manager",
 	}
 }
