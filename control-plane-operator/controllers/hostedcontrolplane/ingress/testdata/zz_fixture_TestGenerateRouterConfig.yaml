@@ -34,36 +34,32 @@ frontend main
   use_backend oauth_private if is_oauth_private
   use_backend ovnkube_sbdb if is_ovnkube_sbdb
   default_backend kube_api
-  
+
 listen health_check_http_url
   bind :::9444 v4v6
   mode http
   monitor-uri /haproxy_ready
 
-resolvers coredns
-  nameserver ns1 172.30.0.10:53
-
-
 backend ignition
-  server ignition ignition-server-proxy.test-ns.svc.cluster.local:443 check resolvers coredns init-addr last,libc,none
+  server ignition 0.0.0.0:443
 
 backend konnectivity
-  server konnectivity konnectivity-server.test-ns.svc.cluster.local:8091 check resolvers coredns init-addr last,libc,none
+  server konnectivity 0.0.0.1:8091
 
 backend metrics_forwarder
-  server metrics_forwarder metrics-forwarder.test-ns.svc.cluster.local:4000 check resolvers coredns init-addr last,libc,none
+  server metrics_forwarder 0.0.0.6:4000
 
 backend oauth
-  server oauth openshift-oauth.test-ns.svc.cluster.local:6443 check resolvers coredns init-addr last,libc,none
+  server oauth 0.0.0.4:6443
 
 backend oauth_internal
-  server oauth_internal openshift-oauth.test-ns.svc.cluster.local:6443 check resolvers coredns init-addr last,libc,none
+  server oauth_internal 0.0.0.4:6443
 
 backend oauth_private
-  server oauth_private openshift-oauth.test-ns.svc.cluster.local:6443 check resolvers coredns init-addr last,libc,none
+  server oauth_private 0.0.0.4:6443
 
 backend ovnkube_sbdb
-  server ovnkube_sbdb ovnkube-master-external.test-ns.svc.cluster.local:3000 check resolvers coredns init-addr last,libc,none
+  server ovnkube_sbdb 0.0.0.5:3000
 
 backend kube_api
-  server kube_api kube-apiserver.test-ns.svc.cluster.local:6443 check resolvers coredns init-addr last,libc,none
+  server kube_api 0.0.0.8:6443

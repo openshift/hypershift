@@ -164,7 +164,6 @@ type HostedControlPlaneReconciler struct {
 	ec2Client                     ec2iface.EC2API
 	awsSession                    *session.Session
 	reconcileInfrastructureStatus func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error)
-	NameServerIP                  string
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -3422,10 +3421,26 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 	}
 
 	// reconcile the router's configuration
+	svcsNameToIP := make(map[string]string)
 	if util.IsPrivateHCP(hcp) || exposeKASThroughRouter {
+		for _, route := range routeList.Items {
+			svc := &corev1.Service{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      route.Spec.To.Name,
+					Namespace: hcp.Namespace,
+				},
+			}
+			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+				return err
+			}
+
+			svcsNameToIP[route.Spec.To.Name] = svc.Spec.ClusterIP
+		}
+
 		routerConfig := manifests.RouterConfigurationConfigMap(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, routerConfig, func() error {
-			return ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(hcp), routerConfig, routeList, r.NameServerIP)
+			return ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(hcp), routerConfig, routeList, svcsNameToIP)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router configuration: %w", err)
 		}
