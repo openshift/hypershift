@@ -17,7 +17,6 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -162,34 +161,6 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 								corev1.ResourceMemory: resource.MustParse("50Mi"),
 								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
-						},
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/metrics",
-									Port:   intstr.FromInt(9191),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: int32(60),
-							PeriodSeconds:       int32(60),
-							SuccessThreshold:    int32(1),
-							FailureThreshold:    int32(5),
-							TimeoutSeconds:      int32(5),
-						},
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/metrics",
-									Port:   intstr.FromInt(9191),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: int32(15),
-							PeriodSeconds:       int32(60),
-							SuccessThreshold:    int32(1),
-							FailureThreshold:    int32(3),
-							TimeoutSeconds:      int32(5),
 						},
 						Command: []string{"/usr/bin/machine-approver"},
 						Args:    args,
