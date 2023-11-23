@@ -977,10 +977,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	if err := r.defaultAPIPortIfNeeded(ctx, hcluster); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to default the apiserver port: %w", err)
-	}
-
 	// Set the infraID as Tag on all created AWS
 	if err := r.reconcileAWSResourceTags(ctx, hcluster); err != nil {
 		return ctrl.Result{}, err
@@ -4277,36 +4273,6 @@ func isUpgradeable(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.Re
 	// Upgradeable is false and no exception criteria were met, cluster is not upgradable
 	return true, "", fmt.Errorf("cluster version is not upgradeable")
 
-}
-
-// defaultAPIPortIfNeeded defaults the apiserver port on Azure management clusters as a workaround
-// for https://bugzilla.redhat.com/show_bug.cgi?id=2060650: Azure LBs with port 6443 don't work
-func (r *HostedClusterReconciler) defaultAPIPortIfNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
-	if hcluster.Spec.Networking.APIServer != nil && hcluster.Spec.Networking.APIServer.Port != nil {
-		return nil
-	}
-
-	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityInfrastructure) {
-		return nil
-	}
-	infra := &configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(infra), infra); err != nil {
-		return fmt.Errorf("failed to retrieve infra: %w", err)
-	}
-
-	if infra.Spec.PlatformSpec.Type != configv1.AzurePlatformType {
-		return nil
-	}
-	if hcluster.Spec.Networking.APIServer == nil {
-		hcluster.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
-	}
-
-	hcluster.Spec.Networking.APIServer.Port = k8sutilspointer.Int32(7443)
-	if err := r.Update(ctx, hcluster); err != nil {
-		return fmt.Errorf("failed to update hostedcluster after defaulting the apiserver port: %w", err)
-	}
-
-	return nil
 }
 
 func (r *HostedClusterReconciler) defaultIngressDomain(ctx context.Context) (string, error) {

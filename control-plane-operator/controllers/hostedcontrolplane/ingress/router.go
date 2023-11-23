@@ -72,24 +72,20 @@ func (r byRouteName) Len() int           { return len(r) }
 func (r byRouteName) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
 func (r byRouteName) Less(i, j int) bool { return r[i].Name < r[j].Name }
 
-func generateRouterConfig(namespace string, kubeAPIPort int32, routeList *routev1.RouteList, nameServerIP string) (string, error) {
+func generateRouterConfig(routeList *routev1.RouteList, svcsNameToIP map[string]string) (string, error) {
 	type backendDesc struct {
-		Name               string
-		HostName           string
-		DestinationService string
-		DestinationPort    int32
+		Name                 string
+		HostName             string
+		DestinationServiceIP string
+		DestinationPort      int32
 	}
 	type templateParams struct {
-		HasKubeAPI   bool
-		Namespace    string
-		KubeAPIPort  int32
-		Backends     []backendDesc
-		NameServerIP string
+		HasKubeAPI              bool
+		KASSVCPort              int32
+		KASDestinationServiceIP string
+		Backends                []backendDesc
 	}
-	p := templateParams{
-		Namespace:    namespace,
-		NameServerIP: nameServerIP,
-	}
+	p := templateParams{}
 	sort.Sort(byRouteName(routeList.Items))
 	for _, route := range routeList.Items {
 		if _, hasHCPLabel := route.Labels[util.HCPRouteLabel]; !hasHCPLabel {
@@ -102,25 +98,26 @@ func generateRouterConfig(namespace string, kubeAPIPort int32, routeList *routev
 			manifests.KubeAPIServerExternalPublicRoute("").Name,
 			manifests.KubeAPIServerExternalPrivateRoute("").Name:
 			p.HasKubeAPI = true
+			p.KASDestinationServiceIP = svcsNameToIP["kube-apiserver"]
 			continue
 		case ignitionserver.Route("").Name:
-			p.Backends = append(p.Backends, backendDesc{Name: "ignition", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: 443})
+			p.Backends = append(p.Backends, backendDesc{Name: "ignition", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 443})
 		case manifests.KonnectivityServerRoute("").Name:
-			p.Backends = append(p.Backends, backendDesc{Name: "konnectivity", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: 8091})
+			p.Backends = append(p.Backends, backendDesc{Name: "konnectivity", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 8091})
 		case manifests.OauthServerExternalPrivateRoute("").Name:
-			p.Backends = append(p.Backends, backendDesc{Name: "oauth_private", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: 6443})
+			p.Backends = append(p.Backends, backendDesc{Name: "oauth_private", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 6443})
 		case manifests.OauthServerExternalPublicRoute("").Name:
-			p.Backends = append(p.Backends, backendDesc{Name: "oauth", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: 6443})
+			p.Backends = append(p.Backends, backendDesc{Name: "oauth", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 6443})
 		case manifests.OauthServerInternalRoute("").Name:
-			p.Backends = append(p.Backends, backendDesc{Name: "oauth_internal", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: 6443})
+			p.Backends = append(p.Backends, backendDesc{Name: "oauth_internal", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 6443})
 		case manifests.OVNKubeSBDBRoute("").Name:
-			p.Backends = append(p.Backends, backendDesc{Name: "ovnkube_sbdb", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: route.Spec.Port.TargetPort.IntVal})
+			p.Backends = append(p.Backends, backendDesc{Name: "ovnkube_sbdb", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: route.Spec.Port.TargetPort.IntVal})
 		case manifests.MetricsForwarderRoute("").Name:
-			p.Backends = append(p.Backends, backendDesc{Name: "metrics_forwarder", HostName: route.Spec.Host, DestinationService: route.Spec.To.Name, DestinationPort: route.Spec.Port.TargetPort.IntVal})
+			p.Backends = append(p.Backends, backendDesc{Name: "metrics_forwarder", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: route.Spec.Port.TargetPort.IntVal})
 		}
 	}
 	if p.HasKubeAPI {
-		p.KubeAPIPort = kubeAPIPort
+		p.KASSVCPort = config.KASSVCPort
 	}
 	out := &bytes.Buffer{}
 	if err := routerConfigTemplate.Execute(out, p); err != nil {
@@ -129,13 +126,13 @@ func generateRouterConfig(namespace string, kubeAPIPort int32, routeList *routev
 	return out.String(), nil
 }
 
-func ReconcileRouterConfiguration(ownerRef config.OwnerRef, cm *corev1.ConfigMap, kubeAPIPort int32, routeList *routev1.RouteList, nameServerIP string) error {
+func ReconcileRouterConfiguration(ownerRef config.OwnerRef, cm *corev1.ConfigMap, routeList *routev1.RouteList, svcsNameToIP map[string]string) error {
 	ownerRef.ApplyTo(cm)
 
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	routerConfig, err := generateRouterConfig(cm.Namespace, kubeAPIPort, routeList, nameServerIP)
+	routerConfig, err := generateRouterConfig(routeList, svcsNameToIP)
 	if err != nil {
 		return err
 	}

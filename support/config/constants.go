@@ -22,14 +22,19 @@ const (
 	DefaultAdvertiseIPv4Address  = "172.20.0.1"
 	DefaultAdvertiseIPv6Address  = "fd00::1"
 	DefaultEtcdURL               = "https://etcd-client:2379"
-	DefaultAPIServerPort         = 6443
-	DefaultServiceNodePortRange  = "30000-32767"
-	DefaultSecurityContextUser   = 1001
-	RecommendedLeaseDuration     = "137s"
-	RecommendedRenewDeadline     = "107s"
-	RecommendedRetryPeriod       = "26s"
-	KCMRecommendedRenewDeadline  = "12s"
-	KCMRecommendedRetryPeriod    = "3s"
+	// KASSVCLBAzurePort is needed because for Azure we currently hardcode 7443 for the SVC LB as 6443 collides with public LB rule for the management cluster.
+	// https://bugzilla.redhat.com/show_bug.cgi?id=2060650
+	// TODO(alberto): explore exposing multiple Azure frontend IPs on the load balancer.
+	KASSVCLBAzurePort           = 7443
+	KASSVCPort                  = 6443
+	KASPodDefaultPort           = 6443
+	DefaultServiceNodePortRange = "30000-32767"
+	DefaultSecurityContextUser  = 1001
+	RecommendedLeaseDuration    = "137s"
+	RecommendedRenewDeadline    = "107s"
+	RecommendedRetryPeriod      = "26s"
+	KCMRecommendedRenewDeadline = "12s"
+	KCMRecommendedRetryPeriod   = "3s"
 
 	DefaultIngressDomainEnvVar = "DEFAULT_INGRESS_DOMAIN"
 )

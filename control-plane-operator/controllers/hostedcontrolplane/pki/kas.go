@@ -94,7 +94,7 @@ func ReconcileServiceAccountKubeconfig(secret, csrSigner *corev1.Secret, ca *cor
 	if err := reconcileSignedCert(secret, csrSigner, config.OwnerRef{}, cn, serviceaccount.MakeGroupNames(serviceAccountNamespace), X509UsageClientAuth); err != nil {
 		return fmt.Errorf("failed to reconcile serviceaccount client cert: %w", err)
 	}
-	svcURL := inClusterKASURL(hcp.Namespace, util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort))
+	svcURL := inClusterKASURL()
 
 	return ReconcileKubeConfig(secret, secret, ca, svcURL, "", manifests.KubeconfigScopeLocal, config.OwnerRef{})
 }
@@ -153,8 +153,8 @@ func generateKubeConfig(url string, crtBytes, keyBytes, caBytes []byte) ([]byte,
 	return clientcmd.Write(kubeCfg)
 }
 
-func inClusterKASURL(namespace string, apiServerPort int32) string {
-	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, apiServerPort)
+func inClusterKASURL() string {
+	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCPort)
 }
 
 // addBracketsIfIPv6 function is needed to build the serverAPI url for every kubeconfig created.

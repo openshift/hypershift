@@ -18,7 +18,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 )
 
-func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerServicePort int, apiServerListenPort int, apiAllowedCIDRBlocks []string, isPublic, isPrivate bool) error {
+func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerServicePort int, apiAllowedCIDRBlocks []string, isPublic, isPrivate bool) error {
 	util.EnsureOwnerRef(svc, owner)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = kasLabels()
@@ -38,9 +38,11 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	} else {
 		svc.Spec.Ports = []corev1.ServicePort{portSpec}
 	}
+
+	// TODO (alberto): if this port ever need to be configurable it should come from new field in the LB publishing strategy.
 	portSpec.Port = int32(apiServerServicePort)
 	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(apiServerListenPort)
+	portSpec.TargetPort = intstr.FromString("client")
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
 	}
@@ -73,6 +75,38 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 		return fmt.Errorf("invalid publishing strategy for Kube API server service: %s", strategy.Type)
 	}
 	svc.Spec.LoadBalancerSourceRanges = apiAllowedCIDRBlocks
+	svc.Spec.Ports[0] = portSpec
+	return nil
+}
+
+func ReconcileServiceClusterIP(svc *corev1.Service, owner *metav1.OwnerReference) error {
+	util.EnsureOwnerRef(svc, owner)
+	if svc.Spec.Selector == nil {
+		svc.Spec.Selector = kasLabels()
+	}
+	// Ensure labels propagate to endpoints so service
+	// monitors can select them
+	if svc.Labels == nil {
+		svc.Labels = map[string]string{}
+	}
+	for k, v := range kasLabels() {
+		svc.Labels[k] = v
+	}
+
+	var portSpec corev1.ServicePort
+	if len(svc.Spec.Ports) > 0 {
+		portSpec = svc.Spec.Ports[0]
+	} else {
+		svc.Spec.Ports = []corev1.ServicePort{portSpec}
+	}
+
+	portSpec.Port = int32(config.KASSVCPort)
+	portSpec.Protocol = corev1.ProtocolTCP
+	portSpec.TargetPort = intstr.FromString("client")
+	if svc.Annotations == nil {
+		svc.Annotations = map[string]string{}
+	}
+	svc.Spec.Type = corev1.ServiceTypeClusterIP
 	svc.Spec.Ports[0] = portSpec
 	return nil
 }
@@ -116,8 +150,6 @@ func ReconcileServiceStatus(svc *corev1.Service, strategy *hyperv1.ServicePublis
 }
 
 func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlane, owner *metav1.OwnerReference) error {
-	apiServerPort := util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
-	apiServerListenPort := util.BindAPIPortWithDefault(hcp, config.DefaultAPIServerPort)
 	util.EnsureOwnerRef(svc, owner)
 	svc.Spec.Selector = kasLabels()
 	var portSpec corev1.ServicePort
@@ -126,9 +158,10 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	} else {
 		svc.Spec.Ports = []corev1.ServicePort{portSpec}
 	}
-	portSpec.Port = int32(apiServerPort)
+
+	portSpec.Port = int32(config.KASSVCPort)
 	portSpec.Protocol = corev1.ProtocolTCP
-	portSpec.TargetPort = intstr.FromInt(int(apiServerListenPort))
+	portSpec.TargetPort = intstr.FromString("client")
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 	if svc.Annotations == nil {
 		svc.Annotations = map[string]string{}
@@ -139,10 +172,6 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
 	svc.Spec.Ports[0] = portSpec
 	return nil
-}
-
-func ReconcilePrivateServiceStatus(hcp *hyperv1.HostedControlPlane) (host string, port int32, err error) {
-	return fmt.Sprintf("api.%s.hypershift.local", hcp.Name), util.InternalAPIPortWithDefault(hcp, config.DefaultAPIServerPort), nil
 }
 
 func ReconcileExternalPublicRoute(route *routev1.Route, owner *metav1.OwnerReference, hostname string) error {

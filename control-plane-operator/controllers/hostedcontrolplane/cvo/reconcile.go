@@ -108,7 +108,7 @@ func cvoLabels() map[string]string {
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneImage, image, cliImage, availabilityProberImage, clusterID string, apiPort *int32, platformType hyperv1.PlatformType) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneImage, image, cliImage, availabilityProberImage, clusterID string, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -148,7 +148,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	}
 	deploymentConfig.ApplyTo(deployment)
 	util.AvailabilityProber(
-		kas.InClusterKASReadyURL(deployment.Namespace, apiPort),
+		kas.InClusterKASReadyURL(),
 		availabilityProberImage,
 		&deployment.Spec.Template.Spec,
 		func(o *util.AvailabilityProberOpts) {

@@ -147,7 +147,8 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 
 func TestReconcileAPIServerService(t *testing.T) {
 	targetNamespace := "test"
-	apiPort := int32(1234)
+	apiPort := int32(config.KASSVCPort)
+	kasPort := "client"
 	hostname := "test.example.com"
 	allowCIDR := []hyperv1.CIDRBlock{"1.2.3.4/24"}
 	allowCIDRString := []string{"1.2.3.4/24"}
@@ -180,7 +181,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 					{
 						Protocol:   corev1.ProtocolTCP,
 						Port:       apiPort,
-						TargetPort: intstr.FromInt(int(apiPort)),
+						TargetPort: intstr.FromString(kasPort),
 					},
 				},
 				LoadBalancerSourceRanges: allowCIDRString,
@@ -996,7 +997,7 @@ func TestReconcileRouter(t *testing.T) {
 	ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 		Name:      "hcp",
 		Namespace: namespace,
-	}}), routerCfg, 6443, &routev1.RouteList{}, "172.30.0.10")
+	}}), routerCfg, &routev1.RouteList{}, map[string]string{})
 
 	testCases := []struct {
 		name                         string
@@ -1217,9 +1218,8 @@ func TestReconcileRouter(t *testing.T) {
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(tc.existingObjects, hcp)...).Build()
 
 			r := HostedControlPlaneReconciler{
-				Client:       c,
-				Log:          ctrl.LoggerFrom(ctx),
-				NameServerIP: "172.30.0.10",
+				Client: c,
+				Log:    ctrl.LoggerFrom(ctx),
 			}
 
 			releaseInfo := &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}
