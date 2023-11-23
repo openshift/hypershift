@@ -46,9 +46,9 @@ func TestAddBracketsIfIPv6(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := addBracketsIfIPv6(tt.apiAddress)
+			got := AddBracketsIfIPv6(tt.apiAddress)
 			if got != tt.want {
-				t.Errorf("addBracketsIfIPv6() = %v, want %v", got, tt.want)
+				t.Errorf("AddBracketsIfIPv6() = %v, want %v", got, tt.want)
 			}
 		})
 	}
