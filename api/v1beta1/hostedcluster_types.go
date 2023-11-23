@@ -421,6 +421,7 @@ type HostedClusterSpec struct {
 	// cluster.
 	//
 	// +kubebuilder:default=management
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="OLMCatalogPlacement is immutable"
 	// +optional
 	// +immutable
 	OLMCatalogPlacement OLMCatalogPlacement `json:"olmCatalogPlacement,omitempty"`
