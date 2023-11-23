@@ -2,8 +2,11 @@ package metrics
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/conditions"
@@ -27,6 +30,10 @@ const (
 
 	CountByHClusterMetricName = "hypershift_hostedcluster_nodepools" // What about renaming it to hypershift_cluster_nodepools ?
 	countByHClusterMetricHelp = "Number of NodePools for a given HostedCluster"
+
+	CoresCountByHClusterMetricName = "hypershift_cluster_cores"
+	CoresCountByHClusterMetricHelp = "Number of cores for a given HostedCluster. " +
+		"-1 if this number cannot be computed." // Be careful when changing this metric as it is used for billing the customers
 
 	TransitionDurationMetricName = "hypershift_nodepools_transition_seconds" // What about renaming it to hypershift_nodepools_transition_duration_seconds ?
 	transitionDurationMetricHelp = "Time in seconds it took for conditions to become true since the creation of the NodePool."
@@ -74,10 +81,17 @@ var (
 		countByPlatformAndFailureConditionMetricHelp,
 		[]string{"platform", "condition"}, nil)
 
+	hclusterLabels = []string{"namespace", "name", "_id", "platform"}
+
 	countByHClusterMetricDesc = prometheus.NewDesc(
 		CountByHClusterMetricName,
 		countByHClusterMetricHelp,
-		[]string{"namespace", "name", "_id", "platform"}, nil)
+		hclusterLabels, nil)
+
+	coresCountByHClusterMetricDesc = prometheus.NewDesc(
+		CoresCountByHClusterMetricName,
+		CoresCountByHClusterMetricHelp,
+		hclusterLabels, nil)
 
 	// One time series per node pool for below metrics
 	nodePoolLabels = []string{"namespace", "name", "_id", "cluster_name", "platform"}
@@ -105,17 +119,22 @@ var (
 
 type nodePoolsMetricsCollector struct {
 	client.Client
-	clock clock.Clock
+	ec2Client ec2iface.EC2API
+	clock     clock.Clock
+
+	ec2InstanceTypeToCoresCount map[string]int32
 
 	transitionDurationMetric *prometheus.HistogramVec
 
 	lastCollectTime time.Time
 }
 
-func createNodePoolsMetricsCollector(client client.Client, clock clock.Clock) prometheus.Collector {
+func createNodePoolsMetricsCollector(client client.Client, ec2Client ec2iface.EC2API, clock clock.Clock) prometheus.Collector {
 	return &nodePoolsMetricsCollector{
-		Client: client,
-		clock:  clock,
+		Client:                      client,
+		ec2Client:                   ec2Client,
+		clock:                       clock,
+		ec2InstanceTypeToCoresCount: make(map[string]int32),
 		transitionDurationMetric: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    TransitionDurationMetricName,
 			Help:    transitionDurationMetricHelp,
@@ -125,8 +144,8 @@ func createNodePoolsMetricsCollector(client client.Client, clock clock.Clock) pr
 	}
 }
 
-func CreateAndRegisterNodePoolsMetricsCollector(client client.Client) prometheus.Collector {
-	collector := createNodePoolsMetricsCollector(client, clock.RealClock{})
+func CreateAndRegisterNodePoolsMetricsCollector(client client.Client, ec2Client ec2iface.EC2API) prometheus.Collector {
+	collector := createNodePoolsMetricsCollector(client, ec2Client, clock.RealClock{})
 
 	metrics.Registry.MustRegister(collector)
 
@@ -139,9 +158,11 @@ func (c *nodePoolsMetricsCollector) Describe(ch chan<- *prometheus.Desc) {
 
 type hclusterData struct {
 	id             string
+	namespace      string
 	name           string
 	platform       hyperv1.PlatformType
 	nodePoolsCount int
+	coresCount     int32
 }
 
 func createFailureConditionToNodePoolsCountMap() *map[string]int {
@@ -160,13 +181,68 @@ func createFailureConditionToNodePoolsCountMap() *map[string]int {
 	return &res
 }
 
+func (c *nodePoolsMetricsCollector) resolveCoresCountPerNode(nodePool *hyperv1.NodePool, unresolvedEc2InstanceTypes *map[string]void) int32 {
+	if nodePool.Spec.Platform.Type != hyperv1.AWSPlatform || c.ec2Client == nil {
+		return -1
+	}
+
+	awsPlatform := nodePool.Spec.Platform.AWS
+
+	if awsPlatform == nil {
+		return -1
+	}
+
+	ec2InstanceType := awsPlatform.InstanceType
+
+	if _, isUnresolved := (*unresolvedEc2InstanceTypes)[ec2InstanceType]; isUnresolved {
+		return -1
+	}
+
+	if coreCountPerNode, isCached := c.ec2InstanceTypeToCoresCount[ec2InstanceType]; isCached {
+		return coreCountPerNode
+	}
+	awsInput := ec2.DescribeInstanceTypesInput{InstanceTypes: []*string{&ec2InstanceType}}
+
+	if awsOuput, err := c.ec2Client.DescribeInstanceTypes(&awsInput); awsOuput != nil && err == nil {
+		if len(awsOuput.InstanceTypes) == 1 {
+			ec2InstanceTypeInfo := awsOuput.InstanceTypes[0]
+
+			if ec2InstanceTypeInfo != nil {
+				instanceTypeInInfo := ec2InstanceTypeInfo.InstanceType
+				cpuInfo := ec2InstanceTypeInfo.VCpuInfo
+
+				if instanceTypeInInfo != nil && *instanceTypeInInfo == ec2InstanceType && cpuInfo != nil {
+					coreCountPtr := cpuInfo.DefaultCores
+
+					if coreCountPtr != nil {
+						coreCount := int32(*coreCountPtr)
+
+						c.ec2InstanceTypeToCoresCount[ec2InstanceType] = coreCount
+
+						return coreCount
+					}
+				}
+			}
+		}
+
+		ctrllog.Log.Error(fmt.Errorf("unexpected AWS output"), "unexpected output for EC2 verb 'describe-instance-types' while querying the following EC2 instance type: "+ec2InstanceType)
+	} else {
+		ctrllog.Log.Error(err, "failed to call AWS to resolve the number of cores per node for the following EC2 instance type: "+ec2InstanceType)
+	}
+
+	(*unresolvedEc2InstanceTypes)[ec2InstanceType] = void{}
+
+	return -1
+}
+
 func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 	ctx := context.Background()
 	currentCollectTime := c.clock.Now()
 	log := ctrllog.Log
+	unresolvedEc2InstanceTypes := make(map[string]void)
 
 	// Data retrieved from objects other than node pools in below loops
-	hclusterNsToData := make(map[string]*hclusterData)
+	hclusterPathToData := make(map[string]*hclusterData)
 	machineSetPathToReplicasCount := make(map[string]int32)
 	machineDeploymentPathToReplicasCount := make(map[string]int32)
 
@@ -181,10 +257,11 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		for k := range hclusters.Items {
 			hcluster := &hclusters.Items[k]
 
-			hclusterNsToData[hcluster.Namespace] = &hclusterData{
-				id:       hcluster.Spec.ClusterID,
-				name:     hcluster.Name,
-				platform: hcluster.Spec.Platform.Type,
+			hclusterPathToData[hcluster.Namespace+"/"+hcluster.Name] = &hclusterData{
+				id:        hcluster.Spec.ClusterID,
+				namespace: hcluster.Namespace,
+				name:      hcluster.Name,
+				platform:  hcluster.Spec.Platform.Type,
 			}
 		}
 	}
@@ -249,7 +326,7 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 			// countByPlatformMetric - aggregation
 			platform := nodePool.Spec.Platform.Type
-			platformToNodePoolsCount[platform] = platformToNodePoolsCount[platform] + 1
+			platformToNodePoolsCount[platform] += 1
 
 			// countByPlatformAndFailureConditionMetric - aggregation
 			{
@@ -273,21 +350,33 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 						failureCondition := failureCondPrefix + condition.Type
 
-						(*failureConditionToNodePoolsCount)[failureCondition] = (*failureConditionToNodePoolsCount)[failureCondition] + 1
+						(*failureConditionToNodePoolsCount)[failureCondition] += 1
 					}
 				}
 			}
 
-			// countByHClusterMetric - aggregation
-			if hclusterData := hclusterNsToData[nodePool.Namespace]; hclusterData != nil {
+			if hclusterData := hclusterPathToData[nodePool.Namespace+"/"+nodePool.Spec.ClusterName]; hclusterData != nil {
 				hclusterId = hclusterData.id
-				hclusterData.nodePoolsCount = hclusterData.nodePoolsCount + 1
+
+				// countByHClusterMetric - aggregation
+				hclusterData.nodePoolsCount += 1
+
+				// coresCountByHClusterMetric - aggregation
+				if hclusterData.coresCount >= 0 && nodePool.Status.Replicas > 0 {
+					nodePoolCoresCount := c.resolveCoresCountPerNode(nodePool, &unresolvedEc2InstanceTypes)
+
+					if nodePoolCoresCount >= 0 {
+						hclusterData.coresCount += nodePoolCoresCount * nodePool.Status.Replicas
+					} else {
+						hclusterData.coresCount = -1
+					}
+				}
 			}
 
 			// transitionDurationMetric - aggregation
 			for i := range nodePool.Status.Conditions {
 				condition := &nodePool.Status.Conditions[i]
-				if _, isOk := transitionDurationMetricConditions[condition.Type]; isOk {
+				if _, isRetained := transitionDurationMetricConditions[condition.Type]; isRetained {
 					if condition.Status == corev1.ConditionTrue {
 						t := condition.LastTransitionTime.Time
 
@@ -388,16 +477,23 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 
-	// countByHClusterMetric
-	for namespace, hclusterData := range hclusterNsToData {
+	for _, hclusterData := range hclusterPathToData {
+		hclusterLabelValues := []string{hclusterData.namespace, hclusterData.name, hclusterData.id, string(hclusterData.platform)}
+
+		// countByHClusterMetric
 		ch <- prometheus.MustNewConstMetric(
 			countByHClusterMetricDesc,
 			prometheus.GaugeValue,
 			float64(hclusterData.nodePoolsCount),
-			namespace,
-			hclusterData.name,
-			hclusterData.id,
-			string(hclusterData.platform),
+			hclusterLabelValues...,
+		)
+
+		// coresCountByHClusterMetric
+		ch <- prometheus.MustNewConstMetric(
+			coresCountByHClusterMetricDesc,
+			prometheus.GaugeValue,
+			float64(hclusterData.coresCount),
+			hclusterLabelValues...,
 		)
 	}
 
