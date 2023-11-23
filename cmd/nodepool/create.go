@@ -13,9 +13,11 @@ import (
 )
 
 // The following lines are needed in order to validate that any platform implementing PlatformOptions satisfy the interface
-var _ core.PlatformOptions = &aws.AWSPlatformCreateOptions{}
-var _ core.PlatformOptions = &kubevirt.KubevirtPlatformCreateOptions{}
-var _ core.PlatformOptions = &agent.AgentPlatformCreateOptions{}
+var (
+	_ core.PlatformOptions = &aws.AWSPlatformCreateOptions{}
+	_ core.PlatformOptions = &kubevirt.KubevirtPlatformCreateOptions{}
+	_ core.PlatformOptions = &agent.AgentPlatformCreateOptions{}
+)
 
 func NewCreateCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -24,6 +26,7 @@ func NewCreateCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
+	// Options for the nodepool command
 	opts := &core.CreateNodePoolOptions{
 		Name:            "example",
 		Namespace:       "clusters",
