@@ -3,6 +3,7 @@ package fixtures
 import (
 	"crypto/rand"
 	"fmt"
+	"github.com/openshift/hypershift/cmd/util"
 	"strings"
 	"time"
 
@@ -111,6 +112,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace.Name,
 			Name:      o.Name + "-pull-secret",
+			Labels:    map[string]string{util.DeleteWithClusterLabelName: "true"},
 		},
 		Data: map[string][]byte{
 			".dockerconfigjson": o.PullSecret,
@@ -128,6 +130,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: namespace.Name,
 				Name:      o.Name + "-ssh-key",
+				Labels:    map[string]string{util.DeleteWithClusterLabelName: "true"},
 			},
 			Data: map[string][]byte{
 				"id_rsa.pub": o.SSHPublicKey,
@@ -286,6 +289,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      o.Name + "-infra-credentials",
 					Namespace: o.Namespace,
+					Labels:    map[string]string{util.DeleteWithClusterLabelName: "true"},
 				},
 				Data: map[string][]byte{
 					"kubeconfig": o.Kubevirt.InfraKubeConfig,
@@ -803,6 +807,7 @@ func (o ExampleOptions) EtcdEncryptionKeySecret() *corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      o.Name + "-etcd-encryption-key",
 			Namespace: o.Namespace,
+			Labels:    map[string]string{util.DeleteWithClusterLabelName: "true"},
 		},
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Secret",

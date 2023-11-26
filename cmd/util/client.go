@@ -16,6 +16,8 @@ import (
 
 const (
 	AutoInfraLabelName = "hypershift.openshift.io/auto-created-for-infra"
+	// DeleteWithClusterLabelName marks CLI created secrets, to be safely removed on hosted cluster deletion
+	DeleteWithClusterLabelName = "hypershift.openshift.io/safe-to-delete-with-cluster"
 )
 
 // GetConfig creates a REST config from current context

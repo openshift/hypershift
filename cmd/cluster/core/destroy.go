@@ -90,6 +90,7 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 
 func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
 	hostedClusterExists := hostedCluster != nil
+	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
 	c, err := util.GetClient()
 	if err != nil {
 		return err
@@ -97,60 +98,55 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 
 	// If the hosted cluster exists, add a finalizer, delete it, and wait for
 	// the cluster to be cleaned up before destroying its infrastructure.
-	if hostedClusterExists && !sets.NewString(hostedCluster.Finalizers...).Has(destroyFinalizer) {
-		original := hostedCluster.DeepCopy()
-		if hostedCluster.DeletionTimestamp == nil {
-			controllerutil.AddFinalizer(hostedCluster, destroyFinalizer)
-		}
-		if o.DestroyCloudResources {
-			if hostedCluster.Annotations == nil {
-				hostedCluster.Annotations = map[string]string{}
+	if hostedClusterExists {
+		if shouldDestroyPlatformSpecifics {
+			err = setFinalizer(ctx, hostedCluster, o, c)
+			if err != nil {
+				return err
 			}
-			hostedCluster.Annotations[hyperv1.CleanupCloudResourcesAnnotation] = "true"
 		}
-		if err := c.Patch(ctx, hostedCluster, client.MergeFrom(original)); err != nil {
-			if apierrors.IsNotFound(err) {
-				o.Log.Info("Hosted cluster not found, skipping finalizer update", "namespace", o.Namespace, "name", o.Name)
-			} else if !strings.Contains(err.Error(), "no new finalizers can be added if the object is being deleted") {
-				return fmt.Errorf("failed to add finalizer to hosted cluster: %w", err)
-			}
-		} else {
-			o.Log.Info("Updated finalizer for hosted cluster", "namespace", o.Namespace, "name", o.Name)
-		}
+
 		o.Log.Info("Deleting hosted cluster", "namespace", o.Namespace, "name", o.Name)
-		if err := c.Delete(ctx, hostedCluster); err != nil {
+		if err = c.Delete(ctx, hostedCluster); err != nil {
 			if apierrors.IsNotFound(err) {
 				o.Log.Info("Hosted not found, skipping delete", "namespace", o.Namespace, "name", o.Name)
 			} else {
 				return fmt.Errorf("failed to delete hostedcluster: %w", err)
 			}
 		}
-		// Wait for the hosted cluster to have only the CLI's finalizer remaining,
-		// which should indicate the cluster was successfully torn down.
-		clusterDeleteCtx, clusterDeleteCtxCancel := context.WithTimeout(ctx, o.ClusterGracePeriod)
-		defer clusterDeleteCtxCancel()
-		err := wait.PollImmediateUntil(1*time.Second, func() (bool, error) {
-			if err := c.Get(clusterDeleteCtx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, hostedCluster); err != nil {
-				if apierrors.IsNotFound(err) {
-					return true, nil
-				}
-				o.Log.Error(err, "Failed to get hosted cluster", "namespace", o.Namespace, "name", o.Name)
-				return false, nil
+
+		if shouldDestroyPlatformSpecifics {
+			if err = waitForRestOfFinalizers(ctx, hostedCluster, o, c); err != nil {
+				return err
 			}
-			done := len(hostedCluster.Finalizers) == 1 && hostedCluster.Finalizers[0] == destroyFinalizer
-			return done, nil
-		}, clusterDeleteCtx.Done())
-		if err != nil {
-			return fmt.Errorf("hostedcluster wasn't finalized, aborting delete: %w", err)
 		}
 	}
 
-	// Destroy additional resources which are specific to the current platform
-	if err := destroyPlatformSpecifics(ctx, o); err != nil {
+	if shouldDestroyPlatformSpecifics {
+		// Destroy additional resources which are specific to the current platform
+		if err = destroyPlatformSpecifics(ctx, o); err != nil {
+			return err
+		}
+	} else if err = waitForClusterDeletion(ctx, hostedCluster, o, c); err != nil {
 		return err
 	}
 
 	// clean up CLI generated secrets
+	if err = deleteCLISecrets(ctx, o, c); err != nil {
+		return err
+	}
+
+	if shouldDestroyPlatformSpecifics && hostedClusterExists {
+		if err = removeFinalizer(ctx, hostedCluster, o, c); err != nil {
+			return err
+		}
+	}
+
+	o.Log.Info("Successfully destroyed cluster and infrastructure", "namespace", o.Namespace, "name", o.Name, "infraID", o.InfraID)
+	return nil
+}
+
+func deleteCLISecrets(ctx context.Context, o *DestroyOptions, c client.Client) error {
 	o.Log.Info("Deleting Secrets", "namespace", o.Namespace)
 	if err := c.DeleteAllOf(ctx, &v1.Secret{}, client.InNamespace(o.Namespace), client.MatchingLabels{util.AutoInfraLabelName: o.InfraID}); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -161,35 +157,117 @@ func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o
 	} else {
 		o.Log.Info("Deleted CLI generated secrets")
 	}
-
-	if hostedClusterExists && sets.NewString(hostedCluster.Finalizers...).Has(destroyFinalizer) {
-		if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-			// Ensure that we have the latest hostedCluster resource
-			if err := c.Get(ctx, client.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return fmt.Errorf("failed to fetch latest HostedCluster: %w", err)
-				}
-				return nil
-			}
-			original := hostedCluster.DeepCopy()
-			controllerutil.RemoveFinalizer(hostedCluster, destroyFinalizer)
-			if err := c.Patch(ctx, hostedCluster, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return err
-				}
-			} else {
-				o.Log.Info("Finalized hosted cluster", "namespace", o.Namespace, "name", o.Name)
-			}
-			return nil
-		}); err != nil {
-			return err
-		}
-	}
-
-	o.Log.Info("Successfully destroyed cluster and infrastructure", "namespace", o.Namespace, "name", o.Name, "infraID", o.InfraID)
 	return nil
 }
 
-func DestroyPlatformSpecificsNoop(_ context.Context, _ *DestroyOptions) error {
+func removeFinalizer(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
+	if !sets.New[string](hostedCluster.Finalizers...).Has(destroyFinalizer) {
+		return nil
+	}
+
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		// Ensure that we have the latest hostedCluster resource
+		if err := c.Get(ctx, client.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to fetch latest HostedCluster: %w", err)
+			}
+			return nil
+		}
+		original := hostedCluster.DeepCopy()
+		controllerutil.RemoveFinalizer(hostedCluster, destroyFinalizer)
+		if err := c.Patch(ctx, hostedCluster, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return err
+			}
+		} else {
+			o.Log.Info("Finalized hosted cluster", "namespace", o.Namespace, "name", o.Name)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+// waitForRestOfFinalizers waits for the hosted cluster to have only the CLI's finalizer remaining,
+// which should indicate the cluster was successfully torn down.
+func waitForRestOfFinalizers(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
+	clusterDeleteCtx, clusterDeleteCtxCancel := context.WithTimeout(ctx, o.ClusterGracePeriod)
+	defer clusterDeleteCtxCancel()
+
+	err := wait.PollUntilContextCancel(clusterDeleteCtx, 1*time.Second, true, func(ctx context.Context) (bool, error) {
+		if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, hostedCluster); err != nil {
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
+			o.Log.Error(err, "Failed to get hosted cluster", "namespace", o.Namespace, "name", o.Name)
+			return false, nil
+		}
+		done := len(hostedCluster.Finalizers) == 1 && hostedCluster.Finalizers[0] == destroyFinalizer
+		return done, nil
+	})
+	if err != nil {
+		return fmt.Errorf("hostedcluster wasn't finalized, aborting delete: %w", err)
+	}
+	return nil
+}
+
+func setFinalizer(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
+	if sets.New[string](hostedCluster.Finalizers...).Has(destroyFinalizer) {
+		return nil
+	}
+
+	original := hostedCluster.DeepCopy()
+	if hostedCluster.DeletionTimestamp == nil {
+		controllerutil.AddFinalizer(hostedCluster, destroyFinalizer)
+	}
+	if o.DestroyCloudResources {
+		if hostedCluster.Annotations == nil {
+			hostedCluster.Annotations = map[string]string{}
+		}
+		hostedCluster.Annotations[hyperv1.CleanupCloudResourcesAnnotation] = "true"
+	}
+	if err := c.Patch(ctx, hostedCluster, client.MergeFrom(original)); err != nil {
+		if apierrors.IsNotFound(err) {
+			o.Log.Info("Hosted cluster not found, skipping finalizer update", "namespace", o.Namespace, "name", o.Name)
+		} else if !strings.Contains(err.Error(), "no new finalizers can be added if the object is being deleted") {
+			return fmt.Errorf("failed to add finalizer to hosted cluster: %w", err)
+		}
+	} else {
+		o.Log.Info("Updated finalizer for hosted cluster", "namespace", o.Namespace, "name", o.Name)
+	}
+
+	return nil
+}
+
+func waitForClusterDeletion(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, c client.Client) error {
+	clusterDeleteCtx, clusterDeleteCtxCancel := context.WithTimeout(ctx, o.ClusterGracePeriod)
+	defer clusterDeleteCtxCancel()
+
+	err := wait.PollUntilContextCancel(clusterDeleteCtx, 1*time.Second, true, func(ctx context.Context) (bool, error) {
+		if err := c.Get(ctx, types.NamespacedName{Namespace: o.Namespace, Name: o.Name}, hostedCluster); err != nil {
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
+			o.Log.Error(err, "Failed to get hosted cluster", "namespace", o.Namespace, "name", o.Name)
+			return false, nil
+		}
+
+		// don't wait for grace period. Nothing happens after grace period in the controller, but it's only
+		// for debug. So it's safe to continue in case of grace period.
+		if _, ok := hostedCluster.Annotations[hyperv1.CleanupCloudResourcesAnnotation]; ok {
+			if meta.FindStatusCondition(hostedCluster.Status.Conditions, string(hyperv1.HostedClusterDestroyed)) != nil {
+				return true, nil
+			}
+		}
+
+		return false, nil
+	})
+
+	if err != nil {
+		o.Log.Error(err, "HostedCluster deletion failed", "namespace", o.Namespace, "name", o.Name)
+		return err
+	}
+
 	return nil
 }

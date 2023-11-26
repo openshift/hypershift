@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/openshift/hypershift/cmd/util"
+	"reflect"
 	"testing"
 	"time"
 
@@ -1090,6 +1092,200 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	}
 	if diff := cmp.Diff(client.createdTypes.List(), watchedResources.List()); diff != "" {
 		t.Errorf("the set of resources that are being created differs from the one that is being watched: %s", diff)
+	}
+}
+
+func TestReconcileCLISecrets(t *testing.T) {
+	const (
+		infraID = "infraId"
+		ns      = "myns"
+	)
+
+	labels := map[string]string{
+		util.DeleteWithClusterLabelName: "true",
+		util.AutoInfraLabelName:         infraID,
+	}
+	testCase := []struct {
+		name            string
+		secrets         []crclient.Object
+		expectedWithRef int
+	}{
+		{
+			name: "secret with both labels and with no ownerRef",
+			secrets: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret1",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+			},
+			expectedWithRef: 1,
+		},
+		{
+			name: "multiple secret with both labels and with no ownerRef",
+			secrets: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret1",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret2",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret3",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+			},
+			expectedWithRef: 3,
+		},
+		{
+			name: "mix cases",
+			secrets: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "valid-1",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "other-namespace",
+						Namespace: "other",
+						Labels:    labels,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "valid-2",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "no-labels",
+						Namespace: ns,
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "only-auto-created-for-infra-label",
+						Namespace: ns,
+						Labels: map[string]string{
+							util.AutoInfraLabelName: infraID,
+						},
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "only-safe-to-delete-with-cluster-label",
+						Namespace: ns,
+						Labels: map[string]string{
+							util.DeleteWithClusterLabelName: "true",
+						},
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "other-infra-id",
+						Namespace: ns,
+						Labels: map[string]string{
+							util.AutoInfraLabelName:         "other",
+							util.DeleteWithClusterLabelName: "true",
+						},
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "valid-3",
+						Namespace: ns,
+						Labels:    labels,
+					},
+				},
+			},
+			expectedWithRef: 3,
+		},
+	}
+
+	for _, tc := range testCase {
+		hc := &hyperv1.HostedCluster{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: hyperv1.GroupVersion.Version,
+				Kind:       "HostedCluster",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-cluster",
+				Namespace: ns,
+				UID:       types.UID("my-cluster-uid"),
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: hyperv1.GroupVersion.Version,
+						Kind:       "HostedCluster",
+						Name:       "hc1",
+						UID:        types.UID("hclusterUID"),
+					},
+				},
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				InfraID: infraID,
+			},
+		}
+
+		reference := *(config.OwnerRefFrom(hc).Reference)
+		createOrUpdate := upsert.New(false).CreateOrUpdate
+		t.Run(tc.name, func(tt *testing.T) {
+			cli := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.secrets...).Build()
+			r := &HostedClusterReconciler{Client: cli}
+			ctx := context.Background()
+			err := r.reconcileCLISecrets(ctx, createOrUpdate, hc)
+			if err != nil {
+				tt.Fatalf("should not return error but returned %q", err.Error())
+			}
+
+			count := 0
+			secrets := &corev1.SecretList{}
+			err = cli.List(ctx, secrets) // reading secrets with no filter, because the function under test uses filters. checking manually below
+			if err != nil {
+				tt.Fatalf("failed to read secrets: %s", err.Error())
+			}
+
+			for _, secret := range secrets.Items {
+				found := len(secret.OwnerReferences) == 1 && reflect.DeepEqual(secret.OwnerReferences[0], reference)
+				if found {
+					count++
+				} else {
+					shouldNotBeFound := false
+					if secret.Namespace != ns {
+						shouldNotBeFound = true
+					} else if v, ok := secret.Labels[util.DeleteWithClusterLabelName]; !ok || v != "true" {
+						shouldNotBeFound = true
+					} else if v, ok = secret.Labels[util.AutoInfraLabelName]; !ok || v != infraID {
+						shouldNotBeFound = true
+					}
+
+					if !shouldNotBeFound {
+						tt.Errorf("owner reference wasn't found in secret. secret name: %s", secret.Name)
+					}
+				}
+			}
+
+			if count != tc.expectedWithRef {
+				tt.Errorf("wrong number of affected secrets. Extcted %d but found %d", tc.expectedWithRef, count)
+			}
+		})
 	}
 }
 
