@@ -1511,15 +1511,16 @@ type ManagedEtcdStorageSpec struct {
 	// +optional
 	PersistentVolume *PersistentVolumeEtcdStorageSpec `json:"persistentVolume,omitempty"`
 
-	// RestoreSnapshotURL allows an optional list of URLs to be provided where
+	// RestoreSnapshotURL allows an optional URL to be provided where
 	// an etcd snapshot can be downloaded, for example a pre-signed URL
-	// referencing a storage service, one URL per replica.
+	// referencing a storage service.
 	// This snapshot will be restored on initial startup, only when the etcd PV
 	// is empty.
 	//
 	// +optional
 	// +immutable
-	RestoreSnapshotURL []string `json:"restoreSnapshotURL"`
+	// +kubebuilder:validation:XValidation:rule="self.size() <= 1", message="RestoreSnapshotURL shouldn't contain more than 1 entry"
+	RestoreSnapshotURL []string `json:"restoreSnapshotURL,omitempty"`
 }
 
 // PersistentVolumeEtcdStorageSpec is the configuration for PersistentVolume
