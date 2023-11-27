@@ -273,6 +273,10 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 			"--aws-zone-type=public",
 			"--aws-batch-change-interval=10s",
 		)
+	case "azure":
+		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
+			"--azure-config-file=/etc/provider/credentials",
+		)
 	}
 
 	return deployment
