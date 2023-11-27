@@ -44,7 +44,8 @@ func ExpectedHCConditions() map[hyperv1.ConditionType]metav1.ConditionStatus {
 		// ExternalDNSReachable could be set to ConditionUnknown if external DNS is not configured or HC is private.
 		hyperv1.ExternalDNSReachable: metav1.ConditionTrue,
 		// ValidAWSKMSConfig could be set to ConditionUnknown if KMS key/role are not configured.
-		hyperv1.ValidAWSKMSConfig: metav1.ConditionTrue,
+		hyperv1.ValidAWSKMSConfig:   metav1.ConditionTrue,
+		hyperv1.ValidAzureKMSConfig: metav1.ConditionTrue,
 	}
 }
 

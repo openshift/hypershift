@@ -3015,6 +3015,10 @@ in the cloud credentials is healthy. E.g. for AWS the idp ARN is referenced in t
 <td><p>ValidAWSKMSConfig indicates whether the AWS KMS role and encryption key are valid and operational
 A failure here indicates that the role or the key are invalid, or the role doesn&rsquo;t have access to use the key.</p>
 </td>
+</tr><tr><td><p>&#34;ValidAzureKMSConfig&#34;</p></td>
+<td><p>ValidAzureKMSConfig indicates whether the given KMS input for the Azure platform is valid and operational
+A failure here indicates that the input is invalid, or permissions are missing to use the encryption key.</p>
+</td>
 </tr><tr><td><p>&#34;ValidConfiguration&#34;</p></td>
 <td><p>ValidHostedClusterConfiguration signals if the hostedCluster input is valid and
 supported by the underlying management cluster.

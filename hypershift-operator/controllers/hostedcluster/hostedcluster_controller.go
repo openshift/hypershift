@@ -678,6 +678,16 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform {
+		if hcp != nil {
+			validKMSConfig := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAzureKMSConfig))
+			if validKMSConfig != nil {
+				validKMSConfig.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *validKMSConfig)
+			}
+		}
+	}
+
 	// Reconcile unmanaged etcd client tls secret validation error status. Note only update status on validation error case to
 	// provide clear status to the user on the resource without having to look at operator logs.
 	{

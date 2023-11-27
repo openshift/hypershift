@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -87,7 +89,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -418,8 +420,13 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	// Validate AWS KMS config
-	r.validateAWSKMSConfig(ctx, hostedControlPlane)
+	// Validate KMS config
+	switch hostedControlPlane.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		r.validateAWSKMSConfig(ctx, hostedControlPlane)
+	case hyperv1.AzurePlatform:
+		r.validateAzureKMSConfig(ctx, hostedControlPlane)
+	}
 
 	// Reconcile Kube APIServer status
 	{
@@ -3902,7 +3909,7 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 	}
 	if err == nil && cvoDeployment.Spec.Replicas != nil && *cvoDeployment.Spec.Replicas > 0 {
 		log.Info("Scaling down cluster version operator deployment")
-		cvoDeployment.Spec.Replicas = pointer.Int32(0)
+		cvoDeployment.Spec.Replicas = ptr.To[int32](0)
 		if err := r.Update(ctx, cvoDeployment); err != nil {
 			return false, fmt.Errorf("failed to scale down CVO deployment: %w", err)
 		}
@@ -4361,6 +4368,89 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 			Status:             metav1.ConditionFalse,
 			Message:            fmt.Sprintf("failed to encrypt data using KMS (key: %s), code: %s", kmsKeyArn, awsErrorCode(err)),
 			Reason:             hyperv1.AWSErrorReason,
+		}
+	}
+
+	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+}
+
+func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
+	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil || hcp.Spec.SecretEncryption.KMS.Azure == nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Message:            "Azure KMS is not configured",
+			Reason:             hyperv1.StatusUnknownReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
+
+	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Message:            fmt.Sprintf("failed to get azure credentials secret: %v", err),
+			Reason:             hyperv1.StatusUnknownReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	tenantID := string(credentialsSecret.Data["AZURE_TENANT_ID"])
+	clientID := string(credentialsSecret.Data["AZURE_CLIENT_ID"])
+	clientSecret := string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
+
+	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+	if err != nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            fmt.Sprintf("failed to obtain azure client credential: %v", err),
+			Reason:             hyperv1.InvalidAzureCredentialsReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	vaultURL := fmt.Sprintf("https://%s.vault.azure.net", azureKmsSpec.KeyVaultName)
+	keysClient, err := azkeys.NewClient(vaultURL, cred, nil)
+	if err != nil {
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            fmt.Sprintf("failed to create azure keys client: %v", err),
+			Reason:             hyperv1.AzureErrorReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
+	}
+
+	condition := metav1.Condition{
+		Type:               string(hyperv1.ValidAzureKMSConfig),
+		ObservedGeneration: hcp.Generation,
+		Status:             metav1.ConditionTrue,
+		Message:            hyperv1.AllIsWellMessage,
+		Reason:             hyperv1.AsExpectedReason,
+	}
+
+	input := azkeys.KeyOperationParameters{
+		Algorithm: ptr.To(azkeys.EncryptionAlgorithmRSAOAEP256),
+		Value:     []byte("text"),
+	}
+	if _, err := keysClient.Encrypt(ctx, azureKmsSpec.KeyName, azureKmsSpec.KeyVersion, input, &azkeys.EncryptOptions{}); err != nil {
+		condition = metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionFalse,
+			Message:            fmt.Sprintf("failed to encrypt data using KMS (key: %s/%s): %v", azureKmsSpec.KeyName, azureKmsSpec.KeyVersion, err),
+			Reason:             hyperv1.AzureErrorReason,
 		}
 	}
 
