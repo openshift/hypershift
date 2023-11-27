@@ -34,6 +34,7 @@ func TestNodeReaper(t *testing.T) {
 			n.Labels[hyperv1.HostedClusterLabel] = fmt.Sprintf("%s-%s", clusterNamespace, name)
 			n.Labels[HostedClusterNamespaceLabel] = clusterNamespace
 			n.Labels[HostedClusterNameLabel] = name
+			n.Labels[HostedClusterLabel] = "true"
 		}
 	}
 	cluster := func(name string) *hyperv1.HostedCluster {
@@ -140,6 +141,7 @@ func TestHostedClusterScheduler(t *testing.T) {
 			n.Labels[HostedClusterNameLabel] = hc.Name
 			n.Labels[HostedClusterNamespaceLabel] = hc.Namespace
 			n.Labels[hyperv1.HostedClusterLabel] = fmt.Sprintf("%s-%s", hc.Namespace, hc.Name)
+			n.Labels[HostedClusterLabel] = "true"
 		}
 	}
 
@@ -266,6 +268,7 @@ func TestHostedClusterScheduler(t *testing.T) {
 						g.Expect(node.Labels[hyperv1.HostedClusterLabel]).To(Equal(fmt.Sprintf("%s-%s", hc.Namespace, hc.Name)))
 						g.Expect(node.Labels[HostedClusterNameLabel]).To(Equal(hc.Name))
 						g.Expect(node.Labels[HostedClusterNamespaceLabel]).To(Equal(hc.Namespace))
+						g.Expect(node.Labels[HostedClusterLabel]).To(Equal("true"))
 						g.Expect(node.Spec.Taints).To(ContainElement(corev1.Taint{
 							Key:    HostedClusterTaint,
 							Value:  fmt.Sprintf("%s-%s", hc.Namespace, hc.Name),
