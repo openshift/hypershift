@@ -33,6 +33,14 @@ func OAuthServerBrowserClient() *oauthv1.OAuthClient {
 	}
 }
 
+func OAuthServerCLIClient() *oauthv1.OAuthClient {
+	return &oauthv1.OAuthClient{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "openshift-cli-client",
+		},
+	}
+}
+
 func OAuthServingCertRoleBinding() *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
