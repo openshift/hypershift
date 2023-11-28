@@ -2921,6 +2921,12 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 		return fmt.Errorf("failed to restart multus admission controller: %w", err)
 	}
 
+	// CNO manages overall network-node-identity deployment. CPO manages restarts.
+	networkNodeIdentityDeployment := manifests.NetworkNodeIdentityDeployment(hcp.Namespace)
+	if err := cno.SetRestartAnnotationAndPatch(ctx, r.Client, networkNodeIdentityDeployment, p.DeploymentConfig); err != nil {
+		return fmt.Errorf("failed to restart network node identity: %w", err)
+	}
+
 	return nil
 }
 

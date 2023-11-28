@@ -10,6 +10,7 @@ import (
 
 const clusterNetworkOperator = "cluster-network-operator"
 const multusAdmissionController = "multus-admission-controller"
+const networkNodeIdentity = "network-node-identity"
 
 func ClusterNetworkOperatorDeployment(ns string) *appsv1.Deployment {
 	return &appsv1.Deployment{
@@ -52,6 +53,15 @@ func MultusAdmissionControllerDeployment(namespace string) *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      multusAdmissionController,
+		},
+	}
+}
+
+func NetworkNodeIdentityDeployment(namespace string) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      networkNodeIdentity,
 		},
 	}
 }
