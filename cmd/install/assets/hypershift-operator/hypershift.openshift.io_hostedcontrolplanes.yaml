@@ -8433,6 +8433,36 @@ spec:
                     x-kubernetes-validations:
                     - message: Kubevirt GenerateID is required once set
                       rule: '!has(oldSelf.generateID) || has(self.generateID)'
+                  openstack:
+                    description: OpenStack specifies configuration for clusters running
+                      on OpenStack.
+                    properties:
+                      caCertSecret:
+                        description: LocalObjectReference contains enough information
+                          to let you locate the referenced object inside the same
+                          namespace.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      cloudsYamlSecret:
+                        description: LocalObjectReference contains enough information
+                          to let you locate the referenced object inside the same
+                          namespace.
+                        properties:
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                              TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    required:
+                    - caCertSecret
+                    - cloudsYamlSecret
+                    type: object
                   powervs:
                     description: |-
                       PowerVS specifies configuration for clusters running on IBMCloud Power VS Service.
@@ -8649,6 +8679,7 @@ spec:
                     - KubeVirt
                     - Azure
                     - PowerVS
+                    - OpenStack
                     type: string
                 required:
                 - type
