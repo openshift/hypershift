@@ -3,6 +3,7 @@ package kas
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -335,6 +336,9 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	case hyperv1.AzurePlatform:
 		params.CloudProvider = azure.Provider
 		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AzureProviderConfigWithCredentials("").Name}
+	case hyperv1.OpenStackPlatform:
+		params.CloudProvider = openstack.Provider
+		// TODO(dulek): Cloud provider config here?
 	}
 
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {

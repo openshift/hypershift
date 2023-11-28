@@ -926,64 +926,67 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 		return ctrl.Result{}, err
 	}
-	if result, err := r.CreateOrUpdate(ctx, r.Client, template, func() error {
-		return mutateTemplate(template)
-	}); err != nil {
-		return ctrl.Result{}, err
-	} else {
-		log.Info("Reconciled Machine template", "result", result)
-	}
-
-	// Check if platform machine template needs to be updated.
-	targetMachineTemplate := template.GetName()
-	if isUpdatingMachineTemplate(nodePool, targetMachineTemplate) {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
-			Status:             corev1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
-			Message:            fmt.Sprintf("platform machine template update in progress. Target template: %s", targetMachineTemplate),
-			ObservedGeneration: nodePool.Generation,
-		})
-		log.Info("NodePool machine template is updating",
-			"current", nodePool.GetAnnotations()[nodePoolAnnotationPlatformMachineTemplate],
-			"target", targetMachineTemplate)
-	} else {
-		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
-	}
-
-	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
-		ms := machineSet(nodePool, controlPlaneNamespace)
-		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, ms, func() error {
-			return r.reconcileMachineSet(
-				ctx,
-				ms, nodePool,
-				userDataSecret,
-				template,
-				infraID,
-				targetVersion, targetConfigHash, targetPayloadConfigHash, machineTemplateSpecJSON)
+	// FIXME(dulek): This is a hack, remove condition once OpenStack has CAPO support.
+	if template != nil {
+		if result, err := r.CreateOrUpdate(ctx, r.Client, template, func() error {
+			return mutateTemplate(template)
 		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineSet %q: %w",
-				client.ObjectKeyFromObject(ms).String(), err)
+			return ctrl.Result{}, err
 		} else {
-			log.Info("Reconciled MachineSet", "result", result)
+			log.Info("Reconciled Machine template", "result", result)
 		}
-	}
 
-	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
-		md := machineDeployment(nodePool, controlPlaneNamespace)
-		if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
-			return r.reconcileMachineDeployment(
-				log,
-				md, nodePool,
-				userDataSecret,
-				template,
-				infraID,
-				targetVersion, targetConfigHash, targetPayloadConfigHash, machineTemplateSpecJSON)
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
-				client.ObjectKeyFromObject(md).String(), err)
+		// Check if platform machine template needs to be updated.
+		targetMachineTemplate := template.GetName()
+		if isUpdatingMachineTemplate(nodePool, targetMachineTemplate) {
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+				Status:             corev1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            fmt.Sprintf("platform machine template update in progress. Target template: %s", targetMachineTemplate),
+				ObservedGeneration: nodePool.Generation,
+			})
+			log.Info("NodePool machine template is updating",
+				"current", nodePool.GetAnnotations()[nodePoolAnnotationPlatformMachineTemplate],
+				"target", targetMachineTemplate)
 		} else {
-			log.Info("Reconciled MachineDeployment", "result", result)
+			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
+		}
+
+		if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+			ms := machineSet(nodePool, controlPlaneNamespace)
+			if result, err := controllerutil.CreateOrPatch(ctx, r.Client, ms, func() error {
+				return r.reconcileMachineSet(
+					ctx,
+					ms, nodePool,
+					userDataSecret,
+					template,
+					infraID,
+					targetVersion, targetConfigHash, targetPayloadConfigHash, machineTemplateSpecJSON)
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineSet %q: %w",
+					client.ObjectKeyFromObject(ms).String(), err)
+			} else {
+				log.Info("Reconciled MachineSet", "result", result)
+			}
+		}
+
+		if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
+			md := machineDeployment(nodePool, controlPlaneNamespace)
+			if result, err := controllerutil.CreateOrPatch(ctx, r.Client, md, func() error {
+				return r.reconcileMachineDeployment(
+					log,
+					md, nodePool,
+					userDataSecret,
+					template,
+					infraID,
+					targetVersion, targetConfigHash, targetPayloadConfigHash, machineTemplateSpecJSON)
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile MachineDeployment %q: %w",
+					client.ObjectKeyFromObject(md).String(), err)
+			} else {
+				log.Info("Reconciled MachineDeployment", "result", result)
+			}
 		}
 	}
 
@@ -2530,6 +2533,9 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 			return nil
 		}
+	case hyperv1.OpenStackPlatform:
+		// FIXME(dulek): This is where CAPO template generation goes.
+		return nil, nil, "", nil
 	default:
 		// TODO(alberto): Consider signal in a condition.
 		return nil, nil, "", fmt.Errorf("unsupported platform type: %s", nodePool.Spec.Platform.Type)
