@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cco"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pkioperator"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -26,6 +27,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -1115,6 +1117,36 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
 	}
 
+	// We need to reconcile the CCO if and only if the hosted control plane has the STS feature flag enabled.
+	// Generally, users will have chosen to turn this flag on by opting into the TechPreviewNoUpgrade feature
+	// set, the definition of which depends on the version of the cluster that's running. Therefore, the best
+	// and most correct way to detect whether this feature gate is on would be to reach out to the tenant and
+	// read feature gates from the API. However, we can't afford the client throughput that would be required
+	// to read this much data from each tenant here.
+	//
+	// Therefore, we make a simplifying assumption - use our vendored version of the OpenShift config API to
+	// infer whether the feature set includes the STS flag or not. This means that there will be a period of
+	// time where the tenant clusters have STS enabled but HCP doesn't know, but that's fine. We can re-vendor
+	// the repo at a later date and clarify the logic here at that point.
+	var shouldReconcileCCO bool
+	featureGatesConfigured := hostedControlPlane.Spec.Configuration != nil && hostedControlPlane.Spec.Configuration.FeatureGate != nil
+	if featureGatesConfigured {
+		featureGates := hostedControlPlane.Spec.Configuration.FeatureGate
+		featureSet := configv1.FeatureSets[featureGates.FeatureSet]
+		if featuregates.NewFeatureGate(featureSet.Enabled, featureSet.Disabled).Enabled(configv1.FeatureGateAWSSecurityTokenService) {
+			shouldReconcileCCO = true
+		} else if featureSet := featureGates.CustomNoUpgrade; featureSet != nil {
+			shouldReconcileCCO = featuregates.NewFeatureGate(featureSet.Enabled, featureSet.Disabled).Enabled(configv1.FeatureGateAWSSecurityTokenService)
+		}
+	}
+	if shouldReconcileCCO {
+		// Reconcile cloud credential operator
+		r.Log.Info("Reconciling Cloud Credential Operator")
+		if err := r.reconcileCloudCredentialOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
+		}
+	}
+
 	// Reconcile OLM
 	r.Log.Info("Reconciling OLM")
 	if err := r.reconcileOperatorLifecycleManager(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
@@ -2053,6 +2085,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile node tuning operator serving cert: %w", err)
+	}
+
+	// Cloud Credential Operator Serving Cert
+	cloudCredentialOperatorServingCert := manifests.CloudCredentialOperatorServingCertSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, cloudCredentialOperatorServingCert, func() error {
+		return pki.ReconcileCloudCredentialOperatorServingCertSecret(cloudCredentialOperatorServingCert, rootCASecret, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cloud credential operator serving cert: %w", err)
 	}
 
 	// OLM PackageServer Cert
@@ -3066,6 +3106,44 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingressoperator pod monitor: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	params := cco.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
+
+	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		return err
+	}
+
+	csrSigner := manifests.CSRSignerCASecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
+		return err
+	}
+
+	kubeconfig := manifests.CloudCredentialOperatorKubeconfig(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kubeconfig, func() error {
+		return pki.ReconcileServiceAccountKubeconfig(kubeconfig, csrSigner, rootCA, hcp, cco.WorkerNamespace, cco.WorkerServiceAccount)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cloud credential operator kubeconfig: %w", err)
+	}
+
+	deployment := manifests.CloudCredentialOperatorDeployment(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, deployment, func() error {
+		return cco.ReconcileDeployment(deployment, params)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cloud credential operator deployment: %w", err)
+	}
+
+	pm := manifests.CloudCredentialOperatorPodMonitor(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, pm, func() error {
+		cco.ReconcilePodMonitor(params.OwnerRef, pm, hcp.Spec.ClusterID, r.MetricsSet)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cloud credential operator pod monitor: %w", err)
 	}
 
 	return nil
