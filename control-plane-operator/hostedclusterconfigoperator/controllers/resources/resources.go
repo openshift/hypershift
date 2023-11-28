@@ -466,6 +466,14 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 			errs = append(errs, fmt.Errorf("failed to reconcile oauth challenging client: %w", err))
 		}
 
+		log.Info("reconciling oauth cli client")
+		oauthCLIClient := manifests.OAuthServerCLIClient()
+		if _, err := r.CreateOrUpdate(ctx, r.client, oauthCLIClient, func() error {
+			return oauth.ReconcileCLIClient(oauthCLIClient, r.oauthAddress, r.oauthPort)
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile oauth cli client: %w", err))
+		}
+
 		log.Info("reconciling oauth serving cert rbac")
 		oauthServingCertRole := manifests.OAuthServingCertRole()
 		if _, err := r.CreateOrUpdate(ctx, r.client, oauthServingCertRole, func() error {
