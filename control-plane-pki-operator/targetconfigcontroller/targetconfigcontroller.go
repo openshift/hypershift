@@ -102,6 +102,7 @@ func ManageClientCABundle(ctx context.Context, lister corev1listers.ConfigMapLis
 	requiredConfigMap, err := resourcesynccontroller.CombineCABundleConfigMaps(
 		resourcesynccontroller.ResourceLocation{Namespace: owner.Namespace, Name: pkimanifests.TotalKASClientCABundle(owner.Namespace).Name},
 		lister,
+		"HOSTEDCP", "Kubernetes total client CA bundle.",
 		// this bundle is what this operator uses to mint new customer client certs it directly manages
 		resourcesynccontroller.ResourceLocation{Namespace: owner.Namespace, Name: pkimanifests.CustomerSystemAdminSignerCA(owner.Namespace).Name},
 	)

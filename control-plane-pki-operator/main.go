@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 
+	"github.com/openshift/hypershift/control-plane-pki-operator/topology"
 	hypershiftversion "github.com/openshift/hypershift/pkg/version"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/version"
@@ -40,6 +41,7 @@ func NewOperator(ctx context.Context) *cobra.Command {
 		NewControllerCommandConfig("control-plane-pki-operator", version.Info{
 			GitCommit: hypershiftversion.GetRevision(),
 		}, RunOperator).
+		WithTopologyDetector(topology.Detector{}).
 		NewCommandWithContext(ctx)
 	cmd.Use = "operator"
 	cmd.Short = "Start the HyperShift control plane PKI Operator"

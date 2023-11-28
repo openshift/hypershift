@@ -13,12 +13,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func NewHostedControlPlaneStatusReporter(name, namespace, conditionName string, client hypershiftv1beta1client.HostedControlPlanesGetter) *HostedControlPlaneStatusReporter {
+func NewHostedControlPlaneStatusReporter(name, namespace string, client hypershiftv1beta1client.HostedControlPlanesGetter) *HostedControlPlaneStatusReporter {
 	return &HostedControlPlaneStatusReporter{
-		namespace:     namespace,
-		name:          name,
-		conditionName: conditionName,
-		client:        client,
+		namespace: namespace,
+		name:      name,
+		client:    client,
 	}
 }
 
@@ -26,15 +25,12 @@ type HostedControlPlaneStatusReporter struct {
 	// namespace, name identify the HostedControlPlane we report to
 	namespace, name string
 
-	// conditionName is used in operator conditions to identify this controller, compare CertRotationDegradedConditionTypeFmt.
-	conditionName string
-
 	client hypershiftv1beta1client.HostedControlPlanesGetter
 }
 
-func (h *HostedControlPlaneStatusReporter) Report(ctx context.Context, syncErr error) (updated bool, updateErr error) {
+func (h *HostedControlPlaneStatusReporter) Report(ctx context.Context, conditionName string, syncErr error) (updated bool, updateErr error) {
 	newCondition := metav1.Condition{
-		Type:   fmt.Sprintf(condition.CertRotationDegradedConditionTypeFmt, h.conditionName),
+		Type:   fmt.Sprintf(condition.CertRotationDegradedConditionTypeFmt, conditionName),
 		Status: metav1.ConditionFalse,
 		Reason: hypershiftv1beta1.AsExpectedReason,
 	}
