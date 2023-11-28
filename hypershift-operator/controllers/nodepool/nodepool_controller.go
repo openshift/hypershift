@@ -2837,6 +2837,9 @@ func machineTemplateBuilders(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.
 			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
 			return nil
 		}
+	case hyperv1.OpenStackPlatform:
+		// TODO(emilien) this will come in future commits
+		return nil, nil, "", nil
 	default:
 		// TODO(alberto): Consider signal in a condition.
 		return nil, nil, "", fmt.Errorf("unsupported platform type: %s", nodePool.Spec.Platform.Type)

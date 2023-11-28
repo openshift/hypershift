@@ -7195,6 +7195,48 @@ the management cluster.</p>
 </td>
 </tr></tbody>
 </table>
+###OpenStackPlatformSpec { #hypershift.openshift.io/v1beta1.OpenStackPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>OpenStackPlatformSpec specifies configuration for clusters running on OpenStack.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>cloudsYamlSecret</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+<tr>
+<td>
+<code>caCertSecret</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
 ###PersistentVolumeAccessMode { #hypershift.openshift.io/v1beta1.PersistentVolumeAccessMode }
 <p>
 (<em>Appears on:</em>
@@ -7362,6 +7404,20 @@ KubevirtPlatformSpec
 <p>KubeVirt defines KubeVirt specific settings for cluster components.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>openstack</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">
+OpenStackPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>OpenStack specifies configuration for clusters running on OpenStack.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###PlatformStatus { #hypershift.openshift.io/v1beta1.PlatformStatus }
@@ -7429,6 +7485,9 @@ AWSPlatformStatus
 </td>
 </tr><tr><td><p>&#34;None&#34;</p></td>
 <td><p>NonePlatform represents user supplied (e.g. bare metal) infrastructure.</p>
+</td>
+</tr><tr><td><p>&#34;OpenStack&#34;</p></td>
+<td><p>OpenStackPlatform represents OpenStack infrastructure.</p>
 </td>
 </tr><tr><td><p>&#34;PowerVS&#34;</p></td>
 <td><p>PowerVSPlatform represents PowerVS infrastructure.</p>
