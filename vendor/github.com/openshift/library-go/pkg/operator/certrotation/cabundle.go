@@ -30,6 +30,10 @@ type CABundleConfigMap struct {
 	Name string
 	// Owner is an optional reference to add to the secret that this rotator creates.
 	Owner *metav1.OwnerReference
+	// JiraComponent annotates tls artifacts so that owner could be easily found
+	JiraComponent string
+	// Description is a human-readable one sentence description of certificate purpose
+	Description string
 
 	// Plumbing:
 	Informer      corev1informers.ConfigMapInformer
@@ -48,11 +52,28 @@ func (c CABundleConfigMap) ensureConfigMapCABundle(ctx context.Context, signingC
 	caBundleConfigMap := originalCABundleConfigMap.DeepCopy()
 	if apierrors.IsNotFound(err) {
 		// create an empty one
-		caBundleConfigMap = &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: c.Namespace, Name: c.Name}}
+		caBundleConfigMap = &corev1.ConfigMap{ObjectMeta: NewTLSArtifactObjectMeta(
+			c.Name,
+			c.Namespace,
+			c.JiraComponent,
+			c.Description,
+		)}
 	}
+
+	needsMetadataUpdate := false
 	if c.Owner != nil {
-		ensureOwnerReference(&caBundleConfigMap.ObjectMeta, c.Owner)
+		needsMetadataUpdate = ensureOwnerReference(&caBundleConfigMap.ObjectMeta, c.Owner)
 	}
+	if len(c.JiraComponent) > 0 || len(c.Description) > 0 {
+		needsMetadataUpdate = EnsureTLSMetadataUpdate(&caBundleConfigMap.ObjectMeta, c.JiraComponent, c.Description) || needsMetadataUpdate
+	}
+	if needsMetadataUpdate && len(caBundleConfigMap.ResourceVersion) > 0 {
+		_, _, err := resourceapply.ApplyConfigMap(ctx, c.Client, c.EventRecorder, caBundleConfigMap)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	updatedCerts, err := manageCABundleConfigMap(caBundleConfigMap, signingCertKeyPair.Config.Certs[0])
 	if err != nil {
 		return nil, err

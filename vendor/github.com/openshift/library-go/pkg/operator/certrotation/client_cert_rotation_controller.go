@@ -29,22 +29,19 @@ const (
 
 // StatusReporter knows how to report the status of cert rotation
 type StatusReporter interface {
-	Report(ctx context.Context, syncErr error) (updated bool, updateErr error)
+	Report(ctx context.Context, controllerName string, syncErr error) (updated bool, updateErr error)
 }
 
 var _ StatusReporter = (*StaticPodConditionStatusReporter)(nil)
 
 type StaticPodConditionStatusReporter struct {
-	// conditionName is used in operator conditions to identify this controller, compare CertRotationDegradedConditionTypeFmt.
-	conditionName string
-
 	// Plumbing:
 	OperatorClient v1helpers.StaticPodOperatorClient
 }
 
-func (s *StaticPodConditionStatusReporter) Report(ctx context.Context, syncErr error) (bool, error) {
+func (s *StaticPodConditionStatusReporter) Report(ctx context.Context, controllerName string, syncErr error) (bool, error) {
 	newCondition := operatorv1.OperatorCondition{
-		Type:   fmt.Sprintf(condition.CertRotationDegradedConditionTypeFmt, s.conditionName),
+		Type:   fmt.Sprintf(condition.CertRotationDegradedConditionTypeFmt, controllerName),
 		Status: operatorv1.ConditionFalse,
 	}
 	if syncErr != nil {
@@ -62,6 +59,8 @@ func (s *StaticPodConditionStatusReporter) Report(ctx context.Context, syncErr e
 // 2) maintain a CA bundle ConfigMap with all not yet expired CA certs.
 // 3) continuously create a target cert and key signed by the latest signing CA and store it in a secret.
 type CertRotationController struct {
+	// controller name
+	name string
 	// rotatedSigningCASecret rotates a self-signed signing CA stored in a secret.
 	rotatedSigningCASecret RotatedSigningCASecret
 	// CABundleConfigMap maintains a CA bundle config map, by adding new CA certs coming from rotatedSigningCASecret, and by removing expired old ones.
@@ -82,6 +81,7 @@ func NewCertRotationController(
 	reporter StatusReporter,
 ) factory.Controller {
 	c := &CertRotationController{
+		name:                           name,
 		rotatedSigningCASecret:         rotatedSigningCASecret,
 		CABundleConfigMap:              caBundleConfigMap,
 		RotatedSelfSignedCertKeySecret: rotatedSelfSignedCertKeySecret,
@@ -110,7 +110,7 @@ func (c CertRotationController) Sync(ctx context.Context, syncCtx factory.SyncCo
 		return syncErr
 	}
 
-	updated, updateErr := c.StatusReporter.Report(ctx, syncErr)
+	updated, updateErr := c.StatusReporter.Report(ctx, c.name, syncErr)
 	if updateErr != nil {
 		return updateErr
 	}

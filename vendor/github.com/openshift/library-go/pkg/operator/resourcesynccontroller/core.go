@@ -7,14 +7,14 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	corev1listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/util/cert"
 
 	"github.com/openshift/library-go/pkg/crypto"
+	"github.com/openshift/library-go/pkg/operator/certrotation"
 )
 
-func CombineCABundleConfigMaps(destinationConfigMap ResourceLocation, lister corev1listers.ConfigMapLister, inputConfigMaps ...ResourceLocation) (*corev1.ConfigMap, error) {
+func CombineCABundleConfigMaps(destinationConfigMap ResourceLocation, lister corev1listers.ConfigMapLister, jiraComponent, description string, inputConfigMaps ...ResourceLocation) (*corev1.ConfigMap, error) {
 	certificates := []*x509.Certificate{}
 	for _, input := range inputConfigMaps {
 		inputConfigMap, err := lister.ConfigMaps(input.Namespace).Get(input.Name)
@@ -58,10 +58,16 @@ func CombineCABundleConfigMaps(destinationConfigMap ResourceLocation, lister cor
 		return nil, err
 	}
 
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: destinationConfigMap.Namespace, Name: destinationConfigMap.Name},
+	cm := &corev1.ConfigMap{
+		ObjectMeta: certrotation.NewTLSArtifactObjectMeta(
+			destinationConfigMap.Name,
+			destinationConfigMap.Namespace,
+			jiraComponent,
+			description,
+		),
 		Data: map[string]string{
 			"ca-bundle.crt": string(caBytes),
 		},
-	}, nil
+	}
+	return cm, nil
 }

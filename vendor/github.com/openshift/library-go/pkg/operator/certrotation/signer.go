@@ -44,6 +44,11 @@ type RotatedSigningCASecret struct {
 	// is used, early deletion will be catastrophic.
 	Owner *metav1.OwnerReference
 
+	// JiraComponent annotates tls artifacts so that owner could be easily found
+	JiraComponent string
+
+	// Description is a human-readable one sentence description of certificate purpose
+	Description string
 	// Plumbing:
 	Informer      corev1informers.SecretInformer
 	Lister        corev1listers.SecretLister
@@ -59,12 +64,27 @@ func (c RotatedSigningCASecret) ensureSigningCertKeyPair(ctx context.Context) (*
 	signingCertKeyPairSecret := originalSigningCertKeyPairSecret.DeepCopy()
 	if apierrors.IsNotFound(err) {
 		// create an empty one
-		signingCertKeyPairSecret = &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: c.Namespace, Name: c.Name}}
+		signingCertKeyPairSecret = &corev1.Secret{ObjectMeta: NewTLSArtifactObjectMeta(
+			c.Name,
+			c.Namespace,
+			c.JiraComponent,
+			c.Description,
+		)}
 	}
 	signingCertKeyPairSecret.Type = corev1.SecretTypeTLS
 
+	needsMetadataUpdate := false
 	if c.Owner != nil {
-		ensureOwnerReference(&signingCertKeyPairSecret.ObjectMeta, c.Owner)
+		needsMetadataUpdate = ensureOwnerReference(&signingCertKeyPairSecret.ObjectMeta, c.Owner)
+	}
+	if len(c.JiraComponent) > 0 || len(c.Description) > 0 {
+		needsMetadataUpdate = EnsureTLSMetadataUpdate(&signingCertKeyPairSecret.ObjectMeta, c.JiraComponent, c.Description) || needsMetadataUpdate
+	}
+	if needsMetadataUpdate && len(signingCertKeyPairSecret.ResourceVersion) > 0 {
+		_, _, err := resourceapply.ApplySecret(ctx, c.Client, c.EventRecorder, signingCertKeyPairSecret)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if needed, reason := needNewSigningCertKeyPair(signingCertKeyPairSecret.Annotations, c.Refresh, c.RefreshOnlyWhenExpired); needed {
@@ -91,7 +111,7 @@ func (c RotatedSigningCASecret) ensureSigningCertKeyPair(ctx context.Context) (*
 }
 
 // ensureOwnerReference adds the owner to the list of owner references in meta, if necessary
-func ensureOwnerReference(meta *metav1.ObjectMeta, owner *metav1.OwnerReference) {
+func ensureOwnerReference(meta *metav1.ObjectMeta, owner *metav1.OwnerReference) bool {
 	var found bool
 	for _, ref := range meta.OwnerReferences {
 		if ref == *owner {
@@ -101,7 +121,9 @@ func ensureOwnerReference(meta *metav1.ObjectMeta, owner *metav1.OwnerReference)
 	}
 	if !found {
 		meta.OwnerReferences = append(meta.OwnerReferences, *owner)
+		return true
 	}
+	return false
 }
 
 func needNewSigningCertKeyPair(annotations map[string]string, refresh time.Duration, refreshOnlyWhenExpired bool) (bool, string) {

@@ -1511,8 +1511,8 @@ github.com/openshift/cluster-node-tuning-operator v0.0.0-20220614214129-2c76314f
 github.com/openshift/custom-resource-status v0.0.0-20200602122900-c002fd1547ca/go.mod h1:GDjWl0tX6FNIj82vIxeudWeSx2Ff6nDZ8uJn0ohUFvo=
 github.com/openshift/custom-resource-status v1.1.2 h1:C3DL44LEbvlbItfd8mT5jWrqPfHnSOQoQf/sypqA6A4=
 github.com/openshift/custom-resource-status v1.1.2/go.mod h1:DB/Mf2oTeiAmVVX1gN+NEqweonAPY0TKUwADizj8+ZA=
-github.com/openshift/library-go v0.0.0-20231114105342-8fcee5af3f13 h1:/ogd2wx77xZqW7sFXZRBGJ7qM36NrG2vr9P38nTeNzs=
-github.com/openshift/library-go v0.0.0-20231114105342-8fcee5af3f13/go.mod h1:8UzmrBMCn7+GzouL8DVYkL9COBQTB1Ggd13/mHJQCUg=
+github.com/openshift/library-go v0.0.0-20231128230659-785a9313da6c h1:L/nRp+uq0MKKvK14y18Ua84dYF860b1dCE973wSQ1do=
+github.com/openshift/library-go v0.0.0-20231128230659-785a9313da6c/go.mod h1:8UzmrBMCn7+GzouL8DVYkL9COBQTB1Ggd13/mHJQCUg=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=
 github.com/opentracing/opentracing-go v1.2.0 h1:uEJPy/1a5RIPAJ0Ov+OIO8OxWu77jEv+1B0VhjKrZUs=
 github.com/opentracing/opentracing-go v1.2.0/go.mod h1:GxEUsuufX4nBwe+T+Wl9TAgYrxe9dPLANfrWvHYVTgc=
