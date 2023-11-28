@@ -2669,7 +2669,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 	}
 
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oapi.ReconcileDeployment(deployment, p.AuditWebhookRef, p.OwnerRef, oapicfg, auditCfg, serviceServingCA, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage)
+		return oapi.ReconcileDeployment(deployment, p.AuditWebhookRef, p.OwnerRef, oapicfg, auditCfg, serviceServingCA, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, p.InternalOAuthDisable)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver deployment: %w", err)
 	}

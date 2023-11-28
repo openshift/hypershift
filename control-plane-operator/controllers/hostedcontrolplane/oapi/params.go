@@ -32,6 +32,7 @@ type OpenShiftAPIServerParams struct {
 	Image                                   *configv1.Image
 	Project                                 *configv1.Project
 	AuditWebhookRef                         *corev1.LocalObjectReference
+	InternalOAuthDisable                    bool
 }
 
 type OAuthDeploymentParams struct {
@@ -59,6 +60,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 		Image:                   observedConfig.Image,
 		Project:                 observedConfig.Project,
+		InternalOAuthDisable:    !util.HCPOAuthEnabled(hcp),
 	}
 
 	if hcp.Spec.Configuration != nil {
