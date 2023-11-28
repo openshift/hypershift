@@ -30,6 +30,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/kubevirt"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/powervs"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/clusterpolicy"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cno"
@@ -2615,6 +2616,31 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure cloud config with credentials: %w", err)
 		}
+	case hyperv1.OpenStackPlatform:
+		// TODO(dulek): No magic strings.
+		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "openstack-credentials"}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
+			return fmt.Errorf("failed to get OpenStack credentials secret: %w", err)
+		}
+
+		cfg := manifests.OpenStackProviderConfig(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, cfg, func() error {
+			return openstack.ReconcileCloudConfig(cfg, hcp, credentialsSecret)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile OpenStack cloud config: %w", err)
+		}
+
+		caConfigMap := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "openstack-ca"}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(caConfigMap), caConfigMap); err != nil {
+			return fmt.Errorf("failed to get OpenStack CA certificates: %w", err)
+		}
+
+		ca := manifests.OpenStackTrustedCA(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, ca, func() error {
+			return openstack.ReconcileTrustedCA(ca, hcp, caConfigMap)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile OpenStack cloud CA: %w", err)
+		}
 	}
 	return nil
 }
@@ -4432,6 +4458,22 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 		deployment := azure.CCMDeployment(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, deployment, func() error {
 			return azure.ReconcileDeployment(deployment, hcp, p, sa.Name, releaseImageProvider)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile %s cloud controller manager deployment: %w", hcp.Spec.Platform.Type, err)
+		}
+	case hyperv1.OpenStackPlatform:
+		ownerRef := config.OwnerRefFrom(hcp)
+		sa := openstack.CCMServiceAccount(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, sa, func() error {
+			return openstack.ReconcileCCMServiceAccount(sa, ownerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile %s cloud provider service account: %w", hcp.Spec.Platform.Type, err)
+		}
+
+		p := openstack.NewOpenStackParams(hcp)
+		deployment := openstack.CCMDeployment(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, deployment, func() error {
+			return openstack.ReconcileDeployment(deployment, hcp, p, sa.Name, releaseImageProvider)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s cloud controller manager deployment: %w", hcp.Spec.Platform.Type, err)
 		}
