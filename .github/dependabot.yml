@@ -1,9 +1,19 @@
+# Configuration options for the dependabot.yml file
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 version: 2
 updates:
-  - package-ecosystem: "gomod" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: "gomod"
+    directory: "/"
     schedule:
       interval: "weekly"
+      day: "friday"
+      time: "01:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "NO-JIRA"
+    labels:
+      - "area/ci-tooling"
+      - "ok-to-test"
     groups:
       github-dependencies:
         patterns:
