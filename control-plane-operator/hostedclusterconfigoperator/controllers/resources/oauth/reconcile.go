@@ -39,7 +39,7 @@ func ReconcileCLIClient(client *oauthv1.OAuthClient, externalHost string, extern
 		"http://127.0.0.1/callback",
 		"http://[::1]/callback",
 	}
-	return reconcileOAuthClient(client, redirectURIs, true, false)
+	return reconcileOAuthClient(client, redirectURIs, false, false)
 }
 
 func reconcileOAuthClient(client *oauthv1.OAuthClient, redirectURIs []string, respondWithChallenges bool, setSecret bool) error {
