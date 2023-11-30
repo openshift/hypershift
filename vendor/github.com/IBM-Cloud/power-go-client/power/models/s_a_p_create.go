@@ -51,7 +51,7 @@ type SAPCreate struct {
 	// The name of the SSH Key to provide to the server for authenticating
 	SSHKeyName string `json:"sshKeyName,omitempty"`
 
-	// The storage affinity data; ignored if storagePool is provided; Only valid when you deploy one of the IBM supplied stock images. Storage tyep and pool for a custom image (an imported image or an image that is created from a PVMInstance capture) defaults to the storage type and pool the image was created in
+	// The storage affinity data; ignored if storagePool is provided; Only valid when you deploy one of the IBM supplied stock images. Storage type and pool for a custom image (an imported image or an image that is created from a PVMInstance capture) defaults to the storage type and pool the image was created in
 	StorageAffinity *StorageAffinity `json:"storageAffinity,omitempty"`
 
 	// Storage Pool for server deployment; if provided then storageAffinity and storageType will be ignored; Only valid when you deploy one of the IBM supplied stock images. Storage type and pool for a custom image (an imported image or an image that is created from a PVMInstance capture) defaults to the storage type and pool the image was created in
