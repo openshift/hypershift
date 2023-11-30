@@ -1,7 +1,52 @@
+# Configuration options for the dependabot.yml file
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 version: 2
 updates:
-  - package-ecosystem: "gomod" # See documentation for possible values
-    directory: "/" # Location of package manifests
-    vendor: true
+  # Main Go module
+  - package-ecosystem: "gomod"
+    directory: "/"
     schedule:
       interval: "weekly"
+      day: "friday"
+      time: "01:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "NO-JIRA"
+    labels:
+      - "area/ci-tooling"
+      - "ok-to-test"
+    groups:
+      github-dependencies:
+        patterns:
+          - "github*"
+      golang-dependencies:
+        patterns:
+          - "golang*"
+      k8s-dependencies:
+        patterns:
+          - "k8s.*"
+          - "sigs.k8s*"
+      misc-dependencies:
+        patterns:
+          - "*"
+  # Hack/tools Go module
+  - package-ecosystem: "gomod"
+    directory: "/hack/tools"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "01:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "NO-JIRA"
+    labels:
+      - "area/ci-tooling"
+      - "ok-to-test"
+    groups:
+      k8s-dependencies:
+        patterns:
+          - "k8s.*"
+          - "sigs.k8s*"
+      misc-dependencies:
+        patterns:
+          - "*"
