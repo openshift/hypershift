@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
-
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
@@ -21,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	hcpmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -139,6 +138,7 @@ func TestHasBeenAvailable(t *testing.T) {
 			r := &HostedClusterReconciler{
 				Client:                        client,
 				Clock:                         clock,
+				CertRotationScale:             24 * time.Hour,
 				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 				ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
 				now:                           func() metav1.Time { return reconcilerNow },
@@ -809,7 +809,8 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 
 			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cluster).Build()
 			r := &HostedClusterReconciler{
-				Client: client,
+				Client:            client,
+				CertRotationScale: 24 * time.Hour,
 			}
 
 			if err := r.reconcileAWSResourceTags(context.Background(), cluster); err != nil {
@@ -1047,8 +1048,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 
 	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
 	r := &HostedClusterReconciler{
-		Client: client,
-		Clock:  clock.RealClock{},
+		Client:            client,
+		Clock:             clock.RealClock{},
+		CertRotationScale: 24 * time.Hour,
 		ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(
 			capabilities.CapabilityInfrastructure,
 			capabilities.CapabilityIngress,
@@ -1353,6 +1355,7 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &HostedClusterReconciler{
+				CertRotationScale:             24 * time.Hour,
 				Client:                        fake.NewClientBuilder().WithObjects(tc.other...).Build(),
 				ManagementClusterCapabilities: tc.managementClusterCapabilities,
 			}
@@ -1772,7 +1775,8 @@ func TestValidateReleaseImage(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			r := &HostedClusterReconciler{
-				Client: fake.NewClientBuilder().WithObjects(tc.other...).Build(),
+				CertRotationScale: 24 * time.Hour,
+				Client:            fake.NewClientBuilder().WithObjects(tc.other...).Build(),
 				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
 					ImageVersion: map[string]string{
 						"image-4.7.0":  "4.7.0",
@@ -1906,7 +1910,8 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			r := &HostedClusterReconciler{
-				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.hc).Build(),
+				CertRotationScale: 24 * time.Hour,
+				Client:            fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.hc).Build(),
 			}
 			g := NewGomegaWithT(t)
 			previousInfraID := test.hc.Spec.InfraID
@@ -2110,7 +2115,8 @@ func TestIsUpgradeable(t *testing.T) {
 			},
 		}
 		r := &HostedClusterReconciler{
-			Client: fake.NewClientBuilder().WithObjects(objs...).Build(),
+			CertRotationScale: 24 * time.Hour,
+			Client:            fake.NewClientBuilder().WithObjects(objs...).Build(),
 			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
 				ImageVersion: map[string]string{
 					"image-4.12":   "4.12.0",
@@ -2253,7 +2259,8 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).WithStatusSubresource(hcluster).Build()
 			r := &HostedClusterReconciler{
-				Client: c,
+				CertRotationScale: 24 * time.Hour,
+				Client:            c,
 				overwriteReconcile: func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
 					return ctrl.Result{}, tc.reconcileResult
 				},
@@ -2456,7 +2463,8 @@ func TestIsProgressing(t *testing.T) {
 			},
 		}
 		r := &HostedClusterReconciler{
-			Client: fake.NewClientBuilder().WithObjects(objs...).Build(),
+			CertRotationScale: 24 * time.Hour,
+			Client:            fake.NewClientBuilder().WithObjects(objs...).Build(),
 			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
 				ImageVersion: map[string]string{
 					"release-1.2": "1.2.0",
@@ -3303,8 +3311,9 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 				Build()}
 
 			r := &HostedClusterReconciler{
-				Client: client,
-				Clock:  clock.RealClock{},
+				Client:            client,
+				Clock:             clock.RealClock{},
+				CertRotationScale: 24 * time.Hour,
 				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(
 					capabilities.CapabilityInfrastructure,
 					capabilities.CapabilityIngress,

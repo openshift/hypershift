@@ -8,11 +8,22 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	authenticationv1 "k8s.io/api/authentication/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -34,7 +45,52 @@ func TestCreateCluster(t *testing.T) {
 		clusterOpts.NodePoolReplicas = 1
 	}
 
-	e2eutil.NewHypershiftTest(t, ctx, nil).
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		t.Run("break-glass-credentials", func(t *testing.T) {
+			// Sanity check the cluster by waiting for the nodes to report ready
+			t.Logf("Waiting for guest client to become available")
+			_ = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+
+			hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+			// Grab the break-glass client certificate
+			clientCertificate := pkimanifests.CustomerSystemAdminClientCertSecret(hostedControlPlaneNamespace)
+			if err := wait.PollUntilContextTimeout(ctx, 1*time.Second, 3*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+				getErr := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(clientCertificate), clientCertificate)
+				if errors.IsNotFound(getErr) {
+					return false, nil
+				}
+				return getErr == nil, err
+			}); err != nil {
+				t.Fatalf("client cert didn't become available: %v", err)
+			}
+
+			guestKubeConfigSecretData, err := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+			g.Expect(err).NotTo(HaveOccurred(), "couldn't get kubeconfig")
+
+			guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+			g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+
+			// amend the existing kubeconfig to use our client certificate
+			certConfig := rest.AnonymousClientConfig(guestConfig)
+			certConfig.TLSClientConfig.CertData = clientCertificate.Data["tls.crt"]
+			certConfig.TLSClientConfig.KeyData = clientCertificate.Data["tls.key"]
+
+			client, err := kubernetes.NewForConfig(certConfig)
+			if err != nil {
+				t.Fatalf("could not create client: %v", err)
+			}
+
+			response, err := client.AuthenticationV1().SelfSubjectReviews().Create(context.Background(), &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+			if err != nil {
+				t.Fatalf("could not send SSAR: %v", err)
+			}
+
+			if !sets.New[string](response.Status.UserInfo.Groups...).Has("system:masters") || !strings.HasPrefix(response.Status.UserInfo.Username, "customer-break-glass-") {
+				t.Fatalf("did not get correct SSAR response: %#v", response)
+			}
+		})
+	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 

@@ -4,10 +4,11 @@ WORKDIR /hypershift
 
 COPY . .
 
-RUN make control-plane-operator
+RUN make control-plane-operator control-plane-pki-operator
 
 FROM registry.ci.openshift.org/ocp/4.15:base
 COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plane-operator
+COPY --from=builder /hypershift/bin/control-plane-pki-operator /usr/bin/control-plane-pki-operator
 
 ENTRYPOINT /usr/bin/control-plane-operator
 

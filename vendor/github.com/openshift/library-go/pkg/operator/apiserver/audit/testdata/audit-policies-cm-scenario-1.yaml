@@ -72,7 +72,7 @@ data:
     - level: Metadata
       resources:
       - group: "route.openshift.io"
-        resources: ["routes"]
+        resources: ["routes", "routes/status"]
       - resources: ["secrets"]
     - level: Metadata
       resources:
@@ -121,7 +121,7 @@ data:
     - level: Metadata
       resources:
       - group: "route.openshift.io"
-        resources: ["routes"]
+        resources: ["routes", "routes/status"]
       - resources: ["secrets"]
     - level: Metadata
       resources:

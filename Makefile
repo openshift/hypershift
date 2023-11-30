@@ -43,7 +43,7 @@ all: build e2e
 
 pre-commit: all verify test
 
-build: hypershift-operator control-plane-operator hypershift product-cli
+build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli
 
 .PHONY: update
 update: deps api api-docs app-sre-saas-template clients
@@ -74,6 +74,10 @@ hypershift-operator:
 .PHONY: control-plane-operator
 control-plane-operator:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/control-plane-operator ./control-plane-operator
+
+.PHONY: control-plane-pki-operator
+control-plane-pki-operator:
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/control-plane-pki-operator ./control-plane-pki-operator
 
 .PHONY: hypershift
 hypershift:

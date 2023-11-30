@@ -20,6 +20,7 @@ COPY --from=builder \
   /opt/app-root/src/bin/hcp \
   /opt/app-root/src/bin/hypershift-operator \
   /opt/app-root/src/bin/control-plane-operator \
+  /opt/app-root/src/bin/control-plane-pki-operator \
   /usr/bin/
 
 RUN cd /usr/bin && \

@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -307,6 +308,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
 
+	certRotationScale, err := pkiconfig.GetCertRotationScale()
+	if err != nil {
+		return fmt.Errorf("could not load cert rotation scale: %w", err)
+	}
+
 	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
 		Client:                        mgr.GetClient(),
 		ManagementClusterCapabilities: mgmtClusterCaps,
@@ -320,6 +326,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		SREConfigHash:                 sreConfigHash,
 		KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
 		MonitoringDashboards:          monitoringDashboards,
+		CertRotationScale:             certRotationScale,
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)

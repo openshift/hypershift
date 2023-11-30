@@ -21,6 +21,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	p *pki.PKIParams,
 	createOrUpdate upsert.CreateOrUpdateFN,
 	rootCASecret *corev1.Secret,
+	additionalClientCAs ...*corev1.ConfigMap,
 ) error {
 	reconcileSigner := func(s *corev1.Secret, reconciler signerReconciler) (*corev1.Secret, error) {
 		applyFunc := func() error {
@@ -204,6 +205,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return pki.ReconcileTotalClientCA(
 			totalClientCA,
 			p.OwnerRef,
+			additionalClientCAs,
 			totalClientCABundle...,
 		)
 	}); err != nil {

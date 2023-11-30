@@ -2,12 +2,12 @@
 - level: Metadata
   resources:
   - group: "route.openshift.io"
-    resources: ["routes"]
-  - resources: ["secrets"]
+    resources: ["routes", "routes/status"]
+  - resources: ["secrets", "serviceaccounts/token"]
   - group: "authentication.k8s.io"
     resources: ["tokenreviews", "tokenrequests"]
   - group: "oauth.openshift.io"
-    resources: ["oauthclients"]
+    resources: ["oauthclients", "tokenreviews"]
 # log request and response payloads for all write requests
 - level: RequestResponse
   verbs:
