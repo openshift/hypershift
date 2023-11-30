@@ -31,7 +31,7 @@ data:
         burst: 0
         contentType: ""
         qps: 0
-      kubeConfig: /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+      kubeConfig: ""
     leaderElection:
       leaseDuration: 0s
       name: openshift-route-controllers
