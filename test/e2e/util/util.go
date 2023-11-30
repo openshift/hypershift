@@ -1677,3 +1677,28 @@ func EnsureAllReqServingPodsLandOnReqServingNodes(t *testing.T, ctx context.Cont
 		g.Expect(node.Labels).To(HaveKeyWithValue(hyperv1.RequestServingComponentLabel, "true"))
 	}
 }
+
+func EnsureNoHCPPodsLandOnDefaultNode(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	g := NewWithT(t)
+
+	namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	var podList corev1.PodList
+	if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
+		t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
+	}
+
+	var HCPNodes corev1.NodeList
+	if err := client.List(ctx, &HCPNodes, crclient.MatchingLabels{"hypershift.openshift.io/control-plane": "true"}); err != nil {
+		t.Fatalf("failed to list nodes with \"hypershift.openshift.io/control-plane\": \"true\" label: %v", err)
+	}
+
+	var hcpNodeNames []string
+	for _, node := range HCPNodes.Items {
+		hcpNodeNames = append(hcpNodeNames, node.Name)
+	}
+
+	for _, pod := range podList.Items {
+		g.Expect(pod.Spec.NodeSelector).To(HaveKeyWithValue("hypershift.openshift.io/control-plane", "true"))
+		g.Expect(hcpNodeNames).To(ContainElement(pod.Spec.NodeName))
+	}
+}

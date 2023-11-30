@@ -46,7 +46,7 @@ func TestNodePool(t *testing.T) {
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		hostedClusterClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-		// Get the newly created defautlt NodePool
+		// Get the newly created default NodePool
 		nodepools := &hyperv1.NodePoolList{}
 		if err := mgtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
 			t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
