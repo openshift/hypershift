@@ -1452,11 +1452,17 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool) {
 	expectedConditions := conditions.ExpectedHCConditions()
 
-	if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
-		// AWS KMS is not configured
-		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionUnknown
-	} else {
-		expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionTrue
+	switch hostedCluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
+			// AWS KMS is not configured
+			expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionUnknown
+		}
+	case hyperv1.AzurePlatform:
+		if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.Azure == nil {
+			// Azure KMS is not configured
+			expectedConditions[hyperv1.ValidAzureKMSConfig] = metav1.ConditionUnknown
+		}
 	}
 
 	kasExternalHostname := support.ServiceExternalDNSHostnameByHC(hostedCluster, hyperv1.APIServer)

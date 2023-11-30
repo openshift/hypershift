@@ -27,6 +27,7 @@ type KMSSpecApplyConfiguration struct {
 	Provider *v1beta1.KMSProvider               `json:"provider,omitempty"`
 	IBMCloud *IBMCloudKMSSpecApplyConfiguration `json:"ibmcloud,omitempty"`
 	AWS      *AWSKMSSpecApplyConfiguration      `json:"aws,omitempty"`
+	Azure    *AzureKMSSpecApplyConfiguration    `json:"azure,omitempty"`
 }
 
 // KMSSpecApplyConfiguration constructs an declarative configuration of the KMSSpec type for use with
@@ -56,5 +57,13 @@ func (b *KMSSpecApplyConfiguration) WithIBMCloud(value *IBMCloudKMSSpecApplyConf
 // If called multiple times, the AWS field is set to the value of the last call.
 func (b *KMSSpecApplyConfiguration) WithAWS(value *AWSKMSSpecApplyConfiguration) *KMSSpecApplyConfiguration {
 	b.AWS = value
+	return b
+}
+
+// WithAzure sets the Azure field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Azure field is set to the value of the last call.
+func (b *KMSSpecApplyConfiguration) WithAzure(value *AzureKMSSpecApplyConfiguration) *KMSSpecApplyConfiguration {
+	b.Azure = value
 	return b
 }

@@ -181,48 +181,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	params.LivenessProbes = config.LivenessProbes{
 		kasContainerMain().Name: baseLivenessProbeConfig,
-		kasContainerIBMCloudKMS().Name: corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(ibmCloudKMSHealthPort)),
-					Path:   "healthz/liveness",
-				},
-			},
-			InitialDelaySeconds: 120,
-			PeriodSeconds:       300,
-			TimeoutSeconds:      160,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
-		},
-		kasContainerAWSKMSBackup().Name: corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(backupAWSKMSHealthPort),
-					Path:   "healthz",
-				},
-			},
-			InitialDelaySeconds: 120,
-			PeriodSeconds:       300,
-			TimeoutSeconds:      160,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
-		},
-		kasContainerAWSKMSActive().Name: corev1.Probe{
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(activeAWSKMSHealthPort),
-					Path:   "healthz",
-				},
-			},
-			InitialDelaySeconds: 120,
-			PeriodSeconds:       300,
-			TimeoutSeconds:      160,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
-		},
 		kasContainerPortieries().Name: corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -293,24 +251,6 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("2Gi"),
 				corev1.ResourceCPU:    resource.MustParse("350m"),
-			},
-		},
-		kasContainerAWSKMSActive().Name: {
-			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("10Mi"),
-				corev1.ResourceCPU:    resource.MustParse("10m"),
-			},
-		},
-		kasContainerAWSKMSBackup().Name: {
-			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("10Mi"),
-				corev1.ResourceCPU:    resource.MustParse("10m"),
-			},
-		},
-		kasContainerIBMCloudKMS().Name: {
-			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("10Mi"),
-				corev1.ResourceCPU:    resource.MustParse("10m"),
 			},
 		},
 		kasContainerPortieries().Name: {

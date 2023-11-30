@@ -2119,6 +2119,71 @@ toleration of full disruption of the component.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureKMSSpec { #hypershift.openshift.io/v1beta1.AzureKMSSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KMSSpec">KMSSpec</a>)
+</p>
+<p>
+<p>AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>location</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Location contains the Azure region</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyVaultName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>KeyVaultName is the name of the keyvault. Must match criteria specified at <a href="https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name">https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name</a>
+Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
+<code>az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn &lt;YOUR APPLICATION CLIENT ID&gt;</code></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>KeyName is the name of the keyvault key used for encrypt/decrypt</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyVersion</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>KeyVersion contains the version of the key to use</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AzureNodePoolPlatform { #hypershift.openshift.io/v1beta1.AzureNodePoolPlatform }
 <p>
 (<em>Appears on:</em>
@@ -2949,6 +3014,10 @@ in the cloud credentials is healthy. E.g. for AWS the idp ARN is referenced in t
 </tr><tr><td><p>&#34;ValidAWSKMSConfig&#34;</p></td>
 <td><p>ValidAWSKMSConfig indicates whether the AWS KMS role and encryption key are valid and operational
 A failure here indicates that the role or the key are invalid, or the role doesn&rsquo;t have access to use the key.</p>
+</td>
+</tr><tr><td><p>&#34;ValidAzureKMSConfig&#34;</p></td>
+<td><p>ValidAzureKMSConfig indicates whether the given KMS input for the Azure platform is valid and operational
+A failure here indicates that the input is invalid, or permissions are missing to use the encryption key.</p>
 </td>
 </tr><tr><td><p>&#34;ValidConfiguration&#34;</p></td>
 <td><p>ValidHostedClusterConfiguration signals if the hostedCluster input is valid and
@@ -4749,6 +4818,8 @@ the update is at least 70% of desired nodes.</p>
 </thead>
 <tbody><tr><td><p>&#34;AWS&#34;</p></td>
 <td></td>
+</tr><tr><td><p>&#34;Azure&#34;</p></td>
+<td></td>
 </tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
 <td></td>
 </tr></tbody>
@@ -4808,6 +4879,20 @@ AWSKMSSpec
 <td>
 <em>(Optional)</em>
 <p>AWS defines metadata about the configuration of the AWS KMS Secret Encryption provider</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azure</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">
+AzureKMSSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Azure defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault</p>
 </td>
 </tr>
 </tbody>

@@ -136,6 +136,10 @@ const (
 	// A failure here indicates that the role or the key are invalid, or the role doesn't have access to use the key.
 	ValidAWSKMSConfig ConditionType = "ValidAWSKMSConfig"
 
+	// ValidAzureKMSConfig indicates whether the given KMS input for the Azure platform is valid and operational
+	// A failure here indicates that the input is invalid, or permissions are missing to use the encryption key.
+	ValidAzureKMSConfig ConditionType = "ValidAzureKMSConfig"
+
 	// AWSDefaultSecurityGroupCreated indicates whether the default security group
 	// for AWS workers has been created.
 	// A failure here indicates that NodePools without a security group will be
@@ -187,6 +191,9 @@ const (
 	InvalidIdentityProvider               = "InvalidIdentityProvider"
 
 	InvalidIAMRoleReason = "InvalidIAMRole"
+
+	InvalidAzureCredentialsReason = "InvalidAzureCredentials"
+	AzureErrorReason              = "AzureError"
 
 	ExternalDNSHostNotReachableReason = "ExternalDNSHostNotReachable"
 

@@ -37583,6 +37583,36 @@ objects:
                           - auth
                           - region
                           type: object
+                        azure:
+                          description: Azure defines metadata about the configuration
+                            of the Azure KMS Secret Encryption provider using Azure
+                            key vault
+                          properties:
+                            keyName:
+                              description: KeyName is the name of the keyvault key
+                                used for encrypt/decrypt
+                              type: string
+                            keyVaultName:
+                              description: 'KeyVaultName is the name of the keyvault.
+                                Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                Your Microsoft Entra application used to create the
+                                cluster must be authorized to access this keyvault,
+                                e.g using the AzureCLI: `az keyvault set-policy -n
+                                $KEYVAULT_NAME --key-permissions decrypt encrypt --spn
+                                <YOUR APPLICATION CLIENT ID>`'
+                              type: string
+                            keyVersion:
+                              description: KeyVersion contains the version of the
+                                key to use
+                              type: string
+                            location:
+                              description: Location contains the Azure region
+                              type: string
+                          required:
+                          - keyName
+                          - keyVaultName
+                          - keyVersion
+                          type: object
                         ibmcloud:
                           description: IBMCloud defines metadata for the IBM Cloud
                             KMS encryption strategy
@@ -37677,6 +37707,7 @@ objects:
                           enum:
                           - IBMCloud
                           - AWS
+                          - Azure
                           type: string
                       required:
                       - provider
@@ -41570,6 +41601,36 @@ objects:
                           - auth
                           - region
                           type: object
+                        azure:
+                          description: Azure defines metadata about the configuration
+                            of the Azure KMS Secret Encryption provider using Azure
+                            key vault
+                          properties:
+                            keyName:
+                              description: KeyName is the name of the keyvault key
+                                used for encrypt/decrypt
+                              type: string
+                            keyVaultName:
+                              description: 'KeyVaultName is the name of the keyvault.
+                                Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                Your Microsoft Entra application used to create the
+                                cluster must be authorized to access this keyvault,
+                                e.g using the AzureCLI: `az keyvault set-policy -n
+                                $KEYVAULT_NAME --key-permissions decrypt encrypt --spn
+                                <YOUR APPLICATION CLIENT ID>`'
+                              type: string
+                            keyVersion:
+                              description: KeyVersion contains the version of the
+                                key to use
+                              type: string
+                            location:
+                              description: Location contains the Azure region
+                              type: string
+                          required:
+                          - keyName
+                          - keyVaultName
+                          - keyVersion
+                          type: object
                         ibmcloud:
                           description: IBMCloud defines metadata for the IBM Cloud
                             KMS encryption strategy
@@ -41664,6 +41725,7 @@ objects:
                           enum:
                           - IBMCloud
                           - AWS
+                          - Azure
                           type: string
                       required:
                       - provider
@@ -45685,6 +45747,36 @@ objects:
                           - auth
                           - region
                           type: object
+                        azure:
+                          description: Azure defines metadata about the configuration
+                            of the Azure KMS Secret Encryption provider using Azure
+                            key vault
+                          properties:
+                            keyName:
+                              description: KeyName is the name of the keyvault key
+                                used for encrypt/decrypt
+                              type: string
+                            keyVaultName:
+                              description: 'KeyVaultName is the name of the keyvault.
+                                Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                Your Microsoft Entra application used to create the
+                                cluster must be authorized to access this keyvault,
+                                e.g using the AzureCLI: `az keyvault set-policy -n
+                                $KEYVAULT_NAME --key-permissions decrypt encrypt --spn
+                                <YOUR APPLICATION CLIENT ID>`'
+                              type: string
+                            keyVersion:
+                              description: KeyVersion contains the version of the
+                                key to use
+                              type: string
+                            location:
+                              description: Location contains the Azure region
+                              type: string
+                          required:
+                          - keyName
+                          - keyVaultName
+                          - keyVersion
+                          type: object
                         ibmcloud:
                           description: IBMCloud defines metadata for the IBM Cloud
                             KMS encryption strategy
@@ -45779,6 +45871,7 @@ objects:
                           enum:
                           - IBMCloud
                           - AWS
+                          - Azure
                           type: string
                       required:
                       - provider
@@ -49649,6 +49742,36 @@ objects:
                           - auth
                           - region
                           type: object
+                        azure:
+                          description: Azure defines metadata about the configuration
+                            of the Azure KMS Secret Encryption provider using Azure
+                            key vault
+                          properties:
+                            keyName:
+                              description: KeyName is the name of the keyvault key
+                                used for encrypt/decrypt
+                              type: string
+                            keyVaultName:
+                              description: 'KeyVaultName is the name of the keyvault.
+                                Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                Your Microsoft Entra application used to create the
+                                cluster must be authorized to access this keyvault,
+                                e.g using the AzureCLI: `az keyvault set-policy -n
+                                $KEYVAULT_NAME --key-permissions decrypt encrypt --spn
+                                <YOUR APPLICATION CLIENT ID>`'
+                              type: string
+                            keyVersion:
+                              description: KeyVersion contains the version of the
+                                key to use
+                              type: string
+                            location:
+                              description: Location contains the Azure region
+                              type: string
+                          required:
+                          - keyName
+                          - keyVaultName
+                          - keyVersion
+                          type: object
                         ibmcloud:
                           description: IBMCloud defines metadata for the IBM Cloud
                             KMS encryption strategy
@@ -49743,6 +49866,7 @@ objects:
                           enum:
                           - IBMCloud
                           - AWS
+                          - Azure
                           type: string
                       required:
                       - provider

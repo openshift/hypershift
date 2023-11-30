@@ -3,8 +3,10 @@ package azure
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	apifixtures "github.com/openshift/hypershift/api/fixtures"
@@ -30,6 +32,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	opts.AzurePlatform.DiskSizeGB = 120
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
+	cmd.Flags().StringVar(&opts.AzurePlatform.EncryptionKeyID, "encryption-key-id", opts.AzurePlatform.EncryptionKeyID, "etcd encryption key identifier in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>")
 	cmd.Flags().StringVar(&opts.AzurePlatform.InstanceType, "instance-type", opts.AzurePlatform.InstanceType, "The instance type to use for nodes")
 	cmd.Flags().Int32Var(&opts.AzurePlatform.DiskSizeGB, "root-disk-size", opts.AzurePlatform.DiskSizeGB, "The size of the root disk for machines in the NodePool (minimum 16)")
 	cmd.Flags().StringSliceVar(&opts.AzurePlatform.AvailabilityZones, "availablity-zones", opts.AzurePlatform.AvailabilityZones, "The availablity zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
@@ -115,6 +118,24 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		SecurityGroupName: infra.SecurityGroupName,
 		DiskSizeGB:        opts.AzurePlatform.DiskSizeGB,
 		AvailabilityZones: opts.AzurePlatform.AvailabilityZones,
+	}
+
+	if opts.AzurePlatform.EncryptionKeyID != "" {
+		parsedKeyId, err := url.Parse(opts.AzurePlatform.EncryptionKeyID)
+		if err != nil {
+			return fmt.Errorf("invalid encryption key identifier: %v", err)
+		}
+
+		key := strings.Split(strings.TrimPrefix(parsedKeyId.Path, "/keys/"), "/")
+		if len(key) != 2 {
+			return fmt.Errorf("invalid encryption key identifier, couldn't retrieve key name and version: %v", err)
+		}
+
+		exampleOptions.Azure.EncryptionKey = &apifixtures.AzureEncryptionKey{
+			KeyVaultName: strings.Split(parsedKeyId.Hostname(), ".")[0],
+			KeyName:      key[0],
+			KeyVersion:   key[1],
+		}
 	}
 
 	azureCredsRaw, err := os.ReadFile(opts.AzurePlatform.CredentialsFile)

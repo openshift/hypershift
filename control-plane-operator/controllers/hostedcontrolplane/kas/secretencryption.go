@@ -1,8 +1,6 @@
 package kas
 
 import (
-	"fmt"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	hcpconfig "github.com/openshift/hypershift/support/config"
@@ -22,30 +20,12 @@ func ReconcileKMSEncryptionConfig(config *corev1.Secret,
 	if config.Data == nil {
 		config.Data = map[string][]byte{}
 	}
-	var encryptionConfigurationBytes []byte
-	switch encryptionSpec.Provider {
-	case hyperv1.IBMCloud:
-		// build encryption config map
-		if encryptionSpec.IBMCloud == nil {
-			return fmt.Errorf("ibmcloud kms key metadata not specified")
-		}
-		ibmCloudKMSEncryptionConfigBytes, err := generateIBMCloudKMSEncryptionConfig(encryptionSpec.IBMCloud.KeyList)
-		if err != nil {
-			return err
-		}
-		encryptionConfigurationBytes = ibmCloudKMSEncryptionConfigBytes
-	case hyperv1.AWS:
-		if encryptionSpec.AWS == nil {
-			return fmt.Errorf("aws kms key metadata not specified")
-		}
-		awsKMSEncryptionConfigBytes, err := generateAWSKMSEncryptionConfig(encryptionSpec.AWS.ActiveKey, encryptionSpec.AWS.BackupKey)
-		if err != nil {
-			return err
-		}
-		encryptionConfigurationBytes = awsKMSEncryptionConfigBytes
-	default:
-		return fmt.Errorf("unrecognized kms provider %s", encryptionSpec.Provider)
+
+	encryptionConfigurationBytes, err := generateKMSEncryptionConfig(encryptionSpec)
+	if err != nil {
+		return err
 	}
+
 	config.Data[secretEncryptionConfigurationKey] = encryptionConfigurationBytes
 	return nil
 }
