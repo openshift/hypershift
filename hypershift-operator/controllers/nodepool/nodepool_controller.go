@@ -592,8 +592,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, err
 	}
 
+	pullSecretContent, err := r.getPullSecretBytes(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Check if config needs to be updated.
-	targetConfigHash := supportutil.HashStruct(config + pullSecretName)
+	targetConfigHash := supportutil.HashStruct(config + pullSecretName + string(pullSecretContent))
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
