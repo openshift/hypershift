@@ -27,7 +27,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -1128,24 +1127,26 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	// infer whether the feature set includes the STS flag or not. This means that there will be a period of
 	// time where the tenant clusters have STS enabled but HCP doesn't know, but that's fine. We can re-vendor
 	// the repo at a later date and clarify the logic here at that point.
-	var shouldReconcileCCO bool
-	featureGatesConfigured := hostedControlPlane.Spec.Configuration != nil && hostedControlPlane.Spec.Configuration.FeatureGate != nil
-	if featureGatesConfigured {
-		featureGates := hostedControlPlane.Spec.Configuration.FeatureGate
-		featureSet := configv1.FeatureSets[featureGates.FeatureSet]
-		if featuregates.NewFeatureGate(featureSet.Enabled, featureSet.Disabled).Enabled(configv1.FeatureGateAWSSecurityTokenService) {
-			shouldReconcileCCO = true
-		} else if featureSet := featureGates.CustomNoUpgrade; featureSet != nil {
-			shouldReconcileCCO = featuregates.NewFeatureGate(featureSet.Enabled, featureSet.Disabled).Enabled(configv1.FeatureGateAWSSecurityTokenService)
-		}
+
+	// disable FG check
+	//var shouldReconcileCCO bool
+	//featureGatesConfigured := hostedControlPlane.Spec.Configuration != nil && hostedControlPlane.Spec.Configuration.FeatureGate != nil
+	//if featureGatesConfigured {
+	//	featureGates := hostedControlPlane.Spec.Configuration.FeatureGate
+	//	featureSet := configv1.FeatureSets[featureGates.FeatureSet]
+	//	if featuregates.NewFeatureGate(featureSet.Enabled, featureSet.Disabled).Enabled(configv1.FeatureGateAWSSecurityTokenService) {
+	//		shouldReconcileCCO = true
+	//	} else if featureSet := featureGates.CustomNoUpgrade; featureSet != nil {
+	//		shouldReconcileCCO = featuregates.NewFeatureGate(featureSet.Enabled, featureSet.Disabled).Enabled(configv1.FeatureGateAWSSecurityTokenService)
+	//	}
+	//}
+	//if shouldReconcileCCO {
+	// Reconcile cloud credential operator
+	r.Log.Info("Reconciling Cloud Credential Operator")
+	if err := r.reconcileCloudCredentialOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
 	}
-	if shouldReconcileCCO {
-		// Reconcile cloud credential operator
-		r.Log.Info("Reconciling Cloud Credential Operator")
-		if err := r.reconcileCloudCredentialOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
-		}
-	}
+	//}
 
 	// Reconcile OLM
 	r.Log.Info("Reconciling OLM")
