@@ -123,11 +123,11 @@ type VolumeSnapshotSource struct {
 // VolumeSnapshotStatus and VolumeSnapshotContentStatus. Fields in VolumeSnapshotStatus
 // are updated based on fields in VolumeSnapshotContentStatus. They are eventual
 // consistency. These fields are duplicate in both objects due to the following reasons:
-// - Fields in VolumeSnapshotContentStatus can be used for filtering when importing a
-//   volumesnapshot.
-// - VolumsnapshotStatus is used by end users because they cannot see VolumeSnapshotContent.
-// - CSI snapshotter sidecar is light weight as it only watches VolumeSnapshotContent
-//   object, not VolumeSnapshot object.
+//   - Fields in VolumeSnapshotContentStatus can be used for filtering when importing a
+//     volumesnapshot.
+//   - VolumsnapshotStatus is used by end users because they cannot see VolumeSnapshotContent.
+//   - CSI snapshotter sidecar is light weight as it only watches VolumeSnapshotContent
+//     object, not VolumeSnapshot object.
 type VolumeSnapshotStatus struct {
 	// boundVolumeSnapshotContentName is the name of the VolumeSnapshotContent
 	// object to which this VolumeSnapshot object intends to bind to.
@@ -183,6 +183,11 @@ type VolumeSnapshotStatus struct {
 	// snapshot creation. Upon success, this error field will be cleared.
 	// +optional
 	Error *VolumeSnapshotError `json:"error,omitempty" protobuf:"bytes,5,opt,name=error,casttype=VolumeSnapshotError"`
+
+	// VolumeGroupSnapshotName is the name of the VolumeGroupSnapshot of which this
+	// VolumeSnapshot is a part of.
+	// +optional
+	VolumeGroupSnapshotName *string `json:"volumeGroupSnapshotName,omitempty" protobuf:"bytes,6,opt,name=volumeGroupSnapshotName"`
 }
 
 // +genclient
@@ -361,11 +366,11 @@ type VolumeSnapshotContentSource struct {
 // VolumeSnapshotStatus and VolumeSnapshotContentStatus. Fields in VolumeSnapshotStatus
 // are updated based on fields in VolumeSnapshotContentStatus. They are eventual
 // consistency. These fields are duplicate in both objects due to the following reasons:
-// - Fields in VolumeSnapshotContentStatus can be used for filtering when importing a
-//   volumesnapshot.
-// - VolumsnapshotStatus is used by end users because they cannot see VolumeSnapshotContent.
-// - CSI snapshotter sidecar is light weight as it only watches VolumeSnapshotContent
-//   object, not VolumeSnapshot object.
+//   - Fields in VolumeSnapshotContentStatus can be used for filtering when importing a
+//     volumesnapshot.
+//   - VolumsnapshotStatus is used by end users because they cannot see VolumeSnapshotContent.
+//   - CSI snapshotter sidecar is light weight as it only watches VolumeSnapshotContent
+//     object, not VolumeSnapshot object.
 type VolumeSnapshotContentStatus struct {
 	// snapshotHandle is the CSI "snapshot_id" of a snapshot on the underlying storage system.
 	// If not specified, it indicates that dynamic snapshot creation has either failed
@@ -415,6 +420,11 @@ type VolumeSnapshotContentStatus struct {
 	// Upon success after retry, this error field will be cleared.
 	// +optional
 	Error *VolumeSnapshotError `json:"error,omitempty" protobuf:"bytes,5,opt,name=error,casttype=VolumeSnapshotError"`
+
+	// VolumeGroupSnapshotContentName is the name of the VolumeGroupSnapshotContent of
+	// which this VolumeSnapshotContent is a part of.
+	// +optional
+	VolumeGroupSnapshotContentName *string `json:"volumeGroupSnapshotContentName,omitempty" protobuf:"bytes,6,opt,name=volumeGroupSnapshotContentName"`
 }
 
 // DeletionPolicy describes a policy for end-of-life maintenance of volume snapshot contents
