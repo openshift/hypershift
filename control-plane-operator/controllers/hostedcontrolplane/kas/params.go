@@ -34,6 +34,7 @@ type KubeAPIServerImages struct {
 
 type KubeAPIServerParams struct {
 	APIServer           *configv1.APIServerSpec      `json:"apiServer"`
+	Authentication      *configv1.AuthenticationSpec `json:"authentication"`
 	FeatureGate         *configv1.FeatureGateSpec    `json:"featureGate"`
 	Network             *configv1.NetworkSpec        `json:"network"`
 	Image               *configv1.ImageSpec          `json:"image"`
@@ -55,6 +56,7 @@ type KubeAPIServerParams struct {
 	KASPodPort           int32                        `json:"apiServerPort"`
 	ExternalOAuthAddress string                       `json:"externalOAuthAddress"`
 	ExternalOAuthPort    int32                        `json:"externalOAuthPort"`
+	OIDCCAConfigMap      *corev1.LocalObjectReference `json:"oidcCAConfigMap"`
 	EtcdURL              string                       `json:"etcdAddress"`
 	KubeConfigRef        *hyperv1.KubeconfigSecretRef `json:"kubeConfigRef"`
 	AuditWebhookRef      *corev1.LocalObjectReference `json:"auditWebhookRef"`
@@ -108,6 +110,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	if hcp.Spec.Configuration != nil {
 		params.APIServer = hcp.Spec.Configuration.APIServer
+		params.Authentication = hcp.Spec.Configuration.Authentication
 		params.FeatureGate = hcp.Spec.Configuration.FeatureGate
 		params.Network = hcp.Spec.Configuration.Network
 		params.Image = hcp.Spec.Configuration.Image
@@ -434,6 +437,7 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		ConsolePublicURL:             p.ConsolePublicURL,
 		DisableProfiling:             p.DisableProfiling,
 		APIServerSTSDirectives:       p.APIServerSTSDirectives,
+		Authentication:               p.Authentication,
 	}
 }
 
@@ -459,6 +463,7 @@ type KubeAPIServerConfigParams struct {
 	ConsolePublicURL             string
 	DisableProfiling             bool
 	APIServerSTSDirectives       string
+	Authentication               *configv1.AuthenticationSpec
 }
 
 func (p *KubeAPIServerParams) TLSSecurityProfile() *configv1.TLSSecurityProfile {

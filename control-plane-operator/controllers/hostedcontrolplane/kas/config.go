@@ -24,6 +24,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -143,8 +144,6 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("audit-log-maxsize", "100")
 	args.Set("audit-log-path", cpath(kasVolumeWorkLogs().Name, AuditLogFile))
 	args.Set("audit-policy-file", cpath(kasVolumeAuditConfig().Name, AuditPolicyConfigMapKey))
-	args.Set("authentication-token-webhook-config-file", cpath(kasVolumeAuthTokenWebhookConfig().Name, KubeconfigKey))
-	args.Set("authentication-token-webhook-version", "v1")
 	args.Set("authorization-mode", "Scope", "SystemMasters", "RBAC", "Node")
 	args.Set("client-ca-file", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey))
 	if p.CloudProviderConfigRef != nil {
@@ -167,6 +166,30 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 		// This is enabled by default in 4.11 but currently disabled by OCP. It is planned to get re-enabled but currently
 		// breaks conformance testing, ref: https://github.com/openshift/cluster-kube-apiserver-operator/pull/1262
 		args.Set("disable-admission-plugins", "PodSecurity")
+	}
+	if util.ConfigOAuthEnabled(p.Authentication) {
+		args.Set("authentication-token-webhook-config-file", cpath(kasVolumeAuthTokenWebhookConfig().Name, KubeconfigKey))
+		args.Set("authentication-token-webhook-version", "v1")
+	} else {
+		if len(p.Authentication.OIDCProviders) > 0 {
+			provider := p.Authentication.OIDCProviders[0]
+			args.Set("oidc-issuer-url", provider.Issuer.URL)
+			args.Set("oidc-client-id", string(provider.Issuer.Audiences[0]))
+			args.Set("oidc-username-claim", provider.ClaimMappings.Username.Claim)
+			if provider.ClaimMappings.Username.PrefixPolicy == configv1.Prefix &&
+				provider.ClaimMappings.Username.Prefix != nil {
+				args.Set("oidc-username-prefix", provider.ClaimMappings.Username.Prefix.PrefixString)
+			}
+			args.Set("oidc-groups-claim", provider.ClaimMappings.Groups.Claim)
+			args.Set("oidc-groups-prefix", provider.ClaimMappings.Groups.Prefix)
+			for _, cvr := range provider.ClaimValidationRules {
+				// TODO: currently can only support a single required claim because of how kubeAPIServerArgs dedups config fields
+				// In order to specify multiple required claims, the flag must be used multiple times
+				// https://kubernetes.io/docs/reference/access-authn-authz/authentication/#configuring-the-api-server
+				args.Set("oidc-required-claim", fmt.Sprintf("%s=%s", cvr.RequiredClaim.Claim, cvr.RequiredClaim.RequiredValue))
+			}
+			args.Set("oidc-ca-file", oidcCAFile(provider.Issuer.CertificateAuthority.Name))
+		}
 	}
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")
@@ -217,6 +240,14 @@ func cloudProviderConfig(cloudProviderConfigName, cloudProvider string) string {
 	if cloudProviderConfigName != "" {
 		cfgDir := cloudProviderConfigVolumeMount.Path(kasContainerMain().Name, kasVolumeCloudConfig().Name)
 		return path.Join(cfgDir, cloud.ProviderConfigKey(cloudProvider))
+	}
+	return ""
+}
+
+func oidcCAFile(oidcCAName string) string {
+	if oidcCAName != "" {
+		caDir := oidcCAVolumeMount.Path(kasContainerMain().Name, kasVolumeOIDCCA().Name)
+		return path.Join(caDir, "ca.crt")
 	}
 	return ""
 }
