@@ -38,7 +38,7 @@ func NewCreateCommands() *cobra.Command {
 		NodeSelector:                   nil,
 		Log:                            log.Log,
 		NodeDrainTimeout:               0,
-		NodeUpgradeType:                v1beta1.UpgradeTypeReplace,
+		NodeUpgradeType:                "",
 		Arch:                           "amd64",
 		OLMCatalogPlacement:            v1beta1.ManagementOLMCatalogPlacement,
 	}
