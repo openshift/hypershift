@@ -76,7 +76,7 @@ func openShiftAPIServerLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, serviceServingCA *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, serviceServingCA *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, socks5ProxyImage string, etcdURL string, availabilityProberImage string, internalOAuthDisable bool) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main OAS container
@@ -127,7 +127,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 		AutomountServiceAccountToken: pointer.Bool(false),
 		InitContainers:               []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))},
 		Containers: []corev1.Container{
-			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort)),
+			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort, internalOAuthDisable)),
 			{
 				Name:            "audit-logs",
 				Image:           image,
@@ -246,7 +246,7 @@ func buildOASSocks5ProxyContainer(socks5ProxyImage string) func(c *corev1.Contai
 	}
 }
 
-func buildOASContainerMain(image string, etcdHostname string, port int32) func(c *corev1.Container) {
+func buildOASContainerMain(image string, etcdHostname string, port int32, internalOAuthDisable bool) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		cpath := func(volume, file string) string {
 			return path.Join(volumeMounts.Path(c.Name, volume), file)
@@ -263,6 +263,9 @@ func buildOASContainerMain(image string, etcdHostname string, port int32) func(c
 			"--requestheader-group-headers=X-Remote-Group",
 			"--requestheader-extra-headers-prefix=X-Remote-Extra-",
 			fmt.Sprintf("--client-ca-file=%s", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey)),
+		}
+		if internalOAuthDisable {
+			c.Args = append(c.Args, "--internal-oauth-disable=true")
 		}
 		// this list can be gathered from firewall docs: https://docs.openshift.com/container-platform/4.12/installing/install_config/configuring-firewall.html
 		defaultSampleImportContainerRegistries := "quay.io,cdn03.quay.io,cdn02.quay.io,cdn01.quay.io,cdn.quay.io,registry.redhat.io,registry.access.redhat.com,access.redhat.com,sso.redhat.com"
