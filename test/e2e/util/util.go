@@ -371,7 +371,7 @@ func WaitForNodePoolVersion(t *testing.T, ctx context.Context, client crclient.C
 	start := time.Now()
 
 	t.Logf("Waiting for nodepool %s/%s to report version %s (currently %s)", nodePool.Namespace, nodePool.Name, version, nodePool.Status.Version)
-	// TestInPlaceUpgradeNodePool must update nodes in the pool squentially and it takes about 5m per node
+	// TestInPlaceUpgradeNodePool must update nodes in the pool sequentially and it takes about 5m per node
 	// TestInPlaceUpgradeNodePool currently uses a single nodepool with 2 replicas so 20m should be enough time (2x expected)
 	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 20*time.Minute, func(ctx context.Context) (done bool, err error) {
 		latest := nodePool.DeepCopy()
@@ -1628,7 +1628,7 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 				continue
 			}
 
-			//aws-ebs-csi-driver-operator tolerations are set through CSO and are different from the ones in the DC
+			// aws-ebs-csi-driver-operator tolerations are set through CSO and are different from the ones in the DC
 			if strings.Contains(pod.Name, awsEbsCsiDriverOperatorPodSubstring) {
 				g.Expect(pod.Spec.Tolerations).To(ContainElements(awsEbsCsiDriverOperatorTolerations))
 			} else {

@@ -134,11 +134,11 @@ func nodePoolScaleDownToZero(ctx context.Context, client crclient.Client, nodePo
 // The situation should not happen in CI but it's useful in local testing.
 func nodePoolRecreate(t *testing.T, ctx context.Context, nodePool *hyperv1.NodePool, mgmtClient crclient.Client) error {
 	g := NewWithT(t)
-	existantNodePool := &hyperv1.NodePool{}
-	err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), existantNodePool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed getting existant nodepool")
-	err = mgmtClient.Delete(ctx, existantNodePool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to Delete the existant NodePool")
+	existingNodePool := &hyperv1.NodePool{}
+	err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), existingNodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed getting existent nodepool")
+	err = mgmtClient.Delete(ctx, existingNodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to Delete the existent NodePool")
 	t.Logf("waiting for NodePools to be recreated")
 	err = wait.PollImmediateWithContext(ctx, 10*time.Second, 15*time.Minute, func(ctx context.Context) (bool, error) {
 		if ctx.Err() != nil {

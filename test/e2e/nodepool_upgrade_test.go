@@ -6,7 +6,6 @@ package e2e
 import (
 	"context"
 	"fmt"
-
 	"io"
 	"os"
 	"testing"
@@ -97,14 +96,13 @@ func NewNodePoolUpgradeTest(ctx context.Context, mgmtClient crclient.Client, hos
 }
 
 func (ru *NodePoolUpgradeTest) Setup(t *testing.T) {
-
-	// TODO re-enable this for KubeVirt platform once the new KubeVirt rhcos
-	// image is available in a previous release. Right now we can't test updating
-	// because the KubeVirt rhcos variant is only in latest.
-	// Tracking this here, https://issues.redhat.com/browse/CNV-29003
-	if globalOpts.Platform == hyperv1.KubevirtPlatform {
-		t.Skip("test can't run for the platform KubeVirt")
+	// Currently, only ReplaceUpgrade strategy test passes for the kubevirt platform.
+	// TODO: Enable InPlace upgrade test as well once the issue is identified and fixed.
+	if globalOpts.Platform == hyperv1.KubevirtPlatform && t.Name() == "TestNodePool/Main/TestNodePoolInPlaceUpgrade" {
+		t.Skip("InPlace Upgrade test currently can't run for the KubeVirt platform")
 	}
+
+	t.Log("starting test NodePoolUpgradeTest")
 }
 
 func (ru *NodePoolUpgradeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
