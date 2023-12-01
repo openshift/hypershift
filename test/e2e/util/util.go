@@ -276,6 +276,9 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	var rolloutIncompleteReason, prevRolloutIncompleteReason string
 	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+
+		t.Logf("prevRolloutIncompleteReason: %s", prevRolloutIncompleteReason)
+
 		latest := hostedCluster.DeepCopy()
 		err = client.Get(ctx, crclient.ObjectKeyFromObject(latest), latest)
 		if err != nil {
@@ -308,9 +311,11 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 			rolloutIncompleteReason = ""
 		}
 
-		if rolloutIncompleteReason != "" && rolloutIncompleteReason != prevRolloutIncompleteReason {
-			prevRolloutIncompleteReason = rolloutIncompleteReason
-			t.Logf("Waiting for hostedcluster rollout. Image: %s: %s", image, rolloutIncompleteReason)
+		if rolloutIncompleteReason != "" {
+			if rolloutIncompleteReason != prevRolloutIncompleteReason {
+				prevRolloutIncompleteReason = rolloutIncompleteReason
+				t.Logf("Waiting for hostedcluster rollout. Image: %s: %s", image, rolloutIncompleteReason)
+			}
 			return false, nil
 		}
 		return true, nil
@@ -1500,16 +1505,15 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 
 			prevStatus, _ := previousConditions[hyperv1.ConditionType(condition.Type)]
 
-			if condition.Status != prevStatus {
-				if condition.Status != expectedStatus {
+			if condition.Status != expectedStatus {
+				if condition.Status != prevStatus {
 					t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
 					previousConditions[hyperv1.ConditionType(condition.Type)] = condition.Status
-					return false, nil
 				}
-				t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
+				return false, nil
 			}
+			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
 		}
-
 		return true, nil
 	})
 	duration := time.Since(start).Round(time.Second)
