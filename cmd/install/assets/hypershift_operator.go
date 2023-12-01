@@ -919,6 +919,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 					"update",
 					"patch",
 					"delete",
+					"deletecollection",
 				},
 			},
 			{
@@ -1008,6 +1009,33 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources:     []string{"validatingwebhookconfigurations"},
 				Verbs:         []string{"delete"},
 				ResourceNames: []string{hyperv1.GroupVersion.Group},
+			},
+			{
+				APIGroups: []string{"certificates.k8s.io"},
+				Resources: []string{"certificatesigningrequests"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"certificates.k8s.io"},
+				Resources: []string{"certificatesigningrequests/status"},
+				Verbs:     []string{"patch"},
+			},
+			{
+				APIGroups: []string{"certificates.k8s.io"},
+				Resources: []string{"certificatesigningrequests/approval"},
+				Verbs:     []string{"update"},
+			},
+			{
+				APIGroups: []string{"certificates.k8s.io"},
+				Resources: []string{"signers"},
+				Verbs:     []string{"approve"},
+				// we can't specify a signer domain with ResourceNames (or even *): https://github.com/kubernetes/kubernetes/issues/122154
+			},
+			{
+				APIGroups: []string{"certificates.k8s.io"},
+				Resources: []string{"signers"},
+				Verbs:     []string{"sign"},
+				// we can't specify a signer domain with ResourceNames (or even *): https://github.com/kubernetes/kubernetes/issues/122154
 			},
 		},
 	}

@@ -62,3 +62,11 @@ rules:
   - delete
   - update
   - patch
+- apiGroups:
+  - hypershift.openshift.io
+  resources:
+  - certificatesigningrequestapprovals
+  verbs:
+  - get
+  - list
+  - watch
