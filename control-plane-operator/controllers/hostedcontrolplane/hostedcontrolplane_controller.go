@@ -1128,25 +1128,13 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	// time where the tenant clusters have STS enabled but HCP doesn't know, but that's fine. We can re-vendor
 	// the repo at a later date and clarify the logic here at that point.
 
-	// disable FG check
-	//var shouldReconcileCCO bool
-	//featureGatesConfigured := hostedControlPlane.Spec.Configuration != nil && hostedControlPlane.Spec.Configuration.FeatureGate != nil
-	//if featureGatesConfigured {
-	//	featureGates := hostedControlPlane.Spec.Configuration.FeatureGate
-	//	featureSet := configv1.FeatureSets[featureGates.FeatureSet]
-	//	if featuregates.NewFeatureGate(featureSet.Enabled, featureSet.Disabled).Enabled(configv1.FeatureGateAWSSecurityTokenService) {
-	//		shouldReconcileCCO = true
-	//	} else if featureSet := featureGates.CustomNoUpgrade; featureSet != nil {
-	//		shouldReconcileCCO = featuregates.NewFeatureGate(featureSet.Enabled, featureSet.Disabled).Enabled(configv1.FeatureGateAWSSecurityTokenService)
-	//	}
-	//}
-	//if shouldReconcileCCO {
 	// Reconcile cloud credential operator
-	r.Log.Info("Reconciling Cloud Credential Operator")
-	if err := r.reconcileCloudCredentialOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
+	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
+		r.Log.Info("Reconciling Cloud Credential Operator")
+		if err := r.reconcileCloudCredentialOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
+		}
 	}
-	//}
 
 	// Reconcile OLM
 	r.Log.Info("Reconciling OLM")
