@@ -24,6 +24,7 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -340,6 +341,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capikubevirt.KubevirtMachine{},
 		&capikubevirt.KubevirtMachineTemplate{},
 		&capikubevirt.KubevirtCluster{},
+		&policyv1.PodDisruptionBudget{},
 		&routev1.Route{},
 		&imagev1.ImageStream{},
 		&networkingv1.NetworkPolicy{},
