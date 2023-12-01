@@ -27,6 +27,10 @@ type FakeHypershiftV1alpha1 struct {
 	*testing.Fake
 }
 
+func (c *FakeHypershiftV1alpha1) CertificateSigningRequestApprovals(namespace string) v1alpha1.CertificateSigningRequestApprovalInterface {
+	return &FakeCertificateSigningRequestApprovals{c, namespace}
+}
+
 func (c *FakeHypershiftV1alpha1) HostedClusters(namespace string) v1alpha1.HostedClusterInterface {
 	return &FakeHostedClusters{c, namespace}
 }
