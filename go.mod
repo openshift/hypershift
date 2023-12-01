@@ -9,7 +9,7 @@ require (
 	github.com/Azure/go-autorest/autorest v0.11.29
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.12
 	github.com/IBM-Cloud/power-go-client v1.3.0
-	github.com/IBM/go-sdk-core/v5 v5.14.1
+	github.com/IBM/go-sdk-core/v5 v5.15.0
 	github.com/IBM/ibm-cos-sdk-go v1.9.4
 	github.com/IBM/networking-go-sdk v0.29.0
 	github.com/IBM/platform-services-go-sdk v0.48.0
@@ -48,7 +48,7 @@ require (
 	github.com/spf13/cobra v1.8.0
 	github.com/tombuildsstuff/giovanni v0.18.0
 	github.com/vincent-petithory/dataurl v1.0.0
-	go.uber.org/zap v1.25.0
+	go.uber.org/zap v1.26.0
 	golang.org/x/crypto v0.15.0
 	golang.org/x/net v0.18.0
 	golang.org/x/sync v0.5.0
@@ -56,13 +56,13 @@ require (
 	gopkg.in/ini.v1 v1.67.0
 	gopkg.in/square/go-jose.v2 v2.6.0
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.28.3
+	k8s.io/api v0.28.4
 	k8s.io/apiextensions-apiserver v0.28.3
-	k8s.io/apimachinery v0.28.3
-	k8s.io/apiserver v0.28.3
+	k8s.io/apimachinery v0.28.4
+	k8s.io/apiserver v0.28.4
 	k8s.io/cli-runtime v0.28.3
-	k8s.io/client-go v0.28.3
-	k8s.io/component-base v0.28.3
+	k8s.io/client-go v0.28.4
+	k8s.io/component-base v0.28.4
 	k8s.io/klog/v2 v2.110.1
 	k8s.io/kube-aggregator v0.28.3
 	k8s.io/kube-scheduler v0.28.3
@@ -102,7 +102,6 @@ require (
 	github.com/NYTimes/gziphandler v1.1.1 // indirect
 	github.com/antlr/antlr4/runtime/Go/antlr/v4 v4.0.0-20230305170008-8188dc5388df // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
-	github.com/benbjohnson/clock v1.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
@@ -219,7 +218,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/kms v0.28.3 // indirect
+	k8s.io/kms v0.28.4 // indirect
 	k8s.io/kube-openapi v0.0.0-20231113174909-778a5567bc1e // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk v0.2.1 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.1.2 // indirect

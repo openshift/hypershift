@@ -161,7 +161,7 @@ github.com/IBM-Cloud/power-go-client/power/client/service_instances
 github.com/IBM-Cloud/power-go-client/power/client/storage_types
 github.com/IBM-Cloud/power-go-client/power/client/swagger_spec
 github.com/IBM-Cloud/power-go-client/power/models
-# github.com/IBM/go-sdk-core/v5 v5.14.1
+# github.com/IBM/go-sdk-core/v5 v5.15.0
 ## explicit; go 1.19
 github.com/IBM/go-sdk-core/v5/core
 # github.com/IBM/ibm-cos-sdk-go v1.9.4
@@ -307,9 +307,6 @@ github.com/aws/aws-sdk-go/service/sso
 github.com/aws/aws-sdk-go/service/sso/ssoiface
 github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/service/sts/stsiface
-# github.com/benbjohnson/clock v1.3.0
-## explicit; go 1.15
-github.com/benbjohnson/clock
 # github.com/beorn7/perks v1.0.1
 ## explicit; go 1.11
 github.com/beorn7/perks/quantile
@@ -987,7 +984,7 @@ go.starlark.net/syntax
 # go.uber.org/multierr v1.11.0
 ## explicit; go 1.19
 go.uber.org/multierr
-# go.uber.org/zap v1.25.0
+# go.uber.org/zap v1.26.0
 ## explicit; go 1.19
 go.uber.org/zap
 go.uber.org/zap/buffer
@@ -996,6 +993,7 @@ go.uber.org/zap/internal/bufferpool
 go.uber.org/zap/internal/color
 go.uber.org/zap/internal/exit
 go.uber.org/zap/internal/pool
+go.uber.org/zap/internal/stacktrace
 go.uber.org/zap/internal/ztest
 go.uber.org/zap/zapcore
 go.uber.org/zap/zapgrpc
@@ -1237,7 +1235,7 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
-# k8s.io/api v0.28.3
+# k8s.io/api v0.28.4
 ## explicit; go 1.20
 k8s.io/api/admission/v1
 k8s.io/api/admission/v1beta1
@@ -1305,7 +1303,7 @@ k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1beta1
-# k8s.io/apimachinery v0.28.3
+# k8s.io/apimachinery v0.28.4
 ## explicit; go 1.20
 k8s.io/apimachinery/pkg/api/apitesting
 k8s.io/apimachinery/pkg/api/apitesting/fuzzer
@@ -1372,7 +1370,7 @@ k8s.io/apimachinery/pkg/watch
 k8s.io/apimachinery/third_party/forked/golang/json
 k8s.io/apimachinery/third_party/forked/golang/netutil
 k8s.io/apimachinery/third_party/forked/golang/reflect
-# k8s.io/apiserver v0.28.3
+# k8s.io/apiserver v0.28.4
 ## explicit; go 1.20
 k8s.io/apiserver/pkg/admission
 k8s.io/apiserver/pkg/admission/cel
@@ -1523,7 +1521,7 @@ k8s.io/cli-runtime/pkg/genericclioptions
 k8s.io/cli-runtime/pkg/genericiooptions
 k8s.io/cli-runtime/pkg/printers
 k8s.io/cli-runtime/pkg/resource
-# k8s.io/client-go v0.28.3 => k8s.io/client-go v0.28.3
+# k8s.io/client-go v0.28.4 => k8s.io/client-go v0.28.3
 ## explicit; go 1.20
 k8s.io/client-go/applyconfigurations/admissionregistration/v1
 k8s.io/client-go/applyconfigurations/admissionregistration/v1alpha1
@@ -1798,7 +1796,7 @@ k8s.io/client-go/util/jsonpath
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
-# k8s.io/component-base v0.28.3
+# k8s.io/component-base v0.28.4
 ## explicit; go 1.20
 k8s.io/component-base/cli
 k8s.io/component-base/cli/flag
@@ -1832,7 +1830,7 @@ k8s.io/klog/v2/internal/dbg
 k8s.io/klog/v2/internal/serialize
 k8s.io/klog/v2/internal/severity
 k8s.io/klog/v2/internal/sloghandler
-# k8s.io/kms v0.28.3
+# k8s.io/kms v0.28.4
 ## explicit; go 1.20
 k8s.io/kms/apis/v1beta1
 k8s.io/kms/apis/v2
