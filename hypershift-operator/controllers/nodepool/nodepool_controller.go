@@ -21,7 +21,6 @@ import (
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
 
-	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -29,6 +28,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"

@@ -6,9 +6,9 @@ import (
 	"os"
 	"runtime"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/pkg/version"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"

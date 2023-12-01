@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"

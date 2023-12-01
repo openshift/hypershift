@@ -12,8 +12,8 @@ import (
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
-	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/pkg/version"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"

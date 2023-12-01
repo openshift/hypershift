@@ -8,8 +8,8 @@ import (
 	"net/http"
 
 	"github.com/google/go-cmp/cmp"
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperapi "github.com/openshift/hypershift/support/api"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"

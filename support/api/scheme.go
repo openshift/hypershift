@@ -3,6 +3,7 @@ package api
 import (
 	"os"
 
+	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	oauthv1 "github.com/openshift/api/oauth/v1"
@@ -12,6 +13,7 @@ import (
 	osinv1 "github.com/openshift/api/osin/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	hyperv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -28,7 +30,10 @@ import (
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
@@ -43,6 +48,10 @@ var (
 	YamlSerializer = json.NewSerializerWithOptions(
 		json.DefaultMetaFactory, Scheme, Scheme,
 		json.SerializerOptions{Yaml: true, Pretty: true, Strict: true},
+	)
+	JsonSerializer = json.NewSerializerWithOptions(
+		json.DefaultMetaFactory, Scheme, Scheme,
+		json.SerializerOptions{Yaml: false, Pretty: true, Strict: true},
 	)
 	TolerantYAMLSerializer = json.NewSerializerWithOptions(
 		json.DefaultMetaFactory, Scheme, Scheme,
@@ -77,7 +86,12 @@ func init() {
 	} else {
 		prometheusoperatorv1.AddToScheme(Scheme)
 	}
+	snapshotv1.AddToScheme(Scheme)
 	mcfgv1.AddToScheme(Scheme)
 	cdiv1beta1.AddToScheme(Scheme)
 	kubevirtv1.AddToScheme(Scheme)
+	capikubevirt.AddToScheme(Scheme)
+	capiazure.AddToScheme(Scheme)
+	agentv1.AddToScheme(Scheme)
+	capipowervs.AddToScheme(Scheme)
 }
