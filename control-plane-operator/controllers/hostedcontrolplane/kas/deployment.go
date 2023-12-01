@@ -916,6 +916,17 @@ func buildKonnectivityServerContainer(image string, serverCount int) func(c *cor
 			strconv.Itoa(serverCount),
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.Lifecycle = &corev1.Lifecycle{
+			PreStop: &corev1.LifecycleHandler{
+				Exec: &corev1.ExecAction{
+					Command: []string{
+						"/bin/sh",
+						"-c",
+						"sleep 70",
+					},
+				},
+			},
+		}
 	}
 }
 
