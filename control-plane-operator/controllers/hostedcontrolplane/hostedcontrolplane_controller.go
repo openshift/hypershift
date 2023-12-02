@@ -1129,12 +1129,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	// the repo at a later date and clarify the logic here at that point.
 
 	// Reconcile cloud credential operator
-	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
-		r.Log.Info("Reconciling Cloud Credential Operator")
-		if err := r.reconcileCloudCredentialOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
-		}
-	}
+	//if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
+	//	r.Log.Info("Reconciling Cloud Credential Operator")
+	//	if err := r.reconcileCloudCredentialOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+	//		return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
+	//	}
+	//}
 
 	// Reconcile OLM
 	r.Log.Info("Reconciling OLM")
