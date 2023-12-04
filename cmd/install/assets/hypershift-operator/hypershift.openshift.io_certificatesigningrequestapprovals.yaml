@@ -8,8 +8,6 @@ metadata:
 spec:
   group: hypershift.openshift.io
   names:
-    categories:
-    - cluster-api
     kind: CertificateSigningRequestApproval
     listKind: CertificateSigningRequestApprovalList
     plural: certificatesigningrequestapprovals
@@ -19,7 +17,7 @@ spec:
     singular: certificatesigningrequestapproval
   scope: Namespaced
   versions:
-  - name: v1alpha1
+  - name: v1beta1
     schema:
       openAPIV3Schema:
         description: CertificateSigningRequestApproval defines the desired state of

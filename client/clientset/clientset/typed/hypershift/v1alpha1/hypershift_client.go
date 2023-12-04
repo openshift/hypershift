@@ -27,7 +27,6 @@ import (
 
 type HypershiftV1alpha1Interface interface {
 	RESTClient() rest.Interface
-	CertificateSigningRequestApprovalsGetter
 	HostedClustersGetter
 	NodePoolsGetter
 }
@@ -35,10 +34,6 @@ type HypershiftV1alpha1Interface interface {
 // HypershiftV1alpha1Client is used to interact with features provided by the hypershift.openshift.io group.
 type HypershiftV1alpha1Client struct {
 	restClient rest.Interface
-}
-
-func (c *HypershiftV1alpha1Client) CertificateSigningRequestApprovals(namespace string) CertificateSigningRequestApprovalInterface {
-	return newCertificateSigningRequestApprovals(c, namespace)
 }
 
 func (c *HypershiftV1alpha1Client) HostedClusters(namespace string) HostedClusterInterface {

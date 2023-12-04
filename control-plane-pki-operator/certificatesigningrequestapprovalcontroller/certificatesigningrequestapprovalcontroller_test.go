@@ -12,7 +12,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
 func TestCertificateSigningRequestApprovalController_processCertificateSigningRequest(t *testing.T) {
@@ -22,7 +22,7 @@ func TestCertificateSigningRequestApprovalController_processCertificateSigningRe
 		name        string
 		signerName  string
 		getCSR      func(name string) (*certificatesv1.CertificateSigningRequest, error)
-		getCSRA     func(namespace, name string) (*hypershiftv1alpha1.CertificateSigningRequestApproval, error)
+		getCSRA     func(namespace, name string) (*hypershiftv1beta1.CertificateSigningRequestApproval, error)
 		expectedCSR *certificatesv1.CertificateSigningRequest
 		expectedErr bool
 	}{
@@ -34,8 +34,8 @@ func TestCertificateSigningRequestApprovalController_processCertificateSigningRe
 			getCSR: func(name string) (*certificatesv1.CertificateSigningRequest, error) {
 				return nil, apierrors.NewNotFound(certificatesv1.SchemeGroupVersion.WithResource("certificatesigningrequests").GroupResource(), name)
 			},
-			getCSRA: func(namespace, name string) (*hypershiftv1alpha1.CertificateSigningRequestApproval, error) {
-				return nil, apierrors.NewNotFound(hypershiftv1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name)
+			getCSRA: func(namespace, name string) (*hypershiftv1beta1.CertificateSigningRequestApproval, error) {
+				return nil, apierrors.NewNotFound(hypershiftv1beta1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name)
 			},
 			expectedErr: false, // nothing to be done
 		},
@@ -57,11 +57,11 @@ func TestCertificateSigningRequestApprovalController_processCertificateSigningRe
 					},
 				}, nil
 			},
-			getCSRA: func(namespace, name string) (*hypershiftv1alpha1.CertificateSigningRequestApproval, error) {
+			getCSRA: func(namespace, name string) (*hypershiftv1beta1.CertificateSigningRequestApproval, error) {
 				if namespace != "test-ns" || name != "test-csr" {
-					return nil, apierrors.NewNotFound(hypershiftv1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name)
+					return nil, apierrors.NewNotFound(hypershiftv1beta1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name)
 				}
-				return &hypershiftv1alpha1.CertificateSigningRequestApproval{
+				return &hypershiftv1beta1.CertificateSigningRequestApproval{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: name,
 					},
@@ -91,11 +91,11 @@ func TestCertificateSigningRequestApprovalController_processCertificateSigningRe
 					},
 				}, nil
 			},
-			getCSRA: func(namespace, name string) (*hypershiftv1alpha1.CertificateSigningRequestApproval, error) {
+			getCSRA: func(namespace, name string) (*hypershiftv1beta1.CertificateSigningRequestApproval, error) {
 				if namespace != "test-ns" || name != "test-csr" {
-					return nil, apierrors.NewNotFound(hypershiftv1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name)
+					return nil, apierrors.NewNotFound(hypershiftv1beta1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name)
 				}
-				return &hypershiftv1alpha1.CertificateSigningRequestApproval{
+				return &hypershiftv1beta1.CertificateSigningRequestApproval{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: name,
 					},
@@ -125,11 +125,11 @@ func TestCertificateSigningRequestApprovalController_processCertificateSigningRe
 					},
 				}, nil
 			},
-			getCSRA: func(namespace, name string) (*hypershiftv1alpha1.CertificateSigningRequestApproval, error) {
+			getCSRA: func(namespace, name string) (*hypershiftv1beta1.CertificateSigningRequestApproval, error) {
 				if namespace != "test-ns" || name != "test-csr" {
-					return nil, apierrors.NewNotFound(hypershiftv1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name)
+					return nil, apierrors.NewNotFound(hypershiftv1beta1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name)
 				}
-				return &hypershiftv1alpha1.CertificateSigningRequestApproval{
+				return &hypershiftv1beta1.CertificateSigningRequestApproval{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: name,
 					},
@@ -154,8 +154,8 @@ func TestCertificateSigningRequestApprovalController_processCertificateSigningRe
 					},
 				}, nil
 			},
-			getCSRA: func(namespace, name string) (*hypershiftv1alpha1.CertificateSigningRequestApproval, error) {
-				return nil, apierrors.NewNotFound(hypershiftv1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name)
+			getCSRA: func(namespace, name string) (*hypershiftv1beta1.CertificateSigningRequestApproval, error) {
+				return nil, apierrors.NewNotFound(hypershiftv1beta1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name)
 			},
 		},
 		{
@@ -176,8 +176,8 @@ func TestCertificateSigningRequestApprovalController_processCertificateSigningRe
 					},
 				}, nil
 			},
-			getCSRA: func(namespace, name string) (*hypershiftv1alpha1.CertificateSigningRequestApproval, error) {
-				return nil, apierrors.NewForbidden(hypershiftv1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name, errors.New("oops"))
+			getCSRA: func(namespace, name string) (*hypershiftv1beta1.CertificateSigningRequestApproval, error) {
+				return nil, apierrors.NewForbidden(hypershiftv1beta1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name, errors.New("oops"))
 			},
 			expectedErr: true,
 		},
@@ -199,11 +199,11 @@ func TestCertificateSigningRequestApprovalController_processCertificateSigningRe
 					},
 				}, nil
 			},
-			getCSRA: func(namespace, name string) (*hypershiftv1alpha1.CertificateSigningRequestApproval, error) {
+			getCSRA: func(namespace, name string) (*hypershiftv1beta1.CertificateSigningRequestApproval, error) {
 				if namespace != "test-ns" || name != "test-csr" {
-					return nil, apierrors.NewNotFound(hypershiftv1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name)
+					return nil, apierrors.NewNotFound(hypershiftv1beta1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals").GroupResource(), name)
 				}
-				return &hypershiftv1alpha1.CertificateSigningRequestApproval{
+				return &hypershiftv1beta1.CertificateSigningRequestApproval{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: name,
 					},

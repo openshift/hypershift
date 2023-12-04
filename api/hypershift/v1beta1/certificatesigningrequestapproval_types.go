@@ -1,4 +1,4 @@
-package v1alpha1
+package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -10,8 +10,9 @@ func init() {
 }
 
 // +genclient
-// +kubebuilder:resource:path=certificatesigningrequestapprovals,shortName=csra;csras,scope=Namespaced,categories=cluster-api
+// +kubebuilder:resource:path=certificatesigningrequestapprovals,shortName=csra;csras,scope=Namespaced
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 
 // CertificateSigningRequestApproval defines the desired state of CertificateSigningRequestApproval
 type CertificateSigningRequestApproval struct {

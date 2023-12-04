@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftinformers "github.com/openshift/hypershift/client/informers/externalversions"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
@@ -26,7 +25,7 @@ type CertificateSigningRequestApprovalController struct {
 
 	namespace, signerName string
 	getCSR                func(name string) (*certificatesv1.CertificateSigningRequest, error)
-	getCSRA               func(namespace, name string) (*hypershiftv1alpha1.CertificateSigningRequestApproval, error)
+	getCSRA               func(namespace, name string) (*hypershiftv1beta1.CertificateSigningRequestApproval, error)
 }
 
 func NewCertificateSigningRequestApprovalController(
@@ -44,12 +43,12 @@ func NewCertificateSigningRequestApprovalController(
 		getCSR: func(name string) (*certificatesv1.CertificateSigningRequest, error) {
 			return kubeInformersForNamespaces.InformersFor(corev1.NamespaceAll).Certificates().V1().CertificateSigningRequests().Lister().Get(name)
 		},
-		getCSRA: func(namespace, name string) (*hypershiftv1alpha1.CertificateSigningRequestApproval, error) {
-			return hypershiftInformers.Hypershift().V1alpha1().CertificateSigningRequestApprovals().Lister().CertificateSigningRequestApprovals(namespace).Get(name)
+		getCSRA: func(namespace, name string) (*hypershiftv1beta1.CertificateSigningRequestApproval, error) {
+			return hypershiftInformers.Hypershift().V1beta1().CertificateSigningRequestApprovals().Lister().CertificateSigningRequestApprovals(namespace).Get(name)
 		},
 	}
 	csrInformer := kubeInformersForNamespaces.InformersFor(corev1.NamespaceAll).Certificates().V1().CertificateSigningRequests().Informer()
-	csraInformer := hypershiftInformers.Hypershift().V1alpha1().CertificateSigningRequestApprovals().Informer()
+	csraInformer := hypershiftInformers.Hypershift().V1beta1().CertificateSigningRequestApprovals().Informer()
 
 	return factory.New().
 		WithInformersQueueKeysFunc(enqueueCertificateSigningRequest, csrInformer).

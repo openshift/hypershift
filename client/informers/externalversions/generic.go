@@ -53,14 +53,14 @@ func (f *genericInformer) Lister() cache.GenericLister {
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
 	// Group=hypershift.openshift.io, Version=v1alpha1
-	case v1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1alpha1().CertificateSigningRequestApprovals().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("hostedclusters"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1alpha1().HostedClusters().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("nodepools"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1alpha1().NodePools().Informer()}, nil
 
 		// Group=hypershift.openshift.io, Version=v1beta1
+	case v1beta1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().CertificateSigningRequestApprovals().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("hostedclusters"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().HostedClusters().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("hostedcontrolplanes"):

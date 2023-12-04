@@ -70,8 +70,6 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1alpha1.AzureNodePoolPlatformApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
 		return &hypershiftv1alpha1.AzurePlatformSpecApplyConfiguration{}
-	case v1alpha1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval"):
-		return &hypershiftv1alpha1.CertificateSigningRequestApprovalApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ClusterAutoscaling"):
 		return &hypershiftv1alpha1.ClusterAutoscalingApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("ClusterConfiguration"):
@@ -244,6 +242,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
 		return &hypershiftv1beta1.AzurePlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval"):
+		return &hypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterAutoscaling"):
 		return &hypershiftv1beta1.ClusterAutoscalingApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterConfiguration"):
