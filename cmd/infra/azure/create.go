@@ -4,22 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"os"
 	"strings"
 	"time"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
-	"github.com/Azure/go-autorest/autorest"
 
 	"github.com/go-logr/logr"
 	"github.com/hashicorp/go-uuid"
@@ -30,6 +18,18 @@ import (
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/yaml"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
+	"github.com/Azure/go-autorest/autorest"
 
 	// This is the same client as terraform uses: https://github.com/hashicorp/terraform-provider-azurerm/blob/b0c897055329438be6a3a159f6ffac4e1ce958f2/internal/services/storage/blobs.go#L17
 	// The one from the azure sdk is cumbersome to use (distinct authorizer, requires to manually construct the full target url), and only allows upload from url for files that are not bigger than 256M.
@@ -44,14 +44,15 @@ const (
 )
 
 type CreateInfraOptions struct {
-	Name            string
-	BaseDomain      string
-	Location        string
-	InfraID         string
-	CredentialsFile string
-	Credentials     *apifixtures.AzureCreds
-	OutputFile      string
-	RHCOSImage      string
+	Name              string
+	BaseDomain        string
+	Location          string
+	InfraID           string
+	CredentialsFile   string
+	Credentials       *apifixtures.AzureCreds
+	OutputFile        string
+	RHCOSImage        string
+	ResourceGroupName string
 }
 
 type CreateInfraOutput struct {
@@ -85,6 +86,7 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Location, "location", opts.Location, "Location where cluster infra should be created")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
+	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
 
 	_ = cmd.MarkFlagRequired("infra-id")
@@ -104,20 +106,6 @@ func NewCreateCommand() *cobra.Command {
 	return cmd
 }
 
-func readCredentials(path string) (*apifixtures.AzureCreds, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read from %s: %w", path, err)
-	}
-
-	var result apifixtures.AzureCreds
-	if err := yaml.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal credentials: %w", err)
-	}
-
-	return &result, nil
-}
-
 func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInfraOutput, error) {
 	result := CreateInfraOutput{
 		Location:   o.Location,
@@ -132,12 +120,12 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	// Create an Azure resource group
-	resourceGroupID, resourceGroupName, err := createResourceGroup(ctx, azureCreds, subscriptionID, o.Name, o.InfraID, o.Location)
+	resourceGroupID, resourceGroupName, msg, err := createResourceGroup(ctx, o, azureCreds, subscriptionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a resource group: %w", err)
 	}
 	result.ResourceGroupName = resourceGroupName
-	l.Info("Successfully created resource group", "name", resourceGroupName)
+	l.Info(msg, "name", resourceGroupName)
 
 	// Capture the base DNS zone's resource group's ID
 	result.PublicZoneID, err = getBaseDomainID(ctx, subscriptionID, azureCreds, o.BaseDomain)
@@ -216,47 +204,37 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 
 }
 
-// setupAzureCredentials creates the Azure credentials needed to create Azure resources from credentials passed in from the user or from a credentials file
-func setupAzureCredentials(l logr.Logger, credentials *apifixtures.AzureCreds, credentialsFile string) (string, *azidentity.DefaultAzureCredential, error) {
-	creds := credentials
-	if creds == nil {
-		var err error
-		creds, err = readCredentials(credentialsFile)
-		if err != nil {
-			return "", nil, fmt.Errorf("failed to read the credentials: %w", err)
-		}
-		l.Info("Using credentials from file", "path", credentialsFile)
-	}
-
-	_ = os.Setenv("AZURE_TENANT_ID", creds.TenantID)
-	_ = os.Setenv("AZURE_CLIENT_ID", creds.ClientID)
-	_ = os.Setenv("AZURE_CLIENT_SECRET", creds.ClientSecret)
-	azureCreds, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to create Azure credentials to create image gallery: %w", err)
-	}
-
-	return creds.SubscriptionID, azureCreds, nil
-}
-
 // createResourceGroup creates the Azure resource group used to group all Azure infrastructure resources
-func createResourceGroup(ctx context.Context, azureCreds azcore.TokenCredential, subscriptionID string, name string, infraID string, location string) (string, string, error) {
+func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds azcore.TokenCredential, subscriptionID string) (string, string, string, error) {
+	existingRGSuccessMsg := "Successfully found existing resource group"
+	createdRGSuccessMsg := "Successfully created resource group"
+
 	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, nil)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to create new resource groups client: %w", err)
+		return "", "", "", fmt.Errorf("failed to create new resource groups client: %w", err)
 	}
 
-	resourceGroupName := createResourceGroupName(name, infraID)
-	rg, err := resourceGroupClient.CreateOrUpdate(ctx, resourceGroupName, armresources.ResourceGroup{Location: to.Ptr(location)}, nil)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create resource group: %w", err)
-	}
-	return *rg.ID, *rg.Name, nil
-}
+	// Use provided resource group if it was provided
+	if o.ResourceGroupName != "" {
+		response, err := resourceGroupClient.Get(ctx, o.ResourceGroupName, nil)
+		if err != nil {
+			return "", "", "", fmt.Errorf("failed to get resource group name, '%s': %w", o.ResourceGroupName, err)
+		}
 
-// createResourceGroupName creates the resource group name from the cluster name - infrastructure ID
-func createResourceGroupName(clusterName, infraID string) string {
-	return clusterName + "-" + infraID
+		return *response.ID, *response.Name, existingRGSuccessMsg, nil
+	} else {
+		// Create a resource group since none was provided
+		resourceGroupName := o.Name + "-" + o.InfraID
+		parameters := armresources.ResourceGroup{
+			Location: to.Ptr(o.Location),
+		}
+		response, err := resourceGroupClient.CreateOrUpdate(ctx, resourceGroupName, parameters, nil)
+		if err != nil {
+			return "", "", "", fmt.Errorf("createResourceGroup: failed to create a resource group: %w", err)
+		}
+
+		return *response.ID, *response.Name, createdRGSuccessMsg, nil
+	}
 }
 
 // getBaseDomainID gets the resource group ID for the resource group containing the base domain
@@ -563,4 +541,41 @@ func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions
 	l.Info("Successfully created image", "resourceID", *imageCreationResult.ID, "result", imageCreationResult)
 
 	return bootImageID, nil
+}
+
+// setupAzureCredentials creates the Azure credentials needed to create Azure resources from credentials passed in from the user or from a credentials file
+func setupAzureCredentials(l logr.Logger, credentials *apifixtures.AzureCreds, credentialsFile string) (string, *azidentity.DefaultAzureCredential, error) {
+	creds := credentials
+	if creds == nil {
+		var err error
+		creds, err = readCredentials(credentialsFile)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to read the credentials: %w", err)
+		}
+		l.Info("Using credentials from file", "path", credentialsFile)
+	}
+
+	_ = os.Setenv("AZURE_TENANT_ID", creds.TenantID)
+	_ = os.Setenv("AZURE_CLIENT_ID", creds.ClientID)
+	_ = os.Setenv("AZURE_CLIENT_SECRET", creds.ClientSecret)
+	azureCreds, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create Azure credentials to create image gallery: %w", err)
+	}
+
+	return creds.SubscriptionID, azureCreds, nil
+}
+
+func readCredentials(path string) (*apifixtures.AzureCreds, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read from %s: %w", path, err)
+	}
+
+	var result apifixtures.AzureCreds
+	if err := yaml.Unmarshal(raw, &result); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal credentials: %w", err)
+	}
+
+	return &result, nil
 }

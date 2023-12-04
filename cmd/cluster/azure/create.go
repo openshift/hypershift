@@ -36,9 +36,10 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.InstanceType, "instance-type", opts.AzurePlatform.InstanceType, "The instance type to use for nodes")
 	cmd.Flags().Int32Var(&opts.AzurePlatform.DiskSizeGB, "root-disk-size", opts.AzurePlatform.DiskSizeGB, "The size of the root disk for machines in the NodePool (minimum 16)")
 	cmd.Flags().StringSliceVar(&opts.AzurePlatform.AvailabilityZones, "availablity-zones", opts.AzurePlatform.AvailabilityZones, "The availablity zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
+	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
 
-	cmd.MarkFlagRequired("azure-creds")
-	cmd.MarkPersistentFlagRequired("pull-secret")
+	_ = cmd.MarkFlagRequired("azure-creds")
+	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -89,12 +90,13 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 
 		infraID := infraid.New(opts.Name)
 		infra, err = (&azureinfra.CreateInfraOptions{
-			Name:            opts.Name,
-			Location:        opts.AzurePlatform.Location,
-			InfraID:         infraID,
-			CredentialsFile: opts.AzurePlatform.CredentialsFile,
-			BaseDomain:      opts.BaseDomain,
-			RHCOSImage:      rhcosImage,
+			Name:              opts.Name,
+			Location:          opts.AzurePlatform.Location,
+			InfraID:           infraID,
+			CredentialsFile:   opts.AzurePlatform.CredentialsFile,
+			BaseDomain:        opts.BaseDomain,
+			RHCOSImage:        rhcosImage,
+			ResourceGroupName: opts.AzurePlatform.ResourceGroupName,
 		}).Run(ctx, opts.Log)
 		if err != nil {
 			return fmt.Errorf("failed to create infra: %w", err)
