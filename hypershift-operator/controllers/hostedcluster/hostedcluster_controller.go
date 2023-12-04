@@ -443,7 +443,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("failed to list cluster roles: %w", err)
 		}
 		if len(crs.Items) > 0 {
-			if err := r.DeleteAllOf(ctx, &crs.Items[0], selector); err != nil {
+			if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRole{}, selector); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to delete cluster roles: %w", err)
 			}
 		}
@@ -452,7 +452,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("failed to list cluster role bindings: %w", err)
 		}
 		if len(crbs.Items) > 0 {
-			if err := r.DeleteAllOf(ctx, &crbs.Items[0], selector); err != nil {
+			if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRoleBinding{}, selector); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to delete cluster role bindings: %w", err)
 			}
 		}
