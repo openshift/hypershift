@@ -123,6 +123,7 @@ const (
 	controlPlaneOperatorManagesMachineApprover                 = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
 	controlPlaneOperatorManagesMachineAutoscaler               = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
+	controlPlanePKIOperatorSignsCSRsLabel                      = "io.openshift.hypershift.control-plane-pki-operator-signs-csrs"
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
 
 	etcdEncKeyPostfix = "-etcd-encryption-key"
@@ -1102,6 +1103,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	_, controlPlaneOperatorManagesMachineAutoscaler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]
 	_, controlPlaneOperatorManagesMachineApprover := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
+	_, controlPlanePKIOperatorSignsCSRs := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlanePKIOperatorSignsCSRsLabel]
 	_, useRestrictedPSA := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[useRestrictedPodSecurityLabel]
 
 	// Reconcile the hosted cluster namespace
@@ -1680,10 +1682,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
 
-	// Reconcile the control plane PKI operator RBAC - the CPO does not have rights to do this itself
-	err = r.reconcileControlPlanePKIOperatorRBAC(ctx, createOrUpdate, hcluster)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane PKI operator RBAC: %w", err)
+	if controlPlanePKIOperatorSignsCSRs {
+		// Reconcile the control plane PKI operator RBAC - the CPO does not have rights to do this itself
+		err = r.reconcileControlPlanePKIOperatorRBAC(ctx, createOrUpdate, hcluster)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane PKI operator RBAC: %w", err)
+		}
 	}
 
 	// Reconcile the Ignition server
