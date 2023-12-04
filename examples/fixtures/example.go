@@ -461,9 +461,9 @@ func (o ExampleOptions) Resources() *ExampleResources {
 		}
 	}
 
-	var etcdStorgageClass *string = nil
+	var etcdStorageClass *string = nil
 	if len(o.EtcdStorageClass) > 0 {
-		etcdStorgageClass = pointer.String(o.EtcdStorageClass)
+		etcdStorageClass = pointer.String(o.EtcdStorageClass)
 	}
 	cluster := &hyperv1.HostedCluster{
 		TypeMeta: metav1.TypeMeta{
@@ -485,7 +485,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 					Storage: hyperv1.ManagedEtcdStorageSpec{
 						Type: hyperv1.PersistentVolumeEtcdStorage,
 						PersistentVolume: &hyperv1.PersistentVolumeEtcdStorageSpec{
-							StorageClassName: etcdStorgageClass,
+							StorageClassName: etcdStorageClass,
 							Size:             &hyperv1.DefaultPersistentVolumeEtcdStorageSize,
 						},
 					},
@@ -692,10 +692,11 @@ func (o ExampleOptions) Resources() *ExampleResources {
 					nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 				}
 				nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-					VMSize:           o.Azure.InstanceType,
-					ImageID:          o.Azure.BootImageID,
-					DiskSizeGB:       o.Azure.DiskSizeGB,
-					AvailabilityZone: availabilityZone,
+					VMSize:              o.Azure.InstanceType,
+					ImageID:             o.Azure.BootImageID,
+					DiskSizeGB:          o.Azure.DiskSizeGB,
+					AvailabilityZone:    availabilityZone,
+					DiskEncryptionSetID: o.Azure.DiskEncryptionSetID,
 				}
 				nodePools = append(nodePools, nodePool)
 			}
@@ -706,9 +707,10 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 			}
 			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-				VMSize:     o.Azure.InstanceType,
-				ImageID:    o.Azure.BootImageID,
-				DiskSizeGB: o.Azure.DiskSizeGB,
+				VMSize:              o.Azure.InstanceType,
+				ImageID:             o.Azure.BootImageID,
+				DiskSizeGB:          o.Azure.DiskSizeGB,
+				DiskEncryptionSetID: o.Azure.DiskEncryptionSetID,
 			}
 			nodePools = append(nodePools, nodePool)
 		}

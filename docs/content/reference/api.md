@@ -2337,6 +2337,18 @@ string
 in a location that does not support AvailabilityZone.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>diskEncryptionSetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzurePlatformSpec { #hypershift.openshift.io/v1beta1.AzurePlatformSpec }

@@ -2,65 +2,62 @@ package azure
 
 import (
 	"context"
-	"os"
-	"os/signal"
-	"syscall"
+	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
+
 	"github.com/spf13/cobra"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+type AzurePlatformCreateOptions struct {
+	InstanceType        string
+	DiskSize            int32
+	AvailabilityZone    string
+	ResourceGroupName   string
+	DiskEncryptionSetID string
+}
+
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
+	platformOpts := &AzurePlatformCreateOptions{
+		InstanceType: "Standard_D4s_v4",
+		DiskSize:     120,
+	}
+
 	cmd := &cobra.Command{
 		Use:          "azure",
-		Short:        "Creates an Azure nodepool",
+		Short:        "Creates basic functional NodePool resources for Azure platform",
 		SilenceUsage: true,
 	}
-	o := &opts{
-		instanceType: "Standard_D4s_v4",
-		diskSize:     120,
-	}
-	cmd.Flags().StringVar(&o.instanceType, "instance-type", o.instanceType, "The instance type to use for the nodepool")
-	cmd.Flags().Int32Var(&o.diskSize, "root-disk-size", o.diskSize, "The size of the root disk for machines in the NodePool (minimum 16)")
-	cmd.Flags().StringVar(&o.availabilityZone, "availability-zone", o.availabilityZone, "The availabilityZone for the nodepool. Must be left unspecified if in a region that doesn't support AZs")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
+	cmd.Flags().StringVar(&platformOpts.InstanceType, "instance-type", platformOpts.InstanceType, "The instance type to use for the nodepool")
+	cmd.Flags().Int32Var(&platformOpts.DiskSize, "root-disk-size", platformOpts.DiskSize, "The size of the root disk for machines in the NodePool (minimum 16)")
+	cmd.Flags().StringVar(&platformOpts.AvailabilityZone, "availability-zone", platformOpts.AvailabilityZone, "The availabilityZone for the nodepool. Must be left unspecified if in a region that doesn't support AZs")
+	cmd.Flags().StringVar(&platformOpts.ResourceGroupName, "resource-group-name", platformOpts.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
+	cmd.Flags().StringVar(&platformOpts.DiskEncryptionSetID, "disk-encryption-set-id", platformOpts.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
 
-		if err := coreOpts.CreateNodePool(ctx, o); err != nil {
-			log.Log.Error(err, "Failed to create nodepool")
-			os.Exit(1)
-		}
-	}
+	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
 	return cmd
 }
 
-type opts struct {
-	instanceType     string
-	diskSize         int32
-	availabilityZone string
-}
+func (o *AzurePlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
+	// Resource group name is required when using DiskEncryptionSetID
+	if o.DiskEncryptionSetID != "" && o.ResourceGroupName == "" {
+		return fmt.Errorf("UpdateNodePool: resource-group-name is required when using disk-encryption-set-id")
+	}
 
-func (o *opts) UpdateNodePool(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, client crclient.Client) error {
 	nodePool.Spec.Platform.Type = hyperv1.AzurePlatform
 	nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-		VMSize:           o.instanceType,
-		DiskSizeGB:       o.diskSize,
-		AvailabilityZone: o.availabilityZone,
+		VMSize:              o.InstanceType,
+		DiskSizeGB:          o.DiskSize,
+		AvailabilityZone:    o.AvailabilityZone,
+		DiskEncryptionSetID: o.DiskEncryptionSetID,
 	}
 	return nil
 }
 
-func (o opts) Type() hyperv1.PlatformType {
+func (o *AzurePlatformCreateOptions) Type() hyperv1.PlatformType {
 	return hyperv1.AzurePlatform
 }
