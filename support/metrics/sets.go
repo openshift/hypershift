@@ -46,6 +46,7 @@ type MetricsSetConfig struct {
 	OpenShiftControllerManager      []*prometheusoperatorv1.RelabelConfig `json:"openshiftControllerManager,omitempty"`
 	OpenShiftRouteControllerManager []*prometheusoperatorv1.RelabelConfig `json:"openshiftRouteControllerManager,omitempty"`
 	CVO                             []*prometheusoperatorv1.RelabelConfig `json:"cvo,omitempty"`
+	CCO                             []*prometheusoperatorv1.RelabelConfig `json:"cco,omitempty"`
 	OLM                             []*prometheusoperatorv1.RelabelConfig `json:"olm,omitempty"`
 	CatalogOperator                 []*prometheusoperatorv1.RelabelConfig `json:"catalogOperator,omitempty"`
 	RegistryOperator                []*prometheusoperatorv1.RelabelConfig `json:"registryOperator,omitempty"`
@@ -352,6 +353,29 @@ func OpenShiftRouteControllerManagerRelabelConfigs(set MetricsSet) []*prometheus
 			{
 				Action:       "drop",
 				Regex:        "etcd_(debugging|disk|request|server).*",
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
+			},
+		}
+	}
+}
+
+func CloudCredentialOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
+	switch set {
+	case MetricsSetTelemetry:
+		return []*prometheusoperatorv1.RelabelConfig{
+			{
+				Action:       "drop",
+				Regex:        "(.*)",
+				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
+			},
+		}
+	case MetricsSetSRE:
+		return sreMetricsSetConfig.CCO
+	default:
+		return []*prometheusoperatorv1.RelabelConfig{
+			{
+				Action:       "drop",
+				Regex:        "etcd_(debugging|disk|server).*",
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}

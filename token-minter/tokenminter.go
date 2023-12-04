@@ -35,7 +35,20 @@ const ErrorRetryPeriod = 10 * time.Second
 
 func NewStartCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use: "token-minter",
+		Use:   "token-minter",
+		Short: "Mint ServiceAccount tokens to the filesystem for ServiceAccounts in a tenant cluster.",
+		Long: `Components running on the service cluster with connectivity to tenant clusters need to run
+with a ServiceAccount in the tenant cluster to follow security best practices. However, due
+to the service/tenant cluster split, Pods in the service cluster can't simply annotate their
+specs with serviceAccountName like they would normally. Instead, a sidecar container running
+this tool is added to Pods in the service cluster to provide the necessary tokens.
+
+This tool will reach out to the tenant cluster identified with --kubeconfig or with
+--kubeconfig-secret-name{,space}, creating tokens for the ServiceAccount identified with
+--service-account-name{,space} and writing them to disk. We have to request the creation
+of tokens ourselves as, by default, Kubernetes will no longer do this for ServiceAccounts.
+This tool must run in a side-car to the Pod it is providing tokens to as it will continually
+refresh the token as it expires.`,
 	}
 	var opts options
 
