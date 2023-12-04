@@ -10,6 +10,7 @@ LABEL io.openshift.hypershift.control-plane-operator-manages.decompress-decode-c
 LABEL io.openshift.hypershift.control-plane-operator-creates-aws-sg=true
 LABEL io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label=true
 LABEL io.openshift.hypershift.restricted-psa=true
+LABEL io.openshift.hypershift.control-plane-pki-operator-signs-csrs=true
 
 RUN cd /usr/bin && \
     ln -s control-plane-operator ignition-server && \
