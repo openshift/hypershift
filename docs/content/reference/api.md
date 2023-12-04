@@ -21,6 +21,79 @@ OpenShift clusters at scale.</p>
 worker nodes and their kubelets, and the infrastructure on which they run). This
 enables &ldquo;hosted control plane as a service&rdquo; use cases.</p>
 </p>
+##CertificateSigningRequestApproval { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApproval }
+<p>
+<p>CertificateSigningRequestApproval defines the desired state of CertificateSigningRequestApproval</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiVersion</code></br>
+string</td>
+<td>
+<code>
+hypershift.openshift.io/v1beta1
+</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>kind</code></br>
+string
+</td>
+<td><code>CertificateSigningRequestApproval</code></td>
+</tr>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CertificateSigningRequestApprovalSpec">
+CertificateSigningRequestApprovalSpec
+</a>
+</em>
+</td>
+<td>
+<br/>
+<br/>
+<table>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CertificateSigningRequestApprovalStatus">
+CertificateSigningRequestApprovalStatus
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
 ##HostedCluster { #hypershift.openshift.io/v1beta1.HostedCluster }
 <p>
 <p>HostedCluster is the primary representation of a HyperShift cluster and encapsulates
@@ -2316,6 +2389,22 @@ string
 <a href="#hypershift.openshift.io/v1beta1.APIServerNetworking">APIServerNetworking</a>)
 </p>
 <p>
+</p>
+###CertificateSigningRequestApprovalSpec { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApprovalSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CertificateSigningRequestApproval">CertificateSigningRequestApproval</a>)
+</p>
+<p>
+<p>CertificateSigningRequestApprovalSpec defines the desired state of CertificateSigningRequestApproval</p>
+</p>
+###CertificateSigningRequestApprovalStatus { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApprovalStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CertificateSigningRequestApproval">CertificateSigningRequestApproval</a>)
+</p>
+<p>
+<p>CertificateSigningRequestApprovalStatus defines the observed state of CertificateSigningRequestApproval</p>
 </p>
 ###ClusterAutoscaling { #hypershift.openshift.io/v1beta1.ClusterAutoscaling }
 <p>

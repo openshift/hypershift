@@ -20,7 +20,7 @@ import (
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hypershiftv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1alpha1"
+	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
@@ -204,8 +204,8 @@ func TestCreateCluster(t *testing.T) {
 				}
 
 				t.Logf("creating CSRA %s/%s to trigger automatic approval of the CSR", csrName, csrName)
-				csraCfg := hypershiftv1alpha1applyconfigurations.CertificateSigningRequestApproval(hostedControlPlaneNamespace, csrName)
-				if _, err := hypershiftClient.HypershiftV1alpha1().CertificateSigningRequestApprovals(hostedControlPlaneNamespace).Apply(ctx, csraCfg, metav1.ApplyOptions{FieldManager: "e2e-test"}); err != nil {
+				csraCfg := hypershiftv1beta1applyconfigurations.CertificateSigningRequestApproval(hostedControlPlaneNamespace, csrName)
+				if _, err := hypershiftClient.HypershiftV1beta1().CertificateSigningRequestApprovals(hostedControlPlaneNamespace).Apply(ctx, csraCfg, metav1.ApplyOptions{FieldManager: "e2e-test"}); err != nil {
 					t.Fatalf("failed to create CSRA: %v", err)
 				}
 
