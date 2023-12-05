@@ -1,12 +1,10 @@
- # Create an Azure cluster
-
+# Create an Azure cluster
 This document describes how to set up an Azure cluster with Hypershift.
 
 ## Prerequisites
-
 In order to authenticate with Azure, an Application must be created through the web portal. Follow [this guide](https://docs.microsoft.com/en-us/azure/active-directory/develop/howto-create-service-principal-portal) to create one.
 
-Afterwards, create a credentials file that looks like this:
+Afterward, create a credentials file that looks like this:
 
 ```
 subscriptionId: <your_subscription_id>
@@ -16,6 +14,7 @@ clientSecret: <your_client_secret>
 ```
 
 ## Install the Hypershift Operator
+This example uses optional external dns flags to set up external dns.
 
 ```
 hypershift install --external-dns-provider=azure \
@@ -25,10 +24,8 @@ hypershift install --external-dns-provider=azure \
 
 See [external DNS docs](https://github.com/kubernetes-sigs/external-dns/blob/master/docs/tutorials/azure.md#creating-a-configuration-file-for-the-service-principal) for the format of the azure.json file.
 
-## Creating the cluster
-
+## Creating the Cluster
 After the credentials file was set up, creating a cluster is a simple matter of invoking the `hypershift` cli:
-
 
 ```
 hypershift create cluster azure --pull-secret <pull_secret_file> \
@@ -39,3 +36,29 @@ hypershift create cluster azure --pull-secret <pull_secret_file> \
 --node-pool-replicas 3 \
 --external-dns-domain=<service_provider_domain>
 ```
+
+## Creating the Cluster in an Existing Resource Group
+If you want to use an existing resource group you've created in Azure, you can pass the name into the `--resource-group-name` flag. This will create all needed Azure infrastructure in specified resource group.
+
+```
+hypershift create cluster azure --pull-secret <pull_secret_file> \
+--name <cluster_name> \
+--azure-creds <path_to_azure_credentials_file> \
+--location eastus --base-domain <base_domain> \
+--release-image <release_image> \
+--node-pool-replicas 3 \
+--resource-group-name <my_existing_resource_group>
+```
+
+If you need to delete your hosted cluster, you will need to also use the `--resource-group-name` flag on the delete command.
+
+```
+hypershift destroy cluster azure \
+--name $CLUSTER_NAME \ 
+--azure-creds $AZURE_CREDS \
+--resource-group-name <my_existing_resource_group>
+```
+
+!!! note
+    
+    If you delete your hosted cluster, it will end up deleting any existing resources prior to when the hosted cluster was created as well as the resource group itself.
