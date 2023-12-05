@@ -3097,75 +3097,66 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 
 func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImageProvider, userReleaseImageProvider.Version(), r.SetDefaultSecurityContext)
-
-	if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {
-		overrideImages, err := checkCatalogImageOverides(p.CertifiedOperatorsCatalogImageOverride, p.CommunityOperatorsCatalogImageOverride, p.RedHatMarketplaceCatalogImageOverride, p.RedHatOperatorsCatalogImageOverride)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile catalogs: %w", err)
-		}
-
-		catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
-		if !overrideImages {
-			isImageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(p.OLMCatalogsISRegistryOverridesAnnotation)
-			if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
-				return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides)
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
-			}
-		} else {
-			if _, err := util.DeleteIfNeeded(ctx, r, catalogsImageStream); err != nil {
-				return fmt.Errorf("failed to remove OLM Catalog ImageStream: %w", err)
+	if (hcp.Spec.Configuration != nil && hcp.Spec.Configuration.OperatorHub != nil &&
+		hcp.Spec.Configuration.OperatorHub.DisableAllDefaultSources) ||
+		hcp.Spec.OLMCatalogPlacement != hyperv1.ManagementOLMCatalogPlacement {
+		// Disable all default sources
+		olmServices := olm.OLMServices(hcp.Namespace)
+		for _, svc := range olmServices {
+			if err := r.Client.Delete(ctx, svc.Manifest); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to delete %s service on OLM reconcile: %w", svc.Name, err)
+				}
 			}
 		}
-
-		certifiedOperatorsService := manifests.CertifiedOperatorsService(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, certifiedOperatorsService, func() error {
-			return olm.ReconcileCertifiedOperatorsService(certifiedOperatorsService, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile certified operators service: %w", err)
-		}
-		communityOperatorsService := manifests.CommunityOperatorsService(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, communityOperatorsService, func() error {
-			return olm.ReconcileCommunityOperatorsService(communityOperatorsService, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile community operators service: %w", err)
-		}
-		marketplaceOperatorsService := manifests.RedHatMarketplaceOperatorsService(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, marketplaceOperatorsService, func() error {
-			return olm.ReconcileRedHatMarketplaceOperatorsService(marketplaceOperatorsService, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile marketplace operators service: %w", err)
-		}
-		redHatOperatorsService := manifests.RedHatOperatorsService(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, redHatOperatorsService, func() error {
-			return olm.ReconcileRedHatOperatorsService(redHatOperatorsService, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile red hat operators service: %w", err)
+		olmDeployments := olm.OLMDeployments(p, hcp.Namespace)
+		for _, dep := range olmDeployments {
+			if _, err := util.DeleteIfNeeded(ctx, r.Client, dep.Manifest); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to delete %s deployment on OLM reconcile: %w", dep.Name, err)
+				}
+			}
 		}
 
-		certifiedOperatorsDeployment := manifests.CertifiedOperatorsDeployment(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, certifiedOperatorsDeployment, func() error {
-			return olm.ReconcileCertifiedOperatorsDeployment(certifiedOperatorsDeployment, p.OwnerRef, p.DeploymentConfig, p.CertifiedOperatorsCatalogImageOverride)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile certified operators deployment: %w", err)
-		}
-		communityOperatorsDeployment := manifests.CommunityOperatorsDeployment(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, communityOperatorsDeployment, func() error {
-			return olm.ReconcileCommunityOperatorsDeployment(communityOperatorsDeployment, p.OwnerRef, p.DeploymentConfig, p.CommunityOperatorsCatalogImageOverride)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile community operators deployment: %w", err)
-		}
-		marketplaceOperatorsDeployment := manifests.RedHatMarketplaceOperatorsDeployment(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, marketplaceOperatorsDeployment, func() error {
-			return olm.ReconcileRedHatMarketplaceOperatorsDeployment(marketplaceOperatorsDeployment, p.OwnerRef, p.DeploymentConfig, p.RedHatMarketplaceCatalogImageOverride)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile marketplace operators deployment: %w", err)
-		}
-		redHatOperatorsDeployment := manifests.RedHatOperatorsDeployment(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, redHatOperatorsDeployment, func() error {
-			return olm.ReconcileRedHatOperatorsDeployment(redHatOperatorsDeployment, p.OwnerRef, p.DeploymentConfig, p.RedHatOperatorsCatalogImageOverride)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile red hat operators deployment: %w", err)
+	} else {
+		// Enable all default sources
+		if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {
+			overrideImages, err := checkCatalogImageOverides(p.CertifiedOperatorsCatalogImageOverride, p.CommunityOperatorsCatalogImageOverride, p.RedHatMarketplaceCatalogImageOverride, p.RedHatOperatorsCatalogImageOverride)
+			if err != nil {
+				return fmt.Errorf("failed to reconcile catalogs: %w", err)
+			}
+
+			catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
+			if !overrideImages {
+				isImageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(p.OLMCatalogsISRegistryOverridesAnnotation)
+				if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
+					return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
+				}
+			} else {
+				if _, err := util.DeleteIfNeeded(ctx, r, catalogsImageStream); err != nil {
+					return fmt.Errorf("failed to remove OLM Catalog ImageStream: %w", err)
+				}
+			}
+
+			olmServices := olm.OLMServices(hcp.Namespace)
+			for _, svc := range olmServices {
+				if _, err := createOrUpdate(ctx, r, svc.Manifest, func() error {
+					return svc.Reconciler(svc.Manifest, p.OwnerRef)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile %s service: %w", svc.Name, err)
+				}
+			}
+
+			olmDeployments := olm.OLMDeployments(p, hcp.Namespace)
+			for _, dep := range olmDeployments {
+				if _, err := createOrUpdate(ctx, r, dep.Manifest, func() error {
+					return dep.Reconciler(dep.Manifest, p.OwnerRef, p.DeploymentConfig, dep.Image)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile %s deployment with image %s: %w", dep.Name, dep.Image, err)
+				}
+			}
 		}
 	}
 
