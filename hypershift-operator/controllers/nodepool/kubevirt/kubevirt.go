@@ -267,6 +267,10 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = ptr.To(true)
 	}
 
+	if kvPlatform.NodeSelector != nil && len(kvPlatform.NodeSelector) > 0 {
+		template.Spec.Template.Spec.NodeSelector = kvPlatform.NodeSelector
+	}
+
 	return template
 }
 
@@ -394,7 +398,7 @@ func applyJsonPatches(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluste
 		return nil
 	}
 
-	//tmplt.Spec.Template.Spec.Networks[0].Multus.NetworkName
+	// tmplt.Spec.Template.Spec.Networks[0].Multus.NetworkName
 	buff := &bytes.Buffer{}
 	dec := json.NewEncoder(buff)
 	err := dec.Encode(tmplt)

@@ -29,6 +29,7 @@ type KubevirtNodePoolPlatformApplyConfiguration struct {
 	NetworkInterfaceMultiQueue *hypershiftv1alpha1.MultiQueueSetting `json:"networkInterfaceMultiqueue,omitempty"`
 	AdditionalNetworks         []KubevirtNetworkApplyConfiguration   `json:"additionalNetworks,omitempty"`
 	AttachDefaultNetwork       *bool                                 `json:"attachDefaultNetwork,omitempty"`
+	NodeSelector               map[string]string                     `json:"nodeSelector,omitempty"`
 }
 
 // KubevirtNodePoolPlatformApplyConfiguration constructs an declarative configuration of the KubevirtNodePoolPlatform type for use with
@@ -79,5 +80,19 @@ func (b *KubevirtNodePoolPlatformApplyConfiguration) WithAdditionalNetworks(valu
 // If called multiple times, the AttachDefaultNetwork field is set to the value of the last call.
 func (b *KubevirtNodePoolPlatformApplyConfiguration) WithAttachDefaultNetwork(value bool) *KubevirtNodePoolPlatformApplyConfiguration {
 	b.AttachDefaultNetwork = &value
+	return b
+}
+
+// WithNodeSelector puts the entries into the NodeSelector field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, the entries provided by each call will be put on the NodeSelector field,
+// overwriting an existing map entries in NodeSelector field with the same key.
+func (b *KubevirtNodePoolPlatformApplyConfiguration) WithNodeSelector(entries map[string]string) *KubevirtNodePoolPlatformApplyConfiguration {
+	if b.NodeSelector == nil && len(entries) > 0 {
+		b.NodeSelector = make(map[string]string, len(entries))
+	}
+	for k, v := range entries {
+		b.NodeSelector[k] = v
+	}
 	return b
 }

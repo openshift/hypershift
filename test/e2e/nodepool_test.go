@@ -108,6 +108,10 @@ func TestNodePool(t *testing.T) {
 				name: "KubeKubeVirtJsonPatchTest",
 				test: NewKubeKubeVirtJsonPatchTest(ctx, mgtClient, hostedCluster),
 			},
+			{
+				name: "KubeVirtNodeSelectorTest",
+				test: NewKubeKubeVirtNodeSelectorTest(ctx, mgtClient, hostedCluster),
+			},
 		}
 
 		for _, testCase := range nodePoolTests {
@@ -251,7 +255,7 @@ func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclie
 				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
 				return false, nil
 			}
-			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
+			t.Logf("observed condition %s status to match expected status [%s]", condition.Type, expectedStatus)
 		}
 
 		return true, nil
