@@ -171,22 +171,39 @@ func (c *DeploymentConfig) setMultizoneSpread(labels map[string]string) {
 	if labels == nil {
 		return
 	}
-
 	if c.Scheduling.Affinity == nil {
 		c.Scheduling.Affinity = &corev1.Affinity{}
 	}
 	if c.Scheduling.Affinity.PodAntiAffinity == nil {
 		c.Scheduling.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
 	}
-	c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution =
-		[]corev1.PodAffinityTerm{
-			{
-				TopologyKey: corev1.LabelTopologyZone,
-				LabelSelector: &metav1.LabelSelector{
-					MatchLabels: labels,
-				},
+	c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution,
+		corev1.PodAffinityTerm{
+			TopologyKey: corev1.LabelTopologyZone,
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: labels,
 			},
-		}
+		},
+	)
+}
+
+// setNodeSpread sets PodAntiAffinity with corev1.LabelHostname as the topology key for a given set of labels.
+// This is useful to e.g ensure pods are spread across nodes.
+func (c *DeploymentConfig) setNodeSpread(labels map[string]string) {
+	if c.Scheduling.Affinity == nil {
+		c.Scheduling.Affinity = &corev1.Affinity{}
+	}
+	if c.Scheduling.Affinity.PodAntiAffinity == nil {
+		c.Scheduling.Affinity.PodAntiAffinity = &corev1.PodAntiAffinity{}
+	}
+	c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(c.Scheduling.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution,
+		corev1.PodAffinityTerm{
+			TopologyKey: corev1.LabelHostname,
+			LabelSelector: &metav1.LabelSelector{
+				MatchLabels: labels,
+			},
+		},
+	)
 }
 
 // setColocation sets labels and PodAffinity rules for this deployment so that pods
@@ -314,6 +331,7 @@ func (c *DeploymentConfig) setLocation(hcp *hyperv1.HostedControlPlane, multiZon
 	// TODO (alberto): pass labels with deployment hash and set this unconditionally so we don't skew setup.
 	if c.Replicas > 1 {
 		c.setMultizoneSpread(multiZoneSpreadLabels)
+		c.setNodeSpread(multiZoneSpreadLabels)
 	}
 }
 
