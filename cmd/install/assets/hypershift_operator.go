@@ -47,6 +47,14 @@ var (
 	// allowPrivilegeEscalation is used to set the status of the
 	// privilegeEscalation on SeccompProfile
 	allowPrivilegeEscalation = false
+
+	// readOnlyRootFilesystem is used to set the container security
+	// context to mount the root filesystem as read-only.
+	readOnlyRootFilesystem = true
+
+	// privileged is used to set the container security
+	// context to run container as unprivileged.
+	privileged = false
 )
 
 type HyperShiftNamespace struct {
@@ -232,6 +240,10 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 									corev1.ResourceMemory: resource.MustParse("20Mi"),
 									corev1.ResourceCPU:    resource.MustParse("5m"),
 								},
+							},
+							SecurityContext: &corev1.SecurityContext{
+								ReadOnlyRootFilesystem: &readOnlyRootFilesystem,
+								Privileged:             &privileged,
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
@@ -562,7 +574,9 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							Command:         []string{"/usr/bin/hypershift-operator"},
 							Args:            []string{"init"},
 							SecurityContext: &corev1.SecurityContext{
-								RunAsUser: k8sutilspointer.Int64(1000),
+								RunAsUser:              k8sutilspointer.Int64(1000),
+								ReadOnlyRootFilesystem: &readOnlyRootFilesystem,
+								Privileged:             &privileged,
 							},
 							VolumeMounts: initVolumeMounts,
 						},
@@ -582,6 +596,8 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								SeccompProfile: &corev1.SeccompProfile{
 									Type: corev1.SeccompProfileTypeRuntimeDefault,
 								},
+								ReadOnlyRootFilesystem: &readOnlyRootFilesystem,
+								Privileged:             &privileged,
 							},
 							Image:           image,
 							ImagePullPolicy: corev1.PullIfNotPresent,
