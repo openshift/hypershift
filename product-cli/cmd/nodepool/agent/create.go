@@ -15,6 +15,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	}
 
 	platformOpts := hypershiftagent.NewAgentPlatformCreateOptions(cmd)
+	cmd.Flags().StringVar(&platformOpts.AgentLabelSelector, "agentLabelSelector", platformOpts.AgentLabelSelector, "A LabelSelector for selecting Agents according to their labels, e.g., 'size=large,zone notin (az1,az2)'")
 	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
 	return cmd

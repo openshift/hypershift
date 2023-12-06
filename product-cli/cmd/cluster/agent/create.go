@@ -16,12 +16,14 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	}
 
 	opts.AgentPlatform = core.AgentPlatformCreateOptions{
-		APIServerAddress: "",
-		AgentNamespace:   "",
+		APIServerAddress:   "",
+		AgentNamespace:     "",
+		AgentLabelSelector: "",
 	}
 
 	cmd.Flags().StringVar(&opts.AgentPlatform.APIServerAddress, "api-server-address", opts.AgentPlatform.APIServerAddress, "The API server address is the IP address for Kubernetes API communication")
 	cmd.Flags().StringVar(&opts.AgentPlatform.AgentNamespace, "agent-namespace", opts.AgentPlatform.AgentNamespace, "The namespace in which to search for Agents")
+	cmd.Flags().StringVar(&opts.AgentPlatform.AgentLabelSelector, "agentLabelSelector", opts.AgentPlatform.AgentLabelSelector, "A LabelSelector used to select Agents according to their labels, in JSON format")
 	_ = cmd.MarkFlagRequired("agent-namespace")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 

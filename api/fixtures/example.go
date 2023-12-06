@@ -3,9 +3,10 @@ package fixtures
 import (
 	"crypto/rand"
 	"fmt"
-	"github.com/openshift/hypershift/cmd/util"
 	"strings"
 	"time"
+
+	"github.com/openshift/hypershift/cmd/util"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 
@@ -656,10 +657,24 @@ func (o ExampleOptions) Resources() *ExampleResources {
 			}
 			nodePool.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation] = val
 		}
-	case hyperv1.NonePlatform, hyperv1.AgentPlatform:
+	case hyperv1.NonePlatform:
 		nodePool := defaultNodePool(cluster.Name)
 		if nodePool.Spec.Management.UpgradeType == "" {
 			nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace
+		}
+		nodePools = append(nodePools, nodePool)
+	case hyperv1.AgentPlatform:
+		nodePool := defaultNodePool(cluster.Name)
+		nodePool.Spec.Platform.Agent = &hyperv1.AgentNodePoolPlatform{}
+		if nodePool.Spec.Management.UpgradeType == "" {
+			nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeInPlace
+		}
+		if o.Agent.AgentLabelSelector != "" {
+			agentSelector, err := metav1.ParseToLabelSelector(o.Agent.AgentLabelSelector)
+			if err != nil {
+				panic(fmt.Sprintf("Failed to parse AgentLabelSelector: %s", err))
+			}
+			nodePool.Spec.Platform.Agent.AgentLabelSelector = agentSelector
 		}
 		nodePools = append(nodePools, nodePool)
 	case hyperv1.AzurePlatform:
