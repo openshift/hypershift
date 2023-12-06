@@ -414,6 +414,9 @@ objects:
             requests:
               cpu: 5m
               memory: 20Mi
+          securityContext:
+            privileged: false
+            readOnlyRootFilesystem: true
           volumeMounts:
           - mountPath: /etc/provider
             name: credentials
@@ -528,6 +531,8 @@ objects:
             capabilities:
               drop:
               - ALL
+            privileged: false
+            readOnlyRootFilesystem: true
             runAsUser: 1000
             seccompProfile:
               type: RuntimeDefault
@@ -553,6 +558,8 @@ objects:
           name: init-environment
           resources: {}
           securityContext:
+            privileged: false
+            readOnlyRootFilesystem: true
             runAsUser: 1000
           volumeMounts:
           - mountPath: /var/run/ca-trust
