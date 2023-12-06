@@ -282,6 +282,12 @@ func TestSetLocation(t *testing.T) {
 					MatchLabels: labels,
 				},
 			},
+			{
+				TopologyKey: corev1.LabelHostname,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: labels,
+				},
+			},
 		},
 	}
 	g.Expect(expected.Scheduling.Affinity.PodAntiAffinity).To(BeEquivalentTo(cfg.Scheduling.Affinity.PodAntiAffinity))
