@@ -12,7 +12,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 )
 
-func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool, isPrivate bool, useNLB bool) error {
+func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool, isPrivate bool, useNLB bool, nlbScope operatorv1.LoadBalancerScope) error {
 	// If ingress controller already exists, skip reconciliation to allow day-2 configuration
 	if ingressController.ResourceVersion != "" {
 		return nil
@@ -43,7 +43,7 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 	case hyperv1.AWSPlatform:
 		if useNLB {
 			ingressController.Spec.EndpointPublishingStrategy.LoadBalancer = &operatorv1.LoadBalancerStrategy{
-				Scope: operatorv1.ExternalLoadBalancer,
+				Scope: nlbScope,
 				ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
 					Type: operatorv1.AWSLoadBalancerProvider,
 					AWS: &operatorv1.AWSLoadBalancerParameters{

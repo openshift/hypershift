@@ -1456,6 +1456,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 
 	g.Expect(hostedCluster.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type).To(Equal(configv1.NLB))
+
 }
 
 func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool) {
