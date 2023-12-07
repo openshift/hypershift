@@ -2064,14 +2064,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile node tuning operator serving cert: %w", err)
 	}
 
-	// Cloud Credential Operator Serving Cert
-	cloudCredentialOperatorServingCert := manifests.CloudCredentialOperatorServingCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, cloudCredentialOperatorServingCert, func() error {
-		return pki.ReconcileCloudCredentialOperatorServingCertSecret(cloudCredentialOperatorServingCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile cloud credential operator serving cert: %w", err)
-	}
-
 	// OLM PackageServer Cert
 	packageServerCertSecret := manifests.OLMPackageServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, packageServerCertSecret, func() error {
@@ -3113,14 +3105,6 @@ func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx cont
 		return cco.ReconcileDeployment(deployment, params)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cloud credential operator deployment: %w", err)
-	}
-
-	pm := manifests.CloudCredentialOperatorPodMonitor(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, pm, func() error {
-		cco.ReconcilePodMonitor(params.OwnerRef, pm, hcp.Spec.ClusterID, r.MetricsSet)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile cloud credential operator pod monitor: %w", err)
 	}
 
 	return nil

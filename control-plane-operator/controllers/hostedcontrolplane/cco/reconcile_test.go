@@ -7,8 +7,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,7 +32,6 @@ func TestReconcileDeployment(t *testing.T) {
 	images := map[string]string{
 		"cloud-credential-operator": "quay.io/openshift/cloud-credential-operator:latest",
 		"token-minter":              "quay.io/openshift/token-minter:latest",
-		"kube-rbac-proxy":           "quay.io/openshift/kube-rbac-proxy:latest",
 		"availability-prober":       "quay.io/openshift/availability-prober:latest",
 	}
 	deployment := manifests.CloudCredentialOperatorDeployment("test-namespace")
@@ -48,20 +45,4 @@ func TestReconcileDeployment(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	testutil.CompareWithFixture(t, deploymentYaml)
-}
-
-func TestReconcilePodMonitor(t *testing.T) {
-	hcp := &hyperv1.HostedControlPlane{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test",
-			Namespace: "test-namespace",
-		},
-	}
-	pm := manifests.ImageRegistryOperatorPodMonitor("test-namespace")
-	ReconcilePodMonitor(config.OwnerRefFrom(hcp), pm, "the-cluster-id", metrics.MetricsSetTelemetry)
-	pmYaml, err := util.SerializeResource(pm, api.Scheme)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	testutil.CompareWithFixture(t, pmYaml)
 }
