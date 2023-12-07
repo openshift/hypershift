@@ -102,7 +102,6 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 		"app": "machine-approver",
 	}
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32(1),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: selector,
 		},

@@ -293,9 +293,7 @@ func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef
 func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 	params.OwnerRef.ApplyTo(dep)
 
-	dep.Spec.Replicas = utilpointer.Int32(1)
 	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": operatorName}}
-	dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
 	if dep.Spec.Template.Annotations == nil {
 		dep.Spec.Template.Annotations = map[string]string{}
 	}

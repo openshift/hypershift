@@ -11,7 +11,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/pointer"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
@@ -97,16 +96,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 	}
 	auditConfigHash := util.ComputeHash(auditConfigBytes)
 
-	maxUnavailable := intstr.FromInt(1)
-	maxSurge := intstr.FromInt(3)
-
-	deployment.Spec.Strategy = appsv1.DeploymentStrategy{
-		Type: appsv1.RollingUpdateDeploymentStrategyType,
-		RollingUpdate: &appsv1.RollingUpdateDeployment{
-			MaxUnavailable: &maxUnavailable,
-			MaxSurge:       &maxSurge,
-		},
-	}
 	if deployment.Spec.Selector == nil {
 		deployment.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: openShiftAPIServerLabels(),

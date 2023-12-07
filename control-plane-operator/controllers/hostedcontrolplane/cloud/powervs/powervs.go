@@ -98,7 +98,6 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 	}
 
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: utilpointer.Int32(int32(replicas)),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{"k8s-app": deployment.Name},
 		},

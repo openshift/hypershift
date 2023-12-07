@@ -99,7 +99,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 func ReconcileDeployment(dep *appsv1.Deployment, params Params) {
 	dep.Spec.Replicas = utilpointer.Int32(1)
 	dep.Spec.Selector = &metav1.LabelSelector{MatchLabels: map[string]string{"name": operatorName}}
-	dep.Spec.Strategy.Type = appsv1.RecreateDeploymentStrategyType
 	if dep.Spec.Template.Annotations == nil {
 		dep.Spec.Template.Annotations = map[string]string{}
 	}

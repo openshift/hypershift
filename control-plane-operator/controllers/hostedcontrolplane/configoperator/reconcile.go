@@ -251,9 +251,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 		Selector: &metav1.LabelSelector{
 			MatchLabels: selectorLabels,
 		},
-		Strategy: appsv1.DeploymentStrategy{
-			Type: appsv1.RecreateDeploymentStrategyType,
-		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				// We copy the map here, otherwise this .Labels would point to the same address that .MatchLabels

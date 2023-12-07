@@ -12,7 +12,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -64,13 +63,6 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 		deployment.Spec.Selector = &metav1.LabelSelector{
 			MatchLabels: oauthLabels(),
 		}
-	}
-	deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
-	maxSurge := intstr.FromInt(3)
-	maxUnavailable := intstr.FromInt(1)
-	deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{
-		MaxSurge:       &maxSurge,
-		MaxUnavailable: &maxUnavailable,
 	}
 	if deployment.Spec.Template.ObjectMeta.Labels == nil {
 		deployment.Spec.Template.ObjectMeta.Labels = map[string]string{}
