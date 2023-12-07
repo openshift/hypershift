@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
@@ -219,6 +220,21 @@ func (h *hypershiftTest) createHostedCluster(opts *core.CreateOptions, platform 
 			case *hyperv1.HostedCluster:
 				v.Spec.ServiceAccountSigningKey = &corev1.LocalObjectReference{
 					Name: serviceAccountSigningKeySecret.Name,
+				}
+				if platform == hyperv1.AWSPlatform {
+					if v.Spec.Configuration == nil {
+						v.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+					}
+					v.Spec.Configuration.Ingress = &configv1.IngressSpec{
+						LoadBalancer: configv1.LoadBalancer{
+							Platform: configv1.IngressPlatformSpec{
+								Type: configv1.AWSPlatformType,
+								AWS: &configv1.AWSIngressSpec{
+									Type: configv1.NLB,
+								},
+							},
+						},
+					}
 				}
 			}
 		}

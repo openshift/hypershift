@@ -552,7 +552,7 @@ func (o ExampleOptions) Resources() *ExampleResources {
 	}
 
 	if proxyConfig != nil {
-		cluster.Spec.Configuration = &hyperv1.ClusterConfiguration{Proxy: proxyConfig}
+		cluster.Spec.Configuration.Proxy = proxyConfig
 	}
 
 	if o.NodeSelector != nil {
