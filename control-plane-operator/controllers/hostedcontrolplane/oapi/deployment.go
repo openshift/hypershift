@@ -265,7 +265,7 @@ func buildOASContainerMain(image string, etcdHostname string, port int32, intern
 			fmt.Sprintf("--client-ca-file=%s", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey)),
 		}
 		if internalOAuthDisable {
-			c.Args = append(c.Args, "--internal-oauth-disable=true")
+			c.Args = append(c.Args, "--internal-oauth-disabled=true")
 		}
 		// this list can be gathered from firewall docs: https://docs.openshift.com/container-platform/4.12/installing/install_config/configuring-firewall.html
 		defaultSampleImportContainerRegistries := "quay.io,cdn03.quay.io,cdn02.quay.io,cdn01.quay.io,cdn.quay.io,registry.redhat.io,registry.access.redhat.com,access.redhat.com,sso.redhat.com"
