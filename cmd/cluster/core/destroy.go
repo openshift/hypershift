@@ -255,7 +255,7 @@ func waitForClusterDeletion(ctx context.Context, hostedCluster *hyperv1.HostedCl
 
 		// don't wait for grace period. Nothing happens after grace period in the controller, but it's only
 		// for debug. So it's safe to continue in case of grace period.
-		if _, ok := hostedCluster.Annotations[hyperv1.CleanupCloudResourcesAnnotation]; ok {
+		if _, ok := hostedCluster.Annotations[hyperv1.HCDestroyGracePeriodAnnotation]; ok {
 			if meta.FindStatusCondition(hostedCluster.Status.Conditions, string(hyperv1.HostedClusterDestroyed)) != nil {
 				return true, nil
 			}
