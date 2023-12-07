@@ -175,6 +175,8 @@ type HostedClusterReconciler struct {
 	MonitoringDashboards bool
 
 	CertRotationScale time.Duration
+
+	EnableCVOManagementClusterMetricsAccess bool
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -2019,7 +2021,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	// Reconcile operator role
 	controlPlaneOperatorRole := controlplaneoperator.OperatorRole(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorRole, func() error {
-		return reconcileControlPlaneOperatorRole(controlPlaneOperatorRole)
+		return reconcileControlPlaneOperatorRole(controlPlaneOperatorRole, r.EnableCVOManagementClusterMetricsAccess)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator role: %w", err)
@@ -2091,7 +2093,8 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 			defaultIngressDomain,
 			cpoHasUtilities,
 			r.MetricsSet,
-			certRotationScale)
+			certRotationScale,
+			r.EnableCVOManagementClusterMetricsAccess)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -2267,7 +2270,8 @@ func reconcileControlPlaneOperatorDeployment(
 	defaultIngressDomain string,
 	cpoHasUtilities bool,
 	metricsSet metrics.MetricsSet,
-	certRotationScale time.Duration) error {
+	certRotationScale time.Duration,
+	enableCVOManagementClusterMetricsAccess bool) error {
 
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
@@ -2437,6 +2441,15 @@ func reconcileControlPlaneOperatorDeployment(
 		)
 	}
 
+	if enableCVOManagementClusterMetricsAccess {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  config.EnableCVOManagementClusterMetricsAccessEnvVar,
+				Value: "1",
+			},
+		)
+	}
+
 	mainContainer = hyperutil.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
 	proxy.SetEnvVars(&mainContainer.Env)
 
@@ -2541,7 +2554,7 @@ func reconcileControlPlaneOperatorDeployment(
 	return nil
 }
 
-func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
+func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClusterMetricsAccess bool) error {
 	role.Rules = []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{"hypershift.openshift.io"},
@@ -2693,6 +2706,14 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role) error {
 				"update",
 			},
 		},
+	}
+	if enableCVOManagementClusterMetricsAccess {
+		role.Rules = append(role.Rules,
+			rbacv1.PolicyRule{
+				APIGroups: []string{"metrics.k8s.io"},
+				Resources: []string{"pods"},
+				Verbs:     []string{"get"},
+			})
 	}
 	return nil
 }

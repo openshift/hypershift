@@ -41,6 +41,15 @@ func ManagementKASNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
 	}
 }
 
+func MetricsServerNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "metrics-server",
+		},
+	}
+}
+
 func OpenshiftMonitoringNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{

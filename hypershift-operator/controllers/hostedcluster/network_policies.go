@@ -24,6 +24,7 @@ import (
 
 const (
 	NeedManagementKASAccessLabel = "hypershift.openshift.io/need-management-kas-access"
+	NeedMetricsServerAccessLabel = "hypershift.openshift.io/need-metrics-server-access"
 )
 
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
@@ -75,6 +76,15 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
 		}
 
+		// Allow egress communication to the HCP metrics server for pods that have a known annotation.
+		if r.EnableCVOManagementClusterMetricsAccess {
+			policy = networkpolicy.MetricsServerNetworkPolicy(controlPlaneNamespaceName)
+			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+				return reconcileMetricsServerNetworkPolicy(policy)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile metrics server network policy: %w", err)
+			}
+		}
 	}
 
 	// Reconcile openshift-monitoring Network Policy
@@ -690,4 +700,49 @@ func kasEndpointsToCIDRs(kubernetesEndpoint *corev1.Endpoints) []string {
 		}
 	}
 	return kasCIDRs
+}
+
+// reconcileMetricsServerNetworkPolicy selects pods having NeedMetricsServerAccessLabel.
+// It allows egress traffic to the HCP metrics server that is available for self-managed
+// HyperShift running on an OpenShift management cluster.
+func reconcileMetricsServerNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
+	protocol := corev1.ProtocolTCP
+	port := intstr.FromInt(9092)
+	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+		{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app.kubernetes.io/instance": "thanos-querier",
+							"app.kubernetes.io/name":     "thanos-query",
+						}},
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"network.openshift.io/policy-group": "monitoring",
+						},
+					},
+				},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Protocol: &protocol,
+					Port:     &port,
+				},
+			},
+		},
+	}
+
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeEgress}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchExpressions: []metav1.LabelSelectorRequirement{
+			{
+				Key:      NeedMetricsServerAccessLabel,
+				Operator: "Exists",
+				Values:   nil,
+			},
+		},
+	}
+
+	return nil
 }

@@ -160,17 +160,18 @@ type HostedControlPlaneReconciler struct {
 	// CertRotationScale determines how quickly we rotate certificates - should only be set faster in testing
 	CertRotationScale time.Duration
 
-	Log                           logr.Logger
-	ReleaseProvider               releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
-	createOrUpdate                func(hcp *hyperv1.HostedControlPlane) upsert.CreateOrUpdateFN
-	EnableCIDebugOutput           bool
-	OperateOnReleaseImage         string
-	DefaultIngressDomain          string
-	MetricsSet                    metrics.MetricsSet
-	SREConfigHash                 string
-	ec2Client                     ec2iface.EC2API
-	awsSession                    *session.Session
-	reconcileInfrastructureStatus func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error)
+	Log                                     logr.Logger
+	ReleaseProvider                         releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
+	createOrUpdate                          func(hcp *hyperv1.HostedControlPlane) upsert.CreateOrUpdateFN
+	EnableCIDebugOutput                     bool
+	OperateOnReleaseImage                   string
+	DefaultIngressDomain                    string
+	MetricsSet                              metrics.MetricsSet
+	SREConfigHash                           string
+	ec2Client                               ec2iface.EC2API
+	awsSession                              *session.Session
+	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (InfrastructureStatus, error)
+	EnableCVOManagementClusterMetricsAccess bool
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -2880,7 +2881,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx cont
 }
 
 func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := cvo.NewCVOParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext)
+	p := cvo.NewCVOParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext, r.EnableCVOManagementClusterMetricsAccess)
 
 	if _, exists := hcp.Annotations[hyperv1.DisableMonitoringServices]; !exists {
 		service := manifests.ClusterVersionOperatorService(hcp.Namespace)
@@ -2898,9 +2899,32 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 		}
 	}
 
+	if r.EnableCVOManagementClusterMetricsAccess {
+		sa := manifests.ClusterVersionOperatorServiceAccount(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
+			return cvo.ReconcileServiceAccount(sa, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile cluster version operator serviceaccount: %w", err)
+		}
+
+		role := manifests.ClusterVersionOperatorRole(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, role, func() error {
+			return cvo.ReconcileRole(role, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile cluster version operator role: %w", err)
+		}
+
+		rb := manifests.ClusterVersionOperatorRoleBinding(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, rb, func() error {
+			return cvo.ReconcileRoleBinding(rb, role, p.OwnerRef, hcp.Namespace)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile cluster version operator rolebinding: %w", err)
+		}
+	}
+
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.ControlPlaneImage, p.Image, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, p.PlatformType, util.HCPOAuthEnabled(hcp))
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, p.ControlPlaneImage, p.Image, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}

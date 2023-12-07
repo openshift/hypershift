@@ -22,6 +22,7 @@ import (
 	"time"
 
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -307,6 +308,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
+	enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
 
 	certRotationScale, err := pkiconfig.GetCertRotationScale()
 	if err != nil {
@@ -314,19 +316,20 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	hostedClusterReconciler := &hostedcluster.HostedClusterReconciler{
-		Client:                        mgr.GetClient(),
-		ManagementClusterCapabilities: mgmtClusterCaps,
-		HypershiftOperatorImage:       operatorImage,
-		ReleaseProvider:               releaseProviderWithOpenShiftImageRegistryOverrides,
-		EnableOCPClusterMonitoring:    opts.EnableOCPClusterMonitoring,
-		EnableCIDebugOutput:           opts.EnableCIDebugOutput,
-		ImageMetadataProvider:         imageMetaDataProvider,
-		MetricsSet:                    metricsSet,
-		OperatorNamespace:             opts.Namespace,
-		SREConfigHash:                 sreConfigHash,
-		KubevirtInfraClients:          kvinfra.NewKubevirtInfraClientMap(),
-		MonitoringDashboards:          monitoringDashboards,
-		CertRotationScale:             certRotationScale,
+		Client:                                  mgr.GetClient(),
+		ManagementClusterCapabilities:           mgmtClusterCaps,
+		HypershiftOperatorImage:                 operatorImage,
+		ReleaseProvider:                         releaseProviderWithOpenShiftImageRegistryOverrides,
+		EnableOCPClusterMonitoring:              opts.EnableOCPClusterMonitoring,
+		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
+		ImageMetadataProvider:                   imageMetaDataProvider,
+		MetricsSet:                              metricsSet,
+		OperatorNamespace:                       opts.Namespace,
+		SREConfigHash:                           sreConfigHash,
+		KubevirtInfraClients:                    kvinfra.NewKubevirtInfraClientMap(),
+		MonitoringDashboards:                    monitoringDashboards,
+		CertRotationScale:                       certRotationScale,
+		EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)

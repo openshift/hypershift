@@ -395,15 +395,18 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("Using metrics set", "set", metricsSet.String())
 
+		enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
+
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
-			Client:                        mgr.GetClient(),
-			ManagementClusterCapabilities: mgmtClusterCaps,
-			ReleaseProvider:               releaseProvider,
-			EnableCIDebugOutput:           enableCIDebugOutput,
-			OperateOnReleaseImage:         os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
-			DefaultIngressDomain:          defaultIngressDomain,
-			MetricsSet:                    metricsSet,
-			CertRotationScale:             certRotationScale,
+			Client:                                  mgr.GetClient(),
+			ManagementClusterCapabilities:           mgmtClusterCaps,
+			ReleaseProvider:                         releaseProvider,
+			EnableCIDebugOutput:                     enableCIDebugOutput,
+			OperateOnReleaseImage:                   os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
+			DefaultIngressDomain:                    defaultIngressDomain,
+			MetricsSet:                              metricsSet,
+			CertRotationScale:                       certRotationScale,
+			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)
