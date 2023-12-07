@@ -9,12 +9,14 @@ import (
 	"github.com/blang/semver"
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/go-logr/logr"
+	apiexample "github.com/openshift/hypershift/api/fixtures"
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -41,15 +43,45 @@ func (defaulter *hostedClusterDefaulter) Default(ctx context.Context, obj runtim
 		return apierrors.NewBadRequest(fmt.Sprintf("expected a HostedCluster but got a %T", obj))
 	}
 
-	if hcluster.Spec.Release.Image != "" {
-		return nil
+	if hcluster.Spec.Release.Image == "" {
+		pullSpec, err := supportedversion.LookupLatestSupportedRelease(ctx, hcluster)
+		if err != nil {
+			return fmt.Errorf("unable to find default release image: %w", err)
+		}
+		hcluster.Spec.Release.Image = pullSpec
 	}
 
-	pullSpec, err := supportedversion.LookupLatestSupportedRelease(ctx, hcluster)
-	if err != nil {
-		return fmt.Errorf("unable to find default release image: %w", err)
+	// Default platform specific values
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		if hcluster.Spec.Platform.Kubevirt == nil {
+			hcluster.Spec.Platform.Kubevirt = &hyperv1.KubevirtPlatformSpec{}
+		}
+		if hcluster.Spec.Platform.Kubevirt.GenerateID == "" {
+			hcluster.Spec.Platform.Kubevirt.GenerateID = utilrand.String(10)
+		}
+		if hcluster.Spec.DNS.BaseDomain == "" {
+			isTrue := true
+			hcluster.Spec.Platform.Kubevirt.BaseDomainPassthrough = &isTrue
+		}
+		if hcluster.Spec.Networking.NetworkType == "" {
+			hcluster.Spec.Networking.NetworkType = hyperv1.OVNKubernetes
+		}
+
+		// Default services for any service types that were not configured
+		existingServices := map[hyperv1.ServiceType]bool{}
+		defaults := apiexample.GetIngressServicePublishingStrategyMapping(hcluster.Spec.Networking.NetworkType, false)
+		for _, entry := range hcluster.Spec.Services {
+			existingServices[entry.Service] = true
+		}
+
+		for _, entry := range defaults {
+			if existingServices[entry.Service] {
+				continue
+			}
+			hcluster.Spec.Services = append(hcluster.Spec.Services, entry)
+		}
 	}
-	hcluster.Spec.Release.Image = pullSpec
 
 	return nil
 }
@@ -60,24 +92,38 @@ func (defaulter *nodePoolDefaulter) Default(ctx context.Context, obj runtime.Obj
 		return apierrors.NewBadRequest(fmt.Sprintf("expected a NodePool but got a %T", obj))
 	}
 
-	if np.Spec.Release.Image != "" {
-		return nil
-	} else if np.Spec.ClusterName == "" {
-		return fmt.Errorf("nodePool.Spec.ClusterName is a required field")
+	if np.Spec.Release.Image == "" {
+		if np.Spec.ClusterName == "" {
+			return fmt.Errorf("nodePool.Spec.ClusterName is a required field")
+		}
+
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      np.Spec.ClusterName,
+				Namespace: np.Namespace,
+			},
+		}
+
+		err := defaulter.client.Get(ctx, client.ObjectKeyFromObject(hc), hc)
+		if err != nil {
+			return fmt.Errorf("error retrieving HostedCluster named [%s], %v", np.Spec.ClusterName, err)
+		}
+		np.Spec.Release.Image = hc.Spec.Release.Image
 	}
 
-	hc := &hyperv1.HostedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      np.Spec.ClusterName,
-			Namespace: np.Namespace,
-		},
+	// Default platform specific values
+	switch np.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		if np.Spec.Platform.Kubevirt == nil {
+			// Setting the KubeVirtNodePoolPlatform to an empty struct allows for
+			// the CRD defaulting for this struct to take place.
+			np.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{}
+		}
+		if np.Spec.Management.UpgradeType == "" {
+			np.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+			np.Spec.Management.Replace = &hyperv1.ReplaceUpgrade{}
+		}
 	}
-
-	err := defaulter.client.Get(ctx, client.ObjectKeyFromObject(hc), hc)
-	if err != nil {
-		return fmt.Errorf("error retrieving HostedCluster named [%s], %v", np.Spec.ClusterName, err)
-	}
-	np.Spec.Release.Image = hc.Spec.Release.Image
 
 	return nil
 }

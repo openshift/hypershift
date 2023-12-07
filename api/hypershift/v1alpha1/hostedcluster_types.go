@@ -205,6 +205,7 @@ type HostedClusterSpec struct {
 	// Networking specifies network configuration for the cluster.
 	//
 	// +immutable
+	// +kubebuilder:default={networkType: "OVNKubernetes", clusterNetwork: {{cidr: "10.132.0.0/14"}}, serviceNetwork: {{cidr: "172.31.0.0/16"}}}
 	Networking ClusterNetworking `json:"networking"`
 
 	// Autoscaling specifies auto-scaling behavior that applies to all NodePools
@@ -529,6 +530,7 @@ type ClusterNetworking struct {
 	//
 	// +immutable
 	// +optional
+	// +kubebuilder:default:={{cidr: "10.132.0.0/14"}}
 	ClusterNetwork []ClusterNetworkEntry `json:"clusterNetwork,omitempty"`
 
 	// ServiceNetwork is the list of IP address pools for services.
@@ -537,6 +539,7 @@ type ClusterNetworking struct {
 	//
 	// +immutable
 	// +optional
+	// +kubebuilder:default:={{cidr: "172.31.0.0/16"}}
 	ServiceNetwork []ServiceNetworkEntry `json:"serviceNetwork,omitempty"`
 
 	// NetworkType specifies the SDN provider used for cluster networking.

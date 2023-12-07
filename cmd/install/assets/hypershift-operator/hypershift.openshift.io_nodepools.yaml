@@ -139,6 +139,7 @@ spec:
                   pool, such as upgrade strategies and auto-repair behaviors.
                 properties:
                   autoRepair:
+                    default: false
                     description: AutoRepair specifies whether health checks should
                       be enabled for machines in the NodePool. The default is false.
                     type: boolean
@@ -548,7 +549,7 @@ spec:
                       compute:
                         default:
                           cores: 2
-                          memory: 4Gi
+                          memory: 8Gi
                         description: Compute contains values representing the virtual
                           hardware requested for the VM
                         properties:
@@ -591,6 +592,10 @@ spec:
                         - Disable
                         type: string
                       rootVolume:
+                        default:
+                          persistent:
+                            size: 32Gi
+                          type: Persistent
                         description: RootVolume represents values associated with
                           the VM volume that will host rhcos
                         properties:
@@ -1113,6 +1118,7 @@ spec:
                   pool, such as upgrade strategies and auto-repair behaviors.
                 properties:
                   autoRepair:
+                    default: false
                     description: AutoRepair specifies whether health checks should
                       be enabled for machines in the NodePool. The default is false.
                     type: boolean
@@ -1514,7 +1520,7 @@ spec:
                       compute:
                         default:
                           cores: 2
-                          memory: 4Gi
+                          memory: 8Gi
                         description: Compute contains values representing the virtual
                           hardware requested for the VM
                         properties:
@@ -1557,6 +1563,10 @@ spec:
                         - Disable
                         type: string
                       rootVolume:
+                        default:
+                          persistent:
+                            size: 32Gi
+                          type: Persistent
                         description: RootVolume represents values associated with
                           the VM volume that will host rhcos
                         properties:

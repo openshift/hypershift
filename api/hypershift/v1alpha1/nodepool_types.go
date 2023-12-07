@@ -364,6 +364,7 @@ type NodePoolManagement struct {
 	// in the NodePool. The default is false.
 	//
 	// +optional
+	// +kubebuilder:default=false
 	AutoRepair bool `json:"autoRepair"`
 }
 
@@ -697,12 +698,13 @@ const (
 // on KubeVirt platform.
 type KubevirtNodePoolPlatform struct {
 	// RootVolume represents values associated with the VM volume that will host rhcos
+	// +kubebuilder:default={persistent: {size: "32Gi"}, type: "Persistent"}
 	RootVolume *KubevirtRootVolume `json:"rootVolume"`
 
 	// Compute contains values representing the virtual hardware requested for the VM
 	//
 	// +optional
-	// +kubebuilder:default={memory: "4Gi", cores: 2}
+	// +kubebuilder:default={memory: "8Gi", cores: 2}
 	Compute *KubevirtCompute `json:"compute"`
 
 	// NetworkInterfaceMultiQueue If set to "Enable", virtual network interfaces configured with a virtio bus will also
