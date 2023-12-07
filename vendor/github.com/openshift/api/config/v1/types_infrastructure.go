@@ -1,6 +1,8 @@
 package v1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 // +genclient
 // +genclient:nonNamespaced
@@ -227,6 +229,24 @@ const (
 	// IBMCloudProviderTypeUPI means that the IBM Cloud cluster is using user provided infrastructure.
 	// This is utilized in IBM Cloud Satellite environments.
 	IBMCloudProviderTypeUPI IBMCloudProviderType = "UPI"
+)
+
+// ClusterHostedDNS indicates whether the cluster DNS is hosted by the cluster or Core DNS .
+type ClusterHostedDNS string
+
+const (
+	// EnabledClusterHostedDNS indicates that a DNS solution other than the default provided by the
+	// cloud platform is in use. In this mode, the cluster hosts a DNS solution during installation and the
+	// user is expected to provide their own DNS solution post-install.
+	// When "Enabled", the cluster will continue to use the default Load Balancers provided by the cloud
+	// platform.
+	EnabledClusterHostedDNS ClusterHostedDNS = "Enabled"
+
+	// DisabledClusterHostedDNS indicates that the cluster is using the default DNS solution for the
+	// cloud platform. OpenShift is responsible for all the LB and DNS configuration needed for the
+	// cluster to be functional with no intervention from the user. To accomplish this, OpenShift
+	// configures the default LB and DNS solutions provided by the underlying cloud.
+	DisabledClusterHostedDNS ClusterHostedDNS = "Disabled"
 )
 
 // ExternalPlatformSpec holds the desired state for the generic External infrastructure provider.
@@ -610,6 +630,24 @@ type GCPPlatformStatus struct {
 	// +optional
 	// +openshift:enable:FeatureSets=CustomNoUpgrade;TechPreviewNoUpgrade
 	ResourceTags []GCPResourceTag `json:"resourceTags,omitempty"`
+
+	// clusterHostedDNS indicates the type of DNS solution in use within the cluster. Its default value of
+	// "Disabled" indicates that the cluster's DNS is the default provided by the cloud platform. It can be
+	// "Enabled" during install to bypass the configuration of the cloud default DNS. When "Enabled", the
+	// cluster needs to provide a self-hosted DNS solution for the cluster's installation to succeed.
+	// The cluster's use of the cloud's Load Balancers is unaffected by this setting.
+	// The value is immutable after it has been set at install time.
+	// Currently, there is no way for the customer to add additional DNS entries into the cluster hosted DNS.
+	// Enabling this functionality allows the user to start their own DNS solution outside the cluster after
+	// installation is complete. The customer would be responsible for configuring this custom DNS solution,
+	// and it can be run in addition to the in-cluster DNS solution.
+	// +kubebuilder:default:="Disabled"
+	// +default="Disabled"
+	// +kubebuilder:validation:Enum="Enabled";"Disabled"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterHostedDNS is immutable and may only be configured during installation"
+	// +optional
+	// +openshift:enable:FeatureSets=CustomNoUpgrade;TechPreviewNoUpgrade
+	ClusterHostedDNS ClusterHostedDNS `json:"clusterHostedDNS,omitempty"`
 }
 
 // GCPResourceLabel is a label to apply to GCP resources created for the cluster.
@@ -1182,15 +1220,14 @@ type VSpherePlatformStatus struct {
 // override existing defaults of IBM Cloud Services.
 type IBMCloudServiceEndpoint struct {
 	// name is the name of the IBM Cloud service.
+	// Possible values are: CIS, COS, DNSServices, GlobalSearch, GlobalTagging, HyperProtect, IAM, KeyProtect, ResourceController, ResourceManager, or VPC.
 	// For example, the IBM Cloud Private IAM service could be configured with the
 	// service `name` of `IAM` and `url` of `https://private.iam.cloud.ibm.com`
 	// Whereas the IBM Cloud Private VPC service for US South (Dallas) could be configured
 	// with the service `name` of `VPC` and `url` of `https://us.south.private.iaas.cloud.ibm.com`
 	//
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9-]+$`
-	// +kubebuilder:validation:MaxLength=32
-	Name string `json:"name"`
+	Name IBMCloudServiceName `json:"name"`
 
 	// url is fully qualified URI with scheme https, that overrides the default generated
 	// endpoint for a client.
@@ -1418,6 +1455,75 @@ type NutanixPlatformSpec struct {
 	// +listType=map
 	// +listMapKey=name
 	PrismElements []NutanixPrismElementEndpoint `json:"prismElements"`
+
+	// failureDomains configures failure domains information for the Nutanix platform.
+	// When set, the failure domains defined here may be used to spread Machines across
+	// prism element clusters to improve fault tolerance of the cluster.
+	// +listType=map
+	// +listMapKey=name
+	// +optional
+	FailureDomains []NutanixFailureDomain `json:"failureDomains"`
+}
+
+// NutanixFailureDomain configures failure domain information for the Nutanix platform.
+type NutanixFailureDomain struct {
+	// name defines the unique name of a failure domain.
+	// Name is required and must be at most 64 characters in length.
+	// It must consist of only lower case alphanumeric characters and hyphens (-).
+	// It must start and end with an alphanumeric character.
+	// This value is arbitrary and is used to identify the failure domain within the platform.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:validation:Pattern=`[a-z0-9]([-a-z0-9]*[a-z0-9])?`
+	Name string `json:"name"`
+
+	// cluster is to identify the cluster (the Prism Element under management of the Prism Central),
+	// in which the Machine's VM will be created. The cluster identifier (uuid or name) can be obtained
+	// from the Prism Central console or using the prism_central API.
+	// +kubebuilder:validation:Required
+	Cluster NutanixResourceIdentifier `json:"cluster"`
+
+	// subnets holds a list of identifiers (one or more) of the cluster's network subnets
+	// for the Machine's VM to connect to. The subnet identifiers (uuid or name) can be
+	// obtained from the Prism Central console or using the prism_central API.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=1
+	// +listType=map
+	// +listMapKey=type
+	Subnets []NutanixResourceIdentifier `json:"subnets"`
+}
+
+// NutanixIdentifierType is an enumeration of different resource identifier types.
+// +kubebuilder:validation:Enum:=UUID;Name
+type NutanixIdentifierType string
+
+const (
+	// NutanixIdentifierUUID is a resource identifier identifying the object by UUID.
+	NutanixIdentifierUUID NutanixIdentifierType = "UUID"
+
+	// NutanixIdentifierName is a resource identifier identifying the object by Name.
+	NutanixIdentifierName NutanixIdentifierType = "Name"
+)
+
+// NutanixResourceIdentifier holds the identity of a Nutanix PC resource (cluster, image, subnet, etc.)
+// +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'UUID' ?  has(self.uuid) : !has(self.uuid)",message="uuid configuration is required when type is UUID, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'Name' ?  has(self.name) : !has(self.name)",message="name configuration is required when type is Name, and forbidden otherwise"
+// +union
+type NutanixResourceIdentifier struct {
+	// type is the identifier type to use for this resource.
+	// +unionDiscriminator
+	// +kubebuilder:validation:Required
+	Type NutanixIdentifierType `json:"type"`
+
+	// uuid is the UUID of the resource in the PC. It cannot be empty if the type is UUID.
+	// +optional
+	UUID *string `json:"uuid,omitempty"`
+
+	// name is the resource name in the PC. It cannot be empty if the type is Name.
+	// +optional
+	Name *string `json:"name,omitempty"`
 }
 
 // NutanixPrismEndpoint holds the endpoint address and port to access the Nutanix Prism Central or Element (cluster)
