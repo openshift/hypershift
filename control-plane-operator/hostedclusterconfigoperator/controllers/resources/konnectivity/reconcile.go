@@ -10,6 +10,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -28,6 +29,8 @@ var (
 			konnectivityVolumeCACert().Name:     "/etc/konnectivity/ca",
 		},
 	}
+	maxUnavailable = intstr.FromString("10%")
+	maxSurge       = intstr.FromInt(0)
 )
 
 func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32, platform hyperv1.PlatformType, proxy configv1.ProxyStatus) {
@@ -60,6 +63,13 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
 					util.BuildVolume(konnectivityVolumeCACert(), buildKonnectivityVolumeCACert),
 				},
+			},
+		},
+		UpdateStrategy: appsv1.DaemonSetUpdateStrategy{
+			Type: appsv1.RollingUpdateDaemonSetStrategyType,
+			RollingUpdate: &appsv1.RollingUpdateDaemonSet{
+				MaxUnavailable: &maxUnavailable,
+				MaxSurge:       &maxSurge,
 			},
 		},
 	}
