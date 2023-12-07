@@ -338,7 +338,14 @@ func apply(ctx context.Context, l logr.Logger, exampleOptions *apifixtures.Examp
 	var hostedCluster *hyperv1.HostedCluster
 	for _, object := range exampleObjects {
 		key := crclient.ObjectKeyFromObject(object)
-		object.SetLabels(map[string]string{util.AutoInfraLabelName: exampleOptions.InfraID})
+
+		labels := object.GetLabels()
+		if labels == nil {
+			labels = make(map[string]string)
+		}
+		labels[util.AutoInfraLabelName] = exampleOptions.InfraID
+		object.SetLabels(labels)
+
 		var err error
 		if object.GetObjectKind().GroupVersionKind().Kind == "HostedCluster" {
 			hostedCluster = &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Namespace: object.GetNamespace(), Name: object.GetName()}}

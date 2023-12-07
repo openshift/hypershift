@@ -75,6 +75,7 @@ import (
 	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/configrefs"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	ignitionserverreconciliation "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/ignitionserver"
@@ -466,6 +467,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Part zero: fix up conversion
 	originalSpec := hcluster.Spec.DeepCopy()
 
+	createOrUpdate := r.createOrUpdate(req)
+
+	if err = r.reconcileCLISecrets(ctx, createOrUpdate, hcluster); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile the CLI secrets: %w", err)
+	}
+
 	// Reconcile converted AWS roles.
 	if hcluster.Spec.Platform.AWS != nil {
 		if err := r.dereferenceAWSRoles(ctx, &hcluster.Spec.Platform.AWS.RolesRef, hcluster.Namespace); err != nil {
@@ -482,8 +489,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN = arn
 		}
 	}
-
-	createOrUpdate := r.createOrUpdate(req)
 
 	// Reconcile platform defaults
 	if err := r.reconcilePlatformDefaultSettings(ctx, hcluster, createOrUpdate, log); err != nil {
@@ -2178,6 +2183,37 @@ func (r *HostedClusterReconciler) reconcileAutoscaler(ctx context.Context, creat
 	}
 
 	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, clusterAutoscalerImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.MutatingOwnerRefFromHCP(hcp, releaseVersion))
+}
+
+// reconcileCLISecrets makes sure the secrets that were created by the cli, and are safe to be deleted with the
+// hosted cluster, has an owner reference of the hosted cluster.
+func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	log := ctrl.LoggerFrom(ctx)
+	secrets := &corev1.SecretList{}
+	err := r.List(ctx, secrets, client.InNamespace(hcluster.Namespace), client.MatchingLabels{
+		util.DeleteWithClusterLabelName: "true",
+		util.AutoInfraLabelName:         hcluster.Spec.InfraID,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to retrieve cli created secrets")
+	}
+
+	ownerRef := config.OwnerRefFrom(hcluster)
+	for _, secret := range secrets.Items {
+		res, err := createOrUpdate(ctx, r.Client, &secret, func() error {
+			ownerRef.ApplyTo(&secret)
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("failed to set secret's owner reference")
+		}
+		if res == controllerutil.OperationResultUpdated {
+			log.Info("added owner reference of the Hosted cluster, to the secret", "secret", secret.Name)
+		}
+	}
+
+	return nil
 }
 
 // GetControlPlaneOperatorImage resolves the appropriate control plane operator
