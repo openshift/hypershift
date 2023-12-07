@@ -359,29 +359,6 @@ func OpenShiftRouteControllerManagerRelabelConfigs(set MetricsSet) []*prometheus
 	}
 }
 
-func CloudCredentialOperatorRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
-	switch set {
-	case MetricsSetTelemetry:
-		return []*prometheusoperatorv1.RelabelConfig{
-			{
-				Action:       "drop",
-				Regex:        "(.*)",
-				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
-			},
-		}
-	case MetricsSetSRE:
-		return sreMetricsSetConfig.CCO
-	default:
-		return []*prometheusoperatorv1.RelabelConfig{
-			{
-				Action:       "drop",
-				Regex:        "etcd_(debugging|disk|server).*",
-				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
-			},
-		}
-	}
-}
-
 func OLMRelabelConfigs(set MetricsSet) []*prometheusoperatorv1.RelabelConfig {
 	switch set {
 	case MetricsSetTelemetry:

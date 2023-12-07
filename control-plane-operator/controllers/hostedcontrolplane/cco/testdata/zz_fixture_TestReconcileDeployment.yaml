@@ -83,39 +83,6 @@ spec:
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: service-account-kubeconfig
-      - args:
-        - --secure-listen-address=0.0.0.0:8443
-        - --upstream=http://127.0.0.1:2112/
-        - --tls-cert-file=/etc/tls/private/tls.crt
-        - --tls-private-key-file=/etc/tls/private/tls.key
-        - --kubeconfig=/etc/kubernetes/kubeconfig
-        command:
-        - /usr/bin/kube-rbac-proxy
-        env:
-        - name: KUBECONFIG
-          value: /etc/kubernetes/kubeconfig
-        image: quay.io/openshift/kube-rbac-proxy:latest
-        name: metrics
-        ports:
-        - containerPort: 8443
-          name: metrics
-          protocol: TCP
-        resources:
-          requests:
-            cpu: 20m
-            memory: 10Mi
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
-        terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
-        volumeMounts:
-        - mountPath: /etc/kubernetes
-          name: service-account-kubeconfig
-        - mountPath: /etc/tls/private
-          name: serving-cert
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -149,8 +116,4 @@ spec:
         secret:
           defaultMode: 416
           secretName: cloud-credential-operator-kubeconfig
-      - name: serving-cert
-        secret:
-          defaultMode: 416
-          secretName: cloud-credential-operator-serving-cert
 status: {}
