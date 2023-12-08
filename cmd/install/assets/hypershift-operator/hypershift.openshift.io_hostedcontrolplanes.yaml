@@ -2015,6 +2015,47 @@ spec:
                             type: integer
                         type: object
                     type: object
+                  operatorhub:
+                    description: OperatorHub specifies the configuration for the Operator
+                      Lifecycle Manager in the HostedCluster. This is only configured
+                      at deployment time but the controller are not reconcilling over
+                      it. The OperatorHub configuration will be constantly reconciled
+                      if catalog placement is management, but only on cluster creation
+                      otherwise.
+                    properties:
+                      disableAllDefaultSources:
+                        description: disableAllDefaultSources allows you to disable
+                          all the default hub sources. If this is true, a specific
+                          entry in sources can be used to enable a default source.
+                          If this is false, a specific entry in sources can be used
+                          to disable or enable a default source.
+                        type: boolean
+                      sources:
+                        description: sources is the list of default hub sources and
+                          their configuration. If the list is empty, it implies that
+                          the default hub sources are enabled on the cluster unless
+                          disableAllDefaultSources is true. If disableAllDefaultSources
+                          is true and sources is not empty, the configuration present
+                          in sources will take precedence. The list of default hub
+                          sources and their current state will always be reflected
+                          in the status block.
+                        items:
+                          description: HubSource is used to specify the hub source
+                            and its configuration
+                          properties:
+                            disabled:
+                              description: disabled is used to disable a default hub
+                                source on cluster
+                              type: boolean
+                            name:
+                              description: name is the name of one of the default
+                                hub sources
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                          type: object
+                        type: array
+                    type: object
                   proxy:
                     description: Proxy holds cluster-wide information on how to configure
                       default proxies for the cluster.
@@ -6100,6 +6141,47 @@ spec:
                       rule: '!has(self.tokenConfig) || !has(self.tokenConfig.accessTokenInactivityTimeout)
                         || duration(self.tokenConfig.accessTokenInactivityTimeout).getSeconds()
                         >= 300'
+                  operatorhub:
+                    description: OperatorHub specifies the configuration for the Operator
+                      Lifecycle Manager in the HostedCluster. This is only configured
+                      at deployment time but the controller are not reconcilling over
+                      it. The OperatorHub configuration will be constantly reconciled
+                      if catalog placement is management, but only on cluster creation
+                      otherwise.
+                    properties:
+                      disableAllDefaultSources:
+                        description: disableAllDefaultSources allows you to disable
+                          all the default hub sources. If this is true, a specific
+                          entry in sources can be used to enable a default source.
+                          If this is false, a specific entry in sources can be used
+                          to disable or enable a default source.
+                        type: boolean
+                      sources:
+                        description: sources is the list of default hub sources and
+                          their configuration. If the list is empty, it implies that
+                          the default hub sources are enabled on the cluster unless
+                          disableAllDefaultSources is true. If disableAllDefaultSources
+                          is true and sources is not empty, the configuration present
+                          in sources will take precedence. The list of default hub
+                          sources and their current state will always be reflected
+                          in the status block.
+                        items:
+                          description: HubSource is used to specify the hub source
+                            and its configuration
+                          properties:
+                            disabled:
+                              description: disabled is used to disable a default hub
+                                source on cluster
+                              type: boolean
+                            name:
+                              description: name is the name of one of the default
+                                hub sources
+                              maxLength: 253
+                              minLength: 1
+                              type: string
+                          type: object
+                        type: array
+                    type: object
                   proxy:
                     description: Proxy holds cluster-wide information on how to configure
                       default proxies for the cluster.
