@@ -273,7 +273,7 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	start := time.Now()
 	g := NewWithT(t)
 
-	var rolloutIncompleteReason string
+	var rolloutIncompleteReason, prevRolloutIncompleteReason string
 	t.Logf("Waiting for hostedcluster to rollout image. Namespace: %s, name: %s, image: %s", hostedCluster.Namespace, hostedCluster.Name, image)
 	err := wait.PollImmediateWithContext(ctx, 10*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
 		latest := hostedCluster.DeepCopy()
@@ -309,7 +309,10 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 		}
 
 		if rolloutIncompleteReason != "" {
-			t.Logf("Waiting for hostedcluster rollout. Image: %s: %s", image, rolloutIncompleteReason)
+			if rolloutIncompleteReason != prevRolloutIncompleteReason {
+				prevRolloutIncompleteReason = rolloutIncompleteReason
+				t.Logf("Waiting for hostedcluster rollout. Image: %s: %s", image, rolloutIncompleteReason)
+			}
 			return false, nil
 		}
 		return true, nil
@@ -1383,7 +1386,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
 	WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
-	// rollout will not complete if there are no wroker nodes.
+	// rollout will not complete if there are no worker nodes.
 	if numNodes > 0 {
 		// Wait for the rollout to be complete
 		t.Logf("Waiting for cluster rollout. Image: %s", clusterOpts.ReleaseImage)
@@ -1451,6 +1454,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 
 func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool) {
 	expectedConditions := conditions.ExpectedHCConditions()
+	var previousConditions = make(map[hyperv1.ConditionType]metav1.ConditionStatus)
 
 	switch hostedCluster.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -1502,8 +1506,13 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 				return false, fmt.Errorf("unknown condition %s", condition.Type)
 			}
 
+			prevStatus, _ := previousConditions[hyperv1.ConditionType(condition.Type)]
+
 			if condition.Status != expectedStatus {
-				t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
+				if condition.Status != prevStatus {
+					t.Logf("condition %s status [%s] doesn't match the expected status [%s]", condition.Type, condition.Status, expectedStatus)
+					previousConditions[hyperv1.ConditionType(condition.Type)] = condition.Status
+				}
 				return false, nil
 			}
 			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
