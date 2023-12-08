@@ -238,27 +238,6 @@ var clusterOperators = []ClusterOperatorInfo{
 			},
 		},
 	},
-	{
-		Name: "cloud-credential",
-		VersionMapping: map[string]string{
-			"operator": "release",
-		},
-		RelatedObjects: []configv1.ObjectReference{
-			{
-				Group:    "operator.openshift.io",
-				Resource: "cloudcredentials",
-				Name:     "cluster",
-			},
-			{
-				Group:    "cloudcredential.openshift.io",
-				Resource: "credentialsrequests",
-			},
-			{
-				Resource: "namespaces",
-				Name:     "openshift-cloud-credential-operator",
-			},
-		},
-	},
 }
 
 func (r *reconciler) reconcileClusterOperators(ctx context.Context) error {
