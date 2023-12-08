@@ -52,6 +52,26 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+var expectedKasManagementComponents = []string{
+	"cluster-network-operator",
+	"ignition-server",
+	"cluster-storage-operator",
+	"csi-snapshot-controller-operator",
+	"machine-approver",
+	"cluster-autoscaler",
+	"cluster-node-tuning-operator",
+	"capi-provider-controller-manager",
+	"capi-provider",
+	"cluster-api",
+	"etcd",
+	"control-plane-operator",
+	"control-plane-pki-operator",
+	"hosted-cluster-config-operator",
+	"cloud-controller-manager",
+	"olm-collect-profiles",
+	"aws-ebs-csi-driver-operator",
+}
+
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
 	return wait.PollImmediateWithContext(ctx, time.Second, time.Minute*1, func(ctx context.Context) (done bool, err error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(original), original); err != nil {
@@ -755,28 +775,8 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		t.Run("EnsureComponentsHaveNeedManagementKASAccessLabel", func(t *testing.T) {
-			// Check for all components expected to have NeedManagementKASAccessLabel.
-			want := []string{
-				"cluster-network-operator",
-				"ignition-server",
-				"cluster-storage-operator",
-				"csi-snapshot-controller-operator",
-				"machine-approver",
-				"cluster-autoscaler",
-				"cluster-node-tuning-operator",
-				"capi-provider-controller-manager",
-				"cluster-api",
-				"etcd", // For etcd-defrag leader elections
-				"control-plane-operator",
-				"control-plane-pki-operator",
-				"hosted-cluster-config-operator",
-				"cloud-controller-manager",
-				"olm-collect-profiles",
-				"aws-ebs-csi-driver-operator",
-			}
-
 			g := NewWithT(t)
-			err := checkPodsHaveLabel(ctx, c, want, hcpNamespace, client.MatchingLabels{suppconfig.NeedManagementKASAccessLabel: "true"})
+			err := checkPodsHaveLabel(ctx, c, expectedKasManagementComponents, hcpNamespace, client.MatchingLabels{suppconfig.NeedManagementKASAccessLabel: "true"})
 			g.Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -1717,5 +1717,38 @@ func EnsureNoHCPPodsLandOnDefaultNode(t *testing.T, ctx context.Context, client 
 	for _, pod := range podList.Items {
 		g.Expect(pod.Spec.NodeSelector).To(HaveKeyWithValue("hypershift.openshift.io/control-plane", "true"))
 		g.Expect(hcpNodeNames).To(ContainElement(pod.Spec.NodeName))
+	}
+}
+
+func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	g := NewWithT(t)
+
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+	var pods corev1.PodList
+	if err := c.List(ctx, &pods, &crclient.ListOptions{Namespace: hcpNamespace}); err != nil {
+	}
+
+	expectedComponentsWithTokenMount := append(expectedKasManagementComponents,
+		"aws-ebs-csi-driver-controller",
+		"packageserver",
+		"csi-snapshot-webhook",
+		"csi-snapshot-controller",
+		"ovnkube-control-plane", //remove once https://issues.redhat.com/browse/OCPBUGS-26408 is closed,
+	)
+
+	for _, pod := range pods.Items {
+		hasPrefix := false
+		for _, prefix := range expectedComponentsWithTokenMount {
+			if strings.HasPrefix(pod.Name, prefix) {
+				hasPrefix = true
+				break
+			}
+		}
+		if !hasPrefix {
+			for _, volume := range pod.Spec.Volumes {
+				g.Expect(volume.Name).ToNot(HavePrefix("kube-api-access-"))
+			}
+		}
 	}
 }
