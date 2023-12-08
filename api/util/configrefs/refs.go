@@ -79,6 +79,15 @@ func authenticationSecretRefs(spec *configv1.AuthenticationSpec) sets.String {
 			refs.Insert(spec.WebhookTokenAuthenticator.KubeConfig.Name)
 		}
 	}
+	if spec.Type == configv1.AuthenticationTypeOIDC {
+		for _, provider := range spec.OIDCProviders {
+			for _, client := range provider.OIDCClients {
+				if len(client.ClientSecret.Name) > 0 {
+					refs.Insert(client.ClientSecret.Name)
+				}
+			}
+		}
+	}
 	return refs
 }
 
@@ -89,6 +98,13 @@ func authenticationConfigMapRefs(spec *configv1.AuthenticationSpec) sets.String 
 	}
 	if len(spec.OAuthMetadata.Name) > 0 {
 		refs.Insert(spec.OAuthMetadata.Name)
+	}
+	if spec.Type == configv1.AuthenticationTypeOIDC {
+		for _, provider := range spec.OIDCProviders {
+			if len(provider.Issuer.CertificateAuthority.Name) > 0 {
+				refs.Insert(provider.Issuer.CertificateAuthority.Name)
+			}
+		}
 	}
 	return refs
 }

@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
+// Be sure to update *ConfigMapRefs in refs.go to include new configmap refs
 func TestKnownConfigMapRefs(t *testing.T) {
 	actual := findRefs(reflect.TypeOf(hyperv1.ClusterConfiguration{}), "", "ConfigMapNameReference")
 	expected := sets.NewString(
@@ -249,12 +250,14 @@ func TestConfigMapRefs(t *testing.T) {
 	}
 }
 
+// Be sure to update *SecretRefs() in refs.go to include new secret refs
 func TestKnownSecretRefs(t *testing.T) {
 	actual := findRefs(reflect.TypeOf(hyperv1.ClusterConfiguration{}), "", "SecretNameReference")
 	expected := sets.NewString(
 		".APIServer.ServingCerts.NamedCertificates.ServingCertificate",
 		".Authentication.WebhookTokenAuthenticator.KubeConfig",
 		".Authentication.WebhookTokenAuthenticators.KubeConfig",
+		".Authentication.OIDCProviders.OIDCClients.ClientSecret",
 		".Ingress.ComponentRoutes.ServingCertKeyPairSecret",
 		".OAuth.IdentityProviders.IdentityProviderConfig.BasicAuth.OAuthRemoteConnectionInfo.TLSClientCert",
 		".OAuth.IdentityProviders.IdentityProviderConfig.BasicAuth.OAuthRemoteConnectionInfo.TLSClientKey",

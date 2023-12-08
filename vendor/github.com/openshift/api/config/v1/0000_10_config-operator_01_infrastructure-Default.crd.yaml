@@ -99,6 +99,80 @@ spec:
                     nutanix:
                       description: Nutanix contains settings specific to the Nutanix infrastructure provider.
                       properties:
+                        failureDomains:
+                          description: failureDomains configures failure domains information for the Nutanix platform. When set, the failure domains defined here may be used to spread Machines across prism element clusters to improve fault tolerance of the cluster.
+                          items:
+                            description: NutanixFailureDomain configures failure domain information for the Nutanix platform.
+                            properties:
+                              cluster:
+                                description: cluster is to identify the cluster (the Prism Element under management of the Prism Central), in which the Machine's VM will be created. The cluster identifier (uuid or name) can be obtained from the Prism Central console or using the prism_central API.
+                                properties:
+                                  name:
+                                    description: name is the resource name in the PC. It cannot be empty if the type is Name.
+                                    type: string
+                                  type:
+                                    description: type is the identifier type to use for this resource.
+                                    enum:
+                                      - UUID
+                                      - Name
+                                    type: string
+                                  uuid:
+                                    description: uuid is the UUID of the resource in the PC. It cannot be empty if the type is UUID.
+                                    type: string
+                                required:
+                                  - type
+                                type: object
+                                x-kubernetes-validations:
+                                  - message: uuid configuration is required when type is UUID, and forbidden otherwise
+                                    rule: 'has(self.type) && self.type == ''UUID'' ?  has(self.uuid) : !has(self.uuid)'
+                                  - message: name configuration is required when type is Name, and forbidden otherwise
+                                    rule: 'has(self.type) && self.type == ''Name'' ?  has(self.name) : !has(self.name)'
+                              name:
+                                description: name defines the unique name of a failure domain. Name is required and must be at most 64 characters in length. It must consist of only lower case alphanumeric characters and hyphens (-). It must start and end with an alphanumeric character. This value is arbitrary and is used to identify the failure domain within the platform.
+                                maxLength: 64
+                                minLength: 1
+                                pattern: '[a-z0-9]([-a-z0-9]*[a-z0-9])?'
+                                type: string
+                              subnets:
+                                description: subnets holds a list of identifiers (one or more) of the cluster's network subnets for the Machine's VM to connect to. The subnet identifiers (uuid or name) can be obtained from the Prism Central console or using the prism_central API.
+                                items:
+                                  description: NutanixResourceIdentifier holds the identity of a Nutanix PC resource (cluster, image, subnet, etc.)
+                                  properties:
+                                    name:
+                                      description: name is the resource name in the PC. It cannot be empty if the type is Name.
+                                      type: string
+                                    type:
+                                      description: type is the identifier type to use for this resource.
+                                      enum:
+                                        - UUID
+                                        - Name
+                                      type: string
+                                    uuid:
+                                      description: uuid is the UUID of the resource in the PC. It cannot be empty if the type is UUID.
+                                      type: string
+                                  required:
+                                    - type
+                                  type: object
+                                  x-kubernetes-validations:
+                                    - message: uuid configuration is required when type is UUID, and forbidden otherwise
+                                      rule: 'has(self.type) && self.type == ''UUID'' ?  has(self.uuid) : !has(self.uuid)'
+                                    - message: name configuration is required when type is Name, and forbidden otherwise
+                                      rule: 'has(self.type) && self.type == ''Name'' ?  has(self.name) : !has(self.name)'
+                                maxItems: 1
+                                minItems: 1
+                                type: array
+                                x-kubernetes-list-map-keys:
+                                  - type
+                                x-kubernetes-list-type: map
+                            required:
+                              - cluster
+                              - name
+                              - subnets
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                            - name
+                          x-kubernetes-list-type: map
                         prismCentral:
                           description: prismCentral holds the endpoint address and port to access the Nutanix Prism Central. When a cluster-wide proxy is installed, by default, this endpoint will be accessed via the proxy. Should you wish for communication with this endpoint not to be proxied, please add the endpoint to the proxy spec.noProxy list.
                           properties:
@@ -655,9 +729,19 @@ spec:
                             description: IBMCloudServiceEndpoint stores the configuration of a custom url to override existing defaults of IBM Cloud Services.
                             properties:
                               name:
-                                description: name is the name of the IBM Cloud service. For example, the IBM Cloud Private IAM service could be configured with the service `name` of `IAM` and `url` of `https://private.iam.cloud.ibm.com` Whereas the IBM Cloud Private VPC service for US South (Dallas) could be configured with the service `name` of `VPC` and `url` of `https://us.south.private.iaas.cloud.ibm.com`
-                                maxLength: 32
-                                pattern: ^[a-zA-Z0-9-]+$
+                                description: 'name is the name of the IBM Cloud service. Possible values are: CIS, COS, DNSServices, GlobalSearch, GlobalTagging, HyperProtect, IAM, KeyProtect, ResourceController, ResourceManager, or VPC. For example, the IBM Cloud Private IAM service could be configured with the service `name` of `IAM` and `url` of `https://private.iam.cloud.ibm.com` Whereas the IBM Cloud Private VPC service for US South (Dallas) could be configured with the service `name` of `VPC` and `url` of `https://us.south.private.iaas.cloud.ibm.com`'
+                                enum:
+                                  - CIS
+                                  - COS
+                                  - DNSServices
+                                  - GlobalSearch
+                                  - GlobalTagging
+                                  - HyperProtect
+                                  - IAM
+                                  - KeyProtect
+                                  - ResourceController
+                                  - ResourceManager
+                                  - VPC
                                 type: string
                               url:
                                 description: url is fully qualified URI with scheme https, that overrides the default generated endpoint for a client. This must be provided and cannot be empty.

@@ -5,6 +5,7 @@ metadata:
     api-approved.openshift.io: https://github.com/openshift/api/pull/495
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
+    release.openshift.io/feature-set: Default
   name: clusterversions.config.openshift.io
 spec:
   group: config.openshift.io
@@ -76,6 +77,7 @@ spec:
                           - DeploymentConfig
                           - ImageRegistry
                           - OperatorLifecycleManager
+                          - CloudCredential
                       x-kubernetes-list-type: atomic
                     baselineCapabilitySet:
                       description: baselineCapabilitySet selects an initial set of optional capabilities to enable, which can be extended via additionalEnabledCapabilities.  If unset, the cluster will choose a default, and the default may change over time. The current default is vCurrent.
@@ -146,6 +148,12 @@ spec:
                       unmanaged:
                         description: 'unmanaged controls if cluster version operator should stop managing the resources in this cluster. Default: false'
                         type: boolean
+                  x-kubernetes-list-map-keys:
+                    - kind
+                    - group
+                    - namespace
+                    - name
+                  x-kubernetes-list-type: map
                 upstream:
                   description: upstream may be used to specify the preferred update server. By default it will use the appropriate update server for the cluster and region.
                   type: string
@@ -170,6 +178,7 @@ spec:
                         type: array
                         items:
                           type: string
+                        x-kubernetes-list-type: set
                       image:
                         description: image is a container image location that contains the update. When this field is part of spec, image is optional if version is specified and the availableUpdates field contains a matching version.
                         type: string
@@ -180,6 +189,7 @@ spec:
                         description: version is a semantic version identifying the update version. When this field is part of spec, version is optional if image is specified.
                         type: string
                   nullable: true
+                  x-kubernetes-list-type: atomic
                 capabilities:
                   description: capabilities describes the state of optional, core cluster components.
                   type: object
@@ -204,6 +214,7 @@ spec:
                           - DeploymentConfig
                           - ImageRegistry
                           - OperatorLifecycleManager
+                          - CloudCredential
                       x-kubernetes-list-type: atomic
                     knownCapabilities:
                       description: knownCapabilities lists all the capabilities known to the current cluster.
@@ -225,6 +236,7 @@ spec:
                           - DeploymentConfig
                           - ImageRegistry
                           - OperatorLifecycleManager
+                          - CloudCredential
                       x-kubernetes-list-type: atomic
                 conditionalUpdates:
                   description: conditionalUpdates contains the list of updates that may be recommended for this cluster if it meets specific required conditions. Consumers interested in the set of updates that are actually recommended for this cluster should use availableUpdates. This list may be empty if no updates are recommended, if the update service is unavailable, or if an empty or invalid channel has been specified.
@@ -292,6 +304,7 @@ spec:
                             type: array
                             items:
                               type: string
+                            x-kubernetes-list-type: set
                           image:
                             description: image is a container image location that contains the update. When this field is part of spec, image is optional if version is specified and the availableUpdates field contains a matching version.
                             type: string
@@ -384,6 +397,9 @@ spec:
                       type:
                         description: type specifies the aspect reported by this condition.
                         type: string
+                  x-kubernetes-list-map-keys:
+                    - type
+                  x-kubernetes-list-type: map
                 desired:
                   description: desired is the version that the cluster is reconciling towards. If the cluster is not yet fully initialized desired will be set with the information available, which may be an image or a tag.
                   type: object
@@ -393,6 +409,7 @@ spec:
                       type: array
                       items:
                         type: string
+                      x-kubernetes-list-type: set
                     image:
                       description: image is a container image location that contains the update. When this field is part of spec, image is optional if version is specified and the availableUpdates field contains a matching version.
                       type: string
@@ -439,6 +456,7 @@ spec:
                       version:
                         description: version is a semantic version identifying the update version. If the requested image does not define a version, or if a failure occurs retrieving the image, this value may be empty.
                         type: string
+                  x-kubernetes-list-type: atomic
                 observedGeneration:
                   description: observedGeneration reports which version of the spec is being synced. If this value is not equal to metadata.generation, then the desired and conditions fields may represent a previous version.
                   type: integer

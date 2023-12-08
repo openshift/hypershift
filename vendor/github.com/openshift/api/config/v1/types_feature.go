@@ -159,8 +159,10 @@ type FeatureGateEnabledDisabled struct {
 var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 	Default: defaultFeatures,
 	CustomNoUpgrade: {
-		Enabled:  []FeatureGateDescription{},
-		Disabled: []FeatureGateDescription{},
+		Enabled: []FeatureGateDescription{},
+		Disabled: []FeatureGateDescription{
+			disableKubeletCloudCredentialProviders, // We do not currently ship the correct config to use the external credentials provider.
+		},
 	},
 	TechPreviewNoUpgrade: newDefaultFeatures().
 		with(validatingAdmissionPolicy).
@@ -168,13 +170,13 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		with(nodeSwap).
 		with(machineAPIProviderOpenStack).
 		with(insightsConfigAPI).
-		with(retroactiveDefaultStorageClass).
 		with(dynamicResourceAllocation).
 		with(gateGatewayAPI).
 		with(maxUnavailableStatefulSet).
 		without(eventedPleg).
 		with(sigstoreImageVerification).
 		with(gcpLabelsTags).
+		with(gcpClusterHostedDNS).
 		with(vSphereStaticIPs).
 		with(routeExternalCertificate).
 		with(automatedEtcdBackup).
@@ -183,6 +185,14 @@ var FeatureSets = map[FeatureSet]*FeatureGateEnabledDisabled{
 		with(adminNetworkPolicy).
 		with(dnsNameResolver).
 		with(machineConfigNodes).
+		with(metricsServer).
+		with(installAlternateInfrastructureAWS).
+		without(clusterAPIInstall).
+		with(sdnLiveMigration).
+		with(mixedCPUsAllocation).
+		with(managedBootImages).
+		without(disableKubeletCloudCredentialProviders).
+		with(signatureStores).
 		toFeatures(defaultFeatures),
 	LatencySensitive: newDefaultFeatures().
 		toFeatures(defaultFeatures),
@@ -202,7 +212,7 @@ var defaultFeatures = &FeatureGateEnabledDisabled{
 		buildCSIVolumes,
 	},
 	Disabled: []FeatureGateDescription{
-		retroactiveDefaultStorageClass,
+		disableKubeletCloudCredentialProviders, // We do not currently ship the correct config to use the external credentials provider.
 	},
 }
 
