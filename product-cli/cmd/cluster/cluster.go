@@ -11,13 +11,14 @@ import (
 	"github.com/openshift/hypershift/product-cli/cmd/cluster/agent"
 	"github.com/openshift/hypershift/product-cli/cmd/cluster/aws"
 	"github.com/openshift/hypershift/product-cli/cmd/cluster/kubevirt"
+	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 func NewCreateCommands() *cobra.Command {
 	opts := &core.CreateOptions{
 		AdditionalTrustBundle:          "",
 		Arch:                           "amd64",
-		ClusterCIDR:                    []string{"10.132.0.0/14"},
+		ClusterCIDR:                    []string{globalconfig.DefaultIPv4ClusterCIDR},
 		ControlPlaneAvailabilityPolicy: "HighlyAvailable",
 		ImageContentSources:            "",
 		InfraID:                        "",
@@ -30,7 +31,8 @@ func NewCreateCommands() *cobra.Command {
 		PullSecretFile:                 "",
 		ReleaseImage:                   "",
 		Render:                         false,
-		ServiceCIDR:                    []string{"172.31.0.0/16"},
+		ServiceCIDR:                    []string{globalconfig.DefaultIPv4ServiceCIDR},
+		DefaultDual:                    false,
 		Timeout:                        0,
 		Wait:                           false,
 		PausedUntil:                    "",
@@ -67,11 +69,14 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the HostedCluster.")
 	cmd.PersistentFlags().BoolVar(&opts.Render, "render", opts.Render, "Renders the HostedCluster manifest output as YAML to stdout instead of automatically applying the manifests to the management cluster.")
 	cmd.PersistentFlags().StringArrayVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network. Can be specified multiple times.")
+	cmd.PersistentFlags().BoolVar(&opts.DefaultDual, "default-dual", opts.DefaultDual, "Defines the Service and Cluster CIDRs as dual-stack default values. This flag is ignored if service-cidr or cluster-cidr are set. Cannot be defined with service-cidr or cluster-cidr flag.")
 	cmd.PersistentFlags().StringVar(&opts.SSHKeyFile, "ssh-key", opts.SSHKeyFile, "Filepath to an SSH key file.")
 	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the duration of the wait (Examples: 30s, 1h30m45s, etc.) 0 means no timeout.")
 	cmd.PersistentFlags().BoolVar(&opts.Wait, "wait", opts.Wait, "If true, the create command will block until the HostedCluster is up. Requires at least one NodePool with at least one node.")
 	cmd.PersistentFlags().StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
 
+	cmd.MarkFlagsMutuallyExclusive("service-cidr", "default-dual")
+	cmd.MarkFlagsMutuallyExclusive("cluster-cidr", "default-dual")
 	cmd.AddCommand(agent.NewCreateCommand(opts))
 	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(kubevirt.NewCreateCommand(opts))

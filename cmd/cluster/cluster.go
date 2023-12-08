@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/support/globalconfig"
 )
 
 func NewCreateCommands() *cobra.Command {
@@ -28,8 +29,9 @@ func NewCreateCommands() *cobra.Command {
 		Render:                         false,
 		InfrastructureJSON:             "",
 		InfraID:                        "",
-		ServiceCIDR:                    []string{"172.31.0.0/16"},
-		ClusterCIDR:                    []string{"10.132.0.0/14"},
+		ServiceCIDR:                    []string{globalconfig.DefaultIPv4ServiceCIDR},
+		ClusterCIDR:                    []string{globalconfig.DefaultIPv4ClusterCIDR},
+		DefaultDual:                    false,
 		Wait:                           false,
 		Timeout:                        0,
 		ExternalDNSDomain:              "",
@@ -75,6 +77,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for hosted cluster resources.")
 	cmd.PersistentFlags().StringArrayVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network. Can be specified multiple times.")
 	cmd.PersistentFlags().StringArrayVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "The CIDR of the cluster network. Can be specified multiple times.")
+	cmd.PersistentFlags().BoolVar(&opts.DefaultDual, "default-dual", opts.DefaultDual, "Defines the Service and Cluster CIDRs as dual-stack default values. Cannot be defined with service-cidr or cluster-cidr flag.")
 	cmd.PersistentFlags().StringToStringVar(&opts.NodeSelector, "node-selector", opts.NodeSelector, "A comma separated list of key=value to use as node selector for the Hosted Control Plane pods to stick to. E.g. role=cp,disk=fast")
 	cmd.PersistentFlags().BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
 	cmd.PersistentFlags().DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
@@ -82,6 +85,9 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().Var(&opts.OLMCatalogPlacement, "olmCatalogPlacement", "The OLM Catalog Placement for the HostedCluster. Supported options: Management, Guest")
 	cmd.PersistentFlags().StringVar(&opts.Arch, "arch", opts.Arch, "The default processor architecture for the NodePool (e.g. arm64, amd64)")
 	cmd.PersistentFlags().StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
+
+	cmd.MarkFlagsMutuallyExclusive("service-cidr", "default-dual")
+	cmd.MarkFlagsMutuallyExclusive("cluster-cidr", "default-dual")
 
 	cmd.AddCommand(aws.NewCreateCommand(opts))
 	cmd.AddCommand(none.NewCreateCommand(opts))
