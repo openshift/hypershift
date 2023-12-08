@@ -4,4 +4,4 @@ title: Manifests
 
 # Manifests
 
-This section describes the manifests that is used for each platform.
+This section describes the manifests that are used for each platform.
