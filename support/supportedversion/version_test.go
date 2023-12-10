@@ -12,7 +12,7 @@ import (
 
 func TestSupportedVersions(t *testing.T) {
 	g := NewGomegaWithT(t)
-	g.Expect(Supported()).To(Equal([]string{"4.15", "4.14", "4.13"}))
+	g.Expect(Supported()).To(Equal([]string{"4.16", "4.15", "4.14"}))
 }
 
 func TestIsValidReleaseVersion(t *testing.T) {
@@ -61,7 +61,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 		{
 			name:                   "the latest HostedCluster version supported by this Operator is 4.12.0",
 			currentVersion:         v("4.12.0"),
-			nextVersion:            v("4.13.0"),
+			nextVersion:            v("4.14.0"),
 			latestVersionSupported: v("4.12.0"),
 			minVersionSupported:    v("4.10.0"),
 			expectError:            true,

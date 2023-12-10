@@ -36,8 +36,8 @@ func TestMutatingOwnerRefFromHCP(t *testing.T) {
 			expected:       "hypershift.openshift.io/v1beta1",
 		},
 		{
-			name:           "4.13.0 should use v1beta1",
-			releaseVersion: semver.MustParse("4.13.0"),
+			name:           "4.14.0 should use v1beta1",
+			releaseVersion: semver.MustParse("4.14.0"),
 			expected:       "hypershift.openshift.io/v1beta1",
 		},
 		{

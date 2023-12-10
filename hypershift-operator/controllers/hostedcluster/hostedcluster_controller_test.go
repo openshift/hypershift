@@ -1679,18 +1679,18 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.14.0",
+							Image: "image-4.15.0",
 						},
 					},
 				},
 			},
-			expectedResult: errors.New(`y-stream downgrade from "4.14.0" to "4.13.0" is not supported`),
+			expectedResult: errors.New(`y-stream downgrade from "4.15.0" to "4.14.0" is not supported`),
 		},
 		{
 			name: "unsupported y-stream upgrade, error",
@@ -1711,7 +1711,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
@@ -1722,7 +1722,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: errors.New(`y-stream upgrade from "4.11.0" to "4.13.0" is not for OpenShiftSDN`),
+			expectedResult: errors.New(`y-stream upgrade from "4.11.0" to "4.14.0" is not for OpenShiftSDN`),
 		},
 		{
 			name: "supported y-stream upgrade, success",
@@ -1743,7 +1743,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
@@ -1775,7 +1775,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 			},
@@ -1800,13 +1800,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.13.0",
+							Image: "image-4.14.0",
 						},
 					},
 				},
@@ -1832,7 +1832,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
@@ -1864,13 +1864,13 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
 					Version: &hyperv1.ClusterVersionStatus{
 						Desired: configv1.Release{
-							Image: "image-4.13.0",
+							Image: "image-4.14.0",
 						},
 					},
 				},
@@ -1926,7 +1926,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 
 					Platform: hyperv1.PlatformSpec{
@@ -1935,7 +1935,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: errors.New(`the minimum version supported for platform KubeVirt is: "4.14.0". Attempting to use: "4.13.0"`),
+			expectedResult: errors.New(`the minimum version supported for platform KubeVirt is: "4.15.0". Attempting to use: "4.14.0"`),
 		},
 		{
 			name: "KubeVirt platform supported release, success",
@@ -1956,7 +1956,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 
 					Platform: hyperv1.PlatformSpec{
@@ -1981,8 +1981,8 @@ func TestValidateReleaseImage(t *testing.T) {
 						"image-4.11.0": "4.11.0",
 						"image-4.11.1": "4.11.1",
 						"image-4.12.0": "4.12.0",
-						"image-4.13.0": "4.13.0",
 						"image-4.14.0": "4.14.0",
+						"image-4.15.0": "4.15.0",
 					},
 				},
 			}
@@ -2317,7 +2317,7 @@ func TestIsUpgradeable(t *testing.T) {
 				ImageVersion: map[string]string{
 					"image-4.12":   "4.12.0",
 					"image-4.12.1": "4.12.1",
-					"image-4.13":   "4.13.0",
+					"image-4.13":   "4.14.0",
 				},
 			},
 		}

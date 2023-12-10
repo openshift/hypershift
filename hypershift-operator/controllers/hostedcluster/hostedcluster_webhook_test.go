@@ -57,14 +57,14 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.27.0",
 			expectError:  false,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "wrong json",
@@ -85,14 +85,14 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.27.0",
 			expectError:  true,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "cnv version not supported",
@@ -110,14 +110,14 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			cnvVersion:   "0.111.0",
 			k8sVersion:   "1.27.0",
 			expectError:  true,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "k8s version not supported",
@@ -135,14 +135,14 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.26.99",
 			expectError:  true,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "no kubevirt field",
@@ -159,14 +159,14 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.27.0",
 			expectError:  true,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "image version too old",
@@ -184,14 +184,14 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.27.0",
 			expectError:  true,
-			imageVersion: "4.13.0",
+			imageVersion: "4.14.0",
 		},
 		{
 			name: fmt.Sprintf("skip image version validation if the %q annotation is set", v1beta1.SkipReleaseImageValidation),
@@ -212,14 +212,14 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.27.0",
 			expectError:  false,
-			imageVersion: "4.13.0",
+			imageVersion: "4.14.0",
 		},
 		{
 			name: "unknown image",
@@ -305,7 +305,7 @@ func TestValidateKVHostedClusterUpdate(t *testing.T) {
 			oldHC: &v1beta1.HostedCluster{
 				Spec: v1beta1.HostedClusterSpec{
 					Release: v1beta1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 			},
@@ -323,19 +323,19 @@ func TestValidateKVHostedClusterUpdate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			expectError:  false,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "wrong json",
 			oldHC: &v1beta1.HostedCluster{
 				Spec: v1beta1.HostedClusterSpec{
 					Release: v1beta1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 			},
@@ -356,12 +356,12 @@ func TestValidateKVHostedClusterUpdate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			expectError:  true,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "image version too old",
@@ -386,12 +386,12 @@ func TestValidateKVHostedClusterUpdate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 			},
 			expectError:  true,
-			imageVersion: "4.13.0",
+			imageVersion: "4.14.0",
 		},
 		{
 			name: fmt.Sprintf("skip image version validation if the %q annotation is set", v1beta1.SkipReleaseImageValidation),
@@ -419,12 +419,12 @@ func TestValidateKVHostedClusterUpdate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 			},
 			expectError:  false,
-			imageVersion: "4.13.0",
+			imageVersion: "4.14.0",
 		},
 		{
 			name: "unknown image",
@@ -497,7 +497,7 @@ func TestValidateKVHostedClusterUpdate(t *testing.T) {
 
 			kvValidator = &kubevirtClusterValidator{
 				client: cl,
-				//clientMap: nil,
+				// clientMap: nil,
 				imageMetaDataProvider: &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
 					Labels: map[string]string{versionLabel: testCase.imageVersion}}},
 				},
@@ -535,7 +535,7 @@ func TestKVClusterValidator_getImageVersion(t *testing.T) {
 				Name: "pull-secret",
 			},
 			Release: v1beta1.Release{
-				Image: "image-4.15.0",
+				Image: "image-4.16.0",
 			},
 		},
 	}
@@ -555,7 +555,7 @@ func TestKVClusterValidator_getImageVersion(t *testing.T) {
 		client:    cl,
 		clientMap: nil,
 		imageMetaDataProvider: &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
-			Labels: map[string]string{versionLabel: "4.15.0"}}},
+			Labels: map[string]string{versionLabel: "4.16.0"}}},
 		},
 	}
 
@@ -569,8 +569,8 @@ func TestKVClusterValidator_getImageVersion(t *testing.T) {
 		t.Fatalf("should return version but it didn't")
 	}
 
-	if ver.Major != 4 || ver.Minor != 15 || ver.Patch != 0 {
-		t.Errorf("version should be 4.15.0, but it's %s", ver.String())
+	if ver.Major != 4 || ver.Minor != 16 || ver.Patch != 0 {
+		t.Errorf("version should be 4.16.0, but it's %s", ver.String())
 	}
 }
 
@@ -691,14 +691,14 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.27.0",
 			expectError:  false,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "wrong json",
@@ -732,14 +732,14 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.27.0",
 			expectError:  true,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "cnv version not supported",
@@ -770,14 +770,14 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			cnvVersion:   "0.111.0",
 			k8sVersion:   "1.27.0",
 			expectError:  true,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "k8s version not supported",
@@ -808,14 +808,14 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.26.99",
 			expectError:  true,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "no kubevirt field",
@@ -845,14 +845,14 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.27.0",
 			expectError:  true,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "image version too old",
@@ -883,14 +883,14 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.27.0",
 			expectError:  true,
-			imageVersion: "4.13.0",
+			imageVersion: "4.14.0",
 		},
 		{
 			name: `skip image version validation if the "hypershift.openshift.io/skip-release-image-validation" annotation is set`,
@@ -911,7 +911,7 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 			},
@@ -927,14 +927,14 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.27.0",
 			expectError:  false,
-			imageVersion: "4.13.0",
+			imageVersion: "4.14.0",
 		},
 		{
 			name: "unknown image",
@@ -1049,7 +1049,7 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 			oldNP: &v1beta1.NodePool{
 				Spec: v1beta1.NodePoolSpec{
 					Release: v1beta1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 			},
@@ -1065,12 +1065,12 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			expectError:  false,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "wrong json",
@@ -1092,7 +1092,7 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 			oldNP: &v1beta1.NodePool{
 				Spec: v1beta1.NodePoolSpec{
 					Release: v1beta1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.15.0",
 					},
 				},
 			},
@@ -1111,12 +1111,12 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.15.0",
+						Image: "image-4.16.0",
 					},
 				},
 			},
 			expectError:  true,
-			imageVersion: "4.15.0",
+			imageVersion: "4.16.0",
 		},
 		{
 			name: "image version too old",
@@ -1154,12 +1154,12 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 			},
 			expectError:  true,
-			imageVersion: "4.13.0",
+			imageVersion: "4.14.0",
 		},
 		{
 			name: `skip image version validation if the "hypershift.openshift.io/skip-release-image-validation" annotation is set`,
@@ -1200,12 +1200,12 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.13.0",
+						Image: "image-4.14.0",
 					},
 				},
 			},
 			expectError:  false,
-			imageVersion: "4.13.0",
+			imageVersion: "4.14.0",
 		},
 		{
 			name: "unknown image",
