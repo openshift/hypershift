@@ -215,6 +215,14 @@ nav:
   - 'Architecture':
     - reference/architecture/index.md
     - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
+  - 'Manifests':
+    - reference/manifests/index.md
+    - 'IBM Cloud':
+      - '4.9': reference/manifests/ibmcloud/4.9.md
+      - '4.10': reference/manifests/ibmcloud/4.10.md
+      - '4.11': reference/manifests/ibmcloud/4.11.md
+      - '4.12': reference/manifests/ibmcloud/4.12.md
+      - '4.13': reference/manifests/ibmcloud/4.13.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
   - reference/multi-platform-support.md
