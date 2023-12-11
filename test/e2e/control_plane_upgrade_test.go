@@ -43,7 +43,21 @@ func TestUpgradeControlPlane(t *testing.T) {
 
 		// Wait for the new rollout to be complete
 		t.Logf("waiting for updated cluster image rollout. Image: %s", globalOpts.LatestReleaseImage)
+		doneUpgrading := make(chan struct{})
+		restConfig, err := e2eutil.WaitForGuestRESTConfig(t, ctx, mgtClient, hostedCluster)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get guest rest config")
+
+		apiServiceHealthResult := &e2eutil.APIServerHealthResult{}
+		e2eutil.WatchOpenShiftAPIServiceHealth(t, ctx, restConfig, apiServiceHealthResult, doneUpgrading)
 		e2eutil.WaitForImageRollout(t, ctx, mgtClient, hostedCluster, globalOpts.LatestReleaseImage)
+		close(doneUpgrading)
+
+		// TODO: In the future, fail the test if the API services health checks fail
+		if apiServiceHealthResult.WasUnhealthy() {
+			t.Logf("WARNING: API services were unavailable during upgrade. In the future, this will fail the test.")
+			t.Logf(apiServiceHealthResult.Report())
+		}
+
 		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
