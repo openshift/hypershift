@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	configv1 "github.com/openshift/api/config/v1"
 	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -82,7 +81,6 @@ type CreateOptions struct {
 	NodeUpgradeType                  hyperv1.UpgradeType
 	PausedUntil                      string
 	OLMCatalogPlacement              hyperv1.OLMCatalogPlacement
-	OLMDisableDefaultSources         bool
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -286,13 +284,6 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		}
 	}
 
-	var operatorHub *configv1.OperatorHubSpec
-	if opts.OLMDisableDefaultSources {
-		operatorHub = &configv1.OperatorHubSpec{
-			DisableAllDefaultSources: true,
-		}
-	}
-
 	return &apifixtures.ExampleOptions{
 		AdditionalTrustBundle:            string(userCABundle),
 		ImageContentSources:              imageContentSources,
@@ -319,7 +310,6 @@ func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures
 		UpgradeType:                      opts.NodeUpgradeType,
 		PausedUntil:                      opts.PausedUntil,
 		OLMCatalogPlacement:              opts.OLMCatalogPlacement,
-		OperatorHub:                      operatorHub,
 	}, nil
 }
 
