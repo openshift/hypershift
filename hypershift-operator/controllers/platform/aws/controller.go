@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -53,10 +54,6 @@ type AWSEndpointServiceReconciler struct {
 	upsert.CreateOrUpdateProvider
 	ec2Client   ec2iface.EC2API
 	elbv2Client elbv2iface.ELBV2API
-
-	// controlPlaneOperatorRoleARNFn determines the control plane operator role given a hosted cluster
-	// This is used to stub the function in unit tests
-	controlPlaneOperatorRoleARNFn func(context.Context, *hyperv1.HostedCluster) (string, error)
 }
 
 func mapNodePoolToAWSEndpointServicesFunc(c client.Client) handler.MapFunc {
@@ -130,8 +127,6 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	awsConfig := aws.NewConfig()
 	r.ec2Client = ec2.New(awsSession, awsConfig)
 	r.elbv2Client = elbv2.New(awsSession, awsConfig)
-
-	r.controlPlaneOperatorRoleARNFn = r.controlPlaneOperatorRoleARN
 
 	return nil
 }
@@ -438,7 +433,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx con
 		return fmt.Errorf("failed to get vpc endpoint permissions with service ID %s: %w", serviceID, err)
 	}
 
-	controlPlaneOperatorRoleARN, err := r.controlPlaneOperatorRoleARNFn(ctx, hostedCluster)
+	controlPlaneOperatorRoleARN, err := r.controlPlaneOperatorRoleARNWithoutPath(hostedCluster)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane operator role ARN: %w", err)
 	}
@@ -636,9 +631,20 @@ func (r *AWSEndpointServiceReconciler) hostedCluster(ctx context.Context, hcp *h
 	return hc, nil
 }
 
-func (r *AWSEndpointServiceReconciler) controlPlaneOperatorRoleARN(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
+// controlPlaneOperatorRoleWithoutPathFn excludes the IAM path from an ARN, which is needed when adding the CPO
+// IAM role to AWS IAM trust policies, namely the AWS VPC Endpoint Service allowed principals' policy.
+func (r *AWSEndpointServiceReconciler) controlPlaneOperatorRoleARNWithoutPath(hc *hyperv1.HostedCluster) (string, error) {
 	if hc.Spec.Platform.AWS == nil || hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN == "" {
 		return "", fmt.Errorf("hosted cluster does not have control plane operator credentials")
 	}
-	return hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, nil
+	arn, err := arn.Parse(hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse %s into an ARN: %v", hc.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, err)
+	}
+
+	// IAM names cannot have a "/" while path names are the only way to get "/" into the name
+	// IAM path names must begin and end with a "/", so the last chunk will be the name of the IAM role
+	// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html#reference_iam-quotas-names
+	name := arn.Resource[strings.LastIndex(arn.Resource, "/")+1:]
+	return fmt.Sprintf("arn:%s:%s::%s:role/%s", arn.Partition, arn.Service, arn.AccountID, name), nil
 }
