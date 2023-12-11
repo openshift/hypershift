@@ -45,6 +45,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 	k8s "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/pointer"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -163,6 +164,14 @@ func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.C
 		return nil, fmt.Errorf("kubeconfig secret is missing kubeconfig key")
 	}
 	return data, nil
+}
+
+func WaitForGuestRESTConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (*rest.Config, error) {
+	guestKubeConfigSecretData, err := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+	if err != nil {
+		return nil, err
+	}
+	return clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 }
 
 func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
@@ -843,7 +852,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 
 			// Validate private router is not allowed to access management KAS.
 			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-				if hostedCluster.Spec.Platform.AWS.EndpointAccess != hyperv1.Private {
+				if hostedCluster.Spec.Platform.AWS.EndpointAccess == hyperv1.PublicAndPrivate {
 					// TODO (alberto): Run also in private case. Today it results in a flake:
 					// === CONT  TestCreateClusterPrivate/EnsureHostedCluster/EnsureNetworkPolicies/EnsureLimitedEgressTrafficToManagementKAS
 					//    util.go:851: private router pod was unexpectedly allowed to reach the management KAS. stdOut: . stdErr: Internal error occurred: error executing command in container: container is not created or running
@@ -1498,6 +1507,11 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
 			// AWS KMS is not configured
 			expectedConditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionUnknown
+		}
+		if hostedCluster.Spec.Platform.AWS.EndpointAccess == hyperv1.Public {
+			// If not using private link, endpoint conditions will be unknown
+			expectedConditions[hyperv1.AWSEndpointAvailable] = metav1.ConditionUnknown
+			expectedConditions[hyperv1.AWSEndpointServiceAvailable] = metav1.ConditionUnknown
 		}
 	case hyperv1.AzurePlatform:
 		if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.Azure == nil {
