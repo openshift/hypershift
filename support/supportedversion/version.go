@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/blang/semver"
@@ -29,15 +28,6 @@ func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
 	defaultMinVersion := semver.MustParse(subtractMinor(&LatestSupportedVersion, uint64(SupportedPreviousMinorVersions)).String())
 
 	switch hc.Spec.Platform.Type {
-	case hyperv1.KubevirtPlatform:
-		val, exists := hc.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation]
-		if exists {
-			if isTrue, _ := strconv.ParseBool(val); isTrue {
-				// This is an unsupported escape hatch annotation for internal use
-				return defaultMinVersion
-			}
-		}
-		return semver.MustParse("4.15.0")
 	case hyperv1.IBMCloudPlatform:
 		return semver.MustParse("4.9.0")
 	default:
