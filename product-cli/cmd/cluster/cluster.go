@@ -37,7 +37,6 @@ func NewCreateCommands() *cobra.Command {
 		Wait:                           false,
 		PausedUntil:                    "",
 		OLMCatalogPlacement:            v1beta1.ManagementOLMCatalogPlacement,
-		OLMDisableDefaultSources:       false,
 	}
 
 	cmd := &cobra.Command{
@@ -64,8 +63,7 @@ func NewCreateCommands() *cobra.Command {
 	cmd.PersistentFlags().Int32Var(&opts.NodePoolReplicas, "node-pool-replicas", opts.NodePoolReplicas, "If set to 0 or greater, NodePools will be created with that many replicas. If set to less than 0, no NodePools will be created.")
 	cmd.PersistentFlags().StringToStringVar(&opts.NodeSelector, "node-selector", opts.NodeSelector, "A comma separated list of key=value pairs to use as the node selector for the Hosted Control Plane pods to stick to. (e.g. role=cp,disk=fast)")
 	cmd.PersistentFlags().Var(&opts.NodeUpgradeType, "node-upgrade-type", "The NodePool upgrade strategy for how nodes should behave when upgraded. Supported options: Replace, InPlace")
-	cmd.PersistentFlags().Var(&opts.OLMCatalogPlacement, "olm-catalog-placement", "The OLM Catalog Placement for the HostedCluster. Supported options: Management, Guest")
-	cmd.PersistentFlags().BoolVar(&opts.OLMDisableDefaultSources, "olm-disable-default-sources", opts.OLMDisableDefaultSources, "Disables the OLM default catalog sources for the HostedCluster.")
+	cmd.PersistentFlags().Var(&opts.OLMCatalogPlacement, "olmCatalogPlacement", "The OLM Catalog Placement for the HostedCluster. Supported options: Management, Guest")
 	cmd.PersistentFlags().StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico, OVNKubernetes, OpenShiftSDN or Other.")
 	cmd.PersistentFlags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "Filepath to a pull secret.")
 	cmd.PersistentFlags().StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the HostedCluster.")

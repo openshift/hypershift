@@ -691,11 +691,6 @@ func (in *ClusterConfiguration) DeepCopyInto(out *ClusterConfiguration) {
 		*out = new(configv1.OAuthSpec)
 		(*in).DeepCopyInto(*out)
 	}
-	if in.OperatorHub != nil {
-		in, out := &in.OperatorHub, &out.OperatorHub
-		*out = new(configv1.OperatorHubSpec)
-		(*in).DeepCopyInto(*out)
-	}
 	if in.Scheduler != nil {
 		in, out := &in.Scheduler, &out.Scheduler
 		*out = new(configv1.SchedulerSpec)

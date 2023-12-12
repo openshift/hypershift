@@ -31,7 +31,6 @@ type ClusterConfigurationApplyConfiguration struct {
 	Ingress        *v1.IngressSpec        `json:"ingress,omitempty"`
 	Network        *v1.NetworkSpec        `json:"network,omitempty"`
 	OAuth          *v1.OAuthSpec          `json:"oauth,omitempty"`
-	OperatorHub    *v1.OperatorHubSpec    `json:"operatorhub,omitempty"`
 	Scheduler      *v1.SchedulerSpec      `json:"scheduler,omitempty"`
 	Proxy          *v1.ProxySpec          `json:"proxy,omitempty"`
 }
@@ -95,14 +94,6 @@ func (b *ClusterConfigurationApplyConfiguration) WithNetwork(value v1.NetworkSpe
 // If called multiple times, the OAuth field is set to the value of the last call.
 func (b *ClusterConfigurationApplyConfiguration) WithOAuth(value v1.OAuthSpec) *ClusterConfigurationApplyConfiguration {
 	b.OAuth = &value
-	return b
-}
-
-// WithOperatorHub sets the OperatorHub field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the OperatorHub field is set to the value of the last call.
-func (b *ClusterConfigurationApplyConfiguration) WithOperatorHub(value v1.OperatorHubSpec) *ClusterConfigurationApplyConfiguration {
-	b.OperatorHub = &value
 	return b
 }
 

@@ -2679,21 +2679,6 @@ This configuration is only honored when the top level Authentication config has 
 </tr>
 <tr>
 <td>
-<code>operatorhub</code></br>
-<em>
-<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
-github.com/openshift/api/config/v1.OperatorHubSpec
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>OperatorHub specifies the configuration for the Operator Lifecycle Manager in the HostedCluster. This is only configured at deployment time but the controller are not reconcilling over it.
-The OperatorHub configuration will be constantly reconciled if catalog placement is management, but only on cluster creation otherwise.</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>scheduler</code></br>
 <em>
 <a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
