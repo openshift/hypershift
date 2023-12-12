@@ -1,0 +1,16 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/owner.name: test-hc
+    hypershift.openshift.io/owner.namespace: test-namespace
+  name: test-namespace-test-hc-csr-signer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: test-namespace-test-hc-csr-signer
+subjects:
+- kind: ServiceAccount
+  name: control-plane-pki-operator
+  namespace: test-namespace

@@ -39,6 +39,9 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
+	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"gopkg.in/ini.v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -50,6 +53,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -119,6 +123,7 @@ const (
 	controlPlaneOperatorManagesMachineApprover                 = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
 	controlPlaneOperatorManagesMachineAutoscaler               = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
+	controlPlanePKIOperatorSignsCSRsLabel                      = "io.openshift.hypershift.control-plane-pki-operator-signs-csrs"
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
 
 	etcdEncKeyPostfix = "-etcd-encryption-key"
@@ -425,6 +430,30 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if !completed {
 				log.Info("hostedcluster is still deleting", "name", req.NamespacedName)
 				return ctrl.Result{RequeueAfter: clusterDeletionRequeueDuration}, nil
+			}
+		}
+
+		// Once the deletion has occurred, we need to clean up cluster-wide resources
+		selector := client.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{
+			controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
+			controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
+		})}
+		var crs rbacv1.ClusterRoleList
+		if err := r.List(ctx, &crs, selector); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list cluster roles: %w", err)
+		}
+		if len(crs.Items) > 0 {
+			if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRole{}, selector); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete cluster roles: %w", err)
+			}
+		}
+		var crbs rbacv1.ClusterRoleBindingList
+		if err := r.List(ctx, &crbs, selector); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list cluster role bindings: %w", err)
+		}
+		if len(crbs.Items) > 0 {
+			if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRoleBinding{}, selector); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete cluster role bindings: %w", err)
 			}
 		}
 
@@ -1074,6 +1103,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	_, controlPlaneOperatorManagesMachineAutoscaler := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineAutoscaler]
 	_, controlPlaneOperatorManagesMachineApprover := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorManagesMachineApprover]
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
+	_, controlPlanePKIOperatorSignsCSRs := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[controlPlanePKIOperatorSignsCSRsLabel]
 	_, useRestrictedPSA := hyperutil.ImageLabels(controlPlaneOperatorImageMetadata)[useRestrictedPodSecurityLabel]
 
 	// Reconcile the hosted cluster namespace
@@ -1652,6 +1682,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
 
+	if controlPlanePKIOperatorSignsCSRs {
+		// Reconcile the control plane PKI operator RBAC - the CPO does not have rights to do this itself
+		err = r.reconcileControlPlanePKIOperatorRBAC(ctx, createOrUpdate, hcluster)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane PKI operator RBAC: %w", err)
+		}
+	}
+
 	// Reconcile the Ignition server
 	if !controlplaneOperatorManagesIgnitionServer {
 		releaseInfo, err := r.lookupReleaseImage(ctx, hcluster)
@@ -2123,6 +2161,49 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator pod monitor: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileControlPlanePKIOperatorRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	// We don't create this ServiceAccount, the CPO does, but we can reference it in RBAC before it's created as the system is eventually consistent
+	serviceAccount := cpomanifests.PKIOperatorServiceAccount(manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name))
+
+	// Reconcile controlplane PKI operator CSR approver cluster role
+	controlPlanePKIOperatorCSRApproverClusterRole := controlplanepkioperatormanifests.CSRApproverClusterRole(hcluster)
+	_, err := createOrUpdate(ctx, r.Client, controlPlanePKIOperatorCSRApproverClusterRole, func() error {
+		return controlplanepkioperatormanifests.ReconcileCSRApproverClusterRole(controlPlanePKIOperatorCSRApproverClusterRole, hcluster, certificates.CustomerBreakGlassSigner)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane PKI operator CSR approver cluster role: %w", err)
+	}
+
+	// Reconcile controlplane PKI operator CSR approver cluster role binding
+	controlPlanePKIOperatorCSRApproverClusterRoleBinding := controlplanepkioperatormanifests.ClusterRoleBinding(hcluster, controlPlanePKIOperatorCSRApproverClusterRole)
+	_, err = createOrUpdate(ctx, r.Client, controlPlanePKIOperatorCSRApproverClusterRoleBinding, func() error {
+		return controlplanepkioperatormanifests.ReconcileClusterRoleBinding(controlPlanePKIOperatorCSRApproverClusterRoleBinding, controlPlanePKIOperatorCSRApproverClusterRole, serviceAccount)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane PKI operator CSR approver cluster role binding: %w", err)
+	}
+
+	// Reconcile controlplane PKI operator CSR signer cluster role
+	controlPlanePKIOperatorCSRSignerClusterRole := controlplanepkioperatormanifests.CSRSignerClusterRole(hcluster)
+	_, err = createOrUpdate(ctx, r.Client, controlPlanePKIOperatorCSRSignerClusterRole, func() error {
+		return controlplanepkioperatormanifests.ReconcileCSRSignerClusterRole(controlPlanePKIOperatorCSRSignerClusterRole, hcluster, certificates.CustomerBreakGlassSigner)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane PKI operator CSR signer cluster role: %w", err)
+	}
+
+	// Reconcile controlplane PKI operator CSR signer cluster role binding
+	controlPlanePKIOperatorCSRSignerClusterRoleBinding := controlplanepkioperatormanifests.ClusterRoleBinding(hcluster, controlPlanePKIOperatorCSRSignerClusterRole)
+	_, err = createOrUpdate(ctx, r.Client, controlPlanePKIOperatorCSRSignerClusterRoleBinding, func() error {
+		return controlplanepkioperatormanifests.ReconcileClusterRoleBinding(controlPlanePKIOperatorCSRSignerClusterRoleBinding, controlPlanePKIOperatorCSRSignerClusterRole, serviceAccount)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane PKI operator CSR signer cluster role binding: %w", err)
 	}
 
 	return nil
