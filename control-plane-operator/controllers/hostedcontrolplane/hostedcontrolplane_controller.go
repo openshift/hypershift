@@ -306,15 +306,36 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
-
+		condition := &metav1.Condition{
+			Type: string(hyperv1.AWSDefaultSecurityGroupDeleted),
+		}
 		if shouldCleanupCloudResources(r.Log, hostedControlPlane) {
 			if err := r.destroyAWSDefaultSecurityGroup(ctx, hostedControlPlane); err != nil {
+				condition.Message = "failed to delete AWS default security group"
+				condition.Reason = hyperv1.AWSErrorReason
+				condition.Status = metav1.ConditionFalse
+				meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, *condition)
+
+				if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition error message: %v", err, condition.Message)
+				}
+
 				if awsErrorCode(err) == "UnauthorizedOperation" {
 					r.Log.Info("Skipping AWS default security group deletion because the operator is not authorized to delete it.")
 				} else {
 					return ctrl.Result{}, fmt.Errorf("failed to delete AWS default security group: %w", err)
 				}
+			} else {
+				condition.Message = hyperv1.AllIsWellMessage
+				condition.Reason = hyperv1.AsExpectedReason
+				condition.Status = metav1.ConditionTrue
+				meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, *condition)
+
+				if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for security group deletion: %w. Condition message: %v", err, condition.Message)
+				}
 			}
+
 			done, err := r.removeCloudResources(ctx, hostedControlPlane)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to ensure cloud resources are removed: %w", err)
@@ -4307,6 +4328,8 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 }
 
 func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
+
 	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
 		return nil
 	}
@@ -4325,7 +4348,13 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissions,
 		}); err != nil {
-			return fmt.Errorf("failed to revoke security group ingress permissions for %s: %w", awssdk.StringValue(sg.GroupId), err)
+			code := "UnknownError"
+			if awsErr, ok := err.(awserr.Error); ok {
+				code = awsErr.Code()
+			}
+			log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", awssdk.StringValue(sg.GroupId), "code", code)
+
+			return fmt.Errorf("failed to revoke security group ingress rules: %s", code)
 		}
 	}
 
@@ -4334,15 +4363,28 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissionsEgress,
 		}); err != nil {
-			return fmt.Errorf("failed to revoke security group egress permissions for %s: %w", awssdk.StringValue(sg.GroupId), err)
+			code := "UnknownError"
+			if awsErr, ok := err.(awserr.Error); ok {
+				code = awsErr.Code()
+			}
+			log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", awssdk.StringValue(sg.GroupId), "code", code)
+
+			return fmt.Errorf("failed to revoke security group egress rules: %s", code)
 		}
 	}
 
 	if _, err = r.ec2Client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
 		GroupId: sg.GroupId,
 	}); err != nil {
-		return fmt.Errorf("failed to delete security group %s: %w", awssdk.StringValue(sg.GroupId), err)
+		code := "UnknownError"
+		if awsErr, ok := err.(awserr.Error); ok {
+			code = awsErr.Code()
+		}
+		log.Error(err, "failed to delete security group", "SecurityGroupID", awssdk.StringValue(sg.GroupId), "code", code)
+
+		return fmt.Errorf("failed to delete security group %s: %s", awssdk.StringValue(sg.GroupId), code)
 	}
+
 	return nil
 
 }
