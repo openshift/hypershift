@@ -11,7 +11,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	componentbasev1 "k8s.io/component-base/config/v1alpha1"
-	schedulerv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
+	schedulerv1 "k8s.io/kube-scheduler/config/v1"
 	"k8s.io/utils/pointer"
 )
 
@@ -35,25 +35,25 @@ func TestGenerateConfig(t *testing.T) {
 		name                   string
 		profile                configv1.SchedulerProfile
 		expectedLeaderElection componentbasev1.LeaderElectionConfiguration
-		expectedProfiles       []schedulerv1beta3.KubeSchedulerProfile
+		expectedProfiles       []schedulerv1.KubeSchedulerProfile
 	}{
 		{
 			name:                   "Leader elect args get set correctly, default profile",
 			profile:                configv1.LowNodeUtilization,
 			expectedLeaderElection: leaderElectionConfig,
-			expectedProfiles:       []schedulerv1beta3.KubeSchedulerProfile{},
+			expectedProfiles:       []schedulerv1.KubeSchedulerProfile{},
 		},
 		{
 			name:                   "high node utilization profile",
 			profile:                configv1.HighNodeUtilization,
 			expectedLeaderElection: leaderElectionConfig,
-			expectedProfiles:       []schedulerv1beta3.KubeSchedulerProfile{highNodeUtilizationProfile()},
+			expectedProfiles:       []schedulerv1.KubeSchedulerProfile{highNodeUtilizationProfile()},
 		},
 		{
 			name:                   "no scoring profile",
 			profile:                configv1.NoScoring,
 			expectedLeaderElection: leaderElectionConfig,
-			expectedProfiles:       []schedulerv1beta3.KubeSchedulerProfile{highNodeUtilizationProfile()},
+			expectedProfiles:       []schedulerv1.KubeSchedulerProfile{highNodeUtilizationProfile()},
 		},
 	}
 	for _, tc := range testCases {
@@ -62,7 +62,7 @@ func TestGenerateConfig(t *testing.T) {
 			if err != nil {
 				t.Errorf("unexpected error generated in config")
 			}
-			var data schedulerv1beta3.KubeSchedulerConfiguration
+			var data schedulerv1.KubeSchedulerConfiguration
 			err = json.Unmarshal([]byte(config), &data)
 			if err != nil {
 				t.Errorf("unexpected error parsing config")

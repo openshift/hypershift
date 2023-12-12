@@ -1872,7 +1872,7 @@ k8s.io/kube-openapi/pkg/validation/strfmt
 k8s.io/kube-openapi/pkg/validation/strfmt/bson
 # k8s.io/kube-scheduler v0.28.3
 ## explicit; go 1.20
-k8s.io/kube-scheduler/config/v1beta3
+k8s.io/kube-scheduler/config/v1
 # k8s.io/kubectl v0.28.3
 ## explicit; go 1.20
 k8s.io/kubectl/pkg/cmd/util
