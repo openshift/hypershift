@@ -219,7 +219,6 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("requestheader-extra-headers-prefix", "X-Remote-Extra-")
 	args.Set("requestheader-group-headers", "X-Remote-Group")
 	args.Set("requestheader-username-headers", "X-Remote-User")
-	args.Set("runtime-config", "flowcontrol.apiserver.k8s.io/v1alpha1=true")
 	args.Set("service-account-issuer", p.ServiceAccountIssuerURL)
 	args.Set("service-account-jwks-uri", jwksURL(p.ServiceAccountIssuerURL))
 	args.Set("service-account-lookup", "true")
