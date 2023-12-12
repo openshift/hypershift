@@ -1,5 +1,5 @@
 /*
-Copyright 2021 The Kubernetes Authors.
+Copyright 2022 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta3
+package v1
 
 import (
 	"bytes"
@@ -64,7 +64,7 @@ type KubeSchedulerConfiguration struct {
 	// Example: if the cluster size is 500 nodes and the value of this flag is 30,
 	// then scheduler stops finding further feasible nodes once it finds 150 feasible ones.
 	// When the value is 0, default percentage (5%--50% based on the size of the cluster) of the
-	// nodes will be scored.
+	// nodes will be scored. It is overridden by profile level PercentageofNodesToScore.
 	PercentageOfNodesToScore *int32 `json:"percentageOfNodesToScore,omitempty"`
 
 	// PodInitialBackoffSeconds is the initial backoff for unschedulable pods.
@@ -89,6 +89,12 @@ type KubeSchedulerConfiguration struct {
 	// with the extender. These extenders are shared by all scheduler profiles.
 	// +listType=set
 	Extenders []Extender `json:"extenders,omitempty"`
+
+	// DelayCacheUntilActive specifies when to start caching. If this is true and leader election is enabled,
+	// the scheduler will wait to fill informer caches until it is the leader. Doing so will have slower
+	// failover with the benefit of lower memory overhead while waiting to become leader.
+	// Defaults to false.
+	DelayCacheUntilActive bool `json:"delayCacheUntilActive,omitempty"`
 }
 
 // DecodeNestedObjects decodes plugin args for known types.
@@ -134,6 +140,17 @@ type KubeSchedulerProfile struct {
 	// If SchedulerName matches with the pod's "spec.schedulerName", then the pod
 	// is scheduled with this profile.
 	SchedulerName *string `json:"schedulerName,omitempty"`
+
+	// PercentageOfNodesToScore is the percentage of all nodes that once found feasible
+	// for running a pod, the scheduler stops its search for more feasible nodes in
+	// the cluster. This helps improve scheduler's performance. Scheduler always tries to find
+	// at least "minFeasibleNodesToFind" feasible nodes no matter what the value of this flag is.
+	// Example: if the cluster size is 500 nodes and the value of this flag is 30,
+	// then scheduler stops finding further feasible nodes once it finds 150 feasible ones.
+	// When the value is 0, default percentage (5%--50% based on the size of the cluster) of the
+	// nodes will be scored. It will override global PercentageOfNodesToScore. If it is empty,
+	// global PercentageOfNodesToScore will be used.
+	PercentageOfNodesToScore *int32 `json:"percentageOfNodesToScore,omitempty"`
 
 	// Plugins specify the set of plugins that should be enabled or disabled.
 	// Enabled plugins are the ones that should be enabled in addition to the
@@ -367,11 +384,14 @@ type ExtenderTLSConfig struct {
 
 	// CertData holds PEM-encoded bytes (typically read from a client certificate file).
 	// CertData takes precedence over CertFile
+	// +listType=atomic
 	CertData []byte `json:"certData,omitempty"`
 	// KeyData holds PEM-encoded bytes (typically read from a client certificate key file).
 	// KeyData takes precedence over KeyFile
+	// +listType=atomic
 	KeyData []byte `json:"keyData,omitempty"`
 	// CAData holds PEM-encoded bytes (typically read from a root certificates bundle).
 	// CAData takes precedence over CAFile
+	// +listType=atomic
 	CAData []byte `json:"caData,omitempty"`
 }

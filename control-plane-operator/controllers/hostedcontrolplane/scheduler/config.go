@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	componentbasev1 "k8s.io/component-base/config/v1alpha1"
-	schedulerv1beta3 "k8s.io/kube-scheduler/config/v1beta3"
+	schedulerv1 "k8s.io/kube-scheduler/config/v1"
 	"k8s.io/utils/pointer"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -49,10 +49,10 @@ func generateConfig(profile configv1.SchedulerProfile) (string, error) {
 		return "", err
 	}
 	kubeConfigPath := path.Join(volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeKubeconfig().Name), kas.KubeconfigKey)
-	config := schedulerv1beta3.KubeSchedulerConfiguration{
+	config := schedulerv1.KubeSchedulerConfiguration{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KubeSchedulerConfiguration",
-			APIVersion: schedulerv1beta3.SchemeGroupVersion.String(),
+			APIVersion: schedulerv1.SchemeGroupVersion.String(),
 		},
 		ClientConnection: componentbasev1.ClientConnectionConfiguration{
 			Kubeconfig: kubeConfigPath,
@@ -68,9 +68,9 @@ func generateConfig(profile configv1.SchedulerProfile) (string, error) {
 	// https://github.com/openshift/cluster-kube-scheduler-operator/tree/master/bindata/assets/config
 	switch profile {
 	case configv1.HighNodeUtilization:
-		config.Profiles = []schedulerv1beta3.KubeSchedulerProfile{highNodeUtilizationProfile()}
+		config.Profiles = []schedulerv1.KubeSchedulerProfile{highNodeUtilizationProfile()}
 	case configv1.NoScoring:
-		config.Profiles = []schedulerv1beta3.KubeSchedulerProfile{noScoringProfile()}
+		config.Profiles = []schedulerv1.KubeSchedulerProfile{noScoringProfile()}
 	}
 	b, err := json.Marshal(config)
 	if err != nil {
@@ -79,10 +79,10 @@ func generateConfig(profile configv1.SchedulerProfile) (string, error) {
 	return string(b), nil
 }
 
-func highNodeUtilizationProfile() schedulerv1beta3.KubeSchedulerProfile {
-	return schedulerv1beta3.KubeSchedulerProfile{
+func highNodeUtilizationProfile() schedulerv1.KubeSchedulerProfile {
+	return schedulerv1.KubeSchedulerProfile{
 		SchedulerName: pointer.String("default-scheduler"),
-		PluginConfig: []schedulerv1beta3.PluginConfig{
+		PluginConfig: []schedulerv1.PluginConfig{
 			{
 				Name: "NodeResourcesFit",
 				Args: runtime.RawExtension{
@@ -90,14 +90,14 @@ func highNodeUtilizationProfile() schedulerv1beta3.KubeSchedulerProfile {
 				},
 			},
 		},
-		Plugins: &schedulerv1beta3.Plugins{
-			Score: schedulerv1beta3.PluginSet{
-				Disabled: []schedulerv1beta3.Plugin{
+		Plugins: &schedulerv1.Plugins{
+			Score: schedulerv1.PluginSet{
+				Disabled: []schedulerv1.Plugin{
 					{
 						Name: "NodeResourcesBalancedAllocation",
 					},
 				},
-				Enabled: []schedulerv1beta3.Plugin{
+				Enabled: []schedulerv1.Plugin{
 					{
 						Name:   "NodeResourcesFit",
 						Weight: pointer.Int32(5),
@@ -108,19 +108,19 @@ func highNodeUtilizationProfile() schedulerv1beta3.KubeSchedulerProfile {
 	}
 }
 
-func noScoringProfile() schedulerv1beta3.KubeSchedulerProfile {
-	return schedulerv1beta3.KubeSchedulerProfile{
+func noScoringProfile() schedulerv1.KubeSchedulerProfile {
+	return schedulerv1.KubeSchedulerProfile{
 		SchedulerName: pointer.String("default-scheduler"),
-		Plugins: &schedulerv1beta3.Plugins{
-			Score: schedulerv1beta3.PluginSet{
-				Disabled: []schedulerv1beta3.Plugin{
+		Plugins: &schedulerv1.Plugins{
+			Score: schedulerv1.PluginSet{
+				Disabled: []schedulerv1.Plugin{
 					{
 						Name: "*",
 					},
 				},
 			},
-			PreScore: schedulerv1beta3.PluginSet{
-				Disabled: []schedulerv1beta3.Plugin{
+			PreScore: schedulerv1.PluginSet{
+				Disabled: []schedulerv1.Plugin{
 					{
 						Name: "*",
 					},
