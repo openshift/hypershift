@@ -65,6 +65,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.KubevirtPlatform.QoSClass, "qos-class", opts.KubevirtPlatform.QoSClass, `If "Guaranteed", set the limit cpu and memory of the VirtualMachineInstance, to be the same as the requested cpu and memory; supported values: "Burstable" and "Guaranteed"`)
 	cmd.Flags().StringArrayVar(&opts.KubevirtPlatform.AdditionalNetworks, "additional-network", opts.KubevirtPlatform.AdditionalNetworks, fmt.Sprintf(`Specify additional network that should be attached to the nodes, the "name" field should point to a multus network attachment definition with the format "[namespace]/[name]", it can be specified multiple times to attach to multiple networks. Supported parameters: %s, example: "name:ns1/nad-foo`, params.Supported(NetworkOpts{})))
 	cmd.Flags().BoolVar(opts.KubevirtPlatform.AttachDefaultNetwork, "attach-default-network", *opts.KubevirtPlatform.AttachDefaultNetwork, `Specify if the default pod network should be attached to the nodes. This can only be set if --additional-network is configured`)
+	cmd.Flags().StringToStringVar(&opts.KubevirtPlatform.VmNodeSelector, "vm-node-selector", opts.KubevirtPlatform.VmNodeSelector, "A comma separated list of key=value pairs to use as the node selector for the KubeVirt VirtualMachines to be scheduled onto. (e.g. role=kubevirt,size=large)")
 
 	cmd.MarkPersistentFlagRequired("pull-secret")
 
@@ -208,6 +209,7 @@ func ApplyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 		QoSClass:                   qosClass,
 		AdditionalNetworks:         additionalNetworks,
 		AttachDefaultNetwork:       opts.KubevirtPlatform.AttachDefaultNetwork,
+		VmNodeSelector:             opts.KubevirtPlatform.VmNodeSelector,
 	}
 
 	if opts.BaseDomain != "" {

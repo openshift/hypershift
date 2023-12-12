@@ -1515,7 +1515,7 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 				}
 				return false, nil
 			}
-			t.Logf("observed condition %s status to match expected stauts [%s]", condition.Type, expectedStatus)
+			t.Logf("observed condition %s status to match expected status [%s]", condition.Type, expectedStatus)
 		}
 
 		return true, nil

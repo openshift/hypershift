@@ -137,6 +137,7 @@ type KubevirtPlatformCreateOptions struct {
 	QoSClass                   string
 	AdditionalNetworks         []string
 	AttachDefaultNetwork       *bool
+	VmNodeSelector             map[string]string
 }
 
 type AWSPlatformOptions struct {

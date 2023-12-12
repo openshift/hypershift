@@ -5260,6 +5260,20 @@ bool
 this can only be set to false if AdditionalNetworks are configured</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>nodeSelector</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeSelector is a selector which must be true for the kubevirt VirtualMachine to fit on a node.
+Selector which must match a node&rsquo;s labels for the VM to be scheduled on that node. More info:
+<a href="https://kubernetes.io/docs/concepts/configuration/assign-pod-node/">https://kubernetes.io/docs/concepts/configuration/assign-pod-node/</a></p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubevirtPersistentVolume { #hypershift.openshift.io/v1beta1.KubevirtPersistentVolume }
