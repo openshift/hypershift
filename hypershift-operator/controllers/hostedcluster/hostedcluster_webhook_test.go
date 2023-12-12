@@ -184,14 +184,14 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.13.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.27.0",
 			expectError:  true,
-			imageVersion: "4.14.0",
+			imageVersion: "4.13.0",
 		},
 		{
 			name: fmt.Sprintf("skip image version validation if the %q annotation is set", v1beta1.SkipReleaseImageValidation),
@@ -386,12 +386,12 @@ func TestValidateKVHostedClusterUpdate(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.13.0",
 					},
 				},
 			},
 			expectError:  true,
-			imageVersion: "4.14.0",
+			imageVersion: "4.13.0",
 		},
 		{
 			name: fmt.Sprintf("skip image version validation if the %q annotation is set", v1beta1.SkipReleaseImageValidation),
@@ -883,14 +883,14 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.13.0",
 					},
 				},
 			},
 			cnvVersion:   "1.0.0",
 			k8sVersion:   "1.27.0",
 			expectError:  true,
-			imageVersion: "4.14.0",
+			imageVersion: "4.13.0",
 		},
 		{
 			name: `skip image version validation if the "hypershift.openshift.io/skip-release-image-validation" annotation is set`,
@@ -1154,12 +1154,12 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 						Kubevirt: &v1beta1.KubevirtNodePoolPlatform{},
 					},
 					Release: v1beta1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.13.0",
 					},
 				},
 			},
 			expectError:  true,
-			imageVersion: "4.14.0",
+			imageVersion: "4.13.0",
 		},
 		{
 			name: `skip image version validation if the "hypershift.openshift.io/skip-release-image-validation" annotation is set`,

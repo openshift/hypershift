@@ -1926,7 +1926,7 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
-						Image: "image-4.14.0",
+						Image: "image-4.13.0",
 					},
 
 					Platform: hyperv1.PlatformSpec{
@@ -1935,7 +1935,7 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: errors.New(`the minimum version supported for platform KubeVirt is: "4.15.0". Attempting to use: "4.14.0"`),
+			expectedResult: errors.New(`the minimum version supported for platform KubeVirt is: "4.14.0". Attempting to use: "4.13.0"`),
 		},
 		{
 			name: "KubeVirt platform supported release, success",
@@ -1981,8 +1981,10 @@ func TestValidateReleaseImage(t *testing.T) {
 						"image-4.11.0": "4.11.0",
 						"image-4.11.1": "4.11.1",
 						"image-4.12.0": "4.12.0",
+						"image-4.13.0": "4.13.0",
 						"image-4.14.0": "4.14.0",
 						"image-4.15.0": "4.15.0",
+						"image-4.16.0": "4.16.0",
 					},
 				},
 			}
