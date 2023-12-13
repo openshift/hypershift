@@ -1376,41 +1376,41 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile OperatorHub configuration: %w", err))
 		}
+	}
 
-		p := olm.NewOperatorLifecycleManagerParams(hcp)
+	p := olm.NewOperatorLifecycleManagerParams(hcp)
 
-		// Check if the defaultSources are disabled
-		if err := r.client.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub); err != nil {
-			if !apierrors.IsNotFound(err) {
-				errs = append(errs, fmt.Errorf("failed to get OperatorHub %s: %w", client.ObjectKeyFromObject(operatorHub).String(), err))
+	// Check if the defaultSources are disabled
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub); err != nil {
+		if !apierrors.IsNotFound(err) {
+			errs = append(errs, fmt.Errorf("failed to get OperatorHub %s: %w", client.ObjectKeyFromObject(operatorHub).String(), err))
+		}
+	}
+
+	catalogs := []struct {
+		manifest  func() *operatorsv1alpha1.CatalogSource
+		reconcile func(*operatorsv1alpha1.CatalogSource, *olm.OperatorLifecycleManagerParams)
+	}{
+		{manifest: manifests.CertifiedOperatorsCatalogSource, reconcile: olm.ReconcileCertifiedOperatorsCatalogSource},
+		{manifest: manifests.CommunityOperatorsCatalogSource, reconcile: olm.ReconcileCommunityOperatorsCatalogSource},
+		{manifest: manifests.RedHatMarketplaceCatalogSource, reconcile: olm.ReconcileRedHatMarketplaceCatalogSource},
+		{manifest: manifests.RedHatOperatorsCatalogSource, reconcile: olm.ReconcileRedHatOperatorsCatalogSource},
+	}
+
+	for _, catalog := range catalogs {
+		cs := catalog.manifest()
+		if operatorHub.Spec.DisableAllDefaultSources {
+			if _, err := util.DeleteIfNeeded(ctx, r.client, cs); err != nil {
+				if !apierrors.IsNotFound(err) {
+					errs = append(errs, fmt.Errorf("failed to delete catalogSource %s/%s: %w", cs.Namespace, cs.Name, err))
+				}
 			}
-		}
-
-		catalogs := []struct {
-			manifest  func() *operatorsv1alpha1.CatalogSource
-			reconcile func(*operatorsv1alpha1.CatalogSource, *olm.OperatorLifecycleManagerParams)
-		}{
-			{manifest: manifests.CertifiedOperatorsCatalogSource, reconcile: olm.ReconcileCertifiedOperatorsCatalogSource},
-			{manifest: manifests.CommunityOperatorsCatalogSource, reconcile: olm.ReconcileCommunityOperatorsCatalogSource},
-			{manifest: manifests.RedHatMarketplaceCatalogSource, reconcile: olm.ReconcileRedHatMarketplaceCatalogSource},
-			{manifest: manifests.RedHatOperatorsCatalogSource, reconcile: olm.ReconcileRedHatOperatorsCatalogSource},
-		}
-
-		for _, catalog := range catalogs {
-			cs := catalog.manifest()
-			if operatorHub.Spec.DisableAllDefaultSources {
-				if _, err := util.DeleteIfNeeded(ctx, r.client, cs); err != nil {
-					if !apierrors.IsNotFound(err) {
-						errs = append(errs, fmt.Errorf("failed to delete catalogSource %s/%s: %w", cs.Namespace, cs.Name, err))
-					}
-				}
-			} else {
-				if _, err := r.CreateOrUpdate(ctx, r.client, cs, func() error {
-					catalog.reconcile(cs, p)
-					return nil
-				}); err != nil {
-					errs = append(errs, fmt.Errorf("failed to reconcile catalog source %s/%s: %w", cs.Namespace, cs.Name, err))
-				}
+		} else {
+			if _, err := r.CreateOrUpdate(ctx, r.client, cs, func() error {
+				catalog.reconcile(cs, p)
+				return nil
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile catalog source %s/%s: %w", cs.Namespace, cs.Name, err))
 			}
 		}
 	}
