@@ -877,6 +877,18 @@ type KubevirtPlatformSpec struct {
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageDriver is immutable"
 	StorageDriver *KubevirtStorageDriverSpec `json:"storageDriver,omitempty"`
+
+	// IngressPassthrowServiceSelector toggles whenever the ingress passsthrow service
+	// should have label selector or not. If the hosted cluster is created skipping
+	// default network this has to be as WithoutSelectors, since hosted cluster
+	// node IPs will not be the ones at virt-launcher pod default interface.
+	//
+	// +kubebuilder:validation:Optional
+	// +optional
+	// +kubebuilder:default=true
+	// +immutable
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="ingressPassthrowServiceSelector is immutable"
+	IngressPassthrowServiceSelector *bool `json:"ingressPassthrowServiceSelector,omitempty"`
 }
 
 // KubevirtStorageDriverConfigType defines how the kubevirt storage driver is configured.

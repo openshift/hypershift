@@ -5,6 +5,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/klog/v2"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -136,9 +137,15 @@ func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultN
 			TargetPort: intstr.FromInt(int(detectedHTTPSNodePort)),
 		},
 	}
-	service.Spec.Selector = map[string]string{
-		"kubevirt.io":        "virt-launcher",
-		hyperv1.InfraIDLabel: hcp.Spec.InfraID,
+	// If VMs did not attach to default network the service has to be headless
+	// and the endpoints will be created by the nodepool controller to point
+	// to secondary networks IPs.
+	if hcp.Spec.Platform.Kubevirt.IngressPassthrowServiceSelector == nil || *hcp.Spec.Platform.Kubevirt.IngressPassthrowServiceSelector {
+		klog.Infof("deleteme, ReconcileDefaultIngressPassthroughService, normal service")
+		service.Spec.Selector = map[string]string{
+			"kubevirt.io":        "virt-launcher",
+			hyperv1.InfraIDLabel: hcp.Spec.InfraID,
+		}
 	}
 	service.Spec.Type = corev1.ServiceTypeClusterIP
 	service.Labels[hyperv1.InfraIDLabel] = hcp.Spec.InfraID

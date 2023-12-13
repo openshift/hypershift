@@ -7060,6 +7060,18 @@ spec:
                         x-kubernetes-validations:
                         - message: Kubevirt GenerateID is immutable once set
                           rule: self == oldSelf
+                      ingressPassthrowServiceSelector:
+                        default: true
+                        description: IngressPassthrowServiceSelector toggles whenever
+                          the ingress passsthrow service should have label selector
+                          or not. If the hosted cluster is created skipping default
+                          network this has to be as WithoutSelectors, since hosted
+                          cluster node IPs will not be the ones at virt-launcher pod
+                          default interface.
+                        type: boolean
+                        x-kubernetes-validations:
+                        - message: ingressPassthrowServiceSelector is immutable
+                          rule: self == oldSelf
                       storageDriver:
                         description: StorageDriver defines how the KubeVirt CSI driver
                           exposes StorageClasses on the infra cluster (hosting the

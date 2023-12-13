@@ -5575,6 +5575,21 @@ KubevirtStorageDriverSpec
 the infra cluster (hosting the VMs) to the guest cluster.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>ingressPassthrowServiceSelector</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>IngressPassthrowServiceSelector toggles whenever the ingress passsthrow service
+should have label selector or not. If the hosted cluster is created skipping
+default network this has to be as WithoutSelectors, since hosted cluster
+node IPs will not be the ones at virt-launcher pod default interface.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubevirtRootVolume { #hypershift.openshift.io/v1beta1.KubevirtRootVolume }

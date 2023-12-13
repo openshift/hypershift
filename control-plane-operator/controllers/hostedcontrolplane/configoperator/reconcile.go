@@ -184,6 +184,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, platform hyperv1
 				APIGroups: []string{corev1.SchemeGroupVersion.Group},
 				Resources: []string{
 					"services",
+					"endpoints",
 				},
 				Verbs: []string{
 					"create",

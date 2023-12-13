@@ -45,6 +45,14 @@ func IngressDefaultIngressPassthroughService(namespace string) *corev1.Service {
 	}
 }
 
+func IngressDefaultIngressPassthroughEndpoints(namespace string) *corev1.Endpoints {
+	return &corev1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+		},
+	}
+}
+
 const IngressDefaultIngressPassthroughRouteName = "default-ingress-passthrough-route"
 
 func IngressDefaultIngressPassthroughRoute(namespace string) *routev1.Route {

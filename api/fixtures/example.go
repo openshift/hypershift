@@ -335,6 +335,8 @@ func (o ExampleOptions) Resources() *ExampleResources {
 					append(platformSpec.Kubevirt.StorageDriver.Manual.StorageClassMapping, newMap)
 			}
 		}
+
+		platformSpec.Kubevirt.IngressPassthrowServiceSelector = o.Kubevirt.AttachDefaultNetwork
 	case o.Azure != nil:
 		credentialSecret := &corev1.Secret{
 			TypeMeta: metav1.TypeMeta{
