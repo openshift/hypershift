@@ -71,7 +71,7 @@ func (c *AzureClusterTemplate) setSubnetsTemplateDefaults() {
 		nodeSubnetCounter++
 		nodeSubnetFound = true
 		subnet.SubnetClassSpec.setDefaults(fmt.Sprintf(DefaultNodeSubnetCIDRPattern, nodeSubnetCounter))
-		cpSubnet.SecurityGroup.setDefaults()
+		subnet.SecurityGroup.setDefaults()
 		c.Spec.Template.Spec.NetworkSpec.Subnets[i] = subnet
 	}
 
