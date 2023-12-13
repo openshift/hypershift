@@ -342,7 +342,7 @@ github.com/chai2010/gettext-go
 github.com/chai2010/gettext-go/mo
 github.com/chai2010/gettext-go/plural
 github.com/chai2010/gettext-go/po
-# github.com/clarketm/json v1.14.1
+# github.com/clarketm/json v1.17.1
 ## explicit
 github.com/clarketm/json
 # github.com/coreos/go-semver v0.3.1
@@ -612,9 +612,13 @@ github.com/grpc-ecosystem/grpc-gateway/utilities
 github.com/grpc-ecosystem/grpc-gateway/v2/internal/httprule
 github.com/grpc-ecosystem/grpc-gateway/v2/runtime
 github.com/grpc-ecosystem/grpc-gateway/v2/utilities
+# github.com/hashicorp/errwrap v1.1.0
+## explicit
 # github.com/hashicorp/go-cleanhttp v0.5.2
 ## explicit; go 1.13
 github.com/hashicorp/go-cleanhttp
+# github.com/hashicorp/go-multierror v1.1.1
+## explicit; go 1.13
 # github.com/hashicorp/go-retryablehttp v0.7.5
 ## explicit; go 1.13
 github.com/hashicorp/go-retryablehttp
@@ -819,11 +823,11 @@ github.com/openshift/cloud-credential-operator/pkg/ibmcloud
 ## explicit; go 1.17
 github.com/openshift/cluster-api-provider-agent/api/v1alpha1
 github.com/openshift/cluster-api-provider-agent/api/v1beta1
-# github.com/openshift/cluster-node-tuning-operator v0.0.0-20220614214129-2c76314fb3cc
-## explicit; go 1.18
+# github.com/openshift/cluster-node-tuning-operator v0.0.0-20240131125539-0e319439e65a
+## explicit; go 1.21
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1
-# github.com/openshift/custom-resource-status v1.1.2
+# github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 ## explicit; go 1.12
 github.com/openshift/custom-resource-status/conditions/v1
 # github.com/openshift/hypershift/api v0.0.0-00010101000000-000000000000 => ./api
@@ -932,7 +936,7 @@ github.com/robfig/cron
 # github.com/russross/blackfriday/v2 v2.1.0
 ## explicit
 github.com/russross/blackfriday/v2
-# github.com/sirupsen/logrus v1.9.0
+# github.com/sirupsen/logrus v1.9.3
 ## explicit; go 1.13
 github.com/sirupsen/logrus
 # github.com/soheilhy/cmux v0.1.5
@@ -2301,7 +2305,10 @@ sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 # github.com/google/cel-go => github.com/google/cel-go v0.17.7
 # github.com/openshift/hypershift/api => ./api
+# k8s.io/cri-api => k8s.io/cri-api v0.28.3
+# k8s.io/csi-translation-lib => k8s.io/csi-translation-lib v0.28.3
 # k8s.io/kubernetes => k8s.io/kubernetes v0.29.0
+# k8s.io/mount-utils => k8s.io/mount-utils v0.28.3
 # kubevirt.io/client-go => kubevirt.io/client-go v0.0.0-00010101000000-000000000000
 # kubevirt.io/containerized-data-importer-api => github.com/kubevirt/containerized-data-importer-api v1.41.1-0.20211201033752-05520fb9f18d
 # sigs.k8s.io/apiserver-network-proxy/konnectivity-client => sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.28.1
