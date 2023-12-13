@@ -1,0 +1,14 @@
+#!/bin/bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+pidfile="${script_dir}/cpo.pid"
+if [[ -f ${pidfile} ]]; then 
+	echo "Stopping control plane operator"
+	kill -9 $(cat ${pidfile}) || true
+	rm ${pidfile}
+else
+	echo "No pid file found for control plane operator"
+	exit 1
+fi
+   
+

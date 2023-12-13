@@ -1,0 +1,31 @@
+#!/bin/zsh
+set -euo pipefail
+script_dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+HYPERSHIFT_DIR=${HYPERSHIFT_DIR:-$script_dir/../..}
+
+manifests=("0alertmanagerConfigCustomResourceDefinition.yaml" \
+           "0prometheusCustomResourceDefinition.yaml" \
+           "0servicemonitorCustomResourceDefinition.yaml" \
+           "0alertmanagerCustomResourceDefinition.yaml" \
+           "0prometheusagentCustomResourceDefinition.yaml" \
+           "0thanosrulerCustomResourceDefinition.yaml" \
+           "0podmonitorCustomResourceDefinition.yaml" \
+           "0prometheusruleCustomResourceDefinition.yaml" \
+           "namespace.yaml" \
+           "0probeCustomResourceDefinition.yaml" \
+           "0scrapeconfigCustomResourceDefinition.yaml")
+
+for m in ${manifests[@]}; do
+  echo "Applying prometheus manifest ${m}"
+  oc create -f "https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/setup/${m}" &> /dev/null || true
+done
+
+
+oc apply -f https://raw.githubusercontent.com/openshift/cluster-ingress-operator/master/manifests/00-custom-resource-definition.yaml &> /dev/null
+
+${HYPERSHIFT_DIR}/bin/hypershift install \
+  --development \
+  --enable-ci-debug-output \
+  --enable-conversion-webhook=false \
+  --enable-defaulting-webhook=false \
+  --enable-validating-webhook=false

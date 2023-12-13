@@ -1,0 +1,59 @@
+#!/bin/bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+HYPERSHIFT_DIR=${HYPERSHIFT_DIR:-$script_dir/../..}
+
+NAMESPACE="${NAMESPACE:-clusters}"
+NAME="${NAME:-example}"
+cp_namespace="${NAMESPACE}-${NAME}"
+
+logfile="${script_dir}/hcco.log"
+pidfile="${script_dir}/hcco.pid"
+kubeconfigfile="${script_dir}/hosted.kubeconfig"
+
+
+# Wait for a hosted-cluster-config-operator deployment to exist in the control plane namespace
+while ! oc get deployment hosted-cluster-config-operator -n ${cp_namespace} &> /dev/null; do
+	echo "Waiting for hosted-cluster-config-operator deployment to exist in ${cp_namespace}"
+	sleep 3
+done
+
+# Get a kubeconfig to the hosted cluster
+${script_dir}/get-kubeconfig
+
+if [[ -f "${pidfile}" ]]; then
+	echo "Found existing hcco pid, killing that first"
+	${script_dir}/stop-hcco
+fi
+
+
+rootca=$(mktemp)
+oc get secret/root-ca -o jsonpath='{ .data.ca\.crt }' -n ${cp_namespace} | base64 -d > $rootca
+clustersignerca=$(mktemp)
+oc get secret/cluster-signer-ca -o jsonpath='{ .data.ca\.crt }' -n ${cp_namespace} | base64 -d > $clustersignerca
+kubeconfig=$(mktemp)
+release_image="$(oc get hcp ${NAME} -n ${cp_namespace} -o jsonpath='{ .spec.releaseImage }')"
+hcco_deployment=$(mktemp)
+oc get deployment hosted-cluster-config-operator -o json -n ${cp_namespace} > "${hcco_deployment}"
+openshift_version="$(cat $hcco_deployment | jq -r '.spec.template.spec.containers[0].env[] | select(.name == "OPENSHIFT_RELEASE_VERSION") | .value')"
+kubernetes_version="$(cat $hcco_deployment | jq -r '.spec.template.spec.containers[0].env[] | select(.name == "KUBERNETES_VERSION") | .value')"
+OPENSHIFT_RELEASE_VERSION="${openshift_version}" \
+  KUBERNETES_VERSION="${kubernetes_version}" \
+  OPERATE_ON_RELEASE_IMAGE="${release_image}" \
+  ${HYPERSHIFT_DIR}/bin/control-plane-operator \
+    hosted-cluster-config-operator \
+    --initial-ca-file=${rootca} \
+    --cluster-signer-ca-file=${clustersignerca} \
+    --target-kubeconfig=${kubeconfigfile} \
+    --namespace ${cp_namespace} \
+    --platform-type None \
+    --enable-ci-debug-output=true \
+    --hosted-control-plane ${NAME} \
+    --konnectivity-address=konnectivity-server.${cp_namespace}.svc \
+    --konnectivity-port=8091 \
+    --oauth-address=oauth-openshift.${cp_namespace}.svc \
+    --oauth-port=443  &> "${logfile}" &
+pid=$!
+echo "${pid}" > "${pidfile}"
+
+echo "Hosted cluster config operator started"

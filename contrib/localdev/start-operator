@@ -1,0 +1,27 @@
+#!/bin/bash
+set -euo pipefail
+script_dir="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+HYPERSHIFT_DIR=${HYPERSHIFT_DIR:-$script_dir/../..}
+
+export METRICS_SET="Telemetry"
+export MY_NAMESPACE=hypershift
+export MY_NAME=operator
+
+logfile="${script_dir}/operator.log"
+pidfile="${script_dir}/operator.pid"
+
+if [[ -f "${pidfile}" ]]; then
+	echo "Found existing operator pid, killing that first"
+	${script_dir}/stop-operator
+fi
+
+${HYPERSHIFT_DIR}/bin/hypershift-operator \
+  run \
+  --metrics-addr=0 \
+  --enable-ocp-cluster-monitoring=false \
+  --enable-ci-debug-output=true \
+  --control-plane-operator-image=quay.io/hypershift/hypershift:latest &> "${logfile}" &
+pid=$!
+echo "${pid}" > "${pidfile}"
+
+echo "HyperShift operator started"
