@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"os"
 	"strings"
 	"time"
@@ -13,8 +12,8 @@ import (
 	"github.com/hashicorp/go-uuid"
 	"github.com/spf13/cobra"
 
-	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/yaml"
@@ -49,7 +48,7 @@ type CreateInfraOptions struct {
 	Location          string
 	InfraID           string
 	CredentialsFile   string
-	Credentials       *apifixtures.AzureCreds
+	Credentials       *util.AzureCreds
 	OutputFile        string
 	RHCOSImage        string
 	ResourceGroupName string
@@ -114,7 +113,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	// Setup subscription ID and Azure credential information
-	subscriptionID, azureCreds, err := setupAzureCredentials(l, o.Credentials, o.CredentialsFile)
+	subscriptionID, azureCreds, err := util.SetupAzureCredentials(l, o.Credentials, o.CredentialsFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to setup Azure credentials: %w", err)
 	}
@@ -541,41 +540,4 @@ func createRhcosImages(ctx context.Context, l logr.Logger, o *CreateInfraOptions
 	l.Info("Successfully created image", "resourceID", *imageCreationResult.ID, "result", imageCreationResult)
 
 	return bootImageID, nil
-}
-
-// setupAzureCredentials creates the Azure credentials needed to create Azure resources from credentials passed in from the user or from a credentials file
-func setupAzureCredentials(l logr.Logger, credentials *apifixtures.AzureCreds, credentialsFile string) (string, *azidentity.DefaultAzureCredential, error) {
-	creds := credentials
-	if creds == nil {
-		var err error
-		creds, err = readCredentials(credentialsFile)
-		if err != nil {
-			return "", nil, fmt.Errorf("failed to read the credentials: %w", err)
-		}
-		l.Info("Using credentials from file", "path", credentialsFile)
-	}
-
-	_ = os.Setenv("AZURE_TENANT_ID", creds.TenantID)
-	_ = os.Setenv("AZURE_CLIENT_ID", creds.ClientID)
-	_ = os.Setenv("AZURE_CLIENT_SECRET", creds.ClientSecret)
-	azureCreds, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to create Azure credentials to create image gallery: %w", err)
-	}
-
-	return creds.SubscriptionID, azureCreds, nil
-}
-
-func readCredentials(path string) (*apifixtures.AzureCreds, error) {
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read from %s: %w", path, err)
-	}
-
-	var result apifixtures.AzureCreds
-	if err := yaml.Unmarshal(raw, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal credentials: %w", err)
-	}
-
-	return &result, nil
 }
