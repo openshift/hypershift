@@ -14,11 +14,6 @@ var SchemeGroupVersion = schema.GroupVersion{Group: "monitoring.rhobs", Version:
 // EnvironmentVariable indicates whether RHOBS monitoring resources should be used
 var EnvironmentVariable = "RHOBS_MONITORING"
 
-// Resource takes an unqualified resource and returns a Group qualified GroupResource
-func Resource(resource string) schema.GroupResource {
-	return SchemeGroupVersion.WithResource(resource).GroupResource()
-}
-
 var (
 	// localSchemeBuilder and AddToScheme will stay in k8s.io/kubernetes.
 	SchemeBuilder      runtime.SchemeBuilder

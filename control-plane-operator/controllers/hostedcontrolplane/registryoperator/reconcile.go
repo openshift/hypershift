@@ -409,25 +409,6 @@ func buildVolumeWebIdentityToken(v *corev1.Volume) {
 	v.EmptyDir = &corev1.EmptyDirVolumeSource{}
 }
 
-func ReconcileService(svc *corev1.Service) {
-	svc.Spec.ClusterIP = "None"
-	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.
-	IPFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
-	svc.Spec.IPFamilyPolicy = &IPFamilyPolicy
-	var port corev1.ServicePort
-	if len(svc.Spec.Ports) > 0 {
-		port = svc.Spec.Ports[0]
-	} else {
-		svc.Spec.Ports = []corev1.ServicePort{port}
-	}
-	port.Name = "metrics"
-	port.Port = int32(metricsPort)
-	port.Protocol = corev1.ProtocolTCP
-	port.TargetPort = intstr.FromInt(metricsPort)
-	svc.Spec.Ports[0] = port
-	svc.Spec.Selector = selectorLabels()
-}
-
 func ReconcilePodMonitor(pm *prometheusoperatorv1.PodMonitor, clusterID string, metricsSet metrics.MetricsSet) {
 	pm.Spec.Selector.MatchLabels = selectorLabels()
 	pm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{

@@ -56,22 +56,6 @@ func ImageDigestMirrorSetList() *configv1.ImageDigestMirrorSetList {
 	}
 }
 
-// ReconcileImageContentSourcePolicy reconciles the ImageContentSources from the HCP spec into an ImageContentSourcePolicy
-func ReconcileImageContentSourcePolicy(icsp *operatorv1alpha1.ImageContentSourcePolicy, hcp *hyperv1.HostedControlPlane) error {
-	if icsp.Labels == nil {
-		icsp.Labels = map[string]string{}
-	}
-	icsp.Labels["machineconfiguration.openshift.io/role"] = "worker"
-	icsp.Spec.RepositoryDigestMirrors = []operatorv1alpha1.RepositoryDigestMirrors{}
-	for _, imageContentSourceEntry := range hcp.Spec.ImageContentSources {
-		icsp.Spec.RepositoryDigestMirrors = append(icsp.Spec.RepositoryDigestMirrors, operatorv1alpha1.RepositoryDigestMirrors{
-			Source:  imageContentSourceEntry.Source,
-			Mirrors: imageContentSourceEntry.Mirrors,
-		})
-	}
-	return nil
-}
-
 // ReconcileImageDigestMirrors reconciles the ImageContentSources from the HCP spec into an ImageDigestMirrorSet
 func ReconcileImageDigestMirrors(idms *configv1.ImageDigestMirrorSet, hcp *hyperv1.HostedControlPlane) error {
 	if idms.Labels == nil {
