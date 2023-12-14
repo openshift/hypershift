@@ -5,15 +5,7 @@ package e2e
 
 import (
 	"context"
-	"crypto/rsa"
-	"crypto/x509"
-	"crypto/x509/pkix"
-	"embed"
-	"encoding/pem"
 	"fmt"
-	"math/rand"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +19,6 @@ import (
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
-	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -40,67 +31,6 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
-
-// generating lots of PKI in environments where compute and/or entropy is limited (like in test containers)
-// can be very slow - instead, we use precomputed PKI and allow for re-generating it if necessary
-//
-//go:embed testdata
-var testdata embed.FS
-
-func certKeyRequest(t *testing.T) ([]byte, []byte, []byte) {
-	if os.Getenv("REGENERATE_PKI") != "" {
-		t.Log("$REGENERATE_PKI set, generating a new cert/key pair")
-		rawCA, err := librarygocrypto.MakeSelfSignedCAConfigForDuration("test-signer", time.Hour*24*365*100)
-		if err != nil {
-			t.Fatalf("could not generate self-signed CA: %v", err)
-		}
-		crt, key := rawCA.Certs[0], rawCA.Key
-
-		der := x509.MarshalPKCS1PrivateKey(key.(*rsa.PrivateKey))
-		keyb := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})
-		if err := os.WriteFile(filepath.Join("testdata", "tls.key"), keyb, 0666); err != nil {
-			t.Fatalf("failed to write re-generated private key: %v", err)
-		}
-
-		crtb := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: crt.Raw})
-		if err := os.WriteFile(filepath.Join("testdata", "tls.crt"), crtb, 0666); err != nil {
-			t.Fatalf("failed to write re-generated certificate: %v", err)
-		}
-
-		csr, err := x509.CreateCertificateRequest(rand.New(rand.NewSource(0)), &x509.CertificateRequest{
-			Subject: pkix.Name{
-				CommonName:   "customer-break-glass-test-whatever",
-				Organization: []string{"system:masters"},
-			},
-		}, key)
-		if err != nil {
-			t.Fatalf("failed to create certificate request")
-		}
-		csrb := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csr})
-		if err := os.WriteFile(filepath.Join("testdata", "csr.pem"), csrb, 0666); err != nil {
-			t.Fatalf("failed to write re-generated certificate request: %v", err)
-		}
-
-		return crtb, keyb, csrb
-	}
-
-	t.Log("loading certificate/key pair from disk, use $REGENERATE_PKI to generate new ones")
-	keyb, err := testdata.ReadFile(filepath.Join("testdata", "tls.key"))
-	if err != nil {
-		t.Fatalf("failed to read private key: %v", err)
-	}
-
-	crtb, err := testdata.ReadFile(filepath.Join("testdata", "tls.crt"))
-	if err != nil {
-		t.Fatalf("failed to read certificate: %v", err)
-	}
-
-	csrb, err := testdata.ReadFile(filepath.Join("testdata", "csr.pem"))
-	if err != nil {
-		t.Fatalf("failed to read certificate request: %v", err)
-	}
-	return crtb, keyb, csrb
-}
 
 // TestCreateCluster implements a test that creates a cluster with the code under test
 // vs upgrading to the code under test as TestUpgradeControlPlane does.

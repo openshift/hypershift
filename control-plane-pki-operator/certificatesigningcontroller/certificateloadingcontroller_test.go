@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/openshift/hypershift/control-plane-pki-operator/certificates/authority"
 	"github.com/openshift/library-go/pkg/controller/factory"
+	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/library-go/pkg/operator/events"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -26,7 +26,7 @@ func TestCertificateLoadingController_CurrentCA(t *testing.T) {
 	}
 
 	t.Log("ask for the current CA before we've loaded anything")
-	caChan := make(chan *authority.CertificateAuthority, 1)
+	caChan := make(chan *librarygocrypto.CA, 1)
 	errChan := make(chan error, 1)
 	wg := sync.WaitGroup{}
 	wg.Add(1)
@@ -76,7 +76,7 @@ func TestCertificateLoadingController_CurrentCA(t *testing.T) {
 		t.Fatalf("expected no error from CurrentCA(), got %v", errs)
 	}
 
-	var cas []*authority.CertificateAuthority
+	var cas []*librarygocrypto.CA
 	for ca := range caChan {
 		if ca != nil {
 			cas = append(cas, ca)
@@ -85,10 +85,14 @@ func TestCertificateLoadingController_CurrentCA(t *testing.T) {
 	if len(cas) > 1 {
 		t.Fatalf("got more than one CA: %v", cas)
 	}
-	if diff := cmp.Diff(cas[0].RawCert, crt); diff != "" {
+	rawCert, rawKey, err := cas[0].Config.GetPEMBytes()
+	if err != nil {
+		t.Fatalf("unexpected error marshalling pem: %v", err)
+	}
+	if diff := cmp.Diff(rawCert, crt); diff != "" {
 		t.Fatalf("got incorrect cert: %v", diff)
 	}
-	if diff := cmp.Diff(cas[0].RawKey, key); diff != "" {
+	if diff := cmp.Diff(rawKey, key); diff != "" {
 		t.Fatalf("got incorrect key: %v", diff)
 	}
 
@@ -99,10 +103,14 @@ func TestCertificateLoadingController_CurrentCA(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
-	if diff := cmp.Diff(ca.RawCert, crt); diff != "" {
+	rawCert, rawKey, err = ca.Config.GetPEMBytes()
+	if err != nil {
+		t.Fatalf("unexpected error marshalling pem: %v", err)
+	}
+	if diff := cmp.Diff(rawCert, crt); diff != "" {
 		t.Fatalf("got incorrect cert: %v", diff)
 	}
-	if diff := cmp.Diff(ca.RawKey, key); diff != "" {
+	if diff := cmp.Diff(rawKey, key); diff != "" {
 		t.Fatalf("got incorrect key: %v", diff)
 	}
 }

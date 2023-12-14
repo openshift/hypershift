@@ -3,14 +3,13 @@ package certificatesigningcontroller
 import (
 	"context"
 	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"time"
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
-	"github.com/openshift/hypershift/control-plane-pki-operator/certificates/authority"
 	"github.com/openshift/library-go/pkg/controller/factory"
+	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
 	certificatesv1 "k8s.io/api/certificates/v1"
@@ -32,14 +31,14 @@ type CertificateSigningController struct {
 	signerName                string
 	validator                 certificates.ValidatorFunc
 	getCSR                    func(name string) (*certificatesv1.CertificateSigningRequest, error)
-	getCurrentCABundleContent func(context.Context) (*authority.CertificateAuthority, error)
+	getCurrentCABundleContent func(context.Context) (*librarygocrypto.CA, error)
 	certTTL                   time.Duration
 }
 
 func NewCertificateSigningController(
 	hostedControlPlane *hypershiftv1beta1.HostedControlPlane,
 	signer certificates.SignerClass,
-	getCurrentCABundleContent func(context.Context) (*authority.CertificateAuthority, error),
+	getCurrentCABundleContent func(context.Context) (*librarygocrypto.CA, error),
 	kubeInformersForNamespaces v1helpers.KubeInformersForNamespaces,
 	kubeClient kubernetes.Interface,
 	eventRecorder events.Recorder,
@@ -155,18 +154,47 @@ func (c *CertificateSigningController) processCertificateSigningRequest(ctx cont
 	return cfg, false, nil, nil
 }
 
-func sign(ca *authority.CertificateAuthority, x509cr *x509.CertificateRequest, usages []certificatesv1.KeyUsage, certTTL time.Duration, expirationSeconds *int32, now func() time.Time) ([]byte, error) {
-	der, err := ca.Sign(x509cr.Raw, authority.PermissiveSigningPolicy{
-		TTL:      duration(certTTL, expirationSeconds),
-		Usages:   usages,
-		Backdate: backdate,       // this must always be less than the minimum TTL requested by a user (see sanity check requestedDuration below)
-		Short:    100 * backdate, // roughly 8 hours
-		Now:      now,
-	})
+func sign(ca *librarygocrypto.CA, x509cr *x509.CertificateRequest, usages []certificatesv1.KeyUsage, certTTL time.Duration, expirationSeconds *int32, now func() time.Time) ([]byte, error) {
+	if err := x509cr.CheckSignature(); err != nil {
+		return nil, fmt.Errorf("unable to verify certificate request signature: %v", err)
+	}
+
+	notBefore, notAfter, err := boundaries(
+		now,
+		duration(certTTL, expirationSeconds),
+		backdate,     // this must always be less than the minimum TTL requested by a user (see sanity check requestedDuration below)
+		100*backdate, // roughly 8 hours
+		ca.Config.Certs[0].NotAfter,
+	)
 	if err != nil {
 		return nil, err
 	}
-	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), nil
+
+	x509usages, extUsages, err := certificates.KeyUsagesFromStrings(usages)
+	if err != nil {
+		return nil, err
+	}
+
+	cert, err := ca.SignCertificate(&x509.Certificate{
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		Subject:               x509cr.Subject,
+		DNSNames:              x509cr.DNSNames,
+		IPAddresses:           x509cr.IPAddresses,
+		EmailAddresses:        x509cr.EmailAddresses,
+		URIs:                  x509cr.URIs,
+		PublicKeyAlgorithm:    x509cr.PublicKeyAlgorithm,
+		PublicKey:             x509cr.PublicKey,
+		KeyUsage:              x509usages,
+		ExtKeyUsage:           extUsages,
+		BasicConstraintsValid: true,
+		IsCA:                  false,
+	}, x509cr.PublicKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return librarygocrypto.EncodeCertificates(cert)
 }
 
 func duration(certTTL time.Duration, expirationSeconds *int32) time.Duration {
@@ -187,4 +215,40 @@ func duration(certTTL time.Duration, expirationSeconds *int32) time.Duration {
 	default:
 		return requestedDuration
 	}
+}
+
+// boundaries computes NotBefore and NotAfter:
+//
+//	All certificates set NotBefore = Now() - Backdate.
+//	Long-lived certificates set NotAfter = Now() + TTL - Backdate.
+//	Short-lived certificates set NotAfter = Now() + TTL.
+//	All certificates truncate NotAfter to the expiration date of the signer.
+func boundaries(now func() time.Time, ttl, backdate, horizon time.Duration, signerNotAfter time.Time) (time.Time, time.Time, error) {
+	if now == nil {
+		now = time.Now
+	}
+
+	instant := now()
+
+	var notBefore, notAfter time.Time
+	if ttl < horizon {
+		// do not backdate the end time if we consider this to be a short-lived certificate
+		notAfter = instant.Add(ttl)
+	} else {
+		notAfter = instant.Add(ttl - backdate)
+	}
+
+	if !notAfter.Before(signerNotAfter) {
+		notAfter = signerNotAfter
+	}
+
+	if !notBefore.Before(signerNotAfter) {
+		return notBefore, notAfter, fmt.Errorf("the signer has expired: NotAfter=%v", signerNotAfter)
+	}
+
+	if !instant.Before(signerNotAfter) {
+		return notBefore, notAfter, fmt.Errorf("refusing to sign a certificate that expired in the past: NotAfter=%v", signerNotAfter)
+	}
+
+	return notBefore, notAfter, nil
 }
