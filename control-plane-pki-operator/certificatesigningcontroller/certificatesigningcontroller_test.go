@@ -5,7 +5,6 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"embed"
@@ -31,12 +30,10 @@ import (
 
 	certificatesv1 "k8s.io/api/certificates/v1"
 	"k8s.io/apimachinery/pkg/util/diff"
-	"k8s.io/client-go/util/cert"
 	"k8s.io/client-go/util/certificate/csr"
 	testingclock "k8s.io/utils/clock/testing"
 
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
-	"github.com/openshift/hypershift/control-plane-pki-operator/certificates/authority"
 )
 
 // generating lots of PKI in environments where compute and/or entropy is limited (like in test containers)
@@ -79,45 +76,33 @@ func privateKey(t *testing.T) crypto.PrivateKey {
 	return key
 }
 
-func certificateAuthority(t *testing.T) *authority.CertificateAuthority {
+func certificateAuthority(t *testing.T) *librarygocrypto.CA {
 	keyPem, certPem := certificateAuthorityRaw(t)
 
-	keyDer, _ := pem.Decode(keyPem)
-	key, err := x509.ParsePKCS1PrivateKey(keyDer.Bytes)
+	ca, err := librarygocrypto.GetCAFromBytes(certPem, keyPem)
 	if err != nil {
-		t.Fatalf("failed to parse private key: %v", err)
+		t.Fatalf("error parsing CA cert and key: %v", err)
 	}
-
-	certDer, _ := pem.Decode(certPem)
-	crt, err := x509.ParseCertificate(certDer.Bytes)
-	if err != nil {
-		t.Fatalf("failed to parse certificate: %v", err)
-	}
-	return &authority.CertificateAuthority{
-		PrivateKey:  key,
-		Certificate: crt,
-	}
+	return ca
 }
 
 func certificateAuthorityRaw(t *testing.T) ([]byte, []byte) {
 	if os.Getenv("REGENERATE_PKI") != "" {
 		t.Log("$REGENERATE_PKI set, generating a new cert/key pair")
-		rawCA, err := librarygocrypto.MakeSelfSignedCAConfigForDuration("test-signer", time.Hour*24*365*100)
+		cfg, err := librarygocrypto.MakeSelfSignedCAConfigForDuration("test-signer", time.Hour*24*365*100)
 		if err != nil {
 			t.Fatalf("could not generate self-signed CA: %v", err)
 		}
-		ca := &authority.CertificateAuthority{
-			Certificate: rawCA.Certs[0],
-			PrivateKey:  rawCA.Key.(crypto.Signer),
+
+		certb, keyb, err := cfg.GetPEMBytes()
+		if err != nil {
+			t.Fatalf("failed to marshal CA cert and key: %v", err)
 		}
 
-		der := x509.MarshalPKCS1PrivateKey(ca.PrivateKey.(*rsa.PrivateKey))
-		keyb := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})
 		if err := os.WriteFile(filepath.Join("testdata", "tls.key"), keyb, 0666); err != nil {
 			t.Fatalf("failed to write re-generated private key: %v", err)
 		}
 
-		certb := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Certificate.Raw})
 		if err := os.WriteFile(filepath.Join("testdata", "tls.crt"), certb, 0666); err != nil {
 			t.Fatalf("failed to write re-generated certificate: %v", err)
 		}
@@ -336,7 +321,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 				validator:  testCase.validator,
 				signerName: testCase.signerName,
 				getCSR:     testCase.getCSR,
-				getCurrentCABundleContent: func(ctx context.Context) (*authority.CertificateAuthority, error) {
+				getCurrentCABundleContent: func(ctx context.Context) (*librarygocrypto.CA, error) {
 					return ca, nil
 				},
 				certTTL: 12 * time.Hour,
@@ -451,7 +436,7 @@ func TestSign(t *testing.T) {
 		t.Fatalf("expected a certificate after signing")
 	}
 
-	certs, err := cert.ParseCertsPEM(certData)
+	certs, err := librarygocrypto.CertsFromPEM(certData)
 	if err != nil {
 		t.Fatalf("failed to parse certificate: %v", err)
 	}
@@ -468,7 +453,7 @@ func TestSign(t *testing.T) {
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
-		NotBefore:             fakeClock.Now().Add(-5 * time.Minute),
+		NotBefore:             fakeClock.Now(),
 		NotAfter:              fakeClock.Now().Add(1 * time.Hour),
 		PublicKeyAlgorithm:    x509.ECDSA,
 		SignatureAlgorithm:    x509.SHA256WithRSA,
