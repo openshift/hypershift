@@ -20,14 +20,14 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 )
 
 // getCACertPool loads CA certificates to pool
 func getCACertPool(caFile string) (*x509.CertPool, error) {
 	certPool := x509.NewCertPool()
-	caCert, err := ioutil.ReadFile(filepath.Clean(caFile))
+	caCert, err := os.ReadFile(filepath.Clean(caFile))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA cert %s: %v", caFile, err)
 	}
