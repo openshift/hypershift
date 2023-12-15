@@ -261,3 +261,8 @@ ci-install-hypershift-private:
 .PHONY: ci-test-e2e
 ci-test-e2e:
 	hack/ci-test-e2e.sh ${CI_TESTS_RUN}
+
+.PHONY: regenerate-pki
+regenerate-pki:
+	REGENERATE_PKI=1 $(GO) test ./control-plane-pki-operator/...
+	REGENERATE_PKI=1 $(GO) test ./test/e2e/... -run TestRegeneratePKI
