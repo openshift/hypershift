@@ -1189,6 +1189,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 
 		auditedAppList := map[string]string{
 			"cloud-controller-manager":         "app",
+			"cloud-credential-operator":        "app",
 			"aws-ebs-csi-driver-controller":    "app",
 			"capi-provider-controller-manager": "app",
 			"cloud-network-config-controller":  "app",

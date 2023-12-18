@@ -46,6 +46,7 @@ type MetricsSetConfig struct {
 	OpenShiftControllerManager      []*prometheusoperatorv1.RelabelConfig `json:"openshiftControllerManager,omitempty"`
 	OpenShiftRouteControllerManager []*prometheusoperatorv1.RelabelConfig `json:"openshiftRouteControllerManager,omitempty"`
 	CVO                             []*prometheusoperatorv1.RelabelConfig `json:"cvo,omitempty"`
+	CCO                             []*prometheusoperatorv1.RelabelConfig `json:"cco,omitempty"`
 	OLM                             []*prometheusoperatorv1.RelabelConfig `json:"olm,omitempty"`
 	CatalogOperator                 []*prometheusoperatorv1.RelabelConfig `json:"catalogOperator,omitempty"`
 	RegistryOperator                []*prometheusoperatorv1.RelabelConfig `json:"registryOperator,omitempty"`
