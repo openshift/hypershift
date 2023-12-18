@@ -110,8 +110,9 @@ type PowerVSPlatformOptions struct {
 }
 
 type AgentPlatformCreateOptions struct {
-	APIServerAddress string
-	AgentNamespace   string
+	APIServerAddress   string
+	AgentNamespace     string
+	AgentLabelSelector string
 }
 
 type NonePlatformCreateOptions struct {

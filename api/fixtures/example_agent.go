@@ -6,8 +6,9 @@ import (
 )
 
 type ExampleAgentOptions struct {
-	APIServerAddress string
-	AgentNamespace   string
+	APIServerAddress   string
+	AgentNamespace     string
+	AgentLabelSelector string
 }
 
 type ExampleAgentResources struct {
