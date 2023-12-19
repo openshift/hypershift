@@ -8,6 +8,7 @@ import (
 
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	hypershiftinformers "github.com/openshift/hypershift/client/informers/externalversions"
+	"github.com/openshift/hypershift/control-plane-pki-operator/certificaterevocationcontroller"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificatesigningcontroller"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificatesigningrequestapprovalcontroller"
@@ -90,6 +91,15 @@ func RunOperator(ctx context.Context, controllerContext *controllercmd.Controlle
 		controllerContext.EventRecorder,
 	)
 
+	certRevocationController := certificaterevocationcontroller.NewCertificateRevocationController(
+		hcp,
+		kubeInformersForNamespaces,
+		hypershiftInformerFactory,
+		kubeClient,
+		hypershiftClient,
+		controllerContext.EventRecorder,
+	)
+
 	secret := manifests.CustomerSystemAdminSigner(namespace)
 	currentCA, certLoadingController := certificatesigningcontroller.NewCertificateLoadingController(
 		secret.Namespace, secret.Name,
@@ -115,6 +125,7 @@ func RunOperator(ctx context.Context, controllerContext *controllercmd.Controlle
 	go certSigningRequestApprovalController.Run(ctx, 1)
 	go certLoadingController.Run(ctx, 1)
 	go certSigningController.Run(ctx, 1)
+	go certRevocationController.Run(ctx, 1)
 
 	<-ctx.Done()
 	return nil

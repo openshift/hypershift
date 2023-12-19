@@ -168,6 +168,16 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 			Resources: []string{"certificatesigningrequestapprovals"},
 			Verbs:     []string{"get", "list", "watch"},
 		},
+		{ // for certificate revocation
+			APIGroups: []string{"certificates.hypershift.openshift.io"},
+			Resources: []string{"certificaterevocationrequests"},
+			Verbs:     []string{"get", "list", "watch"},
+		},
+		{ // for certificate revocation
+			APIGroups: []string{"certificates.hypershift.openshift.io"},
+			Resources: []string{"certificaterevocationrequests/status"},
+			Verbs:     []string{"patch"},
+		},
 	}
 	return nil
 }
