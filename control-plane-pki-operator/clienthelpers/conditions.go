@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/certrotation"
 	"github.com/openshift/library-go/pkg/operator/condition"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
 func NewHostedControlPlaneStatusReporter(name, namespace string, client hypershiftv1beta1client.HostedControlPlanesGetter) *HostedControlPlaneStatusReporter {
@@ -66,7 +67,13 @@ func UpdateHostedControlPlaneStatusCondition(ctx context.Context, newCondition m
 	}
 
 	cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(name, namespace).
-		WithStatus(hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().WithConditions(newCondition))
+		WithStatus(hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().WithConditions(metav1applyconfigurations.Condition().
+			WithType(newCondition.Type).
+			WithStatus(newCondition.Status).
+			WithLastTransitionTime(newCondition.LastTransitionTime).
+			WithReason(newCondition.Reason).
+			WithMessage(newCondition.Message),
+		))
 
 	_, updateErr := client.HostedControlPlanes(namespace).ApplyStatus(ctx, cfg, metav1.ApplyOptions{FieldManager: fieldManager})
 	return true, updateErr
