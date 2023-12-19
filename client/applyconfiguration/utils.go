@@ -32,6 +32,12 @@ import (
 func ForKind(kind schema.GroupVersionKind) interface{} {
 	switch kind {
 	// Group=certificates.hypershift.openshift.io, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithKind("CertificateRevocationRequest"):
+		return &certificatesv1alpha1.CertificateRevocationRequestApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("CertificateRevocationRequestSpec"):
+		return &certificatesv1alpha1.CertificateRevocationRequestSpecApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("CertificateRevocationRequestStatus"):
+		return &certificatesv1alpha1.CertificateRevocationRequestStatusApplyConfiguration{}
 	case v1alpha1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval"):
 		return &certificatesv1alpha1.CertificateSigningRequestApprovalApplyConfiguration{}
 

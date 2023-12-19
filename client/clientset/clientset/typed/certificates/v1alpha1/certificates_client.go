@@ -27,12 +27,17 @@ import (
 
 type CertificatesV1alpha1Interface interface {
 	RESTClient() rest.Interface
+	CertificateRevocationRequestsGetter
 	CertificateSigningRequestApprovalsGetter
 }
 
 // CertificatesV1alpha1Client is used to interact with features provided by the certificates.hypershift.openshift.io group.
 type CertificatesV1alpha1Client struct {
 	restClient rest.Interface
+}
+
+func (c *CertificatesV1alpha1Client) CertificateRevocationRequests(namespace string) CertificateRevocationRequestInterface {
+	return newCertificateRevocationRequests(c, namespace)
 }
 
 func (c *CertificatesV1alpha1Client) CertificateSigningRequestApprovals(namespace string) CertificateSigningRequestApprovalInterface {

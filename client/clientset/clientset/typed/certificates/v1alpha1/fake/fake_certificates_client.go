@@ -27,6 +27,10 @@ type FakeCertificatesV1alpha1 struct {
 	*testing.Fake
 }
 
+func (c *FakeCertificatesV1alpha1) CertificateRevocationRequests(namespace string) v1alpha1.CertificateRevocationRequestInterface {
+	return &FakeCertificateRevocationRequests{c, namespace}
+}
+
 func (c *FakeCertificatesV1alpha1) CertificateSigningRequestApprovals(namespace string) v1alpha1.CertificateSigningRequestApprovalInterface {
 	return &FakeCertificateSigningRequestApprovals{c, namespace}
 }
