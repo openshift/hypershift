@@ -51,8 +51,9 @@ type AWSPlatformDestroyOptions struct {
 }
 
 type AzurePlatformDestroyOptions struct {
-	CredentialsFile string
-	Location        string
+	CredentialsFile   string
+	Location          string
+	ResourceGroupName string
 }
 
 type PowerVSPlatformDestroyOptions struct {

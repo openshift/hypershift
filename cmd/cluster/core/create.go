@@ -168,6 +168,7 @@ type AzurePlatformOptions struct {
 	InstanceType      string
 	DiskSizeGB        int32
 	AvailabilityZones []string
+	ResourceGroupName string
 }
 
 func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
