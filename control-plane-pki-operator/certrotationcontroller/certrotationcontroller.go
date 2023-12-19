@@ -12,7 +12,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-pki-operator/clienthelpers"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/client-go/kubernetes"
@@ -92,6 +91,8 @@ func NewCertRotationController(
 			Client:        kubeClient.CoreV1(),
 			EventRecorder: eventRecorder,
 			Owner:         ownerRef,
+			JiraComponent: "HOSTEDCP",
+			Description:   "Root signer for customer break-glass credentials.",
 		},
 		certrotation.CABundleConfigMap{
 			Namespace:     hostedControlPlane.Namespace,
@@ -101,6 +102,8 @@ func NewCertRotationController(
 			Client:        kubeClient.CoreV1(),
 			EventRecorder: eventRecorder,
 			Owner:         ownerRef,
+			JiraComponent: "HOSTEDCP",
+			Description:   "Trust bundle for customer break-glass credentials.",
 		},
 		certrotation.RotatedSelfSignedCertKeySecret{
 			Namespace: hostedControlPlane.Namespace,
@@ -115,6 +118,8 @@ func NewCertRotationController(
 			Client:        kubeClient.CoreV1(),
 			EventRecorder: eventRecorder,
 			Owner:         ownerRef,
+			JiraComponent: "HOSTEDCP",
+			Description:   "Client certificate for customer break-glass credentials.",
 		},
 		eventRecorder,
 		clienthelpers.NewHostedControlPlaneStatusReporter(hostedControlPlane.Name, hostedControlPlane.Namespace, hypershiftClient),
@@ -132,20 +137,6 @@ func (c *CertRotationController) WaitForReady(stopCh <-chan struct{}) {
 		utilruntime.HandleError(fmt.Errorf("caches did not sync"))
 		return
 	}
-}
-
-// RunOnce will run the cert rotation logic, but will not try to update the static pod status.
-// This eliminates the need to pass an OperatorClient and avoids dubious writes and status.
-func (c *CertRotationController) RunOnce() error {
-	errlist := []error{}
-	runOnceCtx := context.WithValue(context.Background(), certrotation.RunOnceContextKey, true)
-	for _, certRotator := range c.certRotators {
-		if err := certRotator.Sync(runOnceCtx, factory.NewSyncContext("CertRotationController", c.recorder)); err != nil {
-			errlist = append(errlist, err)
-		}
-	}
-
-	return utilerrors.NewAggregate(errlist)
 }
 
 func (c *CertRotationController) Run(ctx context.Context, workers int) {

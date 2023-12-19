@@ -11,6 +11,7 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
+	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	certificatesv1alpha1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
@@ -59,9 +60,7 @@ func TestCreateCluster(t *testing.T) {
 
 			hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
-			validateCertificateAuth := func(t *testing.T, root *rest.Config, crt, key []byte) {
-				t.Log("validating that the client certificate provides the appropriate access")
-
+			clientForCertKey := func(t *testing.T, root *rest.Config, crt, key []byte) *kubernetes.Clientset {
 				t.Log("amending the existing kubeconfig to use break-glass client certificate credentials")
 				certConfig := rest.AnonymousClientConfig(root)
 				certConfig.TLSClientConfig.CertData = crt
@@ -71,6 +70,14 @@ func TestCreateCluster(t *testing.T) {
 				if err != nil {
 					t.Fatalf("could not create client: %v", err)
 				}
+
+				return breakGlassTenantClient
+			}
+
+			validateCertificateAuth := func(t *testing.T, root *rest.Config, crt, key []byte) {
+				t.Log("validating that the client certificate provides the appropriate access")
+
+				breakGlassTenantClient := clientForCertKey(t, root, crt, key)
 
 				t.Log("issuing SSR to identify the subject we are given using the client certificate")
 				response, err := breakGlassTenantClient.AuthenticationV1().SelfSubjectReviews().Create(context.Background(), &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
@@ -179,6 +186,58 @@ func TestCreateCluster(t *testing.T) {
 				}
 
 				validateCertificateAuth(t, guestConfig, signedCrt, key)
+
+				t.Run("revocation", func(t *testing.T) {
+					crrName := "customer-break-glass"
+					t.Logf("creating CRR %s/%s to trigger signer certificate revocation", hostedControlPlaneNamespace, crrName)
+					crrCfg := certificatesv1alpha1applyconfigurations.CertificateRevocationRequest(hostedControlPlaneNamespace, crrName).
+						WithSpec(certificatesv1alpha1applyconfigurations.CertificateRevocationRequestSpec().WithSignerClass(string(certificates.CustomerBreakGlassSigner)))
+					if _, err := hypershiftClient.CertificatesV1alpha1().CertificateRevocationRequests(hostedControlPlaneNamespace).Apply(ctx, crrCfg, metav1.ApplyOptions{FieldManager: "e2e-test"}); err != nil {
+						t.Fatalf("failed to create CRR: %v", err)
+					}
+
+					t.Logf("waiting for CRR %s/%s to be fulfilled", hostedControlPlaneNamespace, crrName)
+					var lastResourceVersion string
+					if err := wait.PollUntilContextTimeout(ctx, 100*time.Millisecond, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+						crr, err := hypershiftClient.CertificatesV1alpha1().CertificateRevocationRequests(hostedControlPlaneNamespace).Get(ctx, crrName, metav1.GetOptions{})
+						if apierrors.IsNotFound(err) {
+							t.Logf("CSR %q does not exist yet", csrName)
+							return false, nil
+						}
+						if err != nil && !apierrors.IsNotFound(err) {
+							return true, err
+						}
+						if crr.ObjectMeta.ResourceVersion != lastResourceVersion {
+							t.Logf("CRR %s/%s observed at RV %s with phase %s", hostedControlPlaneNamespace, crrName, crr.ObjectMeta.ResourceVersion, crr.Status.Phase)
+							for _, condition := range crr.Status.Conditions {
+								msg := fmt.Sprintf("%s=%s", condition.Type, condition.Status)
+								if condition.Reason != "" {
+									msg += ": " + condition.Reason
+								}
+								if condition.Message != "" {
+									msg += "(" + condition.Message + ")"
+								}
+								t.Logf("CRR %s/%s status: %s", hostedControlPlaneNamespace, crrName, msg)
+							}
+							lastResourceVersion = crr.ObjectMeta.ResourceVersion
+						}
+						if crr != nil && crr.Status.Phase == certificatesv1alpha1.CertificateRevocationRequestPhaseComplete {
+							return true, nil
+						}
+						return false, nil
+					}); err != nil {
+						t.Fatalf("never saw CRR complete: %v", err)
+					}
+
+					t.Logf("creating a client using the a certificate from the revoked signer")
+					previousCertClient := clientForCertKey(t, guestConfig, signedCrt, key)
+
+					t.Log("issuing SSR to confirm that we're not authorized to contact the server")
+					response, err := previousCertClient.AuthenticationV1().SelfSubjectReviews().Create(context.Background(), &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+					if !apierrors.IsUnauthorized(err) {
+						t.Fatalf("expected an unauthorized error, got %v, response %#v", err, response)
+					}
+				})
 			})
 		})
 	}).
