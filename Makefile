@@ -43,7 +43,7 @@ all: build e2e
 
 pre-commit: all verify test
 
-build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli
+build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli etcd-backup
 
 .PHONY: update
 update: deps api api-docs app-sre-saas-template clients

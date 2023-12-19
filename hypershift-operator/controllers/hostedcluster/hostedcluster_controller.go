@@ -39,9 +39,37 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
+	"github.com/openshift/hypershift/api"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/configrefs"
+	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
+	ignitionserverreconciliation "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/ignitionserver"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
+	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
+	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanepkioperatormanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplanepkioperator"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/infraid"
+	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/oidc"
+	"github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
+	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/upsert"
+	hyperutil "github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"gopkg.in/ini.v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -75,35 +103,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	"github.com/openshift/hypershift/api"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/api/util/configrefs"
-	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
-	ignitionserverreconciliation "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/ignitionserver"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
-	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
-	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
-	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/openshift/hypershift/support/certs"
-	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/images"
-	"github.com/openshift/hypershift/support/infraid"
-	"github.com/openshift/hypershift/support/metrics"
-	"github.com/openshift/hypershift/support/oidc"
-	"github.com/openshift/hypershift/support/proxy"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/rhobsmonitoring"
-	"github.com/openshift/hypershift/support/supportedversion"
-	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -1793,6 +1792,17 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	for key, val := range hcluster.Annotations {
 		if strings.HasPrefix(key, hyperv1.IdentityProviderOverridesAnnotationPrefix) ||
 			strings.HasPrefix(key, hyperv1.ResourceRequestOverrideAnnotationPrefix) {
+			hcp.Annotations[key] = val
+		}
+	}
+
+	if hcp.Labels == nil {
+		hcp.Labels = make(map[string]string)
+	}
+	// All labels on the HostedCluster with this special prefix are copied
+	// Thoses are labels set by OCM
+	for key, val := range hcluster.Labels {
+		if strings.HasPrefix(key, "api.openshift.com") {
 			hcp.Annotations[key] = val
 		}
 	}

@@ -112,3 +112,21 @@ func OpenShiftTrustedCABundleForNamespace(namespace string) *corev1.ConfigMap {
 		},
 	}
 }
+
+func EtcdBackupServiceAccount(hcpNamespace string) *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd-backup-sa",
+			Namespace: hcpNamespace,
+		},
+	}
+}
+
+func EtcdBackupCronJob(hcpNamespace string) *batchv1.CronJob {
+	return &batchv1.CronJob{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd-backup",
+			Namespace: hcpNamespace,
+		},
+	}
+}
