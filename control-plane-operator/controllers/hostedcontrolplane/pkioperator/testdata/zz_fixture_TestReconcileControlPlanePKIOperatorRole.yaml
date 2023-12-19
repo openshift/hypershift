@@ -70,3 +70,17 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - hypershift.openshift.io
+  resources:
+  - certificaterevocationrequests
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - hypershift.openshift.io
+  resources:
+  - certificaterevocationrequests/status
+  verbs:
+  - patch
