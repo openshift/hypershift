@@ -21,6 +21,91 @@ OpenShift clusters at scale.</p>
 worker nodes and their kubelets, and the infrastructure on which they run). This
 enables &ldquo;hosted control plane as a service&rdquo; use cases.</p>
 </p>
+##CertificateRevocationRequest { #hypershift.openshift.io/v1beta1.CertificateRevocationRequest }
+<p>
+<p>CertificateRevocationRequest defines the desired state of CertificateRevocationRequest</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiVersion</code></br>
+string</td>
+<td>
+<code>
+hypershift.openshift.io/v1beta1
+</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>kind</code></br>
+string
+</td>
+<td><code>CertificateRevocationRequest</code></td>
+</tr>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CertificateRevocationRequestSpec">
+CertificateRevocationRequestSpec
+</a>
+</em>
+</td>
+<td>
+<br/>
+<br/>
+<table>
+<tr>
+<td>
+<code>signerClass</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>SignerClass identifies the class of signer to revoke. All the active signing CAs for the
+signer class will be revoked.</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CertificateRevocationRequestStatus">
+CertificateRevocationRequestStatus
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
 ##CertificateSigningRequestApproval { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApproval }
 <p>
 <p>CertificateSigningRequestApproval defines the desired state of CertificateSigningRequestApproval</p>
@@ -2467,6 +2552,138 @@ string
 </p>
 <p>
 </p>
+###CertificateRevocationRequestPhase { #hypershift.openshift.io/v1beta1.CertificateRevocationRequestPhase }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CertificateRevocationRequestStatus">CertificateRevocationRequestStatus</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Complete&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Propagating&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Regenerating&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Revoking&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Unknown&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Validating&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
+###CertificateRevocationRequestSpec { #hypershift.openshift.io/v1beta1.CertificateRevocationRequestSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CertificateRevocationRequest">CertificateRevocationRequest</a>)
+</p>
+<p>
+<p>CertificateRevocationRequestSpec defines the desired state of CertificateRevocationRequest</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>signerClass</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>SignerClass identifies the class of signer to revoke. All the active signing CAs for the
+signer class will be revoked.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###CertificateRevocationRequestStatus { #hypershift.openshift.io/v1beta1.CertificateRevocationRequestStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CertificateRevocationRequest">CertificateRevocationRequest</a>)
+</p>
+<p>
+<p>CertificateRevocationRequestStatus defines the observed state of CertificateRevocationRequest</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>revocationTimestamp</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<p>RevocationTimestamp is the cut-off time for signing CAs to be revoked. All certificates that
+are valid before this time will be revoked; all re-generated certificates will not be valid
+at or before this time.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>phase</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CertificateRevocationRequestPhase">
+CertificateRevocationRequestPhase
+</a>
+</em>
+</td>
+<td>
+<p>Phase exposes the current phase of this certificate revocation request.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>previousSigner</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<p>PreviousSigner stores a reference to the previous signer certificate. We require
+storing this data to ensure that we can validate that the old signer is no longer
+valid before considering revocation complete.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<p>Conditions contain details about the various aspects of certificate revocation.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###CertificateSigningRequestApprovalSpec { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApprovalSpec }
 <p>
 (<em>Appears on:</em>

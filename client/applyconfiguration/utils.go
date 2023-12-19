@@ -242,6 +242,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
 		return &hypershiftv1beta1.AzurePlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("CertificateRevocationRequest"):
+		return &hypershiftv1beta1.CertificateRevocationRequestApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("CertificateRevocationRequestSpec"):
+		return &hypershiftv1beta1.CertificateRevocationRequestSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("CertificateRevocationRequestStatus"):
+		return &hypershiftv1beta1.CertificateRevocationRequestStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval"):
 		return &hypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterAutoscaling"):

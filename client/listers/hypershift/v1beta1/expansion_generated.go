@@ -17,6 +17,14 @@ limitations under the License.
 
 package v1beta1
 
+// CertificateRevocationRequestListerExpansion allows custom methods to be added to
+// CertificateRevocationRequestLister.
+type CertificateRevocationRequestListerExpansion interface{}
+
+// CertificateRevocationRequestNamespaceListerExpansion allows custom methods to be added to
+// CertificateRevocationRequestNamespaceLister.
+type CertificateRevocationRequestNamespaceListerExpansion interface{}
+
 // CertificateSigningRequestApprovalListerExpansion allows custom methods to be added to
 // CertificateSigningRequestApprovalLister.
 type CertificateSigningRequestApprovalListerExpansion interface{}
