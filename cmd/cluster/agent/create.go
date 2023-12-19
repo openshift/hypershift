@@ -26,7 +26,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 		AgentNamespace:   "",
 	}
 
-	cmd.Flags().StringVar(&opts.AgentPlatform.APIServerAddress, "api-server-address", opts.AgentPlatform.APIServerAddress, "The API server address is the IP address for Kubernetes API communication")
+	cmd.Flags().StringVar(&opts.AgentPlatform.APIServerAddress, "api-server-address", opts.AgentPlatform.APIServerAddress, "The IP address to be used for the hosted cluster's Kubernetes API communication. Requires management cluster connectivity if left unset.")
 	cmd.Flags().StringVar(&opts.AgentPlatform.AgentNamespace, "agent-namespace", opts.AgentPlatform.AgentNamespace, "The namespace in which to search for Agents")
 	cmd.Flags().StringVar(&opts.AgentPlatform.AgentLabelSelector, "agentLabelSelector", opts.AgentPlatform.AgentLabelSelector, "A LabelSelector for selecting Agents according to their labels, e.g., 'size=large,zone notin (az1,az2)'")
 	_ = cmd.MarkFlagRequired("agent-namespace")
