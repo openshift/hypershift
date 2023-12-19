@@ -54,6 +54,8 @@ func (f *genericInformer) Lister() cache.GenericLister {
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
 	// Group=certificates.hypershift.openshift.io, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithResource("certificaterevocationrequests"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Certificates().V1alpha1().CertificateRevocationRequests().Informer()}, nil
 	case v1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Certificates().V1alpha1().CertificateSigningRequestApprovals().Informer()}, nil
 
