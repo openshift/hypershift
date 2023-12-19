@@ -20,6 +20,7 @@ package v1beta1
 import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	metav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
 // HostedControlPlaneStatusApplyConfiguration represents an declarative configuration of the HostedControlPlaneStatus type for use
@@ -36,7 +37,7 @@ type HostedControlPlaneStatusApplyConfiguration struct {
 	LastReleaseImageTransitionTime *v1.Time                                `json:"lastReleaseImageTransitionTime,omitempty"`
 	KubeConfig                     *KubeconfigSecretRefApplyConfiguration  `json:"kubeConfig,omitempty"`
 	KubeadminPassword              *corev1.LocalObjectReference            `json:"kubeadminPassword,omitempty"`
-	Conditions                     []v1.Condition                          `json:"conditions,omitempty"`
+	Conditions                     []metav1.ConditionApplyConfiguration    `json:"conditions,omitempty"`
 	Platform                       *PlatformStatusApplyConfiguration       `json:"platform,omitempty"`
 }
 
@@ -137,9 +138,12 @@ func (b *HostedControlPlaneStatusApplyConfiguration) WithKubeadminPassword(value
 // WithConditions adds the given value to the Conditions field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the Conditions field.
-func (b *HostedControlPlaneStatusApplyConfiguration) WithConditions(values ...v1.Condition) *HostedControlPlaneStatusApplyConfiguration {
+func (b *HostedControlPlaneStatusApplyConfiguration) WithConditions(values ...*metav1.ConditionApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
 	for i := range values {
-		b.Conditions = append(b.Conditions, values[i])
+		if values[i] == nil {
+			panic("nil value passed to WithConditions")
+		}
+		b.Conditions = append(b.Conditions, *values[i])
 	}
 	return b
 }
