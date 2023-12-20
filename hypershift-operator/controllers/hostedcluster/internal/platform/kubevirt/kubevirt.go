@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
+	cdicore "kubevirt.io/containerized-data-importer-api/pkg/apis/core"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -200,12 +201,17 @@ func (Kubevirt) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 		{
 			APIGroups: []string{""},
 			Resources: []string{"services"},
-			Verbs:     []string{"*"},
+			Verbs:     []string{rbacv1.VerbAll},
 		},
 		{
 			APIGroups: []string{"kubevirt.io"},
 			Resources: []string{"virtualmachineinstances", "virtualmachines"},
-			Verbs:     []string{"*"},
+			Verbs:     []string{rbacv1.VerbAll},
+		},
+		{
+			APIGroups: []string{cdicore.GroupName},
+			Resources: []string{"datavolumes"},
+			Verbs:     []string{"get", "list", "watch"},
 		},
 	}
 }
