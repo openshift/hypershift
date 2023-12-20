@@ -76,7 +76,6 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/configrefs"
 	"github.com/openshift/hypershift/cmd/util"
@@ -91,6 +90,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"

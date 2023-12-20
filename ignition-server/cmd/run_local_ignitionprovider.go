@@ -8,8 +8,8 @@ import (
 	"syscall"
 	"time"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	"github.com/openshift/hypershift/ignition-server/controllers"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 	"github.com/spf13/cobra"

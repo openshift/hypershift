@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	hyperapi "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/pkg/version"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 	"github.com/prometheus/client_golang/prometheus"

@@ -26,13 +26,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	api "github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -1598,6 +1598,7 @@ func TestCleanupMachineTemplates(t *testing.T) {
 
 func TestListMachineTemplatesAWS(t *testing.T) {
 	g := NewWithT(t)
+	capiaws.AddToScheme(api.Scheme)
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 	r := &NodePoolReconciler{
 		Client:                 c,

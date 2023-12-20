@@ -3,10 +3,10 @@ package cco
 import (
 	"testing"
 
-	"github.com/openshift/hypershift/api"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,7 +40,7 @@ func TestReconcileDeployment(t *testing.T) {
 	if err := ReconcileDeployment(deployment, params); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	deploymentYaml, err := util.SerializeResource(deployment, api.Scheme)
+	deploymentYaml, err := util.SerializeResource(deployment, hyperapi.Scheme)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

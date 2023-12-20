@@ -1,4 +1,4 @@
-package v1alpha1
+package api
 
 // These imports are used to explicitly declare external API dependencies
 import (
