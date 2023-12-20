@@ -53,10 +53,6 @@ func ReconcileWorkerSSHIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.Owne
 	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, ownerRef)
 }
 
-func ReconcileImageSourceMirrorsIgnitionConfigFromICSP(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageContentSourcePolicy *operatorv1alpha1.ImageContentSourcePolicy) error {
-	return reconcileImageContentTypeIgnitionConfigMap(cm, imageContentSourcePolicy, ownerRef)
-}
-
 func ReconcileImageSourceMirrorsIgnitionConfigFromIDMS(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageDigestMirrorSet *configv1.ImageDigestMirrorSet) error {
 	return reconcileImageContentTypeIgnitionConfigMap(cm, imageDigestMirrorSet, ownerRef)
 }

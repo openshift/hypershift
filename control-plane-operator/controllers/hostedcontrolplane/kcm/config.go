@@ -10,7 +10,6 @@ import (
 
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 
-	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 )
 
@@ -57,22 +56,6 @@ func generateConfig(serviceServingCA *corev1.ConfigMap) (string, error) {
 		return "", err
 	}
 	return string(b), nil
-}
-
-func ReconcileKCMServiceServingCA(cm, combinedCA *corev1.ConfigMap, ownerRef config.OwnerRef) error {
-	ownerRef.ApplyTo(cm)
-	if cm.Data == nil {
-		cm.Data = map[string]string{}
-	}
-	if _, hasKey := cm.Data[ServiceServingCAKey]; !hasKey {
-		cm.Data[ServiceServingCAKey] = combinedCA.Data[certs.CASignerCertMapKey]
-	}
-	return nil
-}
-
-func ReconcileServiceAccount(sa *corev1.ServiceAccount) error {
-	// nothing to reconcile
-	return nil
 }
 
 func ReconcileRecyclerConfig(config *corev1.ConfigMap, ownerRef config.OwnerRef) error {

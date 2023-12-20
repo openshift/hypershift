@@ -57,18 +57,6 @@ func ExtractOptionsFromSecret(client client.Client, name string, namespace strin
 	return baseDomain, awsAccessKeyID, awsSecretAccessKey, nil
 }
 
-func GetDockerConfigJSON(name string, namespace string) ([]byte, error) {
-	secret, err := GetSecret(name, namespace)
-	if err != nil {
-		return nil, err
-	}
-	dockerConfigJSON := secret.Data[".dockerconfigjson"]
-	if len(dockerConfigJSON) == 0 {
-		return nil, fmt.Errorf("the .dockerconfigjson key is invalid, {namespace: %s, secret: %s}", namespace, name)
-	}
-	return dockerConfigJSON, nil
-}
-
 func GetPullSecret(name string, namespace string) ([]byte, error) {
 	secret, err := GetSecret(name, namespace)
 	if err != nil {

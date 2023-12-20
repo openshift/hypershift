@@ -35,15 +35,6 @@ func OAuthServerDeployment(ns string) *appsv1.Deployment {
 	}
 }
 
-func OAuthServerService(ns string) *corev1.Service {
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "oauth-openshift",
-			Namespace: ns,
-		},
-	}
-}
-
 func OAuthServerServiceSessionSecret(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

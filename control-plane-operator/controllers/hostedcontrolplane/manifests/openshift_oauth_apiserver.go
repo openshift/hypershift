@@ -34,12 +34,3 @@ func OpenShiftOAuthAPIServerDisruptionBudget(ns string) *policyv1.PodDisruptionB
 		},
 	}
 }
-
-func OpenShiftOAuthAPIServerServiceServingCA(ns string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openshift-oauth-apiserver-serving-ca",
-			Namespace: ns,
-		},
-	}
-}
