@@ -5,8 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	apifixtures "github.com/openshift/hypershift/examples/fixtures"
 )
 
 func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {

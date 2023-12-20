@@ -15,8 +15,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	apiexample "github.com/openshift/hypershift/api/fixtures"
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
+	apiexample "github.com/openshift/hypershift/examples/fixtures"
 	"github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
 )

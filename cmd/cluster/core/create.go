@@ -25,10 +25,10 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
-	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
+	apifixtures "github.com/openshift/hypershift/examples/fixtures"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"

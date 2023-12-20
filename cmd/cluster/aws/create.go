@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"os"
 
-	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/cmd/util"
+	apifixtures "github.com/openshift/hypershift/examples/fixtures"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/spf13/cobra"
 )

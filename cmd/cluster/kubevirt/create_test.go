@@ -7,9 +7,9 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/utils/pointer"
 
-	apifixtures "github.com/openshift/hypershift/api/fixtures"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	apifixtures "github.com/openshift/hypershift/examples/fixtures"
 )
 
 func Test_ApplyPlatformSpecificValues(t *testing.T) {
