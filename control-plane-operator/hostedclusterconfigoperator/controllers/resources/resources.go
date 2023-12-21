@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -683,11 +684,12 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile dns config: %w", err))
 	}
 
-	cloudCredsConfig := globalconfig.CloudCredentialsConfiguration()
-	if _, err := r.CreateOrUpdate(ctx, r.client, cloudCredsConfig, func() error {
-		return globalconfig.ReconcileCloudCredentialsConfiguration(cloudCredsConfig)
+	cloudCredentialConfig := manifests.CloudCredential()
+	if _, err := r.CreateOrUpdate(ctx, r.client, cloudCredentialConfig, func() error {
+		cco.ReconcileCloudCredentialConfig(cloudCredentialConfig)
+		return nil
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile cloud credentials config: %w", err))
+		errs = append(errs, fmt.Errorf("failed to reconcile cloud credential config: %w", err))
 	}
 
 	authenticationConfig := globalconfig.AuthenticationConfiguration()

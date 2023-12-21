@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cco"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pkioperator"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -1114,6 +1115,14 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	r.Log.Info("Reconciling Cloud Controller Manager")
 	if err := r.reconcileCloudControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
 		return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
+	}
+
+	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
+		// Reconcile cloud credential operator
+		r.Log.Info("Reconciling Cloud Credential Operator")
+		if err := r.reconcileCloudCredentialOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
+		}
 	}
 
 	// Reconcile OLM
@@ -3090,6 +3099,36 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ingressoperator pod monitor: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	params := cco.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
+
+	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		return err
+	}
+
+	csrSigner := manifests.CSRSignerCASecret(hcp.Namespace)
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
+		return err
+	}
+
+	kubeconfig := manifests.CloudCredentialOperatorKubeconfig(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, kubeconfig, func() error {
+		return pki.ReconcileServiceAccountKubeconfig(kubeconfig, csrSigner, rootCA, hcp, cco.WorkerNamespace, cco.WorkerServiceAccount)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cloud credential operator kubeconfig: %w", err)
+	}
+
+	deployment := manifests.CloudCredentialOperatorDeployment(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, deployment, func() error {
+		return cco.ReconcileDeployment(deployment, params)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile cloud credential operator deployment: %w", err)
 	}
 
 	return nil

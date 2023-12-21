@@ -121,7 +121,7 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 			log.WithValues("statuscode", response.StatusCode).Info("Request didn't return a 2XX status code, retrying...")
 			continue
 		}
-		log.Info("Success", "statuscode", response.StatusCode)
+		log.Info("URI probing succeeded", "uri", target.String(), "statuscode", response.StatusCode)
 
 		if len(requiredAPIs) > 0 {
 			_, apis, err := discoveryClient.ServerGroupsAndResources()
@@ -183,6 +183,7 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 			}
 		}
 
+		log.Info("all checks successful, exiting...")
 		return
 	}
 }
