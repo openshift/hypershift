@@ -772,7 +772,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: clusterresourcesetbindings.addons.cluster.x-k8s.io
   spec:
@@ -890,7 +890,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: clusterresourcesets.addons.cluster.x-k8s.io
   spec:
@@ -1083,7 +1083,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: clusterclasses.cluster.x-k8s.io
   spec:
@@ -2435,7 +2435,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: clusters.cluster.x-k8s.io
   spec:
@@ -3306,7 +3306,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: machinedeployments.cluster.x-k8s.io
   spec:
@@ -3848,7 +3848,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: machinehealthchecks.cluster.x-k8s.io
   spec:
@@ -4149,7 +4149,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: machinepools.cluster.x-k8s.io
   spec:
@@ -4614,7 +4614,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: machines.cluster.x-k8s.io
   spec:
@@ -5052,7 +5052,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: machinesets.cluster.x-k8s.io
   spec:
@@ -5504,7 +5504,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
@@ -5838,7 +5838,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
@@ -6250,7 +6250,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
@@ -6464,7 +6464,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: awsclustercontrolleridentities.infrastructure.cluster.x-k8s.io
   spec:
@@ -6674,7 +6674,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: awsclusterroleidentities.infrastructure.cluster.x-k8s.io
   spec:
@@ -7002,7 +7002,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta2
@@ -9108,7 +9108,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: awsclusterstaticidentities.infrastructure.cluster.x-k8s.io
   spec:
@@ -9334,7 +9334,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: awsclustertemplates.infrastructure.cluster.x-k8s.io
   spec:
@@ -10411,7 +10411,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: awsfargateprofiles.infrastructure.cluster.x-k8s.io
   spec:
@@ -10789,7 +10789,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: awsmachinepools.infrastructure.cluster.x-k8s.io
   spec:
@@ -11803,7 +11803,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta2
@@ -12832,7 +12832,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta2
@@ -13722,7 +13722,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: awsmanagedclusters.infrastructure.cluster.x-k8s.io
   spec:
@@ -13833,7 +13833,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: awsmanagedmachinepools.infrastructure.cluster.x-k8s.io
   spec:
@@ -14765,7 +14765,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: azureclusteridentities.infrastructure.cluster.x-k8s.io
   spec:
@@ -14987,7 +14987,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
@@ -16400,7 +16400,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: azureclustertemplates.infrastructure.cluster.x-k8s.io
   spec:
@@ -17342,7 +17342,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
@@ -18209,7 +18209,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta1
@@ -18992,7 +18992,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: azuremanagedclusters.infrastructure.cluster.x-k8s.io
   spec:
@@ -19070,7 +19070,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: azuremanagedcontrolplanes.infrastructure.cluster.x-k8s.io
   spec:
@@ -19767,7 +19767,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: azuremanagedmachinepools.infrastructure.cluster.x-k8s.io
   spec:
@@ -20464,7 +20464,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta2
@@ -20696,7 +20696,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: ibmpowervsclustertemplates.infrastructure.cluster.x-k8s.io
   spec:
@@ -20944,7 +20944,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta2
@@ -21244,7 +21244,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta2
@@ -21848,7 +21848,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta2
@@ -22211,7 +22211,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1beta2
@@ -22591,7 +22591,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: ibmvpcmachines.infrastructure.cluster.x-k8s.io
   spec:
@@ -22935,7 +22935,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: ibmvpcmachinetemplates.infrastructure.cluster.x-k8s.io
   spec:
@@ -23246,7 +23246,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1alpha1
@@ -23509,7 +23509,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     name: kubevirtclustertemplates.infrastructure.cluster.x-k8s.io
   spec:
@@ -23765,7 +23765,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1alpha1
@@ -28548,7 +28548,7 @@ objects:
   kind: CustomResourceDefinition
   metadata:
     annotations:
-      controller-gen.kubebuilder.io/version: v0.12.0
+      controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
     labels:
       cluster.x-k8s.io/v1beta1: v1alpha1

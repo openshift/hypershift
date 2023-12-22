@@ -8,7 +8,7 @@ require (
 	gotest.tools/gotestsum v1.10.0
 	honnef.co/go/tools v0.4.3
 	k8s.io/code-generator v0.28.3
-	sigs.k8s.io/controller-tools v0.12.0
+	sigs.k8s.io/controller-tools v0.13.0
 )
 
 replace k8s.io/code-generator => github.com/stevekuznetsov/k8s-code-generator v0.0.0-20231106164047-541b094e7aaa
