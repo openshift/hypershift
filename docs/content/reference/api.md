@@ -2981,6 +2981,12 @@ for AWS workers has been created.
 A failure here indicates that NodePools without a security group will be
 blocked from creating machines.</p>
 </td>
+</tr><tr><td><p>&#34;AWSDefaultSecurityGroupDeleted&#34;</p></td>
+<td><p>AWSDefaultSecurityGroupDeleted indicates whether the default security group
+for AWS workers has been deleted.
+A failure here indicates that the Security Group has some dependencies that
+there are still pending cloud resources to be deleted that are using that SG.</p>
+</td>
 </tr><tr><td><p>&#34;AWSEndpointAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint has been
 created in the guest VPC</p>

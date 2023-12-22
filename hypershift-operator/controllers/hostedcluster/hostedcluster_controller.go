@@ -376,6 +376,34 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane.
+	// We set this condition even if the HC is being deleted, so we can report blocking objects on deletion.
+	{
+		if hcp != nil && hcp.DeletionTimestamp != nil {
+			freshCondition := &metav1.Condition{
+				Type:               string(hyperv1.AWSDefaultSecurityGroupDeleted),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: hcluster.Generation,
+			}
+
+			securityGroupDeletionCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+			if securityGroupDeletionCondition != nil {
+				freshCondition = securityGroupDeletionCondition
+			}
+
+			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.AWSDefaultSecurityGroupDeleted))
+			if oldCondition == nil || oldCondition.Message != freshCondition.Message {
+				freshCondition.ObservedGeneration = hcluster.Generation
+				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
+				// Persist status updates
+				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
+				}
+			}
+		}
+	}
+
 	// Bubble up CloudResourcesDestroyed condition from the hostedControlPlane.
 	// We set this condition even if the HC is being deleted, so we can construct SLIs for deletion times.
 	{
