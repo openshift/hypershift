@@ -23,7 +23,6 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		inputIsIBMCloudUPI        bool
 		inputIsPrivate            bool
 		inputIsNLB                bool
-		nlbScope                  operatorv1.LoadBalancerScope
 		expectedIngressController *operatorv1.IngressController
 	}{
 		{
@@ -237,6 +236,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 					EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
 						Type: operatorv1.LoadBalancerServiceStrategyType,
 						LoadBalancer: &operatorv1.LoadBalancerStrategy{
+							Scope: operatorv1.ExternalLoadBalancer,
 							ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
 								Type: operatorv1.AWSLoadBalancerProvider,
 								AWS: &operatorv1.AWSLoadBalancerParameters{
@@ -256,7 +256,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			err := ReconcileDefaultIngressController(tc.inputIngressController, tc.inputIngressDomain, tc.inputPlatformType, tc.inputReplicas, tc.inputIsIBMCloudUPI, tc.inputIsPrivate, tc.inputIsNLB, tc.nlbScope)
+			err := ReconcileDefaultIngressController(tc.inputIngressController, tc.inputIngressDomain, tc.inputPlatformType, tc.inputReplicas, tc.inputIsIBMCloudUPI, tc.inputIsPrivate, tc.inputIsNLB)
 			g.Expect(err).To(BeNil())
 			g.Expect(tc.inputIngressController).To(BeEquivalentTo(tc.expectedIngressController))
 		})

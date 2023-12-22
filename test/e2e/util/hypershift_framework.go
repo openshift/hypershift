@@ -3,12 +3,12 @@ package util
 import (
 	"context"
 	"fmt"
+	configv1 "github.com/openshift/api/config/v1"
 	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
 
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
