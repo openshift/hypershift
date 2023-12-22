@@ -9,7 +9,7 @@ import (
 	"github.com/blang/semver"
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/go-logr/logr"
-	apiexample "github.com/openshift/hypershift/api/fixtures"
+	apiexample "github.com/openshift/hypershift/examples/fixtures"
 	"golang.org/x/sync/errgroup"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
