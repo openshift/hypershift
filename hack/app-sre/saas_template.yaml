@@ -218,6 +218,14 @@ objects:
     verbs:
     - '*'
   - apiGroups:
+    - cdi.kubevirt.io
+    resources:
+    - datavolumes
+    verbs:
+    - get
+    - list
+    - watch
+  - apiGroups:
     - subresources.kubevirt.io
     resources:
     - virtualmachineinstances/addvolume

@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
+	cdicore "kubevirt.io/containerized-data-importer-api/pkg/apis/core"
 )
 
 const (
@@ -782,7 +783,7 @@ func (o ExternalDNSClusterRole) Build() *rbacv1.ClusterRole {
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{"route.openshift.io"},
-				Resources: []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
@@ -864,35 +865,35 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{"hypershift.openshift.io"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"config.openshift.io"},
-				Resources: []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{"apiextensions.k8s.io"},
 				Resources: []string{"customresourcedefinitions"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"batch"},
 				Resources: []string{"cronjobs", "jobs"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"coordination.k8s.io"},
 				Resources: []string{
 					"leases",
 				},
-				Verbs: []string{"*"},
+				Verbs: []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"networking.k8s.io"},
 				Resources: []string{"networkpolicies"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{
@@ -907,37 +908,37 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 					"monitoring.coreos.com",
 					"monitoring.rhobs",
 				},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"policy"},
 				Resources: []string{"poddisruptionbudgets"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"operator.openshift.io"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"route.openshift.io"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"image.openshift.io"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"security.openshift.io"},
 				Resources: []string{"securitycontextconstraints"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"rbac.authorization.k8s.io"},
-				Resources: []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
 				Verbs: []string{
 					"get",
 					"list",
@@ -964,22 +965,22 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 					"services",
 					"endpoints",
 				},
-				Verbs: []string{"*"},
+				Verbs: []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"apps"},
 				Resources: []string{"deployments", "replicasets", "statefulsets"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"etcd.database.coreos.com"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"machine.openshift.io"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
@@ -988,43 +989,48 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"capi-provider.agent-install.openshift.io"},
-				Resources: []string{"*"},
-				Verbs:     []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"operator.openshift.io"},
 				Resources: []string{"ingresscontrollers"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"kubevirt.io"},
 				Resources: []string{"virtualmachineinstances", "virtualmachines"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
+			},
+			{
+				APIGroups: []string{cdicore.GroupName},
+				Resources: []string{"datavolumes"},
+				Verbs:     []string{"get", "list", "watch"},
 			},
 			{ // This allows the kubevirt csi driver to hotplug volumes to KubeVirt VMs.
 				APIGroups: []string{"subresources.kubevirt.io"},
 				Resources: []string{"virtualmachineinstances/addvolume", "virtualmachineinstances/removevolume"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{ // This allows the kubevirt csi driver to mirror guest PVCs to the mgmt/infra cluster
 				APIGroups: []string{"cdi.kubevirt.io"},
 				Resources: []string{"datavolumes"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{ // This allows hypershift operator to grant RBAC permissions for agents, clusterDeployments and agentClusterInstalls to the capi-provider-agent
 				APIGroups: []string{"agent-install.openshift.io"},
 				Resources: []string{"agents"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"extensions.hive.openshift.io"},
 				Resources: []string{"agentclusterinstalls"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"hive.openshift.io"},
 				Resources: []string{"clusterdeployments"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
 				APIGroups: []string{"discovery.k8s.io"},
@@ -1127,7 +1133,7 @@ func (o HyperShiftOperatorRole) Build() *rbacv1.Role {
 				Resources: []string{
 					"leases",
 				},
-				Verbs: []string{"*"},
+				Verbs: []string{rbacv1.VerbAll},
 			},
 		},
 	}
@@ -1371,7 +1377,7 @@ func (o HyperShiftClientClusterRole) Build() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{"hypershift.openshift.io"},
 				Resources: []string{"hostedclusters", "nodepools"},
-				Verbs:     []string{"*"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 		},
 	}
@@ -1446,12 +1452,12 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{"hypershift.openshift.io"},
-				Resources: []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{"config.openshift.io"},
-				Resources: []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
@@ -1475,17 +1481,17 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 					"exp.cluster.x-k8s.io",
 					"cluster.x-k8s.io",
 				},
-				Resources: []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{"operator.openshift.io"},
-				Resources: []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{"route.openshift.io"},
-				Resources: []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
@@ -1495,7 +1501,7 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"rbac.authorization.k8s.io"},
-				Resources: []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
@@ -1519,12 +1525,12 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"etcd.database.coreos.com"},
-				Resources: []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{"machine.openshift.io"},
-				Resources: []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
@@ -1534,7 +1540,7 @@ func (o HyperShiftReaderClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"capi-provider.agent-install.openshift.io"},
-				Resources: []string{"*"},
+				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 		},
