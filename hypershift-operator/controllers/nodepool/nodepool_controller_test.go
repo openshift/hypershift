@@ -3,6 +3,7 @@ package nodepool
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -16,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	k8sutilspointer "k8s.io/utils/pointer"
@@ -2184,6 +2186,519 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 				g.Expect(tc.image).To(BeEmpty())
 				g.Expect(tc.err.Error()).To(Equal("release image metadata has no image for region \"" + tc.region + "\""))
 			}
+		})
+	}
+}
+
+type testCondition struct {
+	Status   corev1.ConditionStatus
+	Reason   string
+	Messages []string
+}
+
+func (t *testCondition) Compare(g Gomega, cond *hyperv1.NodePoolCondition) {
+	if t == nil {
+		return
+	}
+
+	g.Expect(cond.Status).To(Equal(t.Status))
+	g.Expect(cond.Reason).To(Equal(t.Reason))
+
+	for _, msg := range t.Messages {
+		g.ExpectWithOffset(1, cond.Message).To(ContainSubstring(msg))
+	}
+}
+
+func TestSetMachineAndNodeConditions(t *testing.T) {
+	g := NewWithT(t)
+	s := runtime.NewScheme()
+	g.Expect(hyperv1.AddToScheme(s)).To(Succeed())
+	g.Expect(capiv1.AddToScheme(s)).To(Succeed())
+
+	for _, tc := range []struct {
+		name               string
+		machinesGenerator  func() []client.Object
+		expectedAllMachine *testCondition
+		expectedAllNodes   *testCondition
+	}{
+		{
+			name:              "no cluster-api machines",
+			machinesGenerator: func() []client.Object { return nil },
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   hyperv1.NodePoolNotFoundReason,
+				Messages: []string{"No Machines are created"},
+			},
+			expectedAllNodes: &testCondition{
+				Status: corev1.ConditionFalse,
+				Reason: hyperv1.NodePoolNotFoundReason,
+			},
+		},
+		{
+			name: "good machines",
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: corev1.ConditionTrue,
+								},
+							},
+						},
+					},
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node2",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: corev1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionTrue,
+				Reason:   hyperv1.AsExpectedReason,
+				Messages: []string{hyperv1.AllIsWellMessage},
+			},
+		},
+		{
+			name: "no InfrastructureReady condition",
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode1",
+									Message: "test message node 1",
+								},
+								{
+									Type:    capiv1.MachineNodeHealthyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode1",
+									Message: "test message node 1",
+								},
+							},
+						},
+					},
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node2",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode2",
+									Message: "test message node 2",
+								},
+								{
+									Type:    capiv1.MachineNodeHealthyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode2",
+									Message: "test message node 2",
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   "TestReasonNode1,TestReasonNode2",
+				Messages: []string{"2 of 2 machines are not ready", "Machine node1: TestReasonNode1", "Machine node2: TestReasonNode2"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   "TestReasonNode2",
+				Messages: []string{"TestReasonNode1", "TestReasonNode2"},
+			},
+		},
+		{
+			name: "mix InfrastructureReady condition; setup counter first",
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+								"testDescription":  "message is setup counter",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode1",
+									Message: "test message node 1",
+								},
+								{
+									Type:    capiv1.InfrastructureReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode1",
+									Message: "12 of 34 completed",
+								},
+								{
+									Type:    capiv1.MachineNodeHealthyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode1",
+									Message: "test message node 1",
+								},
+							},
+						},
+					},
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node2",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+								"testDescription":  "message some error text",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode2",
+									Message: "test message node 2",
+								},
+								{
+									Type:    capiv1.InfrastructureReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode2",
+									Message: "some real failed message",
+								},
+								{
+									Type:    capiv1.MachineNodeHealthyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode2",
+									Message: "test message node 2",
+								},
+							},
+						},
+					},
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node3",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+								"testDescription":  "this machine is ready",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: corev1.ConditionTrue,
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: corev1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   "TestReasonNode1,TestReasonNode2",
+				Messages: []string{"2 of 3 machines are not ready", "Machine node1: TestReasonNode1", "Machine node2: TestReasonNode2: some real failed message"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   "TestReasonNode2",
+				Messages: []string{"TestReasonNode1", "TestReasonNode2"},
+			},
+		},
+		{
+			name: "mix InfrastructureReady condition; failure text first",
+			machinesGenerator: func() []client.Object {
+				return []client.Object{
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node1",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+								"testDescription":  "message some error text",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode1",
+									Message: "test message node 1",
+								},
+								{
+									Type:    capiv1.InfrastructureReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode1",
+									Message: "some real failed message",
+								},
+								{
+									Type:    capiv1.MachineNodeHealthyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode1",
+									Message: "test message node 1",
+								},
+							},
+						},
+					},
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node2",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+								"testDescription":  "message is setup counter",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode2",
+									Message: "test message node 2",
+								},
+								{
+									Type:    capiv1.InfrastructureReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode2",
+									Message: "12 of 34 completed",
+								},
+								{
+									Type:    capiv1.MachineNodeHealthyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode2",
+									Message: "test message node 2",
+								},
+							},
+						},
+					},
+					&capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "node3",
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+								"testDescription":  "this machine is ready",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: corev1.ConditionTrue,
+								},
+								{
+									Type:   capiv1.MachineNodeHealthyCondition,
+									Status: corev1.ConditionTrue,
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   "TestReasonNode1,TestReasonNode2",
+				Messages: []string{"2 of 3 machines are not ready", "Machine node1: TestReasonNode1: some real failed message", "Machine node2: TestReasonNode2"},
+			},
+			expectedAllNodes: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   "TestReasonNode2",
+				Messages: []string{"TestReasonNode1", "TestReasonNode2"},
+			},
+		},
+		{
+			name: "too many not ready machines",
+			machinesGenerator: func() []client.Object {
+				longMessage := strings.Repeat("msg ", 50)
+
+				machines := make([]client.Object, 15) // two reasons with 5 machine each (too long message), one reason with only 3 machines, and 2 ready machines
+
+				i := 0
+
+				for ; i < 5; i++ { // create 5 machine. should exceed max message length
+					machines[i] = &capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      fmt.Sprintf("node%d", i),
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode1",
+									Message: "not ready",
+								},
+								{
+									Type:    capiv1.InfrastructureReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode1",
+									Message: longMessage,
+								},
+							},
+						},
+					}
+				}
+				for ; i < 8; i++ { // create 3 machine. should not exceed max message length
+					machines[i] = &capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      fmt.Sprintf("node%d", i),
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode2",
+									Message: "not ready",
+								},
+								{
+									Type:    capiv1.InfrastructureReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode2",
+									Message: longMessage,
+								},
+							},
+						},
+					}
+				}
+				for ; i < 13; i++ { // create 5 machine. should exceed max message length
+					machines[i] = &capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      fmt.Sprintf("node%d", i),
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:    capiv1.ReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode3",
+									Message: "not ready",
+								},
+								{
+									Type:    capiv1.InfrastructureReadyCondition,
+									Status:  corev1.ConditionFalse,
+									Reason:  "TestReasonNode3",
+									Message: longMessage,
+								},
+							},
+						},
+					}
+				}
+				for ; i < 15; i++ { // 2 ready machines
+					machines[i] = &capiv1.Machine{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      fmt.Sprintf("node%d", i),
+							Namespace: "myns-cluster-name",
+							Annotations: map[string]string{
+								nodePoolAnnotation: "myns/np-name",
+							},
+						},
+						Status: capiv1.MachineStatus{
+							Conditions: []capiv1.Condition{
+								{
+									Type:   capiv1.ReadyCondition,
+									Status: corev1.ConditionTrue,
+								},
+							},
+						},
+					}
+				}
+
+				return machines
+			},
+			expectedAllMachine: &testCondition{
+				Status:   corev1.ConditionFalse,
+				Reason:   "TestReasonNode1,TestReasonNode2,TestReasonNode3",
+				Messages: []string{"13 of 15 machines are not ready", endOfMessage},
+			},
+		},
+	} {
+		t.Run(tc.name, func(tt *testing.T) {
+			gg := NewWithT(tt)
+			r := NodePoolReconciler{
+				Client: fake.NewClientBuilder().WithScheme(s).WithObjects(tc.machinesGenerator()...).Build(),
+			}
+
+			np := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: "np-name", Namespace: "myns"},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "cluster-name",
+				},
+			}
+
+			gg.Expect(r.setMachineAndNodeConditions(context.Background(), np)).To(Succeed())
+
+			cond := FindStatusCondition(np.Status.Conditions, hyperv1.NodePoolAllMachinesReadyConditionType)
+			gg.Expect(cond).ToNot(BeNil())
+			tc.expectedAllMachine.Compare(gg, cond)
+
+			cond = FindStatusCondition(np.Status.Conditions, hyperv1.NodePoolAllNodesHealthyConditionType)
+			gg.Expect(cond).ToNot(BeNil())
+			tc.expectedAllNodes.Compare(gg, cond)
 		})
 	}
 }
