@@ -252,7 +252,6 @@ require (
 
 replace (
 	github.com/google/cel-go => github.com/google/cel-go v0.17.7
-	k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20230717233707-2695361300d9
 	k8s.io/kubernetes => k8s.io/kubernetes v0.29.0
 	kubevirt.io/client-go => kubevirt.io/client-go v0.0.0-00010101000000-000000000000
 	kubevirt.io/containerized-data-importer-api => github.com/kubevirt/containerized-data-importer-api v1.41.1-0.20211201033752-05520fb9f18d
