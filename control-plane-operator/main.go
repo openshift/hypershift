@@ -22,6 +22,7 @@ import (
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/util"
 	tokenminter "github.com/openshift/hypershift/token-minter"
 	"go.uber.org/zap/zapcore"
@@ -270,7 +271,11 @@ func NewStartCommand() *cobra.Command {
 				for _, container := range me.Status.ContainerStatuses {
 					// TODO: could use downward API for this too, overkill?
 					if container.Name == "control-plane-operator" {
-						return strings.TrimPrefix(container.ImageID, "docker-pullable://"), nil
+						image := strings.TrimPrefix(container.ImageID, "docker-pullable://")
+						// Only return image if it is a valid reference
+						if ref, err := reference.Parse(image); err == nil && ref.Registry != "" {
+							return image, nil
+						}
 					}
 				}
 			}
