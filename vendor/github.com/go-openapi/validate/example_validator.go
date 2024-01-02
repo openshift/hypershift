@@ -48,7 +48,6 @@ func (ex *exampleValidator) isVisited(path string) bool {
 //   - schemas
 //   - individual property
 //   - responses
-//
 func (ex *exampleValidator) Validate() (errs *Result) {
 	errs = new(Result)
 	if ex == nil || ex.SpecValidator == nil {
@@ -68,7 +67,7 @@ func (ex *exampleValidator) validateExampleValueValidAgainstSchema() *Result {
 	res := new(Result)
 	s := ex.SpecValidator
 
-	for method, pathItem := range s.analyzer.Operations() {
+	for method, pathItem := range s.expandedAnalyzer().Operations() {
 		for path, op := range pathItem {
 			// parameters
 			for _, param := range paramHelp.safeExpandedParamsFor(path, method, op.ID, res, s) {
