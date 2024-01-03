@@ -162,17 +162,17 @@ type AWSPlatformOptions struct {
 }
 
 type AzurePlatformOptions struct {
-	CredentialsFile   string
-	Location          string
-	EncryptionKeyID   string
-	InstanceType      string
-	DiskSizeGB        int32
-	AvailabilityZones []string
-	ResourceGroupName string
+	CredentialsFile     string
+	Location            string
+	EncryptionKeyID     string
+	InstanceType        string
+	DiskSizeGB          int32
+	AvailabilityZones   []string
+	ResourceGroupName   string
+	DiskEncryptionSetID string
 }
 
 func createCommonFixture(ctx context.Context, opts *CreateOptions) (*apifixtures.ExampleOptions, error) {
-
 	// allow client side defaulting when release image is empty but release stream is set.
 	if len(opts.ReleaseImage) == 0 && len(opts.ReleaseStream) != 0 {
 		defaultVersion, err := version.LookupDefaultOCPVersion(opts.ReleaseStream)

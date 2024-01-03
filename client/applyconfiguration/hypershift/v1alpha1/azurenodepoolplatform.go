@@ -25,6 +25,7 @@ type AzureNodePoolPlatformApplyConfiguration struct {
 	DiskSizeGB             *int32  `json:"diskSizeGB,omitempty"`
 	DiskStorageAccountType *string `json:"diskStorageAccountType,omitempty"`
 	AvailabilityZone       *string `json:"availabilityZone,omitempty"`
+	DiskEncryptionSetID    *string `json:"diskEncryptionSetID,omitempty"`
 }
 
 // AzureNodePoolPlatformApplyConfiguration constructs an declarative configuration of the AzureNodePoolPlatform type for use with
@@ -70,5 +71,13 @@ func (b *AzureNodePoolPlatformApplyConfiguration) WithDiskStorageAccountType(val
 // If called multiple times, the AvailabilityZone field is set to the value of the last call.
 func (b *AzureNodePoolPlatformApplyConfiguration) WithAvailabilityZone(value string) *AzureNodePoolPlatformApplyConfiguration {
 	b.AvailabilityZone = &value
+	return b
+}
+
+// WithDiskEncryptionSetID sets the DiskEncryptionSetID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the DiskEncryptionSetID field is set to the value of the last call.
+func (b *AzureNodePoolPlatformApplyConfiguration) WithDiskEncryptionSetID(value string) *AzureNodePoolPlatformApplyConfiguration {
+	b.DiskEncryptionSetID = &value
 	return b
 }

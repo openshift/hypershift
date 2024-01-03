@@ -74,6 +74,7 @@ nav:
     - how-to/aws/create-aws-hosted-cluster-arm-workers.md
   - 'Azure':
     - how-to/azure/create-azure-cluster.md
+    - how-to/azure/create-azure-cluster-with-options.md
   - 'Agent':
     - how-to/agent/create-agent-cluster.md
   - 'Disconnected':

@@ -883,6 +883,9 @@ type AzureNodePoolPlatform struct {
 	// in a location that does not support AvailabilityZone.
 	// +optional
 	AvailabilityZone string `json:"availabilityZone,omitempty"`
+	// DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.
+	// +optional
+	DiskEncryptionSetID string `json:"diskEncryptionSetID,omitempty"`
 }
 
 // We define our own condition type since metav1.Condition has validation

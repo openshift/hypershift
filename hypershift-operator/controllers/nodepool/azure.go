@@ -5,12 +5,13 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"fmt"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	"golang.org/x/crypto/ssh"
 	utilpointer "k8s.io/utils/pointer"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
 func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, existing capiazure.AzureMachineTemplateSpec) (*capiazure.AzureMachineTemplateSpec, error) {
@@ -24,7 +25,7 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 			return nil, fmt.Errorf("failed to generate a SSH key: %w", err)
 		}
 	}
-	return &capiazure.AzureMachineTemplateSpec{Template: capiazure.AzureMachineTemplateResource{Spec: capiazure.AzureMachineSpec{
+	azureMachineTemplate := &capiazure.AzureMachineTemplateSpec{Template: capiazure.AzureMachineTemplateResource{Spec: capiazure.AzureMachineSpec{
 		VMSize: nodePool.Spec.Platform.Azure.VMSize,
 		Image:  &capiazure.Image{ID: utilpointer.String(bootImage(hcluster, nodePool))},
 		OSDisk: capiazure.OSDisk{
@@ -40,7 +41,18 @@ func azureMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1
 		UserAssignedIdentities: []capiazure.UserAssignedIdentity{{ProviderID: hcluster.Spec.Platform.Azure.MachineIdentityID}},
 		SSHPublicKey:           sshKey,
 		FailureDomain:          failureDomain(nodePool),
-	}}}, nil
+	}}}
+
+	if nodePool.Spec.Platform.Azure.DiskEncryptionSetID != "" {
+		azureMachineTemplate.Template.Spec.OSDisk.ManagedDisk.DiskEncryptionSet = &capiazure.DiskEncryptionSetParameters{
+			ID: nodePool.Spec.Platform.Azure.DiskEncryptionSetID,
+		}
+		azureMachineTemplate.Template.Spec.SecurityProfile = &capiazure.SecurityProfile{
+			EncryptionAtHost: to.Ptr(true),
+		}
+	}
+
+	return azureMachineTemplate, nil
 }
 
 func generateSSHPubkey() (string, error) {

@@ -484,6 +484,10 @@ spec:
                           specified for clusters in a location that does not support
                           AvailabilityZone.
                         type: string
+                      diskEncryptionSetID:
+                        description: DiskEncryptionSetID is the ID of the DiskEncryptionSet
+                          resource to use to encrypt the OS disks for the VMs.
+                        type: string
                       diskSizeGB:
                         default: 120
                         format: int32
@@ -1462,6 +1466,10 @@ spec:
                         description: AvailabilityZone of the nodepool. Must not be
                           specified for clusters in a location that does not support
                           AvailabilityZone.
+                        type: string
+                      diskEncryptionSetID:
+                        description: DiskEncryptionSetID is the ID of the DiskEncryptionSet
+                          resource to use to encrypt the OS disks for the VMs.
                         type: string
                       diskSizeGB:
                         default: 120

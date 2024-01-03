@@ -5,9 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -30,35 +28,37 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	opts.AzurePlatform.Location = "eastus"
 	opts.AzurePlatform.InstanceType = "Standard_D4s_v4"
 	opts.AzurePlatform.DiskSizeGB = 120
+
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
 	cmd.Flags().StringVar(&opts.AzurePlatform.EncryptionKeyID, "encryption-key-id", opts.AzurePlatform.EncryptionKeyID, "etcd encryption key identifier in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>")
 	cmd.Flags().StringVar(&opts.AzurePlatform.InstanceType, "instance-type", opts.AzurePlatform.InstanceType, "The instance type to use for nodes")
 	cmd.Flags().Int32Var(&opts.AzurePlatform.DiskSizeGB, "root-disk-size", opts.AzurePlatform.DiskSizeGB, "The size of the root disk for machines in the NodePool (minimum 16)")
-	cmd.Flags().StringSliceVar(&opts.AzurePlatform.AvailabilityZones, "availablity-zones", opts.AzurePlatform.AvailabilityZones, "The availablity zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
+	cmd.Flags().StringSliceVar(&opts.AzurePlatform.AvailabilityZones, "availability-zones", opts.AzurePlatform.AvailabilityZones, "The availability zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
+	cmd.Flags().StringVar(&opts.AzurePlatform.DiskEncryptionSetID, "disk-encryption-set-id", opts.AzurePlatform.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
-	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
 		if opts.Timeout > 0 {
-			ctx, cancel = context.WithTimeout(context.Background(), opts.Timeout)
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
+			defer cancel()
 		}
-		defer cancel()
 
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
+		err := validate(opts)
+		if err != nil {
+			return err
+		}
 
-		if err := CreateCluster(ctx, opts); err != nil {
+		if err = CreateCluster(ctx, opts); err != nil {
 			opts.Log.Error(err, "Failed to create cluster")
-			os.Exit(1)
+			return err
 		}
+		return nil
 	}
 
 	return cmd
@@ -109,17 +109,18 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.InfraID = infra.InfraID
 	exampleOptions.ExternalDNSDomain = opts.ExternalDNSDomain
 	exampleOptions.Azure = &apifixtures.ExampleAzureOptions{
-		Location:          infra.Location,
-		ResourceGroupName: infra.ResourceGroupName,
-		VnetName:          infra.VnetName,
-		VnetID:            infra.VNetID,
-		SubnetName:        infra.SubnetName,
-		BootImageID:       infra.BootImageID,
-		MachineIdentityID: infra.MachineIdentityID,
-		InstanceType:      opts.AzurePlatform.InstanceType,
-		SecurityGroupName: infra.SecurityGroupName,
-		DiskSizeGB:        opts.AzurePlatform.DiskSizeGB,
-		AvailabilityZones: opts.AzurePlatform.AvailabilityZones,
+		Location:            infra.Location,
+		ResourceGroupName:   infra.ResourceGroupName,
+		VnetName:            infra.VnetName,
+		VnetID:              infra.VNetID,
+		SubnetName:          infra.SubnetName,
+		BootImageID:         infra.BootImageID,
+		MachineIdentityID:   infra.MachineIdentityID,
+		InstanceType:        opts.AzurePlatform.InstanceType,
+		SecurityGroupName:   infra.SecurityGroupName,
+		DiskSizeGB:          opts.AzurePlatform.DiskSizeGB,
+		AvailabilityZones:   opts.AzurePlatform.AvailabilityZones,
+		DiskEncryptionSetID: opts.AzurePlatform.DiskEncryptionSetID,
 	}
 
 	if opts.AzurePlatform.EncryptionKeyID != "" {
@@ -177,4 +178,13 @@ func lookupRHCOSImage(ctx context.Context, arch string, image string, pullSecret
 	}
 
 	return rhcosImage, nil
+}
+
+// validate validates the core create options passed in by the user
+func validate(opts *core.CreateOptions) error {
+	// Resource group name is required when using DiskEncryptionSetID
+	if opts.AzurePlatform.DiskEncryptionSetID != "" && opts.AzurePlatform.ResourceGroupName == "" {
+		return fmt.Errorf("validate: resource-group-name is required when using disk-encryption-set-id")
+	}
+	return nil
 }
