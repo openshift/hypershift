@@ -107,6 +107,14 @@ func newEventHandler(opts *options) (*eventHandler, error) {
 		err:       bufio.NewWriter(opts.stderr),
 		maxFails:  opts.maxFails,
 	}
+
+	switch opts.format {
+	case "dots", "dots-v1", "dots-v2":
+		// Discard the error from the handler to prevent extra lines. The
+		// error will be printed in the summary.
+		handler.err = bufio.NewWriter(io.Discard)
+	}
+
 	var err error
 	if opts.jsonFile != "" {
 		_ = os.MkdirAll(filepath.Dir(opts.jsonFile), 0o755)
@@ -153,6 +161,7 @@ func postRunHook(opts *options, execution *testjson.Execution) error {
 	if len(command) == 0 {
 		return nil
 	}
+	log.Debugf("exec: %s", command)
 
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Stdout = opts.stdout
@@ -162,6 +171,7 @@ func postRunHook(opts *options, execution *testjson.Execution) error {
 		"GOTESTSUM_JSONFILE="+opts.jsonFile,
 		"GOTESTSUM_JSONFILE_TIMING_EVENTS="+opts.jsonFileTimingEvents,
 		"GOTESTSUM_JUNITFILE="+opts.junitFile,
+		fmt.Sprintf("GOTESTSUM_ELAPSED=%.3fs", execution.Elapsed().Seconds()),
 		fmt.Sprintf("TESTS_TOTAL=%d", execution.Total()),
 		fmt.Sprintf("TESTS_FAILED=%d", len(execution.Failed())),
 		fmt.Sprintf("TESTS_SKIPPED=%d", len(execution.Skipped())),
