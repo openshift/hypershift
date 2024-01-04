@@ -1,6 +1,8 @@
 module github.com/openshift-hive/hypershift/hack/tools
 
-go 1.20
+go 1.21.3
+
+toolchain go1.21.5
 
 require (
 	github.com/ahmetb/gen-crd-api-reference-docs v0.3.0
