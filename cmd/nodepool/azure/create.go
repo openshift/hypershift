@@ -12,11 +12,12 @@ import (
 )
 
 type AzurePlatformCreateOptions struct {
-	InstanceType        string
-	DiskSize            int32
-	AvailabilityZone    string
-	ResourceGroupName   string
-	DiskEncryptionSetID string
+	InstanceType          string
+	DiskSize              int32
+	AvailabilityZone      string
+	ResourceGroupName     string
+	DiskEncryptionSetID   string
+	EnableEphemeralOSDisk bool
 }
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
@@ -36,6 +37,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().StringVar(&platformOpts.AvailabilityZone, "availability-zone", platformOpts.AvailabilityZone, "The availabilityZone for the nodepool. Must be left unspecified if in a region that doesn't support AZs")
 	cmd.Flags().StringVar(&platformOpts.ResourceGroupName, "resource-group-name", platformOpts.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
 	cmd.Flags().StringVar(&platformOpts.DiskEncryptionSetID, "disk-encryption-set-id", platformOpts.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
+	cmd.Flags().BoolVar(&platformOpts.EnableEphemeralOSDisk, "enable-ephemeral-disk", platformOpts.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the NodePool will be setup with ephemeral OS disks")
 
 	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
 
@@ -50,10 +52,11 @@ func (o *AzurePlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool 
 
 	nodePool.Spec.Platform.Type = hyperv1.AzurePlatform
 	nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-		VMSize:              o.InstanceType,
-		DiskSizeGB:          o.DiskSize,
-		AvailabilityZone:    o.AvailabilityZone,
-		DiskEncryptionSetID: o.DiskEncryptionSetID,
+		VMSize:                o.InstanceType,
+		DiskSizeGB:            o.DiskSize,
+		AvailabilityZone:      o.AvailabilityZone,
+		DiskEncryptionSetID:   o.DiskEncryptionSetID,
+		EnableEphemeralOSDisk: o.EnableEphemeralOSDisk,
 	}
 	return nil
 }

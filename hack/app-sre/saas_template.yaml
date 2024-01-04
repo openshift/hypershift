@@ -54448,6 +54448,10 @@ objects:
                           - Premium_LRS
                           - UltraSSD_LRS
                           type: string
+                        enableEphemeralOSDisk:
+                          description: EnableEphemeralOSDisk enables ephemeral OS
+                            disk
+                          type: boolean
                         imageID:
                           description: 'ImageID is the id of the image to boot from.
                             If unset, the default image at the location below will
@@ -55442,6 +55446,10 @@ objects:
                           - Premium_LRS
                           - UltraSSD_LRS
                           type: string
+                        enableEphemeralOSDisk:
+                          description: EnableEphemeralOSDisk enables ephemeral OS
+                            disk
+                          type: boolean
                         imageID:
                           description: 'ImageID is the id of the image to boot from.
                             If unset, the default image at the location below will

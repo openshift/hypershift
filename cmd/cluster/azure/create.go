@@ -48,6 +48,7 @@ func NewCreateCommand(opts *core.CreateOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
 	cmd.Flags().StringVar(&opts.AzurePlatform.DiskEncryptionSetID, "disk-encryption-set-id", opts.AzurePlatform.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
 	cmd.Flags().StringVar(&opts.AzurePlatform.NetworkSecurityGroup, "network-security-group", opts.AzurePlatform.NetworkSecurityGroup, "The name of the Network Security Group to use in Virtual Network created for HostedCluster.")
+	cmd.Flags().BoolVar(&opts.AzurePlatform.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.AzurePlatform.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the default NodePool will be setup with ephemeral OS disks")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
@@ -121,18 +122,19 @@ func applyPlatformSpecificsValues(ctx context.Context, exampleOptions *apifixtur
 	exampleOptions.InfraID = infra.InfraID
 	exampleOptions.ExternalDNSDomain = opts.ExternalDNSDomain
 	exampleOptions.Azure = &apifixtures.ExampleAzureOptions{
-		Location:            infra.Location,
-		ResourceGroupName:   infra.ResourceGroupName,
-		VnetName:            infra.VnetName,
-		VnetID:              infra.VNetID,
-		SubnetName:          infra.SubnetName,
-		BootImageID:         infra.BootImageID,
-		MachineIdentityID:   infra.MachineIdentityID,
-		InstanceType:        opts.AzurePlatform.InstanceType,
-		SecurityGroupName:   infra.SecurityGroupName,
-		DiskSizeGB:          opts.AzurePlatform.DiskSizeGB,
-		AvailabilityZones:   opts.AzurePlatform.AvailabilityZones,
-		DiskEncryptionSetID: opts.AzurePlatform.DiskEncryptionSetID,
+		Location:              infra.Location,
+		ResourceGroupName:     infra.ResourceGroupName,
+		VnetName:              infra.VnetName,
+		VnetID:                infra.VNetID,
+		SubnetName:            infra.SubnetName,
+		BootImageID:           infra.BootImageID,
+		MachineIdentityID:     infra.MachineIdentityID,
+		InstanceType:          opts.AzurePlatform.InstanceType,
+		SecurityGroupName:     infra.SecurityGroupName,
+		DiskSizeGB:            opts.AzurePlatform.DiskSizeGB,
+		AvailabilityZones:     opts.AzurePlatform.AvailabilityZones,
+		DiskEncryptionSetID:   opts.AzurePlatform.DiskEncryptionSetID,
+		EnableEphemeralOSDisk: opts.AzurePlatform.EnableEphemeralOSDisk,
 	}
 
 	if opts.AzurePlatform.EncryptionKeyID != "" {

@@ -692,11 +692,12 @@ func (o ExampleOptions) Resources() *ExampleResources {
 					nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 				}
 				nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-					VMSize:              o.Azure.InstanceType,
-					ImageID:             o.Azure.BootImageID,
-					DiskSizeGB:          o.Azure.DiskSizeGB,
-					AvailabilityZone:    availabilityZone,
-					DiskEncryptionSetID: o.Azure.DiskEncryptionSetID,
+					VMSize:                o.Azure.InstanceType,
+					ImageID:               o.Azure.BootImageID,
+					DiskSizeGB:            o.Azure.DiskSizeGB,
+					AvailabilityZone:      availabilityZone,
+					DiskEncryptionSetID:   o.Azure.DiskEncryptionSetID,
+					EnableEphemeralOSDisk: o.Azure.EnableEphemeralOSDisk,
 				}
 				nodePools = append(nodePools, nodePool)
 			}
@@ -707,10 +708,11 @@ func (o ExampleOptions) Resources() *ExampleResources {
 				nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 			}
 			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-				VMSize:              o.Azure.InstanceType,
-				ImageID:             o.Azure.BootImageID,
-				DiskSizeGB:          o.Azure.DiskSizeGB,
-				DiskEncryptionSetID: o.Azure.DiskEncryptionSetID,
+				VMSize:                o.Azure.InstanceType,
+				ImageID:               o.Azure.BootImageID,
+				DiskSizeGB:            o.Azure.DiskSizeGB,
+				DiskEncryptionSetID:   o.Azure.DiskEncryptionSetID,
+				EnableEphemeralOSDisk: o.Azure.EnableEphemeralOSDisk,
 			}
 			nodePools = append(nodePools, nodePool)
 		}

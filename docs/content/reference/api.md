@@ -2349,6 +2349,18 @@ string
 <p>DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>enableEphemeralOSDisk</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>EnableEphemeralOSDisk enables ephemeral OS disk</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzurePlatformSpec { #hypershift.openshift.io/v1beta1.AzurePlatformSpec }

@@ -886,6 +886,9 @@ type AzureNodePoolPlatform struct {
 	// DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.
 	// +optional
 	DiskEncryptionSetID string `json:"diskEncryptionSetID,omitempty"`
+	// EnableEphemeralOSDisk enables ephemeral OS disk
+	// +optional
+	EnableEphemeralOSDisk bool `json:"enableEphemeralOSDisk,omitempty"`
 }
 
 // We define our own condition type since metav1.Condition has validation

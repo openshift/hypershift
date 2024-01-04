@@ -26,6 +26,7 @@ type AzureNodePoolPlatformApplyConfiguration struct {
 	DiskStorageAccountType *string `json:"diskStorageAccountType,omitempty"`
 	AvailabilityZone       *string `json:"availabilityZone,omitempty"`
 	DiskEncryptionSetID    *string `json:"diskEncryptionSetID,omitempty"`
+	EnableEphemeralOSDisk  *bool   `json:"enableEphemeralOSDisk,omitempty"`
 }
 
 // AzureNodePoolPlatformApplyConfiguration constructs an declarative configuration of the AzureNodePoolPlatform type for use with
@@ -79,5 +80,13 @@ func (b *AzureNodePoolPlatformApplyConfiguration) WithAvailabilityZone(value str
 // If called multiple times, the DiskEncryptionSetID field is set to the value of the last call.
 func (b *AzureNodePoolPlatformApplyConfiguration) WithDiskEncryptionSetID(value string) *AzureNodePoolPlatformApplyConfiguration {
 	b.DiskEncryptionSetID = &value
+	return b
+}
+
+// WithEnableEphemeralOSDisk sets the EnableEphemeralOSDisk field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the EnableEphemeralOSDisk field is set to the value of the last call.
+func (b *AzureNodePoolPlatformApplyConfiguration) WithEnableEphemeralOSDisk(value bool) *AzureNodePoolPlatformApplyConfiguration {
+	b.EnableEphemeralOSDisk = &value
 	return b
 }
