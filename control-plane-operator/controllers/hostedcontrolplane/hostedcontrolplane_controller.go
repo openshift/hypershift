@@ -1914,6 +1914,54 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile api server service account key secret: %w", err)
 	}
 
+	// Etcd Proxy Serving Signer CA
+	etcdProxyServingSignerCA := manifests.EtcdProxyServingSignerCA(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdProxyServingSignerCA, func() error {
+		return pki.ReconcileEtcdProxyServingSignerCA(etcdProxyServingSignerCA, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd proxy serving signer CA: %w", err)
+	}
+
+	// Etcd Proxy Client CA Bundle
+	etcdProxyClientCABundle := manifests.EtcdProxyClientCABundle(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdProxyClientCABundle, func() error {
+		return pki.ReconcileEtcdProxyClientCABundle(etcdProxyClientCABundle, p.OwnerRef, etcdProxyServingSignerCA)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd proxy client CA bundle: %w", err)
+	}
+
+	// Etcd Proxy Auth Client Signer CA
+	etcdProxyAuthSignerCA := manifests.EtcdProxyAuthSignerCA(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdProxyAuthSignerCA, func() error {
+		return pki.ReconcileEtcdProxyAuthSignerCA(etcdProxyAuthSignerCA, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd proxy auth signer CA: %w", err)
+	}
+
+	// Etcd Proxy Auth CA Bundle
+	etcdProxyAuthCABundle := manifests.EtcdProxyAuthCABundle(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdProxyAuthCABundle, func() error {
+		return pki.ReconcileEtcdProxyAuthCABundle(etcdProxyAuthCABundle, p.OwnerRef, etcdProxyAuthSignerCA)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd proxy auth CA bundle: %w", err)
+	}
+
+	// Etcd Proxy Serving Cert
+	etcdProxyServingCert := manifests.EtcdProxyServingCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdProxyServingCert, func() error {
+		return pki.ReconcileEtcdProxyServingCert(etcdProxyServingCert, etcdProxyServingSignerCA, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd proxy serving cert: %w", err)
+	}
+
+	// Etcd Proxy Auth Client Cert
+	etcdProxyAuthClientCert := manifests.EtcdProxyAuthClientCert(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, etcdProxyAuthClientCert, func() error {
+		return pki.ReconcileEtcdProxyAuthClientCert(etcdProxyAuthClientCert, etcdProxyAuthSignerCA, p.OwnerRef)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile etcd proxy auth client cert: %w", err)
+	}
+
 	// OpenShift APIServer
 	openshiftAPIServerCertSecret := manifests.OpenShiftAPIServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, openshiftAPIServerCertSecret, func() error {
@@ -2584,6 +2632,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			userReleaseImageProvider.Version(),
 			p.FeatureGate,
 			oidcCA,
+			p.EtcdURL,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)

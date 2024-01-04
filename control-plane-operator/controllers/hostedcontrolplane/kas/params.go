@@ -30,6 +30,7 @@ type KubeAPIServerImages struct {
 	TokenMinterImage           string
 	AWSPodIdentityWebhookImage string
 	KonnectivityServer         string
+	ControlPlaneOperator       string
 }
 
 type KubeAPIServerParams struct {
@@ -106,6 +107,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			AWSKMS:                     releaseImageProvider.GetImage("aws-kms-provider"),
 			AWSPodIdentityWebhookImage: releaseImageProvider.GetImage("aws-pod-identity-webhook"),
 			KonnectivityServer:         releaseImageProvider.GetImage("apiserver-network-proxy"),
+			ControlPlaneOperator:       releaseImageProvider.GetImage(util.CPOImageName),
 		},
 	}
 	if hcp.Spec.Configuration != nil {
@@ -260,6 +262,12 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			},
 		},
 		konnectivityServerContainer().Name: {
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+			},
+		},
+		etcdProxyContainer().Name: {
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("50Mi"),
 				corev1.ResourceCPU:    resource.MustParse("10m"),

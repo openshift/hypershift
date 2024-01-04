@@ -271,3 +271,37 @@ func CSISnapshotControllerWebhookCertSecret(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func EtcdProxyServingSignerCA(ns string) *corev1.Secret {
+	return secretFor(ns, "etcd-proxy-serving-signer-ca")
+}
+
+func EtcdProxyClientCABundle(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd-proxy-client-bundle-ca",
+			Namespace: ns,
+		},
+	}
+}
+
+func EtcdProxyAuthSignerCA(ns string) *corev1.Secret {
+	return secretFor(ns, "etcd-proxy-auth-signer-ca")
+}
+
+func EtcdProxyAuthCABundle(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "etcd-proxy-auth-bundle-ca",
+			Namespace: ns,
+		},
+	}
+}
+
+func EtcdProxyServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "etcd-proxy-serving")
+}
+
+func EtcdProxyAuthClientCert(ns string) *corev1.Secret {
+	return secretFor(ns, "etcd-proxy-auth-client")
+}

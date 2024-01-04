@@ -169,3 +169,33 @@ func AddBracketsIfIPv6(apiAddress string) string {
 
 	return apiAddress
 }
+
+func ReconcileEtcdProxyServingSignerCA(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "etcd-proxy-serving-signer", "openshift")
+}
+
+func ReconcileEtcdProxyAuthSignerCA(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "etcd-proxy-auth-client-signer", "openshift")
+}
+
+func ReconcileEtcdProxyClientCABundle(configMap *corev1.ConfigMap, ownerRef config.OwnerRef, signer *corev1.Secret) error {
+	return reconcileAggregateCA(configMap, ownerRef, signer)
+}
+
+func ReconcileEtcdProxyAuthCABundle(configMap *corev1.ConfigMap, ownerRef config.OwnerRef, signer *corev1.Secret) error {
+	return reconcileAggregateCA(configMap, ownerRef, signer)
+}
+
+func ReconcileEtcdProxyServingCert(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	dnsNames := []string{
+		"localhost",
+	}
+	ips := []string{
+		"127.0.0.1",
+	}
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "etcd-proxy", []string{"openshift"}, X509UsageClientServerAuth, dnsNames, ips)
+}
+
+func ReconcileEtcdProxyAuthClientCert(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCert(secret, ca, ownerRef, "etcd-auth-client", []string{"openshift"}, X509UsageClientAuth)
+}

@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -52,8 +53,6 @@ var (
 			kasVolumeAggregatorCert().Name:         "/etc/kubernetes/certs/aggregator",
 			common.VolumeAggregatorCA().Name:       "/etc/kubernetes/certs/aggregator-ca",
 			common.VolumeTotalClientCA().Name:      "/etc/kubernetes/certs/client-ca",
-			kasVolumeEtcdCA().Name:                 "/etc/kubernetes/certs/etcd-ca",
-			kasVolumeEtcdClientCert().Name:         "/etc/kubernetes/certs/etcd",
 			kasVolumeServiceAccountKey().Name:      "/etc/kubernetes/secrets/svcacct-key",
 			kasVolumeOauthMetadata().Name:          "/etc/kubernetes/oauth",
 			kasVolumeAuthTokenWebhookConfig().Name: "/etc/kubernetes/auth-token-webhook",
@@ -61,11 +60,19 @@ var (
 			kasVolumeKubeletClientCA().Name:        "/etc/kubernetes/certs/kubelet-ca",
 			kasVolumeKonnectivityClientCert().Name: "/etc/kubernetes/certs/konnectivity-client",
 			kasVolumeEgressSelectorConfig().Name:   "/etc/kubernetes/egress-selector",
+			kasVolumeEtcdProxyClientCA().Name:      "/etc/kubernetes/certs/etcd-proxy-ca",
+			kasVolumeEtcdProxyClientCert().Name:    "/etc/kubernetes/certs/etcd-proxy-client",
 		},
 		konnectivityServerContainer().Name: util.ContainerVolumeMounts{
 			konnectivityVolumeServerCerts().Name:  "/etc/konnectivity/server",
 			konnectivityVolumeClusterCerts().Name: "/etc/konnectivity/cluster",
 			kasVolumeKonnectivityCA().Name:        "/etc/konnectivity/ca",
+		},
+		etcdProxyContainer().Name: util.ContainerVolumeMounts{
+			etcdProxyVolumeEtcdCA().Name:         "/etc/kubernetes/certs/etcd-ca",
+			etcdProxyVolumeEtcdClientCert().Name: "/etc/kubernetes/certs/etcd",
+			etcdProxyVolumeClientAuthCA().Name:   "/etc/kubernetes/certs/client-auth-ca",
+			etcdProxyVolumeServingCert().Name:    "/etc/kubernetes/certs/serving",
 		},
 	}
 
@@ -119,6 +126,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	payloadVersion string,
 	featureGateSpec *configv1.FeatureGateSpec,
 	oidcCA *corev1.LocalObjectReference,
+	etcdURL string,
 ) error {
 
 	secretEncryptionData := hcp.Spec.SecretEncryption
@@ -214,6 +222,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 						MountPath: volumeMounts.Path(kasContainerMain().Name, kasVolumeWorkLogs().Name),
 					}},
 				},
+				util.BuildContainer(etcdProxyContainer(), buildEtcdProxyContainer(images.ControlPlaneOperator, etcdURL)),
 			},
 			Volumes: []corev1.Volume{
 				util.BuildVolume(kasVolumeBootstrapManifests(), buildKASVolumeBootstrapManifests),
@@ -226,8 +235,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeAggregatorCert(), buildKASVolumeAggregatorCert),
 				util.BuildVolume(common.VolumeAggregatorCA(), common.BuildVolumeAggregatorCA),
 				util.BuildVolume(kasVolumeServiceAccountKey(), buildKASVolumeServiceAccountKey),
-				util.BuildVolume(kasVolumeEtcdCA(), buildKASVolumeEtcdCA),
-				util.BuildVolume(kasVolumeEtcdClientCert(), buildKASVolumeEtcdClientCert),
 				util.BuildVolume(kasVolumeOauthMetadata(), buildKASVolumeOauthMetadata),
 				util.BuildVolume(kasVolumeAuthTokenWebhookConfig(), buildKASVolumeAuthTokenWebhookConfig),
 				util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
@@ -238,6 +245,12 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeKubeconfig(), buildKASVolumeKubeconfig),
 				util.BuildVolume(konnectivityVolumeServerCerts(), buildKonnectivityVolumeServerCerts),
 				util.BuildVolume(konnectivityVolumeClusterCerts(), buildKonnectivityVolumeClusterCerts),
+				util.BuildVolume(etcdProxyVolumeEtcdCA(), buildEtcdProxyVolumeEtcdCA),
+				util.BuildVolume(etcdProxyVolumeEtcdClientCert(), buildEtcdProxyVolumeEtcdClientCert),
+				util.BuildVolume(kasVolumeEtcdProxyClientCA(), buildKASVolumeEtcdProxyClientCA),
+				util.BuildVolume(kasVolumeEtcdProxyClientCert(), buildKASVolumeEtcdProxyClientCert),
+				util.BuildVolume(etcdProxyVolumeClientAuthCA(), buildEtcdProxyVolumeClientAuthCA),
+				util.BuildVolume(etcdProxyVolumeServingCert(), buildEtcdProxyVolumeServingCert),
 			},
 		},
 	}
@@ -590,6 +603,34 @@ func buildKASVolumeEgressSelectorConfig(v *corev1.Volume) {
 	v.ConfigMap.Name = manifests.KASEgressSelectorConfig("").Name
 }
 
+func kasVolumeEtcdProxyClientCA() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "etcd-proxy-client-ca",
+	}
+}
+
+func buildKASVolumeEtcdProxyClientCA(v *corev1.Volume) {
+	if v.ConfigMap == nil {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	}
+	v.ConfigMap.DefaultMode = pointer.Int32(420)
+	v.ConfigMap.Name = manifests.EtcdProxyClientCABundle("").Name
+}
+
+func kasVolumeEtcdProxyClientCert() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "etcd-proxy-client-crt",
+	}
+}
+
+func buildKASVolumeEtcdProxyClientCert(v *corev1.Volume) {
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
+	v.Secret.DefaultMode = pointer.Int32(420)
+	v.Secret.SecretName = manifests.EtcdProxyAuthClientCert("").Name
+}
+
 func kasVolumeServiceAccountKey() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "svcacct-key",
@@ -617,12 +658,12 @@ func buildKASVolumeKubeletClientCert(v *corev1.Volume) {
 	v.Secret.SecretName = manifests.KASKubeletClientCertSecret("").Name
 }
 
-func kasVolumeEtcdClientCert() *corev1.Volume {
+func etcdProxyVolumeEtcdClientCert() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "etcd-client-crt",
 	}
 }
-func buildKASVolumeEtcdClientCert(v *corev1.Volume) {
+func buildEtcdProxyVolumeEtcdClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
@@ -630,15 +671,37 @@ func buildKASVolumeEtcdClientCert(v *corev1.Volume) {
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
 }
 
-func kasVolumeEtcdCA() *corev1.Volume {
+func etcdProxyVolumeEtcdCA() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "etcd-ca",
 	}
 }
 
-func buildKASVolumeEtcdCA(v *corev1.Volume) {
+func buildEtcdProxyVolumeEtcdCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	v.ConfigMap.Name = manifests.EtcdSignerCAConfigMap("").Name
+}
+
+func etcdProxyVolumeClientAuthCA() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "client-auth-ca",
+	}
+}
+
+func buildEtcdProxyVolumeClientAuthCA(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.EtcdProxyAuthCABundle("").Name
+}
+
+func etcdProxyVolumeServingCert() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "serving-crt",
+	}
+}
+
+func buildEtcdProxyVolumeServingCert(v *corev1.Volume) {
+	v.Secret = &corev1.SecretVolumeSource{}
+	v.Secret.SecretName = manifests.EtcdProxyServingCert("").Name
 }
 
 func kasVolumeOauthMetadata() *corev1.Volume {
@@ -953,5 +1016,44 @@ func buildKonnectivityVolumeClusterCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KonnectivityClusterSecret("").Name,
 		DefaultMode: pointer.Int32(0640),
+	}
+}
+
+func etcdProxyContainer() *corev1.Container {
+	return &corev1.Container{
+		Name: "etcd-proxy",
+	}
+}
+
+func buildEtcdProxyContainer(image string, etcdURL string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		cPath := func(volume, file string) string {
+			return path.Join(volumeMounts.Path(etcdProxyContainer().Name, volume), file)
+		}
+		c.Image = image
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.Command = []string{
+			"/usr/bin/control-plane-operator",
+		}
+		c.Args = []string{
+			"etcd-proxy",
+			"--endpoints",
+			etcdURL,
+			"--cacert",
+			cPath(etcdProxyVolumeEtcdCA().Name, certs.CASignerCertMapKey),
+			"--cert",
+			cPath(etcdProxyVolumeEtcdClientCert().Name, pki.EtcdClientCrtKey),
+			"--key",
+			cPath(etcdProxyVolumeEtcdClientCert().Name, pki.EtcdClientKeyKey),
+			"--cert-file",
+			cPath(etcdProxyVolumeServingCert().Name, corev1.TLSCertKey),
+			"--key-file",
+			cPath(etcdProxyVolumeServingCert().Name, corev1.TLSPrivateKeyKey),
+			"--trusted-ca-file",
+			cPath(etcdProxyVolumeClientAuthCA().Name, certs.CASignerCertMapKey),
+			"--listen-addr=127.0.0.1:23790",
+			"--konnectivity-server-metrics-url=http://127.0.0.1:8093/metrics",
+		}
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
