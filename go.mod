@@ -53,6 +53,7 @@ require (
 	github.com/prometheus/client_golang v1.17.0
 	github.com/prometheus/client_model v0.5.0
 	github.com/prometheus/common v0.45.0
+	github.com/soheilhy/cmux v0.1.5
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.8.4
 	github.com/tombuildsstuff/giovanni v0.18.0
@@ -60,6 +61,7 @@ require (
 	go.etcd.io/etcd/api/v3 v3.5.10
 	go.etcd.io/etcd/client/pkg/v3 v3.5.10
 	go.etcd.io/etcd/client/v3 v3.5.10
+	go.etcd.io/etcd/pkg/v3 v3.5.10
 	go.etcd.io/etcd/server/v3 v3.5.10
 	go.etcd.io/etcd/tests/v3 v3.5.10
 	go.uber.org/zap v1.25.0
@@ -203,7 +205,6 @@ require (
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
-	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace // indirect
 	github.com/stoewer/go-strcase v1.2.0 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75 // indirect
@@ -211,7 +212,6 @@ require (
 	github.com/xlab/treeprint v1.2.0 // indirect
 	go.etcd.io/bbolt v1.3.8 // indirect
 	go.etcd.io/etcd/client/v2 v2.305.10 // indirect
-	go.etcd.io/etcd/pkg/v3 v3.5.10 // indirect
 	go.etcd.io/etcd/raft/v3 v3.5.10 // indirect
 	go.mongodb.org/mongo-driver v1.12.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.35.0 // indirect

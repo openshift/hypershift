@@ -968,9 +968,11 @@ go.etcd.io/etcd/client/v3/concurrency
 go.etcd.io/etcd/client/v3/credentials
 go.etcd.io/etcd/client/v3/internal/endpoint
 go.etcd.io/etcd/client/v3/internal/resolver
+go.etcd.io/etcd/client/v3/leasing
 go.etcd.io/etcd/client/v3/namespace
 go.etcd.io/etcd/client/v3/naming/endpoints
 go.etcd.io/etcd/client/v3/naming/endpoints/internal
+go.etcd.io/etcd/client/v3/ordering
 # go.etcd.io/etcd/pkg/v3 v3.5.10
 ## explicit; go 1.20
 go.etcd.io/etcd/pkg/v3/adt
