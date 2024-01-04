@@ -1,3 +1,5 @@
+// Based on https://github.com/etcd-io/etcd/blob/af1fb6f31f70dcc547cbe39b21022a6b4b8c2366/server/etcdmain/grpc_proxy.go
+
 // Copyright 2016 The etcd Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -101,24 +103,17 @@ var (
 	grpcKeepAliveInterval time.Duration
 
 	maxConcurrentStreams uint32
+
+	// BEGIN hypershift modification
+	konnectivityServerMetricsURL string
+	// END hypershift modification
 )
 
 const defaultGRPCMaxCallSendMsgSize = 1.5 * 1024 * 1024
 
-// newGRPCProxyCommand returns the cobra command for "grpc-proxy".
-func newGRPCProxyCommand() *cobra.Command {
-	lpc := &cobra.Command{
-		Use:   "grpc-proxy <subcommand>",
-		Short: "grpc-proxy related command",
-	}
-	lpc.AddCommand(newGRPCProxyStartCommand())
-
-	return lpc
-}
-
-func newGRPCProxyStartCommand() *cobra.Command {
+func NewEtcdProxyStartCommand() *cobra.Command {
 	cmd := cobra.Command{
-		Use:   "start",
+		Use:   "etcd-proxy",
 		Short: "start the grpc proxy",
 		Run:   startGRPCProxy,
 	}
@@ -165,6 +160,9 @@ func newGRPCProxyStartCommand() *cobra.Command {
 
 	cmd.Flags().Uint32Var(&maxConcurrentStreams, "max-concurrent-streams", math.MaxUint32, "Maximum concurrent streams that each client can open at a time.")
 
+	// BEGIN hypershift modification
+	cmd.Flags().StringVar(&konnectivityServerMetricsURL, "konnectivity-server-metrics-url", "", "The URL of the konnectivity-server metrics endpoint.")
+	// END hypershift modification
 	return &cmd
 }
 
@@ -350,7 +348,7 @@ func newClientCfg(lg *zap.Logger, eps []string) (*clientv3.Config, error) {
 		cfg.MaxCallRecvMsgSize = grpcMaxCallRecvMsgSize
 	}
 
-	tls := newTLS(grpcProxyCA, grpcProxyCert, grpcProxyKey, true)
+	tls := newTLS(grpcProxyCA, grpcProxyCert, grpcProxyKey, false)
 	if tls == nil && grpcProxyInsecureSkipTLSVerify {
 		tls = &transport.TLSInfo{}
 	}
@@ -423,7 +421,13 @@ func newGRPCProxyServer(lg *zap.Logger, client *clientv3.Client) *grpc.Server {
 		client.KV, _, _ = leasing.NewKV(client, grpcProxyLeasing)
 	}
 
-	kvp, _ := grpcproxy.NewKvProxy(client)
+	// BEGIN hypershift modification
+	allowWrites := make(chan struct{})
+	kvp := NewKvProxyWrapper(lg, client, allowWrites)
+	konnChecker := NewKonnectivityChecker(lg, konnectivityServerMetricsURL, allowWrites)
+	go konnChecker.Run(context.Background())
+	// END hypershift modification
+
 	watchp, _ := grpcproxy.NewWatchProxy(client.Ctx(), lg, client)
 	if grpcProxyResolverPrefix != "" {
 		grpcproxy.Register(lg, client, grpcProxyResolverPrefix, grpcProxyAdvertiseClientURL, grpcProxyResolverTTL)

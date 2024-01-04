@@ -1,3 +1,5 @@
+// Based on https://github.com/etcd-io/etcd/blob/af1fb6f31f70dcc547cbe39b21022a6b4b8c2366/server/etcdmain/util.go
+
 // Copyright 2017 The etcd Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
