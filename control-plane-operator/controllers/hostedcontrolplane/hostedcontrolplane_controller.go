@@ -1127,9 +1127,11 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	}
 
 	// Reconcile control plane pki operator
-	r.Log.Info("Reconciling Control Plane PKI Operator")
-	if err := r.reconcileControlPlanePKIOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists, r.CertRotationScale); err != nil {
-		return fmt.Errorf("failed to reconcile control plane pki operator: %w", err)
+	if _, exists := hostedControlPlane.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
+		r.Log.Info("Reconciling Control Plane PKI Operator")
+		if err := r.reconcileControlPlanePKIOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists, r.CertRotationScale); err != nil {
+			return fmt.Errorf("failed to reconcile control plane pki operator: %w", err)
+		}
 	}
 
 	// Reconcile cloud controller manager
