@@ -219,6 +219,16 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("requestheader-extra-headers-prefix", "X-Remote-Extra-")
 	args.Set("requestheader-group-headers", "X-Remote-Group")
 	args.Set("requestheader-username-headers", "X-Remote-User")
+	runtimeConfig := []string{}
+	for _, gate := range p.FeatureGates {
+		if gate == "ValidatingAdmissionPolicy=true" {
+			runtimeConfig = append(runtimeConfig, "admissionregistration.k8s.io/v1beta1=true")
+		}
+		if gate == "DynamicResourceAllocation=true" {
+			runtimeConfig = append(runtimeConfig, "resource.k8s.io/v1alpha2=true")
+		}
+	}
+	args.Set("runtime-config", runtimeConfig...)
 	args.Set("service-account-issuer", p.ServiceAccountIssuerURL)
 	args.Set("service-account-jwks-uri", jwksURL(p.ServiceAccountIssuerURL))
 	args.Set("service-account-lookup", "true")
