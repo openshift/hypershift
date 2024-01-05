@@ -322,6 +322,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
 	}
 
+	log.Info("reconciling oauth client secrets")
+	if err := r.reconcileOAuthClientSecrets(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
+	}
+
 	log.Info("reconciling kube control plane signer secret")
 	kubeControlPlaneSignerSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -935,6 +940,39 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		}
 	}
 
+	return errors.NewAggregate(errs)
+}
+
+func (r *reconciler) reconcileOAuthClientSecrets(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	var errs []error
+	if !util.HCPOAuthEnabled(hcp) &&
+		len(hcp.Spec.Configuration.Authentication.OIDCProviders) != 0 &&
+		len(hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients) > 0 {
+		for _, oidcClient := range hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients {
+			var src corev1.Secret
+			err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
+				continue
+			}
+			dest := corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      oidcClient.ClientSecret.Name,
+					Namespace: "openshift-config",
+				},
+			}
+			_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
+				if dest.Data == nil {
+					dest.Data = map[string][]byte{}
+				}
+				dest.Data["clientSecret"] = src.Data["clientSecret"]
+				return nil
+			})
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
+			}
+		}
+	}
 	return errors.NewAggregate(errs)
 }
 
