@@ -52,3 +52,47 @@ This command will result in the control plane pods being hosted on the
 management cluster that the HyperShift Operator runs on, while the KubeVirt
 VMs will be hosted on a separate infrastructure cluster.
 
+## Required RBAC for the external infrastructure cluster
+It isn't necessary for the user defined in the kubeconfig used for the external infra cluster to be a cluster-admin.  
+The user or service account used in the provided kubeconfig should have full permissions over the following resources:
+* `virtualmachines.kubevirt.io`
+* `virtualmachineinstances.kubevirt.io`
+* `datavolumes.cdi.kubevirt.io`
+* `services`
+* `routes`
+
+All of these permissions are needed only on the target namespace on the infra cluster (passed through the `--infra-namespace` command-line argument).
+This can be achieved by binding the following Role to the user used in the external infra kubeconfig:
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: kv-external-infra-role
+  namespace: clusters-example
+rules:
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachines
+      - virtualmachineinstances
+    verbs:
+      - '*'
+  - apiGroups:
+      - cdi.kubevirt.io
+    resources:
+      - datavolumes
+    verbs:
+      - '*'
+  - apiGroups:
+      - ''
+    resources:
+      - services
+    verbs:
+      - '*'
+  - apiGroups:
+      - route.openshift.io
+    resources:
+      - routes
+    verbs:
+      - '*'
+```
