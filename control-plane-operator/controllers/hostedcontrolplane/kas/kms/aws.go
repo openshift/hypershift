@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -120,7 +121,7 @@ func (p *awsKMSProvider) GenerateKMSEncryptionConfig() (*v1.EncryptionConfigurat
 		},
 		Resources: []v1.ResourceConfiguration{
 			{
-				Resources: []string{"secrets"},
+				Resources: config.KMSEncryptedObjects(),
 				Providers: providerConfiguration,
 			},
 		},
