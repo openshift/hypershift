@@ -21,6 +21,23 @@ import (
 	"k8s.io/utils/net"
 )
 
+// AzureManagedControlPlaneTemplateResourceSpec specifies an Azure managed control plane template resource.
+type AzureManagedControlPlaneTemplateResourceSpec struct {
+	AzureManagedControlPlaneClassSpec `json:",inline"`
+}
+
+// AzureManagedControlPlaneTemplateMachineTemplate is only used to fulfill the CAPI contract which expects a
+// MachineTemplate field for any controlplane ref in a topology.
+type AzureManagedControlPlaneTemplateMachineTemplate struct{}
+
+// AzureManagedMachinePoolTemplateResourceSpec specifies an Azure managed control plane template resource.
+type AzureManagedMachinePoolTemplateResourceSpec struct {
+	AzureManagedMachinePoolClassSpec `json:",inline"`
+}
+
+// AzureManagedClusterTemplateResourceSpec specifies an Azure managed cluster template resource.
+type AzureManagedClusterTemplateResourceSpec struct{}
+
 // AzureClusterTemplateResourceSpec specifies an Azure cluster template resource.
 type AzureClusterTemplateResourceSpec struct {
 	AzureClusterClassSpec `json:",inline"`
