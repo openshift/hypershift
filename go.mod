@@ -22,10 +22,10 @@ require (
 	github.com/IBM/platform-services-go-sdk v0.48.0
 	github.com/IBM/vpc-go-sdk v0.41.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
-	github.com/aws/aws-sdk-go v1.44.213
+	github.com/aws/aws-sdk-go v1.44.298
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.14.1
-	github.com/coreos/ignition/v2 v2.14.0
+	github.com/coreos/ignition/v2 v2.16.2
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/evanphx/json-patch/v5 v5.7.0
 	github.com/go-logr/logr v1.4.1
@@ -86,10 +86,10 @@ require (
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e
 	kubevirt.io/api v1.1.0
 	kubevirt.io/containerized-data-importer-api v1.57.0
-	sigs.k8s.io/apiserver-network-proxy v0.0.24
-	sigs.k8s.io/cluster-api v1.5.3
-	sigs.k8s.io/cluster-api-provider-aws/v2 v2.2.4
-	sigs.k8s.io/cluster-api-provider-azure v1.11.5
+	sigs.k8s.io/apiserver-network-proxy v0.29.0
+	sigs.k8s.io/cluster-api v1.5.4
+	sigs.k8s.io/cluster-api-provider-aws/v2 v2.3.1
+	sigs.k8s.io/cluster-api-provider-azure v1.12.1
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.6.0
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.8
 	sigs.k8s.io/controller-runtime v0.16.3
@@ -99,8 +99,7 @@ require (
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.5.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5 v5.1.0 // indirect
-	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v4 v4.3.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5 v5.2.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.0.0 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/Azure/go-autorest v14.2.0+incompatible // indirect
@@ -111,7 +110,7 @@ require (
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
 	github.com/Azure/go-autorest/logger v0.2.1 // indirect
 	github.com/Azure/go-autorest/tracing v0.6.0 // indirect
-	github.com/AzureAD/microsoft-authentication-library-for-go v1.1.1 // indirect
+	github.com/AzureAD/microsoft-authentication-library-for-go v1.2.0 // indirect
 	github.com/MakeNowJust/heredoc v1.0.0 // indirect
 	github.com/NYTimes/gziphandler v1.1.1 // indirect
 	github.com/antlr/antlr4/runtime/Go/antlr/v4 v4.0.0-20230305170008-8188dc5388df // indirect
@@ -123,7 +122,7 @@ require (
 	github.com/chai2010/gettext-go v1.0.2 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
-	github.com/coreos/vcontext v0.0.0-20211021162308-f1dbbca7bef4 // indirect
+	github.com/coreos/vcontext v0.0.0-20230201181013-d72178a18687 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
@@ -166,7 +165,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.16.2 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
-	github.com/hashicorp/go-retryablehttp v0.7.4 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.5 // indirect
 	github.com/imdario/mergo v0.3.16 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect

@@ -119,7 +119,7 @@ func (c *AzureCluster) setSubnetDefaults() {
 		if subnet.SecurityGroup.Name == "" {
 			subnet.SecurityGroup.Name = generateNodeSecurityGroupName(c.ObjectMeta.Name)
 		}
-		cpSubnet.SecurityGroup.SecurityGroupClass.setDefaults()
+		subnet.SecurityGroup.SecurityGroupClass.setDefaults()
 
 		if subnet.RouteTable.Name == "" {
 			subnet.RouteTable.Name = generateNodeRouteTableName(c.ObjectMeta.Name)

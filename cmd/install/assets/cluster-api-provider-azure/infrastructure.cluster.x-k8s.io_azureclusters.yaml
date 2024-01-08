@@ -557,6 +557,28 @@ spec:
                 - name
                 - type
                 type: object
+              failureDomains:
+                additionalProperties:
+                  description: FailureDomainSpec is the Schema for Cluster API failure
+                    domains. It allows controllers to understand how many failure
+                    domains a cluster can optionally span across.
+                  properties:
+                    attributes:
+                      additionalProperties:
+                        type: string
+                      description: Attributes is a free form map of attributes an
+                        infrastructure provider might use or require.
+                      type: object
+                    controlPlane:
+                      description: ControlPlane determines if this failure domain
+                        is suitable for use by control plane machines.
+                      type: boolean
+                  type: object
+                description: 'FailureDomains is a list of failure domains in the cluster''s
+                  region, used to restrict eligibility to host the control plane.
+                  A FailureDomain maps to an availability zone, which is a separated
+                  group of datacenters within a region. See: https://learn.microsoft.com/azure/reliability/availability-zones-overview'
+                type: object
               identityRef:
                 description: IdentityRef is a reference to an AzureIdentity to be
                   used when reconciling this cluster
