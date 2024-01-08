@@ -210,7 +210,7 @@ type paramHelper struct {
 }
 
 func (h *paramHelper) safeExpandedParamsFor(path, method, operationID string, res *Result, s *SpecValidator) (params []spec.Parameter) {
-	operation, ok := s.analyzer.OperationFor(method, path)
+	operation, ok := s.expandedAnalyzer().OperationFor(method, path)
 	if ok {
 		// expand parameters first if necessary
 		resolvedParams := []spec.Parameter{}
@@ -224,7 +224,7 @@ func (h *paramHelper) safeExpandedParamsFor(path, method, operationID string, re
 		// remove params with invalid expansion from Slice
 		operation.Parameters = resolvedParams
 
-		for _, ppr := range s.analyzer.SafeParamsFor(method, path,
+		for _, ppr := range s.expandedAnalyzer().SafeParamsFor(method, path,
 			func(p spec.Parameter, err error) bool {
 				// since params have already been expanded, there are few causes for error
 				res.AddErrors(someParametersBrokenMsg(path, method, operationID))
@@ -250,7 +250,7 @@ func (h *paramHelper) resolveParam(path, method, operationID string, param *spec
 
 	}
 	if err != nil { // Safeguard
-		// NOTE: we may enter enter here when the whole parameter is an unresolved $ref
+		// NOTE: we may enter here when the whole parameter is an unresolved $ref
 		refPath := strings.Join([]string{"\"" + path + "\"", method}, ".")
 		errorHelp.addPointerError(res, err, param.Ref.String(), refPath)
 		return nil, res
