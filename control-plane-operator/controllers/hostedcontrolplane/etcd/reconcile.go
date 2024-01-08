@@ -87,7 +87,7 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 			Spec: corev1.PersistentVolumeClaimSpec{
 				StorageClassName: p.StorageSpec.PersistentVolume.StorageClassName,
 				AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-				Resources: corev1.ResourceRequirements{
+				Resources: corev1.VolumeResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceStorage: *p.StorageSpec.PersistentVolume.Size,
 					},
