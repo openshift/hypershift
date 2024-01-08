@@ -1809,6 +1809,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.RedHatMarketplaceCatalogImageAnnotation,
 		hyperv1.RedHatOperatorsCatalogImageAnnotation,
 		hyperv1.OLMCatalogsISRegistryOverridesAnnotation,
+		hyperv1.KubeAPIServerGOGCAnnotation,
+		hyperv1.KubeAPIServerGOMemoryLimitAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
