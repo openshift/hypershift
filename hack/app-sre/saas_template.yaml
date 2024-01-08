@@ -221,6 +221,7 @@ objects:
     resources:
     - virtualmachineinstances
     - virtualmachines
+    - virtualmachines/finalizers
     verbs:
     - '*'
   - apiGroups:
@@ -266,9 +267,9 @@ objects:
     - discovery.k8s.io
     resources:
     - endpointslices
+    - endpointslices/restricted
     verbs:
-    - list
-    - watch
+    - '*'
   - apiGroups:
     - admissionregistration.k8s.io
     resourceNames:

@@ -136,10 +136,11 @@ func ReconcileDefaultIngressPassthroughService(service *corev1.Service, defaultN
 			TargetPort: intstr.FromInt(int(detectedHTTPSNodePort)),
 		},
 	}
-	service.Spec.Selector = map[string]string{
-		"kubevirt.io":        "virt-launcher",
-		hyperv1.InfraIDLabel: hcp.Spec.InfraID,
-	}
+
+	// The endpoints reconciliation is done at nodepool controller to support
+	// secondary networks.
+	service.Spec.Selector = map[string]string{}
+
 	service.Spec.Type = corev1.ServiceTypeClusterIP
 	service.Labels[hyperv1.InfraIDLabel] = hcp.Spec.InfraID
 

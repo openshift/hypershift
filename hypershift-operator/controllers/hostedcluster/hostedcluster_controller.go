@@ -2801,10 +2801,10 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 			},
 			Resources: []string{
 				"endpointslices",
+				"endpointslices/restricted",
 			},
 			Verbs: []string{
-				"list",
-				"watch",
+				"*",
 			},
 		},
 		{
@@ -2834,7 +2834,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 		},
 		{
 			APIGroups: []string{"kubevirt.io"},
-			Resources: []string{"virtualmachines", "virtualmachineinstances"},
+			Resources: []string{"virtualmachines", "virtualmachines/finalizers", "virtualmachineinstances"},
 			Verbs:     []string{rbacv1.VerbAll},
 		},
 		{

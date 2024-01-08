@@ -15,6 +15,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -179,6 +180,35 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, platform hyperv1
 				Verbs: []string{
 					"create",
 				},
+			},
+			{
+				APIGroups: []string{discoveryv1.SchemeGroupVersion.Group},
+				Resources: []string{
+					"endpointslices",
+					"endpointslices/restricted",
+				},
+				Verbs: []string{
+					"create",
+					"get",
+					"patch",
+					"update",
+					"list",
+					"watch",
+				},
+			},
+			{
+				APIGroups: []string{
+					"kubevirt.io",
+				},
+				Resources: []string{"virtualmachines"},
+				Verbs:     []string{"get"},
+			},
+			{
+				APIGroups: []string{
+					"kubevirt.io",
+				},
+				Resources: []string{"virtualmachines/finalizers"},
+				Verbs:     []string{"update"},
 			},
 			{
 				APIGroups: []string{corev1.SchemeGroupVersion.Group},
