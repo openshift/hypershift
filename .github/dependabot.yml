@@ -16,6 +16,12 @@ updates:
       - "area/ci-tooling"
       - "ok-to-test"
     groups:
+      azure-github-dependencies:
+        patterns:
+          - "github.com/Azure*"
+      ibm-github-dependencies:
+        patterns:
+          - "github.com/IBM*"
       github-dependencies:
         patterns:
           - "github*"
@@ -25,6 +31,8 @@ updates:
       k8s-dependencies:
         patterns:
           - "k8s.*"
+      sigs-k8s-dependencies:
+        patterns:
           - "sigs.k8s*"
       misc-dependencies:
         patterns:
