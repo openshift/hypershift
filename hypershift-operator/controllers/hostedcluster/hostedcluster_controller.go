@@ -2443,6 +2443,26 @@ func reconcileControlPlaneOperatorDeployment(
 								Name:  "CERT_ROTATION_SCALE",
 								Value: certRotationScale.String(),
 							},
+							{
+								Name:  "CONTROL_PLANE_OPERATOR_IMAGE",
+								Value: cpoImage,
+							},
+							{
+								Name:  "HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE",
+								Value: cpoImage,
+							},
+							{
+								Name:  "SOCKS5_PROXY_IMAGE",
+								Value: utilitiesImage,
+							},
+							{
+								Name:  "AVAILABILITY_PROBER_IMAGE",
+								Value: utilitiesImage,
+							},
+							{
+								Name:  "TOKEN_MINTER_IMAGE",
+								Value: utilitiesImage,
+							},
 							metrics.MetricsSetToEnv(metricsSet),
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
