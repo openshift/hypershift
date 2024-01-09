@@ -91,22 +91,46 @@ type CreateOptions struct {
 }
 
 type PowerVSPlatformOptions struct {
-	ResourceGroup   string
-	Region          string
-	Zone            string
+	// ResourceGroup to use in IBM Cloud
+	ResourceGroup string
+	// Region to use in PowerVS service in IBM Cloud
+	Region string
+	// Zone to use in PowerVS service in IBM Cloud
+	Zone string
+	// CloudInstanceID of the existing PowerVS service instance
+	// Set this field when reusing existing resources from IBM Cloud
 	CloudInstanceID string
+	// CloudConnection is name of the existing cloud connection
+	// Set this field when reusing existing resources from IBM Cloud
 	CloudConnection string
-	VPCRegion       string
-	VPC             string
-	VPCSubnet       string
-	Debug           bool
+	// VPCRegion to use in IBM Cloud
+	// Set this field when reusing existing resources from IBM Cloud
+	VPCRegion string
+	// VPC is name of the existing VPC instance
+	VPC string
+	// Debug flag is to enable debug logs in powervs client
+	Debug bool
+	// RecreateSecrets flag is to delete the existing secrets created in IBM Cloud and recreate new secrets
+	// This is required since cannot recover the secret once its created
+	// Can be used during rerun
 	RecreateSecrets bool
+	// PER flag is to choose Power Edge Router via Transit Gateway instead of using cloud connections to connect VPC
+	PER bool
+	// TransitGatewayLocation to use in Transit gateway service in IBM Cloud
+	TransitGatewayLocation string
+	// TransitGateway is name of the existing Transit gateway instance
+	// Set this field when reusing existing resources from IBM Cloud
+	TransitGateway string
 
 	// nodepool related options
-	SysType    string
-	ProcType   hyperv1.PowerVSNodePoolProcType
+	// SysType of the worker node in PowerVS service
+	SysType string
+	// ProcType of the worker node in PowerVS service
+	ProcType hyperv1.PowerVSNodePoolProcType
+	// Processors count of the worker node in PowerVS service
 	Processors string
-	Memory     int32
+	// Memory of the worker node in PowerVS service
+	Memory int32
 }
 
 type AgentPlatformCreateOptions struct {

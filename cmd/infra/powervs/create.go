@@ -21,6 +21,7 @@ import (
 	"github.com/IBM/go-sdk-core/v5/core"
 	"github.com/IBM/networking-go-sdk/directlinkv1"
 	"github.com/IBM/networking-go-sdk/dnsrecordsv1"
+	"github.com/IBM/networking-go-sdk/transitgatewayapisv1"
 	"github.com/IBM/networking-go-sdk/zonesv1"
 	"github.com/IBM/platform-services-go-sdk/globalcatalogv1"
 	"github.com/IBM/platform-services-go-sdk/globaltaggingv1"
@@ -34,10 +35,11 @@ import (
 
 const (
 	// Resource name suffix for creation
-	cloudInstanceNameSuffix = "pvs"
-	vpcNameSuffix           = "vpc"
-	vpcSubnetNameSuffix     = "vpc-sn"
-	cloudConnNameSuffix     = "cc"
+	cloudInstanceNameSuffix  = "pvs"
+	vpcNameSuffix            = "vpc"
+	vpcSubnetNameSuffix      = "vpc-sn"
+	cloudConnNameSuffix      = "cc"
+	transitGatewayNameSuffix = "tg"
 
 	// Default cloud connection speed
 	defaultCloudConnSpeed = 5000
@@ -84,20 +86,23 @@ const (
 
 // CreateInfraOptions command line options for setting up infra in IBM PowerVS cloud
 type CreateInfraOptions struct {
-	Name            string
-	Namespace       string
-	BaseDomain      string
-	ResourceGroup   string
-	InfraID         string
-	Region          string
-	Zone            string
-	CloudInstanceID string
-	CloudConnection string
-	VPCRegion       string
-	VPC             string
-	OutputFile      string
-	Debug           bool
-	RecreateSecrets bool
+	Name                   string
+	Namespace              string
+	BaseDomain             string
+	ResourceGroup          string
+	InfraID                string
+	Region                 string
+	Zone                   string
+	CloudInstanceID        string
+	CloudConnection        string
+	VPCRegion              string
+	VPC                    string
+	OutputFile             string
+	Debug                  bool
+	RecreateSecrets        bool
+	PER                    bool
+	TransitGatewayLocation string
+	TransitGateway         string
 }
 
 type TimeDuration struct {
@@ -147,11 +152,12 @@ type CreateStat struct {
 }
 
 type InfraCreationStat struct {
-	VPC            CreateStat `json:"vpc"`
-	VPCSubnet      CreateStat `json:"vpcSubnet"`
-	CloudInstance  CreateStat `json:"cloudInstance"`
-	DHCPService    CreateStat `json:"dhcpService"`
-	CloudConnState CreateStat `json:"cloudConnState"`
+	VPC                 CreateStat `json:"vpc"`
+	VPCSubnet           CreateStat `json:"vpcSubnet"`
+	CloudInstance       CreateStat `json:"cloudInstance"`
+	DHCPService         CreateStat `json:"dhcpService"`
+	CloudConnState      CreateStat `json:"cloudConnState"`
+	TransitGatewayState CreateStat `json:"transitGatewayState"`
 }
 
 type Secrets struct {
@@ -164,29 +170,32 @@ type Secrets struct {
 
 // Infra resource info in IBM Cloud for setting up hypershift nodepool
 type Infra struct {
-	ID                string            `json:"id"`
-	Region            string            `json:"region"`
-	Zone              string            `json:"zone"`
-	VPCRegion         string            `json:"vpcRegion"`
-	AccountID         string            `json:"accountID"`
-	BaseDomain        string            `json:"baseDomain"`
-	CISCRN            string            `json:"cisCrn"`
-	CISDomainID       string            `json:"cisDomainID"`
-	ResourceGroup     string            `json:"resourceGroup"`
-	ResourceGroupID   string            `json:"-"`
-	CloudInstanceID   string            `json:"cloudInstanceID"`
-	DHCPSubnet        string            `json:"dhcpSubnet"`
-	DHCPSubnetID      string            `json:"dhcpSubnetID"`
-	DHCPID            string            `json:"-"`
-	CloudConnectionID string            `json:"-"`
-	VPCName           string            `json:"vpcName"`
-	VPCID             string            `json:"-"`
-	VPCCRN            string            `json:"-"`
-	VPCRoutingTableID string            `json:"-"`
-	VPCSubnetName     string            `json:"vpcSubnetName"`
-	VPCSubnetID       string            `json:"-"`
-	Stats             InfraCreationStat `json:"stats"`
-	Secrets           Secrets           `json:"secrets"`
+	ID                     string            `json:"id"`
+	Region                 string            `json:"region"`
+	Zone                   string            `json:"zone"`
+	VPCRegion              string            `json:"vpcRegion"`
+	AccountID              string            `json:"accountID"`
+	BaseDomain             string            `json:"baseDomain"`
+	CISCRN                 string            `json:"cisCrn"`
+	CISDomainID            string            `json:"cisDomainID"`
+	ResourceGroup          string            `json:"resourceGroup"`
+	ResourceGroupID        string            `json:"-"`
+	CloudInstanceID        string            `json:"cloudInstanceID"`
+	DHCPSubnet             string            `json:"dhcpSubnet"`
+	DHCPSubnetID           string            `json:"dhcpSubnetID"`
+	DHCPID                 string            `json:"-"`
+	CloudConnectionID      string            `json:"-"`
+	VPCName                string            `json:"vpcName"`
+	VPCID                  string            `json:"-"`
+	VPCCRN                 string            `json:"-"`
+	VPCRoutingTableID      string            `json:"-"`
+	VPCSubnetName          string            `json:"vpcSubnetName"`
+	VPCSubnetID            string            `json:"-"`
+	Stats                  InfraCreationStat `json:"stats"`
+	Secrets                Secrets           `json:"secrets"`
+	CloudInstanceCRN       string            `json:"-"`
+	TransitGatewayLocation string            `json:"-"`
+	TransitGatewayID       string            `json:"-"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -197,11 +206,12 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := CreateInfraOptions{
-		Namespace: "clusters",
-		Name:      "example",
-		Region:    "us-south",
-		Zone:      "us-south",
-		VPCRegion: "us-south",
+		Namespace:              "clusters",
+		Name:                   "example",
+		Region:                 "us-south",
+		Zone:                   "us-south",
+		VPCRegion:              "us-south",
+		TransitGatewayLocation: "us-south",
 	}
 
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "IBM Cloud CIS Domain")
@@ -218,12 +228,16 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, "Path to file that will contain output information from infra resources (optional)")
 	cmd.Flags().BoolVar(&opts.Debug, "debug", opts.Debug, "Enabling this will print PowerVS API Request & Response logs")
 	cmd.Flags().BoolVar(&opts.RecreateSecrets, "recreate-secrets", opts.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
+	cmd.Flags().BoolVar(&opts.PER, "power-edge-router", opts.PER, "Enabling this flag will utilize Power Edge Router solution via transit gateway instead of cloud connection to create a connection between PowerVS and VPC")
+	cmd.Flags().StringVar(&opts.TransitGatewayLocation, "transit-gateway-location", opts.TransitGatewayLocation, "IBM Cloud Transit Gateway location")
+	cmd.Flags().StringVar(&opts.TransitGateway, "transit-gateway", opts.TransitGateway, "IBM Cloud Transit Gateway. Use this flag to reuse an existing Transit Gateway resource for cluster's infra")
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
 	cmd.Flags().MarkHidden("cloud-instance-id")
 	cmd.Flags().MarkHidden("vpc")
 	cmd.Flags().MarkHidden("cloud-connection")
+	cmd.Flags().MarkHidden("transit-gateway")
 
 	cmd.MarkFlagRequired("base-domain")
 	cmd.MarkFlagRequired("resource-group")
@@ -246,6 +260,10 @@ func (options *CreateInfraOptions) Run(ctx context.Context) error {
 	err := checkUnsupportedPowerVSZone(options.Zone)
 	if err != nil {
 		return err
+	}
+
+	if options.PER && options.TransitGatewayLocation == "" {
+		return fmt.Errorf("transit gateway location is required if use-power-edge-router flag is enabled")
 	}
 
 	infra := &Infra{
@@ -340,11 +358,11 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return fmt.Errorf("error getting id for resource group %s, %w", options.ResourceGroup, err)
 	}
 
-	if err = infra.setupBaseDomain(ctx, options); err != nil {
+	if err := infra.setupBaseDomain(ctx, options); err != nil {
 		return fmt.Errorf("error setup base domain: %w", err)
 	}
 
-	if err = infra.setupSecrets(options); err != nil {
+	if err := infra.setupSecrets(options); err != nil {
 		return fmt.Errorf("error setup secrets: %w", err)
 	}
 
@@ -358,11 +376,11 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return fmt.Errorf("error creating vpc service: %w", err)
 	}
 
-	if err = infra.setupVpc(ctx, options, v1, gtag); err != nil {
+	if err := infra.setupVpc(ctx, options, v1, gtag); err != nil {
 		return fmt.Errorf("error setup vpc: %w", err)
 	}
 
-	if err = infra.setupVpcSubnet(ctx, options, v1); err != nil {
+	if err := infra.setupVpcSubnet(ctx, options, v1); err != nil {
 		return fmt.Errorf("error setup vpc subnet: %w", err)
 	}
 
@@ -372,20 +390,28 @@ func (infra *Infra) SetupInfra(ctx context.Context, options *CreateInfraOptions)
 		return fmt.Errorf("error creating powervs session: %w", err)
 	}
 
-	if err = infra.setupPowerVSCloudInstance(ctx, options, gtag); err != nil {
+	if err := infra.setupPowerVSCloudInstance(ctx, options, gtag); err != nil {
 		return fmt.Errorf("error setup powervs cloud instance: %w", err)
 	}
 
-	if err = infra.setupPowerVSCloudConnection(ctx, options, session, gtag); err != nil {
-		return fmt.Errorf("error setup powervs cloud connection: %w", err)
+	if options.PER {
+		if err := infra.setupTransitGateway(ctx, options, gtag); err != nil {
+			return fmt.Errorf("error setup transit gateway: %w", err)
+		}
+	} else {
+		if err := infra.setupPowerVSCloudConnection(ctx, options, session, gtag); err != nil {
+			return fmt.Errorf("error setup powervs cloud connection: %w", err)
+		}
 	}
 
-	if err = infra.setupPowerVSDHCP(ctx, options, session); err != nil {
+	if err := infra.setupPowerVSDHCP(ctx, options, session); err != nil {
 		return fmt.Errorf("error setup powervs dhcp server: %w", err)
 	}
 
-	if err = infra.isCloudConnectionReady(ctx, options, session); err != nil {
-		return fmt.Errorf("cloud connection is not up: %w", err)
+	if !options.PER {
+		if err := infra.isCloudConnectionReady(ctx, options, session); err != nil {
+			return fmt.Errorf("cloud connection is not up: %w", err)
+		}
 	}
 
 	log(options.InfraID).Info("Setup infra completed in", "duration", time.Since(startTime).String())
@@ -825,6 +851,8 @@ func (infra *Infra) setupPowerVSCloudInstance(ctx context.Context, options *Crea
 
 	if cloudInstance != nil {
 		infra.CloudInstanceID = *cloudInstance.GUID
+		// This is required for transit gateway to create connection to powervs instance
+		infra.CloudInstanceCRN = *cloudInstance.CRN
 		infra.Stats.CloudInstance.Status = *cloudInstance.State
 	}
 
@@ -1281,7 +1309,11 @@ func (infra *Infra) createPowerVSDhcp(options *CreateInfraOptions, client *insta
 	var dhcpServer *models.DHCPServerDetail
 
 	// With the recent update default DNS server is pointing to loop back address in DHCP. Hence, passed 1.1.1.1 public DNS resolver.
-	dhcp, err := client.Create(&models.DHCPServerCreate{CloudConnectionID: &infra.CloudConnectionID, DNSServer: utilpointer.String("1.1.1.1")})
+	dhcpServerCreateOpts := &models.DHCPServerCreate{DNSServer: utilpointer.String("1.1.1.1")}
+	if !options.PER {
+		dhcpServerCreateOpts.CloudConnectionID = utilpointer.String(infra.CloudConnectionID)
+	}
+	dhcp, err := client.Create(dhcpServerCreateOpts)
 
 	if err != nil {
 		return nil, err
@@ -1437,4 +1469,130 @@ func attachTag(gtag *globaltaggingv1.GlobalTaggingV1, infraID string, resourceId
 	}
 
 	return nil
+}
+
+// setupTransitGateway set up the transit gateway for the cluster infra
+func (infra *Infra) setupTransitGateway(ctx context.Context, options *CreateInfraOptions, gtag *globaltaggingv1.GlobalTaggingV1) error {
+	log(options.InfraID).Info("Setting up Transit Gateway ...")
+
+	tgapisv1, err := transitgatewayapisv1.NewTransitGatewayApisV1(&transitgatewayapisv1.TransitGatewayApisV1Options{
+		Authenticator: getIAMAuth(),
+		Version:       utilpointer.String(currentDate),
+	})
+
+	if err != nil {
+		return err
+	}
+	var transitGateway *transitgatewayapisv1.TransitGateway
+	if options.TransitGateway != "" {
+		log(options.InfraID).Info("Validating Transit Gateway", "name", options.TransitGateway)
+		transitGateway, err = validateTransitGatewayByName(ctx, tgapisv1, options.TransitGateway, true)
+		if err != nil {
+			return fmt.Errorf("error validating transit gateway by name %s, %w", options.TransitGateway, err)
+		}
+	} else {
+		transitGateway, err = infra.createTransitGateway(ctx, options, tgapisv1)
+		if err != nil {
+			return fmt.Errorf("error creating transit gateway: %w", err)
+		}
+	}
+
+	if transitGateway == nil {
+		return fmt.Errorf("unable to setup transit gateway")
+	}
+
+	infra.TransitGatewayID = *transitGateway.ID
+	infra.Stats.TransitGatewayState.Status = *transitGateway.Status
+
+	if err := attachTag(gtag, options.InfraID, transitGateway.Crn, fmt.Sprintf("%s-%s", infra.ID, transitGatewayNameSuffix)); err != nil {
+		log(options.InfraID).Error(err, "error attaching tags to transit gateway")
+	}
+
+	log(options.InfraID).Info("Transit Gateway Ready", "id", infra.TransitGatewayID)
+	return nil
+}
+
+// createTransitGateway creates transit gateway and connections
+func (infra *Infra) createTransitGateway(ctx context.Context, options *CreateInfraOptions, tgapisv1 *transitgatewayapisv1.TransitGatewayApisV1) (*transitgatewayapisv1.TransitGateway, error) {
+
+	transitGatewayName := fmt.Sprintf("%s-%s", options.InfraID, transitGatewayNameSuffix)
+
+	tg, err := validateTransitGatewayByName(ctx, tgapisv1, transitGatewayName, true)
+	if err != nil && err.Error() != transitGatewayNotFound(transitGatewayName).Error() {
+		return nil, fmt.Errorf("error validating existing transit gateway: %w", err)
+	}
+
+	if tg != nil {
+		log(options.InfraID).Info("Using existing transit gateway ...")
+		return tg, nil
+	}
+
+	log(options.InfraID).Info("Creating Transit Gateway ...")
+	tg, _, err = tgapisv1.CreateTransitGatewayWithContext(ctx, &transitgatewayapisv1.CreateTransitGatewayOptions{
+		Location:      utilpointer.String(options.TransitGatewayLocation),
+		Name:          utilpointer.String(transitGatewayName),
+		Global:        utilpointer.Bool(true),
+		ResourceGroup: &transitgatewayapisv1.ResourceGroupIdentity{ID: utilpointer.String(infra.ResourceGroupID)},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error creating transit gateway: %w", err)
+	}
+
+	tgVPCCon, _, err := tgapisv1.CreateTransitGatewayConnectionWithContext(ctx, &transitgatewayapisv1.CreateTransitGatewayConnectionOptions{
+		TransitGatewayID: tg.ID,
+		NetworkType:      utilpointer.String("vpc"),
+		NetworkID:        utilpointer.String(infra.VPCCRN),
+		Name:             utilpointer.String(fmt.Sprintf("%s-vpc-con", transitGatewayName)),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error creating vpc connection in transit gateway: %w", err)
+	}
+
+	tgPVSCon, _, err := tgapisv1.CreateTransitGatewayConnectionWithContext(ctx, &transitgatewayapisv1.CreateTransitGatewayConnectionOptions{
+		TransitGatewayID: tg.ID,
+		NetworkType:      utilpointer.String("power_virtual_server"),
+		NetworkID:        utilpointer.String(infra.CloudInstanceCRN),
+		Name:             utilpointer.String(fmt.Sprintf("%s-pvs-con", transitGatewayName)),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error creating powervs connection in transit gateway: %w", err)
+	}
+
+	isConnectionUp := func(connectionID string) error {
+		f := func(ctx2 context.Context) (bool, error) {
+			tgConn, _, err := tgapisv1.GetTransitGatewayConnectionWithContext(ctx2, &transitgatewayapisv1.GetTransitGatewayConnectionOptions{
+				TransitGatewayID: tg.ID,
+				ID:               utilpointer.String(connectionID),
+			})
+			if err != nil {
+				return false, err
+			}
+
+			if *tgConn.Status == "attached" {
+				return true, nil
+			}
+
+			return false, nil
+		}
+
+		if err = wait.PollUntilContextTimeout(ctx, time.Second*30, time.Minute*15, true, f); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	log(infra.ID).Info("Checking VPC Connection status ...")
+	if err = isConnectionUp(*tgVPCCon.ID); err != nil {
+		return nil, fmt.Errorf("error checking vpc connection's status: %w", err)
+	}
+	log(infra.ID).Info("Transit gateway VPC connection OK")
+
+	log(infra.ID).Info("Checking PowerVS Connection status ...")
+	if err = isConnectionUp(*tgPVSCon.ID); err != nil {
+		return nil, fmt.Errorf("error checking powervs connection's status: %w", err)
+	}
+	log(infra.ID).Info("Transit gateway PowerVS connection OK")
+
+	return tg, nil
 }

@@ -57,17 +57,20 @@ type AzurePlatformDestroyOptions struct {
 }
 
 type PowerVSPlatformDestroyOptions struct {
-	BaseDomain      string
-	ResourceGroup   string
-	CISCRN          string
-	CISDomainID     string
-	Region          string
-	Zone            string
-	VPCRegion       string
-	VPC             string
-	CloudInstanceID string
-	CloudConnection string
-	Debug           bool
+	BaseDomain             string
+	ResourceGroup          string
+	CISCRN                 string
+	CISDomainID            string
+	Region                 string
+	Zone                   string
+	VPCRegion              string
+	VPC                    string
+	CloudInstanceID        string
+	CloudConnection        string
+	Debug                  bool
+	PER                    bool
+	TransitGatewayLocation string
+	TransitGateway         string
 }
 
 func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster, error) {

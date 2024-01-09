@@ -105,6 +105,9 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSCloudInstanceID, "e2e-powervs-cloud-instance-id", "", "IBM Cloud PowerVS Service Instance ID. Use this flag to reuse an existing PowerVS Service Instance resource for cluster's infra")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSCloudConnection, "e2e-powervs-cloud-connection", "", "Cloud Connection in given zone. Use this flag to reuse an existing Cloud Connection resource for cluster's infra")
 	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSVPC, "e2e-powervs-vpc", "", "IBM Cloud VPC Name. Use this flag to reuse an existing VPC resource for cluster's infra")
+	flag.BoolVar(&globalOpts.configurableClusterOptions.PowerVSPER, "e2e-powervs-power-edge-router", false, "Enabling this flag will utilize Power Edge Router solution via transit gateway instead of cloud connection to create a connection between PowerVS and VPC")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSTransitGatewayLocation, "e2e-powervs-transit-gateway-location", "", "IBM Cloud Transit Gateway location")
+	flag.StringVar(&globalOpts.configurableClusterOptions.PowerVSTransitGateway, "e2e-powervs-transit-gateway", "", "Transit gateway name. Use this flag to reuse an existing transit gateway resource for cluster's infra")
 	flag.BoolVar(&globalOpts.SkipAPIBudgetVerification, "e2e.skip-api-budget", false, "Bool to avoid send metrics to E2E Server on local test execution.")
 	flag.StringVar(&globalOpts.configurableClusterOptions.EtcdStorageClass, "e2e.etcd-storage-class", "", "The persistent volume storage class for etcd data volumes")
 	flag.BoolVar(&globalOpts.RequestServingIsolation, "e2e.test-request-serving-isolation", false, "If set, TestCreate creates a cluster with request serving isolation topology")
@@ -381,40 +384,43 @@ type options struct {
 }
 
 type configurableClusterOptions struct {
-	AWSCredentialsFile           string
-	AzureCredentialsFile         string
-	AzureLocation                string
-	Region                       string
-	Zone                         stringSliceVar
-	PullSecretFile               string
-	BaseDomain                   string
-	ControlPlaneOperatorImage    string
-	AWSEndpointAccess            string
-	AWSOidcS3BucketName          string
-	AWSKmsKeyAlias               string
-	ExternalDNSDomain            string
-	KubeVirtContainerDiskImage   string
-	KubeVirtNodeMemory           string
-	KubeVirtRootVolumeSize       uint
-	KubeVirtRootVolumeVolumeMode string
-	KubeVirtNodeCores            uint
-	KubeVirtInfraKubeconfigFile  string
-	KubeVirtInfraNamespace       string
-	NodePoolReplicas             int
-	SSHKeyFile                   string
-	NetworkType                  string
-	PowerVSResourceGroup         string
-	PowerVSRegion                string
-	PowerVSZone                  string
-	PowerVSVpcRegion             string
-	PowerVSSysType               string
-	PowerVSProcType              hyperv1.PowerVSNodePoolProcType
-	PowerVSProcessors            string
-	PowerVSMemory                int
-	PowerVSCloudInstanceID       string
-	PowerVSCloudConnection       string
-	PowerVSVPC                   string
-	EtcdStorageClass             string
+	AWSCredentialsFile            string
+	AzureCredentialsFile          string
+	AzureLocation                 string
+	Region                        string
+	Zone                          stringSliceVar
+	PullSecretFile                string
+	BaseDomain                    string
+	ControlPlaneOperatorImage     string
+	AWSEndpointAccess             string
+	AWSOidcS3BucketName           string
+	AWSKmsKeyAlias                string
+	ExternalDNSDomain             string
+	KubeVirtContainerDiskImage    string
+	KubeVirtNodeMemory            string
+	KubeVirtRootVolumeSize        uint
+	KubeVirtRootVolumeVolumeMode  string
+	KubeVirtNodeCores             uint
+	KubeVirtInfraKubeconfigFile   string
+	KubeVirtInfraNamespace        string
+	NodePoolReplicas              int
+	SSHKeyFile                    string
+	NetworkType                   string
+	PowerVSResourceGroup          string
+	PowerVSRegion                 string
+	PowerVSZone                   string
+	PowerVSVpcRegion              string
+	PowerVSSysType                string
+	PowerVSProcType               hyperv1.PowerVSNodePoolProcType
+	PowerVSProcessors             string
+	PowerVSMemory                 int
+	PowerVSCloudInstanceID        string
+	PowerVSCloudConnection        string
+	PowerVSVPC                    string
+	PowerVSPER                    bool
+	PowerVSTransitGatewayLocation string
+	PowerVSTransitGateway         string
+	EtcdStorageClass              string
 }
 
 var nextAWSZoneIndex = 0
@@ -455,17 +461,20 @@ func (o *options) DefaultClusterOptions(t *testing.T) core.CreateOptions {
 			DiskSizeGB:      120,
 		},
 		PowerVSPlatform: core.PowerVSPlatformOptions{
-			ResourceGroup:   o.configurableClusterOptions.PowerVSResourceGroup,
-			Region:          o.configurableClusterOptions.PowerVSRegion,
-			Zone:            o.configurableClusterOptions.PowerVSZone,
-			VPCRegion:       o.configurableClusterOptions.PowerVSVpcRegion,
-			SysType:         o.configurableClusterOptions.PowerVSSysType,
-			ProcType:        o.configurableClusterOptions.PowerVSProcType,
-			Processors:      o.configurableClusterOptions.PowerVSProcessors,
-			Memory:          int32(o.configurableClusterOptions.PowerVSMemory),
-			CloudInstanceID: o.configurableClusterOptions.PowerVSCloudInstanceID,
-			CloudConnection: o.configurableClusterOptions.PowerVSCloudConnection,
-			VPC:             o.configurableClusterOptions.PowerVSVPC,
+			ResourceGroup:          o.configurableClusterOptions.PowerVSResourceGroup,
+			Region:                 o.configurableClusterOptions.PowerVSRegion,
+			Zone:                   o.configurableClusterOptions.PowerVSZone,
+			VPCRegion:              o.configurableClusterOptions.PowerVSVpcRegion,
+			SysType:                o.configurableClusterOptions.PowerVSSysType,
+			ProcType:               o.configurableClusterOptions.PowerVSProcType,
+			Processors:             o.configurableClusterOptions.PowerVSProcessors,
+			Memory:                 int32(o.configurableClusterOptions.PowerVSMemory),
+			CloudInstanceID:        o.configurableClusterOptions.PowerVSCloudInstanceID,
+			CloudConnection:        o.configurableClusterOptions.PowerVSCloudConnection,
+			VPC:                    o.configurableClusterOptions.PowerVSVPC,
+			PER:                    o.configurableClusterOptions.PowerVSPER,
+			TransitGatewayLocation: o.configurableClusterOptions.PowerVSTransitGatewayLocation,
+			TransitGateway:         o.configurableClusterOptions.PowerVSTransitGateway,
 		},
 		ServiceCIDR: []string{"172.31.0.0/16"},
 		ClusterCIDR: []string{"10.132.0.0/14"},

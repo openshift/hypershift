@@ -29,6 +29,7 @@ import (
 	"github.com/IBM/ibm-cos-sdk-go/service/s3"
 	"github.com/IBM/ibm-cos-sdk-go/service/s3/s3manager"
 	"github.com/IBM/networking-go-sdk/dnsrecordsv1"
+	"github.com/IBM/networking-go-sdk/transitgatewayapisv1"
 	"github.com/IBM/platform-services-go-sdk/resourcecontrollerv2"
 	"github.com/IBM/vpc-go-sdk/vpcv1"
 	regionutils "github.com/ppc64le-cloud/powervs-utils"
@@ -56,22 +57,25 @@ const (
 
 // DestroyInfraOptions command line options to destroy infra created in IBMCloud for Hypershift
 type DestroyInfraOptions struct {
-	Name               string
-	Namespace          string
-	InfraID            string
-	InfrastructureJson string
-	BaseDomain         string
-	CISCRN             string
-	CISDomainID        string
-	ResourceGroup      string
-	Region             string
-	Zone               string
-	CloudInstanceID    string
-	DHCPID             string
-	CloudConnection    string
-	VPCRegion          string
-	VPC                string
-	Debug              bool
+	Name                   string
+	Namespace              string
+	InfraID                string
+	InfrastructureJson     string
+	BaseDomain             string
+	CISCRN                 string
+	CISDomainID            string
+	ResourceGroup          string
+	Region                 string
+	Zone                   string
+	CloudInstanceID        string
+	DHCPID                 string
+	CloudConnection        string
+	VPCRegion              string
+	VPC                    string
+	Debug                  bool
+	PER                    bool
+	TransitGatewayLocation string
+	TransitGateway         string
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -99,6 +103,9 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.CloudConnection, "cloud-connection", opts.CloudConnection, "IBM Cloud PowerVS Cloud Connection. Use this flag to reuse an existing Cloud Connection resource for cluster's infra")
 	cmd.Flags().StringVar(&opts.CloudInstanceID, "cloud-instance-id", opts.CloudInstanceID, "IBM PowerVS Cloud Instance ID. Use this flag to reuse an existing PowerVS Cloud Instance resource for cluster's infra")
 	cmd.Flags().BoolVar(&opts.Debug, "debug", opts.Debug, "Enabling this will result in debug logs will be printed")
+	cmd.Flags().BoolVar(&opts.PER, "power-edge-router", opts.PER, "Enabling this flag ensures that the Power Edge router that was used to create the cluster is cleaned up.")
+	cmd.Flags().StringVar(&opts.TransitGatewayLocation, "transit-gateway-location", opts.TransitGatewayLocation, "IBM Cloud Transit Gateway location")
+	cmd.Flags().StringVar(&opts.TransitGateway, "transit-gateway", opts.TransitGateway, "IBM Cloud Transit Gateway. Use this flag to reuse an existing Transit Gateway resource for cluster's infra")
 
 	cmd.MarkFlagRequired("name")
 	cmd.MarkFlagRequired("resource-group")
@@ -113,6 +120,7 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().MarkHidden("vpc")
 	cmd.Flags().MarkHidden("cloud-connection")
 	cmd.Flags().MarkHidden("cloud-instance-id")
+	cmd.Flags().MarkHidden("transit-gateway")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Run(cmd.Context()); err != nil {
@@ -128,6 +136,10 @@ func NewDestroyCommand() *cobra.Command {
 
 // Run Hypershift Infra Destroy
 func (options *DestroyInfraOptions) Run(ctx context.Context) error {
+	if options.PER && options.TransitGatewayLocation == "" {
+		return fmt.Errorf("transit gateway location is required if use-power-edge-router flag is enabled")
+	}
+
 	var infra *Infra
 	if len(options.InfrastructureJson) > 0 {
 		rawInfra, err := os.ReadFile(options.InfrastructureJson)
@@ -224,7 +236,14 @@ func (options *DestroyInfraOptions) DestroyInfra(ctx context.Context, infra *Inf
 		if err != nil {
 			return err
 		}
+	}
 
+	if options.PER {
+		if err = destroyTransitGateway(ctx, options); err != nil {
+			errL = append(errL, fmt.Errorf("error destroying transit gateway: %w", err))
+			log(options.InfraID).Error(err, "error destroying transit gateway")
+		}
+	} else if !skipPowerVs {
 		if err = destroyPowerVsCloudConnection(ctx, options, infra, powerVsCloudInstanceID, session); err != nil {
 			errL = append(errL, fmt.Errorf("error destroying powervs cloud connection: %w", err))
 			log(options.InfraID).Error(err, "error destroying powervs cloud connection")
@@ -907,4 +926,76 @@ func deleteCOS(ctx context.Context, options *DestroyInfraOptions, resourceGroupI
 	_, err = rcv2.DeleteResourceInstance(&resourcecontrollerv2.DeleteResourceInstanceOptions{ID: cosInstance.ID})
 
 	return err
+}
+
+// destroyTransitGateway destroys transit gateway and associated connections
+func destroyTransitGateway(ctx context.Context, options *DestroyInfraOptions) error {
+	tgapisv1, err := transitgatewayapisv1.NewTransitGatewayApisV1(&transitgatewayapisv1.TransitGatewayApisV1Options{
+		Authenticator: getIAMAuth(),
+		Version:       utilpointer.String(currentDate),
+	})
+	if err != nil {
+		return err
+	}
+
+	if options.TransitGateway != "" {
+		return nil
+	}
+
+	transitGatewayName := fmt.Sprintf("%s-%s", options.InfraID, transitGatewayNameSuffix)
+
+	tg, err := validateTransitGatewayByName(ctx, tgapisv1, transitGatewayName, false)
+	if err != nil {
+		if err.Error() == transitGatewayNotFound(transitGatewayName).Error() {
+			return nil
+		}
+		if err.Error() != transitGatewayConnectionError().Error() {
+			return fmt.Errorf("error retrieving transit gateway by name: %s, err: %w", transitGatewayName, err)
+		}
+	}
+
+	tgConnList, _, err := tgapisv1.ListTransitGatewayConnectionsWithContext(ctx, &transitgatewayapisv1.ListTransitGatewayConnectionsOptions{
+		TransitGatewayID: tg.ID,
+	})
+	if err != nil {
+		return fmt.Errorf("error retrieving transit gateway connection list: %v", err)
+	}
+
+	for _, tgConn := range tgConnList.Connections {
+		log(options.InfraID).Info("Deleting transit gateway connection", "name", *tgConn.Name)
+		if _, err = tgapisv1.DeleteTransitGatewayConnectionWithContext(ctx, &transitgatewayapisv1.DeleteTransitGatewayConnectionOptions{
+			TransitGatewayID: tg.ID,
+			ID:               tgConn.ID,
+		}); err != nil {
+			return fmt.Errorf("error deleting transit gateway connection %s, %v", *tgConn.Name, err)
+		}
+	}
+
+	f := func(ctx2 context.Context) (bool, error) {
+		tgConnList, _, err = tgapisv1.ListTransitGatewayConnectionsWithContext(ctx2, &transitgatewayapisv1.ListTransitGatewayConnectionsOptions{
+			TransitGatewayID: tg.ID,
+		})
+		if err != nil {
+			return false, fmt.Errorf("error retrieving transit gateway connection list: %v", err)
+		}
+		if len(tgConnList.Connections) > 0 {
+			return false, nil
+		}
+
+		return true, nil
+	}
+
+	log(options.InfraID).Info("Waiting for transit gateway connections to get deleted")
+	if err = wait.PollUntilContextTimeout(ctx, time.Minute*1, time.Minute*10, true, f); err != nil {
+		return fmt.Errorf("error waiting for tranist gateway connections to get deleted: %v", err)
+	}
+
+	log(options.InfraID).Info("Deleting transit gateway", "name", *tg.Name)
+	if _, err = tgapisv1.DeleteTransitGatewayWithContext(ctx, &transitgatewayapisv1.DeleteTransitGatewayOptions{
+		ID: tg.ID,
+	}); err != nil {
+		return fmt.Errorf("error deleting transit gateway: %w", err)
+	}
+
+	return nil
 }
