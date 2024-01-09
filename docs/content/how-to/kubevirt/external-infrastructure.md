@@ -93,6 +93,13 @@ rules:
       - route.openshift.io
     resources:
       - routes
+      - routes/custom-host
+    verbs:
+      - '*'
+  - apiGroups:
+      - ''
+    resources:
+      - secrets
     verbs:
       - '*'
 ```
