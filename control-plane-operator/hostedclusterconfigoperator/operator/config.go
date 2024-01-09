@@ -127,6 +127,9 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 				&operatorv1.CloudCredential{}: allSelector,
 				&admissionregistrationv1.ValidatingWebhookConfiguration{}: allSelector,
 				&admissionregistrationv1.MutatingWebhookConfiguration{}:   allSelector,
+				&operatorv1.Storage{}:               allSelector,
+				&operatorv1.CSISnapshotController{}: allSelector,
+				&operatorv1.ClusterCSIDriver{}:      allSelector,
 
 				// Needed for inplace upgrader.
 				&corev1.Node{}: allSelector,
