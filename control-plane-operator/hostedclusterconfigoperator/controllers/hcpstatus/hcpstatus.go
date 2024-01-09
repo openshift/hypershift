@@ -113,11 +113,11 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 		hyperv1.ClusterVersionAvailable:       findClusterOperatorStatusCondition(clusterVersion.Status.Conditions, configv1.OperatorAvailable),
 	}
 
-	for conditionType := range cvoConditions {
+	for conditionType, condition := range cvoConditions {
 		var hcpCVOCondition metav1.Condition
 		// Set unknown status.
 		var unknownStatusMessage string
-		if cvoConditions[conditionType] == nil {
+		if condition == nil {
 			unknownStatusMessage = "Condition not found in the CVO."
 		}
 		if err != nil {
@@ -132,9 +132,9 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 			ObservedGeneration: hcp.Generation,
 		}
 
-		if err == nil && cvoConditions[conditionType] != nil {
+		if err == nil && condition != nil {
 			// Bubble up info from CVO.
-			reason := cvoConditions[conditionType].Reason
+			reason := condition.Reason
 			// reason is not required in ClusterOperatorStatusCondition, but it's in metav1.conditions.
 			// So we need to make sure the input does not break the KAS expectation.
 			if reason == "" {
@@ -142,11 +142,18 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 			}
 			hcpCVOCondition = metav1.Condition{
 				Type:               string(conditionType),
-				Status:             metav1.ConditionStatus(cvoConditions[conditionType].Status),
+				Status:             metav1.ConditionStatus(condition.Status),
 				Reason:             reason,
-				Message:            cvoConditions[conditionType].Message,
+				Message:            condition.Message,
 				ObservedGeneration: hcp.Generation,
 			}
+		}
+
+		// If CVO has no Upgradeable condition, consider the HCP upgradable according to the CVO
+		if conditionType == hyperv1.ClusterVersionUpgradeable &&
+			condition == nil {
+			hcpCVOCondition.Status = metav1.ConditionTrue
+			hcpCVOCondition.Reason = hyperv1.FromClusterVersionReason
 		}
 
 		meta.SetStatusCondition(&hcp.Status.Conditions, hcpCVOCondition)
