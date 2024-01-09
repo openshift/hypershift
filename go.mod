@@ -18,7 +18,7 @@ require (
 	github.com/IBM-Cloud/power-go-client v1.5.6
 	github.com/IBM/go-sdk-core/v5 v5.15.1
 	github.com/IBM/ibm-cos-sdk-go v1.9.4
-	github.com/IBM/networking-go-sdk v0.29.0
+	github.com/IBM/networking-go-sdk v0.44.0
 	github.com/IBM/platform-services-go-sdk v0.56.3
 	github.com/IBM/vpc-go-sdk v0.46.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
