@@ -159,6 +159,7 @@ func NewStartCommand() *cobra.Command {
 		deploymentName                   string
 		metricsAddr                      string
 		healthProbeAddr                  string
+		cpoImage                         string
 		hostedClusterConfigOperatorImage string
 		socks5ProxyImage                 string
 		availabilityProberImage          string
@@ -243,6 +244,23 @@ func NewStartCommand() *cobra.Command {
 		if err != nil {
 			setupLog.Error(err, "unable to detect cluster capabilities")
 			os.Exit(1)
+		}
+
+		// The HyperShift operator is generally able to specify with precision the images
+		// that we need to use here. In order to be backwards-compatible, though, we need
+		// to do so with environment variables. While it's possible that a more vigorous
+		// refactor could remove the following self-referential image lookup code entirely,
+		// for now we remove it in practice by using the environment variables, when set.
+		for env, into := range map[string]*string{
+			"CONTROL_PLANE_OPERATOR_IMAGE":         &cpoImage,
+			"HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE": &hostedClusterConfigOperatorImage,
+			"SOCKS5_PROXY_IMAGE":                   &socks5ProxyImage,
+			"AVAILABILITY_PROBER_IMAGE":            &availabilityProberImage,
+			"TOKEN_MINTER_IMAGE":                   &tokenMinterImage,
+		} {
+			if value := os.Getenv(env); value != "" {
+				*into = value
+			}
 		}
 
 		// For now, since the hosted cluster config operator is treated like any other
@@ -330,7 +348,7 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("using token minter image", "image", tokenMinterImage)
 
-		cpoImage, err := lookupOperatorImage("")
+		cpoImage, err = lookupOperatorImage(cpoImage)
 		if err != nil {
 			setupLog.Error(err, "failed to find controlplane-operator-image")
 			os.Exit(1)
