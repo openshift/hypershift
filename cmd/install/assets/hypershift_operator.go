@@ -219,6 +219,10 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								fmt.Sprintf("--txt-owner-id=%s", txtOwnerId),
 								fmt.Sprintf("--label-filter=%s!=%s", hyperv1.RouteVisibilityLabel, hyperv1.RouteVisibilityPrivate),
 								"--interval=1m",
+								"--service-type-filter=LoadBalancer",
+								"--aws-zone-type=public",
+								"--aws-zones-cache-duration=1h",
+								"--txt-cache-interval=1h",
 							},
 							Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 7979}},
 							LivenessProbe: &corev1.Probe{
