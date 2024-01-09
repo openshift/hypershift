@@ -8,7 +8,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	hyperapi "github.com/openshift/hypershift/support/api"

@@ -20,7 +20,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 )
 
 func TestReconcileDefaultIngressEndpoints(t *testing.T) {

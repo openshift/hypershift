@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
 	apifixtures "github.com/openshift/hypershift/examples/fixtures"

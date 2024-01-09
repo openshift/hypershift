@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"time"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/pkg/version"

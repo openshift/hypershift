@@ -2,7 +2,8 @@ package nodepool
 
 import (
 	"fmt"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

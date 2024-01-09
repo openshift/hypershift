@@ -18,7 +18,7 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	v1beta1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 )
 
 // SecretEncryptionSpecApplyConfiguration represents an declarative configuration of the SecretEncryptionSpec type for use

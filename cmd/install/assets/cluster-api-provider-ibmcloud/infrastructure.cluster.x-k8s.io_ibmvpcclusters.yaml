@@ -184,8 +184,6 @@ spec:
                   address:
                     type: string
                   floatingIPID:
-                    description: 'Deprecated: This field has no function and is going
-                      to be removed in the next release.'
                     type: string
                   loadBalancerIPID:
                     type: string
@@ -366,8 +364,6 @@ spec:
                   address:
                     type: string
                   floatingIPID:
-                    description: 'Deprecated: This field has no function and is going
-                      to be removed in the next release.'
                     type: string
                   loadBalancerIPID:
                     type: string

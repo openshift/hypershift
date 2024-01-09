@@ -3,7 +3,7 @@ package pkioperator
 import (
 	"time"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
 	hyperutil "github.com/openshift/hypershift/support/util"

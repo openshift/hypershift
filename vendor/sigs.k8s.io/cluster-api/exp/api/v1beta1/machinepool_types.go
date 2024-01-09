@@ -249,5 +249,5 @@ type MachinePoolList struct {
 }
 
 func init() {
-	objectTypes = append(objectTypes, &MachinePool{}, &MachinePoolList{})
+	SchemeBuilder.Register(&MachinePool{}, &MachinePoolList{})
 }

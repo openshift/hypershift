@@ -21,7 +21,7 @@ import (
 	"context"
 	time "time"
 
-	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
+	hypershiftv1alpha1 "github.com/openshift/hypershift/api/types/hypershift/v1alpha1"
 	clientset "github.com/openshift/hypershift/client/clientset/clientset"
 	internalinterfaces "github.com/openshift/hypershift/client/informers/externalversions/internalinterfaces"
 	v1alpha1 "github.com/openshift/hypershift/client/listers/hypershift/v1alpha1"

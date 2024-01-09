@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/blang/semver"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -663,7 +663,7 @@ EOF
    --asset-output-dir %[2]s/output \
    --rendered-manifest-dir=%[2]s/manifests \
    --cluster-profile=ibm-cloud-managed \
-   --payload-version=%[4]s 
+   --payload-version=%[4]s
 cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
 `
 

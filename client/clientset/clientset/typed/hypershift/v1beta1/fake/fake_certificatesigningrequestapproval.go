@@ -22,7 +22,7 @@ import (
 	json "encoding/json"
 	"fmt"
 
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	v1beta1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"

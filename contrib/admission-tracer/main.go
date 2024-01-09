@@ -8,7 +8,7 @@ import (
 	"net/http"
 
 	"github.com/google/go-cmp/cmp"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	ctrl "sigs.k8s.io/controller-runtime"

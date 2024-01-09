@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"

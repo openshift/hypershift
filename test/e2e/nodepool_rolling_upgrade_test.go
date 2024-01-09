@@ -9,7 +9,7 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npcontroller "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"

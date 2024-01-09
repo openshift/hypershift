@@ -10,7 +10,8 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
+
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"

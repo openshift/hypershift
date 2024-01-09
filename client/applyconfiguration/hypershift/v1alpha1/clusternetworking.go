@@ -18,7 +18,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
+	hypershiftv1alpha1 "github.com/openshift/hypershift/api/types/hypershift/v1alpha1"
 )
 
 // ClusterNetworkingApplyConfiguration represents an declarative configuration of the ClusterNetworking type for use

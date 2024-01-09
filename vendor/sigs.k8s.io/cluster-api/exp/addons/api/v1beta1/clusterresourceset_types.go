@@ -140,5 +140,5 @@ type ClusterResourceSetList struct {
 }
 
 func init() {
-	objectTypes = append(objectTypes, &ClusterResourceSet{}, &ClusterResourceSetList{})
+	SchemeBuilder.Register(&ClusterResourceSet{}, &ClusterResourceSetList{})
 }

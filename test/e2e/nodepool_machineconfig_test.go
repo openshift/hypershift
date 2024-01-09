@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperv1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"

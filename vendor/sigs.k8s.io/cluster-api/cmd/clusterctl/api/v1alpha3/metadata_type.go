@@ -17,7 +17,7 @@ limitations under the License.
 package v1alpha3
 
 import (
-	"github.com/blang/semver/v4"
+	"github.com/blang/semver"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/version"
 )
@@ -54,7 +54,7 @@ func (rs ReleaseSeries) newer(release ReleaseSeries) bool {
 }
 
 func init() {
-	objectTypes = append(objectTypes, &Metadata{})
+	SchemeBuilder.Register(&Metadata{})
 }
 
 // GetReleaseSeriesForVersion returns the release series for a given version.

@@ -22,7 +22,7 @@ import (
 	json "encoding/json"
 	"fmt"
 
-	v1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
+	v1alpha1 "github.com/openshift/hypershift/api/types/certificates/v1alpha1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"

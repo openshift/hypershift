@@ -28,7 +28,7 @@
 
         {{ safe (renderComments .CommentLines) }}
 
-        {{- if and (eq .Type.Kind "Alias") (eq .Type.Name.Package "github.com/openshift/hypershift/api/hypershift/v1alpha1") }}
+        {{- if and (eq .Type.Kind "Alias") (eq .Type.Name.Package "github.com/openshift/hypershift/api/types/hypershift/v1alpha1") }}
           {{- with (constantsOfType .Type) }}
             <p>
             Value must be one of:

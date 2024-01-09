@@ -58,3 +58,32 @@ updates:
       misc-dependencies:
         patterns:
           - "*"
+  # API Go module
+  - package-ecosystem: "gomod"
+    directory: "/api/"
+    schedule:
+      interval: "weekly"
+      day: "friday"
+      time: "01:00"
+      timezone: "Etc/UTC"
+    commit-message:
+      prefix: "NO-JIRA"
+    labels:
+      - "area/api"
+      - "ok-to-test"
+    groups:
+      github-dependencies:
+        patterns:
+          - "github*"
+      golang-dependencies:
+        patterns:
+          - "golang*"
+      k8s-dependencies:
+        patterns:
+          - "k8s.*"
+      sigs-k8s-dependencies:
+        patterns:
+          - "sigs.k8s*"
+      misc-dependencies:
+        patterns:
+          - "*"

@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"time"
 
-	v1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
+	v1alpha1 "github.com/openshift/hypershift/api/types/hypershift/v1alpha1"
 	hypershiftv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1alpha1"
 	scheme "github.com/openshift/hypershift/client/clientset/clientset/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"

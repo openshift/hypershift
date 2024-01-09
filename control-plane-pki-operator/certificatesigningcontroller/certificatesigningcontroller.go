@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/types/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
