@@ -82,6 +82,18 @@ var (
 	deleteCVORemovedResourcesOnce   sync.Once
 )
 
+const azureCCMScript = `
+#!/bin/bash
+set -o allexport
+if [[ -f /etc/kubernetes/apiserver-url.env ]]; then
+  source /etc/kubernetes/apiserver-url.env
+fi
+exec /bin/azure-cloud-node-manager \
+  --node-name=${NODE_NAME} \
+  --enable-deprecated-beta-topology-labels \
+  --wait-routes=false
+`
+
 type reconciler struct {
 	client         client.Client
 	uncachedClient client.Client
@@ -2304,14 +2316,10 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 					},
 					Containers: []corev1.Container{
 						{
-							Name:  ccm.CloudNodeManagerName,
-							Image: image,
-							Command: []string{
-								"/bin/azure-cloud-node-manager",
-								"--node-name=$(NODE_NAME)",
-								"--enable-deprecated-beta-topology-labels",
-								"--wait-routes=false",
-							},
+							Name:    ccm.CloudNodeManagerName,
+							Image:   image,
+							Command: []string{"/bin/bash"},
+							Args:    []string{"-c", azureCCMScript},
 							Env: []corev1.EnvVar{
 								{
 									Name: "NODE_NAME",
@@ -2330,6 +2338,23 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 								Limits: corev1.ResourceList{
 									corev1.ResourceMemory: resource.MustParse("512Mi"),
 									corev1.ResourceCPU:    resource.MustParse("2000m"),
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "host-etc-kube",
+									ReadOnly:  true,
+									MountPath: "/etc/kubernetes",
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "host-etc-kube",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/etc/kubernetes",
 								},
 							},
 						},

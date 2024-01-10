@@ -49,6 +49,12 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		ClusterCIDR:             util.FirstClusterCIDR(hcp.Spec.Networking.ClusterNetwork),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 	}
+
+	// This value comes from the Cloud Provider Azure documentation: https://cloud-provider-azure.sigs.k8s.io/install/azure-ccm/#kube-controller-manager
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+		params.CloudProvider = "external"
+	}
+
 	if hcp.Spec.Configuration != nil {
 		params.FeatureGate = hcp.Spec.Configuration.FeatureGate
 		params.APIServer = hcp.Spec.Configuration.APIServer
