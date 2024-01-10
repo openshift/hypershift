@@ -101,7 +101,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		Images: KubeAPIServerImages{
 			HyperKube:                  releaseImageProvider.GetImage("hyperkube"),
 			CLI:                        releaseImageProvider.GetImage("cli"),
-			ClusterConfigOperator:      releaseImageProvider.GetImage("cluster-config-operator"),
+			ClusterConfigOperator:      releaseImageProvider.GetImage("cluster-config-api"),
 			TokenMinterImage:           releaseImageProvider.GetImage("token-minter"),
 			AWSKMS:                     releaseImageProvider.GetImage("aws-kms-provider"),
 			AWSPodIdentityWebhookImage: releaseImageProvider.GetImage("aws-pod-identity-webhook"),
