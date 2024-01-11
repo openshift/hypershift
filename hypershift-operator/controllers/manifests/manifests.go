@@ -9,7 +9,6 @@ import (
 
 	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -110,24 +109,6 @@ func OpenShiftTrustedCABundleForNamespace(namespace string) *corev1.ConfigMap {
 		},
 		Data: map[string]string{
 			"ca-bundle.crt": "",
-		},
-	}
-}
-
-func EtcdBackupServiceAccount(hcpNamespace string) *corev1.ServiceAccount {
-	return &corev1.ServiceAccount{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "etcd-backup-sa",
-			Namespace: hcpNamespace,
-		},
-	}
-}
-
-func EtcdBackupCronJob(hcpNamespace string) *batchv1.CronJob {
-	return &batchv1.CronJob{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "etcd-backup",
-			Namespace: hcpNamespace,
 		},
 	}
 }

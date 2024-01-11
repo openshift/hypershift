@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	"github.com/openshift/hypershift/dnsresolver"
+	etcdbackup "github.com/openshift/hypershift/etcd-backup"
 	etcddefrag "github.com/openshift/hypershift/etcd-defrag"
 	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
@@ -135,6 +136,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(etcddefrag.NewStartCommand())
 	cmd.AddCommand(kubernetesdefaultproxy.NewStartCommand())
 	cmd.AddCommand(dnsresolver.NewCommand())
+	cmd.AddCommand(etcdbackup.NewStartCommand())
 
 	return cmd
 
