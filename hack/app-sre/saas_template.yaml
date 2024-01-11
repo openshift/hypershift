@@ -426,7 +426,6 @@ objects:
           - --txt-owner-id=${EXTERNAL_DNS_TXT_OWNER_ID}
           - --label-filter=hypershift.openshift.io/route-visibility!=private
           - --interval=1m
-          - --service-type-filter=LoadBalancer
           - --txt-cache-interval=1h
           - --aws-zone-type=public
           - --aws-batch-change-interval=10s
