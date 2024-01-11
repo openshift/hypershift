@@ -220,8 +220,6 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								fmt.Sprintf("--label-filter=%s!=%s", hyperv1.RouteVisibilityLabel, hyperv1.RouteVisibilityPrivate),
 								"--interval=1m",
 								"--service-type-filter=LoadBalancer",
-								"--aws-zone-type=public",
-								"--aws-zones-cache-duration=1h",
 								"--txt-cache-interval=1h",
 							},
 							Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 7979}},
@@ -289,6 +287,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
 			"--aws-zone-type=public",
 			"--aws-batch-change-interval=10s",
+			"--aws-zones-cache-duration=1h",
 		)
 	case "azure":
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
