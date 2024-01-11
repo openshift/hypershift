@@ -34379,7 +34379,6 @@ objects:
             path: /convert
             port: 443
         conversionReviewVersions:
-        - v1beta2
         - v1beta1
         - v1alpha1
     group: hypershift.openshift.io
@@ -34749,7 +34748,6 @@ objects:
             path: /convert
             port: 443
         conversionReviewVersions:
-        - v1beta2
         - v1beta1
         - v1alpha1
     group: hypershift.openshift.io
@@ -34817,7 +34815,6 @@ objects:
             path: /convert
             port: 443
         conversionReviewVersions:
-        - v1beta2
         - v1beta1
         - v1alpha1
     group: hypershift.openshift.io
@@ -43224,7 +43221,6 @@ objects:
             path: /convert
             port: 443
         conversionReviewVersions:
-        - v1beta2
         - v1beta1
         - v1alpha1
     group: hypershift.openshift.io
@@ -51606,7 +51602,6 @@ objects:
             path: /convert
             port: 443
         conversionReviewVersions:
-        - v1beta2
         - v1beta1
         - v1alpha1
     group: hypershift.openshift.io
