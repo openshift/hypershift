@@ -427,11 +427,10 @@ objects:
           - --label-filter=hypershift.openshift.io/route-visibility!=private
           - --interval=1m
           - --service-type-filter=LoadBalancer
-          - --aws-zone-type=public
-          - --aws-zones-cache-duration=1h
           - --txt-cache-interval=1h
           - --aws-zone-type=public
           - --aws-batch-change-interval=10s
+          - --aws-zones-cache-duration=1h
           command:
           - /external-dns
           env:
