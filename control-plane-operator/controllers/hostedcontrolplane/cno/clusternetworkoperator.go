@@ -136,7 +136,8 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 
 func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, networkType hyperv1.NetworkType) error {
 	ownerRef.ApplyTo(role)
-	if networkType == hyperv1.Calico {
+	// The RBAC below is required when the networkType is not OVNKubernetes https://issues.redhat.com/browse/OCPBUGS-26977
+	if networkType != hyperv1.OVNKubernetes {
 		role.Rules = []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{corev1.SchemeGroupVersion.Group},
@@ -161,6 +162,9 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, networkType hype
 					"ovnkube-identity-cm",
 				},
 				Verbs: []string{
+					"list",
+					"get",
+					"watch",
 					"create",
 					"patch",
 					"update",
