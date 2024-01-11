@@ -1,0 +1,10 @@
+.PHONY : all
+all: 0alertmanagerConfigCustomResourceDefinition.yaml 0prometheusCustomResourceDefinition.yaml 0servicemonitorCustomResourceDefinition.yaml 0alertmanagerCustomResourceDefinition.yaml 0prometheusagentCustomResourceDefinition.yaml 0thanosrulerCustomResourceDefinition.yaml 0podmonitorCustomResourceDefinition.yaml 0prometheusruleCustomResourceDefinition.yaml namespace.yaml 0probeCustomResourceDefinition.yaml 0scrapeconfigCustomResourceDefinition.yaml 00-custom-resource-definition.yaml
+
+.DEFAULT_GOAL := all
+
+0alertmanagerConfigCustomResourceDefinition.yaml 0prometheusCustomResourceDefinition.yaml 0servicemonitorCustomResourceDefinition.yaml 0alertmanagerCustomResourceDefinition.yaml 0prometheusagentCustomResourceDefinition.yaml 0thanosrulerCustomResourceDefinition.yaml 0podmonitorCustomResourceDefinition.yaml 0prometheusruleCustomResourceDefinition.yaml namespace.yaml 0probeCustomResourceDefinition.yaml 0scrapeconfigCustomResourceDefinition.yaml:
+	wget https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/main/manifests/setup/$@
+
+00-custom-resource-definition.yaml:
+	wget https://raw.githubusercontent.com/openshift/cluster-ingress-operator/master/manifests/$@
