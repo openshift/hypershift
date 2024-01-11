@@ -183,9 +183,9 @@ func ReconcileIgnitionServer(ctx context.Context,
 		"app":                         ignitionserver.ResourceName,
 		hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
 	}
-	configOperatorImage := componentImages["cluster-config-operator"]
-	if configOperatorImage == "" {
-		return fmt.Errorf("cluster-config-operator image not found in payload images")
+	configAPIImage := componentImages["cluster-config-api"]
+	if configAPIImage == "" {
+		return fmt.Errorf("cluster-config-api image not found in payload images")
 	}
 	machineConfigOperatorImage := componentImages["machine-config-operator"]
 	if machineConfigOperatorImage == "" {
@@ -199,7 +199,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 	// Determine if we need to override the machine config operator and cluster config operator
 	// images based on image mappings present in management cluster.
 	ocpRegistryMapping := util.ConvertImageRegistryOverrideStringToMap(openShiftRegistryOverrides)
-	overrideConfigOperatorImage, err := lookupMappedImage(ocpRegistryMapping, configOperatorImage)
+	overrideConfigAPIImage, err := lookupMappedImage(ocpRegistryMapping, configAPIImage)
 	if err != nil {
 		return err
 	}
@@ -215,8 +215,8 @@ func ReconcileIgnitionServer(ctx context.Context,
 		}
 	}
 
-	if overrideConfigOperatorImage != configOperatorImage {
-		imageOverrides[configOperatorImage] = overrideConfigOperatorImage
+	if overrideConfigAPIImage != configAPIImage {
+		imageOverrides[configAPIImage] = overrideConfigAPIImage
 	}
 
 	if overrideMachineConfigOperatorImage != machineConfigOperatorImage {
@@ -228,7 +228,7 @@ func ReconcileIgnitionServer(ctx context.Context,
 		return reconcileDeployment(ignitionServerDeployment,
 			releaseVersion,
 			utilitiesImage,
-			configOperatorImage,
+			configAPIImage,
 			hcp,
 			defaultIngressDomain,
 			hasHealthzHandler,
@@ -463,7 +463,7 @@ func reconcileRoleBinding(roleBinding *rbacv1.RoleBinding, role *rbacv1.Role, sa
 func reconcileDeployment(deployment *appsv1.Deployment,
 	releaseVersion string,
 	utilitiesImage string,
-	configOperatorImage string,
+	configAPIImage string,
 	hcp *hyperv1.HostedControlPlane,
 	defaultIngressDomain string,
 	hasHealthzHandler bool,
@@ -588,7 +588,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 				InitContainers: []corev1.Container{
 					{
 						Name:            "fetch-feature-gate",
-						Image:           configOperatorImage,
+						Image:           configAPIImage,
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						Command: []string{
 							"/bin/bash",
