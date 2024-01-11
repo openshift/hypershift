@@ -82,8 +82,11 @@ func ReconcileDeployment(
 							},
 						},
 						Command: []string{"/usr/bin/control-plane-pki-operator"},
-						Args:    []string{"operator"},
-						Ports:   []corev1.ContainerPort{{Name: "metrics", Protocol: "TCP", ContainerPort: 8443}},
+						Args: []string{
+							"operator",
+							"--namespace", deployment.Namespace,
+						},
+						Ports: []corev1.ContainerPort{{Name: "metrics", Protocol: "TCP", ContainerPort: 8443}},
 					},
 				},
 			},
