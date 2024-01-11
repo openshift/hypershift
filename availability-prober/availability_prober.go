@@ -149,6 +149,10 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 				log.Info("cluster infrastructure resource not yet available", "err", err)
 				continue
 			}
+			if clusterInfrastructure.Status.InfrastructureName == "" {
+				log.Info("cluster infrastructure name is not yet set")
+				continue
+			}
 		}
 
 		if waitForLabeledPodsGone != "" {
