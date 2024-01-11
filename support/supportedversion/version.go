@@ -6,18 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/supportedversion/supported"
 )
-
-// LatestSupportedVersion is the latest minor OCP version supported by the
-// HyperShift operator.
-// NOTE: The .0 (z release) should be ignored. It's only here to support
-// semver parsing.
-var LatestSupportedVersion = semver.MustParse("4.16.0")
-var MinSupportedVersion = semver.MustParse(subtractMinor(&LatestSupportedVersion, uint64(SupportedPreviousMinorVersions)).String())
 
 func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
 
@@ -25,7 +18,7 @@ func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
 		return semver.MustParse("0.0.0")
 	}
 
-	defaultMinVersion := semver.MustParse(subtractMinor(&LatestSupportedVersion, uint64(SupportedPreviousMinorVersions)).String())
+	defaultMinVersion := semver.MustParse(supported.SubtractMinor(&supported.LatestSupportedVersion, uint64(supported.SupportedPreviousMinorVersions)).String())
 
 	switch hc.Spec.Platform.Type {
 	case hyperv1.IBMCloudPlatform:
@@ -33,35 +26,6 @@ func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
 	default:
 		return defaultMinVersion
 	}
-}
-
-// SupportedPreviousMinorVersions is the number of minor versions prior to current
-// version that are supported.
-const SupportedPreviousMinorVersions = 2
-
-func Supported() []string {
-	versions := []string{trimVersion(LatestSupportedVersion.String())}
-	for i := 0; i < SupportedPreviousMinorVersions; i++ {
-		versions = append(versions, trimVersion(subtractMinor(&LatestSupportedVersion, uint64(i+1)).String()))
-	}
-	return versions
-}
-
-func trimVersion(version string) string {
-	return strings.TrimSuffix(version, ".0")
-}
-
-func subtractMinor(version *semver.Version, count uint64) *semver.Version {
-	result := *version
-	result.Minor = maxInt64(0, result.Minor-count)
-	return &result
-}
-
-func maxInt64(a, b uint64) uint64 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func IsValidReleaseVersion(version, currentVersion, latestVersionSupported, minSupportedVersion *semver.Version, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) error {
@@ -87,7 +51,7 @@ func IsValidReleaseVersion(version, currentVersion, latestVersionSupported, minS
 	}
 
 	if (version.Major == latestVersionSupported.Major && version.Minor > latestVersionSupported.Minor) || version.Major > latestVersionSupported.Major {
-		return fmt.Errorf("the latest version supported is: %q. Attempting to use: %q", LatestSupportedVersion, version)
+		return fmt.Errorf("the latest version supported is: %q. Attempting to use: %q", supported.LatestSupportedVersion, version)
 	}
 
 	if (version.Major == minSupportedVersion.Major && version.Minor < minSupportedVersion.Minor) || version.Major < minSupportedVersion.Major {
@@ -110,7 +74,7 @@ func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster
 
 	prefix := "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi/latest"
 	filter := fmt.Sprintf("in=>4.%d.%d+<+4.%d.0",
-		minSupportedVersion.Minor, minSupportedVersion.Patch, LatestSupportedVersion.Minor+1)
+		minSupportedVersion.Minor, minSupportedVersion.Patch, supported.LatestSupportedVersion.Minor+1)
 
 	releaseURL := fmt.Sprintf("%s?%s", prefix, filter)
 

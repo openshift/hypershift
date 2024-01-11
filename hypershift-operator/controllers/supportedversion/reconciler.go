@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/openshift/hypershift/support/supportedversion/supported"
 	corev1 "k8s.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -17,7 +18,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	manifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
-	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 )
 
@@ -72,7 +72,7 @@ func (r *Reconciler) ensureSupportedVersionConfigMap(ctx context.Context) error 
 	cm.Labels[supportedVersionsLabel] = "true"
 	if _, err := r.CreateOrUpdate(ctx, r, cm, func() error {
 		content := &supportedVersions{
-			Versions: supportedversion.Supported(),
+			Versions: supported.Supported(),
 		}
 		contentBytes, err := json.Marshal(content)
 		if err != nil {

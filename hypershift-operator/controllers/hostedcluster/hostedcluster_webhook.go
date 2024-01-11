@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/supportedversion/supported"
 	hyperutil "github.com/openshift/hypershift/support/util"
 )
 
@@ -401,7 +402,7 @@ func (v *kubevirtClusterValidator) validateReleaseImage(ctx context.Context, hc 
 
 	minSupportedVersion := supportedversion.GetMinSupportedVersion(hc)
 
-	return supportedversion.IsValidReleaseVersion(version, nil, &supportedversion.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
+	return supportedversion.IsValidReleaseVersion(version, nil, &supported.LatestSupportedVersion, &minSupportedVersion, hc.Spec.Networking.NetworkType, hc.Spec.Platform.Type)
 }
 
 func (v *kubevirtClusterValidator) getImageVersion(ctx context.Context, hc *hyperv1.HostedCluster, releaseImage string) (*semver.Version, error) {

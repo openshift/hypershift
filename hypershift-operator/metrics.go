@@ -9,7 +9,7 @@ import (
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/supportedversion/supported"
 	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -25,7 +25,7 @@ const (
 
 // semantically constant - not suposed to be changed at runtime
 var (
-	latestSupportedVersion = supportedversion.LatestSupportedVersion.String()
+	latestSupportedVersion = supported.LatestSupportedVersion.String()
 	hypershiftVersion      = version.GetRevision()
 	goVersion              = runtime.Version()
 	goArch                 = runtime.GOARCH
