@@ -24,7 +24,7 @@ func TestReconcileCloudCredentialConfig(t *testing.T) {
 					OperatorSpec: operatorv1.OperatorSpec{
 						ManagementState: operatorv1.Managed,
 					},
-					CredentialsMode: operatorv1.CloudCredentialsModeDefault,
+					CredentialsMode: operatorv1.CloudCredentialsModeManual,
 				},
 			},
 		},
