@@ -96,16 +96,16 @@ spec:
                       type: string
                     type: array
                   enablePrivateCluster:
-                    description: EnablePrivateCluster - Whether to create the cluster
-                      as a private cluster or not.
+                    description: EnablePrivateCluster indicates whether to create
+                      the cluster as a private cluster or not.
                     type: boolean
                   enablePrivateClusterPublicFQDN:
-                    description: EnablePrivateClusterPublicFQDN - Whether to create
-                      additional public FQDN for private cluster or not.
+                    description: EnablePrivateClusterPublicFQDN indicates whether
+                      to create additional public FQDN for private cluster or not.
                     type: boolean
                   privateDNSZone:
-                    description: PrivateDNSZone - Private dns zone mode for private
-                      cluster.
+                    description: PrivateDNSZone enables private dns zone mode for
+                      private cluster.
                     enum:
                     - System
                     - None
@@ -238,6 +238,13 @@ spec:
                 - host
                 - port
                 type: object
+              disableLocalAccounts:
+                description: DisableLocalAccounts disables getting static credentials
+                  for this cluster when set. Expected to only be used for AAD clusters.
+                type: boolean
+              dnsPrefix:
+                description: DNSPrefix allows the user to customize dns prefix. Immutable.
+                type: string
               dnsServiceIP:
                 description: DNSServiceIP is an IP address assigned to the Kubernetes
                   DNS service. It must be within the Kubernetes service address range
@@ -330,18 +337,15 @@ spec:
                       SNAT ports per VM. Allowed values must be in the range of 0
                       to 64000 (inclusive). The default value is 0 which results in
                       Azure dynamically allocating ports.
-                    format: int32
                     type: integer
                   idleTimeoutInMinutes:
                     description: IdleTimeoutInMinutes - Desired outbound flow idle
                       timeout in minutes. Allowed values must be in the range of 4
                       to 120 (inclusive). The default value is 30 minutes.
-                    format: int32
                     type: integer
                   managedOutboundIPs:
                     description: ManagedOutboundIPs - Desired managed outbound IPs
                       for the cluster load balancer.
-                    format: int32
                     type: integer
                   outboundIPPrefixes:
                     description: OutboundIPPrefixes - Desired outbound IP Prefix resources
@@ -357,6 +361,7 @@ spec:
                     type: array
                 type: object
               loadBalancerSKU:
+                default: Standard
                 description: LoadBalancerSKU is the SKU of the loadBalancer to be
                   provisioned. Immutable.
                 enum:
@@ -365,14 +370,20 @@ spec:
                 type: string
               location:
                 description: 'Location is a string matching one of the canonical Azure
-                  region names. Examples: "westus2", "eastus". Immutable.'
+                  region names. Examples: "westus2", "eastus".'
                 type: string
+              machineTemplate:
+                description: MachineTemplate contains information about how machines
+                  should be shaped when creating or updating a control plane. For
+                  the AzureManagedControlPlaneTemplate, this field is used only to
+                  fulfill the CAPI contract.
+                type: object
               networkPlugin:
-                description: NetworkPlugin used for building Kubernetes network. Allowed
-                  values are "azure", "kubenet". Immutable.
+                description: NetworkPlugin used for building Kubernetes network.
                 enum:
                 - azure
                 - kubenet
+                - none
                 type: string
               networkPluginMode:
                 description: NetworkPluginMode is the mode the network plugin should
@@ -381,8 +392,7 @@ spec:
                 - overlay
                 type: string
               networkPolicy:
-                description: NetworkPolicy used for building Kubernetes network. Allowed
-                  values are "azure", "calico". Immutable.
+                description: NetworkPolicy used for building Kubernetes network.
                 enum:
                 - azure
                 - calico
@@ -401,7 +411,7 @@ spec:
                     type: boolean
                 type: object
               outboundType:
-                description: Outbound configuration used by Nodes. Immutable.
+                description: Outbound configuration used by Nodes.
                 enum:
                 - loadBalancer
                 - managedNATGateway
@@ -432,15 +442,15 @@ spec:
                 type: string
               subscriptionID:
                 description: SubscriptionID is the GUID of the Azure subscription
-                  to hold this cluster. Immutable.
+                  that owns this cluster.
                 type: string
               version:
                 description: Version defines the desired Kubernetes version.
                 minLength: 2
                 type: string
               virtualNetwork:
-                description: VirtualNetwork describes the vnet for the AKS cluster.
-                  Will be created if it does not exist. Immutable except for `subnet`.
+                description: VirtualNetwork describes the virtual network for the
+                  AKS cluster. It will be created if it does not already exist.
                 properties:
                   cidrBlock:
                     type: string
@@ -451,7 +461,8 @@ spec:
                       for the VNet and Subnet.
                     type: string
                   subnet:
-                    description: Immutable except for `serviceEndpoints`.
+                    description: ManagedControlPlaneSubnet describes a subnet for
+                      an AKS cluster.
                     properties:
                       cidrBlock:
                         type: string
@@ -675,6 +686,10 @@ spec:
               ready:
                 description: Ready is true when the provider resource is ready.
                 type: boolean
+              version:
+                description: Version defines the Kubernetes version for the control
+                  plane instance.
+                type: string
             type: object
         type: object
     served: true

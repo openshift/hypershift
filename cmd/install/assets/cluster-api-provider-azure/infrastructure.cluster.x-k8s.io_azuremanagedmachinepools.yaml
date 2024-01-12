@@ -57,6 +57,11 @@ spec:
                 items:
                   type: string
                 type: array
+              enableEncryptionAtHost:
+                description: "EnableEncryptionAtHost indicates whether host encryption
+                  is enabled on the node pool. Immutable. See also [AKS doc]. \n [AKS
+                  doc]: https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption"
+                type: boolean
               enableFIPS:
                 description: EnableFIPS indicates whether FIPS is enabled on the node
                   pool. Immutable.
@@ -85,13 +90,11 @@ spec:
                     description: ContainerLogMaxFiles - The maximum number of container
                       log files that can be present for a container. The number must
                       be ≥ 2.
-                    format: int32
                     minimum: 2
                     type: integer
                   containerLogMaxSizeMB:
                     description: ContainerLogMaxSizeMB - The maximum size in MB of
                       a container log file before it is rotated.
-                    format: int32
                     type: integer
                   cpuCfsQuota:
                     description: CPUCfsQuota - Enable CPU CFS quota enforcement for
@@ -115,7 +118,6 @@ spec:
                     description: ImageGcHighThreshold - The percent of disk usage
                       after which image garbage collection is always run. Valid values
                       are 0-100 (inclusive).
-                    format: int32
                     maximum: 100
                     minimum: 0
                     type: integer
@@ -123,14 +125,12 @@ spec:
                     description: ImageGcLowThreshold - The percent of disk usage before
                       which image garbage collection is never run. Valid values are
                       0-100 (inclusive) and must be less than `imageGcHighThreshold`.
-                    format: int32
                     maximum: 100
                     minimum: 0
                     type: integer
                   podMaxPids:
                     description: PodMaxPids - The maximum number of processes per
                       pod. Must not exceed kernel PID limit. -1 disables the limit.
-                    format: int32
                     minimum: -1
                     type: integer
                   topologyManagerPolicy:
@@ -161,7 +161,6 @@ spec:
                       will be created on the agent nodes from this node pool. Max
                       value of SwapFileSizeMB should be the size of temporary disk(/dev/sdb).
                       Must be at least 1. See also [AKS doc]. \n [AKS doc]: https://learn.microsoft.com/azure/virtual-machines/managed-disks-overview#temporary-disk"
-                    format: int32
                     minimum: 1
                     type: integer
                   sysctls:
@@ -171,7 +170,6 @@ spec:
                         description: FsAioMaxNr specifies the maximum number of system-wide
                           asynchronous io requests. Valid values are 65536-6553500
                           (inclusive). Maps to fs.aio-max-nr.
-                        format: int32
                         maximum: 6553500
                         minimum: 65536
                         type: integer
@@ -180,7 +178,6 @@ spec:
                           that the Linux kernel will allocate, by increasing increases
                           the maximum number of open files permitted. Valid values
                           are 8192-12000500 (inclusive). Maps to fs.file-max.
-                        format: int32
                         maximum: 12000500
                         minimum: 8192
                         type: integer
@@ -190,7 +187,6 @@ spec:
                           90 bytes on a 32-bit kernel, and roughly 160 bytes on a
                           64-bit kernel. Valid values are 781250-2097152 (inclusive).
                           Maps to fs.inotify.max_user_watches.
-                        format: int32
                         maximum: 2097152
                         minimum: 781250
                         type: integer
@@ -198,7 +194,6 @@ spec:
                         description: FsNrOpen specifies the maximum number of file-handles
                           a process can allocate. Valid values are 8192-20000500 (inclusive).
                           Maps to fs.nr_open.
-                        format: int32
                         maximum: 20000500
                         minimum: 8192
                         type: integer
@@ -206,7 +201,6 @@ spec:
                         description: KernelThreadsMax specifies the maximum number
                           of all threads that can be created. Valid values are 20-513785
                           (inclusive). Maps to kernel.threads-max.
-                        format: int32
                         maximum: 513785
                         minimum: 20
                         type: integer
@@ -215,7 +209,6 @@ spec:
                           of packets, queued on the INPUT side, when the interface
                           receives packets faster than kernel can process them. Valid
                           values are 1000-3240000 (inclusive). Maps to net.core.netdev_max_backlog.
-                        format: int32
                         maximum: 3240000
                         minimum: 1000
                         type: integer
@@ -225,7 +218,6 @@ spec:
                           option memory is used in a few cases to store extra structures
                           relating to usage of the socket. Valid values are 20480-4194304
                           (inclusive). Maps to net.core.optmem_max.
-                        format: int32
                         maximum: 4194304
                         minimum: 20480
                         type: integer
@@ -233,7 +225,6 @@ spec:
                         description: NetCoreRmemDefault specifies the default receive
                           socket buffer size in bytes. Valid values are 212992-134217728
                           (inclusive). Maps to net.core.rmem_default.
-                        format: int32
                         maximum: 134217728
                         minimum: 212992
                         type: integer
@@ -241,7 +232,6 @@ spec:
                         description: NetCoreRmemMax specifies the maximum receive
                           socket buffer size in bytes. Valid values are 212992-134217728
                           (inclusive). Maps to net.core.rmem_max.
-                        format: int32
                         maximum: 134217728
                         minimum: 212992
                         type: integer
@@ -253,7 +243,6 @@ spec:
                           function. If the backlog argument is greater than the somaxconn,
                           then it's silently truncated to this limit. Valid values
                           are 4096-3240000 (inclusive). Maps to net.core.somaxconn.
-                        format: int32
                         maximum: 3240000
                         minimum: 4096
                         type: integer
@@ -261,7 +250,6 @@ spec:
                         description: NetCoreWmemDefault specifies the default send
                           socket buffer size in bytes. Valid values are 212992-134217728
                           (inclusive). Maps to net.core.wmem_default.
-                        format: int32
                         maximum: 134217728
                         minimum: 212992
                         type: integer
@@ -269,7 +257,6 @@ spec:
                         description: NetCoreWmemMax specifies the maximum send socket
                           buffer size in bytes. Valid values are 212992-134217728
                           (inclusive). Maps to net.core.wmem_max.
-                        format: int32
                         maximum: 134217728
                         minimum: 212992
                         type: integer
@@ -286,7 +273,6 @@ spec:
                           collection won't be triggered if the number of entries is
                           below this setting. Valid values are 128-80000 (inclusive).
                           Maps to net.ipv4.neigh.default.gc_thresh1.
-                        format: int32
                         maximum: 80000
                         minimum: 128
                         type: integer
@@ -296,7 +282,6 @@ spec:
                           collection will be triggered about 5 seconds after reaching
                           this soft maximum. Valid values are 512-90000 (inclusive).
                           Maps to net.ipv4.neigh.default.gc_thresh2.
-                        format: int32
                         maximum: 90000
                         minimum: 512
                         type: integer
@@ -304,7 +289,6 @@ spec:
                         description: NetIpv4NeighDefaultGcThresh3 specified hard maximum
                           number of entries in the ARP cache. Valid values are 1024-100000
                           (inclusive). Maps to net.ipv4.neigh.default.gc_thresh3.
-                        format: int32
                         maximum: 100000
                         minimum: 1024
                         type: integer
@@ -313,7 +297,6 @@ spec:
                           time an orphaned connection will remain in the FIN_WAIT_2
                           state before it's aborted at the local end. Valid values
                           are 5-120 (inclusive). Maps to net.ipv4.tcp_fin_timeout.
-                        format: int32
                         maximum: 120
                         minimum: 5
                         type: integer
@@ -322,7 +305,6 @@ spec:
                           of keepalive probes TCP sends out, until it decides the
                           connection is broken. Valid values are 1-15 (inclusive).
                           Maps to net.ipv4.tcp_keepalive_probes.
-                        format: int32
                         maximum: 15
                         minimum: 1
                         type: integer
@@ -331,7 +313,6 @@ spec:
                           which TCP sends out a keepalive message when keepalive is
                           enabled. Valid values are 30-432000 (inclusive). Maps to
                           net.ipv4.tcp_keepalive_time.
-                        format: int32
                         maximum: 432000
                         minimum: 30
                         type: integer
@@ -342,7 +323,6 @@ spec:
                           this number is exceeded, the kernel will begin dropping
                           requests. Valid values are 128-3240000 (inclusive). Maps
                           to net.ipv4.tcp_max_syn_backlog.
-                        format: int32
                         maximum: 3240000
                         minimum: 128
                         type: integer
@@ -352,7 +332,6 @@ spec:
                           number is exceeded, time-wait socket is immediately destroyed
                           and warning is printed. Valid values are 8000-1440000 (inclusive).
                           Maps to net.ipv4.tcp_max_tw_buckets.
-                        format: int32
                         maximum: 1440000
                         minimum: 8000
                         type: integer
@@ -367,7 +346,6 @@ spec:
                           it makes up the time to kill a connection that isn't responding,
                           after probes started. Valid values are 1-75 (inclusive).
                           Maps to net.ipv4.tcp_keepalive_intvl.
-                        format: int32
                         maximum: 75
                         minimum: 1
                         type: integer
@@ -376,7 +354,6 @@ spec:
                           size of hash table used by nf_conntrack module to record
                           the established connection record of the TCP protocol. Valid
                           values are 65536-147456 (inclusive). Maps to net.netfilter.nf_conntrack_buckets.
-                        format: int32
                         maximum: 147456
                         minimum: 65536
                         type: integer
@@ -385,7 +362,6 @@ spec:
                           number of connections supported by the nf_conntrack module
                           or the size of connection tracking table. Valid values are
                           131072-1048576 (inclusive). Maps to net.netfilter.nf_conntrack_max.
-                        format: int32
                         maximum: 1048576
                         minimum: 131072
                         type: integer
@@ -393,7 +369,6 @@ spec:
                         description: VMMaxMapCount specifies the maximum number of
                           memory map areas a process may have. Maps to vm.max_map_count.
                           Valid values are 65530-262144 (inclusive).
-                        format: int32
                         maximum: 262144
                         minimum: 65530
                         type: integer
@@ -402,7 +377,6 @@ spec:
                           kernel in swapping memory pages. Higher values will increase
                           aggressiveness, lower values decrease the amount of swap.
                           Valid values are 0-100 (inclusive). Maps to vm.swappiness.
-                        format: int32
                         maximum: 100
                         minimum: 0
                         type: integer
@@ -411,7 +385,6 @@ spec:
                           that controls tendency of the kernel to reclaim the memory,
                           which is used for caching of directory and inode objects.
                           Valid values are 1-500 (inclusive). Maps to vm.vfs_cache_pressure.
-                        format: int32
                         maximum: 500
                         minimum: 1
                         type: integer
@@ -445,24 +418,23 @@ spec:
                   for the node pool. Immutable. See also [AKS doc], [K8s doc]. \n
                   [AKS doc]: https://learn.microsoft.com/azure/aks/configure-azure-cni#configure-maximum---new-clusters
                   [K8s doc]: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/"
-                format: int32
                 type: integer
               mode:
-                description: 'Mode - represents mode of an agent pool. Possible values
-                  include: System, User.'
+                description: 'Mode represents the mode of an agent pool. Possible
+                  values include: System, User.'
                 enum:
                 - System
                 - User
                 type: string
               name:
-                description: Name - name of the agent pool. If not specified, CAPZ
-                  uses the name of the CR as the agent pool name. Immutable.
+                description: Name is the name of the agent pool. If not specified,
+                  CAPZ uses the name of the CR as the agent pool name. Immutable.
                 type: string
               nodeLabels:
                 additionalProperties:
                   type: string
-                description: "Node labels - labels for all of the nodes present in
-                  node pool. See also [AKS doc]. \n [AKS doc]: https://learn.microsoft.com/azure/aks/use-labels"
+                description: "Node labels represent the labels for all of the nodes
+                  present in node pool. See also [AKS doc]. \n [AKS doc]: https://learn.microsoft.com/azure/aks/use-labels"
                 type: object
               nodePublicIPPrefixID:
                 description: NodePublicIPPrefixID specifies the public IP prefix resource
@@ -472,7 +444,6 @@ spec:
                 description: OSDiskSizeGB is the disk size for every machine in this
                   agent pool. If you specify 0, it will apply the default osDisk size
                   according to the vmSize specified. Immutable.
-                format: int32
                 type: integer
               osDiskType:
                 default: Managed
@@ -520,11 +491,9 @@ spec:
                 properties:
                   maxSize:
                     description: MaxSize is the maximum number of nodes for auto-scaling.
-                    format: int32
                     type: integer
                   minSize:
                     description: MinSize is the minimum number of nodes for auto-scaling.
-                    format: int32
                     type: integer
                 type: object
               sku:

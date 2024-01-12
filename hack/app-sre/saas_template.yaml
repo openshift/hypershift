@@ -7980,6 +7980,34 @@ objects:
                   description: ControlPlaneLoadBalancer is optional configuration
                     for customizing control plane behavior.
                   properties:
+                    additionalListeners:
+                      description: AdditionalListeners sets the additional listeners
+                        for the control plane load balancer. This is only applicable
+                        to Network Load Balancer (NLB) types for the time being.
+                      items:
+                        description: AdditionalListenerSpec defines the desired state
+                          of an additional listener on an AWS load balancer.
+                        properties:
+                          port:
+                            description: Port sets the port for the additional listener.
+                            format: int64
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
+                          protocol:
+                            default: TCP
+                            description: Protocol sets the protocol for the additional
+                              listener. Currently only TCP is supported.
+                            enum:
+                            - TCP
+                            type: string
+                        required:
+                        - port
+                        type: object
+                      type: array
+                      x-kubernetes-list-map-keys:
+                      - port
+                      x-kubernetes-list-type: map
                     additionalSecurityGroups:
                       description: AdditionalSecurityGroups sets the security groups
                         used by the load balancer. Expected to be security group IDs
@@ -8044,7 +8072,7 @@ objects:
                           protocol:
                             description: Protocol is the protocol for the ingress
                               rule. Accepted values are "-1" (all), "4" (IP in IP),"tcp",
-                              "udp", "icmp", and "58" (ICMPv6).
+                              "udp", "icmp", and "58" (ICMPv6), "50" (ESP).
                             enum:
                             - "-1"
                             - "4"
@@ -8052,6 +8080,7 @@ objects:
                             - udp
                             - icmp
                             - "58"
+                            - "50"
                             type: string
                           sourceSecurityGroupIds:
                             description: The security group id to allow access from.
@@ -8207,7 +8236,7 @@ objects:
                           protocol:
                             description: Protocol is the protocol for the ingress
                               rule. Accepted values are "-1" (all), "4" (IP in IP),"tcp",
-                              "udp", "icmp", and "58" (ICMPv6).
+                              "udp", "icmp", and "58" (ICMPv6), "50" (ESP).
                             enum:
                             - "-1"
                             - "4"
@@ -8215,6 +8244,7 @@ objects:
                             - udp
                             - icmp
                             - "58"
+                            - "50"
                             type: string
                           sourceSecurityGroupIds:
                             description: The security group id to allow access from.
@@ -8302,8 +8332,16 @@ objects:
                               the provider creates a managed VPC.
                             type: string
                           id:
-                            description: ID defines a unique identifier to reference
-                              this resource.
+                            description: "ID defines a unique identifier to reference
+                              this resource. If you're bringing your subnet, set the
+                              AWS subnet-id here, it must start with `subnet-`. \n
+                              When the VPC is managed by CAPA, and you'd like the
+                              provider to create a subnet for you, the id can be set
+                              to any placeholder value that does not start with `subnet-`;
+                              upon creation, the subnet AWS identifier will be populated
+                              in the `ResourceID` field and the `id` field is going
+                              to be used as the subnet name. If you specify a tag
+                              called `Name`, it takes precedence."
                             type: string
                           ipv6CidrBlock:
                             description: IPv6CidrBlock is the IPv6 CIDR block to be
@@ -8330,6 +8368,11 @@ objects:
                               subnet where the NAT gateway resides. It is then used
                               to determine routes for private subnets in the same
                               AZ as the public subnet.
+                            type: string
+                          resourceID:
+                            description: ResourceID is the subnet identifier from
+                              AWS, READ ONLY. This field is populated when the provider
+                              manages the subnet.
                             type: string
                           routeTableId:
                             description: RouteTableID is the routing table id associated
@@ -8376,6 +8419,7 @@ objects:
                         cidrBlock:
                           description: CidrBlock is the CIDR block to be used when
                             the provider creates a managed VPC. Defaults to 10.0.0.0/16.
+                            Mutually exclusive with IPAMPool.
                           type: string
                         id:
                           description: ID is the vpc-id of the VPC this provider should
@@ -8385,6 +8429,26 @@ objects:
                           description: InternetGatewayID is the id of the internet
                             gateway associated with the VPC.
                           type: string
+                        ipamPool:
+                          description: IPAMPool defines the IPAMv4 pool to be used
+                            for VPC. Mutually exclusive with CidrBlock.
+                          properties:
+                            id:
+                              description: ID is the ID of the IPAM pool this provider
+                                should use to create VPC.
+                              type: string
+                            name:
+                              description: Name is the name of the IPAM pool this
+                                provider should use to create VPC.
+                              type: string
+                            netmaskLength:
+                              description: The netmask length of the IPv4 CIDR you
+                                want to allocate to VPC from an Amazon VPC IP Address
+                                Manager (IPAM) pool. Defaults to /16 for IPv4 if not
+                                specified.
+                              format: int64
+                              type: integer
+                          type: object
                         ipv6:
                           description: IPv6 contains ipv6 specific settings for the
                             network. Supported only in managed clusters. This field
@@ -8392,16 +8456,38 @@ objects:
                           properties:
                             cidrBlock:
                               description: CidrBlock is the CIDR block provided by
-                                Amazon when VPC has enabled IPv6.
+                                Amazon when VPC has enabled IPv6. Mutually exclusive
+                                with IPAMPool.
                               type: string
                             egressOnlyInternetGatewayId:
                               description: EgressOnlyInternetGatewayID is the id of
                                 the egress only internet gateway associated with an
                                 IPv6 enabled VPC.
                               type: string
+                            ipamPool:
+                              description: IPAMPool defines the IPAMv6 pool to be
+                                used for VPC. Mutually exclusive with CidrBlock.
+                              properties:
+                                id:
+                                  description: ID is the ID of the IPAM pool this
+                                    provider should use to create VPC.
+                                  type: string
+                                name:
+                                  description: Name is the name of the IPAM pool this
+                                    provider should use to create VPC.
+                                  type: string
+                                netmaskLength:
+                                  description: The netmask length of the IPv4 CIDR
+                                    you want to allocate to VPC from an Amazon VPC
+                                    IP Address Manager (IPAM) pool. Defaults to /16
+                                    for IPv4 if not specified.
+                                  format: int64
+                                  type: integer
+                              type: object
                             poolId:
                               description: PoolID is the IP pool which must be defined
-                                in case of BYO IP is defined.
+                                in case of BYO IP is defined. Must be specified if
+                                CidrBlock is set. Mutually exclusive with IPAMPool.
                               type: string
                           type: object
                         tags:
@@ -8443,10 +8529,15 @@ objects:
                       items:
                         type: string
                       type: array
+                    presignedURLDuration:
+                      description: "PresignedURLDuration defines the duration for
+                        which presigned URLs are valid. \n This is used to generate
+                        presigned URLs for S3 Bucket objects, which are used by control-plane
+                        and worker nodes to fetch bootstrap data. \n When enabled,
+                        the IAM instance profiles specified are not used."
+                      type: string
                   required:
-                  - controlPlaneIAMInstanceProfile
                   - name
-                  - nodesIAMInstanceProfiles
                   type: object
                 sshKeyName:
                   description: SSHKeyName is the name of the ssh key to attach to
@@ -9029,7 +9120,8 @@ objects:
                                 protocol:
                                   description: Protocol is the protocol for the ingress
                                     rule. Accepted values are "-1" (all), "4" (IP
-                                    in IP),"tcp", "udp", "icmp", and "58" (ICMPv6).
+                                    in IP),"tcp", "udp", "icmp", and "58" (ICMPv6),
+                                    "50" (ESP).
                                   enum:
                                   - "-1"
                                   - "4"
@@ -9037,6 +9129,7 @@ objects:
                                   - udp
                                   - icmp
                                   - "58"
+                                  - "50"
                                   type: string
                                 sourceSecurityGroupIds:
                                   description: The security group id to allow access
@@ -9900,6 +9993,36 @@ objects:
                           description: ControlPlaneLoadBalancer is optional configuration
                             for customizing control plane behavior.
                           properties:
+                            additionalListeners:
+                              description: AdditionalListeners sets the additional
+                                listeners for the control plane load balancer. This
+                                is only applicable to Network Load Balancer (NLB)
+                                types for the time being.
+                              items:
+                                description: AdditionalListenerSpec defines the desired
+                                  state of an additional listener on an AWS load balancer.
+                                properties:
+                                  port:
+                                    description: Port sets the port for the additional
+                                      listener.
+                                    format: int64
+                                    maximum: 65535
+                                    minimum: 1
+                                    type: integer
+                                  protocol:
+                                    default: TCP
+                                    description: Protocol sets the protocol for the
+                                      additional listener. Currently only TCP is supported.
+                                    enum:
+                                    - TCP
+                                    type: string
+                                required:
+                                - port
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - port
+                              x-kubernetes-list-type: map
                             additionalSecurityGroups:
                               description: AdditionalSecurityGroups sets the security
                                 groups used by the load balancer. Expected to be security
@@ -9967,7 +10090,7 @@ objects:
                                     description: Protocol is the protocol for the
                                       ingress rule. Accepted values are "-1" (all),
                                       "4" (IP in IP),"tcp", "udp", "icmp", and "58"
-                                      (ICMPv6).
+                                      (ICMPv6), "50" (ESP).
                                     enum:
                                     - "-1"
                                     - "4"
@@ -9975,6 +10098,7 @@ objects:
                                     - udp
                                     - icmp
                                     - "58"
+                                    - "50"
                                     type: string
                                   sourceSecurityGroupIds:
                                     description: The security group id to allow access
@@ -10136,7 +10260,7 @@ objects:
                                     description: Protocol is the protocol for the
                                       ingress rule. Accepted values are "-1" (all),
                                       "4" (IP in IP),"tcp", "udp", "icmp", and "58"
-                                      (ICMPv6).
+                                      (ICMPv6), "50" (ESP).
                                     enum:
                                     - "-1"
                                     - "4"
@@ -10144,6 +10268,7 @@ objects:
                                     - udp
                                     - icmp
                                     - "58"
+                                    - "50"
                                     type: string
                                   sourceSecurityGroupIds:
                                     description: The security group id to allow access
@@ -10234,8 +10359,18 @@ objects:
                                       used when the provider creates a managed VPC.
                                     type: string
                                   id:
-                                    description: ID defines a unique identifier to
-                                      reference this resource.
+                                    description: "ID defines a unique identifier to
+                                      reference this resource. If you're bringing
+                                      your subnet, set the AWS subnet-id here, it
+                                      must start with `subnet-`. \n When the VPC is
+                                      managed by CAPA, and you'd like the provider
+                                      to create a subnet for you, the id can be set
+                                      to any placeholder value that does not start
+                                      with `subnet-`; upon creation, the subnet AWS
+                                      identifier will be populated in the `ResourceID`
+                                      field and the `id` field is going to be used
+                                      as the subnet name. If you specify a tag called
+                                      `Name`, it takes precedence."
                                     type: string
                                   ipv6CidrBlock:
                                     description: IPv6CidrBlock is the IPv6 CIDR block
@@ -10265,6 +10400,11 @@ objects:
                                       the NAT gateway resides. It is then used to
                                       determine routes for private subnets in the
                                       same AZ as the public subnet.
+                                    type: string
+                                  resourceID:
+                                    description: ResourceID is the subnet identifier
+                                      from AWS, READ ONLY. This field is populated
+                                      when the provider manages the subnet.
                                     type: string
                                   routeTableId:
                                     description: RouteTableID is the routing table
@@ -10312,7 +10452,7 @@ objects:
                                 cidrBlock:
                                   description: CidrBlock is the CIDR block to be used
                                     when the provider creates a managed VPC. Defaults
-                                    to 10.0.0.0/16.
+                                    to 10.0.0.0/16. Mutually exclusive with IPAMPool.
                                   type: string
                                 id:
                                   description: ID is the vpc-id of the VPC this provider
@@ -10322,6 +10462,26 @@ objects:
                                   description: InternetGatewayID is the id of the
                                     internet gateway associated with the VPC.
                                   type: string
+                                ipamPool:
+                                  description: IPAMPool defines the IPAMv4 pool to
+                                    be used for VPC. Mutually exclusive with CidrBlock.
+                                  properties:
+                                    id:
+                                      description: ID is the ID of the IPAM pool this
+                                        provider should use to create VPC.
+                                      type: string
+                                    name:
+                                      description: Name is the name of the IPAM pool
+                                        this provider should use to create VPC.
+                                      type: string
+                                    netmaskLength:
+                                      description: The netmask length of the IPv4
+                                        CIDR you want to allocate to VPC from an Amazon
+                                        VPC IP Address Manager (IPAM) pool. Defaults
+                                        to /16 for IPv4 if not specified.
+                                      format: int64
+                                      type: integer
+                                  type: object
                                 ipv6:
                                   description: IPv6 contains ipv6 specific settings
                                     for the network. Supported only in managed clusters.
@@ -10329,16 +10489,42 @@ objects:
                                   properties:
                                     cidrBlock:
                                       description: CidrBlock is the CIDR block provided
-                                        by Amazon when VPC has enabled IPv6.
+                                        by Amazon when VPC has enabled IPv6. Mutually
+                                        exclusive with IPAMPool.
                                       type: string
                                     egressOnlyInternetGatewayId:
                                       description: EgressOnlyInternetGatewayID is
                                         the id of the egress only internet gateway
                                         associated with an IPv6 enabled VPC.
                                       type: string
+                                    ipamPool:
+                                      description: IPAMPool defines the IPAMv6 pool
+                                        to be used for VPC. Mutually exclusive with
+                                        CidrBlock.
+                                      properties:
+                                        id:
+                                          description: ID is the ID of the IPAM pool
+                                            this provider should use to create VPC.
+                                          type: string
+                                        name:
+                                          description: Name is the name of the IPAM
+                                            pool this provider should use to create
+                                            VPC.
+                                          type: string
+                                        netmaskLength:
+                                          description: The netmask length of the IPv4
+                                            CIDR you want to allocate to VPC from
+                                            an Amazon VPC IP Address Manager (IPAM)
+                                            pool. Defaults to /16 for IPv4 if not
+                                            specified.
+                                          format: int64
+                                          type: integer
+                                      type: object
                                     poolId:
                                       description: PoolID is the IP pool which must
-                                        be defined in case of BYO IP is defined.
+                                        be defined in case of BYO IP is defined. Must
+                                        be specified if CidrBlock is set. Mutually
+                                        exclusive with IPAMPool.
                                       type: string
                                   type: object
                                 tags:
@@ -10381,10 +10567,16 @@ objects:
                               items:
                                 type: string
                               type: array
+                            presignedURLDuration:
+                              description: "PresignedURLDuration defines the duration
+                                for which presigned URLs are valid. \n This is used
+                                to generate presigned URLs for S3 Bucket objects,
+                                which are used by control-plane and worker nodes to
+                                fetch bootstrap data. \n When enabled, the IAM instance
+                                profiles specified are not used."
+                              type: string
                           required:
-                          - controlPlaneIAMInstanceProfile
                           - name
-                          - nodesIAMInstanceProfiles
                           type: object
                         sshKeyName:
                           description: SSHKeyName is the name of the ssh key to attach
@@ -11332,6 +11524,14 @@ objects:
                     an instance, in addition to the ones added by default by the AWS
                     provider.
                   type: object
+                availabilityZoneSubnetType:
+                  description: AvailabilityZoneSubnetType specifies which type of
+                    subnets to use when an availability zone is specified.
+                  enum:
+                  - public
+                  - private
+                  - all
+                  type: string
                 availabilityZones:
                   description: AvailabilityZones is an array of availability zones
                     instances can run in
@@ -11423,6 +11623,62 @@ objects:
                       description: ImageLookupOrg is the AWS Organization ID to use
                         for image lookup if AMI is not set.
                       type: string
+                    instanceMetadataOptions:
+                      description: InstanceMetadataOptions defines the behavior for
+                        applying metadata to instances.
+                      properties:
+                        httpEndpoint:
+                          default: enabled
+                          description: "Enables or disables the HTTP metadata endpoint
+                            on your instances. \n If you specify a value of disabled,
+                            you cannot access your instance metadata. \n Default:
+                            enabled"
+                          enum:
+                          - enabled
+                          - disabled
+                          type: string
+                        httpPutResponseHopLimit:
+                          default: 1
+                          description: "The desired HTTP PUT response hop limit for
+                            instance metadata requests. The larger the number, the
+                            further instance metadata requests can travel. \n Default:
+                            1"
+                          format: int64
+                          maximum: 64
+                          minimum: 1
+                          type: integer
+                        httpTokens:
+                          default: optional
+                          description: "The state of token usage for your instance
+                            metadata requests. \n If the state is optional, you can
+                            choose to retrieve instance metadata with or without a
+                            session token on your request. If you retrieve the IAM
+                            role credentials without a token, the version 1.0 role
+                            credentials are returned. If you retrieve the IAM role
+                            credentials using a valid session token, the version 2.0
+                            role credentials are returned. \n If the state is required,
+                            you must send a session token with any instance metadata
+                            retrieval requests. In this state, retrieving the IAM
+                            role credentials always returns the version 2.0 credentials;
+                            the version 1.0 credentials are not available. \n Default:
+                            optional"
+                          enum:
+                          - optional
+                          - required
+                          type: string
+                        instanceMetadataTags:
+                          default: disabled
+                          description: "Set to enabled to allow access to instance
+                            tags from the instance metadata. Set to disabled to turn
+                            off access to instance tags from the instance metadata.
+                            For more information, see Work with instance tags using
+                            the instance metadata (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#work-with-tags-in-IMDS).
+                            \n Default: disabled"
+                          enum:
+                          - enabled
+                          - disabled
+                          type: string
+                      type: object
                     instanceType:
                       description: 'InstanceType is the type of instance to create.
                         Example: m4.xlarge'
@@ -11531,6 +11787,7 @@ objects:
                             allocate instance types to fulfill On-Demand capacity.
                           enum:
                           - prioritized
+                          - lowest-price
                           type: string
                         onDemandBaseCapacity:
                           default: 0
@@ -11547,6 +11804,8 @@ objects:
                           enum:
                           - lowest-price
                           - capacity-optimized
+                          - capacity-optimized-prioritized
+                          - price-capacity-optimized
                           type: string
                       type: object
                     overrides:
@@ -12456,6 +12715,11 @@ objects:
                         be used to generate bootstrap data.
                       enum:
                       - "2.3"
+                      - "3.0"
+                      - "3.1"
+                      - "3.2"
+                      - "3.3"
+                      - "3.4"
                       type: string
                   type: object
                 imageLookupBaseOS:
@@ -13427,6 +13691,11 @@ objects:
                                 will be used to generate bootstrap data.
                               enum:
                               - "2.3"
+                              - "3.0"
+                              - "3.1"
+                              - "3.2"
+                              - "3.3"
+                              - "3.4"
                               type: string
                           type: object
                         imageLookupBaseOS:
@@ -14358,6 +14627,14 @@ objects:
                     Kubernetes version will be used
                   minLength: 2
                   type: string
+                availabilityZoneSubnetType:
+                  description: AvailabilityZoneSubnetType specifies which type of
+                    subnets to use when an availability zone is specified.
+                  enum:
+                  - public
+                  - private
+                  - all
+                  type: string
                 availabilityZones:
                   description: AvailabilityZones is an array of availability zones
                     instances can run in
@@ -14451,6 +14728,62 @@ objects:
                       description: ImageLookupOrg is the AWS Organization ID to use
                         for image lookup if AMI is not set.
                       type: string
+                    instanceMetadataOptions:
+                      description: InstanceMetadataOptions defines the behavior for
+                        applying metadata to instances.
+                      properties:
+                        httpEndpoint:
+                          default: enabled
+                          description: "Enables or disables the HTTP metadata endpoint
+                            on your instances. \n If you specify a value of disabled,
+                            you cannot access your instance metadata. \n Default:
+                            enabled"
+                          enum:
+                          - enabled
+                          - disabled
+                          type: string
+                        httpPutResponseHopLimit:
+                          default: 1
+                          description: "The desired HTTP PUT response hop limit for
+                            instance metadata requests. The larger the number, the
+                            further instance metadata requests can travel. \n Default:
+                            1"
+                          format: int64
+                          maximum: 64
+                          minimum: 1
+                          type: integer
+                        httpTokens:
+                          default: optional
+                          description: "The state of token usage for your instance
+                            metadata requests. \n If the state is optional, you can
+                            choose to retrieve instance metadata with or without a
+                            session token on your request. If you retrieve the IAM
+                            role credentials without a token, the version 1.0 role
+                            credentials are returned. If you retrieve the IAM role
+                            credentials using a valid session token, the version 2.0
+                            role credentials are returned. \n If the state is required,
+                            you must send a session token with any instance metadata
+                            retrieval requests. In this state, retrieving the IAM
+                            role credentials always returns the version 2.0 credentials;
+                            the version 1.0 credentials are not available. \n Default:
+                            optional"
+                          enum:
+                          - optional
+                          - required
+                          type: string
+                        instanceMetadataTags:
+                          default: disabled
+                          description: "Set to enabled to allow access to instance
+                            tags from the instance metadata. Set to disabled to turn
+                            off access to instance tags from the instance metadata.
+                            For more information, see Work with instance tags using
+                            the instance metadata (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Tags.html#work-with-tags-in-IMDS).
+                            \n Default: disabled"
+                          enum:
+                          - enabled
+                          - disabled
+                          type: string
+                      type: object
                     instanceType:
                       description: 'InstanceType is the type of instance to create.
                         Example: m4.xlarge'
@@ -14751,6 +15084,114 @@ objects:
                   type: integer
               required:
               - ready
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+  status:
+    acceptedNames:
+      kind: ""
+      plural: ""
+    conditions: null
+    storedVersions: null
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.13.0
+    creationTimestamp: null
+    name: rosaclusters.infrastructure.cluster.x-k8s.io
+  spec:
+    group: infrastructure.cluster.x-k8s.io
+    names:
+      categories:
+      - cluster-api
+      kind: ROSACluster
+      listKind: ROSAClusterList
+      plural: rosaclusters
+      shortNames:
+      - rosac
+      singular: rosacluster
+    scope: Namespaced
+    versions:
+    - additionalPrinterColumns:
+      - description: Cluster to which this AWSManagedControl belongs
+        jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+        name: Cluster
+        type: string
+      - description: Control plane infrastructure is ready for worker nodes
+        jsonPath: .status.ready
+        name: Ready
+        type: string
+      - description: API Endpoint
+        jsonPath: .spec.controlPlaneEndpoint.host
+        name: Endpoint
+        priority: 1
+        type: string
+      name: v1beta2
+      schema:
+        openAPIV3Schema:
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource
+                this object represents. Servers may infer this from the endpoint the
+                client submits requests to. Cannot be updated. In CamelCase. More
+                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              properties:
+                controlPlaneEndpoint:
+                  description: ControlPlaneEndpoint represents the endpoint used to
+                    communicate with the control plane.
+                  properties:
+                    host:
+                      description: The hostname on which the API server is serving.
+                      type: string
+                    port:
+                      description: The port on which the API server is serving.
+                      format: int32
+                      type: integer
+                  required:
+                  - host
+                  - port
+                  type: object
+              type: object
+            status:
+              description: ROSAClusterStatus defines the observed state of ROSACluster
+              properties:
+                failureDomains:
+                  additionalProperties:
+                    description: FailureDomainSpec is the Schema for Cluster API failure
+                      domains. It allows controllers to understand how many failure
+                      domains a cluster can optionally span across.
+                    properties:
+                      attributes:
+                        additionalProperties:
+                          type: string
+                        description: Attributes is a free form map of attributes an
+                          infrastructure provider might use or require.
+                        type: object
+                      controlPlane:
+                        description: ControlPlane determines if this failure domain
+                          is suitable for use by control plane machines.
+                        type: boolean
+                    type: object
+                  description: FailureDomains specifies a list fo available availability
+                    zones that can be used
+                  type: object
+                ready:
+                  description: Ready is when the ROSAControlPlane has a API server
+                    URL.
+                  type: boolean
               type: object
           type: object
       served: true
@@ -15551,6 +15992,28 @@ objects:
                   required:
                   - name
                   - type
+                  type: object
+                failureDomains:
+                  additionalProperties:
+                    description: FailureDomainSpec is the Schema for Cluster API failure
+                      domains. It allows controllers to understand how many failure
+                      domains a cluster can optionally span across.
+                    properties:
+                      attributes:
+                        additionalProperties:
+                          type: string
+                        description: Attributes is a free form map of attributes an
+                          infrastructure provider might use or require.
+                        type: object
+                      controlPlane:
+                        description: ControlPlane determines if this failure domain
+                          is suitable for use by control plane machines.
+                        type: boolean
+                    type: object
+                  description: 'FailureDomains is a list of failure domains in the
+                    cluster''s region, used to restrict eligibility to host the control
+                    plane. A FailureDomain maps to an availability zone, which is
+                    a separated group of datacenters within a region. See: https://learn.microsoft.com/azure/reliability/availability-zones-overview'
                   type: object
                 identityRef:
                   description: IdentityRef is a reference to an AzureIdentity to be
@@ -16837,6 +17300,30 @@ objects:
                           required:
                           - name
                           - type
+                          type: object
+                        failureDomains:
+                          additionalProperties:
+                            description: FailureDomainSpec is the Schema for Cluster
+                              API failure domains. It allows controllers to understand
+                              how many failure domains a cluster can optionally span
+                              across.
+                            properties:
+                              attributes:
+                                additionalProperties:
+                                  type: string
+                                description: Attributes is a free form map of attributes
+                                  an infrastructure provider might use or require.
+                                type: object
+                              controlPlane:
+                                description: ControlPlane determines if this failure
+                                  domain is suitable for use by control plane machines.
+                                type: boolean
+                            type: object
+                          description: 'FailureDomains is a list of failure domains
+                            in the cluster''s region, used to restrict eligibility
+                            to host the control plane. A FailureDomain maps to an
+                            availability zone, which is a separated group of datacenters
+                            within a region. See: https://learn.microsoft.com/azure/reliability/availability-zones-overview'
                           type: object
                         identityRef:
                           description: IdentityRef is a reference to an AzureIdentity
@@ -19074,6 +19561,72 @@ objects:
     annotations:
       controller-gen.kubebuilder.io/version: v0.13.0
     creationTimestamp: null
+    name: azuremanagedclustertemplates.infrastructure.cluster.x-k8s.io
+  spec:
+    group: infrastructure.cluster.x-k8s.io
+    names:
+      categories:
+      - cluster-api
+      kind: AzureManagedClusterTemplate
+      listKind: AzureManagedClusterTemplateList
+      plural: azuremanagedclustertemplates
+      shortNames:
+      - amct
+      singular: azuremanagedclustertemplate
+    scope: Namespaced
+    versions:
+    - name: v1beta1
+      schema:
+        openAPIV3Schema:
+          description: AzureManagedClusterTemplate is the Schema for the AzureManagedClusterTemplates
+            API.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource
+                this object represents. Servers may infer this from the endpoint the
+                client submits requests to. Cannot be updated. In CamelCase. More
+                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AzureManagedClusterTemplateSpec defines the desired state
+                of AzureManagedClusterTemplate.
+              properties:
+                template:
+                  description: AzureManagedClusterTemplateResource describes the data
+                    needed to create an AzureManagedCluster from a template.
+                  properties:
+                    spec:
+                      description: AzureManagedClusterTemplateResourceSpec specifies
+                        an Azure managed cluster template resource.
+                      type: object
+                  required:
+                  - spec
+                  type: object
+              required:
+              - template
+              type: object
+          type: object
+      served: true
+      storage: true
+  status:
+    acceptedNames:
+      kind: ""
+      plural: ""
+    conditions: null
+    storedVersions: null
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.13.0
+    creationTimestamp: null
     name: azuremanagedcontrolplanes.infrastructure.cluster.x-k8s.io
   spec:
     group: infrastructure.cluster.x-k8s.io
@@ -19168,16 +19721,16 @@ objects:
                         type: string
                       type: array
                     enablePrivateCluster:
-                      description: EnablePrivateCluster - Whether to create the cluster
-                        as a private cluster or not.
+                      description: EnablePrivateCluster indicates whether to create
+                        the cluster as a private cluster or not.
                       type: boolean
                     enablePrivateClusterPublicFQDN:
-                      description: EnablePrivateClusterPublicFQDN - Whether to create
-                        additional public FQDN for private cluster or not.
+                      description: EnablePrivateClusterPublicFQDN indicates whether
+                        to create additional public FQDN for private cluster or not.
                       type: boolean
                     privateDNSZone:
-                      description: PrivateDNSZone - Private dns zone mode for private
-                        cluster.
+                      description: PrivateDNSZone enables private dns zone mode for
+                        private cluster.
                       enum:
                       - System
                       - None
@@ -19311,6 +19864,14 @@ objects:
                   - host
                   - port
                   type: object
+                disableLocalAccounts:
+                  description: DisableLocalAccounts disables getting static credentials
+                    for this cluster when set. Expected to only be used for AAD clusters.
+                  type: boolean
+                dnsPrefix:
+                  description: DNSPrefix allows the user to customize dns prefix.
+                    Immutable.
+                  type: string
                 dnsServiceIP:
                   description: DNSServiceIP is an IP address assigned to the Kubernetes
                     DNS service. It must be within the Kubernetes service address
@@ -19404,18 +19965,15 @@ objects:
                         SNAT ports per VM. Allowed values must be in the range of
                         0 to 64000 (inclusive). The default value is 0 which results
                         in Azure dynamically allocating ports.
-                      format: int32
                       type: integer
                     idleTimeoutInMinutes:
                       description: IdleTimeoutInMinutes - Desired outbound flow idle
                         timeout in minutes. Allowed values must be in the range of
                         4 to 120 (inclusive). The default value is 30 minutes.
-                      format: int32
                       type: integer
                     managedOutboundIPs:
                       description: ManagedOutboundIPs - Desired managed outbound IPs
                         for the cluster load balancer.
-                      format: int32
                       type: integer
                     outboundIPPrefixes:
                       description: OutboundIPPrefixes - Desired outbound IP Prefix
@@ -19431,6 +19989,7 @@ objects:
                       type: array
                   type: object
                 loadBalancerSKU:
+                  default: Standard
                   description: LoadBalancerSKU is the SKU of the loadBalancer to be
                     provisioned. Immutable.
                   enum:
@@ -19439,14 +19998,20 @@ objects:
                   type: string
                 location:
                   description: 'Location is a string matching one of the canonical
-                    Azure region names. Examples: "westus2", "eastus". Immutable.'
+                    Azure region names. Examples: "westus2", "eastus".'
                   type: string
+                machineTemplate:
+                  description: MachineTemplate contains information about how machines
+                    should be shaped when creating or updating a control plane. For
+                    the AzureManagedControlPlaneTemplate, this field is used only
+                    to fulfill the CAPI contract.
+                  type: object
                 networkPlugin:
                   description: NetworkPlugin used for building Kubernetes network.
-                    Allowed values are "azure", "kubenet". Immutable.
                   enum:
                   - azure
                   - kubenet
+                  - none
                   type: string
                 networkPluginMode:
                   description: NetworkPluginMode is the mode the network plugin should
@@ -19456,7 +20021,6 @@ objects:
                   type: string
                 networkPolicy:
                   description: NetworkPolicy used for building Kubernetes network.
-                    Allowed values are "azure", "calico". Immutable.
                   enum:
                   - azure
                   - calico
@@ -19475,7 +20039,7 @@ objects:
                       type: boolean
                   type: object
                 outboundType:
-                  description: Outbound configuration used by Nodes. Immutable.
+                  description: Outbound configuration used by Nodes.
                   enum:
                   - loadBalancer
                   - managedNATGateway
@@ -19506,15 +20070,15 @@ objects:
                   type: string
                 subscriptionID:
                   description: SubscriptionID is the GUID of the Azure subscription
-                    to hold this cluster. Immutable.
+                    that owns this cluster.
                   type: string
                 version:
                   description: Version defines the desired Kubernetes version.
                   minLength: 2
                   type: string
                 virtualNetwork:
-                  description: VirtualNetwork describes the vnet for the AKS cluster.
-                    Will be created if it does not exist. Immutable except for `subnet`.
+                  description: VirtualNetwork describes the virtual network for the
+                    AKS cluster. It will be created if it does not already exist.
                   properties:
                     cidrBlock:
                       type: string
@@ -19525,7 +20089,8 @@ objects:
                         group for the VNet and Subnet.
                       type: string
                     subnet:
-                      description: Immutable except for `serviceEndpoints`.
+                      description: ManagedControlPlaneSubnet describes a subnet for
+                        an AKS cluster.
                       properties:
                         cidrBlock:
                           type: string
@@ -19753,12 +20318,622 @@ objects:
                 ready:
                   description: Ready is true when the provider resource is ready.
                   type: boolean
+                version:
+                  description: Version defines the Kubernetes version for the control
+                    plane instance.
+                  type: string
               type: object
           type: object
       served: true
       storage: true
       subresources:
         status: {}
+  status:
+    acceptedNames:
+      kind: ""
+      plural: ""
+    conditions: null
+    storedVersions: null
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.13.0
+    creationTimestamp: null
+    name: azuremanagedcontrolplanetemplates.infrastructure.cluster.x-k8s.io
+  spec:
+    group: infrastructure.cluster.x-k8s.io
+    names:
+      categories:
+      - cluster-api
+      kind: AzureManagedControlPlaneTemplate
+      listKind: AzureManagedControlPlaneTemplateList
+      plural: azuremanagedcontrolplanetemplates
+      shortNames:
+      - amcpt
+      singular: azuremanagedcontrolplanetemplate
+    scope: Namespaced
+    versions:
+    - name: v1beta1
+      schema:
+        openAPIV3Schema:
+          description: AzureManagedControlPlaneTemplate is the Schema for the AzureManagedControlPlaneTemplates
+            API.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource
+                this object represents. Servers may infer this from the endpoint the
+                client submits requests to. Cannot be updated. In CamelCase. More
+                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AzureManagedControlPlaneTemplateSpec defines the desired
+                state of AzureManagedControlPlaneTemplate.
+              properties:
+                template:
+                  description: AzureManagedControlPlaneTemplateResource describes
+                    the data needed to create an AzureManagedCluster from a template.
+                  properties:
+                    spec:
+                      description: AzureManagedControlPlaneTemplateResourceSpec specifies
+                        an Azure managed control plane template resource.
+                      properties:
+                        aadProfile:
+                          description: AadProfile is Azure Active Directory configuration
+                            to integrate with AKS for aad authentication.
+                          properties:
+                            adminGroupObjectIDs:
+                              description: AdminGroupObjectIDs - AAD group object
+                                IDs that will have admin role of the cluster.
+                              items:
+                                type: string
+                              type: array
+                            managed:
+                              description: Managed - Whether to enable managed AAD.
+                              type: boolean
+                          required:
+                          - adminGroupObjectIDs
+                          - managed
+                          type: object
+                        additionalTags:
+                          additionalProperties:
+                            type: string
+                          description: AdditionalTags is an optional set of tags to
+                            add to Azure resources managed by the Azure provider,
+                            in addition to the ones added by default.
+                          type: object
+                        addonProfiles:
+                          description: AddonProfiles are the profiles of managed cluster
+                            add-on.
+                          items:
+                            description: AddonProfile represents a managed cluster
+                              add-on.
+                            properties:
+                              config:
+                                additionalProperties:
+                                  type: string
+                                description: Config - Key-value pairs for configuring
+                                  the add-on.
+                                type: object
+                              enabled:
+                                description: Enabled - Whether the add-on is enabled
+                                  or not.
+                                type: boolean
+                              name:
+                                description: Name - The name of the managed cluster
+                                  add-on.
+                                type: string
+                            required:
+                            - enabled
+                            - name
+                            type: object
+                          type: array
+                        apiServerAccessProfile:
+                          description: APIServerAccessProfile is the access profile
+                            for AKS API server. Immutable except for `authorizedIPRanges`.
+                          properties:
+                            authorizedIPRanges:
+                              description: AuthorizedIPRanges - Authorized IP Ranges
+                                to kubernetes API server.
+                              items:
+                                type: string
+                              type: array
+                            enablePrivateCluster:
+                              description: EnablePrivateCluster indicates whether
+                                to create the cluster as a private cluster or not.
+                              type: boolean
+                            enablePrivateClusterPublicFQDN:
+                              description: EnablePrivateClusterPublicFQDN indicates
+                                whether to create additional public FQDN for private
+                                cluster or not.
+                              type: boolean
+                            privateDNSZone:
+                              description: PrivateDNSZone enables private dns zone
+                                mode for private cluster.
+                              enum:
+                              - System
+                              - None
+                              type: string
+                          type: object
+                        autoscalerProfile:
+                          description: AutoscalerProfile is the parameters to be applied
+                            to the cluster-autoscaler when enabled
+                          properties:
+                            balanceSimilarNodeGroups:
+                              description: BalanceSimilarNodeGroups - Valid values
+                                are 'true' and 'false'. The default is false.
+                              enum:
+                              - "true"
+                              - "false"
+                              type: string
+                            expander:
+                              description: Expander - If not specified, the default
+                                is 'random'. See [expanders](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-are-expanders)
+                                for more information.
+                              enum:
+                              - least-waste
+                              - most-pods
+                              - priority
+                              - random
+                              type: string
+                            maxEmptyBulkDelete:
+                              description: MaxEmptyBulkDelete - The default is 10.
+                              type: string
+                            maxGracefulTerminationSec:
+                              description: MaxGracefulTerminationSec - The default
+                                is 600.
+                              pattern: ^(\d+)$
+                              type: string
+                            maxNodeProvisionTime:
+                              description: MaxNodeProvisionTime - The default is '15m'.
+                                Values must be an integer followed by an 'm'. No unit
+                                of time other than minutes (m) is supported.
+                              pattern: ^(\d+)m$
+                              type: string
+                            maxTotalUnreadyPercentage:
+                              description: MaxTotalUnreadyPercentage - The default
+                                is 45. The maximum is 100 and the minimum is 0.
+                              maxLength: 3
+                              minLength: 1
+                              pattern: ^(\d+)$
+                              type: string
+                            newPodScaleUpDelay:
+                              description: NewPodScaleUpDelay - For scenarios like
+                                burst/batch scale where you don't want CA to act before
+                                the kubernetes scheduler could schedule all the pods,
+                                you can tell CA to ignore unscheduled pods before
+                                they're a certain age. The default is '0s'. Values
+                                must be an integer followed by a unit ('s' for seconds,
+                                'm' for minutes, 'h' for hours, etc).
+                              type: string
+                            okTotalUnreadyCount:
+                              description: OkTotalUnreadyCount - This must be an integer.
+                                The default is 3.
+                              pattern: ^(\d+)$
+                              type: string
+                            scaleDownDelayAfterAdd:
+                              description: ScaleDownDelayAfterAdd - The default is
+                                '10m'. Values must be an integer followed by an 'm'.
+                                No unit of time other than minutes (m) is supported.
+                              pattern: ^(\d+)m$
+                              type: string
+                            scaleDownDelayAfterDelete:
+                              description: ScaleDownDelayAfterDelete - The default
+                                is the scan-interval. Values must be an integer followed
+                                by an 's'. No unit of time other than seconds (s)
+                                is supported.
+                              pattern: ^(\d+)s$
+                              type: string
+                            scaleDownDelayAfterFailure:
+                              description: ScaleDownDelayAfterFailure - The default
+                                is '3m'. Values must be an integer followed by an
+                                'm'. No unit of time other than minutes (m) is supported.
+                              pattern: ^(\d+)m$
+                              type: string
+                            scaleDownUnneededTime:
+                              description: ScaleDownUnneededTime - The default is
+                                '10m'. Values must be an integer followed by an 'm'.
+                                No unit of time other than minutes (m) is supported.
+                              pattern: ^(\d+)m$
+                              type: string
+                            scaleDownUnreadyTime:
+                              description: ScaleDownUnreadyTime - The default is '20m'.
+                                Values must be an integer followed by an 'm'. No unit
+                                of time other than minutes (m) is supported.
+                              pattern: ^(\d+)m$
+                              type: string
+                            scaleDownUtilizationThreshold:
+                              description: ScaleDownUtilizationThreshold - The default
+                                is '0.5'.
+                              type: string
+                            scanInterval:
+                              description: ScanInterval - How often cluster is reevaluated
+                                for scale up or down. The default is '10s'.
+                              pattern: ^(\d+)s$
+                              type: string
+                            skipNodesWithLocalStorage:
+                              description: SkipNodesWithLocalStorage - The default
+                                is false.
+                              enum:
+                              - "true"
+                              - "false"
+                              type: string
+                            skipNodesWithSystemPods:
+                              description: SkipNodesWithSystemPods - The default is
+                                true.
+                              enum:
+                              - "true"
+                              - "false"
+                              type: string
+                          type: object
+                        azureEnvironment:
+                          description: 'AzureEnvironment is the name of the AzureCloud
+                            to be used. The default value that would be used by most
+                            users is "AzurePublicCloud", other values are: - ChinaCloud:
+                            "AzureChinaCloud" - PublicCloud: "AzurePublicCloud" -
+                            USGovernmentCloud: "AzureUSGovernmentCloud"'
+                          type: string
+                        disableLocalAccounts:
+                          description: DisableLocalAccounts disables getting static
+                            credentials for this cluster when set. Expected to only
+                            be used for AAD clusters.
+                          type: boolean
+                        dnsServiceIP:
+                          description: DNSServiceIP is an IP address assigned to the
+                            Kubernetes DNS service. It must be within the Kubernetes
+                            service address range specified in serviceCidr. Immutable.
+                          type: string
+                        httpProxyConfig:
+                          description: HTTPProxyConfig is the HTTP proxy configuration
+                            for the cluster. Immutable.
+                          properties:
+                            httpProxy:
+                              description: HTTPProxy is the HTTP proxy server endpoint
+                                to use.
+                              type: string
+                            httpsProxy:
+                              description: HTTPSProxy is the HTTPS proxy server endpoint
+                                to use.
+                              type: string
+                            noProxy:
+                              description: NoProxy indicates the endpoints that should
+                                not go through proxy.
+                              items:
+                                type: string
+                              type: array
+                            trustedCa:
+                              description: TrustedCA is the alternative CA cert to
+                                use for connecting to proxy servers.
+                              type: string
+                          type: object
+                        identity:
+                          description: Identity configuration used by the AKS control
+                            plane.
+                          properties:
+                            type:
+                              description: Type - The Identity type to use.
+                              enum:
+                              - SystemAssigned
+                              - UserAssigned
+                              type: string
+                            userAssignedIdentityResourceID:
+                              description: UserAssignedIdentityResourceID - Identity
+                                ARM resource ID when using user-assigned identity.
+                              type: string
+                          type: object
+                        identityRef:
+                          description: IdentityRef is a reference to a AzureClusterIdentity
+                            to be used when reconciling this cluster
+                          properties:
+                            apiVersion:
+                              description: API version of the referent.
+                              type: string
+                            fieldPath:
+                              description: 'If referring to a piece of an object instead
+                                of an entire object, this string should contain a
+                                valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                                For example, if the object reference is to a container
+                                within a pod, this would take on a value like: "spec.containers{name}"
+                                (where "name" refers to the name of the container
+                                that triggered the event) or if no container name
+                                is specified "spec.containers[2]" (container with
+                                index 2 in this pod). This syntax is chosen only to
+                                have some well-defined way of referencing a part of
+                                an object. TODO: this design is not final and this
+                                field is subject to change in the future.'
+                              type: string
+                            kind:
+                              description: 'Kind of the referent. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+                              type: string
+                            name:
+                              description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names'
+                              type: string
+                            namespace:
+                              description: 'Namespace of the referent. More info:
+                                https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/'
+                              type: string
+                            resourceVersion:
+                              description: 'Specific resourceVersion to which this
+                                reference is made, if any. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency'
+                              type: string
+                            uid:
+                              description: 'UID of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids'
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        kubeletUserAssignedIdentity:
+                          description: KubeletUserAssignedIdentity is the user-assigned
+                            identity for kubelet. For authentication with Azure Container
+                            Registry.
+                          type: string
+                        loadBalancerProfile:
+                          description: LoadBalancerProfile is the profile of the cluster
+                            load balancer.
+                          properties:
+                            allocatedOutboundPorts:
+                              description: AllocatedOutboundPorts - Desired number
+                                of allocated SNAT ports per VM. Allowed values must
+                                be in the range of 0 to 64000 (inclusive). The default
+                                value is 0 which results in Azure dynamically allocating
+                                ports.
+                              type: integer
+                            idleTimeoutInMinutes:
+                              description: IdleTimeoutInMinutes - Desired outbound
+                                flow idle timeout in minutes. Allowed values must
+                                be in the range of 4 to 120 (inclusive). The default
+                                value is 30 minutes.
+                              type: integer
+                            managedOutboundIPs:
+                              description: ManagedOutboundIPs - Desired managed outbound
+                                IPs for the cluster load balancer.
+                              type: integer
+                            outboundIPPrefixes:
+                              description: OutboundIPPrefixes - Desired outbound IP
+                                Prefix resources for the cluster load balancer.
+                              items:
+                                type: string
+                              type: array
+                            outboundIPs:
+                              description: OutboundIPs - Desired outbound IP resources
+                                for the cluster load balancer.
+                              items:
+                                type: string
+                              type: array
+                          type: object
+                        loadBalancerSKU:
+                          default: Standard
+                          description: LoadBalancerSKU is the SKU of the loadBalancer
+                            to be provisioned. Immutable.
+                          enum:
+                          - Basic
+                          - Standard
+                          type: string
+                        location:
+                          description: 'Location is a string matching one of the canonical
+                            Azure region names. Examples: "westus2", "eastus".'
+                          type: string
+                        machineTemplate:
+                          description: MachineTemplate contains information about
+                            how machines should be shaped when creating or updating
+                            a control plane. For the AzureManagedControlPlaneTemplate,
+                            this field is used only to fulfill the CAPI contract.
+                          type: object
+                        networkPlugin:
+                          description: NetworkPlugin used for building Kubernetes
+                            network.
+                          enum:
+                          - azure
+                          - kubenet
+                          - none
+                          type: string
+                        networkPluginMode:
+                          description: NetworkPluginMode is the mode the network plugin
+                            should use. Allowed value is "overlay".
+                          enum:
+                          - overlay
+                          type: string
+                        networkPolicy:
+                          description: NetworkPolicy used for building Kubernetes
+                            network.
+                          enum:
+                          - azure
+                          - calico
+                          type: string
+                        oidcIssuerProfile:
+                          description: OIDCIssuerProfile is the OIDC issuer profile
+                            of the Managed Cluster.
+                          properties:
+                            enabled:
+                              description: Enabled is whether the OIDC issuer is enabled.
+                              type: boolean
+                          type: object
+                        outboundType:
+                          description: Outbound configuration used by Nodes.
+                          enum:
+                          - loadBalancer
+                          - managedNATGateway
+                          - userAssignedNATGateway
+                          - userDefinedRouting
+                          type: string
+                        sku:
+                          description: SKU is the SKU of the AKS to be provisioned.
+                          properties:
+                            tier:
+                              description: Tier - Tier of an AKS cluster.
+                              enum:
+                              - Free
+                              - Paid
+                              - Standard
+                              type: string
+                          required:
+                          - tier
+                          type: object
+                        subscriptionID:
+                          description: SubscriptionID is the GUID of the Azure subscription
+                            that owns this cluster.
+                          type: string
+                        version:
+                          description: Version defines the desired Kubernetes version.
+                          minLength: 2
+                          type: string
+                        virtualNetwork:
+                          description: VirtualNetwork describes the virtual network
+                            for the AKS cluster. It will be created if it does not
+                            already exist.
+                          properties:
+                            cidrBlock:
+                              type: string
+                            name:
+                              type: string
+                            resourceGroup:
+                              description: ResourceGroup is the name of the Azure
+                                resource group for the VNet and Subnet.
+                              type: string
+                            subnet:
+                              description: ManagedControlPlaneSubnet describes a subnet
+                                for an AKS cluster.
+                              properties:
+                                cidrBlock:
+                                  type: string
+                                name:
+                                  type: string
+                                privateEndpoints:
+                                  description: PrivateEndpoints is a slice of Virtual
+                                    Network private endpoints to create for the subnets.
+                                  items:
+                                    description: PrivateEndpointSpec configures an
+                                      Azure Private Endpoint.
+                                    properties:
+                                      applicationSecurityGroups:
+                                        description: ApplicationSecurityGroups specifies
+                                          the Application security group in which
+                                          the private endpoint IP configuration is
+                                          included.
+                                        items:
+                                          type: string
+                                        type: array
+                                      customNetworkInterfaceName:
+                                        description: CustomNetworkInterfaceName specifies
+                                          the network interface name associated with
+                                          the private endpoint.
+                                        type: string
+                                      location:
+                                        description: Location specifies the region
+                                          to create the private endpoint.
+                                        type: string
+                                      manualApproval:
+                                        description: ManualApproval specifies if the
+                                          connection approval needs to be done manually
+                                          or not. Set it true when the network admin
+                                          does not have access to approve connections
+                                          to the remote resource. Defaults to false.
+                                        type: boolean
+                                      name:
+                                        description: Name specifies the name of the
+                                          private endpoint.
+                                        type: string
+                                      privateIPAddresses:
+                                        description: PrivateIPAddresses specifies
+                                          the IP addresses for the network interface
+                                          associated with the private endpoint. They
+                                          have to be part of the subnet where the
+                                          private endpoint is linked.
+                                        items:
+                                          type: string
+                                        type: array
+                                      privateLinkServiceConnections:
+                                        description: PrivateLinkServiceConnections
+                                          specifies Private Link Service Connections
+                                          of the private endpoint.
+                                        items:
+                                          description: PrivateLinkServiceConnection
+                                            defines the specification for a private
+                                            link service connection associated with
+                                            a private endpoint.
+                                          properties:
+                                            groupIDs:
+                                              description: GroupIDs specifies the
+                                                ID(s) of the group(s) obtained from
+                                                the remote resource that this private
+                                                endpoint should connect to.
+                                              items:
+                                                type: string
+                                              type: array
+                                            name:
+                                              description: Name specifies the name
+                                                of the private link service.
+                                              type: string
+                                            privateLinkServiceID:
+                                              description: PrivateLinkServiceID specifies
+                                                the resource ID of the private link
+                                                service.
+                                              type: string
+                                            requestMessage:
+                                              description: RequestMessage specifies
+                                                a message passed to the owner of the
+                                                remote resource with the private endpoint
+                                                connection request.
+                                              maxLength: 140
+                                              type: string
+                                          type: object
+                                        type: array
+                                    required:
+                                    - name
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-map-keys:
+                                  - name
+                                  x-kubernetes-list-type: map
+                                serviceEndpoints:
+                                  description: ServiceEndpoints is a slice of Virtual
+                                    Network service endpoints to enable for the subnets.
+                                  items:
+                                    description: ServiceEndpointSpec configures an
+                                      Azure Service Endpoint.
+                                    properties:
+                                      locations:
+                                        items:
+                                          type: string
+                                        type: array
+                                      service:
+                                        type: string
+                                    required:
+                                    - locations
+                                    - service
+                                    type: object
+                                  type: array
+                                  x-kubernetes-list-map-keys:
+                                  - service
+                                  x-kubernetes-list-type: map
+                              required:
+                              - cidrBlock
+                              - name
+                              type: object
+                          required:
+                          - cidrBlock
+                          - name
+                          type: object
+                      required:
+                      - identityRef
+                      - location
+                      - version
+                      type: object
+                  required:
+                  - spec
+                  type: object
+              required:
+              - template
+              type: object
+          type: object
+      served: true
+      storage: true
   status:
     acceptedNames:
       kind: ""
@@ -19825,6 +21000,11 @@ objects:
                   items:
                     type: string
                   type: array
+                enableEncryptionAtHost:
+                  description: "EnableEncryptionAtHost indicates whether host encryption
+                    is enabled on the node pool. Immutable. See also [AKS doc]. \n
+                    [AKS doc]: https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption"
+                  type: boolean
                 enableFIPS:
                   description: EnableFIPS indicates whether FIPS is enabled on the
                     node pool. Immutable.
@@ -19853,13 +21033,11 @@ objects:
                       description: ContainerLogMaxFiles - The maximum number of container
                         log files that can be present for a container. The number
                         must be ≥ 2.
-                      format: int32
                       minimum: 2
                       type: integer
                     containerLogMaxSizeMB:
                       description: ContainerLogMaxSizeMB - The maximum size in MB
                         of a container log file before it is rotated.
-                      format: int32
                       type: integer
                     cpuCfsQuota:
                       description: CPUCfsQuota - Enable CPU CFS quota enforcement
@@ -19883,7 +21061,6 @@ objects:
                       description: ImageGcHighThreshold - The percent of disk usage
                         after which image garbage collection is always run. Valid
                         values are 0-100 (inclusive).
-                      format: int32
                       maximum: 100
                       minimum: 0
                       type: integer
@@ -19891,14 +21068,12 @@ objects:
                       description: ImageGcLowThreshold - The percent of disk usage
                         before which image garbage collection is never run. Valid
                         values are 0-100 (inclusive) and must be less than `imageGcHighThreshold`.
-                      format: int32
                       maximum: 100
                       minimum: 0
                       type: integer
                     podMaxPids:
                       description: PodMaxPids - The maximum number of processes per
                         pod. Must not exceed kernel PID limit. -1 disables the limit.
-                      format: int32
                       minimum: -1
                       type: integer
                     topologyManagerPolicy:
@@ -19930,7 +21105,6 @@ objects:
                         Max value of SwapFileSizeMB should be the size of temporary
                         disk(/dev/sdb). Must be at least 1. See also [AKS doc]. \n
                         [AKS doc]: https://learn.microsoft.com/azure/virtual-machines/managed-disks-overview#temporary-disk"
-                      format: int32
                       minimum: 1
                       type: integer
                     sysctls:
@@ -19940,7 +21114,6 @@ objects:
                           description: FsAioMaxNr specifies the maximum number of
                             system-wide asynchronous io requests. Valid values are
                             65536-6553500 (inclusive). Maps to fs.aio-max-nr.
-                          format: int32
                           maximum: 6553500
                           minimum: 65536
                           type: integer
@@ -19949,7 +21122,6 @@ objects:
                             that the Linux kernel will allocate, by increasing increases
                             the maximum number of open files permitted. Valid values
                             are 8192-12000500 (inclusive). Maps to fs.file-max.
-                          format: int32
                           maximum: 12000500
                           minimum: 8192
                           type: integer
@@ -19959,7 +21131,6 @@ objects:
                             90 bytes on a 32-bit kernel, and roughly 160 bytes on
                             a 64-bit kernel. Valid values are 781250-2097152 (inclusive).
                             Maps to fs.inotify.max_user_watches.
-                          format: int32
                           maximum: 2097152
                           minimum: 781250
                           type: integer
@@ -19967,7 +21138,6 @@ objects:
                           description: FsNrOpen specifies the maximum number of file-handles
                             a process can allocate. Valid values are 8192-20000500
                             (inclusive). Maps to fs.nr_open.
-                          format: int32
                           maximum: 20000500
                           minimum: 8192
                           type: integer
@@ -19975,7 +21145,6 @@ objects:
                           description: KernelThreadsMax specifies the maximum number
                             of all threads that can be created. Valid values are 20-513785
                             (inclusive). Maps to kernel.threads-max.
-                          format: int32
                           maximum: 513785
                           minimum: 20
                           type: integer
@@ -19984,7 +21153,6 @@ objects:
                             of packets, queued on the INPUT side, when the interface
                             receives packets faster than kernel can process them.
                             Valid values are 1000-3240000 (inclusive). Maps to net.core.netdev_max_backlog.
-                          format: int32
                           maximum: 3240000
                           minimum: 1000
                           type: integer
@@ -19994,7 +21162,6 @@ objects:
                             Socket option memory is used in a few cases to store extra
                             structures relating to usage of the socket. Valid values
                             are 20480-4194304 (inclusive). Maps to net.core.optmem_max.
-                          format: int32
                           maximum: 4194304
                           minimum: 20480
                           type: integer
@@ -20002,7 +21169,6 @@ objects:
                           description: NetCoreRmemDefault specifies the default receive
                             socket buffer size in bytes. Valid values are 212992-134217728
                             (inclusive). Maps to net.core.rmem_default.
-                          format: int32
                           maximum: 134217728
                           minimum: 212992
                           type: integer
@@ -20010,7 +21176,6 @@ objects:
                           description: NetCoreRmemMax specifies the maximum receive
                             socket buffer size in bytes. Valid values are 212992-134217728
                             (inclusive). Maps to net.core.rmem_max.
-                          format: int32
                           maximum: 134217728
                           minimum: 212992
                           type: integer
@@ -20022,7 +21187,6 @@ objects:
                             function. If the backlog argument is greater than the
                             somaxconn, then it's silently truncated to this limit.
                             Valid values are 4096-3240000 (inclusive). Maps to net.core.somaxconn.
-                          format: int32
                           maximum: 3240000
                           minimum: 4096
                           type: integer
@@ -20030,7 +21194,6 @@ objects:
                           description: NetCoreWmemDefault specifies the default send
                             socket buffer size in bytes. Valid values are 212992-134217728
                             (inclusive). Maps to net.core.wmem_default.
-                          format: int32
                           maximum: 134217728
                           minimum: 212992
                           type: integer
@@ -20038,7 +21201,6 @@ objects:
                           description: NetCoreWmemMax specifies the maximum send socket
                             buffer size in bytes. Valid values are 212992-134217728
                             (inclusive). Maps to net.core.wmem_max.
-                          format: int32
                           maximum: 134217728
                           minimum: 212992
                           type: integer
@@ -20056,7 +21218,6 @@ objects:
                             Garbage collection won't be triggered if the number of
                             entries is below this setting. Valid values are 128-80000
                             (inclusive). Maps to net.ipv4.neigh.default.gc_thresh1.
-                          format: int32
                           maximum: 80000
                           minimum: 128
                           type: integer
@@ -20066,7 +21227,6 @@ objects:
                             ARP garbage collection will be triggered about 5 seconds
                             after reaching this soft maximum. Valid values are 512-90000
                             (inclusive). Maps to net.ipv4.neigh.default.gc_thresh2.
-                          format: int32
                           maximum: 90000
                           minimum: 512
                           type: integer
@@ -20074,7 +21234,6 @@ objects:
                           description: NetIpv4NeighDefaultGcThresh3 specified hard
                             maximum number of entries in the ARP cache. Valid values
                             are 1024-100000 (inclusive). Maps to net.ipv4.neigh.default.gc_thresh3.
-                          format: int32
                           maximum: 100000
                           minimum: 1024
                           type: integer
@@ -20083,7 +21242,6 @@ objects:
                             time an orphaned connection will remain in the FIN_WAIT_2
                             state before it's aborted at the local end. Valid values
                             are 5-120 (inclusive). Maps to net.ipv4.tcp_fin_timeout.
-                          format: int32
                           maximum: 120
                           minimum: 5
                           type: integer
@@ -20092,7 +21250,6 @@ objects:
                             of keepalive probes TCP sends out, until it decides the
                             connection is broken. Valid values are 1-15 (inclusive).
                             Maps to net.ipv4.tcp_keepalive_probes.
-                          format: int32
                           maximum: 15
                           minimum: 1
                           type: integer
@@ -20101,7 +21258,6 @@ objects:
                             at which TCP sends out a keepalive message when keepalive
                             is enabled. Valid values are 30-432000 (inclusive). Maps
                             to net.ipv4.tcp_keepalive_time.
-                          format: int32
                           maximum: 432000
                           minimum: 30
                           type: integer
@@ -20112,7 +21268,6 @@ objects:
                             If this number is exceeded, the kernel will begin dropping
                             requests. Valid values are 128-3240000 (inclusive). Maps
                             to net.ipv4.tcp_max_syn_backlog.
-                          format: int32
                           maximum: 3240000
                           minimum: 128
                           type: integer
@@ -20122,7 +21277,6 @@ objects:
                             this number is exceeded, time-wait socket is immediately
                             destroyed and warning is printed. Valid values are 8000-1440000
                             (inclusive). Maps to net.ipv4.tcp_max_tw_buckets.
-                          format: int32
                           maximum: 1440000
                           minimum: 8000
                           type: integer
@@ -20137,7 +21291,6 @@ objects:
                             it makes up the time to kill a connection that isn't responding,
                             after probes started. Valid values are 1-75 (inclusive).
                             Maps to net.ipv4.tcp_keepalive_intvl.
-                          format: int32
                           maximum: 75
                           minimum: 1
                           type: integer
@@ -20146,7 +21299,6 @@ objects:
                             size of hash table used by nf_conntrack module to record
                             the established connection record of the TCP protocol.
                             Valid values are 65536-147456 (inclusive). Maps to net.netfilter.nf_conntrack_buckets.
-                          format: int32
                           maximum: 147456
                           minimum: 65536
                           type: integer
@@ -20155,7 +21307,6 @@ objects:
                             number of connections supported by the nf_conntrack module
                             or the size of connection tracking table. Valid values
                             are 131072-1048576 (inclusive). Maps to net.netfilter.nf_conntrack_max.
-                          format: int32
                           maximum: 1048576
                           minimum: 131072
                           type: integer
@@ -20163,7 +21314,6 @@ objects:
                           description: VMMaxMapCount specifies the maximum number
                             of memory map areas a process may have. Maps to vm.max_map_count.
                             Valid values are 65530-262144 (inclusive).
-                          format: int32
                           maximum: 262144
                           minimum: 65530
                           type: integer
@@ -20172,7 +21322,6 @@ objects:
                             kernel in swapping memory pages. Higher values will increase
                             aggressiveness, lower values decrease the amount of swap.
                             Valid values are 0-100 (inclusive). Maps to vm.swappiness.
-                          format: int32
                           maximum: 100
                           minimum: 0
                           type: integer
@@ -20182,7 +21331,6 @@ objects:
                             the memory, which is used for caching of directory and
                             inode objects. Valid values are 1-500 (inclusive). Maps
                             to vm.vfs_cache_pressure.
-                          format: int32
                           maximum: 500
                           minimum: 1
                           type: integer
@@ -20216,24 +21364,23 @@ objects:
                     for the node pool. Immutable. See also [AKS doc], [K8s doc]. \n
                     [AKS doc]: https://learn.microsoft.com/azure/aks/configure-azure-cni#configure-maximum---new-clusters
                     [K8s doc]: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/"
-                  format: int32
                   type: integer
                 mode:
-                  description: 'Mode - represents mode of an agent pool. Possible
+                  description: 'Mode represents the mode of an agent pool. Possible
                     values include: System, User.'
                   enum:
                   - System
                   - User
                   type: string
                 name:
-                  description: Name - name of the agent pool. If not specified, CAPZ
-                    uses the name of the CR as the agent pool name. Immutable.
+                  description: Name is the name of the agent pool. If not specified,
+                    CAPZ uses the name of the CR as the agent pool name. Immutable.
                   type: string
                 nodeLabels:
                   additionalProperties:
                     type: string
-                  description: "Node labels - labels for all of the nodes present
-                    in node pool. See also [AKS doc]. \n [AKS doc]: https://learn.microsoft.com/azure/aks/use-labels"
+                  description: "Node labels represent the labels for all of the nodes
+                    present in node pool. See also [AKS doc]. \n [AKS doc]: https://learn.microsoft.com/azure/aks/use-labels"
                   type: object
                 nodePublicIPPrefixID:
                   description: NodePublicIPPrefixID specifies the public IP prefix
@@ -20243,7 +21390,6 @@ objects:
                   description: OSDiskSizeGB is the disk size for every machine in
                     this agent pool. If you specify 0, it will apply the default osDisk
                     size according to the vmSize specified. Immutable.
-                  format: int32
                   type: integer
                 osDiskType:
                   default: Managed
@@ -20291,11 +21437,9 @@ objects:
                   properties:
                     maxSize:
                       description: MaxSize is the maximum number of nodes for auto-scaling.
-                      format: int32
                       type: integer
                     minSize:
                       description: MinSize is the minimum number of nodes for auto-scaling.
-                      format: int32
                       type: integer
                   type: object
                 sku:
@@ -20456,6 +21600,608 @@ objects:
       storage: true
       subresources:
         status: {}
+  status:
+    acceptedNames:
+      kind: ""
+      plural: ""
+    conditions: null
+    storedVersions: null
+- apiVersion: apiextensions.k8s.io/v1
+  kind: CustomResourceDefinition
+  metadata:
+    annotations:
+      controller-gen.kubebuilder.io/version: v0.13.0
+    creationTimestamp: null
+    name: azuremanagedmachinepooltemplates.infrastructure.cluster.x-k8s.io
+  spec:
+    group: infrastructure.cluster.x-k8s.io
+    names:
+      categories:
+      - cluster-api
+      kind: AzureManagedMachinePoolTemplate
+      listKind: AzureManagedMachinePoolTemplateList
+      plural: azuremanagedmachinepooltemplates
+      shortNames:
+      - ammpt
+      singular: azuremanagedmachinepooltemplate
+    scope: Namespaced
+    versions:
+    - name: v1beta1
+      schema:
+        openAPIV3Schema:
+          description: AzureManagedMachinePoolTemplate is the Schema for the AzureManagedMachinePoolTemplates
+            API.
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation
+                of an object. Servers should convert recognized schemas to the latest
+                internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource
+                this object represents. Servers may infer this from the endpoint the
+                client submits requests to. Cannot be updated. In CamelCase. More
+                info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AzureManagedMachinePoolTemplateSpec defines the desired
+                state of AzureManagedMachinePoolTemplate.
+              properties:
+                template:
+                  description: AzureManagedMachinePoolTemplateResource describes the
+                    data needed to create an AzureManagedCluster from a template.
+                  properties:
+                    spec:
+                      description: AzureManagedMachinePoolTemplateResourceSpec specifies
+                        an Azure managed control plane template resource.
+                      properties:
+                        additionalTags:
+                          additionalProperties:
+                            type: string
+                          description: AdditionalTags is an optional set of tags to
+                            add to Azure resources managed by the Azure provider,
+                            in addition to the ones added by default.
+                          type: object
+                        availabilityZones:
+                          description: AvailabilityZones - Availability zones for
+                            nodes. Must use VirtualMachineScaleSets AgentPoolType.
+                            Immutable.
+                          items:
+                            type: string
+                          type: array
+                        enableEncryptionAtHost:
+                          description: "EnableEncryptionAtHost indicates whether host
+                            encryption is enabled on the node pool. Immutable. See
+                            also [AKS doc]. \n [AKS doc]: https://learn.microsoft.com/en-us/azure/aks/enable-host-encryption"
+                          type: boolean
+                        enableFIPS:
+                          description: EnableFIPS indicates whether FIPS is enabled
+                            on the node pool. Immutable.
+                          type: boolean
+                        enableNodePublicIP:
+                          description: EnableNodePublicIP controls whether or not
+                            nodes in the pool each have a public IP address. Immutable.
+                          type: boolean
+                        enableUltraSSD:
+                          description: EnableUltraSSD enables the storage type UltraSSD_LRS
+                            for the agent pool. Immutable.
+                          type: boolean
+                        kubeletConfig:
+                          description: KubeletConfig specifies the kubelet configurations
+                            for nodes. Immutable.
+                          properties:
+                            allowedUnsafeSysctls:
+                              description: AllowedUnsafeSysctls - Allowlist of unsafe
+                                sysctls or unsafe sysctl patterns (ending in `*`).
+                                Valid values match `kernel.shm*`, `kernel.msg*`, `kernel.sem`,
+                                `fs.mqueue.*`, or `net.*`.
+                              items:
+                                type: string
+                              type: array
+                            containerLogMaxFiles:
+                              description: ContainerLogMaxFiles - The maximum number
+                                of container log files that can be present for a container.
+                                The number must be ≥ 2.
+                              minimum: 2
+                              type: integer
+                            containerLogMaxSizeMB:
+                              description: ContainerLogMaxSizeMB - The maximum size
+                                in MB of a container log file before it is rotated.
+                              type: integer
+                            cpuCfsQuota:
+                              description: CPUCfsQuota - Enable CPU CFS quota enforcement
+                                for containers that specify CPU limits.
+                              type: boolean
+                            cpuCfsQuotaPeriod:
+                              description: CPUCfsQuotaPeriod - Sets CPU CFS quota
+                                period value. Must end in "ms", e.g. "100ms"
+                              type: string
+                            cpuManagerPolicy:
+                              description: CPUManagerPolicy - CPU Manager policy to
+                                use.
+                              enum:
+                              - none
+                              - static
+                              type: string
+                            failSwapOn:
+                              description: FailSwapOn - If set to true it will make
+                                the Kubelet fail to start if swap is enabled on the
+                                node.
+                              type: boolean
+                            imageGcHighThreshold:
+                              description: ImageGcHighThreshold - The percent of disk
+                                usage after which image garbage collection is always
+                                run. Valid values are 0-100 (inclusive).
+                              maximum: 100
+                              minimum: 0
+                              type: integer
+                            imageGcLowThreshold:
+                              description: ImageGcLowThreshold - The percent of disk
+                                usage before which image garbage collection is never
+                                run. Valid values are 0-100 (inclusive) and must be
+                                less than `imageGcHighThreshold`.
+                              maximum: 100
+                              minimum: 0
+                              type: integer
+                            podMaxPids:
+                              description: PodMaxPids - The maximum number of processes
+                                per pod. Must not exceed kernel PID limit. -1 disables
+                                the limit.
+                              minimum: -1
+                              type: integer
+                            topologyManagerPolicy:
+                              description: TopologyManagerPolicy - Topology Manager
+                                policy to use.
+                              enum:
+                              - none
+                              - best-effort
+                              - restricted
+                              - single-numa-node
+                              type: string
+                          type: object
+                        kubeletDiskType:
+                          description: "KubeletDiskType specifies the kubelet disk
+                            type. Default to OS. Possible values include: 'OS', 'Temporary'.
+                            Requires Microsoft.ContainerService/KubeletDisk preview
+                            feature to be set. Immutable. See also [AKS doc]. \n [AKS
+                            doc]: https://learn.microsoft.com/rest/api/aks/agent-pools/create-or-update?tabs=HTTP#kubeletdisktype"
+                          enum:
+                          - OS
+                          - Temporary
+                          type: string
+                        linuxOSConfig:
+                          description: LinuxOSConfig specifies the custom Linux OS
+                            settings and configurations. Immutable.
+                          properties:
+                            swapFileSizeMB:
+                              description: "SwapFileSizeMB specifies size in MB of
+                                a swap file will be created on the agent nodes from
+                                this node pool. Max value of SwapFileSizeMB should
+                                be the size of temporary disk(/dev/sdb). Must be at
+                                least 1. See also [AKS doc]. \n [AKS doc]: https://learn.microsoft.com/azure/virtual-machines/managed-disks-overview#temporary-disk"
+                              minimum: 1
+                              type: integer
+                            sysctls:
+                              description: Sysctl specifies the settings for Linux
+                                agent nodes.
+                              properties:
+                                fsAioMaxNr:
+                                  description: FsAioMaxNr specifies the maximum number
+                                    of system-wide asynchronous io requests. Valid
+                                    values are 65536-6553500 (inclusive). Maps to
+                                    fs.aio-max-nr.
+                                  maximum: 6553500
+                                  minimum: 65536
+                                  type: integer
+                                fsFileMax:
+                                  description: FsFileMax specifies the max number
+                                    of file-handles that the Linux kernel will allocate,
+                                    by increasing increases the maximum number of
+                                    open files permitted. Valid values are 8192-12000500
+                                    (inclusive). Maps to fs.file-max.
+                                  maximum: 12000500
+                                  minimum: 8192
+                                  type: integer
+                                fsInotifyMaxUserWatches:
+                                  description: FsInotifyMaxUserWatches specifies the
+                                    number of file watches allowed by the system.
+                                    Each watch is roughly 90 bytes on a 32-bit kernel,
+                                    and roughly 160 bytes on a 64-bit kernel. Valid
+                                    values are 781250-2097152 (inclusive). Maps to
+                                    fs.inotify.max_user_watches.
+                                  maximum: 2097152
+                                  minimum: 781250
+                                  type: integer
+                                fsNrOpen:
+                                  description: FsNrOpen specifies the maximum number
+                                    of file-handles a process can allocate. Valid
+                                    values are 8192-20000500 (inclusive). Maps to
+                                    fs.nr_open.
+                                  maximum: 20000500
+                                  minimum: 8192
+                                  type: integer
+                                kernelThreadsMax:
+                                  description: KernelThreadsMax specifies the maximum
+                                    number of all threads that can be created. Valid
+                                    values are 20-513785 (inclusive). Maps to kernel.threads-max.
+                                  maximum: 513785
+                                  minimum: 20
+                                  type: integer
+                                netCoreNetdevMaxBacklog:
+                                  description: NetCoreNetdevMaxBacklog specifies maximum
+                                    number of packets, queued on the INPUT side, when
+                                    the interface receives packets faster than kernel
+                                    can process them. Valid values are 1000-3240000
+                                    (inclusive). Maps to net.core.netdev_max_backlog.
+                                  maximum: 3240000
+                                  minimum: 1000
+                                  type: integer
+                                netCoreOptmemMax:
+                                  description: NetCoreOptmemMax specifies the maximum
+                                    ancillary buffer size (option memory buffer) allowed
+                                    per socket. Socket option memory is used in a
+                                    few cases to store extra structures relating to
+                                    usage of the socket. Valid values are 20480-4194304
+                                    (inclusive). Maps to net.core.optmem_max.
+                                  maximum: 4194304
+                                  minimum: 20480
+                                  type: integer
+                                netCoreRmemDefault:
+                                  description: NetCoreRmemDefault specifies the default
+                                    receive socket buffer size in bytes. Valid values
+                                    are 212992-134217728 (inclusive). Maps to net.core.rmem_default.
+                                  maximum: 134217728
+                                  minimum: 212992
+                                  type: integer
+                                netCoreRmemMax:
+                                  description: NetCoreRmemMax specifies the maximum
+                                    receive socket buffer size in bytes. Valid values
+                                    are 212992-134217728 (inclusive). Maps to net.core.rmem_max.
+                                  maximum: 134217728
+                                  minimum: 212992
+                                  type: integer
+                                netCoreSomaxconn:
+                                  description: NetCoreSomaxconn specifies maximum
+                                    number of connection requests that can be queued
+                                    for any given listening socket. An upper limit
+                                    for the value of the backlog parameter passed
+                                    to the listen(2)(https://man7.org/linux/man-pages/man2/listen.2.html)
+                                    function. If the backlog argument is greater than
+                                    the somaxconn, then it's silently truncated to
+                                    this limit. Valid values are 4096-3240000 (inclusive).
+                                    Maps to net.core.somaxconn.
+                                  maximum: 3240000
+                                  minimum: 4096
+                                  type: integer
+                                netCoreWmemDefault:
+                                  description: NetCoreWmemDefault specifies the default
+                                    send socket buffer size in bytes. Valid values
+                                    are 212992-134217728 (inclusive). Maps to net.core.wmem_default.
+                                  maximum: 134217728
+                                  minimum: 212992
+                                  type: integer
+                                netCoreWmemMax:
+                                  description: NetCoreWmemMax specifies the maximum
+                                    send socket buffer size in bytes. Valid values
+                                    are 212992-134217728 (inclusive). Maps to net.core.wmem_max.
+                                  maximum: 134217728
+                                  minimum: 212992
+                                  type: integer
+                                netIpv4IPLocalPortRange:
+                                  description: NetIpv4IPLocalPortRange is used by
+                                    TCP and UDP traffic to choose the local port on
+                                    the agent node. PortRange should be specified
+                                    in the format "first last". First, being an integer,
+                                    must be between [1024 - 60999]. Last, being an
+                                    integer, must be between [32768 - 65000]. Maps
+                                    to net.ipv4.ip_local_port_range.
+                                  type: string
+                                netIpv4NeighDefaultGcThresh1:
+                                  description: NetIpv4NeighDefaultGcThresh1 specifies
+                                    the minimum number of entries that may be in the
+                                    ARP cache. Garbage collection won't be triggered
+                                    if the number of entries is below this setting.
+                                    Valid values are 128-80000 (inclusive). Maps to
+                                    net.ipv4.neigh.default.gc_thresh1.
+                                  maximum: 80000
+                                  minimum: 128
+                                  type: integer
+                                netIpv4NeighDefaultGcThresh2:
+                                  description: NetIpv4NeighDefaultGcThresh2 specifies
+                                    soft maximum number of entries that may be in
+                                    the ARP cache. ARP garbage collection will be
+                                    triggered about 5 seconds after reaching this
+                                    soft maximum. Valid values are 512-90000 (inclusive).
+                                    Maps to net.ipv4.neigh.default.gc_thresh2.
+                                  maximum: 90000
+                                  minimum: 512
+                                  type: integer
+                                netIpv4NeighDefaultGcThresh3:
+                                  description: NetIpv4NeighDefaultGcThresh3 specified
+                                    hard maximum number of entries in the ARP cache.
+                                    Valid values are 1024-100000 (inclusive). Maps
+                                    to net.ipv4.neigh.default.gc_thresh3.
+                                  maximum: 100000
+                                  minimum: 1024
+                                  type: integer
+                                netIpv4TCPFinTimeout:
+                                  description: NetIpv4TCPFinTimeout specifies the
+                                    length of time an orphaned connection will remain
+                                    in the FIN_WAIT_2 state before it's aborted at
+                                    the local end. Valid values are 5-120 (inclusive).
+                                    Maps to net.ipv4.tcp_fin_timeout.
+                                  maximum: 120
+                                  minimum: 5
+                                  type: integer
+                                netIpv4TCPKeepaliveProbes:
+                                  description: NetIpv4TCPKeepaliveProbes specifies
+                                    the number of keepalive probes TCP sends out,
+                                    until it decides the connection is broken. Valid
+                                    values are 1-15 (inclusive). Maps to net.ipv4.tcp_keepalive_probes.
+                                  maximum: 15
+                                  minimum: 1
+                                  type: integer
+                                netIpv4TCPKeepaliveTime:
+                                  description: NetIpv4TCPKeepaliveTime specifies the
+                                    rate at which TCP sends out a keepalive message
+                                    when keepalive is enabled. Valid values are 30-432000
+                                    (inclusive). Maps to net.ipv4.tcp_keepalive_time.
+                                  maximum: 432000
+                                  minimum: 30
+                                  type: integer
+                                netIpv4TCPMaxSynBacklog:
+                                  description: NetIpv4TCPMaxSynBacklog specifies the
+                                    maximum number of queued connection requests that
+                                    have still not received an acknowledgment from
+                                    the connecting client. If this number is exceeded,
+                                    the kernel will begin dropping requests. Valid
+                                    values are 128-3240000 (inclusive). Maps to net.ipv4.tcp_max_syn_backlog.
+                                  maximum: 3240000
+                                  minimum: 128
+                                  type: integer
+                                netIpv4TCPMaxTwBuckets:
+                                  description: NetIpv4TCPMaxTwBuckets specifies maximal
+                                    number of timewait sockets held by system simultaneously.
+                                    If this number is exceeded, time-wait socket is
+                                    immediately destroyed and warning is printed.
+                                    Valid values are 8000-1440000 (inclusive). Maps
+                                    to net.ipv4.tcp_max_tw_buckets.
+                                  maximum: 1440000
+                                  minimum: 8000
+                                  type: integer
+                                netIpv4TCPTwReuse:
+                                  description: NetIpv4TCPTwReuse is used to allow
+                                    to reuse TIME-WAIT sockets for new connections
+                                    when it's safe from protocol viewpoint. Maps to
+                                    net.ipv4.tcp_tw_reuse.
+                                  type: boolean
+                                netIpv4TCPkeepaliveIntvl:
+                                  description: NetIpv4TCPkeepaliveIntvl specifies
+                                    the frequency of the probes sent out. Multiplied
+                                    by tcpKeepaliveprobes, it makes up the time to
+                                    kill a connection that isn't responding, after
+                                    probes started. Valid values are 1-75 (inclusive).
+                                    Maps to net.ipv4.tcp_keepalive_intvl.
+                                  maximum: 75
+                                  minimum: 1
+                                  type: integer
+                                netNetfilterNfConntrackBuckets:
+                                  description: NetNetfilterNfConntrackBuckets specifies
+                                    the size of hash table used by nf_conntrack module
+                                    to record the established connection record of
+                                    the TCP protocol. Valid values are 65536-147456
+                                    (inclusive). Maps to net.netfilter.nf_conntrack_buckets.
+                                  maximum: 147456
+                                  minimum: 65536
+                                  type: integer
+                                netNetfilterNfConntrackMax:
+                                  description: NetNetfilterNfConntrackMax specifies
+                                    the maximum number of connections supported by
+                                    the nf_conntrack module or the size of connection
+                                    tracking table. Valid values are 131072-1048576
+                                    (inclusive). Maps to net.netfilter.nf_conntrack_max.
+                                  maximum: 1048576
+                                  minimum: 131072
+                                  type: integer
+                                vmMaxMapCount:
+                                  description: VMMaxMapCount specifies the maximum
+                                    number of memory map areas a process may have.
+                                    Maps to vm.max_map_count. Valid values are 65530-262144
+                                    (inclusive).
+                                  maximum: 262144
+                                  minimum: 65530
+                                  type: integer
+                                vmSwappiness:
+                                  description: VMSwappiness specifies aggressiveness
+                                    of the kernel in swapping memory pages. Higher
+                                    values will increase aggressiveness, lower values
+                                    decrease the amount of swap. Valid values are
+                                    0-100 (inclusive). Maps to vm.swappiness.
+                                  maximum: 100
+                                  minimum: 0
+                                  type: integer
+                                vmVfsCachePressure:
+                                  description: VMVfsCachePressure specifies the percentage
+                                    value that controls tendency of the kernel to
+                                    reclaim the memory, which is used for caching
+                                    of directory and inode objects. Valid values are
+                                    1-500 (inclusive). Maps to vm.vfs_cache_pressure.
+                                  maximum: 500
+                                  minimum: 1
+                                  type: integer
+                              type: object
+                            transparentHugePageDefrag:
+                              description: "TransparentHugePageDefrag specifies whether
+                                the kernel should make aggressive use of memory compaction
+                                to make more hugepages available. See also [Linux
+                                doc]. \n [Linux doc]: https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html#admin-guide-transhuge
+                                for more details."
+                              enum:
+                              - always
+                              - defer
+                              - defer+madvise
+                              - madvise
+                              - never
+                              type: string
+                            transparentHugePageEnabled:
+                              description: "TransparentHugePageEnabled specifies various
+                                modes of Transparent Hugepages. See also [Linux doc].
+                                \n [Linux doc]: https://www.kernel.org/doc/html/latest/admin-guide/mm/transhuge.html#admin-guide-transhuge
+                                for more details."
+                              enum:
+                              - always
+                              - madvise
+                              - never
+                              type: string
+                          type: object
+                        maxPods:
+                          description: "MaxPods specifies the kubelet `--max-pods`
+                            configuration for the node pool. Immutable. See also [AKS
+                            doc], [K8s doc]. \n [AKS doc]: https://learn.microsoft.com/azure/aks/configure-azure-cni#configure-maximum---new-clusters
+                            [K8s doc]: https://kubernetes.io/docs/reference/command-line-tools-reference/kubelet/"
+                          type: integer
+                        mode:
+                          description: 'Mode represents the mode of an agent pool.
+                            Possible values include: System, User.'
+                          enum:
+                          - System
+                          - User
+                          type: string
+                        name:
+                          description: Name is the name of the agent pool. If not
+                            specified, CAPZ uses the name of the CR as the agent pool
+                            name. Immutable.
+                          type: string
+                        nodeLabels:
+                          additionalProperties:
+                            type: string
+                          description: "Node labels represent the labels for all of
+                            the nodes present in node pool. See also [AKS doc]. \n
+                            [AKS doc]: https://learn.microsoft.com/azure/aks/use-labels"
+                          type: object
+                        nodePublicIPPrefixID:
+                          description: NodePublicIPPrefixID specifies the public IP
+                            prefix resource ID which VM nodes should use IPs from.
+                            Immutable.
+                          type: string
+                        osDiskSizeGB:
+                          description: OSDiskSizeGB is the disk size for every machine
+                            in this agent pool. If you specify 0, it will apply the
+                            default osDisk size according to the vmSize specified.
+                            Immutable.
+                          type: integer
+                        osDiskType:
+                          default: Managed
+                          description: "OsDiskType specifies the OS disk type for
+                            each node in the pool. Allowed values are 'Ephemeral'
+                            and 'Managed' (default). Immutable. See also [AKS doc].
+                            \n [AKS doc]: https://learn.microsoft.com/azure/aks/cluster-configuration#ephemeral-os"
+                          enum:
+                          - Ephemeral
+                          - Managed
+                          type: string
+                        osType:
+                          description: "OSType specifies the virtual machine operating
+                            system. Default to Linux. Possible values include: 'Linux',
+                            'Windows'. 'Windows' requires the AzureManagedControlPlane's
+                            `spec.networkPlugin` to be `azure`. Immutable. See also
+                            [AKS doc]. \n [AKS doc]: https://learn.microsoft.com/rest/api/aks/agent-pools/create-or-update?tabs=HTTP#ostype"
+                          enum:
+                          - Linux
+                          - Windows
+                          type: string
+                        scaleDownMode:
+                          default: Delete
+                          description: 'ScaleDownMode affects the cluster autoscaler
+                            behavior. Default to Delete. Possible values include:
+                            ''Deallocate'', ''Delete'''
+                          enum:
+                          - Deallocate
+                          - Delete
+                          type: string
+                        scaleSetPriority:
+                          description: 'ScaleSetPriority specifies the ScaleSetPriority
+                            value. Default to Regular. Possible values include: ''Regular'',
+                            ''Spot'' Immutable.'
+                          enum:
+                          - Regular
+                          - Spot
+                          type: string
+                        scaling:
+                          description: Scaling specifies the autoscaling parameters
+                            for the node pool.
+                          properties:
+                            maxSize:
+                              description: MaxSize is the maximum number of nodes
+                                for auto-scaling.
+                              type: integer
+                            minSize:
+                              description: MinSize is the minimum number of nodes
+                                for auto-scaling.
+                              type: integer
+                          type: object
+                        sku:
+                          description: SKU is the size of the VMs in the node pool.
+                            Immutable.
+                          type: string
+                        spotMaxPrice:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: SpotMaxPrice defines max price to pay for spot
+                            instance. Possible values are any decimal value greater
+                            than zero or -1. If you set the max price to be -1, the
+                            VM won't be evicted based on price. The price for the
+                            VM will be the current price for spot or the price for
+                            a standard VM, which ever is less, as long as there's
+                            capacity and quota available.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        subnetName:
+                          description: SubnetName specifies the Subnet where the MachinePool
+                            will be placed Immutable.
+                          type: string
+                        taints:
+                          description: "Taints specifies the taints for nodes present
+                            in this agent pool. See also [AKS doc]. \n [AKS doc]:
+                            https://learn.microsoft.com/azure/aks/use-multiple-node-pools#setting-node-pool-taints"
+                          items:
+                            description: Taint represents a Kubernetes taint.
+                            properties:
+                              effect:
+                                description: Effect specifies the effect for the taint
+                                enum:
+                                - NoSchedule
+                                - NoExecute
+                                - PreferNoSchedule
+                                type: string
+                              key:
+                                description: Key is the key of the taint
+                                type: string
+                              value:
+                                description: Value is the value of the taint
+                                type: string
+                            required:
+                            - effect
+                            - key
+                            - value
+                            type: object
+                          type: array
+                      required:
+                      - mode
+                      - sku
+                      type: object
+                  required:
+                  - spec
+                  type: object
+              required:
+              - template
+              type: object
+          type: object
+      served: true
+      storage: true
   status:
     acceptedNames:
       kind: ""
