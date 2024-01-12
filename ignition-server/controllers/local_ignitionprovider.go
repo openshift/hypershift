@@ -278,7 +278,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 		if err := file.Chmod(0777); err != nil {
 			return fmt.Errorf("failed to chmod file: %w", err)
 		}
-		if err := p.ImageFileCache.extractImageFile(ctx, clusterConfigAPIImage, pullSecret, filepath.Join("usr/bin/", component), file); err != nil {
+		if err := p.ImageFileCache.extractImageFile(ctx, clusterConfigAPIImage, pullSecret, "usr/bin/render", file); err != nil {
 			return fmt.Errorf("failed to extract image file: %w", err)
 		}
 		if err := file.Close(); err != nil {
@@ -312,10 +312,10 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage str
 
 		cmd := exec.CommandContext(ctx, "/bin/bash", args...)
 		out, err := cmd.CombinedOutput()
-		log.Info("cluster-config-api process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
 		if err != nil {
 			return fmt.Errorf("cluster-config-api process failed: %s: %w", string(out), err)
 		}
+		log.Info("cluster-config-api process completed", "time", time.Since(start).Round(time.Second).String(), "output", string(out))
 		return nil
 	}()
 	if err != nil {
@@ -659,7 +659,7 @@ cat <<EOF >%[2]s/manifests/99_feature-gate.yaml
 %[5]s
 EOF
 
-/usr/bin/render \
+%[1]s \
    --asset-output-dir %[2]s/output \
    --rendered-manifest-dir=%[2]s/manifests \
    --payload-version=%[4]s 
