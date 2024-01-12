@@ -263,11 +263,11 @@ type eventHandler struct {
 func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, restMapper meta.RESTMapper) []eventHandler {
 	handlers := []eventHandler{
 		{obj: &corev1.Event{}, handler: handler.EnqueueRequestsFromMapFunc(r.hostedControlPlaneInNamespace)},
+		{obj: &corev1.ConfigMap{}, handler: handler.EnqueueRequestsFromMapFunc(r.hostedControlPlaneInNamespace)},
 		{obj: &corev1.Service{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &appsv1.Deployment{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &appsv1.StatefulSet{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &corev1.Secret{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
-		{obj: &corev1.ConfigMap{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &corev1.ServiceAccount{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &policyv1.PodDisruptionBudget{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &prometheusoperatorv1.PodMonitor{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
@@ -1224,30 +1224,48 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	// TODO: consider using a side container in the etcd pod instead.
 	r.Log.Info("Reconciling etcd-backup cronJob")
 	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
-		serviceAccount := manifests.EtcdBackupServiceAccount(hostedControlPlane.Namespace)
-		if _, err = createOrUpdate(ctx, r.Client, serviceAccount, func() error {
-			util.EnsurePullSecret(serviceAccount, common.PullSecret("").Name)
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile etcd-backup cronJob service account: %w", err)
-		}
+		configMapName := "etcd-backup-config" // TODO: get configMap name from annotation?
+		configMap := &corev1.ConfigMap{}
+		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedControlPlane.Namespace, Name: configMapName}, configMap); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get etcd backup configMap: %w", err)
+			}
 
-		cronJob := manifests.EtcdBackupCronJob(hostedControlPlane.Namespace)
-		if _, err = createOrUpdate(ctx, r.Client, cronJob, func() error {
-			return r.reconcileEtcdBackupCronJob(cronJob,
-				serviceAccount,
-				hostedControlPlane,
-				releaseImageProvider.GetImage(util.CPOImageName),
-				releaseImageProvider.GetImage("etcd"))
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile etcd-backup cronJob: %w", err)
+			serviceAccount := manifests.EtcdBackupServiceAccount(hostedControlPlane.Namespace)
+			if _, err := util.DeleteIfNeeded(ctx, r.Client, serviceAccount); err != nil {
+				return fmt.Errorf("failed to delete etcd backup service account: %w", err)
+			}
+			cronJob := manifests.EtcdBackupCronJob(hostedControlPlane.Namespace)
+			if _, err := util.DeleteIfNeeded(ctx, r.Client, cronJob); err != nil {
+				return fmt.Errorf("failed to delete etcd backup cronJob: %w", err)
+			}
+		} else {
+			serviceAccount := manifests.EtcdBackupServiceAccount(hostedControlPlane.Namespace)
+			if _, err = createOrUpdate(ctx, r.Client, serviceAccount, func() error {
+				util.EnsurePullSecret(serviceAccount, common.PullSecret("").Name)
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile etcd-backup cronJob service account: %w", err)
+			}
+
+			cronJob := manifests.EtcdBackupCronJob(hostedControlPlane.Namespace)
+			if _, err = createOrUpdate(ctx, r.Client, cronJob, func() error {
+				return r.reconcileEtcdBackupCronJob(cronJob,
+					configMap,
+					serviceAccount,
+					hostedControlPlane,
+					releaseImageProvider.GetImage(util.CPOImageName),
+					releaseImageProvider.GetImage("etcd"))
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile etcd-backup cronJob: %w", err)
+			}
 		}
 	}
 
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batchv1.CronJob, serviceAccount *corev1.ServiceAccount, hcp *hyperv1.HostedControlPlane, cpoImage, etcdImage string) error {
+func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batchv1.CronJob, configMap *corev1.ConfigMap, serviceAccount *corev1.ServiceAccount, hcp *hyperv1.HostedControlPlane, cpoImage, etcdImage string) error {
 	clusterID, ok := hcp.Labels["api.openshift.com/id"]
 	if !ok {
 		clusterID = hcp.Spec.ClusterID
@@ -1256,8 +1274,6 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batch
 	if !ok {
 		orgID = "openshift" // TODO: non OCM environment
 	}
-
-	configMapName := "etcd-backup-config" // TODO: get configMap name from annotation?
 
 	cronJob.Spec = batchv1.CronJobSpec{
 		Schedule: "0 */1 * * *", // TODO: make it configurable, read from annotation?
@@ -1321,7 +1337,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batch
 										ValueFrom: &corev1.EnvVarSource{
 											ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
 												LocalObjectReference: corev1.LocalObjectReference{
-													Name: configMapName,
+													Name: configMap.Name,
 												},
 												Key: "bucket-name",
 											},
@@ -1332,7 +1348,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batch
 										ValueFrom: &corev1.EnvVarSource{
 											ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
 												LocalObjectReference: corev1.LocalObjectReference{
-													Name: configMapName,
+													Name: configMap.Name,
 												},
 												Key: "region",
 											},
@@ -1343,7 +1359,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batch
 										ValueFrom: &corev1.EnvVarSource{
 											ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
 												LocalObjectReference: corev1.LocalObjectReference{
-													Name: configMapName,
+													Name: configMap.Name,
 												},
 												Key: "role-arn",
 											},
@@ -1354,7 +1370,7 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batch
 										ValueFrom: &corev1.EnvVarSource{
 											ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
 												LocalObjectReference: corev1.LocalObjectReference{
-													Name: configMapName,
+													Name: configMap.Name,
 												},
 												Key:      "s3-endpoint-url",
 												Optional: pointer.Bool(true),
