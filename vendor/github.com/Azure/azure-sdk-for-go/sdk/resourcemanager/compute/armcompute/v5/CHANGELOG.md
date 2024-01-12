@@ -1,5 +1,22 @@
 # Release History
 
+## 5.2.0 (2023-09-22)
+### Features Added
+
+- New value `DiskCreateOptionCopyFromSanSnapshot` added to enum type `DiskCreateOption`
+- New enum type `DomainNameLabelScopeTypes` with values `DomainNameLabelScopeTypesNoReuse`, `DomainNameLabelScopeTypesResourceGroupReuse`, `DomainNameLabelScopeTypesSubscriptionReuse`, `DomainNameLabelScopeTypesTenantReuse`
+- New enum type `NetworkInterfaceAuxiliaryMode` with values `NetworkInterfaceAuxiliaryModeAcceleratedConnections`, `NetworkInterfaceAuxiliaryModeFloating`, `NetworkInterfaceAuxiliaryModeNone`
+- New enum type `NetworkInterfaceAuxiliarySKU` with values `NetworkInterfaceAuxiliarySKUA1`, `NetworkInterfaceAuxiliarySKUA2`, `NetworkInterfaceAuxiliarySKUA4`, `NetworkInterfaceAuxiliarySKUA8`, `NetworkInterfaceAuxiliarySKUNone`
+- New field `ElasticSanResourceID` in struct `CreationData`
+- New field `LastOwnershipUpdateTime` in struct `DiskProperties`
+- New field `AuxiliaryMode`, `AuxiliarySKU` in struct `VirtualMachineNetworkInterfaceConfigurationProperties`
+- New field `DomainNameLabelScope` in struct `VirtualMachinePublicIPAddressDNSSettingsConfiguration`
+- New field `AuxiliaryMode`, `AuxiliarySKU` in struct `VirtualMachineScaleSetNetworkConfigurationProperties`
+- New field `DomainNameLabelScope` in struct `VirtualMachineScaleSetPublicIPAddressConfigurationDNSSettings`
+- New field `AuxiliaryMode`, `AuxiliarySKU` in struct `VirtualMachineScaleSetUpdateNetworkConfigurationProperties`
+- New field `TimeCreated` in struct `VirtualMachineScaleSetVMProperties`
+
+
 ## 5.1.0 (2023-07-28)
 ### Features Added
 
