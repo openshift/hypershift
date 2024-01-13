@@ -754,11 +754,9 @@ cat <<EOF >/tmp/manifests/99_feature-gate.yaml
 %[3]s
 EOF
 
-/usr/bin/cluster-config-operator render \
-   --config-output-file config \
-   --asset-input-dir /tmp/input \
+/usr/bin/render \
    --asset-output-dir /tmp/output \
-   --rendered-manifest-files=/tmp/manifests \
+   --rendered-manifest-dir=/tmp/manifests \
    --payload-version=%[2]s
 cp /tmp/output/manifests/* %[1]s
 cp /tmp/manifests/* %[1]s
