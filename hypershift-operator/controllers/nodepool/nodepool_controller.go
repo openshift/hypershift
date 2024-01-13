@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -15,27 +16,10 @@ import (
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
-
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/operator/v1alpha1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	tunedv1 "github.com/openshift/cluster-node-tuning-operator/pkg/apis/tuned/v1"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
-	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
-	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
-	"github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/supportedversion"
-	"github.com/openshift/hypershift/support/upsert"
-	supportutil "github.com/openshift/hypershift/support/util"
-	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
-
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -51,7 +35,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	k8sutilspointer "k8s.io/utils/pointer"
-
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
@@ -66,6 +49,21 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
+	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/upsert"
+	supportutil "github.com/openshift/hypershift/support/util"
+	mcfgv1 "github.com/openshift/hypershift/thirdparty/machineconfigoperator/pkg/apis/machineconfiguration.openshift.io/v1"
 )
 
 const (
@@ -122,6 +120,13 @@ type CPOCapabilities struct {
 	DecompressAndDecodeConfig     bool
 	CreateDefaultAWSSecurityGroup bool
 }
+
+var (
+	// when using the conditions.SetSummary, with the WithStepCounter or WithStepCounterIf(true) options,
+	// the result Ready condition message is something like "1 of 2 completed". If we want to use this kind
+	// of messages for our own condition message, this is not useful. This regexp finds these condition messages
+	isSetupCounterCondMessage = regexp.MustCompile(`\d+ of \d+ completed`)
+)
 
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	controller, err := ctrl.NewControllerManagedBy(mgr).
@@ -708,100 +713,10 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 	}
 
-	// Set AllMachinesReadyCondition.
-	// Get all Machines for NodePool.
-	machines, err := r.getMachinesForNodePool(nodePool)
+	err = r.setMachineAndNodeConditions(ctx, nodePool)
 	if err != nil {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolAllMachinesReadyConditionType,
-			Status:             corev1.ConditionUnknown,
-			Reason:             hyperv1.NodePoolFailedToGetReason,
-			Message:            err.Error(),
-			ObservedGeneration: nodePool.Generation,
-		})
-		return ctrl.Result{}, fmt.Errorf("failed to get Machines: %w", err)
+		return ctrl.Result{}, err
 	}
-
-	status := corev1.ConditionTrue
-	reason := hyperv1.AsExpectedReason
-	var message string
-
-	if len(machines) < 1 {
-		status = corev1.ConditionFalse
-		reason = hyperv1.NodePoolNotFoundReason
-		message = "No Machines are created"
-	}
-
-	// Aggregate conditions.
-	// TODO (alberto): consider bubbling failureReason / failureMessage.
-	// This a rudimentary approach which aggregates every Machine, until
-	// https://github.com/kubernetes-sigs/cluster-api/pull/6218 and
-	// https://github.com/kubernetes-sigs/cluster-api/pull/6025
-	// are solved.
-	// Eventually we should solve this in CAPI to make it available in MachineDeployments / MachineSets
-	// with a consumable "Reason" and an aggregated "Message".
-	for _, machine := range machines {
-		condition := findCAPIStatusCondition(machine.Status.Conditions, capiv1.ReadyCondition)
-		if condition != nil && condition.Status != corev1.ConditionTrue {
-			status = corev1.ConditionFalse
-			reason = condition.Reason
-			// We append the reason as part of the higher Message, since the message is meaningless.
-			// This is how a CAPI condition looks like in AWS for an instance deleted out of band failure.
-			//	- lastTransitionTime: "2022-11-28T15:14:28Z"
-			//		message: 1 of 2 completed
-			//		reason: InstanceTerminated
-			//		severity: Error
-			//		status: "False"
-			//		type: Ready
-			message = message + fmt.Sprintf("Machine %s: %s\n", machine.Name, condition.Reason)
-		}
-	}
-
-	if status == corev1.ConditionTrue {
-		message = hyperv1.AllIsWellMessage
-	}
-
-	allMachinesReadyCondition := &hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolAllMachinesReadyConditionType,
-		Status:             status,
-		Reason:             reason,
-		Message:            message,
-		ObservedGeneration: nodePool.Generation,
-	}
-	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesReadyCondition)
-
-	// Set AllNodesHealthyCondition.
-	status = corev1.ConditionTrue
-	reason = hyperv1.AsExpectedReason
-	message = ""
-
-	if len(machines) < 1 {
-		status = corev1.ConditionFalse
-		reason = hyperv1.NodePoolNotFoundReason
-		message = "No Machines are created"
-	}
-
-	for _, machine := range machines {
-		condition := findCAPIStatusCondition(machine.Status.Conditions, capiv1.MachineNodeHealthyCondition)
-		if condition != nil && condition.Status != corev1.ConditionTrue {
-			status = corev1.ConditionFalse
-			reason = condition.Reason
-			message = message + fmt.Sprintf("Machine %s: %s\n", machine.Name, condition.Reason)
-		}
-	}
-
-	if status == corev1.ConditionTrue {
-		message = hyperv1.AllIsWellMessage
-	}
-
-	allMachinesHealthyCondition := &hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolAllNodesHealthyConditionType,
-		Status:             status,
-		Reason:             reason,
-		Message:            message,
-		ObservedGeneration: nodePool.Generation,
-	}
-	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesHealthyCondition)
 
 	// 2. - Reconcile towards expected state of the world.
 	compressedConfig, err := supportutil.CompressAndEncode([]byte(config))
@@ -1026,6 +941,126 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		})
 	}
 	return ctrl.Result{}, nil
+}
+
+// setMachineAndNodeConditions sets the nodePool's AllMachinesReady and AllNodesHealthy conditions.
+func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, nodePool *hyperv1.NodePool) error {
+	// Get all Machines for NodePool.
+	machines, err := r.getMachinesForNodePool(ctx, nodePool)
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolAllMachinesReadyConditionType,
+			Status:             corev1.ConditionUnknown,
+			Reason:             hyperv1.NodePoolFailedToGetReason,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return fmt.Errorf("failed to get Machines: %w", err)
+	}
+
+	r.setAllMachinesReadyCondition(nodePool, machines)
+
+	r.setAllNodesHealthyCondition(nodePool, machines)
+
+	return nil
+}
+
+func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine) {
+	status := corev1.ConditionTrue
+	reason := hyperv1.AsExpectedReason
+	var message string
+
+	if len(machines) < 1 {
+		status = corev1.ConditionFalse
+		reason = hyperv1.NodePoolNotFoundReason
+		message = "No Machines are created"
+	}
+
+	for _, machine := range machines {
+		condition := findCAPIStatusCondition(machine.Status.Conditions, capiv1.MachineNodeHealthyCondition)
+		if condition != nil && condition.Status != corev1.ConditionTrue {
+			status = corev1.ConditionFalse
+			reason = condition.Reason
+			message = message + fmt.Sprintf("Machine %s: %s\n", machine.Name, condition.Reason)
+		}
+	}
+
+	if status == corev1.ConditionTrue {
+		message = hyperv1.AllIsWellMessage
+	}
+
+	allMachinesHealthyCondition := &hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolAllNodesHealthyConditionType,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: nodePool.Generation,
+	}
+	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesHealthyCondition)
+}
+
+func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.NodePool, machines []*capiv1.Machine) {
+	status := corev1.ConditionTrue
+	reason := hyperv1.AsExpectedReason
+	message := hyperv1.AllIsWellMessage
+
+	if numMachines := len(machines); numMachines == 0 {
+		status = corev1.ConditionFalse
+		reason = hyperv1.NodePoolNotFoundReason
+		message = "No Machines are created"
+	} else {
+		// Aggregate conditions.
+		// TODO (alberto): consider bubbling failureReason / failureMessage.
+		// This a rudimentary approach which aggregates every Machine, until
+		// https://github.com/kubernetes-sigs/cluster-api/pull/6218 and
+		// https://github.com/kubernetes-sigs/cluster-api/pull/6025
+		// are solved.
+		// Eventually we should solve this in CAPI to make it available in MachineDeployments / MachineSets
+		// with a consumable "Reason" and an aggregated "Message".
+
+		numNotReady := 0
+		messageMap := make(map[string][]string)
+
+		for _, machine := range machines {
+			readyCond := findCAPIStatusCondition(machine.Status.Conditions, capiv1.ReadyCondition)
+			if readyCond != nil && readyCond.Status != corev1.ConditionTrue {
+				status = corev1.ConditionFalse
+				numNotReady++
+				infraReadyCond := findCAPIStatusCondition(machine.Status.Conditions, capiv1.InfrastructureReadyCondition)
+				// We append the reason as part of the higher Message, since the message is meaningless.
+				// This is how a CAPI condition looks like in AWS for an instance deleted out of band failure.
+				//	- lastTransitionTime: "2022-11-28T15:14:28Z"
+				//		message: 1 of 2 completed
+				//		reason: InstanceTerminated
+				//		severity: Error
+				//		status: "False"
+				//		type: Ready
+				var mapReason, mapMessage string
+				if infraReadyCond != nil && infraReadyCond.Status != corev1.ConditionTrue && !isSetupCounterCondMessage.MatchString(infraReadyCond.Message) {
+					mapReason = infraReadyCond.Reason
+					mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", machine.Name, infraReadyCond.Reason, infraReadyCond.Message)
+				} else {
+					mapReason = readyCond.Reason
+					mapMessage = fmt.Sprintf("Machine %s: %s\n", machine.Name, readyCond.Reason)
+				}
+
+				messageMap[mapReason] = append(messageMap[mapReason], mapMessage)
+			}
+		}
+		if numNotReady > 0 {
+			reason, message = aggregateMachineReasonsAndMessages(messageMap, numMachines, numNotReady)
+		}
+	}
+
+	allMachinesReadyCondition := &hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolAllMachinesReadyConditionType,
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: nodePool.Generation,
+	}
+
+	SetStatusCondition(&nodePool.Status.Conditions, *allMachinesReadyCondition)
 }
 
 func (r *NodePoolReconciler) cleanupMachineTemplates(ctx context.Context, log logr.Logger, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
@@ -1337,7 +1372,7 @@ func (r *NodePoolReconciler) delete(ctx context.Context, nodePool *hyperv1.NodeP
 	}
 
 	// Ensure all machines in NodePool are deleted
-	if err = r.ensureMachineDeletion(nodePool); err != nil {
+	if err = r.ensureMachineDeletion(ctx, nodePool); err != nil {
 		return err
 	}
 
@@ -2608,8 +2643,8 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 // This function can be deleted once the upstream PR (https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/3805) is merged and pulled into https://github.com/openshift/cluster-api-provider-aws.
 // This function is necessary to ensure AWSMachines are fully deleted prior to deleting the NodePull secrets being deleted due to a bug introduced by https://github.com/kubernetes-sigs/cluster-api-provider-aws/pull/2271
 // See https://github.com/openshift/hypershift/pull/1826#discussion_r1007349564 for more details.
-func (r *NodePoolReconciler) ensureMachineDeletion(nodePool *hyperv1.NodePool) error {
-	machines, err := r.getMachinesForNodePool(nodePool)
+func (r *NodePoolReconciler) ensureMachineDeletion(ctx context.Context, nodePool *hyperv1.NodePool) error {
+	machines, err := r.getMachinesForNodePool(ctx, nodePool)
 	if err != nil {
 		return fmt.Errorf("error getting Machines: %w", err)
 	}
@@ -2623,18 +2658,19 @@ func (r *NodePoolReconciler) ensureMachineDeletion(nodePool *hyperv1.NodePool) e
 
 // getMachinesForNodePool get all Machines listed with the nodePoolAnnotation
 // within the control plane Namespace for that NodePool.
-func (r *NodePoolReconciler) getMachinesForNodePool(nodePool *hyperv1.NodePool) ([]*capiv1.Machine, error) {
+func (r *NodePoolReconciler) getMachinesForNodePool(ctx context.Context, nodePool *hyperv1.NodePool) ([]*capiv1.Machine, error) {
+	npAnnotation := client.ObjectKeyFromObject(nodePool).String()
 	machines := capiv1.MachineList{}
 	controlPlaneNamespace := fmt.Sprintf("%s-%s", nodePool.Namespace, strings.ReplaceAll(nodePool.Spec.ClusterName, ".", "-"))
 
-	if err := r.List(context.Background(), &machines, &client.ListOptions{Namespace: controlPlaneNamespace}); err != nil {
+	if err := r.List(ctx, &machines, &client.ListOptions{Namespace: controlPlaneNamespace}); err != nil {
 		return nil, fmt.Errorf("failed to list Machines: %w", err)
 	}
 
 	// Filter out only machines belonging to deleted NodePool
 	var machinesForNodePool []*capiv1.Machine
 	for i, machine := range machines.Items {
-		if machine.Annotations[nodePoolAnnotation] == client.ObjectKeyFromObject(nodePool).String() {
+		if machine.Annotations[nodePoolAnnotation] == npAnnotation {
 			machinesForNodePool = append(machinesForNodePool, &machines.Items[i])
 		}
 	}
@@ -2682,4 +2718,46 @@ func (o machinesByCreationTimestamp) Less(i, j int) bool {
 func sortedByCreationTimestamp(machines []*capiv1.Machine) []*capiv1.Machine {
 	sort.Sort(machinesByCreationTimestamp(machines))
 	return machines
+}
+
+const (
+	endOfMessage     = "... to many similar errors\n"
+	maxMessageLength = 1000
+)
+
+func aggregateMachineReasonsAndMessages(messageMap map[string][]string, numMachines, numNotReady int) (string, string) {
+	msgBuilder := &strings.Builder{}
+	reasons := make([]string, len(messageMap))
+
+	msgBuilder.WriteString(fmt.Sprintf("%d of %d machines are not ready\n", numNotReady, numMachines))
+
+	// as map order is not deterministic, we must sort the reasons in order to get deterministic reason and message, so
+	// we won't need to update the nodepool condition just because we've got different order from the map, the machine
+	// conditions weren't actually changed.
+	i := 0
+	for reason := range messageMap {
+		reasons[i] = reason
+		i++
+	}
+	sort.Strings(reasons)
+
+	for _, reason := range reasons {
+		msgBuilder.WriteString(aggregateMachineMessages(messageMap[reason]))
+	}
+
+	return strings.Join(reasons, ","), msgBuilder.String()
+}
+
+func aggregateMachineMessages(msgs []string) string {
+	builder := strings.Builder{}
+	for _, msg := range msgs {
+		if builder.Len()+len(msg) > maxMessageLength {
+			builder.WriteString(endOfMessage)
+			break
+		}
+
+		builder.WriteString(msg)
+	}
+
+	return builder.String()
 }
