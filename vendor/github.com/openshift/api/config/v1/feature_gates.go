@@ -421,4 +421,14 @@ var (
 		ResponsiblePerson:   "dgrisonnet",
 		OwningProduct:       kubernetes,
 	}
+
+	FeatureGatePinnedImages = FeatureGateName("PinnedImages")
+	pinnedImages            = FeatureGateDescription{
+		FeatureGateAttributes: FeatureGateAttributes{
+			Name: FeatureGatePinnedImages,
+		},
+		OwningJiraComponent: "MachineConfigOperator",
+		ResponsiblePerson:   "jhernand",
+		OwningProduct:       ocpSpecific,
+	}
 )

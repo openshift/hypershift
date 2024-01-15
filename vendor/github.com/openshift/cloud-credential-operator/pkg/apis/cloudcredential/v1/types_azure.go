@@ -31,6 +31,40 @@ type AzureProviderSpec struct {
 
 	// RoleBindings contains a list of roles that should be associated with the minted credential.
 	RoleBindings []RoleBinding `json:"roleBindings"`
+
+	// Permissions is the list of Azure permissions required to create a more fine-grained custom role to
+	// satisfy the CredentialsRequest.
+	// The Permissions field may be provided in addition to RoleBindings. When both fields are specified,
+	// the user-assigned managed identity will have union of permissions defined from both Permissions
+	// and RoleBindings.
+	// +optional
+	Permissions []string `json:"permissions,omitempty"`
+
+	// DataPermissions is the list of Azure data permissions required to create a more fine-grained custom
+	// role to satisfy the CredentialsRequest.
+	// The DataPermissions field may be provided in addition to RoleBindings. When both fields are specified,
+	// the user-assigned managed identity will have union of permissions defined from both DataPermissions
+	// and RoleBindings.
+	// +optional
+	DataPermissions []string `json:"dataPermissions,omitempty"`
+
+	// The following fields are only required for Azure Workload Identity.
+	// AzureClientID is the ID of the specific application you created in Azure
+	// +optional
+	AzureClientID string `json:"azureClientID,omitempty"`
+
+	// AzureRegion is the geographic region of the Azure service.
+	// +optional
+	AzureRegion string `json:"azureRegion,omitempty"`
+
+	// Each Azure subscription has an ID associated with it, as does the tenant to which a subscription belongs.
+	// AzureSubscriptionID is the ID of the subscription.
+	// +optional
+	AzureSubscriptionID string `json:"azureSubscriptionID,omitempty"`
+
+	// AzureTenantID is the ID of the tenant to which the subscription belongs.
+	// +optional
+	AzureTenantID string `json:"azureTenantID,omitempty"`
 }
 
 // RoleBinding models part of the Azure RBAC Role Binding

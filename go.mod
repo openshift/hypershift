@@ -40,12 +40,12 @@ require (
 	github.com/onsi/gomega v1.30.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
-	github.com/openshift/api v0.0.0-20231213232254-1029f2d5339f
-	github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1
-	github.com/openshift/cloud-credential-operator v0.0.0-20220708202639-ef451d260cf6
-	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
+	github.com/openshift/api v0.0.0-20240112192513-412e126bd40b
+	github.com/openshift/client-go v0.0.0-20240104132419-223261fd8630
+	github.com/openshift/cloud-credential-operator v0.0.0-20240112205841-8bca79fc6179
+	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20231219080321-a5792ff62bf4
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20220614214129-2c76314fb3cc
-	github.com/openshift/library-go v0.0.0-20231214171439-128164517bf7
+	github.com/openshift/library-go v0.0.0-20240115112243-470c096a1ca9
 	github.com/operator-framework/api v0.10.7
 	github.com/pkg/errors v0.9.1
 	github.com/ppc64le-cloud/powervs-utils v0.0.0-20230306072409-bc42a581099f
@@ -63,8 +63,8 @@ require (
 	go.etcd.io/etcd/server/v3 v3.5.10
 	go.etcd.io/etcd/tests/v3 v3.5.10
 	go.uber.org/zap v1.26.0
-	golang.org/x/crypto v0.17.0
-	golang.org/x/net v0.19.0
+	golang.org/x/crypto v0.18.0
+	golang.org/x/net v0.20.0
 	golang.org/x/sync v0.5.0
 	golang.org/x/time v0.5.0
 	google.golang.org/grpc v1.60.1
@@ -78,7 +78,7 @@ require (
 	k8s.io/cli-runtime v0.29.0
 	k8s.io/client-go v0.29.0
 	k8s.io/component-base v0.29.0
-	k8s.io/klog/v2 v2.110.1
+	k8s.io/klog/v2 v2.120.0
 	k8s.io/kube-aggregator v0.29.0
 	k8s.io/kube-scheduler v0.29.0
 	k8s.io/kubectl v0.29.0
@@ -123,7 +123,7 @@ require (
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/coreos/vcontext v0.0.0-20230201181013-d72178a18687 // indirect
-	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
@@ -192,7 +192,7 @@ require (
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
-	github.com/openshift/custom-resource-status v1.1.2 // indirect
+	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
@@ -202,7 +202,7 @@ require (
 	github.com/prometheus/procfs v0.12.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
-	github.com/sirupsen/logrus v1.9.0 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
@@ -227,8 +227,8 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20231226003508-02704c960a9b // indirect
 	golang.org/x/oauth2 v0.15.0 // indirect
-	golang.org/x/sys v0.15.0 // indirect
-	golang.org/x/term v0.15.0 // indirect
+	golang.org/x/sys v0.16.0 // indirect
+	golang.org/x/term v0.16.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect

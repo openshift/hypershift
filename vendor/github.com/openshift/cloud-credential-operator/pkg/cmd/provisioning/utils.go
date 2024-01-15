@@ -79,6 +79,9 @@ spec:
 	if err := ioutil.WriteFile(clusterAuthFile, []byte(fileData), 0600); err != nil {
 		return errors.Wrap(err, "failed to save cluster authentication file")
 	}
+	log.Printf("Wrote cluster authentication manifest at path %s", clusterAuthFile)
+	log.Printf("Issuer URL (serviceAccountIssuer) is %s", issuerURL)
+
 	return nil
 }
 
@@ -93,7 +96,7 @@ func BuildJsonWebKeySet(publicKeyPath string) ([]byte, error) {
 
 	block, _ := pem.Decode(publicKeyContent)
 	if block == nil {
-		return nil, errors.Wrap(err, "frror decoding PEM file")
+		return nil, errors.Wrap(err, "error decoding PEM file")
 	}
 
 	publicKey, err := x509.ParsePKIXPublicKey(block.Bytes)
@@ -198,4 +201,11 @@ func GetListOfCredentialsRequests(dir string, enableTechPreview bool) ([]*credre
 	}
 
 	return credRequests, nil
+}
+
+func ShortenName(name string, maxLength int) string {
+	if len(name) > maxLength {
+		return name[0:maxLength]
+	}
+	return name
 }
