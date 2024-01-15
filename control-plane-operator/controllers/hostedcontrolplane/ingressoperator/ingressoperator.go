@@ -6,6 +6,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/konnectivity"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -136,11 +137,11 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) {
 			{Name: "KUBECONFIG", Value: "/etc/kubernetes/kubeconfig"},
 			{
 				Name:  "HTTP_PROXY",
-				Value: fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("socks5://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
 			},
 			{
 				Name:  "HTTPS_PROXY",
-				Value: fmt.Sprintf("socks5://127.0.0.1:%d", kas.KonnectivityServerLocalPort),
+				Value: fmt.Sprintf("socks5://127.0.0.1:%d", konnectivity.KonnectivityServerLocalPort),
 			},
 			{
 				Name:  "NO_PROXY",
