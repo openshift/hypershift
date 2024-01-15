@@ -1,4 +1,4 @@
-FROM quay.io/openshift/origin-base:4.16
+FROM registry.access.redhat.com/ubi9:latest
 
 LABEL io.openshift.hypershift.control-plane-operator-skips-haproxy=true
 LABEL io.openshift.hypershift.control-plane-operator-subcommands=true

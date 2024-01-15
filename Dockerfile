@@ -1,4 +1,4 @@
-FROM registry.ci.openshift.org/openshift/release:golang-1.21 as builder
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.21-openshift-4.16 as builder
 
 WORKDIR /hypershift
 
@@ -6,7 +6,7 @@ COPY . .
 
 RUN make build
 
-FROM quay.io/openshift/origin-base:4.16
+FROM registry.access.redhat.com/ubi9:latest
 COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hcp \
                     /hypershift/bin/hypershift-operator \
