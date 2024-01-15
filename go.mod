@@ -24,10 +24,10 @@ require (
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/aws/aws-sdk-go v1.49.21
 	github.com/blang/semver v3.5.1+incompatible
-	github.com/clarketm/json v1.14.1
-	github.com/coreos/ignition/v2 v2.16.2
-	github.com/docker/distribution v2.8.2+incompatible
-	github.com/evanphx/json-patch/v5 v5.7.0
+	github.com/clarketm/json v1.17.1
+	github.com/coreos/ignition/v2 v2.17.0
+	github.com/docker/distribution v2.8.3+incompatible
+	github.com/evanphx/json-patch/v5 v5.8.0
 	github.com/go-logr/logr v1.4.1
 	github.com/go-logr/zapr v1.2.4
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
@@ -39,7 +39,7 @@ require (
 	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.0.1
 	github.com/onsi/gomega v1.30.0
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
+	github.com/opencontainers/image-spec v1.1.0-rc5
 	github.com/openshift/api v0.0.0-20240112192513-412e126bd40b
 	github.com/openshift/client-go v0.0.0-20240104132419-223261fd8630
 	github.com/openshift/cloud-credential-operator v0.0.0-20240112205841-8bca79fc6179
@@ -125,6 +125,7 @@ require (
 	github.com/coreos/vcontext v0.0.0-20230201181013-d72178a18687 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
+	github.com/distribution/reference v0.5.0 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
