@@ -7,7 +7,8 @@ import (
 	"strings"
 
 	"github.com/blang/semver"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	configv1 "github.com/openshift/api/config/v1"
+	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,10 +16,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	podsecurityadmissionv1beta1 "k8s.io/pod-security-admission/admission/api/v1beta1"
 
-	configv1 "github.com/openshift/api/config/v1"
-	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/certs"
@@ -146,10 +147,10 @@ func generateConfig(p KubeAPIServerConfigParams, version semver.Version) *kcpv1.
 	args.Set("audit-policy-file", cpath(kasVolumeAuditConfig().Name, AuditPolicyConfigMapKey))
 	args.Set("authorization-mode", "Scope", "SystemMasters", "RBAC", "Node")
 	args.Set("client-ca-file", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey))
-	if p.CloudProviderConfigRef != nil {
+	if p.CloudProviderConfigRef != nil && p.CloudProvider != azure.Provider {
 		args.Set("cloud-config", cloudProviderConfig(p.CloudProviderConfigRef.Name, p.CloudProvider))
 	}
-	if p.CloudProvider != "" && p.CloudProvider != aws.Provider {
+	if p.CloudProvider != "" && p.CloudProvider != aws.Provider && p.CloudProvider != azure.Provider {
 		args.Set("cloud-provider", p.CloudProvider)
 	}
 	if p.AuditWebhookEnabled {
