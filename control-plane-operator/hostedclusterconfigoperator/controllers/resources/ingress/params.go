@@ -2,6 +2,7 @@ package ingress
 
 import (
 	configv1 "github.com/openshift/api/config/v1"
+	v1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/globalconfig"
 )
@@ -13,6 +14,7 @@ type IngressParams struct {
 	IsPrivate        bool
 	IBMCloudUPI      bool
 	AWSNLB           bool
+	AWSNLBScope      v1.LoadBalancerScope
 }
 
 func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
@@ -20,6 +22,7 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 	isPrivate := false
 	ibmCloudUPI := false
 	nlb := false
+	awsNlbScope := v1.ExternalLoadBalancer
 	if hcp.Spec.Platform.IBMCloud != nil && hcp.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI {
 		ibmCloudUPI = true
 	}
@@ -31,6 +34,9 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 	}
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Ingress != nil && hcp.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS != nil {
 		nlb = hcp.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type == configv1.NLB
+		if hcp.Spec.Platform.AWS.EndpointAccess == hyperv1.Private {
+			awsNlbScope = v1.InternalLoadBalancer
+		}
 	}
 
 	return &IngressParams{
@@ -40,6 +46,7 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 		IsPrivate:        isPrivate,
 		IBMCloudUPI:      ibmCloudUPI,
 		AWSNLB:           nlb,
+		AWSNLBScope:      awsNlbScope,
 	}
 
 }

@@ -1416,6 +1416,10 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	if numNodes > 0 {
 		EnsureNodeCommunication(t, ctx, client, hostedCluster)
 	}
+
+	if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		g.Expect(hostedCluster.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type).To(Equal(configv1.NLB))
+	}
 }
 
 func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *core.CreateOptions) {
@@ -1452,6 +1456,11 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0)
 
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
+
+	if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+		g.Expect(hostedCluster.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type).To(Equal(configv1.NLB))
+	}
+
 }
 
 func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool) {
