@@ -871,14 +871,14 @@ github.com/pkg/errors
 # github.com/pkg/profile v1.3.0
 ## explicit
 github.com/pkg/profile
-# github.com/pmezard/go-difflib v1.0.0
+# github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2
 ## explicit
 github.com/pmezard/go-difflib/difflib
-# github.com/ppc64le-cloud/powervs-utils v0.0.0-20230306072409-bc42a581099f
+# github.com/ppc64le-cloud/powervs-utils v0.0.0-20240105123432-7588e9595c17
 ## explicit; go 1.15
 github.com/ppc64le-cloud/powervs-utils
-# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.57.0
-## explicit; go 1.17
+# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.71.0
+## explicit; go 1.21
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1
 # github.com/prometheus/client_golang v1.18.0
@@ -927,6 +927,8 @@ github.com/spf13/pflag
 # github.com/stoewer/go-strcase v1.3.0
 ## explicit; go 1.11
 github.com/stoewer/go-strcase
+# github.com/stretchr/objx v0.5.1
+## explicit; go 1.13
 # github.com/stretchr/testify v1.8.4
 ## explicit; go 1.20
 github.com/stretchr/testify/assert

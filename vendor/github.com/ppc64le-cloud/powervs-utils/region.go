@@ -30,6 +30,10 @@ func GetRegion(zone string) (region string, err error) {
 		region = "osa"
 	case strings.HasPrefix(zone, "mon"):
 		region = "mon"
+	case strings.HasPrefix(zone, "mad"):
+		region = "mad"
+	case strings.HasPrefix(zone, "wdc"):
+		region = "wdc"
 	default:
 		return "", fmt.Errorf("region not found for the zone, talk to the developer to add the support into the tool: %s", zone)
 	}
@@ -70,6 +74,15 @@ var Regions = map[string]Region{
 			"lon06",
 		},
 	},
+	"mad": {
+		Description: "Madrid, Spain",
+		VPCRegion:   "eu-es",
+		COSRegion:   "eu-es",
+		Zones: []string{
+			"mad02",
+			"mad04",
+		},
+	},
 	"mon": {
 		Description: "Montreal, Canada",
 		VPCRegion:   "ca-tor",
@@ -95,7 +108,10 @@ var Regions = map[string]Region{
 		Description: "São Paulo, Brazil",
 		VPCRegion:   "br-sao",
 		COSRegion:   "br-sao",
-		Zones:       []string{"sao01"},
+		Zones:       []string{
+			"sao01",
+			"sao04",
+		},
 	},
 	"tok": {
 		Description: "Tokyo, Japan",
@@ -108,6 +124,15 @@ var Regions = map[string]Region{
 		VPCRegion:   "us-east",
 		COSRegion:   "us-east",
 		Zones:       []string{"us-east"},
+	},
+	"wdc": {
+		Description: "Washington DC, USA",
+		VPCRegion:   "us-east",
+		COSRegion:   "us-east",
+		Zones: []string{
+			"wdc06",
+			"wdc07",
+		},
 	},
 }
 
