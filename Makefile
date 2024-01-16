@@ -142,7 +142,7 @@ clients:
 
 .PHONY: release
 release:
-	go run ./hack/tools/release/notes.go --from=${FROM} --to=${TO}
+	go run ./hack/tools/release/notes.go --from=${FROM} --to=${TO} --token=${TOKEN}
 
 .PHONY: app-sre-saas-template
 app-sre-saas-template: hypershift

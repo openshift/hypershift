@@ -26,6 +26,7 @@ type commit struct {
 var (
 	fromTag = flag.String("from", "", "The tag or commit to start from.")
 	toTag   = flag.String("to", "", "The tag or commit to compare with.")
+	token   = flag.String("token", "", "The token to use for github API authorization.")
 )
 
 func main() {
@@ -82,16 +83,21 @@ func main() {
 		headers := map[string]string{
 			"Accept": "application/vnd.github.v3+json",
 		}
+		if token != nil && *token != "" {
+			headers["Authorization"] = fmt.Sprintf("Bearer %s", *token)
+		}
 
 		// Make the API request.
 		resp, err := makeRequest("GET", url, headers, nil)
 		if err != nil {
 			fmt.Printf("Error making API request: %v", err)
-			return
+			os.Exit(1)
 		}
 
 		if resp.StatusCode != 200 {
-			fmt.Println(fmt.Sprintf("API returned: %v", resp.StatusCode))
+			fmt.Println(fmt.Sprintf("API returned: %v.  Changelog incomplete!", resp.StatusCode))
+			fmt.Println("Consider generating an authorization token and using the --token flag.")
+			os.Exit(1)
 		}
 
 		// Parse the API response body.
