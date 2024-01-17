@@ -1,0 +1,124 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.13.0
+  name: ibmvpcclustertemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: IBMVPCClusterTemplate
+    listKind: IBMVPCClusterTemplateList
+    plural: ibmvpcclustertemplates
+    shortNames:
+    - ibmvpcct
+    singular: ibmvpcclustertemplate
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Time duration since creation of IBMVPCClusterTemplate
+      jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: IBMVPCClusterTemplate is the Schema for the ibmvpcclustertemplates
+          API.
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: IBMVPCClusterTemplateSpec defines the desired state of IBMVPCClusterTemplate.
+            properties:
+              template:
+                description: IBMVPCClusterTemplateResource describes the data needed
+                  to create an IBMVPCCluster from a template.
+                properties:
+                  metadata:
+                    description: 'Standard object''s metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata'
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: 'Annotations is an unstructured key value map
+                          stored with a resource that may be set by external tools
+                          to store and retrieve arbitrary metadata. They are not queryable
+                          and should be preserved when modifying objects. More info:
+                          http://kubernetes.io/docs/user-guide/annotations'
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: 'Map of string keys and values that can be used
+                          to organize and categorize (scope and select) objects. May
+                          match selectors of replication controllers and services.
+                          More info: http://kubernetes.io/docs/user-guide/labels'
+                        type: object
+                    type: object
+                  spec:
+                    description: IBMVPCClusterSpec defines the desired state of IBMVPCCluster.
+                    properties:
+                      controlPlaneEndpoint:
+                        description: ControlPlaneEndpoint represents the endpoint
+                          used to communicate with the control plane.
+                        properties:
+                          host:
+                            description: The hostname on which the API server is serving.
+                            type: string
+                          port:
+                            description: The port on which the API server is serving.
+                            format: int32
+                            type: integer
+                        required:
+                        - host
+                        - port
+                        type: object
+                      controlPlaneLoadBalancer:
+                        description: ControlPlaneLoadBalancer is optional configuration
+                          for customizing control plane behavior.
+                        properties:
+                          name:
+                            description: Name sets the name of the VPC load balancer.
+                            maxLength: 63
+                            pattern: ^([a-z]|[a-z][-a-z0-9]*[a-z0-9])$
+                            type: string
+                        type: object
+                      region:
+                        description: The IBM Cloud Region the cluster lives in.
+                        type: string
+                      resourceGroup:
+                        description: The VPC resources should be created under the
+                          resource group.
+                        type: string
+                      vpc:
+                        description: The Name of VPC.
+                        type: string
+                      zone:
+                        description: The Name of availability zone.
+                        type: string
+                    required:
+                    - region
+                    - resourceGroup
+                    type: object
+                required:
+                - spec
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}
