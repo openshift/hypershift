@@ -28,6 +28,41 @@ In addition:
       role.kubernetes.io/infra: "" 
 ```
 
+## Scheduling Topology Options 
+
+Cluster Service Providers may choose how hosted control planes are isolated or co-located. The three different options are:
+
+ - Shared Everything
+ - Shared Nothing 
+ - Dedicated Request Serving
+
+**NOTE**: Each hosted control plane can run Single Replica or Highly Available. If Highly Available, the control plane will be spread across failure domains via `topology.kubernetes.io/zone` as the topology key.
+
+### Shared Everything
+
+- All hosted control plane pods are scheduled to any node that can run hosted control plane workloads.
+
+![shared_everything_topology.png](..%2Fimages%2Fshared_everything_topology.png)
+
+### Shared Nothing
+
+- Nodes meant for a specific hosted cluster are tainted (and labeled) with a specific `hypershift.openshift.io/cluster` value.
+- No other control plane pods will land on those nodes.
+
+![shared_nothing_topology.png](..%2Fimages%2Fshared_nothing_topology.png)
+
+### Dedicated Request Serving
+
+- Two nodes in different zones are dedicated to a specific hosted cluster’s front end serving components.
+- The rest of the hosted cluster’s control plane pods can co-exist with other clusters’ control plane pods running on shared nodes.
+
+**NOTE**: A HostedCluster must have:
+
+- `hypershift.openshift.io/topology: dedicated-request-serving-components` annotation to honor dedicated serving content workloads affinity opinions.
+-  nodeSelector set as `hypershift.openshift.io/control-plane: true` for it to be a hard requirement for workloads to be scheduled. Without it that label is a soft requirement meaning workloads will try to find any suitable node if there’s none with this label.
+
+![dedicated_request_serving_topology.png](..%2Fimages%2Fdedicated_request_serving_topology.png)
+
 ## Priority
 
 HyperShift leverages PriorityClasses for driving Priority and Preemption of their managed Pods.
