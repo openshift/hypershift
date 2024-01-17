@@ -1721,36 +1721,50 @@ func EnsureNoHCPPodsLandOnDefaultNode(t *testing.T, ctx context.Context, client 
 }
 
 func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	g := NewWithT(t)
+	t.Run("EnsureSATokenNotMountedUnlessNecessary", func(t *testing.T) {
+		g := NewWithT(t)
 
-	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
-	var pods corev1.PodList
-	if err := c.List(ctx, &pods, &crclient.ListOptions{Namespace: hcpNamespace}); err != nil {
-	}
+		var pods corev1.PodList
+		if err := c.List(ctx, &pods, &crclient.ListOptions{Namespace: hcpNamespace}); err != nil {
+			t.Fatalf("failed to list pods in namespace %s: %v", hcpNamespace, err)
+		}
 
-	expectedComponentsWithTokenMount := append(expectedKasManagementComponents,
-		"aws-ebs-csi-driver-controller",
-		"packageserver",
-		"csi-snapshot-webhook",
-		"csi-snapshot-controller",
-		"ovnkube-control-plane", //remove once https://issues.redhat.com/browse/OCPBUGS-26408 is closed,
-		"kubevirt-cloud-controller-manager",
-		"kubevirt-csi-controller",
-	)
+		expectedComponentsWithTokenMount := append(expectedKasManagementComponents,
+			"aws-ebs-csi-driver-controller",
+			"packageserver",
+			"csi-snapshot-webhook",
+			"csi-snapshot-controller",
+			"ovnkube-control-plane", //remove once https://issues.redhat.com/browse/OCPBUGS-26408 is closed,
+		)
 
-	for _, pod := range pods.Items {
-		hasPrefix := false
-		for _, prefix := range expectedComponentsWithTokenMount {
-			if strings.HasPrefix(pod.Name, prefix) {
-				hasPrefix = true
-				break
+		if hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+			expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount, hostedCluster.Name+"-test-",
+				"kubevirt-cloud-controller-manager",
+				"kubevirt-csi-controller",
+			)
+
+			for _, pod := range pods.Items {
+				if strings.HasSuffix(pod.Name, "-console-logger") {
+					expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount, pod.Name)
+				}
 			}
 		}
-		if !hasPrefix {
-			for _, volume := range pod.Spec.Volumes {
-				g.Expect(volume.Name).ToNot(HavePrefix("kube-api-access-"))
+
+		for _, pod := range pods.Items {
+			hasPrefix := false
+			for _, prefix := range expectedComponentsWithTokenMount {
+				if strings.HasPrefix(pod.Name, prefix) {
+					hasPrefix = true
+					break
+				}
+			}
+			if !hasPrefix {
+				for _, volume := range pod.Spec.Volumes {
+					g.Expect(volume.Name).ToNot(HavePrefix("kube-api-access-"))
+				}
 			}
 		}
-	}
+	})
 }
