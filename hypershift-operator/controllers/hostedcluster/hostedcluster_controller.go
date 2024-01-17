@@ -1856,6 +1856,17 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		}
 	}
 
+	if hcp.Labels == nil {
+		hcp.Labels = make(map[string]string)
+	}
+	// All labels on the HostedCluster with this special prefix are copied
+	// Thoses are labels set by OCM
+	for key, val := range hcluster.Labels {
+		if strings.HasPrefix(key, "api.openshift.com") {
+			hcp.Labels[key] = val
+		}
+	}
+
 	hcp.Spec.Channel = hcluster.Spec.Channel
 	hcp.Spec.ReleaseImage = hcluster.Spec.Release.Image
 	if hcluster.Spec.ControlPlaneRelease != nil {
