@@ -1,6 +1,13 @@
 package metrics
 
 import (
+	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"testing"
 	"time"
 
@@ -11,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/clock"
@@ -755,4 +763,221 @@ func TestReportDeletingDuration(t *testing.T) {
 				tc.expected)
 		})
 	}
+}
+
+func TestProxyCAValidity(t *testing.T) {
+	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
+		return createMetricValue(
+			ProxyCAValidMetricName,
+			proxyCAValidMetricHelp,
+			expectedValue)
+	}
+
+	now := time.Now()
+	_, invalidCAPEM, err := createCa(now.Add(-time.Hour), now.Add(-time.Minute))
+	if err != nil {
+		t.Fail()
+	}
+	_, validCAPEM, err := createCa(now.Add(-time.Hour), now.Add(time.Hour))
+	if err != nil {
+		t.Fail()
+	}
+
+	testCases := []struct {
+		name          string
+		timestamp     time.Time
+		caConfigMap   string
+		caCertificate string
+		expected      *dto.MetricFamily
+	}{
+		{
+			name:          "When cluster is not setting a CA bundle, the validity it not reported",
+			timestamp:     now,
+			caCertificate: "",
+			caConfigMap:   "",
+		},
+		{
+			name:          "When the configured certificates are expired, the CA is invalid",
+			timestamp:     now,
+			caCertificate: invalidCAPEM,
+			caConfigMap:   "my-config-map",
+			expected:      wrapExpectedValueAsMetric(0),
+		},
+		{
+			name:          "When the configured certificates are valid, the CA is valid",
+			timestamp:     now,
+			caCertificate: validCAPEM,
+			caConfigMap:   "my-config-map",
+			expected:      wrapExpectedValueAsMetric(1),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			objects := make([]client.Object, 0)
+			hcBase := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "hc",
+					Namespace:  "any",
+					Finalizers: []string{"necessary"}, // fake client needs finalizers when a deletionTimestamp is set
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+				},
+			}
+			objects = append(objects, hcBase)
+			if tc.caConfigMap != "" {
+				hcBase.Spec.Configuration = &hyperv1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						TrustedCA: configv1.ConfigMapNameReference{
+							Name: tc.caConfigMap,
+						},
+					},
+				}
+				configMap := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      tc.caConfigMap,
+						Namespace: "any",
+					},
+					Data: map[string]string{ProxyCAConfigMapKey: tc.caCertificate},
+				}
+				objects = append(objects, configMap)
+			}
+			clientBuilder = clientBuilder.WithObjects(objects...)
+			checkMetric(t,
+				clientBuilder.Build(),
+				clocktesting.NewFakeClock(tc.timestamp),
+				ProxyCAValidMetricName,
+				tc.expected)
+		})
+	}
+}
+
+func TestProxyCAExpiry(t *testing.T) {
+
+	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
+		return createMetricValue(
+			ProxyCAExpiryTimestampName,
+			proxyCAExpiryTimestampMetricHelp,
+			expectedValue)
+	}
+
+	now := time.Now()
+	invalidCA, invalidCAPEM, err := createCa(now.Add(-time.Hour), now.Add(-time.Minute))
+	if err != nil {
+		t.Fail()
+	}
+	validCA, validCAPEM, err := createCa(now.Add(-time.Hour), now.Add(time.Hour))
+	if err != nil {
+		t.Fail()
+	}
+
+	testCases := []struct {
+		name          string
+		timestamp     time.Time
+		caConfigMap   string
+		caCertificate string
+		expected      *dto.MetricFamily
+	}{
+		{
+			name:          "When cluster is not setting a CA bundle, the validity it not reported",
+			timestamp:     now,
+			caCertificate: "",
+			caConfigMap:   "",
+		},
+		{
+			name:          "When the configured certificates are expired, the CA is invalid",
+			timestamp:     now,
+			caCertificate: invalidCAPEM,
+			caConfigMap:   "my-config-map",
+			expected:      wrapExpectedValueAsMetric(float64(invalidCA.NotAfter.UTC().Unix())),
+		},
+		{
+			name:          "When the configured certificates are valid, the CA is valid",
+			timestamp:     now,
+			caCertificate: validCAPEM,
+			caConfigMap:   "my-config-map",
+			expected:      wrapExpectedValueAsMetric(float64(validCA.NotAfter.UTC().Unix())),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			objects := make([]client.Object, 0)
+			hcBase := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "hc",
+					Namespace:  "any",
+					Finalizers: []string{"necessary"}, // fake client needs finalizers when a deletionTimestamp is set
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+				},
+			}
+			objects = append(objects, hcBase)
+			if tc.caConfigMap != "" {
+				hcBase.Spec.Configuration = &hyperv1.ClusterConfiguration{
+					Proxy: &configv1.ProxySpec{
+						TrustedCA: configv1.ConfigMapNameReference{
+							Name: tc.caConfigMap,
+						},
+					},
+				}
+				configMap := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      tc.caConfigMap,
+						Namespace: "any",
+					},
+					Data: map[string]string{ProxyCAConfigMapKey: tc.caCertificate},
+				}
+				objects = append(objects, configMap)
+			}
+			clientBuilder = clientBuilder.WithObjects(objects...)
+			checkMetric(t,
+				clientBuilder.Build(),
+				clocktesting.NewFakeClock(tc.timestamp),
+				ProxyCAExpiryTimestampName,
+				tc.expected)
+		})
+	}
+}
+
+func createCa(notBefore, notAfter time.Time) (*x509.Certificate, string, error) {
+	ca := &x509.Certificate{
+		SerialNumber: big.NewInt(2019),
+		Subject: pkix.Name{
+			Organization:  []string{"Company, INC."},
+			Country:       []string{"US"},
+			Province:      []string{""},
+			Locality:      []string{"City"},
+			StreetAddress: []string{"Street"},
+			PostalCode:    []string{"00000"},
+		},
+		NotBefore:             notBefore,
+		NotAfter:              notAfter,
+		IsCA:                  true,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		BasicConstraintsValid: true,
+	}
+	caPrivKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// create the CA
+	caBytes, err := x509.CreateCertificate(rand.Reader, ca, ca, &caPrivKey.PublicKey, caPrivKey)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// pem encode
+	caPEM := new(bytes.Buffer)
+	pem.Encode(caPEM, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: caBytes,
+	})
+	return ca, caPEM.String(), nil
 }
