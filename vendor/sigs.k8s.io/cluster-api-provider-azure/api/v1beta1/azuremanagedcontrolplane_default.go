@@ -19,7 +19,6 @@ package v1beta1
 import (
 	"encoding/base64"
 	"fmt"
-	"reflect"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
@@ -97,6 +96,15 @@ func (m *AzureManagedControlPlane) setDefaultSubnet() {
 			m.Spec.VirtualNetwork.Subnet.CIDRBlock = defaultAKSNodeSubnetCIDRForOverlay
 		}
 	}
+}
+
+// setDefaultFleetsMember sets the default FleetsMember for an AzureManagedControlPlane.
+func setDefaultFleetsMember(fleetsMember *FleetsMember, labels map[string]string) *FleetsMember {
+	result := fleetsMember.DeepCopy()
+	if clusterName, ok := labels[clusterv1.ClusterNameLabel]; ok && fleetsMember != nil && fleetsMember.Name == "" {
+		result.Name = clusterName
+	}
+	return result
 }
 
 func setDefaultSku(sku *AKSSku) *AKSSku {
@@ -195,7 +203,7 @@ func (m *AzureManagedControlPlane) setDefaultOIDCIssuerProfile() {
 }
 
 func (m *AzureManagedControlPlane) setDefaultDNSPrefix() {
-	if reflect.ValueOf(m.Spec.DNSPrefix).IsZero() {
+	if m.Spec.DNSPrefix == nil {
 		m.Spec.DNSPrefix = ptr.To(m.Name)
 	}
 }

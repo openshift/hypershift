@@ -83,6 +83,7 @@ func (mw *azureManagedControlPlaneWebhook) Default(ctx context.Context, obj runt
 	m.Spec.Version = setDefaultVersion(m.Spec.Version)
 	m.Spec.SKU = setDefaultSku(m.Spec.SKU)
 	m.Spec.AutoScalerProfile = setDefaultAutoScalerProfile(m.Spec.AutoScalerProfile)
+	m.Spec.FleetsMember = setDefaultFleetsMember(m.Spec.FleetsMember, m.Labels)
 
 	if err := m.setDefaultSSHPublicKey(); err != nil {
 		ctrl.Log.WithName("AzureManagedControlPlaneWebHookLogger").Error(err, "setDefaultSSHPublicKey failed")
@@ -207,22 +208,23 @@ func (mw *azureManagedControlPlaneWebhook) ValidateUpdate(ctx context.Context, o
 		allErrs = append(allErrs, err)
 	}
 
-	oldDNSPrefix := old.Spec.DNSPrefix
-	newDNSPrefix := m.Spec.DNSPrefix
-	if reflect.ValueOf(oldDNSPrefix).IsZero() {
-		oldDNSPrefix = ptr.To(old.Name)
-	}
-
-	if reflect.ValueOf(newDNSPrefix).IsZero() {
-		newDNSPrefix = ptr.To(m.Name)
-	}
-
-	if err := webhookutils.ValidateImmutable(
-		field.NewPath("Spec", "DNSPrefix"),
-		oldDNSPrefix,
-		newDNSPrefix,
-	); err != nil {
-		allErrs = append(allErrs, err)
+	// This nil check is only to streamline tests from having to define this correctly in every test case.
+	// Normally, the defaulting webhooks will always set the new DNSPrefix so users can never entirely unset it.
+	if m.Spec.DNSPrefix != nil {
+		// Pre-1.12 versions of CAPZ do not set this field while 1.12+ defaults it, so emulate the current
+		// defaulting here to avoid unrelated updates from failing this immutability check due to the
+		// nil -> non-nil transition.
+		oldDNSPrefix := old.Spec.DNSPrefix
+		if oldDNSPrefix == nil {
+			oldDNSPrefix = ptr.To(old.Name)
+		}
+		if err := webhookutils.ValidateImmutable(
+			field.NewPath("Spec", "DNSPrefix"),
+			oldDNSPrefix,
+			m.Spec.DNSPrefix,
+		); err != nil {
+			allErrs = append(allErrs, err)
+		}
 	}
 
 	// Consider removing this once moves out of preview
@@ -256,6 +258,10 @@ func (mw *azureManagedControlPlaneWebhook) ValidateUpdate(ctx context.Context, o
 	}
 
 	if errs := m.validateOIDCIssuerProfileUpdate(old); len(errs) > 0 {
+		allErrs = append(allErrs, errs...)
+	}
+
+	if errs := m.validateFleetsMember(old); len(errs) > 0 {
 		allErrs = append(allErrs, errs...)
 	}
 
@@ -681,6 +687,25 @@ func (m *AzureManagedControlPlane) validateOIDCIssuerProfileUpdate(old *AzureMan
 				),
 			)
 		}
+	}
+
+	return allErrs
+}
+
+// validateFleetsMember validates a FleetsMember.
+func (m *AzureManagedControlPlane) validateFleetsMember(old *AzureManagedControlPlane) field.ErrorList {
+	var allErrs field.ErrorList
+
+	if old.Spec.FleetsMember == nil || m.Spec.FleetsMember == nil {
+		return allErrs
+	}
+	if old.Spec.FleetsMember.Name != "" && old.Spec.FleetsMember.Name != m.Spec.FleetsMember.Name {
+		allErrs = append(allErrs,
+			field.Forbidden(
+				field.NewPath("Spec", "FleetsMember", "Name"),
+				"Name is immutable",
+			),
+		)
 	}
 
 	return allErrs
