@@ -3671,7 +3671,7 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlanePKIOperator(ctx cont
 
 	deployment := manifests.PKIOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-		return pkioperator.ReconcileDeployment(deployment, openShiftTrustedCABundleConfigMapForCPOExists, hcp, releaseImageProvider.GetImage("hypershift"), r.SetDefaultSecurityContext, sa, certRotationScale)
+		return pkioperator.ReconcileDeployment(deployment, openShiftTrustedCABundleConfigMapForCPOExists, hcp, releaseImageProvider.GetImage(util.CPPKIOImageName), r.SetDefaultSecurityContext, sa, certRotationScale)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile control plane pki operator deployment: %w", err)
 	}

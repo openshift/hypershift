@@ -2350,7 +2350,7 @@ func GetControlPlaneOperatorImageLabels(ctx context.Context, hc *hyperv1.HostedC
 		for i, rawLabel := range rawLabels {
 			parts := strings.Split(rawLabel, "=")
 			if len(parts) != 2 {
-				return nil, fmt.Errorf("hosted cluster %s/%s annotation %s malformed: label %d not in key=value form: %s", hc.Namespace, hc.Name, i, rawLabel)
+				return nil, fmt.Errorf("hosted cluster %s/%s annotation %d malformed: label %s not in key=value form", hc.Namespace, hc.Name, i, rawLabel)
 			}
 			annotatedLabels[parts[0]] = parts[1]
 		}
