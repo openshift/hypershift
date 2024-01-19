@@ -225,6 +225,9 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 	azureCluster.Spec.NetworkSpec.Vnet.Name = hcluster.Spec.Platform.Azure.VnetName
 	azureCluster.Spec.NetworkSpec.Vnet.ResourceGroup = hcluster.Spec.Platform.Azure.ResourceGroupName
 	azureCluster.Spec.SubscriptionID = hcluster.Spec.Platform.Azure.SubscriptionID
+	azureCluster.Spec.NetworkSpec.NodeOutboundLB = &capiazure.LoadBalancerSpec{}
+	azureCluster.Spec.NetworkSpec.NodeOutboundLB.Name = hcluster.Spec.InfraID
+	azureCluster.Spec.NetworkSpec.NodeOutboundLB.BackendPool.Name = hcluster.Spec.InfraID
 
 	azureCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
 		Host: apiEndpoint.Host,
