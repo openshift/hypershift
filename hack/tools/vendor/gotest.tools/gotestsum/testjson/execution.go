@@ -63,11 +63,6 @@ func (e TestEvent) PackageEvent() bool {
 	return e.Test == ""
 }
 
-// ElapsedFormatted returns Elapsed formatted in the go test format, ex (0.00s).
-func (e TestEvent) ElapsedFormatted() string {
-	return fmt.Sprintf("(%.2fs)", e.Elapsed)
-}
-
 // Bytes returns the serialized JSON bytes that were parsed to create the event.
 func (e TestEvent) Bytes() []byte {
 	return e.raw
@@ -199,7 +194,6 @@ func (p *Package) addOutput(id int, output string) {
 	if strings.HasPrefix(output, "panic: ") {
 		p.panicked = true
 	}
-	// TODO: limit size of buffered test output
 	p.output[id] = append(p.output[id], output)
 }
 
@@ -223,6 +217,14 @@ func (n TestName) Name() string {
 	return string(n)
 }
 
+func (n TestName) Parent() string {
+	idx := strings.LastIndex(string(n), "/")
+	if idx < 0 {
+		return ""
+	}
+	return string(n)[:idx]
+}
+
 func (p *Package) removeOutput(id int) {
 	delete(p.output, id)
 
@@ -242,9 +244,14 @@ func tcIDSet(skipped []TestCase) map[int]struct{} {
 	return result
 }
 
-// TestMainFailed returns true if the package failed, but there were no tests.
-// This may occur if the package init() or TestMain exited non-zero.
+// TestMainFailed returns true if the package has output related to a failure. This
+// may happen if a TestMain or init function panic, or if test timeout
+// is reached and output is associated with the package instead of the running
+// test.
 func (p *Package) TestMainFailed() bool {
+	if p.testTimeoutPanicInTest != "" {
+		return true
+	}
 	return p.action == ActionFail && len(p.Failed) == 0
 }
 
@@ -365,8 +372,8 @@ func (p *Package) addEvent(event TestEvent) {
 		p.action = event.Action
 		p.elapsed = elapsedDuration(event.Elapsed)
 	case ActionOutput:
-		if isCoverageOutput(event.Output) {
-			p.coverage = strings.TrimRight(event.Output, "\n")
+		if coverage, ok := isCoverageOutput(event.Output); ok {
+			p.coverage = coverage
 		}
 		if strings.Contains(event.Output, "\t(cached)") {
 			p.cached = true
@@ -466,10 +473,22 @@ func elapsedDuration(elapsed float64) time.Duration {
 	return time.Duration(elapsed*1000) * time.Millisecond
 }
 
-func isCoverageOutput(output string) bool {
-	return all(
-		strings.HasPrefix(output, "coverage:"),
-		strings.Contains(output, "% of statements"))
+func isCoverageOutput(output string) (string, bool) {
+	start := strings.Index(output, "coverage:")
+	if start < 0 {
+		return "", false
+	}
+
+	if !strings.Contains(output[start:], "% of statements") {
+		return "", false
+	}
+
+	return strings.TrimRight(output[start:], "\n"), true
+}
+
+func isCoverageOutputPreGo119(output string) bool {
+	return strings.HasPrefix(output, "coverage:") &&
+		strings.HasSuffix(output, "% of statements\n")
 }
 
 func isShuffleSeedOutput(output string) bool {
@@ -518,7 +537,7 @@ func (e *Execution) Failed() []TestCase {
 		// Add package-level failure output if there were no failed tests, or
 		// if the test timeout was reached (because we now have to store that
 		// output on the package).
-		if pkg.TestMainFailed() || pkg.testTimeoutPanicInTest != "" {
+		if pkg.TestMainFailed() {
 			failed = append(failed, TestCase{Package: name})
 		}
 		failed = append(failed, pkg.Failed...)
@@ -526,15 +545,41 @@ func (e *Execution) Failed() []TestCase {
 	return failed
 }
 
-// FilterFailedUnique filters a slice of failed TestCases by removing root test
-// case that have failed subtests.
+// FilterFailedUnique filters a slice of failed TestCases to remove any parent
+// tests that have failed subtests. The parent test will always be run when
+// running any of its subtests.
 func FilterFailedUnique(tcs []TestCase) []TestCase {
-	var result []TestCase
-	for _, tc := range tcs {
-		if !tc.hasSubTestFailed {
-			result = append(result, tc)
+	sort.Slice(tcs, func(i, j int) bool {
+		a, b := tcs[i], tcs[j]
+		if a.Package != b.Package {
+			return a.Package < b.Package
 		}
+		return len(a.Test.Name()) > len(b.Test.Name())
+	})
+
+	var result []TestCase //nolint:prealloc
+	var parents = make(map[string]map[string]bool)
+	for _, tc := range tcs {
+		if _, exists := parents[tc.Package]; !exists {
+			parents[tc.Package] = make(map[string]bool)
+		}
+		if parent := tc.Test.Parent(); parent != "" {
+			parents[tc.Package][parent] = true
+		}
+		if _, exists := parents[tc.Package][tc.Test.Name()]; exists {
+			continue // tc is a parent of a failing subtest
+		}
+		result = append(result, tc)
 	}
+
+	// Restore the original order of test cases
+	sort.Slice(result, func(i, j int) bool {
+		a, b := result[i], result[j]
+		if a.Package != b.Package {
+			return a.Package < b.Package
+		}
+		return a.ID < b.ID
+	})
 	return result
 }
 
@@ -734,7 +779,7 @@ func readStderr(config ScanConfig, execution *Execution) error {
 		if err := config.Handler.Err(line); err != nil {
 			return fmt.Errorf("failed to handle stderr: %v", err)
 		}
-		if isGoModuleOutput(line) {
+		if isGoModuleOutput(line) || isGoDebugOutput(line) {
 			continue
 		}
 		if strings.HasPrefix(line, "warning:") {
@@ -742,6 +787,7 @@ func readStderr(config ScanConfig, execution *Execution) error {
 		}
 		execution.addError(line)
 	}
+
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("failed to scan stderr: %v", err)
 	}
@@ -755,6 +801,20 @@ func isGoModuleOutput(scannerText string) bool {
 		"go: downloading",
 		"go: extracting",
 		"go: finding",
+	}
+
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(scannerText, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func isGoDebugOutput(scannerText string) bool {
+	prefixes := []string{
+		"HASH",       // Printed when tests are running with `GODEBUG=gocachehash=1`.
+		"testcache:", // Printed when tests are running with `GODEBUG=gocachetest=1`.
 	}
 
 	for _, prefix := range prefixes {
