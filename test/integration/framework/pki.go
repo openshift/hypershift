@@ -1,4 +1,4 @@
-package e2e
+package framework
 
 import (
 	"crypto/x509"
@@ -14,17 +14,13 @@ import (
 	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
 )
 
-func TestRegeneratePKI(t *testing.T) {
-	certKeyRequest(t)
-}
-
 // generating lots of PKI in environments where compute and/or entropy is limited (like in test containers)
 // can be very slow - instead, we use precomputed PKI and allow for re-generating it if necessary
 //
 //go:embed testdata
 var testdata embed.FS
 
-func certKeyRequest(t *testing.T) ([]byte, []byte, []byte) {
+func CertKeyRequest(t *testing.T) ([]byte, []byte, []byte) {
 	if os.Getenv("REGENERATE_PKI") != "" {
 		t.Log("$REGENERATE_PKI set, generating a new cert/key pair")
 		cfg, err := librarygocrypto.MakeSelfSignedCAConfigForDuration("test-signer", time.Hour*24*365*100)

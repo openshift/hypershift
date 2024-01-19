@@ -184,7 +184,7 @@ fmt:
 # Run go vet against code
 .PHONY: vet
 vet:
-	$(GO) vet ./...
+	$(GO) vet -tags integration,e2e ./...
 
 .PHONY: build-promtool
 build-promtool:
@@ -210,6 +210,7 @@ deps:
 staticcheck: $(STATICCHECK)
 	$(STATICCHECK) \
 		./control-plane-operator/... \
+		./control-plane-pki-operator/... \
 		./hypershift-operator/controllers/... \
 		./ignition-server/... \
 		./cmd/... \
@@ -218,7 +219,8 @@ staticcheck: $(STATICCHECK)
 		./support/upsert/... \
 		./konnectivity-socks5-proxy/... \
 		./contrib/... \
-		./availability-prober/...
+		./availability-prober/... \
+		./test/integration/... \
 
 # Build the docker image with official golang image
 .PHONY: docker-build
