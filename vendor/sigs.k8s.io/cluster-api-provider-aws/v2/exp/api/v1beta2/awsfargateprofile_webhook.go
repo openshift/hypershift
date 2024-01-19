@@ -26,7 +26,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/eks"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -69,11 +68,11 @@ func (r *AWSFargateProfile) Default() {
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AWSFargateProfile) ValidateUpdate(oldObj runtime.Object) (admission.Warnings, error) {
+func (r *AWSFargateProfile) ValidateUpdate(oldObj runtime.Object) error {
 	gv := r.GroupVersionKind().GroupKind()
 	old, ok := oldObj.(*AWSFargateProfile)
 	if !ok {
-		return nil, apierrors.NewInvalid(gv, r.Name, field.ErrorList{
+		return apierrors.NewInvalid(gv, r.Name, field.ErrorList{
 			field.InternalError(nil, errors.Errorf("failed to convert old %s to object", gv.Kind)),
 		})
 	}
@@ -122,10 +121,10 @@ func (r *AWSFargateProfile) ValidateUpdate(oldObj runtime.Object) (admission.War
 	}
 
 	if len(allErrs) == 0 {
-		return nil, nil
+		return nil
 	}
 
-	return nil, apierrors.NewInvalid(
+	return apierrors.NewInvalid(
 		gv,
 		r.Name,
 		allErrs,
@@ -133,15 +132,15 @@ func (r *AWSFargateProfile) ValidateUpdate(oldObj runtime.Object) (admission.War
 }
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (r *AWSFargateProfile) ValidateCreate() (admission.Warnings, error) {
+func (r *AWSFargateProfile) ValidateCreate() error {
 	var allErrs field.ErrorList
 
 	allErrs = append(allErrs, r.Spec.AdditionalTags.Validate()...)
 
 	if len(allErrs) == 0 {
-		return nil, nil
+		return nil
 	}
-	return nil, apierrors.NewInvalid(
+	return apierrors.NewInvalid(
 		r.GroupVersionKind().GroupKind(),
 		r.Name,
 		allErrs,
@@ -149,6 +148,6 @@ func (r *AWSFargateProfile) ValidateCreate() (admission.Warnings, error) {
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *AWSFargateProfile) ValidateDelete() (admission.Warnings, error) {
-	return nil, nil
+func (r *AWSFargateProfile) ValidateDelete() error {
+	return nil
 }

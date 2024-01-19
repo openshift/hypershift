@@ -146,30 +146,16 @@ const (
 )
 
 const (
+	// CustomHeaderPrefix is the prefix of annotations that enable additional cluster / node pool features.
+	// Whatever follows the prefix will be passed as a header to cluster/node pool creation/update requests.
+	// E.g. add `"infrastructure.cluster.x-k8s.io/custom-header-UseGPUDedicatedVHD": "true"` annotation to
+	// AzureManagedMachinePool CR to enable creating GPU nodes by the node pool.
+	CustomHeaderPrefix = "infrastructure.cluster.x-k8s.io/custom-header-"
+)
+
+const (
 	// LinuxOS is Linux OS value for OSDisk.OSType.
 	LinuxOS = "Linux"
 	// WindowsOS is Windows OS value for OSDisk.OSType.
 	WindowsOS = "Windows"
-)
-
-const (
-	// OwnedByClusterLabelKey communicates CAPZ's ownership of an ASO resource
-	// independently of its ownership of the underlying Azure resource. The
-	// value for the label is the CAPI Cluster Name.
-	OwnedByClusterLabelKey = NameAzureProviderPrefix + string(ResourceLifecycleOwned)
-)
-
-const (
-	// AzureClusterKind indicates the kind of an AzureCluster.
-	AzureClusterKind = "AzureCluster"
-	// AzureMachinePoolKind indicates the kind of an AzureMachinePool.
-	AzureMachinePoolKind = "AzureMachinePool"
-	// AzureManagedClusterKind indicates the kind of an AzureManagedCluster.
-	AzureManagedClusterKind = "AzureManagedCluster"
-	// AzureManagedControlPlaneKind indicates the kind of an AzureManagedControlPlane.
-	AzureManagedControlPlaneKind = "AzureManagedControlPlane"
-	// AzureClusterIdentityKind indicates the kind of an AzureClusterIdentity.
-	AzureClusterIdentityKind = "AzureClusterIdentity"
-	// AzureNetworkPluginName is the name of the Azure network plugin.
-	AzureNetworkPluginName = "azure"
 )

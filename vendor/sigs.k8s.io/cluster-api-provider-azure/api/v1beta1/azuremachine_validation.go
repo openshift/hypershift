@@ -20,14 +20,13 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-11-01/compute"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/ssh"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	azureutil "sigs.k8s.io/cluster-api-provider-azure/util/azure"
 )
 
-// ValidateAzureMachineSpec checks an AzureMachineSpec and returns any validation errors.
+// ValidateAzureMachineSpec check for validation errors of azuremachine.spec.
 func ValidateAzureMachineSpec(spec AzureMachineSpec) field.ErrorList {
 	var allErrs field.ErrorList
 
@@ -36,10 +35,6 @@ func ValidateAzureMachineSpec(spec AzureMachineSpec) field.ErrorList {
 	}
 
 	if errs := ValidateOSDisk(spec.OSDisk, field.NewPath("osDisk")); len(errs) > 0 {
-		allErrs = append(allErrs, errs...)
-	}
-
-	if errs := ValidateConfidentialCompute(spec.OSDisk.ManagedDisk, spec.SecurityProfile, field.NewPath("securityProfile")); len(errs) > 0 {
 		allErrs = append(allErrs, errs...)
 	}
 
@@ -129,19 +124,9 @@ func ValidateSystemAssignedIdentity(identityType VMIdentity, oldIdentity, newIde
 func ValidateUserAssignedIdentity(identityType VMIdentity, userAssignedIdentities []UserAssignedIdentity, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
-	if identityType == VMIdentityUserAssigned {
-		if len(userAssignedIdentities) == 0 {
-			allErrs = append(allErrs, field.Required(fldPath, "must be specified for the 'UserAssigned' identity type"))
-		}
-		for _, identity := range userAssignedIdentities {
-			if identity.ProviderID != "" {
-				if _, err := azureutil.ParseResourceID(identity.ProviderID); err != nil {
-					allErrs = append(allErrs, field.Invalid(fldPath, identity.ProviderID, "must be a valid Azure resource ID"))
-				}
-			}
-		}
+	if identityType == VMIdentityUserAssigned && len(userAssignedIdentities) == 0 {
+		allErrs = append(allErrs, field.Required(fldPath, "must be specified for the 'UserAssigned' identity type"))
 	}
-
 	return allErrs
 }
 
@@ -249,18 +234,6 @@ func validateManagedDisk(m *ManagedDiskParameters, fieldPath *field.Path, isOSDi
 
 	if m != nil {
 		allErrs = append(allErrs, validateStorageAccountType(m.StorageAccountType, fieldPath.Child("StorageAccountType"), isOSDisk)...)
-
-		// DiskEncryptionSet can only be set when SecurityEncryptionType is set to DiskWithVMGuestState
-		// https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/create-or-update?tabs=HTTP#securityencryptiontypes
-		if isOSDisk && m.SecurityProfile != nil && m.SecurityProfile.DiskEncryptionSet != nil {
-			if m.SecurityProfile.SecurityEncryptionType != SecurityEncryptionTypeDiskWithVMGuestState {
-				allErrs = append(allErrs, field.Invalid(
-					fieldPath.Child("securityProfile").Child("diskEncryptionSet"),
-					m.SecurityProfile.DiskEncryptionSet.ID,
-					"diskEncryptionSet is only supported when securityEncryptionType is set to DiskWithVMGuestState",
-				))
-			}
-		}
 	}
 
 	return allErrs
@@ -334,7 +307,7 @@ func validateManagedDisksUpdate(oldDiskParams, newDiskParams *ManagedDiskParamet
 func validateStorageAccountType(storageAccountType string, fieldPath *field.Path, isOSDisk bool) field.ErrorList {
 	allErrs := field.ErrorList{}
 
-	if isOSDisk && storageAccountType == string(armcompute.StorageAccountTypesUltraSSDLRS) {
+	if isOSDisk && storageAccountType == string(compute.StorageAccountTypesUltraSSDLRS) {
 		allErrs = append(allErrs, field.Invalid(fieldPath.Child("managedDisks").Child("storageAccountType"), storageAccountType, "UltraSSD_LRS can only be used with data disks, it cannot be used with OS Disks"))
 	}
 
@@ -343,12 +316,12 @@ func validateStorageAccountType(storageAccountType string, fieldPath *field.Path
 		return allErrs
 	}
 
-	for _, possibleStorageAccountType := range armcompute.PossibleDiskStorageAccountTypesValues() {
+	for _, possibleStorageAccountType := range compute.PossibleDiskStorageAccountTypesValues() {
 		if string(possibleStorageAccountType) == storageAccountType {
 			return allErrs
 		}
 	}
-	allErrs = append(allErrs, field.Invalid(fieldPath, "", fmt.Sprintf("allowed values are %v", armcompute.PossibleDiskStorageAccountTypesValues())))
+	allErrs = append(allErrs, field.Invalid(fieldPath, "", fmt.Sprintf("allowed values are %v", compute.PossibleDiskStorageAccountTypesValues())))
 	return allErrs
 }
 
@@ -356,19 +329,19 @@ func validateCachingType(cachingType string, fieldPath *field.Path, managedDisk 
 	allErrs := field.ErrorList{}
 	cachingTypeChildPath := fieldPath.Child("CachingType")
 
-	if managedDisk != nil && managedDisk.StorageAccountType == string(armcompute.StorageAccountTypesUltraSSDLRS) {
-		if cachingType != string(armcompute.CachingTypesNone) {
-			allErrs = append(allErrs, field.Invalid(cachingTypeChildPath, cachingType, fmt.Sprintf("cachingType '%s' is not supported when storageAccountType is '%s'. Allowed values are: '%s'", cachingType, armcompute.StorageAccountTypesUltraSSDLRS, armcompute.CachingTypesNone)))
+	if managedDisk != nil && managedDisk.StorageAccountType == string(compute.StorageAccountTypesUltraSSDLRS) {
+		if cachingType != string(compute.CachingTypesNone) {
+			allErrs = append(allErrs, field.Invalid(cachingTypeChildPath, cachingType, fmt.Sprintf("cachingType '%s' is not supported when storageAccountType is '%s'. Allowed values are: '%s'", cachingType, compute.StorageAccountTypesUltraSSDLRS, compute.CachingTypesNone)))
 		}
 	}
 
-	for _, possibleCachingType := range armcompute.PossibleCachingTypesValues() {
+	for _, possibleCachingType := range compute.PossibleCachingTypesValues() {
 		if string(possibleCachingType) == cachingType {
 			return allErrs
 		}
 	}
 
-	allErrs = append(allErrs, field.Invalid(cachingTypeChildPath, cachingType, fmt.Sprintf("allowed values are %v", armcompute.PossibleCachingTypesValues())))
+	allErrs = append(allErrs, field.Invalid(cachingTypeChildPath, cachingType, fmt.Sprintf("allowed values are %v", compute.PossibleCachingTypesValues())))
 	return allErrs
 }
 
@@ -399,55 +372,6 @@ func ValidateDiagnostics(diagnostics *Diagnostics, fieldPath *field.Path) field.
 				allErrs = append(allErrs, field.Invalid(fieldPath.Child("StorageAccountURI"), diagnostics.Boot.UserManaged.StorageAccountURI,
 					fmt.Sprintf("StorageAccountURI cannot be set when storageAccountType is '%s'",
 						ManagedDiagnosticsStorage)))
-			}
-		}
-	}
-
-	return allErrs
-}
-
-// ValidateConfidentialCompute validates the configuration options when the machine is a Confidential VM.
-// https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/create-or-update?tabs=HTTP#vmdisksecurityprofile
-// https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/create-or-update?tabs=HTTP#securityencryptiontypes
-// https://learn.microsoft.com/en-us/rest/api/compute/virtual-machines/create-or-update?tabs=HTTP#uefisettings
-func ValidateConfidentialCompute(managedDisk *ManagedDiskParameters, profile *SecurityProfile, fieldPath *field.Path) field.ErrorList {
-	var allErrs field.ErrorList
-
-	var securityEncryptionType SecurityEncryptionType
-
-	if managedDisk != nil && managedDisk.SecurityProfile != nil {
-		securityEncryptionType = managedDisk.SecurityProfile.SecurityEncryptionType
-	}
-
-	if profile != nil && securityEncryptionType != "" {
-		// SecurityEncryptionType can only be set for Confindential VMs
-		if profile.SecurityType != SecurityTypesConfidentialVM {
-			allErrs = append(allErrs, field.Invalid(fieldPath.Child("SecurityType"), profile.SecurityType,
-				fmt.Sprintf("SecurityType should be set to '%s' when securityEncryptionType is defined", SecurityTypesConfidentialVM)))
-		}
-
-		// Confidential VMs require vTPM to be enabled, irrespective of the SecurityEncryptionType used
-		if profile.UefiSettings == nil {
-			allErrs = append(allErrs, field.Invalid(fieldPath.Child("UefiSettings"), profile.UefiSettings,
-				"UefiSettings should be set when securityEncryptionType is defined"))
-		}
-
-		if profile.UefiSettings != nil && (profile.UefiSettings.VTpmEnabled == nil || !*profile.UefiSettings.VTpmEnabled) {
-			allErrs = append(allErrs, field.Invalid(fieldPath.Child("VTpmEnabled"), profile.UefiSettings.VTpmEnabled,
-				"VTpmEnabled should be set to true when securityEncryptionType is defined"))
-		}
-
-		if securityEncryptionType == SecurityEncryptionTypeDiskWithVMGuestState {
-			// DiskWithVMGuestState encryption type is not compatible with EncryptionAtHost
-			if profile.EncryptionAtHost != nil && *profile.EncryptionAtHost {
-				allErrs = append(allErrs, field.Invalid(fieldPath.Child("EncryptionAtHost"), profile.EncryptionAtHost,
-					fmt.Sprintf("EncryptionAtHost cannot be set to 'true' when securityEncryptionType is set to '%s'", SecurityEncryptionTypeDiskWithVMGuestState)))
-			}
-
-			// DiskWithVMGuestState encryption type requires SecureBoot to be enabled
-			if profile.UefiSettings != nil && (profile.UefiSettings.SecureBootEnabled == nil || !*profile.UefiSettings.SecureBootEnabled) {
-				allErrs = append(allErrs, field.Invalid(fieldPath.Child("SecureBootEnabled"), profile.UefiSettings.SecureBootEnabled,
-					fmt.Sprintf("SecureBootEnabled should be set to true when securityEncryptionType is set to '%s'", SecurityEncryptionTypeDiskWithVMGuestState)))
 			}
 		}
 	}

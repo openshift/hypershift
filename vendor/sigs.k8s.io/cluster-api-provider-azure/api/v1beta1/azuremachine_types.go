@@ -62,7 +62,7 @@ type AzureMachineSpec struct {
 	// UserAssignedIdentities is a list of standalone Azure identities provided by the user
 	// The lifecycle of a user-assigned identity is managed separately from the lifecycle of
 	// the AzureMachine.
-	// See https://learn.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-manage-ua-identity-cli
+	// See https://docs.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/how-to-manage-ua-identity-cli
 	// +optional
 	UserAssignedIdentities []UserAssignedIdentity `json:"userAssignedIdentities,omitempty"`
 
@@ -81,9 +81,6 @@ type AzureMachineSpec struct {
 	// +optional
 	DataDisks []DataDisk `json:"dataDisks,omitempty"`
 
-	// SSHPublicKey is the SSH public key string, base64-encoded to add to a Virtual Machine. Linux only.
-	// Refer to documentation on how to set up SSH access on Windows instances.
-	// +optional
 	SSHPublicKey string `json:"sshPublicKey"`
 
 	// AdditionalTags is an optional set of tags to add to an instance, in addition to the ones added by default by the

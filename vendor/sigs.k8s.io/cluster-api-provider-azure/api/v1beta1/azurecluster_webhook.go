@@ -25,7 +25,6 @@ import (
 	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 // SetupWebhookWithManager sets up and registers the webhook with the manager.
@@ -47,12 +46,12 @@ func (c *AzureCluster) Default() {
 }
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (c *AzureCluster) ValidateCreate() (admission.Warnings, error) {
+func (c *AzureCluster) ValidateCreate() error {
 	return c.validateCluster(nil)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (c *AzureCluster) ValidateUpdate(oldRaw runtime.Object) (admission.Warnings, error) {
+func (c *AzureCluster) ValidateUpdate(oldRaw runtime.Object) error {
 	var allErrs field.ErrorList
 	old := oldRaw.(*AzureCluster)
 
@@ -136,7 +135,7 @@ func (c *AzureCluster) ValidateUpdate(oldRaw runtime.Object) (admission.Warnings
 		return c.validateCluster(old)
 	}
 
-	return nil, apierrors.NewInvalid(GroupVersion.WithKind(AzureClusterKind).GroupKind(), c.Name, allErrs)
+	return apierrors.NewInvalid(GroupVersion.WithKind("AzureCluster").GroupKind(), c.Name, allErrs)
 }
 
 // validateSubnetUpdate validates a ClusterSpec.NetworkSpec.Subnets for immutability.
@@ -169,7 +168,7 @@ func (c *AzureCluster) validateSubnetUpdate(old *AzureCluster) field.ErrorList {
 						c.Spec.NetworkSpec.Subnets[i].RouteTable.Name, "field is immutable"),
 				)
 			}
-			if (subnet.NatGateway.Name != oldSubnet.NatGateway.Name) && (oldSubnet.NatGateway.Name != "") {
+			if subnet.NatGateway.Name != oldSubnet.NatGateway.Name {
 				allErrs = append(allErrs,
 					field.Invalid(field.NewPath("spec", "networkSpec", "subnets").Index(oldSubnetIndex[subnet.Name]).Child("NatGateway").Child("Name"),
 						c.Spec.NetworkSpec.Subnets[i].NatGateway.Name, "field is immutable"),
@@ -188,6 +187,6 @@ func (c *AzureCluster) validateSubnetUpdate(old *AzureCluster) field.ErrorList {
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (c *AzureCluster) ValidateDelete() (admission.Warnings, error) {
-	return nil, nil
+func (c *AzureCluster) ValidateDelete() error {
+	return nil
 }
