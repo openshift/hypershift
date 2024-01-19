@@ -36,17 +36,20 @@ Cluster Service Providers may choose how hosted control planes are isolated or c
  - Shared Nothing 
  - Dedicated Request Serving
 
+These options can be seen as a spectrum of isolation. Shared Everything is the least isolated, Dedicated Request Serving (Shared Some) and then Shared Nothing being the most isolated option.
+
 **NOTE**: Each hosted control plane can run Single Replica or Highly Available. If Highly Available, the control plane will be spread across failure domains via `topology.kubernetes.io/zone` as the topology key.
 
 ### Shared Everything
 
 - All hosted control plane pods are scheduled to any node that can run hosted control plane workloads.
+- Nodes can be allocated specifically for control plane workloads by tainting and labeling them with `hypershift.openshift.io/control-plane: true`.
 
 ![shared_everything_topology.png](..%2Fimages%2Fshared_everything_topology.png)
 
 ### Shared Nothing
 
-- Nodes meant for a specific hosted cluster are tainted (and labeled) with a specific `hypershift.openshift.io/cluster` value.
+- To confine nodes to a specific hosted cluster taint and label them with `hypershift.openshift.io/cluster` value.
 - No other control plane pods will land on those nodes.
 
 ![shared_nothing_topology.png](..%2Fimages%2Fshared_nothing_topology.png)
@@ -55,6 +58,7 @@ Cluster Service Providers may choose how hosted control planes are isolated or c
 
 - Two nodes in different zones are dedicated to a specific hosted cluster’s front end serving components.
 - The rest of the hosted cluster’s control plane pods can co-exist with other clusters’ control plane pods running on shared nodes.
+- When running a Highly Available control plane, there will only be 2 replicas of request serving workloads instead of 3.
 
 **NOTE**: A HostedCluster must have:
 
