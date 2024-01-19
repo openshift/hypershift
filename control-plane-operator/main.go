@@ -384,6 +384,7 @@ func NewStartCommand() *cobra.Command {
 			"token-minter":                   tokenMinterImage,
 			"aws-kms-provider":               awsKMSProviderImage,
 			util.CPOImageName:                cpoImage,
+			util.CPPKIOImageName:             cpoImage,
 		}
 		for name, image := range imageOverrides {
 			componentImages[name] = image

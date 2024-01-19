@@ -27,6 +27,9 @@ const (
 	// CPOImageName is the name under which components can find the CPO image in the release image..
 	CPOImageName = "controlplane-operator"
 
+	// CPPKIOImageName is the name under which components can find the CP PKI Operator image in the release image..
+	CPPKIOImageName = "controlplane-pki-operator"
+
 	// AvailabilityProberImageName is the name under which components can find the availability prober
 	// image in the release image.
 	AvailabilityProberImageName = "availability-prober"
