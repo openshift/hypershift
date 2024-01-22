@@ -109,7 +109,7 @@ func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster
 	minSupportedVersion := GetMinSupportedVersion(hc)
 
 	prefix := "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi/latest"
-	filter := fmt.Sprintf("in=>4.%d.%d+<+4.%d.0",
+	filter := fmt.Sprintf("in=>4.%d.%d+<+4.%d.0-a",
 		minSupportedVersion.Minor, minSupportedVersion.Patch, LatestSupportedVersion.Minor+1)
 
 	releaseURL := fmt.Sprintf("%s?%s", prefix, filter)
