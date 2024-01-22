@@ -1,15 +1,7 @@
----
-title: Troubleshooting
----
+# Debug Disaster Recovery - Hosted Cluster Migration
+These are issues related to disaster recovery that we've identified, and you could face during a Hosted Cluster migration.
 
-# Troubleshooting
-
-## Disaster Recovery - Hosted Cluster Migration
-
-These are issues related with disaster recovery that we've identified and you could face during a Hosted Cluster migration.
-
-### The new workloads do not got scheduled in the new migrated cluster
-
+## New workloads do not get scheduled in the new migrated cluster
 Everything looks normal, in the destination Management or Hosted Cluster and in the old Management and Hosted Cluster, but your new workloads do not schedule in your migrated Hosted Cluster (your old ones should work properly).
 
 Eventually your pods begin to fall down and the cluster status becomes degraded.
@@ -35,7 +27,7 @@ Eventually the Hosted Cluster will start self healing and the ClusterOperator wi
 
 **Cause:** The cause of this issue is after the Hosted Cluster Migration the KAS (Kube API Server) uses the same DNS name, but it points to different load balancer in AWS platform. Sometimes OVN does not behave correctly facing this situation.
 
-### The migration gets blocked in ETCD recovery
+## The migration gets blocked in ETCD recovery
 
 The context around it's basically "I've edited the Hosted Cluster adding the `ETCDSnapshotURL` but the modification disappears and does not continue".
 
@@ -54,11 +46,11 @@ oc delete pod -n hypershift -lapp=operator
 
 **Cause:** This issue happens when the Hypershift operator is down and the Hosted Cluster controller cannot handle the modifications in the objects which belong to it.
 
-### The nodes cannot join the new Hosted Cluster and stay in the older one
+## The nodes cannot join the new Hosted Cluster and stay in the older one
 
-We have 2 paths to follow and depends if [this code](https://github.com/openshift/hypershift/pull/2265) is in your Hypershift Operator.
+We have 2 paths to follow, and it depends on if [this code](https://github.com/openshift/hypershift/pull/2265) is in your Hypershift Operator.
 
-#### The PR is merged and my Hypershift Operator has that code running
+### The PR is merged and my Hypershift Operator has that code running
 
 If that's the case, you need to make sure your Hosted Cluster is paused:
 ```
@@ -69,7 +61,7 @@ If this command does not give you any output, make sure you've followed properly
 
 Even if it's paused and is still in that situation, please **continue to the next section** because it's highly probable that you don't have the code which manages this situation properly.
 
-#### The PR is not merged or my Hypershift Operator does not have that code running
+### The PR is not merged or my Hypershift Operator does not have that code running
 
 If that's not the case, the only way to solve it is executing the teardown of the old Hosted Cluster prior the full restoration in the new Management cluster. Make sure you already have all the Manifests and the ETCD backed up.
 
@@ -77,7 +69,7 @@ Once you followed the Teardown procedure of the old Hosted Cluster, you will see
 
 **Cause:** This issue occurs when the old Hosted Cluster has a conflict with the AWSPrivateLink object. The old one is still running and the new one cannot handle it because the `hypershift.local` AWS internal DNS entry still points to the old LoadBalancer.
 
-### Dependant resources block the old Hosted Cluster teardown
+## Dependant resources block the old Hosted Cluster teardown
 
 To solve this issue you need to check all the objects in the HostedControlPlane Namespace and make sure all of them are being terminated. To do that we recommend to use an external tool called [ketall](https://github.com/corneliusweig/ketall) which gives you a complete overview of all resources in a kubernetes cluster.
 
@@ -110,7 +102,7 @@ Eventually, the namespace will be successfully terminated and also the Hosted Cl
 
 **Cause:** This is pretty common issue in the Kubernetes/Openshift world. You are trying to delete a resource that has other dependedent objects. The finalizer is still trying to delete them but it cannot progress.
 
-### The Storage ClusterOperator keeps reporting "Waiting for Deployment"
+## The Storage ClusterOperator keeps reporting "Waiting for Deployment"
 
 To solve this issue you need to check that all the pods from the **HostedCluster** and the **HostedControlPlane** are running, not blocked and there are no issues in the `cluster-storage-operator` pod. After that you need to delete the **AWS EBS CSI Drivers** from the HCP namespace in the destination management cluster:
 
@@ -124,7 +116,7 @@ The operator will take a while to raise up again and eventually the driver contr
 **Cause:** This issue probably comes from objects that are deployed by the Operator. In this case, `cluster-storage-operator`, but the controller or the operator does not reconcile over them. If you delete the deployments, you ensure the operator is recreated from scratch.
 
 
-### The image-registry ClusterOperator keeps reporting a degraded status
+## The image-registry ClusterOperator keeps reporting a degraded status
 
 When a migration is done and the image-registry clusteroperator is marked as degraded, you will need to figure out how it reaches that status. The message will look like `ImagePrunerDegraded: Job has reached the specified backoff limit`.
 

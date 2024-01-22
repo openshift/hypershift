@@ -54,9 +54,8 @@ nav:
   - how-to/restart-control-plane-components.md
   - how-to/pause-reconciliation.md
   - how-to/per-hostedcluster-dashboard.md
-  - how-to/debug-nodes.md
   - how-to/metrics-sets.md
-  - how-to/troubleshooting.md
+  - how-to/troubleshooting-general.md
   - how-to/etcd-recovery.md
   - 'Automated Machine Management':
     - how-to/automated-machine-management/index.md
@@ -64,15 +63,18 @@ nav:
     - how-to/automated-machine-management/nodepool-lifecycle.md
     - how-to/automated-machine-management/node-tuning.md
     - how-to/automated-machine-management/configure-machines.md
-  - "AWS":
+  - 'AWS':
+    - how-to/aws/create-aws-hosted-cluster-arm-workers.md
     - how-to/aws/create-infra-iam-separately.md
     - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
     - how-to/aws/deploy-aws-private-clusters.md
     - how-to/aws/external-dns.md
     - how-to/aws/etc-backup-restore.md
     - how-to/aws/disaster-recovery.md
-    - how-to/aws/troubleshooting.md
-    - how-to/aws/create-aws-hosted-cluster-arm-workers.md
+    - 'Troubleshooting':
+        - how-to/aws/troubleshooting/index.md
+        - how-to/aws/troubleshooting/debug-nodes.md
+        - how-to/aws/troubleshooting/troubleshooting-disaster-recovery.md
   - 'Azure':
     - how-to/azure/create-azure-cluster.md
     - how-to/azure/create-azure-cluster-with-options.md
