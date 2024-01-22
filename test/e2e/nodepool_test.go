@@ -112,6 +112,10 @@ func TestNodePool(t *testing.T) {
 				name: "KubeVirtNodeSelectorTest",
 				test: NewKubeKubeVirtNodeSelectorTest(ctx, mgtClient, hostedCluster),
 			},
+			{
+				name: "KubeVirtNodeMultinetTest",
+				test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster),
+			},
 		}
 
 		for _, testCase := range nodePoolTests {
