@@ -98,4 +98,4 @@ If you have provider-scoped questions, please take a look at the troubleshooting
 We will keep adding more and more troubleshooting sections and updating the existent ones.
 
 - [AWS](./aws/troubleshooting/index.md)
-- [Azure](./azure/troubleshooting)
+- [Azure](./azure/troubleshooting/index.md)

@@ -78,6 +78,9 @@ nav:
   - 'Azure':
     - how-to/azure/create-azure-cluster.md
     - how-to/azure/create-azure-cluster-with-options.md
+    - 'Troubleshooting':
+        - how-to/azure/troubleshooting/index.md
+        - how-to/azure/troubleshooting/debug-nodes.md
   - 'Agent':
     - how-to/agent/create-agent-cluster.md
   - 'Disconnected':
