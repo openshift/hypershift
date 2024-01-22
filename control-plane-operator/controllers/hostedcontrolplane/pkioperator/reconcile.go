@@ -161,7 +161,7 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef) error {
 			Verbs:     []string{"get", "list", "watch", "create", "delete", "update", "patch"},
 		},
 		{ // to approve certificate signing requests
-			APIGroups: []string{"hypershift.openshift.io"},
+			APIGroups: []string{"certificates.hypershift.openshift.io"},
 			Resources: []string{"certificatesigningrequestapprovals"},
 			Verbs:     []string{"get", "list", "watch"},
 		},

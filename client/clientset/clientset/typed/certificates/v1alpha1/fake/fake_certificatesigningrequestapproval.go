@@ -22,8 +22,8 @@ import (
 	json "encoding/json"
 	"fmt"
 
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+	v1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
+	certificatesv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	types "k8s.io/apimachinery/pkg/types"
@@ -33,29 +33,29 @@ import (
 
 // FakeCertificateSigningRequestApprovals implements CertificateSigningRequestApprovalInterface
 type FakeCertificateSigningRequestApprovals struct {
-	Fake *FakeHypershiftV1beta1
+	Fake *FakeCertificatesV1alpha1
 	ns   string
 }
 
-var certificatesigningrequestapprovalsResource = v1beta1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals")
+var certificatesigningrequestapprovalsResource = v1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals")
 
-var certificatesigningrequestapprovalsKind = v1beta1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval")
+var certificatesigningrequestapprovalsKind = v1alpha1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval")
 
 // Get takes name of the certificateSigningRequestApproval, and returns the corresponding certificateSigningRequestApproval object, and an error if there is any.
-func (c *FakeCertificateSigningRequestApprovals) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.CertificateSigningRequestApproval, err error) {
+func (c *FakeCertificateSigningRequestApprovals) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.CertificateSigningRequestApproval, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(certificatesigningrequestapprovalsResource, c.ns, name), &v1beta1.CertificateSigningRequestApproval{})
+		Invokes(testing.NewGetAction(certificatesigningrequestapprovalsResource, c.ns, name), &v1alpha1.CertificateSigningRequestApproval{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1beta1.CertificateSigningRequestApproval), err
+	return obj.(*v1alpha1.CertificateSigningRequestApproval), err
 }
 
 // List takes label and field selectors, and returns the list of CertificateSigningRequestApprovals that match those selectors.
-func (c *FakeCertificateSigningRequestApprovals) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.CertificateSigningRequestApprovalList, err error) {
+func (c *FakeCertificateSigningRequestApprovals) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.CertificateSigningRequestApprovalList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(certificatesigningrequestapprovalsResource, certificatesigningrequestapprovalsKind, c.ns, opts), &v1beta1.CertificateSigningRequestApprovalList{})
+		Invokes(testing.NewListAction(certificatesigningrequestapprovalsResource, certificatesigningrequestapprovalsKind, c.ns, opts), &v1alpha1.CertificateSigningRequestApprovalList{})
 
 	if obj == nil {
 		return nil, err
@@ -65,8 +65,8 @@ func (c *FakeCertificateSigningRequestApprovals) List(ctx context.Context, opts 
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &v1beta1.CertificateSigningRequestApprovalList{ListMeta: obj.(*v1beta1.CertificateSigningRequestApprovalList).ListMeta}
-	for _, item := range obj.(*v1beta1.CertificateSigningRequestApprovalList).Items {
+	list := &v1alpha1.CertificateSigningRequestApprovalList{ListMeta: obj.(*v1alpha1.CertificateSigningRequestApprovalList).ListMeta}
+	for _, item := range obj.(*v1alpha1.CertificateSigningRequestApprovalList).Items {
 		if label.Matches(labels.Set(item.Labels)) {
 			list.Items = append(list.Items, item)
 		}
@@ -82,43 +82,43 @@ func (c *FakeCertificateSigningRequestApprovals) Watch(ctx context.Context, opts
 }
 
 // Create takes the representation of a certificateSigningRequestApproval and creates it.  Returns the server's representation of the certificateSigningRequestApproval, and an error, if there is any.
-func (c *FakeCertificateSigningRequestApprovals) Create(ctx context.Context, certificateSigningRequestApproval *v1beta1.CertificateSigningRequestApproval, opts v1.CreateOptions) (result *v1beta1.CertificateSigningRequestApproval, err error) {
+func (c *FakeCertificateSigningRequestApprovals) Create(ctx context.Context, certificateSigningRequestApproval *v1alpha1.CertificateSigningRequestApproval, opts v1.CreateOptions) (result *v1alpha1.CertificateSigningRequestApproval, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(certificatesigningrequestapprovalsResource, c.ns, certificateSigningRequestApproval), &v1beta1.CertificateSigningRequestApproval{})
+		Invokes(testing.NewCreateAction(certificatesigningrequestapprovalsResource, c.ns, certificateSigningRequestApproval), &v1alpha1.CertificateSigningRequestApproval{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1beta1.CertificateSigningRequestApproval), err
+	return obj.(*v1alpha1.CertificateSigningRequestApproval), err
 }
 
 // Update takes the representation of a certificateSigningRequestApproval and updates it. Returns the server's representation of the certificateSigningRequestApproval, and an error, if there is any.
-func (c *FakeCertificateSigningRequestApprovals) Update(ctx context.Context, certificateSigningRequestApproval *v1beta1.CertificateSigningRequestApproval, opts v1.UpdateOptions) (result *v1beta1.CertificateSigningRequestApproval, err error) {
+func (c *FakeCertificateSigningRequestApprovals) Update(ctx context.Context, certificateSigningRequestApproval *v1alpha1.CertificateSigningRequestApproval, opts v1.UpdateOptions) (result *v1alpha1.CertificateSigningRequestApproval, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(certificatesigningrequestapprovalsResource, c.ns, certificateSigningRequestApproval), &v1beta1.CertificateSigningRequestApproval{})
+		Invokes(testing.NewUpdateAction(certificatesigningrequestapprovalsResource, c.ns, certificateSigningRequestApproval), &v1alpha1.CertificateSigningRequestApproval{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1beta1.CertificateSigningRequestApproval), err
+	return obj.(*v1alpha1.CertificateSigningRequestApproval), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeCertificateSigningRequestApprovals) UpdateStatus(ctx context.Context, certificateSigningRequestApproval *v1beta1.CertificateSigningRequestApproval, opts v1.UpdateOptions) (*v1beta1.CertificateSigningRequestApproval, error) {
+func (c *FakeCertificateSigningRequestApprovals) UpdateStatus(ctx context.Context, certificateSigningRequestApproval *v1alpha1.CertificateSigningRequestApproval, opts v1.UpdateOptions) (*v1alpha1.CertificateSigningRequestApproval, error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceAction(certificatesigningrequestapprovalsResource, "status", c.ns, certificateSigningRequestApproval), &v1beta1.CertificateSigningRequestApproval{})
+		Invokes(testing.NewUpdateSubresourceAction(certificatesigningrequestapprovalsResource, "status", c.ns, certificateSigningRequestApproval), &v1alpha1.CertificateSigningRequestApproval{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1beta1.CertificateSigningRequestApproval), err
+	return obj.(*v1alpha1.CertificateSigningRequestApproval), err
 }
 
 // Delete takes name of the certificateSigningRequestApproval and deletes it. Returns an error if one occurs.
 func (c *FakeCertificateSigningRequestApprovals) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteActionWithOptions(certificatesigningrequestapprovalsResource, c.ns, name, opts), &v1beta1.CertificateSigningRequestApproval{})
+		Invokes(testing.NewDeleteActionWithOptions(certificatesigningrequestapprovalsResource, c.ns, name, opts), &v1alpha1.CertificateSigningRequestApproval{})
 
 	return err
 }
@@ -127,23 +127,23 @@ func (c *FakeCertificateSigningRequestApprovals) Delete(ctx context.Context, nam
 func (c *FakeCertificateSigningRequestApprovals) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
 	action := testing.NewDeleteCollectionAction(certificatesigningrequestapprovalsResource, c.ns, listOpts)
 
-	_, err := c.Fake.Invokes(action, &v1beta1.CertificateSigningRequestApprovalList{})
+	_, err := c.Fake.Invokes(action, &v1alpha1.CertificateSigningRequestApprovalList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched certificateSigningRequestApproval.
-func (c *FakeCertificateSigningRequestApprovals) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.CertificateSigningRequestApproval, err error) {
+func (c *FakeCertificateSigningRequestApprovals) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.CertificateSigningRequestApproval, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(certificatesigningrequestapprovalsResource, c.ns, name, pt, data, subresources...), &v1beta1.CertificateSigningRequestApproval{})
+		Invokes(testing.NewPatchSubresourceAction(certificatesigningrequestapprovalsResource, c.ns, name, pt, data, subresources...), &v1alpha1.CertificateSigningRequestApproval{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1beta1.CertificateSigningRequestApproval), err
+	return obj.(*v1alpha1.CertificateSigningRequestApproval), err
 }
 
 // Apply takes the given apply declarative configuration, applies it and returns the applied certificateSigningRequestApproval.
-func (c *FakeCertificateSigningRequestApprovals) Apply(ctx context.Context, certificateSigningRequestApproval *hypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.CertificateSigningRequestApproval, err error) {
+func (c *FakeCertificateSigningRequestApprovals) Apply(ctx context.Context, certificateSigningRequestApproval *certificatesv1alpha1.CertificateSigningRequestApprovalApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.CertificateSigningRequestApproval, err error) {
 	if certificateSigningRequestApproval == nil {
 		return nil, fmt.Errorf("certificateSigningRequestApproval provided to Apply must not be nil")
 	}
@@ -156,17 +156,17 @@ func (c *FakeCertificateSigningRequestApprovals) Apply(ctx context.Context, cert
 		return nil, fmt.Errorf("certificateSigningRequestApproval.Name must be provided to Apply")
 	}
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(certificatesigningrequestapprovalsResource, c.ns, *name, types.ApplyPatchType, data), &v1beta1.CertificateSigningRequestApproval{})
+		Invokes(testing.NewPatchSubresourceAction(certificatesigningrequestapprovalsResource, c.ns, *name, types.ApplyPatchType, data), &v1alpha1.CertificateSigningRequestApproval{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1beta1.CertificateSigningRequestApproval), err
+	return obj.(*v1alpha1.CertificateSigningRequestApproval), err
 }
 
 // ApplyStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-func (c *FakeCertificateSigningRequestApprovals) ApplyStatus(ctx context.Context, certificateSigningRequestApproval *hypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.CertificateSigningRequestApproval, err error) {
+func (c *FakeCertificateSigningRequestApprovals) ApplyStatus(ctx context.Context, certificateSigningRequestApproval *certificatesv1alpha1.CertificateSigningRequestApprovalApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.CertificateSigningRequestApproval, err error) {
 	if certificateSigningRequestApproval == nil {
 		return nil, fmt.Errorf("certificateSigningRequestApproval provided to Apply must not be nil")
 	}
@@ -179,10 +179,10 @@ func (c *FakeCertificateSigningRequestApprovals) ApplyStatus(ctx context.Context
 		return nil, fmt.Errorf("certificateSigningRequestApproval.Name must be provided to Apply")
 	}
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(certificatesigningrequestapprovalsResource, c.ns, *name, types.ApplyPatchType, data, "status"), &v1beta1.CertificateSigningRequestApproval{})
+		Invokes(testing.NewPatchSubresourceAction(certificatesigningrequestapprovalsResource, c.ns, *name, types.ApplyPatchType, data, "status"), &v1alpha1.CertificateSigningRequestApproval{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1beta1.CertificateSigningRequestApproval), err
+	return obj.(*v1alpha1.CertificateSigningRequestApproval), err
 }
