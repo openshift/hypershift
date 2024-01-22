@@ -16,7 +16,7 @@ CONTROLLER_GEN := $(abspath $(TOOLS_BIN_DIR)/controller-gen)
 STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
 GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 
-PROMTOOL=GO111MODULE=on GOFLAGS=-mod=vendor go run github.com/prometheus/prometheus/cmd/promtool
+PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
 GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOFLAGS=-mod=vendor go
@@ -186,8 +186,12 @@ fmt:
 vet:
 	$(GO) vet ./...
 
+.PHONY: build-promtool
+build-promtool:
+	cd $(TOOLS_DIR); $(GO) build -o $(PROMTOOL) github.com/prometheus/prometheus/cmd/promtool
+
 .PHONY: promtool
-promtool:
+promtool: build-promtool
 	cd $(TOOLS_DIR); $(PROMTOOL) check rules ../../cmd/install/assets/slos/*.yaml ../../cmd/install/assets/recordingrules/*.yaml ../../control-plane-operator/controllers/hostedcontrolplane/kas/assets/*.yaml
 
 # Updates Go modules
@@ -197,6 +201,8 @@ deps:
 	$(GO) mod vendor
 	$(GO) mod verify
 	$(GO) list -m -mod=readonly -json all > /dev/null
+	(cd hack/tools && $(GO) mod tidy && $(GO) mod vendor && $(GO) mod verify && $(GO) list -m -mod=readonly -json all > /dev/null)
+
 
 # Run staticcheck
 # How to ignore failures https://staticcheck.io/docs/configuration#line-based-linter-directives

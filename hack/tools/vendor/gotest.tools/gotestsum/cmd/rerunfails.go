@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
+	"strings"
 
 	"gotest.tools/gotestsum/testjson"
 )
@@ -136,10 +138,20 @@ func (r *failureRecorder) count() int {
 
 func goTestRunFlagForTestCase(test testjson.TestName) string {
 	if test.IsSubTest() {
-		root, sub := test.Split()
-		return "-test.run=^" + root + "$/^" + sub + "$"
+		parts := strings.Split(string(test), "/")
+		var sb strings.Builder
+		sb.WriteString("-test.run=")
+		for i, p := range parts {
+			if i > 0 {
+				sb.WriteByte('/')
+			}
+			sb.WriteByte('^')
+			sb.WriteString(regexp.QuoteMeta(p))
+			sb.WriteByte('$')
+		}
+		return sb.String()
 	}
-	return "-test.run=^" + test.Name() + "$"
+	return "-test.run=^" + regexp.QuoteMeta(test.Name()) + "$"
 }
 
 func writeRerunFailsReport(opts *options, exec *testjson.Execution) error {
