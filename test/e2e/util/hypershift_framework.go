@@ -122,6 +122,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, opts *core.
 		if platform == hyperv1.AWSPlatform {
 			EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
 		}
+		EnsureSATokenNotMountedUnlessNecessary(t, context.Background(), h.client, hostedCluster)
 	})
 }
 
