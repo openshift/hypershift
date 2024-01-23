@@ -1414,7 +1414,11 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 		// Management OLM Placement
 		if _, err := r.CreateOrUpdate(ctx, r.client, operatorHub, func() error {
 			if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.OperatorHub != nil {
+				// if spec.Configuration.OperatorHub is set, we need to sync it to the guest cluster
 				operatorHub.Spec.DisableAllDefaultSources = hcp.Spec.Configuration.OperatorHub.DisableAllDefaultSources
+			} else {
+				// If the spec.Configuration is nil or the spec.Configuration.OperatorHub is nil, then we need to set the OperatorHub.Spec to an empty struct
+				operatorHub.Spec = configv1.OperatorHubSpec{}
 			}
 			return nil
 		}); err != nil {
